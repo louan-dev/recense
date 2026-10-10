@@ -1,0 +1,27 @@
+# gallery: public links and the private Main library on Cloudflare Workers and R2.
+name = "gallery"
+main = "src/worker.js"
+compatibility_date = "2026-10-05"
+workers_dev = true
+preview_urls = false
+
+# the pages' own CSS and browser scripts are bundled as text
+[[rules]]
+type = "Text"
+globs = ["**/client/*.css", "**/client/*.js"]
+fallthrough = false
+
+[[r2_buckets]]
+binding = "PUBLIC"
+bucket_name = "gallery-public"
+
+[[r2_buckets]]
+binding = "MAIN"
+bucket_name = "gallery-main"
+
+[triggers]
+crons = ["0 3 * * *"]
+
+[vars]
+ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
+# ACCESS_AUD, OWNER_EMAIL and SERVICE_CLIENT_ID are set with `wrangler secret put`.

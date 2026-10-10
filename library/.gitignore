@@ -1,0 +1,10 @@
+.wrangler/
+.test-build/
+.dev.vars
+node_modules/
+.DS_Store
+*.bak
+test-fail.png
+.claude/settings.local.json
+rclone.conf
+old-versions.zip

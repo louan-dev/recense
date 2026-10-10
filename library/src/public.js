@@ -1,0 +1,945 @@
+// The public side: links anyone can open, backed by the PUBLIC bucket.
+//
+// Two kinds of link, both under /s/<id> and both temporary:
+//   - upload links: files sent from the web page or the Mac, kept under links/<id>/
+//   - folder links: a folder in Gallery/Public, kept under folders/<name>/
+// Everything here expires and is deleted; nothing here reads or writes MAIN.
+
+import { OWNER, ID_RE, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, notice, jsonResponse, serveObject } from "./common.js";
+import { extractArt } from "./art.js";
+import { galleryPage } from "./page/gallery.js";
+
+const LINKS = "links/";
+
+// An upload that has shown no sign of life for this long is shown as "paused".
+const STALL_MS = 15 * 60 * 1000;
+
+// Daily: every upload-link object past its expiry goes.
+export async function cleanup(env) {
+  const now = Date.now();
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({
+      prefix: LINKS,
+      include: ["customMetadata"],
+      cursor,
+    });
+
+    const dead = r.objects
+      .filter(
+        (o) =>
+          o.customMetadata &&
+          Number(o.customMetadata.expires) &&
+          Number(o.customMetadata.expires) < now
+      )
+      .map((o) => o.key);
+
+    if (dead.length) {
+      await env.PUBLIC.delete(dead);
+    }
+
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
+// ---------- upload links ----------
+//
+// A link is a manifest written BEFORE any file is uploaded, so the gallery
+// link works immediately. Items that are registered but not yet in R2 show up
+// as "still uploading" placeholders and flip to real media the moment they land.
+
+const manifestKey = (id) => LINKS + id + "/.manifest";
+
+async function readManifest(env, id) {
+  try {
+    const mo = await env.PUBLIC.get(manifestKey(id));
+    return mo ? await mo.json() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeManifest(env, manifest) {
+  return env.PUBLIC.put(manifestKey(manifest.id), JSON.stringify(manifest), {
+    httpMetadata: { contentType: "application/json" },
+    customMetadata: { expires: String(Number(manifest.exp) || Date.now() + 7 * 864e5) },
+  });
+}
+
+// POST /main/api/link?action=start&days=7        body: one item per line
+//   "<size>\t<taken-ms>\t<type>\t<name>"  (type and name are encodeURIComponent'd)
+//   -> { ok, id, exp, count, url }               the id is made here, never by the client
+// POST /main/api/link?action=cancel&id=ID        marks unfinished items failed
+// POST /main/api/link?action=folder&name=<folder in Public>&days=7
+export async function linkApi(req, env, url) {
+  const q = url.searchParams;
+  const action = q.get("action") || "";
+
+  if (action === "folder") return folderLinkApi(env, q);
+
+  if (action === "start") {
+    const id = newLinkId();
+    const days = Math.min(365, Math.max(1, parseInt(q.get("days") || "", 10) || 7));
+    const items = [];
+
+    try {
+      for (const line of (await req.text()).split("\n")) {
+        if (!line.trim()) continue;
+
+        const [size, taken, type, name] = line.replace(/\r$/, "").split("\t");
+
+        items.push({
+          i: items.length,
+          size: Number(size) || 0,
+          taken: Number(taken) || Date.now(),
+          type: decodeURIComponent(type || "").slice(0, 200) || "application/octet-stream",
+          name: decodeURIComponent(name || "").slice(0, 120) || "file",
+        });
+      }
+    } catch (e) {
+      return new Response("Bad item list", { status: 400 });
+    }
+
+    if (!items.length || items.length > 1000) {
+      return new Response("Bad file count", { status: 400 });
+    }
+
+    const manifest = {
+      id,
+      owner: OWNER,
+      created: Date.now(),
+      exp: Date.now() + days * 864e5,
+      count: items.length,
+      items,
+    };
+
+    await writeManifest(env, manifest);
+
+    return jsonResponse({ ok: true, id, exp: manifest.exp, count: items.length, url: "/s/" + id });
+  }
+
+  const id = q.get("id") || "";
+  if (!ID_RE.test(id)) return new Response("Bad request", { status: 400 });
+
+  if (action === "cancel") {
+    const manifest = await readManifest(env, id);
+
+    if (!manifest) return new Response("Link not found", { status: 404 });
+
+    manifest.cancelled = Date.now();
+    await writeManifest(env, manifest);
+
+    return jsonResponse({ ok: true });
+  }
+
+  return new Response("Bad request", { status: 400 });
+}
+
+// ---------- folder links (Gallery/Public on the Mac) ----------
+//
+// Everything under folders/<folder>/ is public. A folder gets its link the first time
+// one is asked for (the Quick Action, or action=folder), or at the next cleanup if
+// nobody asks, so nothing in Public outlives its expiry. When the link expires, the
+// cleanup deletes the whole folder. Saving a file through the mount replaces the
+// object and strips its R2 metadata, so the expiry lives in index/, never on the files.
+
+const FOLDERS = "folders/";
+const INDEX = "index/";
+const FOLDER_DAYS = 7;
+const FOLDER_DAYS_MAX = 30; // the bucket's lifecycle rule deletes anything in folders/ after 31 days
+const LINK_ID_LEN = 20;
+
+const linkKey = (id) => INDEX + id + ".json";
+const folderKey = (folder) => INDEX + "folder/" + encodeURIComponent(folder);
+
+function newLinkId() {
+  const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(LINK_ID_LEN * 2));
+  let id = "";
+
+  // 248 is the largest multiple of 62 under 256: rejecting the rest keeps every letter equally likely
+  for (const b of bytes) {
+    if (b < 248) id += abc[b % 62];
+    if (id.length === LINK_ID_LEN) break;
+  }
+
+  return id.length === LINK_ID_LEN ? id : newLinkId();
+}
+
+async function readLink(env, id) {
+  if (!ID_RE.test(id)) return null;
+
+  try {
+    const o = await env.PUBLIC.get(linkKey(id));
+    const link = o ? await o.json() : null;
+    return link && typeof link.folder === "string" && Number(link.exp) > 0 ? link : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// One folder name at the top of Public, or null.
+function folderName(s) {
+  const name = String(s || "").normalize("NFC");
+
+  if (!name || name.length > 200 || name.includes("/") || name === "." || name === "..") return null;
+  if ([...name].some((ch) => ch.charCodeAt(0) < 32) || JUNK.test(name)) return null;
+
+  return name;
+}
+
+async function folderHasFiles(env, folder) {
+  const r = await env.PUBLIC.list({ prefix: FOLDERS + folder + "/", limit: 1 });
+  return r.objects.length > 0;
+}
+
+// Deletes a public folder and its link.
+async function purgeFolder(env, link) {
+  await deletePrefix(env, FOLDERS + link.folder + "/");
+
+  const idx = await env.PUBLIC.get(folderKey(link.folder));
+  const owner = idx ? await idx.json().catch(() => null) : null;
+
+  if (!owner || owner.id === link.id) await env.PUBLIC.delete(folderKey(link.folder));
+  await env.PUBLIC.delete(linkKey(link.id));
+}
+
+// The folder's live link; a new one if it has none. An expired folder is deleted
+// on the spot instead of being given a second life.
+async function folderLink(env, folder, days) {
+  const now = Date.now();
+  const idx = await env.PUBLIC.get(folderKey(folder));
+
+  if (idx) {
+    const owner = await idx.json().catch(() => null);
+    const link = owner && (await readLink(env, owner.id));
+
+    if (link && link.exp > now) return link;
+
+    if (link) {
+      await purgeFolder(env, link);
+      return { expired: true };
+    }
+  }
+
+  const link = { id: newLinkId(), folder, created: now, exp: now + days * 864e5 };
+
+  await env.PUBLIC.put(linkKey(link.id), JSON.stringify(link), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  await env.PUBLIC.put(folderKey(folder), JSON.stringify({ id: link.id }), {
+    httpMetadata: { contentType: "application/json" },
+  });
+
+  return link;
+}
+
+// action=folder&name=<folder in Public>&days=7
+//   -> { ok, id, exp, url }   the same link every time until it expires
+async function folderLinkApi(env, q) {
+  const folder = folderName(q.get("name"));
+  if (!folder) return new Response("Bad folder name", { status: 400 });
+
+  if (!(await folderHasFiles(env, folder))) {
+    return new Response("That folder isn't in Public yet (or is empty)", { status: 404 });
+  }
+
+  const days = Math.min(FOLDER_DAYS_MAX, Math.max(1, parseInt(q.get("days") || "", 10) || FOLDER_DAYS));
+  const link = await folderLink(env, folder, days);
+
+  if (link.expired) {
+    return new Response("This folder's link had expired, so the folder was deleted", { status: 410 });
+  }
+
+  return jsonResponse({ ok: true, id: link.id, exp: link.exp, url: "/s/" + link.id });
+}
+
+// Daily: expired links take their folders with them, and a folder nobody asked a
+// link for gets one, so its clock starts. Loose files at the top of Public (not in
+// any folder) have no link to hang an expiry on: they go once they are FOLDER_DAYS old.
+export async function sweepFolders(env) {
+  const now = Date.now();
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({ prefix: INDEX, delimiter: "/", cursor });
+
+    for (const o of r.objects) {
+      const link = await readLink(env, o.key.slice(INDEX.length).replace(/\.json$/, ""));
+      if (link && link.exp <= now) await purgeFolder(env, link);
+    }
+
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+
+  cursor = undefined;
+
+  do {
+    const r = await env.PUBLIC.list({ prefix: FOLDERS, delimiter: "/", cursor });
+
+    for (const p of r.delimitedPrefixes || []) {
+      const folder = p.slice(FOLDERS.length, -1);
+      if (folder && !(await env.PUBLIC.head(folderKey(folder)))) {
+        await folderLink(env, folder, FOLDER_DAYS);
+      }
+    }
+
+    const loose = r.objects
+      .filter((o) => now - o.uploaded.getTime() > FOLDER_DAYS * 864e5)
+      .map((o) => o.key);
+
+    if (loose.length) await env.PUBLIC.delete(loose);
+
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
+// A public folder as a gallery: whatever is in it right now, edits included.
+async function folderGalleryData(env, link) {
+  if (!(link.exp > Date.now())) return { expired: true };
+
+  const prefix = FOLDERS + link.folder + "/";
+  const objs = [];
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({
+      prefix,
+      include: ["httpMetadata", "customMetadata"],
+      cursor,
+    });
+
+    objs.push(...r.objects);
+    cursor = r.truncated && objs.length < FOLDER_MAX ? r.cursor : undefined;
+  } while (cursor);
+
+  const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  const niceName = (s) => s.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
+  /** @type {any[]} */
+  const items = [];
+
+  for (const o of objs.slice(0, FOLDER_MAX)) {
+    const rel = o.key.slice(prefix.length);
+    if (!rel || rel.split("/").some((x) => !x || JUNK.test(x))) continue;
+
+    const name = rel.split("/").pop();
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    let type = (o.httpMetadata && o.httpMetadata.contentType) || "";
+
+    if (/^(|application\/octet-stream|binary\/octet-stream|text\/plain.*)$/.test(type)) {
+      type = MIME_BY_EXT[ext] || IMG_BY_EXT[ext] || type || "application/octet-stream";
+    }
+
+    const mtime = Number((o.customMetadata || {}).mtime);
+    // the file's version is part of its address, so an edit is never hidden by a cached copy
+    const at = "/d/" + link.id + "/" + o.etag.replace(/[^A-Za-z0-9]/g, "").slice(0, 12) + "/" + urlPath(rel);
+
+    items.push({
+      name: niceName(rel),
+      sortName: rel,
+      path: rel,
+      type,
+      size: o.size,
+      taken: mtime > 0 ? Math.round(mtime * 1000) : o.uploaded.getTime(),
+      src: at,
+      art: isAudioish(type, name) ? at + "?art=1" : null,
+    });
+  }
+
+  if (!items.length) return { missing: true };
+
+  items.sort((a, b) => byName(a.sortName, b.sortName));
+  items.forEach((f, i) => {
+    f.n = String(i).padStart(5, "0");
+    delete f.sortName;
+  });
+
+  return {
+    id: link.id,
+    owner: OWNER,
+    title: link.folder,
+    heading: link.folder,
+    zip: link.folder + ".zip",
+    exp: link.exp,
+    expected: items.length,
+    ready: items.length,
+    complete: true,
+    items,
+  };
+}
+
+// GET /d/<id>/<version>/<path inside the folder>   (?art=1 for embedded artwork)
+export async function folderFile(req, env, url, id, relEncoded) {
+  const link = await readLink(env, id);
+  if (!link) return notice("Link not found", 404);
+  if (!(link.exp > Date.now())) return notice("Link expired", 410);
+
+  const rel = cleanPath(relEncoded, true);
+  if (!rel || rel.split("/").some((x) => JUNK.test(x))) return notice("Link not found", 404);
+
+  const key = FOLDERS + link.folder + "/" + rel;
+  const name = rel.split("/").pop();
+  const ext = (name.split(".").pop() || "").toLowerCase();
+
+  if (url.searchParams.get("art") === "1") {
+    const head = await env.PUBLIC.head(key);
+    let art = null;
+
+    if (head && isAudioish(head.httpMetadata && head.httpMetadata.contentType, name)) {
+      try {
+        art = await extractArt(env.PUBLIC, key, head.size);
+      } catch (e) {}
+    }
+
+    return art
+      ? new Response(art.data.slice(), {
+          headers: {
+            "content-type": art.mime,
+            "cache-control": "private, max-age=3600",
+            "x-content-type-options": "nosniff",
+          },
+        })
+      : new Response("No artwork", { status: 404, headers: { "cache-control": "private, max-age=3600" } });
+  }
+
+  let obj;
+
+  try {
+    obj = await env.PUBLIC.get(key, { range: req.headers });
+  } catch (e) {
+    return new Response("Bad range", { status: 416 });
+  }
+
+  if (!obj) return notice("Link not found", 404);
+
+  return serveObject(req, url, obj, name, MIME_BY_EXT[ext] || IMG_BY_EXT[ext]);
+}
+
+// ---------- upload ----------
+//
+// Cloudflare rejects any single request body over 100 MB on the Free and Pro
+// plans (413, before it reaches this Worker). Small files go up in one PUT.
+// Big files use R2 multipart upload: start -> part, part, ... -> complete,
+// with every part a separate, small request.
+
+function target(q, sentType) {
+  const id = q.get("id") || "";
+  const i = parseInt(q.get("i") || "", 10);
+
+  if (!ID_RE.test(id) || !(i >= 0 && i < 1000)) return null;
+
+  const days = Math.min(365, Math.max(1, parseInt(q.get("days") || "", 10) || 7));
+  const isArt = q.get("art") === "1";
+  const n = String(i).padStart(3, "0");
+  const key = LINKS + id + "/" + n + (isArt ? ".art" : "");
+
+  const metadata = {
+    name: encodeURIComponent(
+      Array.from(q.get("name") || (isArt ? "cover.jpg" : "file")).slice(0, 120).join("")
+    ),
+    expires: String(Date.now() + days * 864e5),
+    taken: String(Number(q.get("t")) || Date.now()),
+  };
+
+  if (!isArt) {
+    metadata.hasArt = q.get("hasArt") === "1" ? "1" : "0";
+  }
+
+  // don't trust a generic type for files we can recognise by extension
+  const sent = sentType || "";
+  const ext = ((q.get("name") || "").split(".").pop() || "").toLowerCase();
+
+  const contentType =
+    !isArt && (!sent || sent === "application/octet-stream")
+      ? MIME_BY_EXT[ext] || "application/octet-stream"
+      : sent || "application/octet-stream";
+
+  return { key, metadata, contentType };
+}
+
+export async function upload(req, env, url) {
+  const q = url.searchParams;
+  const action = q.get("action");
+
+  if (action) return multipart(req, env, q, action);
+
+  const t = target(q, req.headers.get("content-type"));
+
+  if (!t) return new Response("Bad request", { status: 400 });
+
+  await env.PUBLIC.put(t.key, req.body, {
+    httpMetadata: { contentType: t.contentType },
+    customMetadata: t.metadata,
+  });
+
+  return new Response("ok");
+}
+
+// Progress lives in a tiny side object so the gallery can show a ring without
+// any extra reads: the list call that finds the files already returns it.
+function setProgress(env, t, done, total) {
+  if (t.key.endsWith(".art") || !(total >= 1 && total <= 10000)) {
+    return Promise.resolve();
+  }
+
+  return env.PUBLIC.put(t.key + ".progress", new Uint8Array(0), {
+    customMetadata: {
+      done: String(done),
+      total: String(total),
+      expires: String(Date.now() + 2 * 864e5),
+    },
+  }).catch(() => {});
+}
+
+// best-effort: tidying up must never turn a finished upload into an error
+async function dropProgress(env, t) {
+  try {
+    await env.PUBLIC.delete(t.key + ".progress");
+  } catch (e) {}
+}
+
+// action=start    POST  -> uploadId (plain text)       ?total=N is optional
+// action=part     PUT   -> etag     (plain text)       body = one chunk, ?total=N
+// action=complete POST  -> "ok"                        body = [{partNumber, etag}, ...]
+// action=abort    POST  -> "ok"
+async function multipart(req, env, q, action) {
+  const t = target(q, q.get("type"));
+
+  if (!t) return new Response("Bad request", { status: 400 });
+
+  const total = parseInt(q.get("total") || "", 10);
+
+  if (action === "start") {
+    const mp = await env.PUBLIC.createMultipartUpload(t.key, {
+      httpMetadata: { contentType: t.contentType },
+      customMetadata: t.metadata,
+    });
+
+    await setProgress(env, t, 0, total);
+
+    return new Response(mp.uploadId);
+  }
+
+  const uploadId = q.get("uploadId") || "";
+
+  if (!uploadId || uploadId.length > 1024) {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const mp = env.PUBLIC.resumeMultipartUpload(t.key, uploadId);
+
+  if (action === "part") {
+    const n = parseInt(q.get("part") || "", 10);
+
+    if (!(n >= 1 && n <= 10000) || !req.body) {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    try {
+      const part = await mp.uploadPart(n, req.body);
+      await setProgress(env, t, n, total);
+      return new Response(part.etag);
+    } catch (e) {
+      return new Response("Part failed: " + (e && e.message), { status: 500 });
+    }
+  }
+
+  if (action === "complete") {
+    let parts;
+
+    try {
+      parts = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    const valid =
+      Array.isArray(parts) &&
+      parts.length >= 1 &&
+      parts.length <= 10000 &&
+      parts.every(
+        (p) =>
+          p &&
+          Number.isInteger(p.partNumber) &&
+          p.partNumber >= 1 &&
+          p.partNumber <= 10000 &&
+          typeof p.etag === "string" &&
+          p.etag.length > 0 &&
+          p.etag.length <= 200
+      );
+
+    if (!valid) return new Response("Bad request", { status: 400 });
+
+    parts.sort((a, b) => a.partNumber - b.partNumber);
+
+    try {
+      await mp.complete(parts);
+    } catch (e) {
+      return new Response("Complete failed: " + (e && e.message), { status: 400 });
+    }
+
+    await dropProgress(env, t);
+
+    return new Response("ok");
+  }
+
+  if (action === "abort") {
+    try {
+      await mp.abort();
+    } catch (e) {}
+
+    await dropProgress(env, t);
+
+    return new Response("ok");
+  }
+
+  return new Response("Bad request", { status: 400 });
+}
+
+// ---------- file bytes ----------
+
+export async function file(req, env, ctx, url, id, n) {
+  if (!ID_RE.test(id)) {
+    return notice("Link not found", 404);
+  }
+
+  const isArt =
+    url.searchParams.get("art") === "1";
+
+  const key =
+    LINKS +
+    id +
+    "/" +
+    n +
+    (isArt ? ".art" : "");
+
+  let obj;
+
+  try {
+    obj = await env.PUBLIC.get(key, {
+      range: req.headers,
+    });
+  } catch (e) {
+    return new Response("Bad range", {
+      status: 416,
+    });
+  }
+
+  if (!obj && isArt) {
+    return artFromSource(env, ctx, id, n);
+  }
+
+  if (!obj) {
+    return notice("Link not found", 404);
+  }
+
+  const meta =
+    obj.customMetadata || {};
+
+  if (
+    Number(meta.expires) &&
+    Date.now() > Number(meta.expires)
+  ) {
+    return notice("Link expired", 410);
+  }
+
+  if (isArt && meta.none === "1") {
+    return new Response("No artwork", {
+      status: 404,
+      headers: { "cache-control": "private, max-age=3600" },
+    });
+  }
+
+  return serveObject(req, url, obj, decodeURIComponent(meta.name || "file"));
+}
+
+// Serves /f/<id>/<n>?art=1 when no cover was uploaded: pull it out of the
+// audio file once, then keep it next to the file so it expires with the link.
+async function artFromSource(env, ctx, id, n) {
+  const gone = () =>
+    new Response("No artwork", {
+      status: 404,
+      headers: { "cache-control": "private, max-age=3600" },
+    });
+
+  const keep = (p) => {
+    const safe = Promise.resolve(p).catch(() => {});
+    if (ctx && ctx.waitUntil) ctx.waitUntil(safe);
+  };
+
+  const srcKey = LINKS + id + "/" + n;
+  const head = await env.PUBLIC.head(srcKey);
+
+  if (!head) return notice("Link not found", 404);
+
+  const meta = head.customMetadata || {};
+
+  if (Number(meta.expires) && Date.now() > Number(meta.expires)) {
+    return notice("Link expired", 410);
+  }
+
+  const type = (head.httpMetadata && head.httpMetadata.contentType) || "";
+  const name = decodeURIComponent(meta.name || "");
+
+  if (!isAudioish(type, name)) return gone();
+
+  let art = null;
+
+  try {
+    art = await extractArt(env.PUBLIC, srcKey, head.size);
+  } catch (e) {}
+
+  const artKey = srcKey + ".art";
+
+  const stamp = {
+    expires: meta.expires || "0",
+    taken: meta.taken || String(Date.now()),
+  };
+
+  if (!art) {
+    // remember "no artwork" so the next view skips the lookup
+    keep(
+      env.PUBLIC.put(artKey, new Uint8Array(0), {
+        customMetadata: { ...stamp, name: "cover", none: "1" },
+      })
+    );
+
+    return gone();
+  }
+
+  const ext =
+    art.mime === "image/png"
+      ? "png"
+      : art.mime === "image/webp"
+      ? "webp"
+      : art.mime === "image/gif"
+      ? "gif"
+      : "jpg";
+
+  const bytes = art.data.slice();
+
+  keep(
+    env.PUBLIC.put(artKey, bytes, {
+      httpMetadata: { contentType: art.mime },
+      customMetadata: {
+        ...stamp,
+        name: encodeURIComponent("cover." + ext),
+      },
+    })
+  );
+
+  return new Response(bytes, {
+    headers: {
+      "content-type": art.mime,
+      "cache-control": "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+// ---------- live gallery state ----------
+
+// Merges what the uploader promised (the manifest) with what is actually in R2.
+// Registered-but-missing items come back as { pending: true, progress, ... }.
+export async function getGalleryData(env, id) {
+  if (!ID_RE.test(id)) return { missing: true };
+
+  const manifest = await readManifest(env, id);
+  const objs = [];
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({
+      prefix: LINKS + id + "/",
+      include: ["httpMetadata", "customMetadata"],
+      cursor,
+    });
+
+    objs.push(...r.objects);
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+
+  const ready = {};
+  const progress = {};
+  let lastActivity = manifest ? Number(manifest.created) || 0 : 0;
+
+  for (const o of objs) {
+    const m = o.key.match(/\/(\d{3})(\.art|\.progress)?$/);
+
+    if (o.uploaded) lastActivity = Math.max(lastActivity, o.uploaded.getTime());
+
+    if (!m) continue; // the manifest
+
+    if (m[2] === ".progress") progress[m[1]] = o;
+    else if (!m[2]) ready[m[1]] = o;
+  }
+
+  const manifestItems = manifest && Array.isArray(manifest.items) ? manifest.items : [];
+
+  if (!manifest && !Object.keys(ready).length) {
+    // not an upload link: maybe a folder link
+    const link = await readLink(env, id);
+    return link ? folderGalleryData(env, link) : { missing: true };
+  }
+
+  const now = Date.now();
+  const niceName = (s) => s.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
+  const items = [];
+
+  for (const n of Object.keys(ready).sort()) {
+    const o = ready[n];
+    const meta = o.customMetadata || {};
+    const exp = Number(meta.expires) || 0;
+
+    if (exp && exp <= now) continue;
+
+    let rawName = "file";
+    try {
+      rawName = decodeURIComponent(meta.name || "file");
+    } catch (e) {}
+
+    const ctype =
+      (o.httpMetadata && o.httpMetadata.contentType) || "application/octet-stream";
+
+    items.push({
+      n,
+      name: niceName(rawName),
+      type: ctype,
+      size: o.size,
+      exp,
+      taken: Number(meta.taken) || o.uploaded.getTime(),
+      art:
+        meta.hasArt === "1" || isAudioish(ctype, rawName)
+          ? "/f/" + id + "/" + n + "?art=1"
+          : null,
+    });
+  }
+
+  const readyNumbers = new Set(items.map((f) => f.n));
+  const stalled = now - lastActivity > STALL_MS;
+  const failed = !!(manifest && manifest.cancelled);
+
+  for (const it of manifestItems) {
+    const n = String(it.i).padStart(3, "0");
+
+    if (readyNumbers.has(n) || ready[n]) continue; // ready (or expired) already
+
+    const po = progress[n];
+    const pm = po && po.customMetadata ? po.customMetadata : null;
+    const total = pm ? Number(pm.total) : 0;
+
+    items.push({
+      n,
+      name: niceName(it.name || "file"),
+      type: it.type || "application/octet-stream",
+      size: Number(it.size) || 0,
+      taken: Number(it.taken) || now,
+      pending: true,
+      progress: total > 0 ? Math.min(1, Number(pm.done) / total) : null,
+      stalled: stalled && !failed,
+      failed,
+    });
+  }
+
+  items.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+
+  const readyItems = items.filter((f) => !f.pending);
+  const expected = manifest ? Math.max(Number(manifest.count) || 0, items.length) : items.length;
+  const manifestExp = manifest ? Number(manifest.exp) || 0 : 0;
+  const exp = Math.max(manifestExp, ...readyItems.map((f) => f.exp), 0);
+
+  if (exp && now > exp) return { expired: true };
+
+  return {
+    id,
+    owner: OWNER,
+    exp,
+    expected,
+    ready: readyItems.length,
+    complete: readyItems.length >= expected,
+    items: items.map(({ exp, ...f }) => f),
+  };
+}
+
+export async function galleryApi(env, url) {
+  const data = await getGalleryData(env, url.searchParams.get("id") || "");
+
+  if (!data || data.missing) return jsonResponse({ error: "Link not found" }, 404);
+  if (data.expired) return jsonResponse({ error: "Link expired" }, 410);
+
+  return jsonResponse(data);
+}
+export async function gallery(env, id) {
+  const live = await getGalleryData(env, id);
+
+  if (!live || live.missing) return notice("Link not found", 404);
+  if (live.expired) return notice("Link expired", 410);
+
+  return galleryPage(live);
+}
+
+
+// ---------- deleting (owner only) ----------
+
+async function deletePrefix(env, prefix) {
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({ prefix, cursor });
+    const keys = r.objects.map((o) => o.key);
+    if (keys.length) await env.PUBLIC.delete(keys);
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
+// DELETE /main/api/link?id=ID                     the whole link and its files, now
+// DELETE /main/api/link?id=ID&item=…&item=…       chosen items only: an upload link's
+//                                                 three-digit number, or a folder link's path
+export async function deleteFromLink(env, url) {
+  const q = url.searchParams;
+  const id = q.get("id") || "";
+  const picked = q.getAll("item");
+
+  if (!ID_RE.test(id) || picked.length > 1000) return new Response("Bad request", { status: 400 });
+
+  const manifest = await readManifest(env, id);
+  const link = manifest ? null : await readLink(env, id);
+
+  if (link) {
+    if (!picked.length) {
+      await purgeFolder(env, link);
+      return jsonResponse({ ok: true, deleted: "link" });
+    }
+
+    const keys = [];
+
+    for (const p of picked) {
+      const rel = cleanPath(p);
+      if (!rel) return new Response("Bad item", { status: 400 });
+      keys.push(FOLDERS + link.folder + "/" + rel);
+    }
+
+    await env.PUBLIC.delete(keys);
+    return jsonResponse({ ok: true, deleted: keys.length });
+  }
+
+  const remaining = manifest && Array.isArray(manifest.items) ? manifest.items : [];
+
+  if (!picked.length || (manifest && remaining.every((it) => picked.includes(String(it.i).padStart(3, "0"))))) {
+    await deletePrefix(env, LINKS + id + "/");
+    return jsonResponse({ ok: true, deleted: "link" });
+  }
+
+  if (!picked.every((n) => /^\d{3}$/.test(n))) return new Response("Bad item", { status: 400 });
+
+  await env.PUBLIC.delete(picked.flatMap((n) => [n, n + ".art", n + ".progress"].map((x) => LINKS + id + "/" + x)));
+
+  if (manifest) {
+    manifest.items = remaining.filter((it) => !picked.includes(String(it.i).padStart(3, "0")));
+    manifest.count = manifest.items.length;
+    await writeManifest(env, manifest);
+  }
+
+  return jsonResponse({ ok: true, deleted: picked.length });
+}
