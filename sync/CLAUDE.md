@@ -28,3 +28,5 @@ Update `PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3
 
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation, next action. Running low on context: update §7, write a patch, build `progress.zip` (PROGRESS.md, patch, test output; no secrets, caches or `.env`) and verify it exists.
+## Changelog
+After each step, append an entry under ## CHANGELOG in PROGRESS.md: date and time from `date`, item ID, status (DONE/PARTIAL/BLOCKED), what changed, validation, next action. Keep §7 current.

@@ -1,0 +1,12 @@
+.env
+.env.*
+rclone.conf
+.DS_Store
+node_modules/
+# ledger sinks, mirrors, stages and local outputs
+ledger-sink/
+mirror/
+stage/
+*.part
+progress.zip
+audit/

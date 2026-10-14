@@ -79,3 +79,5 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 5. Battery colors: green ≥40, yellow 30–39, red ≤29 (red at 29 is mandatory; the old spec's yellow overlapped red). One constant each.
 6. Scheduler starts in shadow mode for 2 weeks (addendum §7); owner can switch to live.
 7. Recommended private repo: `sync/` (ledger.mjs + specs): unique, tiny, unversioned, and the root of both other projects. Do not push anywhere until the owner names the repo.
+
+## CHANGELOG 
