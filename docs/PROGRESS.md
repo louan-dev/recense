@@ -63,7 +63,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 | A1 | Audit + quota breakdown | PARTIAL | `ledger audit` → `AUDIT.md`: Drive `.Trash` holds 12.7 GB of 15.1 GB (one 11.3 GB wav); `brctl quota` says 16.4 GB left, contradicting "5 GB full". Needs owner's Apple-side breakdown |
 | A2 | Arq plan + verified restore | PARTIAL | `ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
 | A3 | Quota freed | BLOCKED | `A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
-| A4 | Canary round-trip | BLOCKED | canary `10051f3f` in vault 18:16; Mac upload pending (`draftpad.md` + canary "uploading"; brctl last-sync 07:50). Owner: iPhone/iPad lines, Notability iPad upload check |
+| A4 | Canary round-trip | BLOCKED | canary `10051f3f` written 18:16, **uploaded from the Mac by 18:28** (vault 237/237 uploaded). Waits only on owner: `iphone HH:MM` / `ipad HH:MM` lines, Notability iPad upload check |
 | A5 | Ledger mirror | PARTIAL | macOS verified: selftest, copy dry-run, real vault → scratch sink (89 dataless detected, vault untouched), rclone sink via `:local:`. SanDisk dropped off the bus mid-write; launchd job written, not installed |
 | A6 | Overflow lane, Notability WebDAV | PARTIAL | `ledger overflow` planner (read-only, tested on vault); Remotely Save checklist in `OVERFLOW.md` (owner); Notability WebDAV designed, build gated on A5 DONE |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
@@ -120,3 +120,8 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 - Validated: selftest all passed (32 checks). Real vault at 10 MB: 1 candidate (73 MB `.mov`, cloud-only, so not ready); before the `.obsidian` exclusion it also flagged a 59 MB Mac-only plugin binary (`local-dictation-sidecar`) syncing through iCloud, now an A3 row.
 - Not done: no bucket or token created, no Remotely Save configured (owner's Cloudflare/Obsidian GUI). No file moved, no pointer written. Notability WebDAV not built: the plan gates it on A5, which waits on the SanDisk.
 - Next: owner sets the plan size so `quota` stops reading `inconsistent`; after A5 is DONE, build `/dav/notability/` in `cloud-gallery` per `OVERFLOW.md` §3.
+
+### 2026-10-13 18:29 PDT · A4 · BLOCKED (update)
+- Changed: nothing in code; re-measured.
+- Validated: `swift tools/upload-status.swift <vault>` at 18:28 → 237 files, 237 uploaded, 0 pending (canary and `draftpad.md` included). Mac→iCloud upload for the Obsidian container works now (≤12 min for the canary), which agrees with `brctl quota`'s 16.4 GB free and weakens the "iCloud is full" premise. If iPad/iPhone still don't sync, look at those devices (their own iCloud state, Low Power/Low Data mode, Obsidian on iOS opened in the foreground) rather than the Mac.
+- Next: owner appends the iPhone line, then the iPad line; run `node canary.mjs check --wait 60` on the Mac.
