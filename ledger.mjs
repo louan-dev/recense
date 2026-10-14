@@ -30,6 +30,10 @@
 //   node ledger.mjs fold    --sink SINK [--at ISO] [--write]       current tree (or as of a time)
 //   node ledger.mjs verify  --sink SINK [--deep]                    chains, objects, optional re-hash
 //   node ledger.mjs restore --sink SINK --dest DIR [--at ISO]       rebuild a tree somewhere else
+//   node ledger.mjs audit   [--root DIR] [--out AUDIT.md] [--baseline-dir DIR] [--top 50] [--dup-min BYTES]
+//                           read-only: per-container bytes, dataless, largest, duplicates, dev junk
+//   node ledger.mjs backup-status [--dest ARQ_DEST] [--source DIR --restored DIR] [--max-age-hours 26]
+//                           read-only: last write, snapshot count, sha256 check of a sample restored with Arq
 //   node ledger.mjs selftest
 //   SINK is a directory path, or  rclone:REMOTE:PATH  (e.g. rclone:gallery-main:ledger/icloud).
 //   Without --apply, `run` reads and reports but writes nothing.
@@ -372,6 +376,159 @@ export async function restore({ sink, dest, atMs = Infinity, log = console.log }
   return n;
 }
 
+// ------------------------------------------------------------------ audit (read-only; where the iCloud bytes are)
+
+const JUNK = new Set(['node_modules', '.build', 'DerivedData', 'Pods', '.venv', '__pycache__']);
+const fmtB = (n) => { const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; };
+
+function confirmDataless(files) { // one `stat` per 200 paths instead of one per file
+  const out = new Set();
+  if (process.platform !== 'darwin') { for (const f of files) out.add(f); return out; }
+  for (let i = 0; i < files.length; i += 200) {
+    const chunk = files.slice(i, i + 200);
+    const r = spawnSync('stat', ['-f', '%f', ...chunk], { encoding: 'utf8', maxBuffer: 1 << 24 });
+    const lines = (r.stdout || '').split('\n');
+    chunk.forEach((f, j) => { const fl = parseInt(lines[j], 10); if (!Number.isFinite(fl) || (fl & SF_DATALESS)) out.add(f); }); // unknown = evicted (P1)
+  }
+  return out;
+}
+
+async function hashFile(f) { const h = crypto.createHash('sha256'); await pipeline(fs.createReadStream(f), h); return h.digest('hex'); }
+
+export async function audit(o = {}) {
+  const log = o.log || console.log;
+  const root = fs.realpathSync(o.root || path.join(os.homedir(), 'Library', 'Mobile Documents'));
+  const dupMin = o.dupMin ?? 1 << 20; const topN = o.top ?? 50;
+  const groups = new Map(); const files = []; const junk = new Map(); const denied = []; const unreadable = [];
+  const g = (name) => { if (!groups.has(name)) groups.set(name, { name, files: 0, apparent: 0, onDisk: 0, dataless: 0, datalessBytes: 0, junkBytes: 0 }); return groups.get(name); };
+  const groupOf = (rel) => { const p = rel.split('/'); return p[0] === 'com~apple~CloudDocs' && p.length > 2 ? `iCloud Drive/${p[1]}` : p[0] === 'com~apple~CloudDocs' ? 'iCloud Drive/(root)' : p[0]; };
+
+  const walkA = async (rel, junkRoot) => {
+    const full = path.join(root, rel);
+    if (DENY.some((rx) => rx.test(full + '/'))) { denied.push(rel); return; } // P10: not even readdir
+    let ents; try { ents = await fsp.readdir(full, { withFileTypes: true }); } catch (e) { unreadable.push(`${rel}: ${e.code}`); return; }
+    for (const e of ents) {
+      const r = rel ? `${rel}/${e.name}` : e.name; const f = path.join(root, r);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) { await walkA(r, junkRoot ?? (JUNK.has(e.name) ? r : undefined)); continue; }
+      if (!e.isFile()) continue;
+      const legacy = /^\.(.+)\.icloud$/.exec(e.name);
+      let st; try { st = await fsp.lstat(f); } catch { continue; }
+      if (legacy) { const c = g(groupOf(r)); c.files++; c.dataless++; continue; } // size unknown without parsing the stub
+      files.push({ rel: r, full: f, size: st.size, onDisk: st.blocks * 512, zero: st.size > 0 && st.blocks === 0, junkRoot });
+    }
+  };
+  if (!rel0Ok(root)) throw new Error(`not a directory: ${root}`);
+  await walkA('', undefined);
+
+  const dl = confirmDataless(files.filter((x) => x.zero).map((x) => x.full));
+  for (const x of files) {
+    x.dataless = dl.has(x.full); const c = g(groupOf(x.rel));
+    c.files++; c.apparent += x.size; c.onDisk += x.onDisk; if (x.dataless) { c.dataless++; c.datalessBytes += x.size; }
+    if (x.junkRoot) { c.junkBytes += x.size; junk.set(x.junkRoot, (junk.get(x.junkRoot) || 0) + x.size); }
+  }
+
+  // duplicates: same size first, then sha256 of local (non-dataless) copies only; never forces a download
+  const bySize = new Map();
+  for (const x of files) if (!x.dataless && x.size >= dupMin) { const a = bySize.get(x.size) || []; a.push(x); bySize.set(x.size, a); }
+  const dups = []; let hashed = 0;
+  for (const [size, xs] of bySize) {
+    if (xs.length < 2) continue;
+    const byHash = new Map();
+    for (const x of xs) { let h; try { h = await hashFile(x.full); hashed++; } catch { continue; } const a = byHash.get(h) || []; a.push(x.rel); byHash.set(h, a); }
+    for (const [h, rels] of byHash) if (rels.length > 1) dups.push({ size, hash: h, copies: rels.length, wasted: size * (rels.length - 1), paths: rels });
+  }
+  dups.sort((a, b) => b.wasted - a.wasted);
+
+  const quota = spawnSync('brctl', ['quota'], { encoding: 'utf8' });
+  const qm = /(\d+) bytes of quota remaining/.exec(quota.stdout || '');
+  const tot = [...groups.values()].reduce((t, c) => ({ files: t.files + c.files, apparent: t.apparent + c.apparent, onDisk: t.onDisk + c.onDisk, dataless: t.dataless + c.dataless, datalessBytes: t.datalessBytes + c.datalessBytes }), { files: 0, apparent: 0, onDisk: 0, dataless: 0, datalessBytes: 0 });
+  const largest = [...files].sort((a, b) => b.size - a.size).slice(0, topN).map((x) => ({ path: x.rel, size: x.size, dataless: x.dataless }));
+  const junkList = [...junk].map(([p, b]) => ({ path: p, bytes: b })).sort((a, b) => b.bytes - a.bytes);
+  const doc = {
+    v: V, generated: iso(Date.now()), root, quotaRemaining: qm ? Number(qm[1]) : null, totals: tot,
+    groups: [...groups.values()].sort((a, b) => b.apparent - a.apparent), largest, duplicates: dups, junk: junkList,
+    denied, unreadable, hashedForDuplicates: hashed, dupMinBytes: dupMin,
+  };
+
+  // baseline: counts only live outside the repo (paths can be private); previous one gives a delta
+  const bdir = assertWritable(o.baselineDir || path.join(os.homedir(), '.ledger', 'audit'));
+  await fsp.mkdir(bdir, { recursive: true });
+  let prev = null; try { prev = JSON.parse(await fsp.readFile(path.join(bdir, 'latest.json'), 'utf8')); } catch { /* first audit */ }
+  const stamp = doc.generated.replace(/[-:.]/g, '');
+  await fsp.writeFile(path.join(bdir, `audit-${stamp}.json`), JSON.stringify(doc, null, 2));
+  await fsp.writeFile(path.join(bdir, 'latest.json'), JSON.stringify(doc, null, 2));
+
+  const L = [];
+  L.push(`# AUDIT.md · iCloud containers on this Mac · ${doc.generated}`, '');
+  L.push(`Read-only scan of \`${root}\` by \`node ledger.mjs audit\`. Denied (never opened): ${denied.length ? denied.map((d) => `\`${d}\``).join(', ') : 'none'}. Full detail: \`${path.join(bdir, `audit-${stamp}.json`)}\`.`, '');
+  L.push(`- **Quota remaining (\`brctl quota\`):** ${qm ? fmtB(Number(qm[1])) : 'unavailable'}`);
+  L.push(`- **Local containers:** ${tot.files} files, ${fmtB(tot.apparent)} apparent, ${fmtB(tot.onDisk)} on this disk; ${tot.dataless} dataless placeholders (${fmtB(tot.datalessBytes)} only in the cloud)`);
+  if (prev) L.push(`- **Since ${prev.generated}:** apparent ${fmtB(tot.apparent - prev.totals.apparent)} (signed bytes: ${tot.apparent - prev.totals.apparent}), files ${tot.files - prev.totals.files}`);
+  L.push(`- Not visible here but counted by Apple: Photos, device Backups, Messages, Mail, app data in CloudKit (not in Mobile Documents). The owner's storage breakdown screenshot is the only source for those.`, '');
+  L.push('| Container / Drive folder | Files | Apparent | On disk | Dataless | Dev junk |', '|---|--:|--:|--:|--:|--:|');
+  for (const c of doc.groups.slice(0, 15)) L.push(`| \`${c.name}\` | ${c.files} | ${fmtB(c.apparent)} | ${fmtB(c.onDisk)} | ${c.dataless} (${fmtB(c.datalessBytes)}) | ${c.junkBytes ? fmtB(c.junkBytes) : '–'} |`);
+  if (doc.groups.length > 15) { const rest = doc.groups.slice(15); L.push(`| ${rest.length} others | ${rest.reduce((t, c) => t + c.files, 0)} | ${fmtB(rest.reduce((t, c) => t + c.apparent, 0))} | ${fmtB(rest.reduce((t, c) => t + c.onDisk, 0))} | | |`); }
+  L.push('', `**Largest files** (top 10 of ${largest.length} in the JSON; ☁ = dataless):`);
+  for (const x of largest.slice(0, 10)) L.push(`- ${fmtB(x.size)} ${x.dataless ? '☁ ' : ''}\`${x.path}\``);
+  L.push('', `**Duplicates** (≥${fmtB(dupMin)}, local copies, sha256): ${dups.length} sets, ${fmtB(dups.reduce((t, d) => t + d.wasted, 0))} redundant${dups.length ? '; top:' : '.'}`);
+  for (const d of dups.slice(0, 5)) L.push(`- ${d.copies}× ${fmtB(d.size)}: ${d.paths.slice(0, 3).map((p) => `\`${p}\``).join(', ')}${d.paths.length > 3 ? ' …' : ''}`);
+  L.push('', `**Dev junk inside iCloud** (${JUNK.size} dir names): ${junkList.length ? fmtB(junkList.reduce((t, j) => t + j.bytes, 0)) : 'none'}`);
+  for (const j of junkList.slice(0, 5)) L.push(`- ${fmtB(j.bytes)} \`${j.path}\``);
+  if (unreadable.length) L.push('', `Unreadable: ${unreadable.length} (e.g. \`${unreadable[0]}\`).`);
+  const md = L.join('\n') + '\n';
+  if (o.out) { await fsp.writeFile(assertWritable(o.out), md); log(`wrote ${o.out} and ${path.join(bdir, 'latest.json')}`); } else log(md);
+  return doc;
+}
+function rel0Ok(root) { try { return fs.statSync(root).isDirectory(); } catch { return false; } }
+
+// ------------------------------------------------------------------ backup-status (read-only; is the Arq copy real?)
+
+export async function backupStatus(o = {}) {
+  const log = o.log || console.log; const now = o.now || Date.now;
+  const statusFile = assertWritable(o.statusFile || path.join(os.homedir(), '.ledger', 'backup-status.json'));
+  let prev = {}; try { prev = JSON.parse(await fsp.readFile(statusFile, 'utf8')); } catch { /* first check */ }
+  const out = { v: V, checked: iso(now()), dest: null, lastWrite: null, snapshots: null, restore: prev.restore || null, problems: [] };
+
+  if (o.dest) { // last write and snapshot count from the destination tree (Arq 7: one *.backuprecord per snapshot per folder)
+    const dest = fs.realpathSync(o.dest); out.dest = dest; let newest = 0, records = 0, files = 0;
+    const w = async (d) => { for (const e of await fsp.readdir(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) await w(f); else if (e.isFile()) { files++; const st = await fsp.stat(f); if (st.mtimeMs > newest) newest = st.mtimeMs; if (e.name.endsWith('.backuprecord')) records++; }
+    } };
+    await w(dest);
+    out.lastWrite = newest ? iso(newest) : null; out.snapshots = records || null; out.destFiles = files;
+    if (!files) out.problems.push('destination is empty');
+    else if (now() - newest > (o.maxAgeHours ?? 26) * 3600_000) out.problems.push(`no write to the destination for more than ${o.maxAgeHours ?? 26} h`);
+    if (files && !records) out.problems.push('no *.backuprecord files: not an Arq 7 layout, snapshot count unknown');
+  }
+
+  if (o.restored) { // a sample the owner restored with Arq into a scratch dir, compared byte-for-byte with the source
+    if (!o.source) throw new Error('--restored needs --source (the original folder the sample came from)');
+    const src = fs.realpathSync(o.source); const rd = fs.realpathSync(o.restored);
+    let checked = 0, matched = 0, skipped = 0; const bad = [];
+    const w = async (rel) => { for (const e of await fsp.readdir(path.join(rd, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { await w(r); continue; } if (!e.isFile() || IGNORE.some((rx) => rx.test(r))) continue;
+      const orig = path.join(src, r); let st; try { st = await fsp.lstat(orig); } catch { bad.push(`${r}: missing in source`); continue; }
+      if (isEvicted(st, orig)) { skipped++; continue; } // never force a download to compare
+      checked++;
+      if ((await hashFile(path.join(rd, r))) === (await hashFile(orig))) matched++; else bad.push(`${r}: sha256 differs (source may have changed since the snapshot)`);
+    } };
+    await w('');
+    out.restore = { at: iso(now()), source: src, restored: rd, checked, matched, skipped, mismatches: bad.slice(0, 20), ok: checked > 0 && bad.length === 0 };
+    if (!checked) out.problems.push('restore sample had no comparable files');
+  }
+  if (out.restore && !out.restore.ok) out.problems.push('last restore drill did not verify');
+  if (!out.restore) out.problems.push('no restore drill recorded yet');
+  out.ok = out.problems.length === 0;
+  await fsp.mkdir(path.dirname(statusFile), { recursive: true });
+  const tmp = `${statusFile}.${process.pid}.tmp`; await fsp.writeFile(tmp, JSON.stringify(out, null, 2)); await fsp.rename(tmp, statusFile);
+  log(`backup-status: ${out.ok ? 'OK' : 'NOT OK'}; last write ${out.lastWrite ?? '–'}; snapshots ${out.snapshots ?? '–'}; restore ${out.restore ? `${out.restore.matched}/${out.restore.checked} match (${out.restore.at})` : '–'}`);
+  for (const p of out.problems) log(`  ! ${p}`);
+  return out;
+}
+
 // ------------------------------------------------------------------ CLI
 
 async function main() {
@@ -398,8 +555,10 @@ async function main() {
   }
   else if (cmd === 'verify') { const r = await verify(openSink(a.sink), { deep: !!a.deep }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'restore') { await restore({ sink: openSink(a.sink), dest: a.dest, atMs: a.at ? Date.parse(a.at) : Infinity }); }
+  else if (cmd === 'audit') { await audit({ root: a.root === true ? undefined : a.root, out: a.out === true ? undefined : a.out, baselineDir: a['baseline-dir'], top: a.top ? Number(a.top) : undefined, dupMin: a['dup-min'] ? Number(a['dup-min']) : undefined }); }
+  else if (cmd === 'backup-status') { const r = await backupStatus({ dest: a.dest, source: a.source, restored: a.restored, statusFile: a['status-file'], maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : undefined }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'selftest') { await selftest(); }
-  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|selftest  (see the header of this file)'); process.exit(64); }
+  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|audit|backup-status|selftest  (see the header of this file)'); process.exit(64); }
 }
 
 // ------------------------------------------------------------------ selftest
@@ -469,6 +628,31 @@ async function selftest() {
   assert(threw, 'Notability container is refused as a source');
   if (process.platform !== 'darwin') assert(isEvicted({ size: 10, blocks: 0 }, '/nonexistent') === true, 'zero-block file with a size is treated as evicted when it cannot be confirmed');
   assert(isEvicted({ size: 10, blocks: 8 }, '/nonexistent') === false && isEvicted({ size: 0, blocks: 0 }, '/nonexistent') === false, 'normal files and empty files are not evicted');
+
+  const md = path.join(tmp, 'Mobile Documents'); const mk = async (rel, data) => { const f = path.join(md, rel); await fsp.mkdir(path.dirname(f), { recursive: true }); await fsp.writeFile(f, data); };
+  const blob = Buffer.alloc(2048, 7);
+  await mk('com~apple~CloudDocs/Docs/a.bin', blob); await mk('com~apple~CloudDocs/Old/a copy.bin', blob); await mk('com~apple~CloudDocs/Docs/b.bin', Buffer.alloc(2048, 8));
+  await mk('com~apple~CloudDocs/proj/node_modules/x/i.js', 'x'.repeat(300));
+  await mk('ZP9ZJ4EF3S~com~gingerlabs~Notability/Documents/n.note', 'secret');
+  await fsp.chmod(path.join(md, 'ZP9ZJ4EF3S~com~gingerlabs~Notability'), 0o000); // any readdir would surface as "unreadable"
+  const au = await audit({ root: md, baselineDir: path.join(tmp, 'audit'), out: path.join(tmp, 'AUDIT.md'), dupMin: 1024, log: quiet });
+  await fsp.chmod(path.join(md, 'ZP9ZJ4EF3S~com~gingerlabs~Notability'), 0o755);
+  assert(au.denied.length === 1 && au.unreadable.length === 0 && au.totals.files === 4, 'audit never opens the Notability container and counts the other 4 files');
+  assert(au.duplicates.length === 1 && au.duplicates[0].copies === 2 && au.duplicates[0].wasted === 2048, 'audit finds the duplicate by size then sha256');
+  assert(au.junk.length === 1 && au.junk[0].path.endsWith('proj/node_modules') && au.junk[0].bytes === 300, 'audit reports node_modules inside iCloud as dev junk');
+  assert(au.groups.some((c) => c.name === 'iCloud Drive/Docs' && c.files === 2) && fs.existsSync(path.join(tmp, 'audit', 'latest.json')), 'audit groups by Drive folder and saves a baseline');
+
+  const arq = path.join(tmp, 'arqdest', 'P', 'backupfolders', 'F', 'backuprecords', '00001'); await fsp.mkdir(arq, { recursive: true });
+  await fsp.writeFile(path.join(arq, '1.backuprecord'), 'r1'); await fsp.writeFile(path.join(arq, '2.backuprecord'), 'r2');
+  const rs = path.join(tmp, 'restoredSample'); await fsp.mkdir(path.join(rs, 'b'), { recursive: true }); await fsp.writeFile(path.join(rs, 'dup1.txt'), 'same');
+  const bsFile = path.join(tmp, 'bs.json');
+  let bs = await backupStatus({ dest: path.join(tmp, 'arqdest'), source: src, restored: rs, statusFile: bsFile, log: quiet });
+  assert(bs.ok && bs.snapshots === 2 && bs.restore.matched === 1, 'backup-status counts Arq snapshots and verifies a restored sample by sha256');
+  await fsp.writeFile(path.join(rs, 'dup1.txt'), 'tampered');
+  bs = await backupStatus({ source: src, restored: rs, statusFile: bsFile, log: quiet });
+  assert(!bs.ok && bs.restore.mismatches.length === 1, 'backup-status fails when a restored file differs from the source');
+  bs = await backupStatus({ dest: path.join(tmp, 'arqdest'), statusFile: bsFile, now: () => Date.now() + 30 * 3600_000, log: quiet });
+  assert(!bs.ok && bs.problems.some((p) => /no write/.test(p)), 'backup-status flags a destination with no write for over 26 h');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');

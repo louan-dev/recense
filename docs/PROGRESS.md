@@ -60,8 +60,8 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 ## 7. Status ledger (update as you go)
 | ID | Item | State | Evidence / next |
 |---|---|---|---|
-| A1 | Audit + quota breakdown | PROPOSED | needs owner screenshot |
-| A2 | Arq plan + verified restore | PROPOSED | owner clicks the Arq GUI once |
+| A1 | Audit + quota breakdown | PARTIAL | `ledger audit` → `AUDIT.md`: Drive `.Trash` holds 12.7 GB of 15.1 GB (one 11.3 GB wav); `brctl quota` says 16.4 GB left, contradicting "5 GB full". Needs owner's Apple-side breakdown |
+| A2 | Arq plan + verified restore | PARTIAL | `ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
 | A3 | Quota freed | PROPOSED | blocked on A1, A2 |
 | A4 | Canary round-trip | PROPOSED | |
 | A5 | Ledger mirror | PARTIAL | selftest passes (Linux); macOS paths untested |
@@ -80,4 +80,17 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 6. Scheduler starts in shadow mode for 2 weeks (addendum §7); owner can switch to live.
 7. Recommended private repo: `sync/` (ledger.mjs + specs): unique, tiny, unversioned, and the root of both other projects. Do not push anywhere until the owner names the repo.
 
-## CHANGELOG 
+## CHANGELOG
+
+### 2026-10-13 18:14 PDT · A1 · PARTIAL
+- Changed: `ledger.mjs audit` (read-only; per-container/Drive-folder files, apparent vs on-disk bytes, dataless count confirmed by batched `SF_DATALESS` checks, top 50, duplicates by size→sha256 on local copies only, dev-junk dirs; denied containers never opened, not even `readdir`). Writes `AUDIT.md` + baseline `~/.ledger/audit/latest.json` (paths stay outside the repo's JSON; delta vs previous run). 4 new selftests. Also: `.gitignore` was an empty directory; replaced with a file. `git` already existed (commit `baseline`).
+- Validated: `selftest` on macOS 15.5 / Node 24 (all passed, incl. first macOS run of the original 17 checks). Real audit of `~/Library/Mobile Documents`: 1,814 files, 15.1 GB apparent, 1.8 GB local, 443 dataless (13.3 GB). Both Notability containers denied, 0 unreadable.
+- Findings: iCloud Drive Recently Deleted (`.Trash`) = 13.0 GB (12.7 GB cloud-only; an 11.3 GB `.wav`, a 305 MB `.m4b`, a 108 MB PDF); it counts against quota until emptied or auto-purged. Clips 1.3 GB, WhatsApp backup 423 MB, Obsidian 220 MB. No duplicates ≥1 MB, no dev junk. `brctl quota` reports 16.4 GB remaining, which is impossible on a 5 GB plan: plan size, or what brctl measures, must be confirmed.
+- Next: owner sends System Settings → Apple Account → iCloud → Manage breakdown (Photos, Backups, Messages, Mail are invisible here) and the plan size.
+
+### 2026-10-13 18:14 PDT · A2 · PARTIAL
+- Changed: `ledger.mjs backup-status` (read-only: destination last write, Arq 7 `*.backuprecord` snapshot count, sha256 comparison of an Arq-restored sample vs source without forcing downloads; state in `~/.ledger/backup-status.json`; exit 1 if stale >26 h, no drill, or mismatch). 3 new selftests. `ARQ-CHECKLIST.md`: destination, sources, excludes, schedule, thinning, materialize-in-batches, restore drill.
+- Validated: selftest passes. Inspected the Mac: Arq 5.7.8 installed, no backup sets, agent not running, no `arqc`; SanDisk mounted, exFAT, 796 GiB free; internal disk ~12 GiB free.
+- Not done: no backup has run, no restore verified (GUI-only; owner's step). `backup-status` against a real Arq 5 destination is unverified (snapshot count only for Arq 7 layout).
+- Note: `/Volumes/SanDisk/Backups/` holds a plaintext password-export CSV and a Proton Pass zip (names only seen, not opened); consider moving them into an encrypted container.
+- Next: owner chooses Arq 5 vs 7, follows the checklist, runs the drill command in §4. A3 stays gated on a passing drill.
