@@ -17,6 +17,7 @@ Status: PROPOSED. Nothing has been deleted, evicted or moved. Every row is the o
 | 2 | `iCloud~com~apple~clips` (Clips projects) | 1.3 GB | No (fully local, so Arq can cover it) | Add to Arq sources, pass drill, then delete old projects in Clips. |
 | 3 | WhatsApp iCloud chat backup (`Media.tar`, `Document.tar`) | 423 MB | No | WhatsApp → Settings → Chats → Chat Backup: exclude videos or turn off; keep a local export if needed. |
 | 4 | Obsidian attachments (e.g. 73 MB `ScreenRecording….mov`) | ≤150 MB | No | Move to the A6 overflow lane (R2) with a pointer note once A5/A6 are verified. |
+| 4b | Obsidian plugin binary `.obsidian/plugins/local-dictation/bin/cpu/local-dictation-sidecar` | 59 MB | Local, in scratch ledger only | A Mac-only binary synced to every device. Owner: keep, or move the plugin's binary outside the vault if the plugin allows a path. |
 | 5 | Photos, device Backups, Messages, Mail | unknown | — | Need the Apple-side breakdown. If device Backups dominate: encrypted local Finder backup (covered by Arq) → turn off iCloud Backup for that device → delete its old iCloud backup. |
 
 ## After the owner acts

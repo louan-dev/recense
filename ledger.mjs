@@ -36,6 +36,8 @@
 //   node ledger.mjs backup-status [--dest ARQ_DEST] [--source DIR --restored DIR] [--max-age-hours 26]
 //                           read-only: last write, snapshot count, sha256 check of a sample restored with Arq
 //   node ledger.mjs quota   [--total 5GB] [--target 60] [--alert 80] [--write]   iCloud usage from `brctl quota`
+//   node ledger.mjs overflow --source DIR [--sink SINK] [--max-mb 25] [--total 5GB] [--alert 80] [--target 60] [--json]
+//                           read-only plan: large files that should live in R2, and whether the sink already has them
 //   node ledger.mjs selftest
 //   SINK is a directory path, or  rclone:REMOTE:PATH  (e.g. rclone:gallery-main:ledger/icloud).
 //   Without --apply, `run` reads and reports but writes nothing.
@@ -556,6 +558,38 @@ export async function health(sink, { maxAgeHours = 24, now = Date.now, log = con
   return { ok, ageH, lastOk: h.lastOk, reason: ok ? null : 'stale' };
 }
 
+// ------------------------------------------------------------------ overflow (read-only plan: what should leave iCloud for R2)
+// Rule: a local file > maxMB is a candidate. When iCloud usage ≥ alert%, take candidates largest-first until projected
+// usage ≤ target%. A candidate is "ready" only when the sink already holds its exact bytes (sha256). Moving it out and
+// leaving a pointer note is the owner's step; this command never writes to the source.
+
+export async function overflow(o = {}) {
+  const log = o.log || console.log;
+  const source = fs.realpathSync(o.source); const maxBytes = (o.maxMB ?? 25) * 1e6;
+  const q = o.quota ?? quota({ total: o.total, alert: o.alert, target: o.target });
+  const sink = o.sink ? openSink(o.sink) : null; const objs = sink ? await sink.list('objects') : new Map();
+  const counts = { denied: 0, symlinks: 0 }; const cands = [];
+  for await (const it of walk(source, '', counts)) {
+    if (it.kind !== 'file' || /(^|\/)\.obsidian\//.test(it.rel)) continue; // app config/plugins must stay where the app loads them
+    const st = await fsp.lstat(it.full); if (st.size <= maxBytes) continue;
+    const dataless = isEvicted(st, it.full);
+    const hash = dataless ? null : await hashFile(it.full); // never forces a download
+    cands.push({ path: nfc(it.rel), size: st.size, dataless, hash, ready: !!hash && objs.has(objKey(hash)) });
+  }
+  cands.sort((a, b) => b.size - a.size);
+  const pressure = q.level === 'alert'; const needBytes = pressure ? Math.max(0, (q.total - q.remaining) - q.total * q.target / 100) : 0;
+  let picked = 0; for (const c of cands) { c.selected = !pressure || picked < needBytes; if (c.selected) picked += c.size; }
+  const doc = { v: V, checked: iso(Date.now()), source, maxMB: maxBytes / 1e6, quota: q, pressure, needBytes, candidates: cands };
+  log(`overflow: quota ${q.level} (${q.usedPct}% of ${fmtB(q.total)}); ${cands.length} file(s) > ${fmtB(maxBytes)}; ${cands.filter((c) => c.ready).length} ready (exact copy in sink)${pressure ? `; need ${fmtB(needBytes)} out` : ''}`);
+  for (const c of cands.slice(0, 20)) log(`  ${c.ready ? 'ready ' : c.dataless ? 'cloud ' : 'nocopy'} ${c.selected ? '*' : ' '} ${fmtB(c.size).padStart(9)}  ${c.path}`);
+  return doc;
+}
+
+export function pointerNote(c, sinkSpec) { // what stays in the vault once the owner moves the file out
+  return `---\noverflow: ${JSON.stringify({ sink: sinkSpec, key: objKey(c.hash), sha256: c.hash, size: c.size, original: c.path })}\n---\n\n` +
+    `**${path.basename(c.path)}** (${fmtB(c.size)}) lives in the overflow lane. Restore: \`node ledger.mjs restore --sink ${sinkSpec} --dest <dir>\`.\n`;
+}
+
 // ------------------------------------------------------------------ CLI
 
 async function main() {
@@ -586,8 +620,9 @@ async function main() {
   else if (cmd === 'backup-status') { const r = await backupStatus({ dest: a.dest, source: a.source, restored: a.restored, statusFile: a['status-file'], maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : undefined }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'quota') { const q = quota({ total: a.total, alert: a.alert, target: a.target }); console.log(JSON.stringify(q)); if (a.write) { const f = assertWritable(path.join(os.homedir(), '.ledger', 'quota.json')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(q, null, 2)); } process.exit(q.level === 'ok' ? 0 : 1); }
   else if (cmd === 'health') { const r = await health(openSink(a.sink), { maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : 24 }); process.exit(r.ok ? 0 : 1); }
+  else if (cmd === 'overflow') { const r = await overflow({ source: a.source, sink: a.sink, maxMB: a['max-mb'] ? Number(a['max-mb']) : undefined, total: a.total, alert: a.alert, target: a.target }); if (a.json) console.log(JSON.stringify(r, null, 2)); }
   else if (cmd === 'selftest') { await selftest(); }
-  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest  (see the header of this file)'); process.exit(64); }
+  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|health|audit|backup-status|quota|overflow|selftest  (see the header of this file)'); process.exit(64); }
 }
 
 // ------------------------------------------------------------------ selftest
@@ -691,6 +726,16 @@ async function selftest() {
   assert(threw, 'a sink on an unmounted volume is refused, not created on the internal disk');
 
   assert(defaultStatePath('/v', 'dir:/a') !== defaultStatePath('/v', 'rclone:r2:x'), 'state is per source and sink, so a second sink gets a full upload');
+
+  const ovs = path.join(tmp, 'ov'); await fsp.mkdir(ovs);
+  for (const [n, mb] of [['big.mov', 3], ['mid.pdf', 2], ['small.md', 0.1]]) { const f = path.join(ovs, n); await fsp.writeFile(f, Buffer.alloc(mb * 1e6, n.length)); await fsp.utimes(f, old, old); }
+  const ovSink = new LocalDirSink(path.join(tmp, 'ovsink')); await run({ source: ovs, sink: ovSink, state: path.join(tmp, 'ovstate.json'), apply: true, quietSecs: 0, now: () => clock, log: quiet });
+  await fsp.writeFile(path.join(ovs, 'mid.pdf'), Buffer.alloc(2e6, 9)); // changed since mirrored: no longer ready
+  let ov = await overflow({ source: ovs, sink: path.join(tmp, 'ovsink'), maxMB: 1, quota: quota({ total: '5GB', remaining: 3e9 }), log: quiet });
+  assert(ov.candidates.length === 2 && ov.candidates[0].ready && !ov.candidates[1].ready && ov.candidates.every((c) => c.selected), 'overflow lists files over the limit; ready only when the sink holds the exact bytes');
+  ov = await overflow({ source: ovs, maxMB: 1, quota: { ...quota({ total: '10MB', remaining: 1e6 }) }, log: quiet });
+  assert(ov.pressure && ov.candidates[0].selected && !ov.candidates[1].selected, 'under quota pressure it selects largest-first only until usage reaches the target');
+  assert(/sha256: |"sha256":"/.test(pointerNote(ov.candidates[0], 'rclone:notes:overflow')), 'pointer note records sink, key and sha256');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');

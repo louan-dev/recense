@@ -65,7 +65,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 | A3 | Quota freed | BLOCKED | `A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
 | A4 | Canary round-trip | BLOCKED | canary `10051f3f` in vault 18:16; Mac upload pending (`draftpad.md` + canary "uploading"; brctl last-sync 07:50). Owner: iPhone/iPad lines, Notability iPad upload check |
 | A5 | Ledger mirror | PARTIAL | macOS verified: selftest, copy dry-run, real vault → scratch sink (89 dataless detected, vault untouched), rclone sink via `:local:`. SanDisk dropped off the bus mid-write; launchd job written, not installed |
-| A6 | Overflow lane, Notability WebDAV | PROPOSED | |
+| A6 | Overflow lane, Notability WebDAV | PARTIAL | `ledger overflow` planner (read-only, tested on vault); Remotely Save checklist in `OVERFLOW.md` (owner); Notability WebDAV designed, build gated on A5 DONE |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
 | B1–B4 | Notes in Sill, DEVONthink, Calendar Desk, Apple pulls | PROPOSED | specs exist, no code; iPhone addendum missing |
 | C0–C3 | Authz, D1, Rooms, co-editing | PROPOSED | no participant model exists |
@@ -114,3 +114,9 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 - Next (owner): reconnect the SanDisk (try another port/cable), then
   `node ~/Developer/sync/ledger.mjs run --source "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian" --sink /Volumes/SanDisk/ledger/obsidian --origin obsidian --apply && node ~/Developer/sync/ledger.mjs verify --sink /Volumes/SanDisk/ledger/obsidian --deep`
   then install the job (persistent; owner's call): `cp launchd/com.chauphan.ledger.obsidian.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist`. iCloud Drive and the `rclone:gallery-main:ledger/<source>` sink (with `crypt` for private material) come after.
+
+### 2026-10-13 18:28 PDT · A6 · PARTIAL
+- Changed: `ledger.mjs overflow` (read-only): candidates = files > `--max-mb` (default 25) outside `.obsidian/`; at ≥ alert% usage picks largest-first until projected usage ≤ target%; `ready` only when the sink holds the exact sha256; `pointerNote()` defines the note left behind. 3 new selftests. `OVERFLOW.md`: rule, Remotely Save → R2 `notes` checklist (bucket-scoped token, one sync layer per vault, canary), Notability WebDAV design (append-only, no DELETE/MOVE, own Basic-auth secret, miniflare tests). `A3-PROPOSAL.md` row 4b added.
+- Validated: selftest all passed (39 checks). Real vault at 10 MB: 1 candidate (73 MB `.mov`, cloud-only, so not ready); before the `.obsidian` exclusion it also flagged a 59 MB Mac-only plugin binary (`local-dictation-sidecar`) syncing through iCloud, now an A3 row.
+- Not done: no bucket or token created, no Remotely Save configured (owner's Cloudflare/Obsidian GUI). No file moved, no pointer written. Notability WebDAV not built: the plan gates it on A5, which waits on the SanDisk.
+- Next: owner sets the plan size so `quota` stops reading `inconsistent`; after A5 is DONE, build `/dav/notability/` in `cloud-gallery` per `OVERFLOW.md` §3.
