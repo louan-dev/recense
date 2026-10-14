@@ -10,3 +10,7 @@ stage/
 *.part
 progress.zip
 audit/
+requests/*
+!requests/README.md
+AUDIT.md
+*.log

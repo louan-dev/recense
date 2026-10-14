@@ -28,7 +28,7 @@ Arq → Add Storage Location → Local or network folder → `/Volumes/SanDisk/A
 ## 3. Materialize before backing up (a placeholder is not a backup)
 `AUDIT.md` shows 443 dataless files (13.3 GB), 12.7 GB of them in iCloud Drive's `.Trash`. Outside the trash about 0.6 GB is cloud-only (WhatsApp backup tars, Obsidian attachments, Drive/Downloads). Batch them through the ledger so only one batch sits on the internal disk at a time:
 ```
-node ledger.mjs run --source "<folder>" --sink /Volumes/SanDisk/ledger/<name> --materialize --stage-dir /Volumes/SanDisk/stage --apply
+node src/ledger.mjs run --source "<folder>" --sink /Volumes/SanDisk/ledger/<name> --materialize --stage-dir /Volumes/SanDisk/stage --apply
 ```
 Recently Deleted (`.Trash`) items are not backup sources; the owner decides about them in A3.
 
@@ -37,6 +37,6 @@ Recently Deleted (`.Trash`) items are not backup sources; the owner decides abou
 2. Arq → Restore → pick 3–5 files from the vault (include one attachment) → restore to `~/Desktop/arq-restore-test` (not over the originals).
 3. Check:
 ```
-node ~/Developer/sync/ledger.mjs backup-status --dest /Volumes/SanDisk/Arq --source "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian" --restored ~/Desktop/arq-restore-test
+node ~/Developer/sync/src/ledger.mjs backup-status --dest /Volumes/SanDisk/Arq --source "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian" --restored ~/Desktop/arq-restore-test
 ```
 Pass = exit 0, every restored file's sha256 equals the source. Result is kept in `~/.ledger/backup-status.json`. A3 stays blocked until this passes.

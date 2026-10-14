@@ -3,7 +3,7 @@
 Status: rule PARTIAL (planner built and tested); Remotely Save PROPOSED (owner GUI); Notability WebDAV BLOCKED on A5 (by plan).
 
 ## 1. Rule (implemented, read-only)
-`node ledger.mjs overflow --source <vault> --sink <sink> --max-mb 25 --total <plan> [--alert 80 --target 60]`
+`node src/ledger.mjs overflow --source <vault> --sink <sink> --max-mb 25 --total <plan> [--alert 80 --target 60]`
 - Candidate = a file in the source larger than `--max-mb` (default 25 MB). `.obsidian/` is never a candidate.
 - At or above `--alert`% iCloud usage, it selects candidates largest first until projected usage reaches `--target`%. Below the alert level every candidate is listed.
 - `ready` = the sink already holds the file's exact bytes (sha256 object). `cloud` = dataless, so it cannot be hashed without a download. `nocopy` = not yet mirrored.

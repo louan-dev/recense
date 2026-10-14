@@ -6,7 +6,7 @@
 set -u
 SRC=$1 SINK=$2 ORIGIN=$3
 NODE=${LEDGER_NODE:-/opt/homebrew/bin/node}
-LEDGER=${0:A:h:h}/ledger.mjs
+LEDGER=${0:A:h:h}/src/ledger.mjs
 notify() { /usr/bin/osascript -e "display notification \"$1\" with title \"Ledger: $ORIGIN\"" >/dev/null 2>&1; }
 
 if [[ $SINK == /Volumes/* ]]; then VOL=${SINK#/Volumes/}; VOL=/Volumes/${VOL%%/*}; [[ -d $VOL ]] || { echo "$(date -u +%FT%TZ) skip: $VOL not mounted"; exit 0; }; fi
