@@ -63,7 +63,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 | A1 | Audit + quota breakdown | PARTIAL | `ledger audit` → `AUDIT.md`: Drive `.Trash` holds 12.7 GB of 15.1 GB (one 11.3 GB wav); `brctl quota` says 16.4 GB left, contradicting "5 GB full". Needs owner's Apple-side breakdown |
 | A2 | Arq plan + verified restore | PARTIAL | `ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
 | A3 | Quota freed | BLOCKED | `A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
-| A4 | Canary round-trip | PROPOSED | |
+| A4 | Canary round-trip | BLOCKED | canary `10051f3f` in vault 18:16; Mac upload stuck (`draftpad.md` + canary "uploading", brctl last-sync 07:50). Owner: iPhone/iPad lines, Notability iPad upload check |
 | A5 | Ledger mirror | PARTIAL | selftest passes (Linux); macOS paths untested |
 | A6 | Overflow lane, Notability WebDAV | PROPOSED | |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
@@ -100,3 +100,9 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 - Validated: selftest passes. `quota --total 5GB` → `inconsistent` (16.4 GB remaining > 5 GB plan); `--total 50GB` → 67.2% used, `over-target`.
 - Blocked on: plan size + Apple-side breakdown (A1); owner review of Recently Deleted (13.0 GB, 12.7 GB cloud-only, 11.3 GB single wav); A2 restore drill (no candidate has a verified copy).
 - Next: owner decides per row in `A3-PROPOSAL.md`; then re-run `audit` and `quota --write`.
+
+### 2026-10-13 18:17 PDT · A4 · BLOCKED
+- Changed: `canary.mjs` (separate from the read-only ledger; writes one note `_sync-canary.md` with a nonce, `check --wait N` blocks on `fs.watch` until the iPad line returns, results in `~/.ledger/canary.json`; never deletes). `tools/upload-status.swift` (read-only, public `NSURLUbiquitousItemIsUploaded*` keys; skips Notability and `.DS_Store`). Started the real canary `10051f3f` in the vault at 18:16.
+- Validated: canary selftest + scratch-vault run (start → iphone → iPad line via `fs.watch` → exit 0). On the real vault: 237 files, 235 uploaded, 2 not: `draftpad.md` and the canary, both "uploading" with no upload error. `brctl status iCloud~md~obsidian`: client idle, last-sync 2026-10-13 07:50. So Mac→iCloud uploads for this container have not completed since this morning; consistent with a full quota despite `brctl quota`'s 16.4 GB.
+- Blocked on: A3 (quota), then owner devices: on iPhone then iPad append `iphone HH:MM` / `ipad HH:MM` to `_sync-canary.md`; confirm on the iPad that Notability shows its iCloud upload finished.
+- Next: after the owner frees space: `swift tools/upload-status.swift "<vault>"` until 0 pending, then `node canary.mjs check --wait 60`. Canary note stays in the vault until the owner removes it.
