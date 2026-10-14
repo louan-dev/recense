@@ -62,7 +62,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 |---|---|---|---|
 | A1 | Audit + quota breakdown | PARTIAL | `ledger audit` → `AUDIT.md`: Drive `.Trash` holds 12.7 GB of 15.1 GB (one 11.3 GB wav); `brctl quota` says 16.4 GB left, contradicting "5 GB full". Needs owner's Apple-side breakdown |
 | A2 | Arq plan + verified restore | PARTIAL | `ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
-| A3 | Quota freed | PROPOSED | blocked on A1, A2 |
+| A3 | Quota freed | BLOCKED | `A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
 | A4 | Canary round-trip | PROPOSED | |
 | A5 | Ledger mirror | PARTIAL | selftest passes (Linux); macOS paths untested |
 | A6 | Overflow lane, Notability WebDAV | PROPOSED | |
@@ -83,7 +83,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 ## CHANGELOG
 
 ### 2026-10-13 18:14 PDT · A1 · PARTIAL
-- Changed: `ledger.mjs audit` (read-only; per-container/Drive-folder files, apparent vs on-disk bytes, dataless count confirmed by batched `SF_DATALESS` checks, top 50, duplicates by size→sha256 on local copies only, dev-junk dirs; denied containers never opened, not even `readdir`). Writes `AUDIT.md` + baseline `~/.ledger/audit/latest.json` (paths stay outside the repo's JSON; delta vs previous run). 4 new selftests. Also: `.gitignore` was an empty directory; replaced with a file. `git` already existed (commit `baseline`).
+- Changed: `ledger.mjs audit` (read-only; per-container/Drive-folder files, apparent vs on-disk bytes, dataless count confirmed by batched `SF_DATALESS` checks, top 50, duplicates by size→sha256 on local copies only, dev-junk dirs; denied containers never opened, not even `readdir`). Writes `AUDIT.md` + baseline `~/.ledger/audit/latest.json` (full JSON with paths stays outside the repo; delta vs previous run). 4 new selftests. Also: `.gitignore` was an empty directory; replaced with a file. `git` already existed (commit `baseline`).
 - Validated: `selftest` on macOS 15.5 / Node 24 (all passed, incl. first macOS run of the original 17 checks). Real audit of `~/Library/Mobile Documents`: 1,814 files, 15.1 GB apparent, 1.8 GB local, 443 dataless (13.3 GB). Both Notability containers denied, 0 unreadable.
 - Findings: iCloud Drive Recently Deleted (`.Trash`) = 13.0 GB (12.7 GB cloud-only; an 11.3 GB `.wav`, a 305 MB `.m4b`, a 108 MB PDF); it counts against quota until emptied or auto-purged. Clips 1.3 GB, WhatsApp backup 423 MB, Obsidian 220 MB. No duplicates ≥1 MB, no dev junk. `brctl quota` reports 16.4 GB remaining, which is impossible on a 5 GB plan: plan size, or what brctl measures, must be confirmed.
 - Next: owner sends System Settings → Apple Account → iCloud → Manage breakdown (Photos, Backups, Messages, Mail are invisible here) and the plan size.
@@ -94,3 +94,9 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 - Not done: no backup has run, no restore verified (GUI-only; owner's step). `backup-status` against a real Arq 5 destination is unverified (snapshot count only for Arq 7 layout).
 - Note: `/Volumes/SanDisk/Backups/` holds a plaintext password-export CSV and a Proton Pass zip (names only seen, not opened); consider moving them into an encrypted container.
 - Next: owner chooses Arq 5 vs 7, follows the checklist, runs the drill command in §4. A3 stays gated on a passing drill.
+
+### 2026-10-13 18:15 PDT · A3 · BLOCKED
+- Changed: `A3-PROPOSAL.md` (ranked candidates with size, copy status, owner action; nothing deleted). `ledger.mjs quota [--total 5GB --target 60 --alert 80 --write]`: usage from `brctl quota` with configurable plan size, levels ok/over-target/alert/inconsistent, optional `~/.ledger/quota.json`. 2 new selftests.
+- Validated: selftest passes. `quota --total 5GB` → `inconsistent` (16.4 GB remaining > 5 GB plan); `--total 50GB` → 67.2% used, `over-target`.
+- Blocked on: plan size + Apple-side breakdown (A1); owner review of Recently Deleted (13.0 GB, 12.7 GB cloud-only, 11.3 GB single wav); A2 restore drill (no candidate has a verified copy).
+- Next: owner decides per row in `A3-PROPOSAL.md`; then re-run `audit` and `quota --write`.

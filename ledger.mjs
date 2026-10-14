@@ -34,6 +34,7 @@
 //                           read-only: per-container bytes, dataless, largest, duplicates, dev junk
 //   node ledger.mjs backup-status [--dest ARQ_DEST] [--source DIR --restored DIR] [--max-age-hours 26]
 //                           read-only: last write, snapshot count, sha256 check of a sample restored with Arq
+//   node ledger.mjs quota   [--total 5GB] [--target 60] [--alert 80] [--write]   iCloud usage from `brctl quota`
 //   node ledger.mjs selftest
 //   SINK is a directory path, or  rclone:REMOTE:PATH  (e.g. rclone:gallery-main:ledger/icloud).
 //   Without --apply, `run` reads and reports but writes nothing.
@@ -529,6 +530,19 @@ export async function backupStatus(o = {}) {
   return out;
 }
 
+// ------------------------------------------------------------------ quota (read-only; brctl reports bytes remaining, the plan size is config)
+
+const parseBytes = (v) => { const m = /^([\d.]+)\s*(B|KB|MB|GB|TB)?$/i.exec(String(v).trim()); if (!m) throw new Error(`bad size: ${v}`); return Math.round(Number(m[1]) * 1000 ** ['B', 'KB', 'MB', 'GB', 'TB'].indexOf((m[2] || 'B').toUpperCase())); };
+
+export function quota(o = {}) {
+  const total = parseBytes(o.total ?? '5GB'); const alert = Number(o.alert ?? 80); const target = Number(o.target ?? 60);
+  let remaining = o.remaining;
+  if (remaining === undefined) { const r = spawnSync('brctl', ['quota'], { encoding: 'utf8' }); const m = /(\d+) bytes of quota remaining/.exec(r.stdout || ''); if (!m) throw new Error('brctl quota gave no number'); remaining = Number(m[1]); }
+  const usedPct = Math.round(((total - remaining) / total) * 1000) / 10;
+  const level = remaining > total ? 'inconsistent' : usedPct >= alert ? 'alert' : usedPct > target ? 'over-target' : 'ok';
+  return { v: V, checked: iso(Date.now()), total, remaining, usedPct, target, alert, level };
+}
+
 // ------------------------------------------------------------------ CLI
 
 async function main() {
@@ -557,8 +571,9 @@ async function main() {
   else if (cmd === 'restore') { await restore({ sink: openSink(a.sink), dest: a.dest, atMs: a.at ? Date.parse(a.at) : Infinity }); }
   else if (cmd === 'audit') { await audit({ root: a.root === true ? undefined : a.root, out: a.out === true ? undefined : a.out, baselineDir: a['baseline-dir'], top: a.top ? Number(a.top) : undefined, dupMin: a['dup-min'] ? Number(a['dup-min']) : undefined }); }
   else if (cmd === 'backup-status') { const r = await backupStatus({ dest: a.dest, source: a.source, restored: a.restored, statusFile: a['status-file'], maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : undefined }); process.exit(r.ok ? 0 : 1); }
+  else if (cmd === 'quota') { const q = quota({ total: a.total, alert: a.alert, target: a.target }); console.log(JSON.stringify(q)); if (a.write) { const f = assertWritable(path.join(os.homedir(), '.ledger', 'quota.json')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(q, null, 2)); } process.exit(q.level === 'ok' ? 0 : 1); }
   else if (cmd === 'selftest') { await selftest(); }
-  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|audit|backup-status|selftest  (see the header of this file)'); process.exit(64); }
+  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|audit|backup-status|quota|selftest  (see the header of this file)'); process.exit(64); }
 }
 
 // ------------------------------------------------------------------ selftest
@@ -653,6 +668,9 @@ async function selftest() {
   assert(!bs.ok && bs.restore.mismatches.length === 1, 'backup-status fails when a restored file differs from the source');
   bs = await backupStatus({ dest: path.join(tmp, 'arqdest'), statusFile: bsFile, now: () => Date.now() + 30 * 3600_000, log: quiet });
   assert(!bs.ok && bs.problems.some((p) => /no write/.test(p)), 'backup-status flags a destination with no write for over 26 h');
+
+  assert(quota({ total: '5GB', remaining: 1.5e9 }).level === 'over-target' && quota({ total: '5GB', remaining: 0.5e9 }).level === 'alert' && quota({ total: '5GB', remaining: 3e9 }).level === 'ok', 'quota levels: ≤60% ok, >60% over-target, ≥80% alert');
+  assert(quota({ total: '5GB', remaining: 16e9 }).level === 'inconsistent', 'quota flags remaining > plan size instead of reporting a negative usage');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');
