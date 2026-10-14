@@ -64,7 +64,7 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 | A2 | Arq plan + verified restore | PARTIAL | `ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
 | A3 | Quota freed | BLOCKED | `A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
 | A4 | Canary round-trip | BLOCKED | canary `10051f3f` written 18:16, **uploaded from the Mac by 18:28** (vault 237/237 uploaded). Waits only on owner: `iphone HH:MM` / `ipad HH:MM` lines, Notability iPad upload check |
-| A5 | Ledger mirror | PARTIAL | macOS verified: selftest, copy dry-run, real vault → scratch sink (89 dataless detected, vault untouched), rclone sink via `:local:`. SanDisk dropped off the bus mid-write; launchd job written, not installed |
+| A5 | Ledger mirror | PARTIAL | macOS verified: selftest, copy dry-run, real vault → scratch sink (89 dataless detected, vault untouched), rclone sink via `:local:`. SanDisk writes hung in `copyfile(3)` (xattrs on exFAT/FSKit); fixed to byte-stream copy, awaiting owner re-run; launchd job written, not installed |
 | A6 | Overflow lane, Notability WebDAV | PARTIAL | `ledger overflow` planner (read-only, tested on vault); Remotely Save checklist in `OVERFLOW.md` (owner); Notability WebDAV designed, build gated on A5 DONE |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
 | B1–B4 | Notes in Sill, DEVONthink, Calendar Desk, Apple pulls | PROPOSED | specs exist, no code; iPhone addendum missing |
@@ -125,3 +125,9 @@ Nothing below has run on the owner's Mac. The only execution was `ledger.mjs sel
 - Changed: nothing in code; re-measured.
 - Validated: `swift tools/upload-status.swift <vault>` at 18:28 → 237 files, 237 uploaded, 0 pending (canary and `draftpad.md` included). Mac→iCloud upload for the Obsidian container works now (≤12 min for the canary), which agrees with `brctl quota`'s 16.4 GB free and weakens the "iCloud is full" premise. If iPad/iPhone still don't sync, look at those devices (their own iCloud state, Low Power/Low Data mode, Obsidian on iOS opened in the foreground) rather than the Mac.
 - Next: owner appends the iPhone line, then the iPad line; run `node canary.mjs check --wait 60` on the Mac.
+
+### 2026-10-13 19:06 PDT · A5 · PARTIAL (fix)
+- Observed: owner ran the real vault → `/Volumes/SanDisk/ledger/obsidian` mirror at ~19:00. Process went to `U` (uninterruptible I/O) on a 0-byte `.part` at 19:05; every object had an AppleDouble `._` sibling. Cause: `LocalDirSink` used `fs.copyFile` → macOS `copyfile(3)`, which also copies xattrs (`com.apple.provenance`); exFAT stores them as `._` files and the FSKit exFAT driver hangs (earlier: EIO, then the drive dropped). So the earlier "drive dropped" was most likely this, not the cable.
+- Changed: `putFile`/`getFile` now stream bytes only (`pipeline`, `wx`); `list()` ignores `._*` AppleDouble files so the partial sink needs no cleanup (finished objects are valid; `.part` and `._` are skipped). 1 new selftest (33 total, all passed).
+- Not verified: a run onto the SanDisk itself (this session's sandbox cannot write `/Volumes`).
+- Next: owner stops the stuck run (Ctrl-C; if it stays in `U`, eject or replug the SanDisk), re-runs the same command, then `verify --deep`.

@@ -109,7 +109,7 @@ class LocalDirSink {
       for (const e of ents) {
         const r = rel ? `${rel}/${e.name}` : e.name;
         if (e.isDirectory()) await walk(path.join(d, e.name), r);
-        else if (e.isFile() && !e.name.endsWith('.part')) out.set(`${prefix}/${r}`, (await fsp.stat(path.join(d, e.name))).size);
+        else if (e.isFile() && !e.name.endsWith('.part') && !e.name.startsWith('._')) out.set(`${prefix}/${r}`, (await fsp.stat(path.join(d, e.name))).size);
       }
     };
     await walk(base, '');
@@ -118,7 +118,7 @@ class LocalDirSink {
   async putFile(local, key) { // atomic: write beside, then rename
     const dst = this.p(key); await fsp.mkdir(path.dirname(dst), { recursive: true });
     const tmp = `${dst}.${crypto.randomBytes(4).toString('hex')}.part`;
-    await fsp.copyFile(local, tmp); await fsp.rename(tmp, dst);
+    await pipeline(fs.createReadStream(local), fs.createWriteStream(tmp, { flags: 'wx' })); await fsp.rename(tmp, dst); // bytes only: copyfile(3) also copies xattrs, which hangs exFAT under FSKit
   }
   async putText(key, text) {
     const dst = this.p(key); await fsp.mkdir(path.dirname(dst), { recursive: true });
@@ -126,7 +126,7 @@ class LocalDirSink {
     await fsp.writeFile(tmp, text); await fsp.rename(tmp, dst);
   }
   async getText(key) { return fsp.readFile(this.p(key), 'utf8'); }
-  async getFile(key, dest) { await fsp.mkdir(path.dirname(dest), { recursive: true }); await fsp.copyFile(this.p(key), dest); }
+  async getFile(key, dest) { await fsp.mkdir(path.dirname(dest), { recursive: true }); await pipeline(fs.createReadStream(this.p(key)), fs.createWriteStream(dest)); }
 }
 
 class RcloneSink {
@@ -736,6 +736,9 @@ async function selftest() {
   ov = await overflow({ source: ovs, maxMB: 1, quota: { ...quota({ total: '10MB', remaining: 1e6 }) }, log: quiet });
   assert(ov.pressure && ov.candidates[0].selected && !ov.candidates[1].selected, 'under quota pressure it selects largest-first only until usage reaches the target');
   assert(/sha256: |"sha256":"/.test(pointerNote(ov.candidates[0], 'rclone:notes:overflow')), 'pointer note records sink, key and sha256');
+
+  await fsp.writeFile(path.join(sinkDir, 'objects', '._appledouble'), 'xattrs');
+  assert(![...(await sink.list('objects')).keys()].some((k) => k.includes('/._')), 'AppleDouble ._ files on exFAT sinks are not mistaken for objects');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');
