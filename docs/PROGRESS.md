@@ -6,7 +6,7 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 ## 1. Objective and order
 **Sync** (backend root) → **Gallery** (Cloudflare Worker + R2: web UI, API, glue) → **Sill** (macOS strip app: the UI that embeds Gallery and reads Sync). Spend effort in that order. Backend taste: boring, quiet, elegant; event-driven, no polling; on-demand over daemons; standards over cleverness.
 
-- **A · Unclog & Mirror — today.** iCloud (5 GB, free tier, staying free) is full, so Notability, Obsidian and Calendar stopped syncing. Everything queues behind this.
+- **A · Unclog & Mirror — today.** iCloud is nearly full (**correction 2026-10-13: owner's screenshot shows iCloud+ 200 GB, 184.7 GB used, 92%**; the earlier "5 GB free tier" was wrong), so Notability, Obsidian and Calendar stopped syncing. Everything queues behind this.
 - **B · Desk — tomorrow.** Notability, Obsidian and filesystem usable inside Sill; Calendar Desk scheduler; DEVONthink.
 - **C · Rooms — next.** Gallery collaboration: main (shared, two-way) vs public (one-way).
 - Everything else: BACKLOG, in dependency order.
@@ -60,19 +60,19 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 ## 7. Status ledger (update as you go)
 | ID | Item | State | Evidence / next |
 |---|---|---|---|
-| A1 | Audit + quota breakdown | PARTIAL | `ledger audit` → `AUDIT.md`: Drive `.Trash` holds 12.7 GB of 15.1 GB (one 11.3 GB wav); `brctl quota` says 16.4 GB left, contradicting "5 GB full". Needs owner's Apple-side breakdown |
-| A2 | Arq plan + verified restore | PARTIAL | `docs/runbooks/ARQ-CHECKLIST.md` + `backup-status` (selftested). Installed Arq is 5.7.8, no plans, no CLI; owner picks Arq 5 vs 7, runs plan, restore drill |
-| A3 | Quota freed | BLOCKED | `docs/proposals/A3-PROPOSAL.md` + `ledger quota` ready; needs plan size, owner decisions on Recently Deleted (13 GB), and A2 drill |
-| A4 | Canary round-trip | BLOCKED | canary `10051f3f` written 18:16, **uploaded from the Mac by 18:28** (vault 237/237 uploaded). Waits only on owner: `iphone HH:MM` / `ipad HH:MM` lines, Notability iPad upload check |
-| A5 | Ledger mirror | PARTIAL | macOS verified: selftest, copy dry-run, real vault → scratch sink (89 dataless detected, vault untouched), rclone sink via `:local:`. SanDisk writes hung in `copyfile(3)` (xattrs on exFAT/FSKit); fixed to byte-stream copy, awaiting owner re-run; launchd job written, not installed |
-| A6 | Overflow lane, Notability WebDAV | PARTIAL | `ledger overflow` planner (read-only, tested on vault); Remotely Save checklist in `docs/runbooks/OVERFLOW.md` (owner); Notability WebDAV designed, build gated on A5 DONE |
+| A1 | Audit + quota breakdown | PARTIAL | Plan = iCloud+ 200 GB, 184.7 GB used (`quota --total 200GB` → 91.8%, alert). Screenshots cover only "Others" (~2.5 GB; Backups 0 KB); the ~180 GB above it (Photos/Messages/Mail/Drive) still uncaptured |
+| A2 | Arq plan + verified restore | PARTIAL | Owner: stay on Arq 5.7.8. Checklist updated (Arq 5 labels, Clips source, exFAT caution); `backup-status` accepts Arq 5 layout. No backup set or drill yet |
+| A3 | Quota freed | PARTIAL | Owner decisions in `decisions/20261012 A3-PROPOSAL.md`: rows 1–4b proceed. Owner-side: empty Recently Deleted (13 GB), WhatsApp backup setting. Done here: Clips → Arq sources; 4b sidecar copied out + verified, awaits override + test. Row 5 needs the top of the Manage sheet |
+| A4 | Canary round-trip | PARTIAL | Canary round-tripped Mac 18:16 → iPhone 19:16 → iPad 19:25 → Mac (arrival time unmeasured). Notability upload-finished not shown in the iPad screenshot |
+| A5 | Ledger mirror | DONE (vault) | SanDisk sink: 146 files, `verify --deep` 0 problems; launchd agent installed, run from launchd exit 0, health OK. Next: WatchPaths trigger test, iCloud Drive source, R2 sink |
+| A6 | Overflow lane, Notability WebDAV | PARTIAL | Planner done; Remotely Save owner-side; Notability WebDAV now unblocked by A5 (vault), not built |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
 | B1–B4 | Notes in Sill, DEVONthink, Calendar Desk, Apple pulls | PROPOSED | specs exist, no code; iPhone addendum missing |
 | C0–C3 | Authz, D1, Rooms, co-editing | PROPOSED | no participant model exists |
 | — | Chrome `/main` 404, setup scripts, Sill CPU, audio/EQ, layout, Draftpad, Phi, Nook, cleanup | PROPOSED | BACKLOG |
 
 ## 8. Decisions made (defaults; change only if the owner objects)
-1. "rw" = R2. "5 GB" = the iCloud quota.
+1. "rw" = R2. "5 GB" = the iCloud quota (superseded: the plan is iCloud+ 200 GB, see §1).
 2. iCloud stays the live lane once unclogged; ledger mirrors it; R2 takes overflow (A6).
 3. Add D1 to Gallery (concurrent two-way writes, revocation checks, queries; Sync/Switchboard specs already use D1).
 4. Phi: reuse whatever is installed on the SanDisk. Owner says "3.2", the Oct 9 directive says 3.5; inspect the files.
@@ -131,3 +131,35 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 - Changed: `putFile`/`getFile` now stream bytes only (`pipeline`, `wx`); `list()` ignores `._*` AppleDouble files so the partial sink needs no cleanup (finished objects are valid; `.part` and `._` are skipped). 1 new selftest (33 total, all passed).
 - Not verified: a run onto the SanDisk itself (this session's sandbox cannot write `/Volumes`).
 - Next: owner stops the stuck run (Ctrl-C; if it stays in `U`, eject or replug the SanDisk), re-runs the same command, then `verify --deep`.
+
+### 2026-10-13 21:15 PDT · A1 · PARTIAL
+- Changed: nothing in code. Read `requests/20261012 icloud 1–3.png`: **iCloud+ 200 GB, 184.7 GB used**. The "Others" list: Clips 1.2 GB, WhatsApp 403.7 MB, Notability Pro 298 MB, Obsidian 227.9 MB, iCloud Drive 105.4 MB, Books 70.8 MB, FaceTime 67.8 MB, Notes 27.7 MB, rest KB-sized; **Backups 0 KB**.
+- Validated: `quota --total 200GB --write` → 91.8% used, level `alert` (`~/.ledger/quota.json`). `brctl quota` (16.48 GB left) agrees with Settings within rounding (200 − 184.7 = 15.3 GB; Settings rounds and may lag).
+- Open: the Others list explains ~2.5 GB. The other ~180 GB sits in the categories above "Others" (Photos, Messages, Mail, possibly Drive incl. Recently Deleted), which the screenshots cut off.
+- Next: owner screenshots the top of the same Manage sheet (above "Others").
+
+### 2026-10-13 21:15 PDT · A2 · PARTIAL
+- Changed: owner decision recorded: stay on Arq 5.7.8. `docs/runbooks/ARQ-CHECKLIST.md`: Arq 5 menu path (labels flagged to verify on screen), Clips container added to sources (A3 row 2), exFAT caution (first backup small, watch it finish). `src/ledger.mjs backup-status`: an Arq 5 destination (no `*.backuprecord`) is now a note, not a failure; otherwise Arq 5 could never pass. 1 new selftest; `npm test` passes.
+- Validated: `~/Library/Arq/config` still has only `app_config.plist`: no destination or backup set yet.
+- Next: owner sets up the destination + plan per the checklist, runs the drill; then `node src/ledger.mjs backup-status --dest /Volumes/SanDisk/Arq --source <vault> --restored ~/Desktop/arq-restore-test`.
+
+### 2026-10-13 21:15 PDT · A3 · PARTIAL
+- Changed: read `decisions/20261012 A3-PROPOSAL.md` (owner's Decision column; not edited). Row 2 (Clips): added to Arq sources. Row 4b (plugin binary): Speech Kit has a `sidecarPathOverride` setting that points to the executable and bypasses the plugin's installer, so the move is possible. Copied `bin/cpu/` (sidecar 59 MB + translation helper + 2 small files) to `~/Library/Application Support/obsidian-local-dictation/cpu/`; vault copy untouched.
+- Validated: all 4 copied files match by sha256. Not tested: dictation running from the new path.
+- Owner-side (Apple/app UI; I don't delete): rows 1/1a/1b "Drop" → Finder or iCloud.com → iCloud Drive → Recently Deleted → Delete All (13.0 GB). Row 3 → iPhone WhatsApp → Settings → Chats → Chat Backup. Row 4 (73 MB `.mov` to R2) waits on the R2 `notes` bucket + overflow lane. Row 4b: Obsidian → Settings → Speech Kit → sidecar path override = `~/Library/Application Support/obsidian-local-dictation/cpu/local-dictation-sidecar` (full path), test one dictation, then delete `.obsidian/plugins/local-dictation/bin/` from the vault. Row 5: see A1.
+- Arithmetic: target 60% = 120 GB means ~65 GB must go; emptying Recently Deleted reaches about 171.7 GB (86%), still above the 80% alert. The big lever is in the uncaptured categories.
+
+### 2026-10-13 21:15 PDT · A4 · PARTIAL
+- Changed: nothing in code.
+- Validated: `_sync-canary.md` has `iphone 19:16` and `iPad 19:25`, read back on the Mac. Hops as logged: Mac→iPhone ≤60 min (includes the owner's own delay), iPhone→iPad ≤9 min. Arrival back on the Mac: before my check at ~21:13, exact time unmeasured (no watcher was running; `canary.json`'s `backMs` is the check time, not arrival). Owner: DEVONthink To Go works on both devices. `.md` is unsupported in Notability (expected; the canary is an Obsidian note).
+- Open: `requests/20261012 notability ipad.png` shows Notability's iCloud Drive search for the canary (no results) and 109 notes, not an upload status. Settings shows Notability Pro holding 298 MB in iCloud, so data reached iCloud, but "finished uploading" is unconfirmed.
+- Next: owner checks Notability's sync/backup status screen on the iPad (or confirms a recent iPad note opens on another device).
+
+### 2026-10-13 21:15 PDT · A5 · DONE (vault)
+- Changed: launchd agent installed from `launchd/com.chauphan.ledger.obsidian.plist.example` (`__HOME__` substituted) → `~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist`, `launchctl bootstrap` + `kickstart`.
+- Validated: owner's run (post-fix) wrote `/Volumes/SanDisk/ledger/obsidian`; `verify --deep` → 1 segment, 146 live files, 0 problems; `health` OK. launchd run: exit 0, 145 unchanged, 1 changed (draftpad), journal segment written, health OK (`~/Library/Logs/ledger-obsidian.log`). So iCloud and removable-volume access work from the agent.
+- Not yet tested: WatchPaths actually firing on a vault edit (it watches only the top-level folder; the 03:30 daily run is the backstop). 221 leftover `._*` AppleDouble files from the hung run remain in the sink (ignored by `list()`); harmless.
+- Next: check the log after the next Obsidian edit; then iCloud Drive source and the R2 sink (`crypt` for private material).
+
+### 2026-10-13 21:15 PDT · A6 · PARTIAL
+- Unchanged code. The Notability WebDAV build was gated on A5; the vault part of A5 is now done, so it can start in `cloud-gallery` when the owner says go (it's another repo and a deploy).

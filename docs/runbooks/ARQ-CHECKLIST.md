@@ -6,10 +6,11 @@ Status: PROPOSED. The owner does this in Arq's GUI; nothing here has been automa
 - `/Applications/Arq.app` is **Arq 5.7.8** (2019-era, legacy). No backup sets are configured (`~/Library/Arq/config` has only `app_config.plist`), the agent is not running, and Arq 5 has no CLI (`arqc` does not exist; its AppleScript suite only handles license URLs).
 - SanDisk: `/Volumes/SanDisk`, 932 GiB exFAT, 796 GiB free. No Arq data on it yet.
 - Internal disk: about 12 GiB free, so dataless iCloud files must be materialized in batches (§3), not all at once.
-- **Owner decision:** stay on Arq 5 (if licensed; runs but is unsupported on macOS 15) or install current Arq 7 (paid; has `arqc`; its backup records let `backup-status` count snapshots). Recommended: Arq 7. Installing it is the owner's download.
+- **Owner decision (2026-10-13): stay on Arq 5.7.8.** No CLI, so everything below is GUI; `backup-status` reports snapshot count as unknown for the Arq 5 layout and relies on the restore drill. Menu labels below are from Arq 5 memory: verify them on screen.
+- **exFAT caution:** the ledger hung on this SanDisk when macOS's `copyfile` also copied extended attributes (fixed in `src/ledger.mjs` by copying plain bytes). Arq 5 has not been seen writing to this drive yet: make the first backup a small folder and watch that it finishes before adding the rest.
 
 ## 1. Destination
-Arq → Add Storage Location → Local or network folder → `/Volumes/SanDisk/Arq` (new folder). Set an encryption password and save it in the password manager (not in this repo). R2 as a second destination only if total stays inside R2's free 10 GB; skip B2.
+Arq → Preferences → Destinations → + → Local Folder → `/Volumes/SanDisk/Arq` (new folder). Set an encryption password and save it in the password manager (not in this repo). R2 as a second destination only if total stays inside R2's free 10 GB; skip B2.
 
 ## 2. Backup plan (one plan, destination SanDisk)
 **Sources**
@@ -18,6 +19,7 @@ Arq → Add Storage Location → Local or network folder → `/Volumes/SanDisk/A
 - `~/Documents`, `~/Desktop`
 - `~/Developer`
 - Dotfiles: `~/.zshrc`, `~/.zprofile`, `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.npmrc`, `~/.ledger` (Arq encrypts; these hold keys, so the Arq password matters)
+- `~/Library/Mobile Documents/iCloud~com~apple~clips` (Clips projects, 1.3 GB, fully local; A3 row 2: back up, pass the drill, then the owner deletes old projects in Clips)
 - `~/Library/Mobile Documents/com~apple~CloudDocs` (iCloud Drive), only after its dataless files are materialized (§3)
 
 **Excludes** (Arq: plan → Edit → Exclude, wildcard rules)

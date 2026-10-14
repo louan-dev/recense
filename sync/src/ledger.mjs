@@ -507,7 +507,7 @@ export async function backupStatus(o = {}) {
     out.lastWrite = newest ? iso(newest) : null; out.snapshots = records || null; out.destFiles = files;
     if (!files) out.problems.push('destination is empty');
     else if (now() - newest > (o.maxAgeHours ?? 26) * 3600_000) out.problems.push(`no write to the destination for more than ${o.maxAgeHours ?? 26} h`);
-    if (files && !records) out.problems.push('no *.backuprecord files: not an Arq 7 layout, snapshot count unknown');
+    if (files && !records) out.note = 'no *.backuprecord files (Arq 5 layout): snapshot count unknown; the restore drill is the proof';
   }
 
   if (o.restored) { // a sample the owner restored with Arq into a scratch dir, compared byte-for-byte with the source
@@ -739,6 +739,10 @@ async function selftest() {
 
   await fsp.writeFile(path.join(sinkDir, 'objects', '._appledouble'), 'xattrs');
   assert(![...(await sink.list('objects')).keys()].some((k) => k.includes('/._')), 'AppleDouble ._ files on exFAT sinks are not mistaken for objects');
+
+  const arq5 = path.join(tmp, 'arq5dest', 'UUID', 'packsets'); await fsp.mkdir(arq5, { recursive: true }); await fsp.writeFile(path.join(arq5, 'x.pack'), 'p');
+  bs = await backupStatus({ dest: path.join(tmp, 'arq5dest'), source: src, restored: rs, statusFile: path.join(tmp, 'bs5.json'), log: quiet });
+  assert(bs.snapshots === null && bs.note && !bs.problems.some((p) => /Arq 7/.test(p)), 'an Arq 5 destination is not a failure; snapshot count is reported unknown');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');
