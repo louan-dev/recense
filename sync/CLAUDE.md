@@ -3,9 +3,9 @@
 This repo holds the shared plan. Every session: read `PROGRESS.md` §2 (Rules) and only the section for the task named. Open only the matching section of `BACKLOG.md`. Don't re-read unchanged files or re-plan. You edit only this repo unless the task names another folder.
 
 ## Where things are
-- `ledger.mjs`: read-only observer of the iCloud folder, append-only SHA-256 hash-chained journal to a directory or rclone sink. Zero deps. Commands: `run|watch|fold|verify|restore|selftest`. Only `selftest` has run (Linux); macOS paths, rclone sink, `SF_DATALESS` and `watch` are untested.
+- `ledger.mjs`: read-only observer of the iCloud folder, append-only SHA-256 hash-chained journal to a directory or rclone sink. Zero deps. Commands: `run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest`. Verified on the Mac 2026-10-13 (selftest, real vault, `SF_DATALESS`, rclone sink via `:local:`); `watch` and a real R2 remote are untested. Also `canary.mjs`, `tools/upload-status.swift`, `bin/ledger-job.sh` + `launchd/`.
 - Docs: `ledger-report.md`, `sync-matrix.md`, `icloud-backend-technical-report.md`, `Obsidian integration.md`, `switchboard-spec.md`, `switchboard-scheduler-addendum.md`, `manager.md`, `notes/refs/sync.md`. `switchboard-iphone-addendum.md` is referenced everywhere but is missing: ask the owner for it.
-- No git yet: run `git init` (local only, no remote, no push until the owner names a repo). `.gitignore`: `.env`, `rclone.conf`, ledger sinks and mirrors, `.DS_Store`, `node_modules/`. Commit before each task.
+- Local git exists (no remote; no push until the owner names a repo). `.gitignore`: `.env`, `rclone.conf`, ledger sinks and mirrors, `.DS_Store`, `node_modules/`. Commit before each task.
 
 ## Your items (PROGRESS §4-§5, BACKLOG §S)
 Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session:

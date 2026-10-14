@@ -30,6 +30,7 @@
 //   node ledger.mjs fold    --sink SINK [--at ISO] [--write]       current tree (or as of a time)
 //   node ledger.mjs verify  --sink SINK [--deep]                    chains, objects, optional re-hash
 //   node ledger.mjs restore --sink SINK --dest DIR [--at ISO]       rebuild a tree somewhere else
+//   node ledger.mjs health  --sink SINK [--max-age-hours 24]          exit 1 when views/health.json is missing or stale
 //   node ledger.mjs audit   [--root DIR] [--out AUDIT.md] [--baseline-dir DIR] [--top 50] [--dup-min BYTES]
 //                           read-only: per-container bytes, dataless, largest, duplicates, dev junk
 //   node ledger.mjs backup-status [--dest ARQ_DEST] [--source DIR --restored DIR] [--max-age-hours 26]
@@ -148,8 +149,11 @@ class RcloneSink {
   async getFile(key, dest) { await fsp.mkdir(path.dirname(dest), { recursive: true }); const r = this.sh(['copyto', this.r(key), dest]); if (r.status !== 0) throw new Error(`rclone copyto failed: ${r.stderr}`); }
 }
 
+function volumeOf(p) { const m = /^\/Volumes\/([^/]+)/.exec(path.resolve(p)); return m ? `/Volumes/${m[1]}` : null; }
 function openSink(spec) {
   if (!spec || spec === true) throw new Error('--sink is required');
+  const vol = spec.startsWith('rclone:') ? null : volumeOf(spec); // an unplugged drive must fail loudly, never fall back to the internal disk
+  if (vol && !fs.existsSync(vol)) throw new Error(`sink volume not mounted: ${vol}`);
   return spec.startsWith('rclone:') ? new RcloneSink(spec.slice(7)) : new LocalDirSink(spec);
 }
 
@@ -204,7 +208,7 @@ async function stage(src, dir) {
 
 // ------------------------------------------------------------------ state (local only, outside the source)
 
-function defaultStatePath(source) { return path.join(os.homedir(), '.ledger', `state-${sha256(source).slice(0, 10)}.json`); }
+function defaultStatePath(source, sinkName) { return path.join(os.homedir(), '.ledger', `state-${sha256(`${source}\n${sinkName}`).slice(0, 10)}.json`); } // one per source×sink: a second sink must not inherit the first one's 'unchanged'
 function loadState(file) {
   try { const s = JSON.parse(fs.readFileSync(file, 'utf8')); if (s.v === V) return s; } catch { /* first run */ }
   return { v: V, chain: sha256('genesis'), seq: 0, files: {}, conflicts: {} };
@@ -223,7 +227,7 @@ export async function run(o) {
   const source = checkSource(o.source);
   const sink = o.sink;
   if (sink.root) assertWritable(sink.root);
-  const stateFile = o.state || defaultStatePath(source);
+  const stateFile = o.state || defaultStatePath(source, sink.name);
   const state = loadState(stateFile);
   const known = await sink.list('objects'); // what the sink already holds (dedup across everything it has ever seen)
 
@@ -543,6 +547,15 @@ export function quota(o = {}) {
   return { v: V, checked: iso(Date.now()), total, remaining, usedPct, target, alert, level };
 }
 
+// ------------------------------------------------------------------ health (P9: is the mirror fresh?)
+
+export async function health(sink, { maxAgeHours = 24, now = Date.now, log = console.log } = {}) {
+  let h; try { h = JSON.parse(await sink.getText('views/health.json')); } catch { log(`health: no views/health.json in ${sink.name}`); return { ok: false, reason: 'missing' }; }
+  const ageH = (now() - Date.parse(h.lastOk)) / 3600_000; const ok = ageH <= maxAgeHours;
+  log(`health: ${ok ? 'OK' : 'STALE'}; lastOk ${h.lastOk} (${ageH.toFixed(1)} h ago); evicted ${h.counts?.evicted ?? '?'}, unstable ${h.counts?.unstable ?? '?'}`);
+  return { ok, ageH, lastOk: h.lastOk, reason: ok ? null : 'stale' };
+}
+
 // ------------------------------------------------------------------ CLI
 
 async function main() {
@@ -572,8 +585,9 @@ async function main() {
   else if (cmd === 'audit') { await audit({ root: a.root === true ? undefined : a.root, out: a.out === true ? undefined : a.out, baselineDir: a['baseline-dir'], top: a.top ? Number(a.top) : undefined, dupMin: a['dup-min'] ? Number(a['dup-min']) : undefined }); }
   else if (cmd === 'backup-status') { const r = await backupStatus({ dest: a.dest, source: a.source, restored: a.restored, statusFile: a['status-file'], maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : undefined }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'quota') { const q = quota({ total: a.total, alert: a.alert, target: a.target }); console.log(JSON.stringify(q)); if (a.write) { const f = assertWritable(path.join(os.homedir(), '.ledger', 'quota.json')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(q, null, 2)); } process.exit(q.level === 'ok' ? 0 : 1); }
+  else if (cmd === 'health') { const r = await health(openSink(a.sink), { maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : 24 }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'selftest') { await selftest(); }
-  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|audit|backup-status|quota|selftest  (see the header of this file)'); process.exit(64); }
+  else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest  (see the header of this file)'); process.exit(64); }
 }
 
 // ------------------------------------------------------------------ selftest
@@ -671,6 +685,12 @@ async function selftest() {
 
   assert(quota({ total: '5GB', remaining: 1.5e9 }).level === 'over-target' && quota({ total: '5GB', remaining: 0.5e9 }).level === 'alert' && quota({ total: '5GB', remaining: 3e9 }).level === 'ok', 'quota levels: ≤60% ok, >60% over-target, ≥80% alert');
   assert(quota({ total: '5GB', remaining: 16e9 }).level === 'inconsistent', 'quota flags remaining > plan size instead of reporting a negative usage');
+
+  assert((await health(sink, { now: () => clock, log: quiet })).ok && !(await health(sink, { now: () => clock + 25 * 3600_000, log: quiet })).ok, 'health is OK after a run and STALE after 25 h');
+  threw = false; try { openSink('/Volumes/ledger-selftest-not-mounted/x'); } catch (e) { threw = /not mounted/.test(e.message); }
+  assert(threw, 'a sink on an unmounted volume is refused, not created on the internal disk');
+
+  assert(defaultStatePath('/v', 'dir:/a') !== defaultStatePath('/v', 'rclone:r2:x'), 'state is per source and sink, so a second sink gets a full upload');
 
   await fsp.rm(tmp, { recursive: true, force: true });
   console.log('all passed');

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chauphan.ledger.obsidian</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/chauphan/Developer/sync/bin/ledger-job.sh</string>
+    <string>/Users/chauphan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian</string>
+    <string>/Volumes/SanDisk/ledger/obsidian</string>
+    <string>obsidian</string>
+  </array>
+  <!-- event-driven: top-level vault changes (WatchPaths is not recursive; the daily heartbeat catches the rest) -->
+  <key>WatchPaths</key><array><string>/Users/chauphan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian</string></array>
+  <key>StartOnMount</key><true/>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
+  <key>ThrottleInterval</key><integer>300</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/ledger-obsidian.log</string>
+  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/ledger-obsidian.log</string>
+</dict>
+</plist>
