@@ -1,0 +1,26 @@
+[
+  {
+    "BTTLastUpdatedAt" : 1791017180.9946718,
+    "BTTTriggerType" : 102,
+    "BTTTriggerTypeDescriptionReadOnly" : "3 Finger Swipe Up",
+    "BTTTriggerClass" : "BTTTriggerTypeTouchpadAll",
+    "BTTUUID" : "00219C4A-A0B0-4198-BA70-A326815EE39A",
+    "BTTOrder" : 5,
+    "BTTActionsToExecute" : [
+      {
+        "BTTLastUpdatedAt" : 1791030673.3853459,
+        "BTTTriggerParentUUID" : "00219C4A-A0B0-4198-BA70-A326815EE39A",
+        "BTTIsPureAction" : true,
+        "BTTUUID" : "1F3C50BF-A713-4AE0-99BD-92F01AD631A6",
+        "BTTPredefinedActionType" : 206,
+        "BTTPredefinedActionName" : "Execute Shell Script  or  Task",
+        "BTTShellTaskActionScript" : "\"$HOME\/Developer\/obsidian\/draftpad\" hide",
+        "BTTShellTaskActionConfig" : "\/bin\/zsh:::-c:::-:::",
+        "BTTOrder" : 37
+      }
+    ],
+    "BTTTriggerLauncherConfig" : {
+      "BTTLauncherShowInLauncher" : 0
+    }
+  }
+]

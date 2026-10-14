@@ -1,0 +1,6 @@
+.build/
+build/
+*.bak
+backups/
+.env
+.DS_Store

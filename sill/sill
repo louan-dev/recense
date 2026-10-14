@@ -1,0 +1,6 @@
+#!/bin/zsh
+app=/Applications/Sill.app
+if ! pgrep -qx sill && [[ "${1:-time}" != (status|hide|quit) ]]; then
+  exec open -a "$app" --args "${1:-time}"
+fi
+exec "$app/Contents/MacOS/sill" "$@"

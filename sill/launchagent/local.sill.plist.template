@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the Sill login item. Do not copy this file into LaunchAgents by hand:
+  scripts/install-launchagent.sh fills in __SILL_BIN__ and __SILL_LOG__ with your real paths.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.sill</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__SILL_BIN__</string>
+        <string>background</string>
+    </array>
+
+    <!-- Lets System Settings → Login Items list this as "Sill". -->
+    <key>AssociatedBundleIdentifiers</key>
+    <string>local.sill</string>
+
+    <!-- Start once when you log in. No KeepAlive on purpose: "sill quit" and pkill stay quit. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Only inside a normal graphical login session. -->
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>__SILL_LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__SILL_LOG__</string>
+</dict>
+</plist>

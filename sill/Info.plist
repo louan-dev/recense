@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>local.sill</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleName</key>
+    <string>Sill</string>
+    <key>CFBundleDisplayName</key>
+    <string>Sill</string>
+    <key>CFBundleExecutable</key>
+    <string>sill</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSRemindersFullAccessUsageDescription</key>
+	<string>Sill shows reminders with a due time on the horizon, next to your Calendar events.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Sill shows reminders with a due time on the horizon, next to your Calendar events.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Sill shows your next events and colors its time bar by how soon the next one starts.</string>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Sill records your camera when you turn on Camera in its recorder.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+	<string>Sill turns what you say into a draft Calendar event, recognized on this Mac.</string>
+	<key>NSMicrophoneUsageDescription</key>
+    <string>Sill records voice notes when you press its record button.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Sill asks Finder which files are selected, to run your Quick Actions on them.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Sill shows your next events and colors its time bar by how soon the next one starts.</string>
+</dict>
+</plist>

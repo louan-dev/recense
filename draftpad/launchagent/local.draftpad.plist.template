@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the draftpad login item. Do not copy this file into LaunchAgents by hand:
+  scripts/install-launchagent.sh fills in __DRAFTPAD_BIN__ and __DRAFTPAD_LOG__ with your real paths.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.draftpad</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__DRAFTPAD_BIN__</string>
+    </array>
+
+    <!-- Start once when you log in. No KeepAlive on purpose: "draftpad quit" and pkill stay quit. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Only inside a normal graphical login session. -->
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>__DRAFTPAD_LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__DRAFTPAD_LOG__</string>
+</dict>
+</plist>
