@@ -907,6 +907,7 @@
     let B = null;
     let dragging = false;
 
+    el.preservesPitch = true;   // speed changes tempo, never pitch
     el.playbackRate = speed;
 
     const ready = () => A !== null && B !== null;
