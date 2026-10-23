@@ -21,7 +21,7 @@
 //   P7  Conflicts are data.        iCloud's "name 2.ext" copies become `conflict` events, not errors.
 //   P8  Ports and adapters.        Source = a folder. Sink = a directory or rclone remote. Views are derived.
 //   P9  Observable.                `views/health.json` says when it last succeeded and what it skipped.
-//   P10 Bounded blast radius.      Hard denylist for live app stores (Notability, Photos library, Messages).
+//   P10 Bounded blast radius.      Hard denylist for live app stores (Photos library, Messages, Mail). Notability was tested read-only 2026-10-14 and is allowed.
 //
 // USAGE
 //   node ledger.mjs run     --source DIR --sink SINK [--apply] [--quiet-secs 60] [--materialize]
@@ -35,8 +35,8 @@
 //                           read-only: per-container bytes, dataless, largest, duplicates, dev junk
 //   node ledger.mjs backup-status [--dest ARQ_DEST] [--source DIR --restored DIR] [--max-age-hours 26]
 //                           read-only: last write, snapshot count, sha256 check of a sample restored with Arq
-//   node ledger.mjs quota   [--total 5GB] [--target 60] [--alert 80] [--write]   iCloud usage from `brctl quota`
-//   node ledger.mjs overflow --source DIR [--sink SINK] [--max-mb 25] [--total 5GB] [--alert 80] [--target 60] [--json]
+//   node ledger.mjs quota   [--total 200GB] [--target 75] [--alert 85] [--write]   iCloud usage from `brctl quota`
+//   node ledger.mjs overflow --source DIR [--sink SINK] [--max-mb 25] [--total 200GB] [--alert 85] [--target 75] [--json]
 //                           read-only plan: large files that should live in R2, and whether the sink already has them
 //   node ledger.mjs selftest
 //   SINK is a directory path, or  rclone:REMOTE:PATH  (e.g. rclone:gallery-main:ledger/icloud).
@@ -57,7 +57,6 @@ const SF_DATALESS = 0x40000000; // st_flags bit for FileProvider placeholders (m
 
 // P10: live stores of other apps. Never read, whichever folder you point us at.
 const DENY = [
-  /gingerlabs~Notability/i,                 // Notability's iCloud container is a live mirror of its sync state
   /\.photoslibrary(\/|$)/i,                 // export originals instead; never walk the bundle
   /\/Library\/Messages(\/|$)/,              // copy chat.db first, then point at the copy
   /\/Library\/Mail(\/|$)/,
@@ -541,7 +540,7 @@ export async function backupStatus(o = {}) {
 const parseBytes = (v) => { const m = /^([\d.]+)\s*(B|KB|MB|GB|TB)?$/i.exec(String(v).trim()); if (!m) throw new Error(`bad size: ${v}`); return Math.round(Number(m[1]) * 1000 ** ['B', 'KB', 'MB', 'GB', 'TB'].indexOf((m[2] || 'B').toUpperCase())); };
 
 export function quota(o = {}) {
-  const total = parseBytes(o.total ?? '5GB'); const alert = Number(o.alert ?? 80); const target = Number(o.target ?? 60);
+  const total = parseBytes(o.total ?? '200GB'); const alert = Number(o.alert ?? 85); const target = Number(o.target ?? 75);
   let remaining = o.remaining;
   if (remaining === undefined) { const r = spawnSync('brctl', ['quota'], { encoding: 'utf8' }); const m = /(\d+) bytes of quota remaining/.exec(r.stdout || ''); if (!m) throw new Error('brctl quota gave no number'); remaining = Number(m[1]); }
   const usedPct = Math.round(((total - remaining) / total) * 1000) / 10;
@@ -688,8 +687,8 @@ async function selftest() {
   threw = false; try { await run({ source: big, sink: sink2, state: st2, apply: true, quietSecs: 0, now: () => clock, log: quiet }); } catch (e) { threw = /refusing/.test(e.message); }
   assert(threw, 'a source that suddenly loses every file is refused, not tombstoned');
 
-  threw = false; try { checkSource(await (async () => { const d = path.join(tmp, 'Mobile Documents', 'ZP9ZJ4EF3S~com~gingerlabs~Notability'); await fsp.mkdir(d, { recursive: true }); return d; })()); } catch { threw = true; }
-  assert(threw, 'Notability container is refused as a source');
+  threw = false; try { checkSource(await (async () => { const d = path.join(tmp, 'Library', 'Messages'); await fsp.mkdir(d, { recursive: true }); return d; })()); } catch { threw = true; }
+  assert(threw, 'a live app store (Messages) is refused as a source');
   if (process.platform !== 'darwin') assert(isEvicted({ size: 10, blocks: 0 }, '/nonexistent') === true, 'zero-block file with a size is treated as evicted when it cannot be confirmed');
   assert(isEvicted({ size: 10, blocks: 8 }, '/nonexistent') === false && isEvicted({ size: 0, blocks: 0 }, '/nonexistent') === false, 'normal files and empty files are not evicted');
 
@@ -697,11 +696,11 @@ async function selftest() {
   const blob = Buffer.alloc(2048, 7);
   await mk('com~apple~CloudDocs/Docs/a.bin', blob); await mk('com~apple~CloudDocs/Old/a copy.bin', blob); await mk('com~apple~CloudDocs/Docs/b.bin', Buffer.alloc(2048, 8));
   await mk('com~apple~CloudDocs/proj/node_modules/x/i.js', 'x'.repeat(300));
-  await mk('ZP9ZJ4EF3S~com~gingerlabs~Notability/Documents/n.note', 'secret');
-  await fsp.chmod(path.join(md, 'ZP9ZJ4EF3S~com~gingerlabs~Notability'), 0o000); // any readdir would surface as "unreadable"
+  await mk('Library/Messages/chat.db', 'secret');
+  await fsp.chmod(path.join(md, 'Library', 'Messages'), 0o000); // any readdir would surface as "unreadable"
   const au = await audit({ root: md, baselineDir: path.join(tmp, 'audit'), out: path.join(tmp, 'AUDIT.md'), dupMin: 1024, log: quiet });
-  await fsp.chmod(path.join(md, 'ZP9ZJ4EF3S~com~gingerlabs~Notability'), 0o755);
-  assert(au.denied.length === 1 && au.unreadable.length === 0 && au.totals.files === 4, 'audit never opens the Notability container and counts the other 4 files');
+  await fsp.chmod(path.join(md, 'Library', 'Messages'), 0o755);
+  assert(au.denied.length === 1 && au.unreadable.length === 0 && au.totals.files === 4, 'audit never opens a denied app store (Messages) and counts the other 4 files');
   assert(au.duplicates.length === 1 && au.duplicates[0].copies === 2 && au.duplicates[0].wasted === 2048, 'audit finds the duplicate by size then sha256');
   assert(au.junk.length === 1 && au.junk[0].path.endsWith('proj/node_modules') && au.junk[0].bytes === 300, 'audit reports node_modules inside iCloud as dev junk');
   assert(au.groups.some((c) => c.name === 'iCloud Drive/Docs' && c.files === 2) && fs.existsSync(path.join(tmp, 'audit', 'latest.json')), 'audit groups by Drive folder and saves a baseline');
@@ -718,7 +717,7 @@ async function selftest() {
   bs = await backupStatus({ dest: path.join(tmp, 'arqdest'), statusFile: bsFile, now: () => Date.now() + 30 * 3600_000, log: quiet });
   assert(!bs.ok && bs.problems.some((p) => /no write/.test(p)), 'backup-status flags a destination with no write for over 26 h');
 
-  assert(quota({ total: '5GB', remaining: 1.5e9 }).level === 'over-target' && quota({ total: '5GB', remaining: 0.5e9 }).level === 'alert' && quota({ total: '5GB', remaining: 3e9 }).level === 'ok', 'quota levels: ≤60% ok, >60% over-target, ≥80% alert');
+  assert(quota({ total: '5GB', remaining: 1e9 }).level === 'over-target' && quota({ total: '5GB', remaining: 0.5e9 }).level === 'alert' && quota({ total: '5GB', remaining: 3e9 }).level === 'ok', 'quota levels: ≤75% ok, >75% over-target, ≥85% alert (owner-approved 2026-10-22)');
   assert(quota({ total: '5GB', remaining: 16e9 }).level === 'inconsistent', 'quota flags remaining > plan size instead of reporting a negative usage');
 
   assert((await health(sink, { now: () => clock, log: quiet })).ok && !(await health(sink, { now: () => clock + 25 * 3600_000, log: quiet })).ok, 'health is OK after a run and STALE after 25 h');

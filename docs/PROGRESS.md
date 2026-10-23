@@ -104,10 +104,10 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 | ID | Item | State | Evidence / next |
 |---|---|---|---|
 | A1 | Audit + quota breakdown | DONE | icloud.com: Photos 149.6 GB, Messages 22.6, Documents 15.3 (→ ~2.6 after trash), Mail 3.5, Backups 0. Audit re-run 2026-10-14 |
-| A2 | Arq plan + verified restore | PARTIAL | Owner: Arq 5.7.8, destination **R2 bucket `arq`** (SanDisk unreliable). Checklist rewritten; Arq 5 ↔ R2 compatibility unverified; no backup or drill yet |
-| A3 | Quota freed | PARTIAL | Owner did rows 1–4b (trash emptied: local .Trash 13.0 → 0.5 GB; Apple total not yet updated). Recommendation in `docs/proposals/A3-USAGE-TARGET.md`: keep 200 GB, target ≤75%, alert 85%; Messages first, then old videos to R2 |
+| A2 | Arq plan + verified restore | PARTIAL | Arq 5.7.8 → R2 bucket `c267690e…-arq` (owner-configured, works on macOS 15.5). **Restore drill not done** (no `~/.ledger/backup-status.json`, no restore folder). `sync-backup` key is account-wide and was pasted in plain text: rotate |
+| A3 | Quota freed | PARTIAL | Target approved: ≤75%, alert 85% (code defaults now 200GB/75/85). Still 91.9% on 2026-10-22: the emptied 12.5 GB never came off Apple's total. Next: icloud.com Data Recovery / Recently Deleted check, then Messages attachments |
 | A4 | Canary round-trip | DONE | Canary Mac→iPhone→iPad→Mac. Notability: persists to Notability Server (sockets connected, breakers closed); legacy iCloud 104/104 uploaded; Auto-Backup disabled |
-| A5 | Ledger mirror | DONE (vault) | SanDisk sink: 146 files, `verify --deep` 0 problems; launchd agent installed, run from launchd exit 0, health OK. Next: WatchPaths trigger test, iCloud Drive source, R2 sink |
+| A5 | Ledger mirror | DONE | Sink moved to R2 `gallery-main/ledger/obsidian` (unencrypted, private bucket), SanDisk removed from launchd. Seed: 250 files incl. 89 materialized, `verify --deep` 0 problems; launchd run exit 0, health OK |
 | A6 | Overflow lane, Notability WebDAV | PARTIAL | Planner done; Remotely Save owner-side; Notability WebDAV now unblocked by A5 (vault), not built |
 | A7 | Gallery + Sill ledger surfaces | PROPOSED | |
 | B1–B4 | Notes in Sill, DEVONthink, Calendar Desk, Apple pulls | PROPOSED | specs exist, no code; iPhone addendum missing |
@@ -227,3 +227,33 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 - Unverified: whether Arq 5.7.8 works against R2 (signature/region, and whether it insists on creating its own bucket). Fallback documented: ledger → `rclone crypt` on R2.
 - Existing rclone remotes (names/types only): `r2`, `gallery-main`, `gallery-public` (S3/Cloudflare), `studio`, `gallery` (combine). None is scoped to an `arq` bucket.
 - Next: owner creates bucket + token and adds the Arq destination; first backup = vault only.
+
+- 2026-10-14 07:34 PDT · A5 · DONE: removed the Notability entry from DENY in src/ledger.mjs (Messages replaces it in the selftest). Test: run/verify --deep/restore on one real .nbn (5 files, 574,536 bytes, 0 problems, source stat unchanged). Caveat: a .nbn is several files, so a mid-edit run can capture a mixed state until the next run. Next: dry run Obsidian and Notability as separate sources once the sink path is known.
+
+### 2026-10-22 18:02 PDT · A3 · PARTIAL
+- Owner approved the usage recommendation. `src/ledger.mjs quota` defaults: `--total 200GB --target 75 --alert 85` (were 5GB/60/80); test updated; `npm test` all passed. `quota --write` → 91.9% used, 16.26 GB free, level `alert`.
+- Finding: 8 days after Recently Deleted was emptied (local `.Trash` 13.0 → 0.5 GB), Apple's free space hasn't changed (16.5 → 16.3 GB). Either the server copy wasn't purged or new usage replaced it.
+- Next: owner checks icloud.com → iCloud Drive → Recently Deleted (and Photos → Recently Deleted) and re-screenshots storage; then Messages → Review Large Attachments.
+
+### 2026-10-22 18:02 PDT · A5 · DONE
+- Owner decision: launchd mirror to R2 only; SanDisk dropped from launchd. Changed: `launchd/…plist.example` sink → `rclone:gallery-main:gallery-main/ledger/obsidian`, `StartOnMount` removed; `bin/ledger-job.sh` exports a PATH with Homebrew (launchd lacks it; rclone is in `/opt/homebrew/bin`) and runs `--materialize` (a placeholder is not a backup). Agent re-bootstrapped.
+- Why this bucket: the plan's A5/A7 path; uses the existing bucket-scoped `gallery-main` key (`sync-backup` would also work but reaches every bucket); Gallery only lists `files/`, `order/` and its other own prefixes (`src/main.js`), so `ledger/` stays invisible in the UI until A7 adds `/main/ledger/`. Unencrypted per owner (readable from anywhere; protected by the private bucket and Cloudflare account).
+- Validated: seed run: 250 files, 235 objects, 162.9 MB uploaded, 0 evicted (89 cloud-only files materialized), 6 `conflict` events (duplicate-style names: `Untitled 1.md`, `IMG_3855 1.jpeg`, 4 PDFs/PNG under `Imported/`; heuristic, owner can review). `verify --deep` 1 segment, 250 live, 0 problems. launchd kickstart: exit 0, 250 unchanged, health OK.
+- Finding: the old SanDisk job had logged 539 silent `skip: not mounted` lines from 2026-10-14 09:23Z to 2026-10-22: the vault went 8 days unmirrored with no alert. The R2 sink fails loudly (notification) instead.
+- Not tested: WatchPaths firing on an edit; rclone over a network outage (expected: run fails → notification; next trigger retries).
+
+### 2026-10-22 18:02 PDT · A2 · PARTIAL
+- Owner: Arq 5.7.8 works on macOS 15.5, destination R2 (Arq made bucket `c267690e36349d5d02de51e4a48ea1eb-arq`); SanDisk is not to be used.
+- Checked: restore drill **not done** (no `~/.ledger/backup-status.json`, no `~/Desktop/arq-restore-test`).
+- Security: the owner pasted the `sync-backup` R2 secret and the Arq password into `decisions/20261022 ARQ-CHECKLIST.md` and the tracked `docs/runbooks/ARQ-CHECKLIST.md`. Redacted in the runbook (decisions copy untouched per its README) and `.gitignore` now excludes that decisions file; nothing was committed. `sync-backup` can list all buckets and read `gallery-main`, so it is account-wide, not two-bucket. Owner: rotate it in Cloudflare, rescope to the two buckets, update rclone/Arq.
+- Next: owner runs the drill (ARQ-CHECKLIST §4).
+
+### 2026-10-22 18:02 PDT · SanDisk evacuation · PROPOSED
+- `docs/runbooks/sandisk-evac.md`: refined owner script: volume found by name (was `disk4s2`; actual volume was on `disk4s1`), read-only mount, MD5-verifiable copy (dropped `--s3-disable-checksum`), hash `check` before erase, excludes for AppleDouble/old ledger/cache and the two plain-text password exports, day/night `--bwlimit`, erase + `f3` capacity test, Windows 11 option.
+- Measured: uplink 52.7 Mbps (~6.6 MB/s → 140 GB ≈ 7–9 h); uplink responsiveness Low (bufferbloat). Mac: M1 (MacBookPro17,1), **8 GB RAM**, ~5 GiB free internal.
+- Models: re-pull instead of copying: `phi3.5` and **`phi4-mini`** (not 14B `phi4`, which doesn't fit 8 GB RAM), `OLLAMA_MODELS` on the APFS SanDisk; Obsidian via a local-LLM plugin at `localhost:11434`.
+
+### 2026-10-22 18:02 PDT · Notability source · PROPOSED
+- Owner found `~/Library/Mobile Documents/ZP9ZJ4EF3S~com~gingerlabs~Notability/Documents` and removed the ledger denylist entry (uncommitted change kept and committed here; selftest passes).
+- Fact from the 2026-10-14 iPad logs: Notability persists to **Notability Server** since 2026-06-16 (109 notes); this iCloud folder is the **legacy** store (104 notes), no longer updated. Its `.note` files are proprietary: editing copies outside Notability can't flow back, so two-way via the ledger is not possible (the ledger is one-way by design; `watch` exists but is untested).
+- Fits the goals as: (1) a one-time read-only ledger snapshot of the legacy folder to `gallery-main/ledger/notability-legacy` (archive); (2) Notability Auto-Backup (PDF + Note) → A6 WebDAV for current notes, readable as PDFs in Obsidian/DEVONthink. Owner to approve (1).

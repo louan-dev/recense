@@ -9,7 +9,7 @@ This repo holds the shared plan. Every session: read `PROGRESS.md` §2 (Rules) a
 
 ## Your items (PROGRESS §4-§5, BACKLOG §S)
 Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session:
-- **A1** locate the 5 GB of iCloud usage: ask for the storage breakdown screenshot, then add a read-only `audit` that writes `AUDIT.md` (never read inside the Notability container).
+- **A1** locate the 5 GB of iCloud usage: ask for the storage breakdown screenshot, then add a read-only `audit` that writes `AUDIT.md` (Notability tested read-only 2026-10-14 and now allowed; no denylist entry).
 - **A2** Arq backup gate to the 1 TB SanDisk: give an exact GUI checklist (sources, excludes, schedule, retention) and add `backup-status` with a verified sample restore.
 - **A3** free the quota: propose a list only, delete nothing. Evicting a local copy does not free iCloud quota.
 - **A4** canary note round trip Mac, iPhone, iPad, Mac.
