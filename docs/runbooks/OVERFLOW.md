@@ -20,7 +20,7 @@ Status: rule PARTIAL (planner built and tested); Remotely Save PROPOSED (owner G
 6. R2 free tier is 10 GB storage plus Class A/B operation limits. A 5-minute interval on 3 devices stays well inside it (verify on the R2 dashboard after a week).
 
 ## 3. Notability → WebDAV on the Gallery Worker (design only; build after A5 is DONE)
-- Route `/dav/notability/` in `cloud-gallery/gallery/src/worker.js`, R2 prefix `MAIN:notability-backup/`.
+- Route `/dav/notability/` in `gallery/gallery/src/worker.js`, R2 prefix `MAIN:notability-backup/`.
 - Methods: `OPTIONS`, `PROPFIND` (Depth 0/1), `GET`, `HEAD`, `PUT`, `MKCOL`. `DELETE`, `MOVE`, `COPY`, `PROPPATCH` → 405. A `PUT` over an existing key writes a new version (`<key>@<iso>`) instead of overwriting, so the store is append-only.
 - Auth: HTTP Basic with its own app password (wrangler secret `NOTABILITY_DAV_HASH`, compared as a hash in constant time), outside Cloudflare Access because Notability cannot do Access. Rate-limit failures.
 - Tests (miniflare): Notability's request sequence (`PROPFIND` the root, `MKCOL`, `PUT`), 401 without or with a wrong password, 405 on `DELETE`/`MOVE`, a second `PUT` keeps both versions, no path traversal outside the prefix.

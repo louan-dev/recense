@@ -24,7 +24,7 @@ Never delete or move user data, overwrite backups, change production access rule
 Update `PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3 and BACKLOG SL6, which are now out of date:
 - **Nook is being folded into Sill** (hover-to-peek and an always-hidden tier behind a Sill setting that can be turned off; running Sill hides menu-bar icons automatically). The old `~/Developer/nook` folder is deleted afterwards, only after verification, a recoverable snapshot and the owner's confirmation of the exact path. Work happens in the Sill repo.
 - A new **widget panel** (name undecided; right-edge slide-out on a non-conflicting three-finger gesture, first widget Find My) is built inside Sill as item SL7, not as a standalone app.
-- Repos: `sync`, `sill`, `cloud-gallery` are separate local git repos, all private.
+- Repos: `sync`, `sill`, `gallery` are separate local git repos, all private.
 
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation, next action. Running low on context: update §7, write a patch, build `progress.zip` (PROGRESS.md, patch, test output; no secrets, caches or `.env`) and verify it exists.
