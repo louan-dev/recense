@@ -81,8 +81,23 @@ async function accessClaims(req, env) {
   return good ? body : null;
 }
 
+// Someone Cloudflare Access let through who isn't the owner (signed in with another email, say on
+// a phone): their email, so the page can say so and offer to switch accounts. Null for everyone
+// else, who keep getting the plain 404.
+export async function signedInAs(req, env) {
+  try {
+    const c = await accessClaims(req, env);
+    return c && c.email ? String(c.email) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function isOwner(req, env) {
-  const email = String(env.OWNER_EMAIL || "").trim().toLowerCase();
+  // OWNER_EMAIL may list several addresses, comma-separated. Left unset, the Access policy decides:
+  // any email it let through counts, since the token's audience is checked and Access only issues
+  // one to emails the policy includes.
+  const emails = String(env.OWNER_EMAIL || "").toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
   const client = String(env.SERVICE_CLIENT_ID || "").trim();
 
   let claims = null;
@@ -94,7 +109,8 @@ export async function isOwner(req, env) {
   }
 
   if (!claims) return false;
-  if (email && String(claims.email || "").trim().toLowerCase() === email) return true;
+  if (claims.email && !emails.length) return true;
+  if (emails.includes(String(claims.email || "").trim().toLowerCase())) return true;
   if (client && !claims.email && String(claims.common_name || "") === client) return true;
 
   return false;

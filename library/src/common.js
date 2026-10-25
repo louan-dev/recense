@@ -1,7 +1,7 @@
 // Pieces every route uses: page and JSON responses, file serving, types, names and paths.
 
 export const OWNER = "Chau Phan";
-export const VERSION = "1.0.0";
+export const VERSION = "1.1.0";
 export const ID_RE = /^[A-Za-z0-9]{8,32}$/;
 
 // most files one folder view will list
@@ -24,7 +24,7 @@ export function page(body, status = 200) {
 
 export function notice(title, status) {
   return page(
-    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>' +
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="darkreader-lock"><title>' +
       esc(title) +
       '</title><style>body{margin:0;display:grid;place-items:center;min-height:100vh;background:#1c1c1e;color:#fff;font:600 20px -apple-system,BlinkMacSystemFont,sans-serif}</style><p>' +
       esc(title) +
@@ -197,4 +197,13 @@ export function cleanPath(s, encoded = false) {
 }
 
 export const urlPath = (rel) => rel.split("/").map(encodeURIComponent).join("/");
-
+// How a share link shows its media, chosen by the owner when it was made and stored with it (the
+// trailing language, en | vi | fr, and the Key caption's notation, 0–9): every device that opens the
+// link sees the same, whatever that browser has kept. null if nothing valid was sent.
+export function viewOf(b) {
+  const lang = b && /^(en|vi|fr)$/.test(b.lang) ? b.lang : null;
+  const n = b ? Number(b.notation) : NaN;
+  const notation = Number.isInteger(n) && n >= 0 && n <= 9 ? n : null;
+  if (lang === null && notation === null) return null;
+  return { ...(lang ? { lang } : {}), ...(notation !== null ? { notation } : {}) };
+}

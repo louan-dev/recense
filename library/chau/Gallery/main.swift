@@ -20,6 +20,9 @@ let mountArgs = [
     "--volname", "Gallery",
     "--vfs-cache-mode", "full",
     "--vfs-cache-max-size", "20G",
+    "--vfs-cache-max-age", "72h",
+    // the internal disk has ~13 GiB free: the cache gives way before the disk fills, whatever max-size says
+    "--vfs-cache-min-free-space", "5G",
     "--dir-cache-time", "1m",
     "--metadata",
     "--log-file", logFile,
@@ -59,8 +62,11 @@ final class App: NSObject, NSApplicationDelegate {
                 defer { self.busy = false }
                 guard ok else { return }
 
-                if !self.isMounted() && !self.startMount() {
-                    self.say("Gallery couldn't connect. Check your internet connection, then try again.")
+                // a mount this app isn't serving is a leftover from a crash or rebuild: remount it
+                let alive = self.isMounted() && (self.mount?.isRunning ?? false)
+                if !alive && !self.startMount() {
+                    let why = self.lastLog()
+                    self.say("Gallery couldn't open.\n\n" + (why.isEmpty ? "rclone stopped before the folder appeared." : why) + "\n\nFull log: ~/Library/Logs/gallery-mount.log")
                     return
                 }
 
@@ -69,17 +75,32 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    // reads the kernel's mount table instead of asking the volume, so a dead mount can't freeze the app
     func isMounted() -> Bool {
-        var info = statfs()
-        guard statfs(mountPoint, &info) == 0 else { return false }
-        let target = withUnsafePointer(to: &info.f_mntonname) {
-            $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) }
+        var raw: UnsafeMutablePointer<statfs>?
+        let count = Int(getmntinfo(&raw, MNT_NOWAIT))
+        guard let list = raw, count > 0 else { return false }
+        for i in 0..<count {
+            var entry = list[i]
+            let target = withUnsafePointer(to: &entry.f_mntonname) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) }
+            }
+            if target == mountPoint { return true }
         }
-        return target == mountPoint
+        return false
     }
 
     func startMount() -> Bool {
         try? FileManager.default.createDirectory(atPath: mountPoint, withIntermediateDirectories: true)
+
+        // clear a dead mount left by a crash or sleep, or rclone refuses to mount again
+        let u = Process()
+        u.executableURL = URL(fileURLWithPath: "/sbin/umount")
+        u.arguments = ["-f", mountPoint]
+        try? u.run()
+        u.waitUntilExit()
+
+        guard FileManager.default.isExecutableFile(atPath: rclone) else { return false }
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: rclone)
@@ -98,17 +119,30 @@ final class App: NSObject, NSApplicationDelegate {
 
     @objc func close() {
         if isMounted() {
-            let u = Process()
-            u.executableURL = URL(fileURLWithPath: "/sbin/umount")
-            u.arguments = [mountPoint]
-            try? u.run()
-            u.waitUntilExit()
+            // refused while Finder or a transfer is using the volume; force it, or killing rclone leaves a dead mount
+            if unmount([mountPoint]) != 0 { unmount(["-f", mountPoint]) }
         }
         if let p = mount, p.isRunning { p.terminate() }
         mount = nil
     }
 
+    @discardableResult
+    func unmount(_ args: [String]) -> Int32 {
+        let u = Process()
+        u.executableURL = URL(fileURLWithPath: "/sbin/umount")
+        u.arguments = args
+        do { try u.run() } catch { return -1 }
+        u.waitUntilExit()
+        return u.terminationStatus
+    }
+
+    func lastLog() -> String {
+        guard let text = try? String(contentsOfFile: logFile, encoding: .utf8) else { return "" }
+        return text.split(separator: "\n").suffix(3).joined(separator: "\n")
+    }
+
     func say(_ text: String) {
+        NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
         a.messageText = "Gallery"
         a.informativeText = text

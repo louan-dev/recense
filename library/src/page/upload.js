@@ -7,11 +7,11 @@ export function uploadPage() {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="darkreader-lock">
 <meta name="theme-color" content="#1c1c1e">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex">
-<title>Gallery</title>
+<title>Create Share Link</title>
 <style>${css}</style>
 </head>
 
@@ -19,9 +19,11 @@ export function uploadPage() {
 
 <main>
 
-  <h1>New link</h1>
+  <p class="back"><a href="/main/">Back to Main Gallery</a></p>
 
-  <p id="signin" hidden><a href="/main">Sign in</a> to make a link.</p>
+  <h1>Create Share Link</h1>
+
+  <p id="signin" hidden><a href="/main/">Sign in</a> to make a link.</p>
 
   <div class="f">Link lasts</div>
 
