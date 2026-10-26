@@ -169,4 +169,4 @@ Building for production...
 6629 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 [3/5] Write Objects.LinkFileList
 [4/5] Linking sill
-Build of product 'sill' complete! (22.70s)
+Build of product 'sill' complete! (22.05s)

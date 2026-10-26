@@ -4103,7 +4103,7 @@ final class EssentialsView: ClickView {
     }()
     /// Recense's dark `--bg` (viewer/read-along.html), so the page and Sill's fill are one colour.
     let recenseFill = NSColor(srgbRed: 0x11/255.0, green: 0x16/255.0, blue: 0x15/255.0, alpha: 1)
-    static let recenseURL = URL(fileURLWithPath: NSHomeDirectory() + "/Developer/recense/viewer/read-along.html")
+    static let recenseURL = URL(fileURLWithPath: NSHomeDirectory() + "/Developer/sill/recense/viewer/read-along.html")
     let r2 = R2Tray(frame: .zero)
     private var foldWork: [Int: DispatchWorkItem] = [:]
     var onKeyboard: ((NSView?) -> Void)?
