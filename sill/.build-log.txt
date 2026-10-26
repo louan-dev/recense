@@ -1,57 +1,52 @@
-[0/3] Write swift-version--58304C5D6DBC2206.txt
-[1/2] Linking SwiftTermBuildInfoGenerator-tool
-[0/1] Planning build
 Building for production...
-[0/5] Write swift-version--58304C5D6DBC2206.txt
-[1/4] Linking SwiftTermBuildInfoGenerator-tool
-[2/4] Generate SwiftTerm build information
-[3/5] Write sources
-[5/6] Compiling sill main.swift
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:538:13: warning: initialization of immutable value 'size' was never used; consider replacing with assignment to '_' or removing it
- 536 |         guard t != lastTime else { return }
- 537 |         lastTime = t
- 538 |         let size = label.font!.pointSize
+[0/4] Write swift-version--58304C5D6DBC2206.txt
+[1/3] Write sources
+[3/4] Compiling sill main.swift
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:539:13: warning: initialization of immutable value 'size' was never used; consider replacing with assignment to '_' or removing it
+ 537 |         guard t != lastTime else { return }
+ 538 |         lastTime = t
+ 539 |         let size = label.font!.pointSize
      |             `- warning: initialization of immutable value 'size' was never used; consider replacing with assignment to '_' or removing it
- 539 |         let s = NSMutableAttributedString(string: t, attributes: [.font: label.font!, .foregroundColor: label.textColor!])
- 540 |         if !suffix.isEmpty {
+ 540 |         let s = NSMutableAttributedString(string: t, attributes: [.font: label.font!, .foregroundColor: label.textColor!])
+ 541 |         if !suffix.isEmpty {
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1286:67: warning: capture of 'self' with non-sendable type 'ScreenCapture' in a '@Sendable' closure
-1241 | /// Screen + system audio to a .mov, via ScreenCaptureKit's recording output (macOS 15 and later).
-1242 | @available(macOS 15.0, *)
-1243 | final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1287:67: warning: capture of 'self' with non-sendable type 'ScreenCapture' in a '@Sendable' closure
+1242 | /// Screen + system audio to a .mov, via ScreenCaptureKit's recording output (macOS 15 and later).
+1243 | @available(macOS 15.0, *)
+1244 | final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
      |             `- note: class 'ScreenCapture' does not conform to the 'Sendable' protocol
-1244 |     private var stream: SCStream?
-1245 |     private var finished: ((Bool) -> Void)?
+1245 |     private var stream: SCStream?
+1246 |     private var finished: ((Bool) -> Void)?
      :
-1284 |             try? await s.stopCapture()
-1285 |             stream = nil
-1286 |             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.finished?(true); self.finished = nil }
+1285 |             try? await s.stopCapture()
+1286 |             stream = nil
+1287 |             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.finished?(true); self.finished = nil }
      |                                                                   `- warning: capture of 'self' with non-sendable type 'ScreenCapture' in a '@Sendable' closure
-1287 |         }
-1288 |     }
+1288 |         }
+1289 |     }
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1397:31: warning: capture of 'self' with non-sendable type 'MixedAudioRecorder' in a '@Sendable' closure
-1303 | /// the samples and closes the gap, so the file has no dead air.
-1304 | @available(macOS 15.0, *)
-1305 | final class MixedAudioRecorder: NSObject, SCStreamOutput {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1398:31: warning: capture of 'self' with non-sendable type 'MixedAudioRecorder' in a '@Sendable' closure
+1304 | /// the samples and closes the gap, so the file has no dead air.
+1305 | @available(macOS 15.0, *)
+1306 | final class MixedAudioRecorder: NSObject, SCStreamOutput {
      |             `- note: class 'MixedAudioRecorder' does not conform to the 'Sendable' protocol
-1306 |     private var stream: SCStream?
-1307 |     private var writer: AVAssetWriter?
+1307 |     private var stream: SCStream?
+1308 |     private var writer: AVAssetWriter?
      :
-1395 |             stream = nil
-1396 |             queue.async {
-1397 |                 guard let w = self.writer, self.started else { done(nil); return }
+1396 |             stream = nil
+1397 |             queue.async {
+1398 |                 guard let w = self.writer, self.started else { done(nil); return }
      |                               `- warning: capture of 'self' with non-sendable type 'MixedAudioRecorder' in a '@Sendable' closure
-1398 |                 self.systemIn?.markAsFinished(); self.micIn?.markAsFinished()
-1399 |                 w.finishWriting { self.mixDown(done) }
+1399 |                 self.systemIn?.markAsFinished(); self.micIn?.markAsFinished()
+1400 |                 w.finishWriting { self.mixDown(done) }
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1431:25: warning: capture of 'reader' with non-sendable type 'AVAssetReader' in a '@Sendable' closure
-1429 |                 let q = DispatchQueue(label: "local.sill.mixdown")
-1430 |                 input.requestMediaDataWhenReady(on: q) {
-1431 |                     _ = reader                                   // keep the reader alive until the mix is done
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1432:25: warning: capture of 'reader' with non-sendable type 'AVAssetReader' in a '@Sendable' closure
+1430 |                 let q = DispatchQueue(label: "local.sill.mixdown")
+1431 |                 input.requestMediaDataWhenReady(on: q) {
+1432 |                     _ = reader                                   // keep the reader alive until the mix is done
      |                         `- warning: capture of 'reader' with non-sendable type 'AVAssetReader' in a '@Sendable' closure
-1432 |                     while input.isReadyForMoreMediaData {
-1433 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
+1433 |                     while input.isReadyForMoreMediaData {
+1434 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/AVFoundation.framework/Headers/AVAssetReader.h:62:12: note: class 'AVAssetReader' does not conform to the 'Sendable' protocol
  60 |  */
@@ -61,7 +56,7 @@ Building for production...
  63 | {
  64 | @private
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:38:1: warning: add '@preconcurrency' to suppress 'Sendable'-related warnings from module 'AVFoundation'
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:38:1: warning: add '@preconcurrency' to suppress 'Sendable'-related warnings from module 'AVFoundation'
   36 | import IOKit.ps
   37 | import EventKit
   38 | import AVFoundation
@@ -69,13 +64,13 @@ Building for production...
   39 | import ScreenCaptureKit
   40 | import LocalAuthentication
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1432:27: warning: capture of 'input' with non-sendable type 'AVAssetWriterInput' in a '@Sendable' closure
-1430 |                 input.requestMediaDataWhenReady(on: q) {
-1431 |                     _ = reader                                   // keep the reader alive until the mix is done
-1432 |                     while input.isReadyForMoreMediaData {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1433:27: warning: capture of 'input' with non-sendable type 'AVAssetWriterInput' in a '@Sendable' closure
+1431 |                 input.requestMediaDataWhenReady(on: q) {
+1432 |                     _ = reader                                   // keep the reader alive until the mix is done
+1433 |                     while input.isReadyForMoreMediaData {
      |                           `- warning: capture of 'input' with non-sendable type 'AVAssetWriterInput' in a '@Sendable' closure
-1433 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
-1434 |                         input.markAsFinished()
+1434 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
+1435 |                         input.markAsFinished()
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/AVFoundation.framework/Headers/AVAssetWriterInput.h:43:12: note: class 'AVAssetWriterInput' does not conform to the 'Sendable' protocol
   41 |  */
@@ -85,13 +80,13 @@ Building for production...
   44 | {
   45 | @private
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1433:36: warning: capture of 'mix' with non-sendable type 'AVAssetReaderAudioMixOutput' in a '@Sendable' closure
-1431 |                     _ = reader                                   // keep the reader alive until the mix is done
-1432 |                     while input.isReadyForMoreMediaData {
-1433 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1434:36: warning: capture of 'mix' with non-sendable type 'AVAssetReaderAudioMixOutput' in a '@Sendable' closure
+1432 |                     _ = reader                                   // keep the reader alive until the mix is done
+1433 |                     while input.isReadyForMoreMediaData {
+1434 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
      |                                    `- warning: capture of 'mix' with non-sendable type 'AVAssetReaderAudioMixOutput' in a '@Sendable' closure
-1434 |                         input.markAsFinished()
-1435 |                         writer.finishWriting {
+1435 |                         input.markAsFinished()
+1436 |                         writer.finishWriting {
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/AVFoundation.framework/Headers/AVAssetReaderOutput.h:300:12: note: class 'AVAssetReaderAudioMixOutput' does not conform to the 'Sendable' protocol
 298 |  */
@@ -101,13 +96,13 @@ Building for production...
 301 | {
 302 | @private
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:1435:25: warning: capture of 'writer' with non-sendable type 'AVAssetWriter' in a '@Sendable' closure
-1433 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
-1434 |                         input.markAsFinished()
-1435 |                         writer.finishWriting {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:1436:25: warning: capture of 'writer' with non-sendable type 'AVAssetWriter' in a '@Sendable' closure
+1434 |                         if let b = mix.copyNextSampleBuffer() { input.append(b); continue }
+1435 |                         input.markAsFinished()
+1436 |                         writer.finishWriting {
      |                         `- warning: capture of 'writer' with non-sendable type 'AVAssetWriter' in a '@Sendable' closure
-1436 |                             if writer.status == .completed { try? FileManager.default.removeItem(at: temp); done(out) }
-1437 |                             else { NSLog("sill: mixdown write failed (\(writer.error?.localizedDescription ?? "?")); keeping the two-track file")
+1437 |                             if writer.status == .completed { try? FileManager.default.removeItem(at: temp); done(out) }
+1438 |                             else { NSLog("sill: mixdown write failed (\(writer.error?.localizedDescription ?? "?")); keeping the two-track file")
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/AVFoundation.framework/Headers/AVAssetWriter.h:65:12: note: class 'AVAssetWriter' does not conform to the 'Sendable' protocol
  63 |  */
@@ -117,21 +112,21 @@ Building for production...
  66 | {
  67 | @private
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:3893:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-3891 |     let h = RestStrip.menuBarHeight(s)
-3892 |     let rect = CGRect(x: s.frame.midX + restWidth / 2 - 30, y: top - s.frame.maxY + h * 0.2, width: 20, height: max(2, h * 0.3))
-3893 |     guard let img = CGWindowListCreateImage(rect, .optionOnScreenBelowWindow, wid, [.nominalResolution]) else { return nil }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:3913:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+3911 |     let h = RestStrip.menuBarHeight(s)
+3912 |     let rect = CGRect(x: s.frame.midX + restWidth / 2 - 30, y: top - s.frame.maxY + h * 0.2, width: 20, height: max(2, h * 0.3))
+3913 |     guard let img = CGWindowListCreateImage(rect, .optionOnScreenBelowWindow, wid, [.nominalResolution]) else { return nil }
      |                     `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-3894 |     let rep = NSBitmapImageRep(cgImage: img)
-3895 |     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, n: CGFloat = 0
+3914 |     let rep = NSBitmapImageRep(cgImage: img)
+3915 |     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, n: CGFloat = 0
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:5672:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5670 |             d.location = json["location"] as? String ?? ""
-5671 |             d.allDay = json["allDay"] as? Bool ?? false
-5672 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5767:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5765 |             d.location = json["location"] as? String ?? ""
+5766 |             d.allDay = json["allDay"] as? Bool ?? false
+5767 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5673 |             d.start = parse("start") ?? now
-5674 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5768 |             d.start = parse("start") ?? now
+5769 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -141,13 +136,13 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:5672:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5670 |             d.location = json["location"] as? String ?? ""
-5671 |             d.allDay = json["allDay"] as? Bool ?? false
-5672 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5767:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5765 |             d.location = json["location"] as? String ?? ""
+5766 |             d.allDay = json["allDay"] as? Bool ?? false
+5767 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5673 |             d.start = parse("start") ?? now
-5674 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5768 |             d.start = parse("start") ?? now
+5769 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -157,21 +152,21 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:6526:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6524 |         if let scr = NSScreen.main {
-6525 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
-6526 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6621:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6619 |         if let scr = NSScreen.main {
+6620 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
+6621 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
      |                         `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6527 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
-6528 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
+6622 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+6623 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
 
-/Users/chauphan/Developer/sill/sill/Sources/sill/main.swift:6532:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6530 |         }
-6531 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
-6532 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6627:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6625 |         }
+6626 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
+6627 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
      |                     `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6533 |             let rep = NSBitmapImageRep(cgImage: cg)
-6534 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
-[5/7] Write Objects.LinkFileList
-[6/7] Linking sill
-Build of product 'sill' complete! (23.76s)
+6628 |             let rep = NSBitmapImageRep(cgImage: cg)
+6629 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+[3/5] Write Objects.LinkFileList
+[4/5] Linking sill
+Build of product 'sill' complete! (22.70s)

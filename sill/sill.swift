@@ -2192,6 +2192,25 @@ final class RecorderView: NSView {
 
 
 
+/// Recense's menu-bar mark (copied from Recense's `menuBarIcon()`): a rounded frame holding two lines of subtitle.
+func recenseIcon() -> NSImage {
+    let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+        let frame = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 3.5, width: 15, height: 11), xRadius: 3.25, yRadius: 3.25)
+        frame.lineWidth = 1.3
+        NSColor.black.setStroke(); frame.stroke()
+        for (y, w, a) in [(8.6, 8.0, 1.0), (6.2, 4.5, 0.45)] as [(CGFloat, CGFloat, CGFloat)] {
+            let l = NSBezierPath()
+            l.move(to: NSPoint(x: 9 - w / 2, y: y)); l.line(to: NSPoint(x: 9 + w / 2, y: y))
+            l.lineWidth = 1.3; l.lineCapStyle = .round
+            NSColor.black.withAlphaComponent(a).setStroke(); l.stroke()
+        }
+        return true
+    }
+    img.isTemplate = true
+    img.accessibilityDescription = "Recense"
+    return img
+}
+
 // MARK: - Bitwarden
 //
 // Vault search inside Sill, through Bitwarden's official command-line tool (`bw`, installed with Homebrew).
@@ -4073,7 +4092,10 @@ final class EssentialsView: ClickView {
     let recenseSheet = NSView()                 // Recense's viewer, embedded; opened from the audio menu
     let recenseClose = NSButton()
     lazy var recenseWeb: WKWebView = {
-        let v = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let cfg = WKWebViewConfiguration()
+        // Recense's `.drop { display: grid }` beats its own `hidden` attribute, so the drop veil would never go away.
+        cfg.userContentController.addUserScript(WKUserScript(source: "document.head.insertAdjacentHTML('beforeend','<style>[hidden]{display:none!important}</style>')", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        let v = WKWebView(frame: .zero, configuration: cfg)
         v.appearance = NSAppearance(named: .darkAqua)     // Recense picks its dark tokens from the colour scheme
         v.setValue(false, forKey: "drawsBackground")
         v.underPageBackgroundColor = recenseFill
@@ -4157,7 +4179,7 @@ final class EssentialsView: ClickView {
         audioSheet.addSubview(audioClose)
         chrome.addSubview(recorderTray)
         recenseOpen.isBordered = false
-        recenseOpen.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Recense")
+        recenseOpen.image = recenseIcon()
         recenseOpen.contentTintColor = .white
         recenseOpen.toolTip = "Recense"
         recenseOpen.target = self; recenseOpen.action = #selector(openRecense)
@@ -4279,9 +4301,11 @@ final class EssentialsView: ClickView {
         let aw = audioSheet.frame.width, ah = audioSheet.frame.height
         audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
         recenseOpen.frame = NSRect(x: aw - 56, y: ah - 30, width: 20, height: 20)
-        recenseSheet.frame = vaultSheet.frame
-        recenseClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
-        if recenseWeb.superview != nil { recenseWeb.frame = NSRect(x: 0, y: 0, width: aw, height: ah - 36) }
+        // The page fills the whole surface in Recense's colour; the viewer itself sits where the vault would.
+        recenseSheet.frame = bounds
+        let rv = vaultSheet.frame
+        recenseClose.frame = NSRect(x: rv.maxX - 30, y: rv.maxY - 30, width: 20, height: 20)
+        recenseWeb.frame = NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36)
         recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
         r2.frame = NSRect(x: 40, y: 30, width: w - 80, height: top - 130)
         home.frame = NSRect(x: 0, y: 2, width: w, height: 44)
@@ -4303,10 +4327,13 @@ final class EssentialsView: ClickView {
             if !audioSheet.isHidden { showAudio(false) }
             if recenseWeb.superview == nil {
                 recenseSheet.addSubview(recenseWeb, positioned: .below, relativeTo: recenseClose)
-                let f = recenseSheet.frame
-                recenseWeb.frame = NSRect(x: 0, y: 0, width: f.width, height: f.height - 36)
+                let rv = vaultSheet.frame
+                recenseWeb.frame = NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36)
+                // Read as UTF-8 ourselves: the page declares no charset, and WebKit would guess Latin-1.
                 let u = Self.recenseURL
-                recenseWeb.loadFileURL(u, allowingReadAccessTo: u.deletingLastPathComponent().deletingLastPathComponent())
+                if let html = try? String(contentsOf: u, encoding: .utf8) {
+                    recenseWeb.loadHTMLString(html, baseURL: u.deletingLastPathComponent())
+                }
             }
             recenseSheet.isHidden = false
             recenseSheet.alphaValue = 0
