@@ -40,6 +40,7 @@ import ScreenCaptureKit
 import LocalAuthentication
 import CoreAudio
 import AudioToolbox
+import WebKit
 import Speech
 
 // MARK: - Settings (edit these)
@@ -4068,6 +4069,19 @@ final class EssentialsView: ClickView {
     let vaultClose = NSButton()
     let audioSheet = NSVisualEffectView()
     let audioClose = NSButton()
+    let recenseOpen = NSButton()
+    let recenseSheet = NSView()                 // Recense's viewer, embedded; opened from the audio menu
+    let recenseClose = NSButton()
+    lazy var recenseWeb: WKWebView = {
+        let v = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        v.appearance = NSAppearance(named: .darkAqua)     // Recense picks its dark tokens from the colour scheme
+        v.setValue(false, forKey: "drawsBackground")
+        v.underPageBackgroundColor = recenseFill
+        return v
+    }()
+    /// Recense's dark `--bg` (viewer/read-along.html), so the page and Sill's fill are one colour.
+    let recenseFill = NSColor(srgbRed: 0x11/255.0, green: 0x16/255.0, blue: 0x15/255.0, alpha: 1)
+    static let recenseURL = URL(fileURLWithPath: NSHomeDirectory() + "/Developer/recense/viewer/read-along.html")
     let r2 = R2Tray(frame: .zero)
     private var foldWork: [Int: DispatchWorkItem] = [:]
     var onKeyboard: ((NSView?) -> Void)?
@@ -4142,9 +4156,27 @@ final class EssentialsView: ClickView {
         audioClose.target = self; audioClose.action = #selector(closeAudio)
         audioSheet.addSubview(audioClose)
         chrome.addSubview(recorderTray)
+        recenseOpen.isBordered = false
+        recenseOpen.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Recense")
+        recenseOpen.contentTintColor = .white
+        recenseOpen.toolTip = "Recense"
+        recenseOpen.target = self; recenseOpen.action = #selector(openRecense)
+        audioSheet.addSubview(recenseOpen)
+        recenseSheet.wantsLayer = true
+        recenseSheet.layer?.backgroundColor = recenseFill.cgColor
+        recenseSheet.layer?.cornerRadius = 18
+        recenseSheet.layer?.masksToBounds = true
+        recenseSheet.isHidden = true
+        recenseClose.isBordered = false
+        recenseClose.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        recenseClose.contentTintColor = .white
+        recenseClose.target = self; recenseClose.action = #selector(closeRecense)
+        recenseSheet.addSubview(recenseClose)
+        chrome.addSubview(recenseSheet)
         leftBar.toolTip = "Audio: click to pin the recorder open · two fingers up / down for volume"
         leftBar.onClick = { [weak self] in
             guard let self = self else { return }
+            if !self.recenseSheet.isHidden { self.showRecense(false); return }
             self.showAudio(self.audioSheet.isHidden)
         }
         leftBar.onScrollY = { [weak self] dy in
@@ -4246,6 +4278,10 @@ final class EssentialsView: ClickView {
         audioSheet.frame = vaultSheet.frame
         let aw = audioSheet.frame.width, ah = audioSheet.frame.height
         audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
+        recenseOpen.frame = NSRect(x: aw - 56, y: ah - 30, width: 20, height: 20)
+        recenseSheet.frame = vaultSheet.frame
+        recenseClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
+        if recenseWeb.superview != nil { recenseWeb.frame = NSRect(x: 0, y: 0, width: aw, height: ah - 36) }
         recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
         r2.frame = NSRect(x: 40, y: 30, width: w - 80, height: top - 130)
         home.frame = NSRect(x: 0, y: 2, width: w, height: 44)
@@ -4257,6 +4293,38 @@ final class EssentialsView: ClickView {
     // MARK: Edges
 
     @objc func closeAudio() { showAudio(false) }
+    @objc func openRecense() { showRecense(true) }
+    @objc func closeRecense() { showRecense(false) }
+
+    /// Recense as its own page, opened from the left bar's menu the way the right bar opens the vault.
+    func showRecense(_ on: Bool) {
+        leftBar.active = on || recorder.state == .recording || recorder.state == .paused
+        if on {
+            if !audioSheet.isHidden { showAudio(false) }
+            if recenseWeb.superview == nil {
+                recenseSheet.addSubview(recenseWeb, positioned: .below, relativeTo: recenseClose)
+                let f = recenseSheet.frame
+                recenseWeb.frame = NSRect(x: 0, y: 0, width: f.width, height: f.height - 36)
+                let u = Self.recenseURL
+                recenseWeb.loadFileURL(u, allowingReadAccessTo: u.deletingLastPathComponent().deletingLastPathComponent())
+            }
+            recenseSheet.isHidden = false
+            recenseSheet.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                recenseSheet.animator().alphaValue = 1
+                calendar.animator().alphaValue = 0.15
+                horizon.animator().alphaValue = 0.15
+            }
+        } else {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.22
+                recenseSheet.animator().alphaValue = 0
+                calendar.animator().alphaValue = 1
+                horizon.animator().alphaValue = 1
+            }, completionHandler: { [weak self] in if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true } })
+        }
+    }
 
     /// The audio menu, mirroring the vault: fades in over a dimmed calendar; ✕ or the left bar closes it.
     func showAudio(_ on: Bool) {
