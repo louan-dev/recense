@@ -1059,7 +1059,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         // Inside Sill both bars sit out at the edges, as Sill's own do: the stroke near the foot, the vertical bar
         // at the right edge.
         cfg.userContentController.addUserScript(WKUserScript(source: """
-            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:\(Int(RecenseHomeBar.line))px} .p-ctrl{right:-10px;bottom:0}</style>')
+            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .p-ctrl{right:-10px;bottom:var(--foot,0px)}</style>')
             """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         setValue(false, forKey: "drawsBackground")
         navigationDelegate = self
@@ -1320,19 +1320,18 @@ final class Overlay: NSObject, NSWindowDelegate {
     var inStrip = false
     func stripRoom(_ on: Bool) {
         guard inStrip else { return }
+        // Open (hovered, swiped, held): the strip stretches down so what hangs under the stroke (the time you
+        // landed on, the ruler's marks) isn't cut off. Nothing on it moves, so a hold or swipe keeps its place.
+        let extra: CGFloat = on ? 60 : 0
         var f = panel.frame
-        let h: CGFloat = on ? 320 : 120
+        let h = 120 + extra
         guard f.height != h else { return }
-        let delta = h - f.height                  // how far the foot (and the bar on it) moves down
         f.origin.y = f.maxY - h; f.size.height = h
-        panel.setFrame(f, display: true)          // not animated: an animated window resize holds the main thread
-        // The bar sits on the window's foot, so it moves with it: move the pointer by as much, so a hold or a drag on
-        // the time ruler stays exactly where it was on the bar (CG's coordinates run downward).
-        if let ev = CGEvent(source: nil) {
-            let at = ev.location
-            CGWarpMouseCursorPosition(CGPoint(x: at.x, y: at.y + delta))
-            CGAssociateMouseAndMouseCursorPosition(1)
-        }
+        areaFoot.constant = -extra
+        // The bar's page reaches the window's foot (room for what hangs under the stroke); the stroke is lifted by
+        // as much inside it, so it stays put.
+        homeBar.evaluateJavaScript("document.documentElement.style.setProperty('--foot','\(Int(extra))px')")
+        panel.setFrame(f, display: true)
     }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
@@ -1354,6 +1353,10 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
     var hostedRoot: NSView?
     private var panelWasVisible = false
+    // The subtitles and the bar keep their place on screen while the strip grows below them (stripRoom).
+    lazy var areaFoot = area.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
+    lazy var barFoot = homeBar.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
+
     func host(in container: NSView?, frame: NSRect = .zero) {
         if let c = container {
             guard hostedRoot == nil, let root = panel.contentView else { return }
@@ -1441,7 +1444,7 @@ final class Overlay: NSObject, NSWindowDelegate {
             area.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
             area.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             area.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            area.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            areaFoot,
             editor.topAnchor.constraint(equalTo: area.topAnchor),
             editor.leadingAnchor.constraint(equalTo: area.leadingAnchor),
             editor.trailingAnchor.constraint(equalTo: area.trailingAnchor),
@@ -1454,7 +1457,7 @@ final class Overlay: NSObject, NSWindowDelegate {
             // where the bar actually is
             homeBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             homeBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            homeBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            barFoot,
             homeBar.topAnchor.constraint(equalTo: area.topAnchor),
         ])
         panel.contentView = root
