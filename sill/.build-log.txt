@@ -1,32 +1,12 @@
-Fetching https://github.com/migueldeicaza/SwiftTerm from cache
-Fetching https://github.com/apple/swift-argument-parser from cache
-Fetched https://github.com/apple/swift-argument-parser from cache (0.82s)
-Fetched https://github.com/migueldeicaza/SwiftTerm from cache (0.83s)
-Computing version for https://github.com/migueldeicaza/SwiftTerm
-Computed https://github.com/migueldeicaza/SwiftTerm at 1.20.0 (1.83s)
-Computed https://github.com/migueldeicaza/SwiftTerm at 1.20.0 (0.00s)
-Computing version for https://github.com/apple/swift-argument-parser
-Computed https://github.com/apple/swift-argument-parser at 1.8.2 (0.51s)
-Creating working copy for https://github.com/migueldeicaza/SwiftTerm
-Working copy of https://github.com/migueldeicaza/SwiftTerm resolved at 1.20.0
-Creating working copy for https://github.com/apple/swift-argument-parser
-Working copy of https://github.com/apple/swift-argument-parser resolved at 1.8.2
-[0/4] Write sources
-[1/4] Write swift-version--58304C5D6DBC2206.txt
-[3/5] Compiling SwiftTermBuildInfoGenerator BuildInfoGenerator.swift
-[3/5] Write Objects.LinkFileList
-[4/5] Linking SwiftTermBuildInfoGenerator-tool
+[0/3] Write swift-version--58304C5D6DBC2206.txt
+[1/2] Linking SwiftTermBuildInfoGenerator-tool
+[0/1] Planning build
 Building for production...
-[0/10] Copying Shaders.metal
-[1/10] Write sources
-[3/10] Write swift-version--58304C5D6DBC2206.txt
-[5/11] Compiling SwiftTermBuildInfoGenerator BuildInfoGenerator.swift
-[5/11] Write Objects.LinkFileList
-[6/11] Linking SwiftTermBuildInfoGenerator-tool
-[7/11] Generate SwiftTerm build information
-[8/11] Write sources
-[10/12] Compiling SwiftTerm AppleTerminalView.swift
-[11/13] Compiling sill main.swift
+[0/5] Write swift-version--58304C5D6DBC2206.txt
+[1/4] Linking SwiftTermBuildInfoGenerator-tool
+[2/4] Generate SwiftTerm build information
+[3/5] Write sources
+[5/6] Compiling sill main.swift
 /Users/chauphan/Developer/sill/.claude/worktrees/cool-antonelli-c894a6/sill/Sources/sill/main.swift:539:13: warning: initialization of immutable value 'size' was never used; consider replacing with assignment to '_' or removing it
  537 |         guard t != lastTime else { return }
  538 |         lastTime = t
@@ -193,13 +173,13 @@ Building for production...
 6711 |             let rep = NSBitmapImageRep(cgImage: cg)
 6712 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/cool-antonelli-c894a6/sill/Sources/sill/recense.swift:5387:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5385 |     func menuNeedsUpdate(_ m: NSMenu) {
-5386 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5387 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/cool-antonelli-c894a6/sill/Sources/sill/recense.swift:5389:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5387 |     func menuNeedsUpdate(_ m: NSMenu) {
+5388 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5389 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5388 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5389 |         bookmarksMenu.removeAllItems()
-[11/13] Write Objects.LinkFileList
-[12/13] Linking sill
-Build of product 'sill' complete! (114.67s)
+5390 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5391 |         bookmarksMenu.removeAllItems()
+[5/7] Write Objects.LinkFileList
+[6/7] Linking sill
+Build of product 'sill' complete! (85.77s)

@@ -2667,7 +2667,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     func attach(_ f: URL) -> Bool {
         guard let af = try? AVAudioFile(forReading: f) else {
-            log("can't decode \(f.lastPathComponent)")
+            let head = (try? FileHandle(forReadingFrom: f))?.readData(ofLength: 16) ?? Data()
+            let size = (try? f.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? -1
+            log("can't decode \(f.lastPathComponent) (\(size) bytes, starts \(head.map { String(format: "%02x", $0) }.joined()))")
             if f.path.hasPrefix(cacheDir.path) { try? FileManager.default.removeItem(at: f) }
             return false
         }
