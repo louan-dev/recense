@@ -182,16 +182,16 @@
   };
   // the tray's settings (Gallery's prefs.eq / key / space); the notation is kept in this page, as Gallery keeps it
   const KEY_NOTATION = "recense.keyNotation";
-  const sound = { eq: { low: 0, mid: 0, high: 0 }, key: 0, keyNotation: 0, space: { mix: 0, on: false, room: "room" }, get nativeLang() { return st.lang; } };
+  const sound = { eq: { low: 0, mid: 0, high: 0 }, key: 0, vox: 0, keyNotation: 0, space: { mix: 0, on: false, room: "room" }, get nativeLang() { return st.lang; } };
   try {
     const n = parseInt(localStorage.getItem(KEY_NOTATION), 10);
     if (Number.isInteger(n) && n >= 0 && n < GalleryKey.STATES) sound.keyNotation = n;
   } catch (e) {}
   let soundNo = null; // why the followed player can't take the sound (main.swift), or null
-  const plain = () => !sound.eq.low && !sound.eq.mid && !sound.eq.high && !sound.key && !(sound.space.on && sound.space.mix);
+  const plain = () => !sound.eq.low && !sound.eq.mid && !sound.eq.high && !sound.key && !sound.vox && !(sound.space.on && sound.space.mix);
   const sendSound = () => {
     if (soundNo) return false;
-    post({ k: "fx", eq: { ...sound.eq }, key: sound.key, mix: sound.space.on ? sound.space.mix : 0, room: sound.space.room });
+    post({ k: "fx", eq: { ...sound.eq }, key: sound.key, mix: sound.space.on ? sound.space.mix : 0, room: sound.space.room, vox: sound.vox || 0 });
     return true;
   };
   const vbar = Homebar.vertical({
@@ -199,7 +199,7 @@
     shaped: () => Math.abs(st.size - 1) > 1e-6 || st.prominence != null || !plain(),
     tap: () => (tray.isOpen() ? tray.hide() : tray.show(5000)),
     tare: () => {
-      const snap = { size: st.size, prominence: st.prominence, eq: { ...sound.eq }, key: sound.key, space: { ...sound.space } };
+      const snap = { size: st.size, prominence: st.prominence, eq: { ...sound.eq }, key: sound.key, vox: sound.vox, space: { ...sound.space } };
       if (Math.abs(st.size - 1) > 1e-6) setSize(1);
       if (st.prominence != null) setProm(null);
       if (!plain()) tray.reset();
@@ -221,6 +221,12 @@
     state: sound,
     vbar,
     rooms: GalleryRoom.ROOMS,
+    // the chord detector (SPEC 40): Recense's own chain listens (notes 32); asking keeps it running
+    chroma: () => {
+      post({ k: "chroma?" });
+      return st.chroma;
+    },
+    chords: (t) => post({ k: "chord", t: t || null }),
     keyName: () => st.key || "",
     notation: (n) => {
       try {
@@ -231,6 +237,7 @@
       band: sendSound,
       key: sendSound,
       space: sendSound,
+      vox: (a) => ((sound.vox = a), sendSound()), // the extractor, in Recense's own chain (notes 32)
       live: () => true,
       why: (what) => soundNo && what + ": " + soundNo,
     },
@@ -331,6 +338,7 @@
 
   // ----- what main.swift says -----
   window.Recense = {
+    chroma: (c) => (st.chroma = Array.isArray(c) && c.length === 12 ? c : null),
     report: (r) => {
       const was = st.paused;
       st.time = r.time;

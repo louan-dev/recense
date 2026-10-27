@@ -1508,6 +1508,12 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// Why the followed player can't take the sound tray's EQ, Key and Reverb (SPEC 54), or nil: the page's tray says so.
     var soundNo: String? { didSet { if soundNo != oldValue { homeBar.call("sound", soundNo ?? NSNull()) } } }
     let toast = Toast()
+    /// The chord detector's chord, directly above the lines (SPEC 40)
+    let chord = PassLabel(labelWithString: "")
+    func showChord(_ t: String?) {
+        chord.stringValue = t ?? ""
+        chord.isHidden = (t ?? "").isEmpty
+    }
     var modeWork: DispatchWorkItem?
     let editor = LineEditor()
     var onEdit: ((_ clicked: Bool) -> Void)?             // correct the line on screen (a double-click has played or paused first)
@@ -1631,7 +1637,9 @@ final class Overlay: NSObject, NSWindowDelegate {
         toast.alphaValue = 0
 
         panel.contentView = root               // first: areaFoot and barFoot anchor to the panel's content view
-        for v in [video, area, editor, status, skipAd, homeBar, modeCtl, langCtl, toast] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
+        chord.font = .systemFont(ofSize: 15, weight: .semibold); chord.textColor = NSColor(white: 1, alpha: 0.85)
+        chord.alignment = .center; chord.isHidden = true
+        for v in [video, area, editor, status, skipAd, homeBar, modeCtl, langCtl, toast, chord] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
         words.translatesAutoresizingMaskIntoConstraints = false; area.addSubview(words)
         NSLayoutConstraint.activate([
             status.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
@@ -1643,6 +1651,8 @@ final class Overlay: NSObject, NSWindowDelegate {
             modeCtl.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             langCtl.centerYAnchor.constraint(equalTo: modeCtl.centerYAnchor),
             langCtl.trailingAnchor.constraint(equalTo: modeCtl.leadingAnchor, constant: -8),
+            chord.topAnchor.constraint(equalTo: area.topAnchor, constant: 2),
+            chord.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             toast.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
             toast.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             toast.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -6143,6 +6153,8 @@ final class NativeSources {
             case "clear": self.clearTranscript()
             case "share": self.shareSource()
             case "fx": self.setSound(b)
+            case "chroma?": self.wantChords()          // the tray's chord detector asks (4 a second while it is on)
+            case "chord": self.overlay.showChord(b["t"] as? String)
             default: break
             }
         }
@@ -6644,11 +6656,33 @@ final class NativeSources {
     }
     // ----- the sound tray (SPEC 54, note 30): the tray is Recense's own controller. A Firefox page reshapes its own
     // sound through the bridge; any other player (and a page the bridge can't take) is reshaped natively by SoundEngine.
+    /// The chord detector (SPEC 40 in Recense, notes 32): while the tray asks, the native chain runs (at unity if the
+    /// sound is otherwise flat) and its chroma goes to the page; a second without asking and it stops.
+    var chordsAsked = Date.distantPast
+    var chordsT: Timer?
+    func wantChords() {
+        chordsAsked = Date()
+        if sound["chords"] == nil {
+            sound["chords"] = 1.0; soundV += 1; routeSound()
+        }
+        if let c = soundEngine.chroma { overlay.homeBar.call("chroma", c) }
+        guard chordsT == nil else { return }
+        chordsT = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self else { t.invalidate(); return }
+                guard Date().timeIntervalSince(self.chordsAsked) > 1 else { return }
+                t.invalidate(); self.chordsT = nil
+                self.sound["chords"] = nil; self.soundV += 1; self.routeSound()
+                self.overlay.showChord(nil)
+            }
+        }
+    }
     func setSound(_ b: [String: Any]) {
         let num = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0 }
         let eq = b["eq"] as? [String: Any] ?? [:]
         sound = ["eq": ["low": num(eq["low"]), "mid": num(eq["mid"]), "high": num(eq["high"])], "key": num(b["key"]),
-                 "mix": num(b["mix"]), "room": b["room"] as? String ?? "room"]
+                 "mix": num(b["mix"]), "room": b["room"] as? String ?? "room", "vox": num(b["vox"])]
+        if chordsT != nil { sound["chords"] = 1.0 }
         soundV += 1
         fxKeySaid = false
         pendingCmds.removeAll { $0["op"] as? String == "fx" }
@@ -6661,7 +6695,9 @@ final class NativeSources {
         let ids: [String]
         switch pos.source {
         case "browser":
-            guard let no = fxNo, no != "gallery" else { return nil }   // the page takes it, or Gallery's own chain obeys
+            // Recense's own sound (notes 30): Firefox's output is taken and shaped here, Gallery's page or not; the page's
+            // chain (the bridge, or Gallery's) is only the fallback where the native one can't run
+            guard SoundEngine.available, soundEngine.state != .denied || fxNo != nil else { return nil }
             ids = ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
         case "quicktime": ids = ["com.apple.QuickTimePlayerX"]
         case "music": ids = ["com.apple.Music"]
@@ -6672,12 +6708,26 @@ final class NativeSources {
     }
     /// Engages, retunes or drops the native chain when the followed app or the tray's sound changes (cheap otherwise).
     func routeSound() {
+        if soundEngine.onState == nil {
+            // the native chain came on or went (denied, failed): the page takes over or lets go, at once
+            soundEngine.onState = { [weak self] _ in
+                guard let self else { return }
+                self.soundV += 1
+                self.pendingCmds.removeAll { $0["op"] as? String == "fx" }
+                if self.pos.source == "browser" { self.push(self.soundCmd()) }
+            }
+        }
         let p = nativeSoundPID
         guard p != nativeLast.pid || soundV != nativeLast.v else { return }
         nativeLast = (p, soundV)
         soundEngine.run(pid: p, sound: sound)
     }
-    func soundCmd() -> [String: Any] { sound.merging(["op": "fx", "v": soundV]) { a, _ in a } }
+    /// What the page is asked to do: nothing while the native chain carries the sound (never shaped twice), else the tray's.
+    func soundCmd() -> [String: Any] {
+        let native = soundEngine.state == .on || (nativeSoundPID != nil && soundEngine.state == .off)
+        let s: [String: Any] = native ? ["eq": ["low": 0.0, "mid": 0.0, "high": 0.0], "key": 0.0, "mix": 0.0, "room": sound["room"] ?? "room", "vox": 0.0] : sound
+        return s.merging(["op": "fx", "v": soundV]) { a, _ in a }
+    }
     /// The commands for a page's report, with the sound when the page has another than the tray's.
     func soundFor(_ j: [String: Any], _ cmds: [[String: Any]]) -> [[String: Any]] {
         fxNo = j["fxNo"] as? String
@@ -6688,8 +6738,10 @@ final class NativeSources {
     /// Why the tray's sound can't reach the followed player, in the tray's words ("EQ: …"), or nil.
     var soundBlock: String? {
         guard browserMode else { return nil }
-        if pos.source == "browser", fxNo == "gallery" { return "this Gallery is older than the tray's control of it: reload Gallery" }
-        guard nativeSoundPID != nil else { return nil }
+        guard nativeSoundPID != nil else {
+            if pos.source == "browser", fxNo == "gallery" { return "this Gallery is older than the tray's control of it: reload Gallery" }
+            return nil
+        }
         switch soundEngine.state {
         case .unsupported: return "reshaping this player's sound needs macOS 14.2 or later"
         case .denied: return "allow Sill under Privacy & Security › Audio Capture to reshape this player's sound"

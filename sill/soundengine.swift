@@ -2,6 +2,7 @@ import Cocoa
 import CoreAudio
 import AudioToolbox
 import AVFoundation
+import Accelerate
 
 /// Note 30: Recense's own sound for players its bridge can't reshape (QuickTime, Music, Safari, Chrome, a Firefox page
 /// whose file can't be taken). A Core Audio process tap takes the followed app's output (muting the original while
@@ -23,7 +24,7 @@ final class SoundEngine {
     static func flat(_ s: [String: Any]) -> Bool {
         let eq = s["eq"] as? [String: Any] ?? [:]
         let n = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0 }
-        return n(eq["low"]) == 0 && n(eq["mid"]) == 0 && n(eq["high"]) == 0 && n(s["key"]) == 0 && n(s["mix"]) == 0
+        return n(eq["low"]) == 0 && n(eq["mid"]) == 0 && n(eq["high"]) == 0 && n(s["key"]) == 0 && n(s["mix"]) == 0 && n(s["vox"]) == 0 && n(s["chords"]) == 0
     }
 
     /// Follow this process (nil stops) with this sound; a flat sound stops too, so the original is never muted for nothing.
@@ -40,6 +41,12 @@ final class SoundEngine {
         t.apply(s)
         impl = t
         set(.on)
+    }
+
+    /// The chord detector's 12-bin chroma of what the chain plays (nil: not running), as keylabel.js chromaOfSpectrum.
+    var chroma: [Double]? {
+        if #available(macOS 14.2, *) { return (impl as? SoundTap)?.chroma() }
+        return nil
     }
 
     func stop() {
@@ -97,6 +104,7 @@ private final class SoundTap {
         componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0))
     private var ring: Ring?
     private var scratch: UnsafeMutablePointer<Float>?
+    private var vox: VoxCut?
     private var room: String?
     private var watchdog: Timer?
     private var ramp: Timer?
@@ -150,9 +158,12 @@ private final class SoundTap {
         let tmp = UnsafeMutablePointer<Float>.allocate(capacity: maxFrames * ch)
         tmp.initialize(repeating: 0, count: maxFrames * ch)
         scratch = tmp
+        let vox = VoxCut(sampleRate: asbd.mSampleRate)
+        self.vox = vox
         let src = AVAudioSourceNode(format: fmt) { _, _, frames, abl -> OSStatus in
             let out = UnsafeMutableAudioBufferListPointer(abl), n = min(Int(frames), maxFrames)
             ring.read(tmp, n * ch)
+            vox.process(tmp, n, ch)   // the extractor first: it works on the recording's own stereo
             for (c, b) in out.enumerated() where c < ch {   // deinterleave
                 let d = b.mData!.assumingMemoryBound(to: Float.self)
                 for i in 0..<n { d[i] = tmp[i * ch + c] }
@@ -174,6 +185,13 @@ private final class SoundTap {
         engine.connect(pitch, to: reverb, format: fmt)
         engine.connect(reverb, to: limiter, format: fmt)
         engine.connect(limiter, to: engine.mainMixerNode, format: fmt)
+        // the chord detector listens to what is played (8192-point spectrum, as Gallery's analyser), off the render thread
+        let sr = asbd.mSampleRate
+        limiter.installTap(onBus: 0, bufferSize: 8192, format: fmt) { [weak self] buf, _ in
+            guard let self, let d = buf.floatChannelData, buf.frameLength > 0 else { return }
+            let c = SoundTap.chromaOf(d, Int(buf.frameLength), Int(buf.format.channelCount), sr)
+            os_unfair_lock_lock(&self.chromaLock); self.lastChroma = c; os_unfair_lock_unlock(&self.chromaLock)
+        }
         do { try engine.start() } catch { return fail(.failed) }
 
         alive = true
@@ -185,6 +203,30 @@ private final class SoundTap {
         return true
     }
 
+    private var chromaLock = os_unfair_lock()
+    private var lastChroma: [Double]?
+    func chroma() -> [Double]? { os_unfair_lock_lock(&chromaLock); defer { os_unfair_lock_unlock(&chromaLock) }; return lastChroma }
+
+    /// 12 pitch classes from a Hann-windowed spectrum (55 Hz – 2 kHz, each bin's magnitude to its nearest note, A = 9).
+    static func chromaOf(_ d: UnsafePointer<UnsafeMutablePointer<Float>>, _ n: Int, _ ch: Int, _ sr: Double) -> [Double] {
+        var N = 1; while N * 2 <= min(n, 8192) { N *= 2 }
+        var x = [Float](repeating: 0, count: N), zero = [Float](repeating: 0, count: N)
+        for i in 0..<N { var v: Float = 0; for c in 0..<ch { v += d[c][n - N + i] }; x[i] = v / Float(ch) * Float(0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(N))) }
+        var re = [Float](repeating: 0, count: N), im = [Float](repeating: 0, count: N)
+        guard let setup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(N), .FORWARD) else { return Array(repeating: 0, count: 12) }
+        vDSP_DFT_Execute(setup, x, zero, &re, &im)
+        vDSP_DFT_DestroySetup(setup)
+        var chroma = [Double](repeating: 0, count: 12)
+        let lo = max(1, Int(ceil(55 * Double(N) / sr))), hi = min(N / 2 - 1, Int(2000 * Double(N) / sr))
+        guard lo <= hi else { return chroma }
+        for b in lo...hi {
+            let m = Double((re[b] * re[b] + im[b] * im[b]).squareRoot())
+            let pc = (Int((12 * log2(Double(b) * sr / Double(N) / 440)).rounded()) + 9) % 12
+            chroma[(pc + 12) % 12] += m
+        }
+        return chroma
+    }
+
     /// The tray's values, glided over ~60 ms so a drag never clicks.
     func apply(_ s: [String: Any]) {
         let n = { (x: Any?) in Float((x as? NSNumber)?.doubleValue ?? 0) }
@@ -193,6 +235,7 @@ private final class SoundTap {
         // trim: take back the highest boost (shelves and the peak barely overlap at Q 0.7), so a boost never clips
         let trim = -max(0, g.max() ?? 0, g[0] > 0 && g[1] > 0 ? (g[0] + g[1]) * 0.6 : 0, g[1] > 0 && g[2] > 0 ? (g[1] + g[2]) * 0.6 : 0)
         target = g + [trim]
+        vox?.amount = max(-1, min(1, n(s["vox"])))   // the extractor: −1 the vocals out, 1 the vocals alone
         pitch.pitch = max(-2400, min(2400, n(s["key"]) * 100))   // Key in semitones
         pitch.bypass = n(s["key"]) == 0
         let room = s["room"] as? String ?? "room"
@@ -220,6 +263,8 @@ private final class SoundTap {
         alive = false
         watchdog?.invalidate(); watchdog = nil
         ramp?.invalidate(); ramp = nil
+        limiter.removeTap(onBus: 0)
+        lastChroma = nil
         engine.stop()
         if let io = ioProc { AudioDeviceStop(aggID, io); AudioDeviceDestroyIOProcID(aggID, io); ioProc = nil }
         if aggID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggID); aggID = AudioObjectID(kAudioObjectUnknown) }
@@ -259,4 +304,100 @@ private final class SoundTap {
 
     private func fail(_ s: SoundEngine.State) -> Bool { why = s; stop(); return false }
     deinit { stop(); scratch?.deallocate() }
+}
+
+
+/// The extractor (SPEC 30; notes 32: Recense's tray has all of Gallery's), Gallery's Center Cut (player-key.js "pdc-vox")
+/// ported: each 4096-frame window of both channels goes to the frequency domain (one complex transform carries the two),
+/// and in every bin the part the channels share, the centre where the voice almost always is, is estimated (their sum,
+/// scaled down by how much they differ there). Below 0 it comes out of both channels, the lowest notes (bass, kick) left
+/// in: an instrumental. Above 0 it is kept alone, without those lows: the voice. Hann in and out, 4 overlapping. At 0
+/// nothing is done (no latency); it starts afresh when turned on. Render-thread safe: everything is allocated up front.
+final class VoxCut {
+    static let N = 4096, HOP = 1024, HALF = 2048, LAT = 4096 - 1024
+    /// −1 … 1, written on the main thread, read on the render thread
+    var amount: Float = 0
+    private var running = false
+    private let fwd: vDSP_DFT_Setup, inv: vDSP_DFT_Setup
+    private let win, keepLow, voice: UnsafeMutablePointer<Float>
+    private let inL, inR, acL, acR, oL, oR, re, im, ore, oim: UnsafeMutablePointer<Float>
+    private var rover = VoxCut.LAT
+
+    init(sampleRate sr: Double) {
+        let N = VoxCut.N
+        fwd = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(N), .FORWARD)!
+        inv = vDSP_DFT_zop_CreateSetup(fwd, vDSP_Length(N), .INVERSE)!
+        func buf(_ n: Int) -> UnsafeMutablePointer<Float> { let p = UnsafeMutablePointer<Float>.allocate(capacity: n); p.initialize(repeating: 0, count: n); return p }
+        win = buf(N); keepLow = buf(VoxCut.HALF + 1); voice = buf(VoxCut.HALF + 1)
+        inL = buf(N); inR = buf(N); acL = buf(N); acR = buf(N); oL = buf(VoxCut.HOP); oR = buf(VoxCut.HOP)
+        re = buf(N); im = buf(N); ore = buf(N); oim = buf(N)
+        for i in 0..<N { win[i] = Float(0.5 - 0.5 * cos(2 * Double.pi * Double(i) / Double(N))) }
+        // a raised-cosine step from 0 at f0 to 1 at f1
+        func ramp(_ f: Double, _ f0: Double, _ f1: Double) -> Float { f <= f0 ? 0 : f >= f1 ? 1 : Float(0.5 - 0.5 * cos(Double.pi * (f - f0) / (f1 - f0))) }
+        for k in 0...VoxCut.HALF {
+            let f = Double(k) * sr / Double(N)
+            keepLow[k] = ramp(f, 90, 180)   // how much of the centre comes out: none below 90 Hz, all above 180
+            voice[k] = ramp(f, 60, 120)     // how much of the centre the voice alone keeps: none below 60 Hz
+        }
+    }
+    deinit {
+        vDSP_DFT_DestroySetup(fwd); vDSP_DFT_DestroySetup(inv)
+        for p in [win, keepLow, voice, inL, inR, acL, acR, oL, oR, re, im, ore, oim] { p.deallocate() }
+    }
+
+    private func clear() {
+        inL.update(repeating: 0, count: VoxCut.N); inR.update(repeating: 0, count: VoxCut.N)
+        acL.update(repeating: 0, count: VoxCut.N); acR.update(repeating: 0, count: VoxCut.N)
+        oL.update(repeating: 0, count: VoxCut.HOP); oR.update(repeating: 0, count: VoxCut.HOP)
+        rover = VoxCut.LAT
+    }
+
+    /// `n` interleaved frames of `ch` channels, in place (stereo only: a mono recording is all centre).
+    func process(_ x: UnsafeMutablePointer<Float>, _ n: Int, _ ch: Int) {
+        guard ch == 2 else { return }
+        if amount == 0 { running = false; return }
+        if !running { clear(); running = true }
+        for i in 0..<n {
+            inL[rover] = x[2 * i]; inR[rover] = x[2 * i + 1]
+            x[2 * i] = oL[rover - VoxCut.LAT]; x[2 * i + 1] = oR[rover - VoxCut.LAT]
+            rover += 1
+            if rover >= VoxCut.N { frame(); rover = VoxCut.LAT }
+        }
+    }
+
+    private func frame() {
+        let N = VoxCut.N, H = VoxCut.HALF, a = amount
+        for i in 0..<N { re[i] = inL[i] * win[i]; im[i] = inR[i] * win[i] }
+        vDSP_DFT_Execute(fwd, re, im, ore, oim)
+        for k in 0...H {
+            // the two channels out of the one transform: L = (Z[k] + Z*[N−k]) / 2, R = (Z[k] − Z*[N−k]) / 2i
+            let j = (N - k) & (N - 1)
+            let zr = ore[k], zi = oim[k], cr = ore[j], ci = -oim[j]
+            let Lr = 0.5 * (zr + cr), Li = 0.5 * (zi + ci), Rr = 0.5 * (zi - ci), Ri = 0.5 * (cr - zr)
+            let Sr = Lr + Rr, Si = Li + Ri, Dr = Lr - Rr, Di = Li - Ri
+            let s2 = Sr * Sr + Si * Si, d2 = Dr * Dr + Di * Di
+            let al = s2 > 1e-30 ? max(0, 0.5 - 0.5 * (d2 / s2).squareRoot()) : 0
+            let Cr = al * Sr, Ci = al * Si
+            var lr: Float, li: Float, rr: Float, ri: Float
+            if a <= 0 {
+                let m = -a * keepLow[k]
+                lr = Lr - m * Cr; li = Li - m * Ci; rr = Rr - m * Cr; ri = Ri - m * Ci
+            } else {
+                let u = 1 - a, w = a * voice[k]
+                lr = u * Lr + w * Cr; li = u * Li + w * Ci; rr = u * Rr + w * Cr; ri = u * Ri + w * Ci
+            }
+            // both channels back into one spectrum, Z = L + iR, over both halves
+            re[k] = lr - ri; im[k] = li + rr
+            if k > 0 && k < H { re[N - k] = lr + ri; im[N - k] = rr - li }
+        }
+        vDSP_DFT_Execute(inv, re, im, ore, oim)
+        let scale = Float(1 / (1.5 * Double(N)))   // the inverse gives N times the frame; Hann² 4 times over sums to 1.5
+        for i in 0..<N { acL[i] += win[i] * ore[i] * scale; acR[i] += win[i] * oim[i] * scale }
+        oL.update(from: acL, count: VoxCut.HOP); oR.update(from: acR, count: VoxCut.HOP)
+        let keep = (N - VoxCut.HOP) * MemoryLayout<Float>.size   // (no arrays here: the render thread never allocates)
+        memmove(acL, acL + VoxCut.HOP, keep); memmove(acR, acR + VoxCut.HOP, keep)
+        memmove(inL, inL + VoxCut.HOP, keep); memmove(inR, inR + VoxCut.HOP, keep)
+        acL.advanced(by: N - VoxCut.HOP).update(repeating: 0, count: VoxCut.HOP)
+        acR.advanced(by: N - VoxCut.HOP).update(repeating: 0, count: VoxCut.HOP)
+    }
 }
