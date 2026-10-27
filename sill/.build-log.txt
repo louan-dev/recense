@@ -173,13 +173,13 @@ Building for production...
 6694 |             let rep = NSBitmapImageRep(cgImage: cg)
 6695 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5364:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5362 |     func menuNeedsUpdate(_ m: NSMenu) {
-5363 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5364 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5386:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5384 |     func menuNeedsUpdate(_ m: NSMenu) {
+5385 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5386 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5365 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5366 |         bookmarksMenu.removeAllItems()
+5387 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5388 |         bookmarksMenu.removeAllItems()
 [5/7] Write Objects.LinkFileList
 [6/7] Linking sill
-Build of product 'sill' complete! (69.17s)
+Build of product 'sill' complete! (127.10s)

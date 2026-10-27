@@ -988,13 +988,15 @@ final class HoverView: NSView {
 final class SubtitleArea: NSView {
     var onClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+    var onTextClick: (() -> Void)?                 // a tap on the words themselves (the editor), as in Gallery
+    var isText: ((NSPoint) -> Bool)?               // window coordinates
     var onRightClick: ((NSEvent) -> Void)?
     var onScroll: ((NSEvent) -> Bool)?             // Learning's barrel turns with a scroll; true: taken
     override func rightMouseDown(with e: NSEvent) { onRightClick?(e) }
     override func scrollWheel(with e: NSEvent) { if onScroll?(e) != true { super.scrollWheel(with: e) } }
     private var down: NSEvent?
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
-    override func mouseDown(with e: NSEvent) { down = e }
+    override func mouseDown(with e: NSEvent) { down = e; window?.makeKey() }    // the space bar plays / pauses here
     override func mouseDragged(with e: NSEvent) {
         Recense.delegate?.kick()                  // dragging the subtitles: draw at full rate
         guard let d = down else { return }
@@ -1003,7 +1005,9 @@ final class SubtitleArea: NSView {
         }
     }
     override func mouseUp(with e: NSEvent) {
-        if down != nil { if e.clickCount == 2 { onDoubleClick?() } else if e.clickCount == 1 { onClick?() } }
+        if down != nil, e.clickCount == 1 {
+            if isText?(e.locationInWindow) == true, let t = onTextClick { t() } else { onClick?() }
+        }
         down = nil
     }
 }
@@ -1319,8 +1323,16 @@ final class Overlay: NSObject, NSWindowDelegate {
         var f = panel.frame
         let h: CGFloat = on ? 320 : 120
         guard f.height != h else { return }
+        let delta = h - f.height                  // how far the foot (and the bar on it) moves down
         f.origin.y = f.maxY - h; f.size.height = h
         panel.setFrame(f, display: true)          // not animated: an animated window resize holds the main thread
+        // The bar sits on the window's foot, so it moves with it: move the pointer by as much, so a hold or a drag on
+        // the time ruler stays exactly where it was on the bar (CG's coordinates run downward).
+        if let ev = CGEvent(source: nil) {
+            let at = ev.location
+            CGWarpMouseCursorPosition(CGPoint(x: at.x, y: at.y + delta))
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
     }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
@@ -1384,7 +1396,12 @@ final class Overlay: NSObject, NSWindowDelegate {
             guard let self, !self.homeBar.closeTools() else { return }
             self.onCmd?(.playPause)
         }
-        area.onDoubleClick = { [weak self] in self?.onEdit?(true) }
+        area.onTextClick = { [weak self] in self?.onEdit?(false) }      // tap the words: correct them; around them: play / pause
+        area.isText = { [weak self] p in
+            guard let self else { return false }
+            let q = self.words.convert(p, from: nil)
+            return self.words.inkRects.contains { $0.insetBy(dx: -6, dy: -3).contains(q) }
+        }
         area.onRightClick = { [weak self] e in self?.lineMenu(e) }
         area.onScroll = { [weak self] e in self?.scrollDrum(e) ?? false }
         status.font = .systemFont(ofSize: 11); status.textColor = NSColor(white: 1, alpha: 0.5)
@@ -1847,7 +1864,11 @@ final class WordsView: NSView {
         }.reduce(0, +) + CGFloat(max(0, used.count - 1)) * blockGap
     }
 
+    /// Where text was drawn last frame (this view's flipped coordinates; not Learning's drum): a tap there edits the line.
+    private(set) var inkRects: [NSRect] = []
+
     override func draw(_ dirty: NSRect) {
+        inkRects = []
         if let drum {
             // Each line sits on a drum whose rows are `pitch` apart, 30° round from each other: off the front it moves
             // up or down, flattens and recedes, the way a picker's wheel does.
@@ -1892,6 +1913,7 @@ final class WordsView: NSView {
     /// across, and inside a phrase (Learning, whose phrases stay in English reading order) its own words.
     func draw(_ r: Row, at y: CGFloat, gap: CGFloat, h: CGFloat) {
         var x = (bounds.width - r.width) / 2
+        if drum == nil { inkRects.append(NSRect(x: x, y: y, width: r.width, height: h)) }
         let flow = r.cells.allSatisfy { $0.cell.words.count == 1 } && r.cells.contains { Self.rtl($0.cell) } ? Array(r.cells.reversed()) : r.cells
         for (c, w) in flow {
             let rtl = Self.rtl(c)
