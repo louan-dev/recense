@@ -3953,35 +3953,39 @@ final class GlassPauseButton: NSButton {
         l.add(a, forKey: "bounce")
     }
     override func draw(_ dirty: NSRect) {
+        // Just the icon, no circle: its own shape is its border. It lights up (full white, a soft glow) under the pointer.
         let d = min(bounds.width, bounds.height) - 1
         let c = NSRect(x: (bounds.width - d) / 2, y: (bounds.height - d) / 2, width: d, height: d)
-        NSColor.white.withAlphaComponent(hover ? 0.26 : 0.16).setFill()
-        NSBezierPath(ovalIn: c).fill()
-        NSColor.white.withAlphaComponent(0.3).setStroke()
-        let rim = NSBezierPath(ovalIn: c.insetBy(dx: 0.5, dy: 0.5)); rim.lineWidth = 0.8; rim.stroke()
+        let tone = NSColor.white.withAlphaComponent(hover ? 1 : 0.72)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        if hover {
+            let glow = NSShadow(); glow.shadowColor = NSColor.white.withAlphaComponent(0.85); glow.shadowBlurRadius = 6
+            glow.shadowOffset = .zero; glow.set()
+        }
         if let m = mark {
-            let s = d * 0.62, r = NSRect(x: c.midX - s / 2, y: c.midY - s / 2, width: s, height: s)
-            let white = NSImage(size: r.size, flipped: false) { b in
-                m.draw(in: b); NSColor.white.set(); b.fill(using: .sourceAtop); return true
+            let s = d * 0.95, r = NSRect(x: c.midX - s / 2, y: c.midY - s / 2, width: s, height: s)
+            let tinted = NSImage(size: r.size, flipped: false) { b in
+                m.draw(in: b); tone.set(); b.fill(using: .sourceAtop); return true
             }
-            white.draw(in: r)
+            tinted.draw(in: r)
             return
         }
         if let sym = symbol, let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: d * 0.42, weight: .semibold).applying(.init(paletteColors: [.white]))) {
+            .withSymbolConfiguration(.init(pointSize: d * 0.72, weight: .semibold).applying(.init(paletteColors: [tone]))) {
             img.draw(in: NSRect(x: c.midX - img.size.width / 2, y: c.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
             return
         }
-        NSColor.white.setFill()
+        tone.setFill()
         if showsPlay {
             let t = NSBezierPath()
-            let s = d * 0.36
+            let s = d * 0.66
             t.move(to: NSPoint(x: c.midX - s * 0.38, y: c.midY - s / 2))
             t.line(to: NSPoint(x: c.midX - s * 0.38, y: c.midY + s / 2))
             t.line(to: NSPoint(x: c.midX + s * 0.55, y: c.midY))
             t.close(); t.fill()
         } else {
-            let bw = d * 0.13, bh = d * 0.42, gap = d * 0.11
+            let bw = d * 0.2, bh = d * 0.66, gap = d * 0.16
             for x in [c.midX - gap / 2 - bw, c.midX + gap / 2] {
                 NSBezierPath(roundedRect: NSRect(x: x, y: c.midY - bh / 2, width: bw, height: bh), xRadius: bw / 2, yRadius: bw / 2).fill()
             }
@@ -4831,7 +4835,7 @@ final class RestStrip: NSObject {
         space.symbol = "square.grid.3x2"; space.isBordered = false; space.title = ""
         space.toolTip = "Mission Control"
         space.target = self; space.action = #selector(missionControl)
-        record.symbol = "record.circle"; record.isBordered = false; record.title = ""
+        record.symbol = "mic.fill"; record.isBordered = false; record.title = ""
         record.toolTip = "Recorder"
         record.target = self; record.action = #selector(openRecord)
         recense.mark = recenseIcon(); recense.isBordered = false; recense.title = ""
@@ -4948,7 +4952,7 @@ final class RestStrip: NSObject {
         if open && band.frame.width == 0 { band.frame = NSRect(x: b.midX, y: 0, width: 0, height: b.height) }
         // Step the width ourselves (rather than a layer animation) so the contoured ends are redrawn at every size.
         bandTimer?.invalidate()
-        let from = band.frame, start = Date(), duration: TimeInterval = open ? 0.38 : 0.26
+        let from = band.frame, start = Date(), duration: TimeInterval = open ? 0.2 : 0.2
         bandTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
             let p = min(1, Date().timeIntervalSince(start) / duration)
@@ -4967,8 +4971,8 @@ final class RestStrip: NSObject {
         f.setValue(0, forKey: kCIInputRadiusKey)
         l.filters = [f]
         let a = CABasicAnimation(keyPath: "filters.blur.inputRadius")
-        a.fromValue = open ? 7 : 0; a.toValue = open ? 0 : 7
-        a.duration = open ? 0.42 : 0.2
+        a.fromValue = open ? 4 : 0; a.toValue = open ? 0 : 4
+        a.duration = open ? 0.2 : 0.15
         a.timingFunction = CAMediaTimingFunction(name: .easeOut)
         l.add(a, forKey: "focus")
     }
