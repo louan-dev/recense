@@ -4884,7 +4884,15 @@ final class RestStrip: NSObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
     @objc func openRecord() { record.bounce(); onRecord?() }
-    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
+    @objc func toggleRecense() {
+        recense.bounce()
+        MainActor.assumeIsolated {
+            let o = Recense.overlay
+            log("sill: recense icon (delegate \(Recense.delegate == nil ? "nil" : "ok"), overlay \(o == nil ? "nil" : "ok"), visible \(o?.panel.isVisible ?? false), hosted \(o?.hostedRoot != nil))")
+            o?.toggleStrip()
+            log("sill: after toggle visible \(o?.panel.isVisible ?? false) frame \(o?.panel.frame ?? .zero) screen \(NSScreen.main?.frame ?? .zero)")
+        }
+    }
 
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
