@@ -5823,7 +5823,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
     private let heard = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(labelWithString: "")
     private let title = NSTextField(), when = NSTextField(labelWithString: ""), notes = NSTextField(), place = NSTextField()
-    private let save = NSButton(), smarter = NSButton(), cancel = NSButton()
+    private let save = NSButton(), smarter = NSButton(), cancel = NSButton(), close = NSButton()
     private let recognizer = SFSpeechRecognizer()
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -5865,7 +5865,11 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         }
         smarter.toolTip = "Re-read the sentence with Claude (sends it to the cloud)"
         save.keyEquivalent = "\r"; cancel.keyEquivalent = "\u{1b}"
-        [heard, status, title, when, notes, place, save, smarter, cancel].forEach(root.addSubview)
+        close.isBordered = false; close.title = ""; close.toolTip = "Close"
+        close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        close.contentTintColor = NSColor.white.withAlphaComponent(0.6)
+        close.target = self; close.action = #selector(closeTapped)
+        [heard, status, title, when, notes, place, save, smarter, cancel, close].forEach(root.addSubview)
     }
 
     // MARK: Listening
@@ -5942,6 +5946,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         let a = anchor()
         let w: CGFloat = 520, h: CGFloat = listening ? 96 : 236
         window.setFrame(NSRect(x: a.midX - w / 2, y: a.minY - h - 8, width: w, height: h), display: true)
+        close.frame = NSRect(x: w - 30, y: h - 30, width: 18, height: 18)      // top right, in every state
         window.orderFrontRegardless()
     }
 
@@ -5956,7 +5961,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         let w = window.frame.width, h = window.frame.height
         heard.stringValue = "“\(transcript)”"
         heard.font = roundedFont(11, .medium)
-        heard.frame = NSRect(x: 18, y: h - 34, width: w - 36, height: 16)
+        heard.frame = NSRect(x: 18, y: h - 34, width: w - 56, height: 16)
         status.frame = .zero
         title.frame = NSRect(x: 16, y: h - 70, width: w - 32, height: 26)
         when.frame = NSRect(x: 18, y: h - 96, width: w - 36, height: 18)
@@ -5986,7 +5991,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
 
     private func layoutMessage() {
         let w = window.frame.width, h = window.frame.height
-        heard.frame = NSRect(x: 18, y: h - 56, width: w - 36, height: 40)
+        heard.frame = NSRect(x: 18, y: h - 56, width: w - 56, height: 40)
         heard.font = roundedFont(13, .medium)
         status.frame = NSRect(x: 18, y: 14, width: w - 36, height: 14)
     }
@@ -6004,6 +6009,15 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
     }
 
     @objc func cancelTapped() { window.orderOut(nil) }
+    /// × : stop listening without making a draft, and close.
+    @objc func closeTapped() {
+        if listening {
+            listening = false; onListening?(false); silence?.cancel()
+            engine.stop(); engine.inputNode.removeTap(onBus: 0)
+            request?.endAudio(); task?.cancel()
+        }
+        window.orderOut(nil)
+    }
 
     @objc func smarterTapped() {
         let text = transcript

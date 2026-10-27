@@ -152,21 +152,21 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6688:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6686 |         if let scr = NSScreen.main {
-6687 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
-6688 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6702:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6700 |         if let scr = NSScreen.main {
+6701 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
+6702 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
      |                         `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6689 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
-6690 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
+6703 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+6704 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6694:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6692 |         }
-6693 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
-6694 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6708:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6706 |         }
+6707 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
+6708 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
      |                     `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6695 |             let rep = NSBitmapImageRep(cgImage: cg)
-6696 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+6709 |             let rep = NSBitmapImageRep(cgImage: cg)
+6710 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
 /Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5389:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
 5387 |     func menuNeedsUpdate(_ m: NSMenu) {
@@ -177,4 +177,4 @@ Building for production...
 5391 |         bookmarksMenu.removeAllItems()
 [3/5] Write Objects.LinkFileList
 [4/5] Linking sill
-Build of product 'sill' complete! (52.85s)
+Build of product 'sill' complete! (72.26s)
