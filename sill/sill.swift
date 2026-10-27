@@ -2192,63 +2192,6 @@ final class RecorderView: NSView {
 
 
 
-/// A web view that takes the pointer only inside `hits` (page coordinates, top-left origin) and lets the rest through.
-final class HitWebView: WKWebView {
-    var hits: [NSRect] = []
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let q = convert(point, from: superview)
-        let p = NSPoint(x: q.x, y: isFlipped ? q.y : bounds.height - q.y)
-        return hits.contains(where: { $0.contains(p) }) ? super.hitTest(point) : nil
-    }
-}
-
-/// Wires Recense's home bar to the embedded viewer: the bar's commands drive the viewer's <audio>, and the audio's
-/// events report back to the bar. Event-driven (about 1 Hz while playing), no timer of Sill's own.
-final class RecenseBridge: NSObject, WKScriptMessageHandler {
-    weak var viewer: WKWebView?
-    weak var bar: HitWebView?
-    static let viewerJS = """
-    (() => {
-      const a = document.getElementById('audio'); if (!a) return;
-      let A = null, B = null, ab = false, last = 0;
-      const rep = () => webkit.messageHandlers.viewer.postMessage({ time: a.currentTime, duration: a.duration || 0,
-        paused: a.paused, rate: a.playbackRate, loop: { track: a.loop, ab, a: A, b: B } });
-      ['play', 'pause', 'seeked', 'ratechange', 'loadedmetadata', 'durationchange'].forEach(e => a.addEventListener(e, rep));
-      a.addEventListener('timeupdate', () => {
-        if (ab && A != null && B != null && a.currentTime >= B) a.currentTime = A;
-        const n = performance.now(); if (n - last > 1000) { last = n; rep(); }
-      });
-      window.SillHB = { rep, jump: t => { a.currentTime = t; }, cmd: m => {
-        if (m.c === 'seek') a.currentTime = m.t;
-        else if (m.c === 'playPause') a.paused ? a.play() : a.pause();
-        else if (m.c === 'skip') a.currentTime = Math.max(0, a.currentTime + m.d);
-        else if (m.c === 'speed') a.playbackRate = m.v;
-        else if (m.c === 'loop') { a.loop = !!m.track; ab = !!m.ab; A = m.a; B = m.b; rep(); }
-      } };
-    })();
-    """
-
-    private func json(_ o: Any) -> String {
-        (try? JSONSerialization.data(withJSONObject: o)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
-    }
-
-    func userContentController(_ uc: WKUserContentController, didReceive m: WKScriptMessage) {
-        guard let b = m.body as? [String: Any] else { return }
-        if m.name == "viewer" {
-            bar?.evaluateJavaScript("window.Recense && Recense.report(\(json(b)))")
-            return
-        }
-        switch b["k"] as? String {
-        case "cmd": viewer?.evaluateJavaScript("window.SillHB && SillHB.cmd(\(json(b)))")
-        case "jump": viewer?.evaluateJavaScript("window.SillHB && SillHB.jump(\((b["t"] as? Double) ?? 0))")
-        case "ready": viewer?.evaluateJavaScript("window.SillHB && SillHB.rep()")
-        case "hits":
-            bar?.hits = (b["r"] as? [[Double]] ?? []).compactMap { $0.count == 4 ? NSRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
-        default: break                          // download, export, language and the rest are Recense-app only
-        }
-    }
-}
-
 /// Recense's menu-bar mark (copied from Recense's `menuBarIcon()`): a rounded frame holding two lines of subtitle.
 func recenseIcon() -> NSImage {
     let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
@@ -4148,32 +4091,8 @@ final class EssentialsView: ClickView {
     let recenseOpen = NSButton()
     let recenseSheet = NSView()                 // Recense's viewer, embedded; opened from the audio menu
     let recenseClose = NSButton()
-    lazy var recenseWeb: WKWebView = {
-        let cfg = WKWebViewConfiguration()
-        // Recense's `.drop { display: grid }` beats its own `hidden` attribute, so the drop veil would never go away.
-        cfg.userContentController.addUserScript(WKUserScript(source: "document.head.insertAdjacentHTML('beforeend','<style>[hidden]{display:none!important}</style>')", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        cfg.userContentController.addUserScript(WKUserScript(source: RecenseBridge.viewerJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        cfg.userContentController.add(recenseBridge, name: "viewer")
-        let v = WKWebView(frame: .zero, configuration: cfg)
-        v.appearance = NSAppearance(named: .darkAqua)     // Recense picks its dark tokens from the colour scheme
-        v.setValue(false, forKey: "drawsBackground")
-        v.underPageBackgroundColor = recenseFill
-        return v
-    }()
-    let recenseBridge = RecenseBridge()
-    /// Recense's home bar (Gallery's homebar.js, hosted by recense/homebar/index.html), see-through over the page's foot.
-    lazy var recenseBar: HitWebView = {
-        let cfg = WKWebViewConfiguration()
-        cfg.userContentController.add(recenseBridge, name: "recense")
-        let v = HitWebView(frame: .zero, configuration: cfg)
-        v.appearance = NSAppearance(named: .darkAqua)
-        v.setValue(false, forKey: "drawsBackground")
-        return v
-    }()
-    /// Recense's dark `--bg` (viewer/read-along.html), so the page and Sill's fill are one colour.
-    let recenseFill = NSColor(srgbRed: 0x11/255.0, green: 0x16/255.0, blue: 0x15/255.0, alpha: 1)
-    let recenseStrip: CGFloat = 56              // the home bar's strip under the viewer
-    static let recenseURL = URL(fileURLWithPath: NSHomeDirectory() + "/Developer/sill/recense/viewer/read-along.html")
+    /// Recense's window fill (Overlay: white 0.04), so the page and Sill's fill are one colour.
+    let recenseFill = NSColor(white: 0.04, alpha: 1)
     let r2 = R2Tray(frame: .zero)
     private var foldWork: [Int: DispatchWorkItem] = [:]
     var onKeyboard: ((NSView?) -> Void)?
@@ -4375,8 +4294,6 @@ final class EssentialsView: ClickView {
         recenseSheet.frame = bounds
         let rv = vaultSheet.frame
         recenseClose.frame = NSRect(x: rv.maxX - 30, y: rv.maxY - 30, width: 20, height: 20)
-        recenseWeb.frame = NSRect(x: rv.minX, y: rv.minY + recenseStrip, width: rv.width, height: rv.height - 36 - recenseStrip)
-        recenseBar.frame = NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36)
         recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
         r2.frame = NSRect(x: 40, y: 30, width: w - 80, height: top - 130)
         home.frame = NSRect(x: 0, y: 2, width: w, height: 44)
@@ -4396,22 +4313,9 @@ final class EssentialsView: ClickView {
         leftBar.active = on || recorder.state == .recording || recorder.state == .paused
         if on {
             if !audioSheet.isHidden { showAudio(false) }
-            if recenseWeb.superview == nil {
-                recenseSheet.addSubview(recenseWeb, positioned: .below, relativeTo: recenseClose)
-                let rv = vaultSheet.frame
-                recenseWeb.frame = NSRect(x: rv.minX, y: rv.minY + recenseStrip, width: rv.width, height: rv.height - 36 - recenseStrip)
-                recenseBar.frame = NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36)
-                recenseSheet.addSubview(recenseBar, positioned: .above, relativeTo: recenseWeb)
-                recenseBridge.viewer = recenseWeb; recenseBridge.bar = recenseBar
-                if let dir = Bundle.main.resourceURL?.appendingPathComponent("homebar") {
-                    recenseBar.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
-                }
-                // Read as UTF-8 ourselves: the page declares no charset, and WebKit would guess Latin-1.
-                let u = Self.recenseURL
-                if let html = try? String(contentsOf: u, encoding: .utf8) {
-                    recenseWeb.loadHTMLString(html, baseURL: u.deletingLastPathComponent())
-                }
-            }
+            // Recense's own window, moved in whole while the page is open: the same subtitles, switches and home bar.
+            let rv = vaultSheet.frame
+            Recense.delegate?.overlay.host(in: recenseSheet, frame: NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36))
             recenseSheet.isHidden = false
             recenseSheet.alphaValue = 0
             NSAnimationContext.runAnimationGroup { ctx in
@@ -4426,7 +4330,9 @@ final class EssentialsView: ClickView {
                 recenseSheet.animator().alphaValue = 0
                 calendar.animator().alphaValue = 1
                 horizon.animator().alphaValue = 1
-            }, completionHandler: { [weak self] in if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true } })
+            }, completionHandler: { [weak self] in
+                if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true; Recense.delegate?.overlay.host(in: nil) }
+            })
         }
     }
 

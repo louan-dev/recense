@@ -1298,7 +1298,26 @@ final class Overlay: NSObject, NSWindowDelegate {
     var onPick: ((Int) -> Void)?                         // play from line j of the lines last drawn
     var drumLine: Int? { mode == .learning && drum >= 0 && drumCount > 0 ? min(drumCount - 1, Int(drum.rounded())) : nil }
 
-    var minimized: Bool { panel.isMiniaturized || !panel.isVisible }
+    var minimized: Bool { hostedRoot == nil && (panel.isMiniaturized || !panel.isVisible) }
+
+    /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
+    var hostedRoot: NSView?
+    private var panelWasVisible = false
+    func host(in container: NSView?, frame: NSRect = .zero) {
+        if let c = container {
+            guard hostedRoot == nil, let root = panel.contentView else { return }
+            panelWasVisible = panel.isVisible
+            panel.contentView = NSView(); panel.orderOut(nil)
+            root.frame = frame; root.autoresizingMask = [.width, .height]
+            c.addSubview(root, positioned: .below, relativeTo: nil)
+            hostedRoot = root
+        } else if let root = hostedRoot {
+            root.removeFromSuperview(); hostedRoot = nil
+            panel.contentView = root
+            if panelWasVisible { panel.orderFrontRegardless() }
+        }
+        lastKey = ""; fits = [:]
+    }
 
     override init() {
         let screen = NSScreen.main!.visibleFrame
