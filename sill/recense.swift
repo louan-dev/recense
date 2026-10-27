@@ -3004,7 +3004,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     func attach(_ f: URL) -> Bool {
         guard let af = try? AVAudioFile(forReading: f) else {
-            log("can't decode \(f.lastPathComponent)")
+            let head = (try? FileHandle(forReadingFrom: f))?.readData(ofLength: 16) ?? Data()
+            let size = (try? f.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? -1
+            log("can't decode \(f.lastPathComponent) (\(size) bytes, starts \(head.map { String(format: "%02x", $0) }.joined()))")
             if f.path.hasPrefix(cacheDir.path) { try? FileManager.default.removeItem(at: f) }
             return false
         }
@@ -5555,7 +5557,7 @@ final class NativeSources {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    var overlay: Overlay!, item: NSStatusItem!
+    var overlay: Overlay!, menu: NSMenu!
     var statusUntil = Date.distantPast
     var sigint: DispatchSourceSignal?, sigterm: DispatchSourceSignal?
     var server: Server?
@@ -5683,13 +5685,12 @@ final class NativeSources {
         overlay.onReset = { [weak self] in self?.resetLine() }
         overlay.lineState = { [weak self] in (self?.editable != nil, self?.editable.map(Episode.isEdited) ?? false) }
         overlay.setControls(false)
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = menuBarIcon()
-        item.button?.toolTip = "Recense"
-        let m = NSMenu()
-        let hide = m.addItem(withTitle: "CC Off", action: #selector(toggleOverlay), keyEquivalent: "m")
-        hide.target = self
-        overlay.onToggle = { hide.title = self.overlay.minimized ? "CC On" : "CC Off" }
+        // No status item of its own: Sill shows this menu as "Recense" in its menu bar.
+        let m = NSMenu(title: "Recense")
+        // SPEC 32: CC On/Off plays or pauses the player in whatever tab Recense follows (it no longer hides the window).
+        let cc = m.addItem(withTitle: "CC Off", action: #selector(toggleCC), keyEquivalent: "m")
+        cc.target = self
+        ccItem = cc
         // Text Size and Balance: two compact rows, applied as they move
         let redraw = { [weak self] in self?.overlay.lastKey = ""; self?.overlay.fits = [:] }
         var sizeRow: ReaderRow!
@@ -5714,7 +5715,7 @@ final class NativeSources {
         m.addItem(withTitle: "Bookmarks", action: nil, keyEquivalent: "").submenu = bookmarksMenu
         // Inside Sill: no Open at Login, Restart or Quit (they would act on Sill), and Sill owns the signals.
         m.autoenablesItems = false; m.delegate = self
-        item.menu = m
+        menu = m
 
         guard !cfg.apiKey.isEmpty else {
             return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
@@ -5776,7 +5777,6 @@ final class NativeSources {
         let working = on || GalleryJob.current != nil
         if working != wasWorking {
             wasWorking = working
-            item?.button?.alphaValue = working ? 1 : 0.4
             NotificationCenter.default.post(name: Recense.workingChanged, object: nil, userInfo: ["working": working])
         }
         if !on { frame() }                        // paused: still draw what changed (a seek, a transcript loaded)
@@ -5893,6 +5893,10 @@ final class NativeSources {
         }
     }
     @objc func playPause() { globalPlayPause() }
+    /// The menu's CC On/Off (SPEC 32): ⏯ for the followed tab's player; the title says what pressing it does next.
+    weak var ccItem: NSMenuItem?
+    @objc func toggleCC() { ccTitle(paused: globalPlayPause()) }
+    func ccTitle(paused: Bool) { let t = paused ? "CC On" : "CC Off"; if ccItem?.title != t { ccItem?.title = t } }
     /// The global ⏯ (Sill's strip button): the player Recense follows is played or paused directly, so the window
     /// changes with it at once; with none, the system's ⏯ key. Sill used to press the system key itself, which macOS
     /// may hand to another app than the one in the window. Returns whether it is paused now.
@@ -6418,8 +6422,7 @@ final class NativeSources {
     func frame() {
         if browserActive != browserMode { setBrowserMode(!browserMode) }
         overlay.soundNo = soundBlock
-        let idle = !browserMode || pos.paused
-        if item.button?.appearsDisabled != idle { item.button?.appearsDisabled = idle }
+        ccTitle(paused: !browserMode || (expectPaused ?? pos.paused))
         // An ad in the followed player (the bridge says so): nothing is transcribed for it, and Skip Ad is offered.
         let ad = adPlaying
         overlay.setSkipAd(ad)
@@ -6760,5 +6763,7 @@ final class NativeSources {
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         // The window is always the strip inside Sill, and starts hidden: shown at launch (empty, see-through, over the
         // menu bar) it went unnoticed, and the strip icon's first press hid it, so the icon seemed to do nothing.
+        let mi = NSMenuItem(title: "Recense", action: nil, keyEquivalent: ""); mi.submenu = d.menu
+        NSApp.mainMenu?.addItem(mi)
     }
 }
