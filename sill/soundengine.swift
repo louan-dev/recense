@@ -1,0 +1,262 @@
+import Cocoa
+import CoreAudio
+import AudioToolbox
+import AVFoundation
+
+/// Note 30: Recense's own sound for players its bridge can't reshape (QuickTime, Music, Safari, Chrome, a Firefox page
+/// whose file can't be taken). A Core Audio process tap takes the followed app's output (muting the original while
+/// tapped), and an AVAudioEngine plays it again through the tray's chain: the same three bands as the bridge
+/// (low shelf 160 Hz, peak 1 kHz, high shelf 5 kHz, Q 0.7), a trim that takes back the EQ's highest boost, Key
+/// (time-pitch at rate 1), Space (reverb), and a peak limiter, at the tap's own sample rate. It runs only while the
+/// sound isn't flat and a player is followed; a watchdog drops the tap (so the original plays again) when no frames
+/// arrive for a second. Needs macOS 14.2 and the Audio Capture permission.
+final class SoundEngine {
+    enum State: Equatable { case off, on, unsupported, denied, failed }
+    private(set) var state: State = .off
+    var onState: ((State) -> Void)?
+    private var pid: pid_t?
+    private var sound: [String: Any] = [:]
+    private var impl: AnyObject?   // SoundTap on 14.2+
+
+    static var available: Bool { if #available(macOS 14.2, *) { return true } else { return false } }
+
+    static func flat(_ s: [String: Any]) -> Bool {
+        let eq = s["eq"] as? [String: Any] ?? [:]
+        let n = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0 }
+        return n(eq["low"]) == 0 && n(eq["mid"]) == 0 && n(eq["high"]) == 0 && n(s["key"]) == 0 && n(s["mix"]) == 0
+    }
+
+    /// Follow this process (nil stops) with this sound; a flat sound stops too, so the original is never muted for nothing.
+    func run(pid p: pid_t?, sound s: [String: Any]) {
+        sound = s
+        guard let p, !SoundEngine.flat(s) else { stop(); return }
+        guard #available(macOS 14.2, *) else { set(.unsupported); return }
+        if let t = impl as? SoundTap, pid == p, t.alive { t.apply(s); return }
+        stop()
+        pid = p
+        let t = SoundTap(pid: p)
+        t.onDead = { [weak self] why in DispatchQueue.main.async { self?.stop(); self?.set(why) } }
+        guard t.start() else { set(t.why); return }
+        t.apply(s)
+        impl = t
+        set(.on)
+    }
+
+    func stop() {
+        if #available(macOS 14.2, *) { (impl as? SoundTap)?.stop() }
+        impl = nil; pid = nil
+        if state == .on { set(.off) }
+    }
+
+    private func set(_ s: State) { guard s != state else { return }; state = s; onState?(s) }
+}
+
+/// One frame-ring between the tap's IO thread and the engine's render thread (interleaved floats).
+private final class Ring {
+    private var buf: [Float]
+    private var r = 0, w = 0, count = 0
+    private var lock = os_unfair_lock()
+    private var stamp = Date().timeIntervalSinceReferenceDate
+    let ch: Int
+    /// When the tap last delivered frames (read off the IO thread under the lock).
+    var lastWrite: TimeInterval { os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }; return stamp }
+    init(frames: Int, ch: Int) { self.ch = ch; buf = [Float](repeating: 0, count: frames * ch) }
+    func write(_ p: UnsafePointer<Float>, _ n: Int) {
+        os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
+        let cap = buf.count
+        for i in 0..<n { buf[w] = p[i]; w = (w + 1) % cap }
+        count = min(cap, count + n)
+        if count == cap { r = w }   // overrun: keep the newest
+        stamp = Date().timeIntervalSinceReferenceDate
+    }
+    /// Fills `n` samples, silence for what isn't there (an underrun is a dropout, never noise).
+    func read(_ p: UnsafeMutablePointer<Float>, _ n: Int) {
+        os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
+        let cap = buf.count, k = min(n, count)
+        for i in 0..<k { p[i] = buf[r]; r = (r + 1) % cap }
+        count -= k
+        if k < n { for i in k..<n { p[i] = 0 } }
+    }
+}
+
+@available(macOS 14.2, *)
+private final class SoundTap {
+    let pid: pid_t
+    var onDead: ((SoundEngine.State) -> Void)?
+    private(set) var why: SoundEngine.State = .failed
+    private(set) var alive = false
+    private var tapID = AudioObjectID(kAudioObjectUnknown)
+    private var aggID = AudioObjectID(kAudioObjectUnknown)
+    private var ioProc: AudioDeviceIOProcID?
+    private let engine = AVAudioEngine()
+    private let eq = AVAudioUnitEQ(numberOfBands: 3)
+    private let pitch = AVAudioUnitTimePitch()
+    private let reverb = AVAudioUnitReverb()
+    private let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+        componentType: kAudioUnitType_Effect, componentSubType: kAudioUnitSubType_PeakLimiter,
+        componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0))
+    private var ring: Ring?
+    private var scratch: UnsafeMutablePointer<Float>?
+    private var room: String?
+    private var watchdog: Timer?
+    private var ramp: Timer?
+    private var target: [Float] = [0, 0, 0, 0]   // low, mid, high (dB), trim (dB)
+
+    init(pid: pid_t) { self.pid = pid }
+
+    func start() -> Bool {
+        let objs = SoundTap.audioObjects(for: pid)
+        guard !objs.isEmpty else { return fail(.failed) }
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyFormat,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+
+        let desc = CATapDescription(stereoMixdownOfProcesses: objs)
+        desc.uuid = UUID()
+        desc.muteBehavior = .mutedWhenTapped
+        desc.isPrivate = true
+        let err = AudioHardwareCreateProcessTap(desc, &tapID)
+        // no Audio Capture permission shows up as a refused tap
+        guard err == noErr, tapID != kAudioObjectUnknown else { return fail(err == OSStatus(kAudioHardwareIllegalOperationError) ? .denied : .failed) }
+
+        // the tap's format: its sample rate is the one played at (no resampling of ours)
+        var asbd = AudioStreamBasicDescription()
+        size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard AudioObjectGetPropertyData(tapID, &addr, 0, nil, &size, &asbd) == noErr, asbd.mSampleRate > 0 else { return fail(.failed) }
+        let ch = Int(max(1, asbd.mChannelsPerFrame))
+
+        let agg: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Recense Sound",
+            kAudioAggregateDeviceUIDKey: "recense.sound.\(UUID().uuidString)",
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: desc.uuid.uuidString, kAudioSubTapDriftCompensationKey: true]],
+        ]
+        guard AudioHardwareCreateAggregateDevice(agg as CFDictionary, &aggID) == noErr else { return fail(.failed) }
+
+        let ring = Ring(frames: Int(asbd.mSampleRate / 4), ch: ch)   // 250 ms of room; a few ms is used
+        self.ring = ring
+        let st = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggID, nil) { _, input, _, _, _ in
+            let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+            guard let b = abl.first, let d = b.mData else { return }
+            ring.write(d.assumingMemoryBound(to: Float.self), Int(b.mDataByteSize) / MemoryLayout<Float>.size)
+        }
+        guard st == noErr, AudioDeviceStart(aggID, ioProc) == noErr else { return fail(.failed) }
+
+        // the engine: source (from the ring) → EQ → Key → Space → limiter → out, at the tap's rate
+        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: asbd.mSampleRate, channels: AVAudioChannelCount(ch)) else { return fail(.failed) }
+        // scratch allocated once: the render thread must never allocate
+        let maxFrames = 8192
+        let tmp = UnsafeMutablePointer<Float>.allocate(capacity: maxFrames * ch)
+        tmp.initialize(repeating: 0, count: maxFrames * ch)
+        scratch = tmp
+        let src = AVAudioSourceNode(format: fmt) { _, _, frames, abl -> OSStatus in
+            let out = UnsafeMutableAudioBufferListPointer(abl), n = min(Int(frames), maxFrames)
+            ring.read(tmp, n * ch)
+            for (c, b) in out.enumerated() where c < ch {   // deinterleave
+                let d = b.mData!.assumingMemoryBound(to: Float.self)
+                for i in 0..<n { d[i] = tmp[i * ch + c] }
+            }
+            return noErr
+        }
+        let kinds: [AVAudioUnitEQFilterType] = [.lowShelf, .parametric, .highShelf]
+        for (i, f) in [160, 1000, 5000].enumerated() {
+            let b = eq.bands[i]
+            b.filterType = kinds[i]; b.frequency = Float(f); b.bandwidth = 1.9   // octaves ≈ Q 0.7
+            b.gain = 0; b.bypass = false
+        }
+        eq.globalGain = 0
+        pitch.rate = 1; pitch.overlap = 8
+        reverb.wetDryMix = 0
+        for n in [src, eq, pitch, reverb, limiter] as [AVAudioNode] { engine.attach(n) }
+        engine.connect(src, to: eq, format: fmt)
+        engine.connect(eq, to: pitch, format: fmt)
+        engine.connect(pitch, to: reverb, format: fmt)
+        engine.connect(reverb, to: limiter, format: fmt)
+        engine.connect(limiter, to: engine.mainMixerNode, format: fmt)
+        do { try engine.start() } catch { return fail(.failed) }
+
+        alive = true
+        watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, self.alive else { return }
+            // a stuck tap (or engine) must never leave the original muted
+            if Date().timeIntervalSinceReferenceDate - (self.ring?.lastWrite ?? 0) > 1 || !self.engine.isRunning { self.stop(); self.onDead?(.failed) }
+        }
+        return true
+    }
+
+    /// The tray's values, glided over ~60 ms so a drag never clicks.
+    func apply(_ s: [String: Any]) {
+        let n = { (x: Any?) in Float((x as? NSNumber)?.doubleValue ?? 0) }
+        let e = s["eq"] as? [String: Any] ?? [:]
+        let g = [n(e["low"]), n(e["mid"]), n(e["high"])]
+        // trim: take back the highest boost (shelves and the peak barely overlap at Q 0.7), so a boost never clips
+        let trim = -max(0, g.max() ?? 0, g[0] > 0 && g[1] > 0 ? (g[0] + g[1]) * 0.6 : 0, g[1] > 0 && g[2] > 0 ? (g[1] + g[2]) * 0.6 : 0)
+        target = g + [trim]
+        pitch.pitch = max(-2400, min(2400, n(s["key"]) * 100))   // Key in semitones
+        pitch.bypass = n(s["key"]) == 0
+        let room = s["room"] as? String ?? "room"
+        if room != self.room { reverb.loadFactoryPreset(room == "hall" ? .largeHall : .mediumRoom); self.room = room }   // reloading each drag resets the tail
+        reverb.wetDryMix = min(100, abs(n(s["mix"])))   // a reversed room has no native match: the forward one plays
+        if ramp == nil {
+            ramp = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
+                guard let self else { t.invalidate(); return }
+                var done = true
+                for i in 0..<3 {
+                    let c = self.eq.bands[i].gain, d = self.target[i] - c
+                    self.eq.bands[i].gain = abs(d) < 0.05 ? self.target[i] : c + d * 0.25
+                    if abs(d) >= 0.05 { done = false }
+                }
+                let c = self.eq.globalGain, d = self.target[3] - c
+                self.eq.globalGain = abs(d) < 0.05 ? self.target[3] : c + d * (d < 0 ? 0.6 : 0.2)   // down fast, up slow
+                if abs(d) >= 0.05 { done = false }
+                if done { t.invalidate(); self.ramp = nil }
+            }
+        }
+    }
+
+    func stop() {
+        guard alive || aggID != kAudioObjectUnknown || tapID != kAudioObjectUnknown else { return }
+        alive = false
+        watchdog?.invalidate(); watchdog = nil
+        ramp?.invalidate(); ramp = nil
+        engine.stop()
+        if let io = ioProc { AudioDeviceStop(aggID, io); AudioDeviceDestroyIOProcID(aggID, io); ioProc = nil }
+        if aggID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggID); aggID = AudioObjectID(kAudioObjectUnknown) }
+        // destroying the tap is what unmutes the original
+        if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID); tapID = AudioObjectID(kAudioObjectUnknown) }
+    }
+
+    /// The audio objects of an app and of its helpers: a browser plays from its content processes, not its own.
+    /// Helpers are the app's children (Firefox, Chromium) or, for Safari, WebKit's WebContent (shared by every WebKit app).
+    static func audioObjects(for app: pid_t) -> [AudioObjectID] {
+        func get<T>(_ o: AudioObjectID, _ sel: AudioObjectPropertySelector, _ v: inout T) -> Bool {
+            var a = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var n = UInt32(MemoryLayout<T>.size)
+            return AudioObjectGetPropertyData(o, &a, 0, nil, &n, &v) == noErr
+        }
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
+                                           mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var n = UInt32(0), sys = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(sys, &a, 0, nil, &n) == noErr, n > 0 else { return [] }
+        var list = [AudioObjectID](repeating: 0, count: Int(n) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(sys, &a, 0, nil, &n, &list) == noErr else { return [] }
+        let safari = NSRunningApplication(processIdentifier: app)?.bundleIdentifier?.hasPrefix("com.apple.Safari") == true
+        return list.filter { o in
+            var p: pid_t = -1
+            guard get(o, kAudioProcessPropertyPID, &p), p > 0 else { return false }
+            if p == app || parent(of: p) == app { return true }
+            guard safari else { return false }
+            var b: CFString = "" as CFString
+            return get(o, kAudioProcessPropertyBundleID, &b) && (b as String).hasPrefix("com.apple.WebKit.WebContent")
+        }
+    }
+    private static func parent(of p: pid_t) -> pid_t {
+        var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, p]
+        return sysctl(&mib, 4, &info, &size, nil, 0) == 0 ? info.kp_eproc.e_ppid : -1
+    }
+
+    private func fail(_ s: SoundEngine.State) -> Bool { why = s; stop(); return false }
+    deinit { stop(); scratch?.deallocate() }
+}

@@ -160,9 +160,9 @@
     },
     // a firm press on the stroke: bookmark this moment (no hover slide: the bookmarks live in the editor, SPEC 53)
     firmPress: () => post({ k: "bookmark" }),
-    // slide 1 text size · 2 Loop · A · B · 3 the speed ruler · 4 volume. Language, Follow · Learn, Clear, Download,
+    // slide 1 text size · 2 Loop · A · B · 3 the speed ruler. No volume slide (notes 2026-10-26 #16): the source player, keys or Touch Bar set it. Language, Follow · Learn, Clear, Download,
     // Share, Retranscribe, the exports and the bookmarks are the transcript editor's (SPEC 57): click the words.
-    slides: () => ["size", "loop", "speed", "volume"],
+    slides: () => ["size", "loop", "speed"],
   });
   document.body.appendChild(bar.el);
 

@@ -1369,7 +1369,12 @@ final class Toast: NSView {
 /// The line on screen, corrected where it stands: Return keeps what's typed (nothing hides the line), Esc leaves it
 /// as it was, and Reset to Auto (on a corrected line) brings back what the pipeline made. Clicking away keeps it.
 final class LineEditor: NSView, NSTextFieldDelegate {
-    enum Result { case save(String), reset, cancel }
+    enum Result { case save(String), reset, cancel, move(Int, String) }   // move: saved, then the line `n` away
+    /// Notes 24: the whole transcript on a vertical barrel, the edited line in the middle; the lines before it above,
+    /// those after it below, smaller and fainter the farther they are. Scroll (or click one) to edit another line.
+    private var rows: [PassLabel] = []
+    private var rowOffsets: [Int] = []
+    private var scrollAcc: CGFloat = 0
     let field = NSTextField(string: "")
     let hint = PassLabel(labelWithString: "Return saves  ·  Esc cancels  ·  empty hides the line")
     let resetButton = NSButton(title: "Reset to Auto", target: nil, action: nil)
@@ -1393,8 +1398,13 @@ final class LineEditor: NSView, NSTextFieldDelegate {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func begin(_ text: String, edited: Bool, size: CGFloat, done: @escaping (Result) -> Void) {
+    func begin(_ text: String, edited: Bool, size: CGFloat, above: [String] = [], below: [String] = [],
+               done: @escaping (Result) -> Void) {
         self.done = done
+        rows.forEach { $0.removeFromSuperview() }; rows = []; rowOffsets = []; scrollAcc = 0
+        let reach = 4
+        for (k, t) in above.suffix(reach).reversed().enumerated() { addRow(t, -(k + 1), size) }
+        for (k, t) in below.prefix(reach).enumerated() { addRow(t, k + 1, size) }
         field.font = .systemFont(ofSize: size, weight: .semibold)
         field.stringValue = text
         resetButton.isHidden = !edited
@@ -1413,6 +1423,28 @@ final class LineEditor: NSView, NSTextFieldDelegate {
         d(r)
     }
     @objc func resetPressed() { finish(.reset) }
+    private func addRow(_ t: String, _ off: Int, _ size: CGFloat) {
+        let d = CGFloat(abs(off))
+        let l = PassLabel(labelWithString: t.isEmpty ? "…" : t)
+        l.font = .systemFont(ofSize: max(10, size * pow(0.82, d)), weight: .medium)
+        l.textColor = NSColor(white: 1, alpha: max(0.12, 0.62 - 0.13 * d))
+        l.alignment = .center; l.lineBreakMode = .byTruncatingTail; l.maximumNumberOfLines = 1
+        addSubview(l); rows.append(l); rowOffsets.append(off)
+    }
+    func move(_ n: Int) { finish(.move(n, field.stringValue)) }
+    override func scrollWheel(with e: NSEvent) {
+        guard editing, !rows.isEmpty else { return super.scrollWheel(with: e) }
+        scrollAcc += e.scrollingDeltaY * (e.hasPreciseScrollingDeltas ? 1 : 12)
+        guard abs(scrollAcc) > 36 else { return }
+        let n = scrollAcc > 0 ? -1 : 1        // content follows the fingers: down shows the lines before
+        scrollAcc = 0
+        if rowOffsets.contains(n) { move(n) }
+    }
+    override func mouseDown(with e: NSEvent) {
+        let p = convert(e.locationInWindow, from: nil)
+        if let i = rows.firstIndex(where: { !$0.isHidden && $0.frame.insetBy(dx: 0, dy: -3).contains(p) }) { move(rowOffsets[i]) }
+        else { super.mouseDown(with: e) }
+    }
 
     func control(_ c: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
         if sel == #selector(NSResponder.insertNewline(_:)) { finish(.save(field.stringValue)); return true }
@@ -1432,6 +1464,14 @@ final class LineEditor: NSView, NSTextFieldDelegate {
         field.frame = NSRect(x: 28, y: y, width: w, height: h)
         hint.frame = NSRect(x: (bounds.width - row) / 2, y: y - 8 - max(hs.height, bs.height) / 2 - hs.height / 2, width: hs.width, height: hs.height)
         resetButton.frame = NSRect(x: hint.frame.maxX + 14, y: y - 8 - max(hs.height, bs.height) / 2 - bs.height / 2, width: bs.width, height: bs.height)
+        // the barrel: lines before stack up from the field, lines after down from the hint
+        var up = field.frame.maxY + 6, down = min(hint.frame.minY, resetButton.isHidden ? hint.frame.minY : resetButton.frame.minY) - 6
+        for (l, off) in zip(rows, rowOffsets).sorted(by: { abs($0.1) < abs($1.1) }) {
+            let h = l.intrinsicContentSize.height
+            let r = off < 0 ? NSRect(x: 28, y: up, width: w, height: h) : NSRect(x: 28, y: down - h, width: w, height: h)
+            if off < 0 { up += h + 4 } else { down -= h + 4 }
+            l.frame = r; l.isHidden = r.minY < 0 || r.maxY > bounds.height
+        }
     }
 }
 
@@ -1760,18 +1800,30 @@ final class Overlay: NSObject, NSWindowDelegate {
     // ----- correcting the line on screen -----
     /// The editor (SPEC 57): the line's own field where the lines were, and the transcript's tools (language, Follow ·
     /// Learn, Clear, Download, Share, Retranscribe, Export as MD and M4B, bookmarks) where the home bar was.
-    func beginEdit(_ text: String, edited: Bool, done: @escaping (LineEditor.Result) -> Void) {
+    private var editSession: (barHidden: Bool, frame: NSRect)?
+    func beginEdit(_ text: String, edited: Bool, above: [String] = [], below: [String] = [],
+                   done: @escaping (LineEditor.Result) -> Void) {
         words.isHidden = true
-        let barHidden = homeBar.isHidden
+        if editSession == nil { editSession = (homeBar.isHidden, panel.frame) }  // notes 19: Return restores this size
+        let (barHidden, frame) = editSession!
         homeBar.isHidden = false
         pushBar(force: true)
         homeBar.editor(true)
-        editor.begin(text, edited: edited, size: min(26, max(400, panel.frame.width) / 38)) { [weak self] r in
+        editor.begin(text, edited: edited, size: min(26, max(400, panel.frame.width) / 38), above: above, below: below) { [weak self] r in
             guard let self else { return }
+            var handled = false
+            if case .move = r { done(r); handled = true; if self.editor.editing { return } }   // the barrel turned: still editing
+            self.editSession = nil
             self.homeBar.editor(false)
             self.homeBar.isHidden = barHidden && !self.browserControls
             self.words.isHidden = false; self.lastKey = ""; self.fit.key = ""
-            done(r)
+            if !handled { done(r) }   // a move past the last line was already saved and resumed
+            if self.hostedRoot == nil {
+                let sc = NSScreen.main?.frame
+                let back = self.inStrip && sc != nil
+                    ? NSRect(x: frame.minX, y: sc!.maxY - Overlay.stripHeight, width: frame.width, height: Overlay.stripHeight) : frame
+                if self.panel.frame != back { self.panel.setFrame(back, display: true) }
+            }
         }
     }
     func lineMenu(_ e: NSEvent) {
@@ -5584,6 +5636,8 @@ final class NativeSources {
     var sound: [String: Any] = ["eq": ["low": 0, "mid": 0, "high": 0], "key": 0, "mix": 0, "room": "room"]
     var soundV = 0
     var fxNo: String?                         // the followed page can't take it: "cors", "gallery", "audio"
+    let soundEngine = SoundEngine()           // note 30: the tray's sound for players the bridge can't reshape
+    var nativeLast: (pid: pid_t?, v: Int) = (nil, -1)
     var fxKeySaid = false
     var cmdSeq = 0 { didSet { kick() } }
     var lastPush = Date.distantPast   // reports from before the page ran command #cmdSeq are stale
@@ -6172,7 +6226,8 @@ final class NativeSources {
             push(["op": "volume", "v": x])
         }
     }
-    // ----- the sound tray (SPEC 54): Recense plays nothing, so the followed page reshapes its own sound -----
+    // ----- the sound tray (SPEC 54, note 30): the tray is Recense's own controller. A Firefox page reshapes its own
+    // sound through the bridge; any other player (and a page the bridge can't take) is reshaped natively by SoundEngine.
     func setSound(_ b: [String: Any]) {
         let num = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0 }
         let eq = b["eq"] as? [String: Any] ?? [:]
@@ -6182,6 +6237,29 @@ final class NativeSources {
         fxKeySaid = false
         pendingCmds.removeAll { $0["op"] as? String == "fx" }
         if pos.source == "browser" { push(soundCmd()) }
+        routeSound()
+    }
+    /// The app whose sound SoundEngine takes, or nil when the bridge does it (or nothing should be taken).
+    var nativeSoundPID: pid_t? {
+        guard browserMode, !SoundEngine.flat(sound) else { return nil }
+        let ids: [String]
+        switch pos.source {
+        case "browser":
+            guard let no = fxNo, no != "gallery" else { return nil }   // the page takes it, or Gallery's own chain obeys
+            ids = ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
+        case "quicktime": ids = ["com.apple.QuickTimePlayerX"]
+        case "music": ids = ["com.apple.Music"]
+        default: ids = [pos.source]
+        }
+        for id in ids { if let a = NSRunningApplication.runningApplications(withBundleIdentifier: id).first { return a.processIdentifier } }
+        return nil
+    }
+    /// Engages, retunes or drops the native chain when the followed app or the tray's sound changes (cheap otherwise).
+    func routeSound() {
+        let p = nativeSoundPID
+        guard p != nativeLast.pid || soundV != nativeLast.v else { return }
+        nativeLast = (p, soundV)
+        soundEngine.run(pid: p, sound: sound)
     }
     func soundCmd() -> [String: Any] { sound.merging(["op": "fx", "v": soundV]) { a, _ in a } }
     /// The commands for a page's report, with the sound when the page has another than the tray's.
@@ -6194,20 +6272,13 @@ final class NativeSources {
     /// Why the tray's sound can't reach the followed player, in the tray's words ("EQ: …"), or nil.
     var soundBlock: String? {
         guard browserMode else { return nil }
-        switch pos.source {
-        case "browser":
-            switch fxNo {
-            case "cors": return "this page's player plays a file from another site, which doesn't let its sound be reshaped"
-            case "gallery": return "Gallery shapes its own sound: use its tray"
-            case "audio": return "this page doesn't let its sound be reshaped"
-            default: return nil
-            }
-        case "quicktime": return "QuickTime plays its own sound; the tray reshapes players followed through Firefox"
-        case "music": return "Music plays its own sound; the tray reshapes players followed through Firefox"
-        default:   // Safari or Chrome, followed through AppleScript (no extension there to make the sound)
-            let app = pos.source.localizedCaseInsensitiveContains("safari") ? "Safari"
-                : pos.source.localizedCaseInsensitiveContains("chrom") ? "Chrome" : "This player"
-            return "\(app) is followed without the bridge; the tray reshapes players followed through Firefox"
+        if pos.source == "browser", fxNo == "gallery" { return "this Gallery is older than the tray's control of it: reload Gallery" }
+        guard nativeSoundPID != nil else { return nil }
+        switch soundEngine.state {
+        case .unsupported: return "reshaping this player's sound needs macOS 14.2 or later"
+        case .denied: return "allow Sill under Privacy & Security › Audio Capture to reshape this player's sound"
+        case .failed: return "this player's sound couldn't be taken (it plays as it is); move a slider to try again"
+        case .on, .off: return nil
         }
     }
 
@@ -6421,6 +6492,7 @@ final class NativeSources {
 
     func frame() {
         if browserActive != browserMode { setBrowserMode(!browserMode) }
+        routeSound()
         overlay.soundNo = soundBlock
         ccTitle(paused: !browserMode || (expectPaused ?? pos.paused))
         // An ad in the followed player (the bridge says so): nothing is transcribed for it, and Skip Ad is offered.
@@ -6500,16 +6572,42 @@ final class NativeSources {
     /// The line on screen, corrected in place; the player waits while it's typed. A double-click's first click has
     /// already played or paused, so what was playing before it plays again after.
     func edit(clicked: Bool) {
-        guard browserMode, let ep = episode, let line = editable, !overlay.editor.editing else { return }
+        guard browserMode, let line = editable, !overlay.editor.editing else { return }
         let paused = expectPaused ?? pos.paused, resume = clicked ? paused : !paused
         if !paused { setPlaying(false) }
-        overlay.beginEdit(lineKey(line), edited: Episode.isEdited(line)) { [weak self, weak ep] r in
+        editLine(line, resume: resume)
+    }
+    /// One line of the whole transcript in the editor (notes 24), the others on its barrel; turning the barrel or
+    /// clicking another line saves this one, plays from that one's start and edits it.
+    func editLine(_ line: Line, resume: Bool) {
+        guard let ep = episode else { return }
+        let all = ep.shown
+        let i = all.firstIndex { $0.id == line.id } ?? all.firstIndex { $0.start >= line.start - 0.01 } ?? max(0, all.count - 1)
+        let above = all.indices.contains(i) ? all[..<i].map(lineKey) : []
+        let below = all.indices.contains(i) ? all[(i + 1)...].map(lineKey) : []
+        overlay.beginEdit(lineKey(line), edited: Episode.isEdited(line), above: Array(above), below: Array(below)) { [weak self, weak ep] r in
             guard let self, let ep, self.episode === ep else { return }
-            switch r {
-            case .save(let text) where text.split(whereSeparator: \.isWhitespace).joined(separator: " ") != lineKey(line):
+            @MainActor func save(_ text: String) {
+                guard text.split(whereSeparator: \.isWhitespace).joined(separator: " ") != lineKey(line) else { return }
                 ep.correct(line, to: text)
                 self.overlay.toast.say(text.allSatisfy(\.isWhitespace) ? "Line hidden" : "Corrected")
+            }
+            switch r {
+            case .save(let text): save(text)
             case .reset: ep.reset(line); self.overlay.toast.say("Back to auto")
+            case .move(let n, let text):
+                save(text)
+                let now = ep.shown
+                let hidden = !now.contains { abs($0.start - line.start) < 0.01 }
+                let base = now.firstIndex { $0.start >= line.start - 0.01 } ?? now.count
+                let j = base + n - (hidden && n > 0 ? 1 : 0)
+                if now.indices.contains(j) {
+                    let to = now[j]
+                    self.command(.seek(to.start - 0.05 - cfg.syncOffset * self.pos.rate + ep.shift))
+                    self.editable = to
+                    self.editLine(to, resume: resume)
+                    return
+                }
             default: break
             }
             if resume { self.setPlaying(true) }
