@@ -6348,6 +6348,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         updateLabel()
         updateClock()
         ready = true
+        // Recense before the hot key, gestures and monitors that can reach its card (the observer below is a no-op then).
+        Recense.start()
 
         registerHotKey { [weak self] in self?.toggle() }
         DistributedNotificationCenter.default().addObserver(
@@ -7374,6 +7376,7 @@ app.setActivationPolicy(.accessory)
 let appDelegate = App(initialCommand: initial)
 app.delegate = appDelegate
 // Recense (subtitles over any player, its extension's server, transcription) runs inside Sill now.
+// Started from App.applicationDidFinishLaunching; this observer is the fallback (start() runs once).
 NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
     MainActor.assumeIsolated { Recense.start() }
 }
