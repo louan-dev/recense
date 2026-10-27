@@ -120,13 +120,13 @@ Building for production...
 3914 |     let rep = NSBitmapImageRep(cgImage: img)
 3915 |     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, n: CGFloat = 0
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5750:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5748 |             d.location = json["location"] as? String ?? ""
-5749 |             d.allDay = json["allDay"] as? Bool ?? false
-5750 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5751:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5749 |             d.location = json["location"] as? String ?? ""
+5750 |             d.allDay = json["allDay"] as? Bool ?? false
+5751 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5751 |             d.start = parse("start") ?? now
-5752 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5752 |             d.start = parse("start") ?? now
+5753 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -136,13 +136,13 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5750:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5748 |             d.location = json["location"] as? String ?? ""
-5749 |             d.allDay = json["allDay"] as? Bool ?? false
-5750 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5751:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5749 |             d.location = json["location"] as? String ?? ""
+5750 |             d.allDay = json["allDay"] as? Bool ?? false
+5751 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5751 |             d.start = parse("start") ?? now
-5752 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5752 |             d.start = parse("start") ?? now
+5753 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -152,29 +152,58 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6604:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6602 |         if let scr = NSScreen.main {
-6603 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
-6604 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6433:79: error: main actor-isolated property 'overlay' can not be referenced from a nonisolated context
+6431 |         timeView.onClick = { [weak self] in self?.present(.pad) }
+6432 |         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
+6433 |         timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
+     |                                                                               `- error: main actor-isolated property 'overlay' can not be referenced from a nonisolated context
+6434 |         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
+6435 |         timeView.onKeyboard = { [weak self] v in
+
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5112:9: note: property declared here
+5110 | 
+5111 | @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+5112 |     var overlay: Overlay!, item: NSStatusItem!
+     |         `- note: property declared here
+5113 |     var statusUntil = Date.distantPast
+5114 |     var sigint: DispatchSourceSignal?, sigterm: DispatchSourceSignal?
+
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6433:69: error: main actor-isolated static property 'delegate' can not be referenced from a nonisolated context
+6431 |         timeView.onClick = { [weak self] in self?.present(.pad) }
+6432 |         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
+6433 |         timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
+     |                                                                     `- error: main actor-isolated static property 'delegate' can not be referenced from a nonisolated context
+6434 |         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
+6435 |         timeView.onKeyboard = { [weak self] v in
+
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:6120:16: note: static property declared here
+6118 | // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
+6119 | @MainActor enum Recense {
+6120 |     static var delegate: AppDelegate?
+     |                `- note: static property declared here
+6121 |     static func start() {
+6122 |         guard delegate == nil else { return }
+
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6607:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6605 |         if let scr = NSScreen.main {
+6606 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
+6607 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
      |                         `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6605 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
-6606 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
+6608 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+6609 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6610:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6608 |         }
-6609 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
-6610 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6613:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6611 |         }
+6612 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
+6613 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
      |                     `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6611 |             let rep = NSBitmapImageRep(cgImage: cg)
-6612 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+6614 |             let rep = NSBitmapImageRep(cgImage: cg)
+6615 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5314:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5312 |     func menuNeedsUpdate(_ m: NSMenu) {
-5313 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5314 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5335:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5333 |     func menuNeedsUpdate(_ m: NSMenu) {
+5334 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5335 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5315 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5316 |         bookmarksMenu.removeAllItems()
-[3/5] Write Objects.LinkFileList
-[4/5] Linking sill
-Build of product 'sill' complete! (105.31s)
+5336 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5337 |         bookmarksMenu.removeAllItems()

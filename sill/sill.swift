@@ -4305,7 +4305,8 @@ final class EssentialsView: ClickView {
     // MARK: Edges
 
     @objc func closeAudio() { showAudio(false) }
-    @objc func openRecense() { showRecense(true) }
+    var onRecense: (() -> Void)?
+    @objc func openRecense() { showAudio(false); onRecense?() }
     @objc func closeRecense() { showRecense(false) }
 
     /// Recense as its own page, opened from the left bar's menu the way the right bar opens the vault.
@@ -6428,6 +6429,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.frame = effect.bounds
         timeView.autoresizingMask = [.width, .height]
         timeView.onClick = { [weak self] in self?.present(.pad) }
+        // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
+        timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
         timeView.onKeyboard = { [weak self] v in
             guard let self = self, self.panel.isVisible else { return }

@@ -1300,6 +1300,18 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     var minimized: Bool { hostedRoot == nil && (panel.isMiniaturized || !panel.isVisible) }
 
+    /// Opened from Sill: a see-through strip from the top of the screen (over the menu bar) to about the bottom of a
+    /// browser's address bar, as wide as Sill's card; dark enough to read the subtitles, light enough to see behind.
+    func showStrip() {
+        guard let sc = NSScreen.main else { return }
+        let w = timeSize.width, h: CGFloat = 120
+        panel.backgroundColor = NSColor(white: 0.04, alpha: 0.55)
+        panel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: true)
+        if panel.isMiniaturized { panel.deminiaturize(nil) }
+        panel.orderFrontRegardless()
+        lastKey = ""; fits = [:]
+    }
+
     /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
     var hostedRoot: NSView?
     private var panelWasVisible = false
@@ -2962,7 +2974,16 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     /// The languages this song is sung in, with their share of it: from its lyrics' spelling, else from each phrase heard
     /// (phraseLanguage). A language the spelling can't name (Arabic script) is the one Whisper heard in that script.
+    // Recomputing this runs NaturalLanguage over the whole song; inside Sill that stalled the main thread, so it is
+    // kept until the words heard or the lyrics change.
+    private var sharesMemo: (heard: Int, lyrics: Int, v: [(code: String, share: Double)])?
     func languageShares() -> [(code: String, share: Double)] {
+        if let m = sharesMemo, m.heard == heard.count, m.lyrics == lyrics.count { return m.v }
+        let v = computeLanguageShares()
+        sharesMemo = (heard.count, lyrics.count, v)
+        return v
+    }
+    private func computeLanguageShares() -> [(code: String, share: Double)] {
         var n: [String: Double] = [:]
         if lyrics.isEmpty {
             for ph in sentences(heard, pause: 0.7) where ph.count >= 3 { if let l = language(of: ph) { n[l.code, default: 0] += Double(ph.count) } }
