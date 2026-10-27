@@ -152,38 +152,6 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6433:79: error: main actor-isolated property 'overlay' can not be referenced from a nonisolated context
-6431 |         timeView.onClick = { [weak self] in self?.present(.pad) }
-6432 |         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
-6433 |         timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
-     |                                                                               `- error: main actor-isolated property 'overlay' can not be referenced from a nonisolated context
-6434 |         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
-6435 |         timeView.onKeyboard = { [weak self] v in
-
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5112:9: note: property declared here
-5110 | 
-5111 | @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-5112 |     var overlay: Overlay!, item: NSStatusItem!
-     |         `- note: property declared here
-5113 |     var statusUntil = Date.distantPast
-5114 |     var sigint: DispatchSourceSignal?, sigterm: DispatchSourceSignal?
-
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6433:69: error: main actor-isolated static property 'delegate' can not be referenced from a nonisolated context
-6431 |         timeView.onClick = { [weak self] in self?.present(.pad) }
-6432 |         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
-6433 |         timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
-     |                                                                     `- error: main actor-isolated static property 'delegate' can not be referenced from a nonisolated context
-6434 |         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
-6435 |         timeView.onKeyboard = { [weak self] v in
-
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:6120:16: note: static property declared here
-6118 | // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
-6119 | @MainActor enum Recense {
-6120 |     static var delegate: AppDelegate?
-     |                `- note: static property declared here
-6121 |     static func start() {
-6122 |         guard delegate == nil else { return }
-
 /Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6607:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
 6605 |         if let scr = NSScreen.main {
 6606 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
@@ -200,10 +168,13 @@ Building for production...
 6614 |             let rep = NSBitmapImageRep(cgImage: cg)
 6615 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5335:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5333 |     func menuNeedsUpdate(_ m: NSMenu) {
-5334 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5335 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5337:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5335 |     func menuNeedsUpdate(_ m: NSMenu) {
+5336 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5337 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5336 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5337 |         bookmarksMenu.removeAllItems()
+5338 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5339 |         bookmarksMenu.removeAllItems()
+[3/5] Write Objects.LinkFileList
+[4/5] Linking sill
+Build of product 'sill' complete! (133.46s)

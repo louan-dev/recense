@@ -6430,7 +6430,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.autoresizingMask = [.width, .height]
         timeView.onClick = { [weak self] in self?.present(.pad) }
         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
-        timeView.onRecense = { [weak self] in self?.hide(); Recense.delegate?.overlay.showStrip() }
+        timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.delegate?.overlay.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
         timeView.onKeyboard = { [weak self] v in
             guard let self = self, self.panel.isVisible else { return }

@@ -966,6 +966,8 @@ final class PassLabel: NSTextField { override func hitTest(_ p: NSPoint) -> NSVi
 final class RecenseKeyPanel: NSPanel {
     var onKey: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { true }
+    // Titled windows are kept below the menu bar; the strip hangs from the very top of the screen.
+    override func constrainFrameRect(_ r: NSRect, to screen: NSScreen?) -> NSRect { r }
     override func keyDown(with e: NSEvent) { if onKey?(e) != true { super.keyDown(with: e) } }
 }
 
@@ -6123,5 +6125,6 @@ final class NativeSources {
         let d = AppDelegate()
         delegate = d
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        d.overlay.showStrip()                  // the window is always the strip inside Sill
     }
 }
