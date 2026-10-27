@@ -1302,12 +1302,16 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     var minimized: Bool { hostedRoot == nil && (panel.isMiniaturized || !panel.isVisible) }
 
+    func hideStrip() { panel.orderOut(nil); onToggle?() }
+    func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
+
     /// Opened from Sill: a see-through strip from the top of the screen (over the menu bar) to about the bottom of a
     /// browser's address bar, as wide as Sill's card; dark enough to read the subtitles, light enough to see behind.
     func showStrip() {
         guard let sc = NSScreen.main else { return }
         let w = timeSize.width, h: CGFloat = 120
         panel.backgroundColor = NSColor(white: 0.04, alpha: 0.55)
+        panel.styleMask.remove(.resizable); panel.isMovable = false      // locked: only the strip's Recense button moves it
         panel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: true)
         if panel.isMiniaturized { panel.deminiaturize(nil) }
         panel.orderFrontRegardless()
@@ -5313,6 +5317,7 @@ final class NativeSources {
         let on = busy
         if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused))") }
         displayLink?.isPaused = !on
+        if !on { frame() }                        // paused: still draw what changed (a seek, a transcript loaded)
         pollTimer?.invalidate()
         let t = Timer(timeInterval: on ? 0.05 : 1.0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.pollLoop() } }
         pollTimer = t

@@ -3928,6 +3928,7 @@ final class GlassPauseButton: NSButton {
     private var hover = false
     var showsPlay = false { didSet { needsDisplay = true } }
     var symbol: String?                 // a round glass button with an SF Symbol instead of play/pause
+    var mark: NSImage?                  // or with a template image (drawn white), such as Recense's mark
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
@@ -3949,6 +3950,14 @@ final class GlassPauseButton: NSButton {
         NSBezierPath(ovalIn: c).fill()
         NSColor.white.withAlphaComponent(0.3).setStroke()
         let rim = NSBezierPath(ovalIn: c.insetBy(dx: 0.5, dy: 0.5)); rim.lineWidth = 0.8; rim.stroke()
+        if let m = mark {
+            let s = d * 0.62, r = NSRect(x: c.midX - s / 2, y: c.midY - s / 2, width: s, height: s)
+            let white = NSImage(size: r.size, flipped: false) { b in
+                m.draw(in: b); NSColor.white.set(); b.fill(using: .sourceAtop); return true
+            }
+            white.draw(in: r)
+            return
+        }
         if let sym = symbol, let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: d * 0.42, weight: .semibold).applying(.init(paletteColors: [.white]))) {
             img.draw(in: NSRect(x: c.midX - img.size.width / 2, y: c.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
@@ -4762,6 +4771,7 @@ final class RestStrip: NSObject {
     let sideQuest = GlassPauseButton()
     let space = GlassPauseButton()
     let spaceBack = GlassPauseButton()
+    let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
     private var batteryText = ""
     private var batteryAt = Date.distantPast
@@ -4811,6 +4821,9 @@ final class RestStrip: NSObject {
         space.symbol = "square.grid.3x2"; space.isBordered = false; space.title = ""
         space.toolTip = "Mission Control"
         space.target = self; space.action = #selector(missionControl)
+        recense.mark = recenseIcon(); recense.isBordered = false; recense.title = ""
+        recense.toolTip = "Recense: open or close the subtitle card"
+        recense.target = self; recense.action = #selector(toggleRecense)
         for (b, sym, tip, sel) in [(spaceBack, "chevron.left", "Previous desktop", #selector(prevSpace)),
                                    (spaceNext, "chevron.right", "Next desktop", #selector(nextSpace))] {
             b.symbol = sym; b.isBordered = false; b.title = ""; b.toolTip = tip
@@ -4818,7 +4831,7 @@ final class RestStrip: NSObject {
         }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, battery, sideQuest, pause, spaceBack, space, spaceNext].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, battery, sideQuest, pause, recense].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -4853,6 +4866,7 @@ final class RestStrip: NSObject {
         // Mission Control itself (the same as its keyboard shortcut or the Mission Control app).
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
+    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.delegate?.overlay.toggleStrip() } }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -4896,6 +4910,7 @@ final class RestStrip: NSObject {
         pause.frame = NSRect(x: b.midX - 10, y: (b.height - 20) / 2, width: 20, height: 20)
         sideQuest.frame = NSRect(x: b.midX - 40, y: (b.height - 20) / 2, width: 20, height: 20)
         // Desktops: back, new, forward.
+        recense.frame = NSRect(x: b.midX + 20, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
         space.frame = NSRect(x: b.midX + 42, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceNext.frame = NSRect(x: b.midX + 64, y: (b.height - 18) / 2, width: 18, height: 18)
@@ -6582,6 +6597,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         switch cmd {
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up, down one down.
         case "up":     guard settled() else { return }
+                       // The Recense card is dismissed first, before any layer opens.
+                       if MainActor.assumeIsolated({ Recense.delegate?.overlay.panel.isVisible == true }) {
+                           MainActor.assumeIsolated { Recense.delegate?.overlay.hideStrip() }; return
+                       }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
         case "down":   guard settled() else { return }
                        if panel.isVisible {

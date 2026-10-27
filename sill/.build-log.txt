@@ -120,13 +120,13 @@ Building for production...
 3914 |     let rep = NSBitmapImageRep(cgImage: img)
 3915 |     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, n: CGFloat = 0
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5751:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5749 |             d.location = json["location"] as? String ?? ""
-5750 |             d.allDay = json["allDay"] as? Bool ?? false
-5751 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5766:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5764 |             d.location = json["location"] as? String ?? ""
+5765 |             d.allDay = json["allDay"] as? Bool ?? false
+5766 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5752 |             d.start = parse("start") ?? now
-5753 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5767 |             d.start = parse("start") ?? now
+5768 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -136,13 +136,13 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5751:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5749 |             d.location = json["location"] as? String ?? ""
-5750 |             d.allDay = json["allDay"] as? Bool ?? false
-5751 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:5766:73: warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
+5764 |             d.location = json["location"] as? String ?? ""
+5765 |             d.allDay = json["allDay"] as? Bool ?? false
+5766 |             let parse = { (k: String) in (json[k] as? String).flatMap { iso.date(from: $0) } }
      |                                                                         `- warning: capture of 'iso' with non-sendable type 'ISO8601DateFormatter' in an isolated closure; this is an error in the Swift 6 language mode
-5752 |             d.start = parse("start") ?? now
-5753 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
+5767 |             d.start = parse("start") ?? now
+5768 |             d.end = parse("end") ?? d.start.addingTimeInterval(1800)
 
 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSISO8601DateFormatter.h:46:12: note: class 'ISO8601DateFormatter' does not conform to the 'Sendable' protocol
 44 | 
@@ -152,29 +152,29 @@ Building for production...
 47 | @private
 48 |     CFDateFormatterRef _formatter;
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6607:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6605 |         if let scr = NSScreen.main {
-6606 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
-6607 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6626:25: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6624 |         if let scr = NSScreen.main {
+6625 |             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
+6626 |             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
      |                         `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6608 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
-6609 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
+6627 |                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+6628 |                     .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6613:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6611 |         }
-6612 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
-6613 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:6632:21: warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
+6630 |         }
+6631 |         // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
+6632 |         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
      |                     `- warning: 'CGWindowListCreateImage' was deprecated in macOS 14.0: Please use ScreenCaptureKit instead.
-6614 |             let rep = NSBitmapImageRep(cgImage: cg)
-6615 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+6633 |             let rep = NSBitmapImageRep(cgImage: cg)
+6634 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5337:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5335 |     func menuNeedsUpdate(_ m: NSMenu) {
-5336 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5337 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5342:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5340 |     func menuNeedsUpdate(_ m: NSMenu) {
+5341 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5342 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5338 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5339 |         bookmarksMenu.removeAllItems()
+5343 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5344 |         bookmarksMenu.removeAllItems()
 [3/5] Write Objects.LinkFileList
 [4/5] Linking sill
-Build of product 'sill' complete! (133.46s)
+Build of product 'sill' complete! (58.40s)
