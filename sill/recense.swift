@@ -1539,7 +1539,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     var inStrip = false
     /// The strip starts over the menu bar (and a notch): its lines start below that, and the strip grows by as much (notes 47).
     static func stripTop(_ sc: NSScreen) -> CGFloat {
-        max(26, sc.frame.maxY - sc.visibleFrame.maxY, sc.safeAreaInsets.top) + 4
+        max(26, sc.frame.maxY - sc.visibleFrame.maxY, sc.safeAreaInsets.top) + 22
     }
     static func stripHeight(_ sc: NSScreen) -> CGFloat { stripHeight + stripTop(sc) - 26 }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
