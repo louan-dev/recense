@@ -6176,6 +6176,7 @@ final class NativeSources {
     static var overlay: Overlay? { delegate.flatMap { $0.overlay as Overlay? } }
     static func start() {
         guard delegate == nil else { return }
+        log("sill: starting Recense")
         let d = AppDelegate()
         delegate = d
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))

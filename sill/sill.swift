@@ -4885,6 +4885,7 @@ final class RestStrip: NSObject {
     }
     @objc func openRecord() { record.bounce(); onRecord?() }
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
+
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -6387,6 +6388,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
 
         writeState("hidden")
+        Recense.start()            // last, once Sill's own strip, hover and gestures are set up (start() runs once)
         run(initialCommand)
     }
 
