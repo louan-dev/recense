@@ -4987,15 +4987,24 @@ final class RestStrip: NSObject {
         if now.timeIntervalSince(batteryAt) > 120 {
             batteryAt = now
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let text = readBatteries().map { $0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%" }.joined(separator: "   ")
-                let low = readBatteries().map { ($0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%", $0.percent < 30) }
+                let all = readBatteries()
+                let text = all.map { $0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%" }.joined(separator: "   ")
                 DispatchQueue.main.async {
                     self?.batteryText = text
+                    let font = self?.battery.font ?? roundedFont(11, .semibold)
                     let a = NSMutableAttributedString()
-                    for (i, (t, isLow)) in low.enumerated() {
+                    for (i, b) in all.enumerated() {
+                        let color = b.percent < 30 ? batteryLow : batteryOK
                         if i > 0 { a.append(NSAttributedString(string: "   ")) }
-                        a.append(NSAttributedString(string: t, attributes: [.foregroundColor: isLow ? batteryLow : batteryOK,
-                                                                            .font: self?.battery.font ?? roundedFont(11, .semibold)]))
+                        // Charging and the level at once: a bolt in front of the percentage, in its colour.
+                        if b.charging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Charging")?
+                            .withSymbolConfiguration(.init(pointSize: font.pointSize - 1, weight: .semibold).applying(.init(paletteColors: [color]))) {
+                            let att = NSTextAttachment(); att.image = bolt
+                            att.bounds = NSRect(x: 0, y: -1, width: bolt.size.width, height: bolt.size.height)
+                            a.append(NSAttributedString(attachment: att)); a.append(NSAttributedString(string: "\u{2009}"))
+                        }
+                        let t = b.name == "Mac" ? "\(b.percent)%" : "\(b.name) \(b.percent)%"
+                        a.append(NSAttributedString(string: t, attributes: [.foregroundColor: color, .font: font]))
                     }
                     self?.battery.attributedStringValue = a
                 }
