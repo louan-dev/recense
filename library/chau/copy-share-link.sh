@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Finder Quick Action "Copy Public Link": select files, or a folder in Gallery/Public, and get a
+# Finder Quick Action "Copy Share Link": select files, or a folder in Gallery/Public, and get a
 # gallery link on the clipboard.
 #
 # Automator: New > Quick Action, receives files or folders in Finder, add "Run Shell Script"
 # (shell /bin/bash, pass input as arguments) containing only:
-#   exec /bin/bash "$HOME/Developer/cloudflare/gallery/mac/copy-public-link.sh" "$@"
+#   exec /bin/bash "$HOME/Library/Application Support/Gallery/copy-share-link.sh" "$@"
 #
 # Two paths:
 #   - Anything inside ~/Gallery/Public/<folder>: it is already online, so this only asks for that
@@ -14,9 +14,19 @@
 #     they land), then files go up smallest first. Over ~90 MB, in 32 MiB parts.
 #
 # It signs in as the owner with the Access service token kept in the Keychain
-# (mac/setup.sh puts it there). Logs go to ~/Library/Logs/gallery-link.log.
+# (chau/setup.sh puts it there). Logs go to ~/Library/Logs/gallery-link.log.
+#
+# setup.sh copies this file to ~/Library/Application Support/Gallery/copy-share-link.sh, which is
+# the path the Quick Action should call, so the Quick Action never depends on where the project lives.
+#
+# The uploads continue in a second copy of this script that is started in its own session (see the
+# end of the file). Automator ends everything it started the moment the action returns, so a plain
+# background job would be killed after the first few seconds.
 
 set -u
+
+# Quick Actions start with a bare PATH
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$PATH"
 
 # -------------------------------------------------------------------
 # Configuration
@@ -31,6 +41,9 @@ PART_MB=32                          # R2 needs parts of at least 5 MiB
 BIG=90000000                        # Cloudflare refuses single requests over 100 MB
 RETRY_SLEEP=3
 
+SELF="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/$(basename "$0")"
+RESUME="${GALLERY_RESUME:-}"   # set only in the detached copy that carries on uploading
+
 LOG="$HOME/Library/Logs/gallery-link.log"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 
@@ -38,8 +51,11 @@ log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null || true
 }
 
+# when nobody is watching a terminal, keep stderr in the log instead of losing it
+[ -t 2 ] || exec 2>>"$LOG"
+
 log "============================================================"
-log "Started with $# item(s)"
+log "Started with $# item(s) | script: $SELF | bash $BASH_VERSION | user: $(id -un)${RESUME:+ | resuming uploads}"
 
 # -------------------------------------------------------------------
 # macOS messages
@@ -74,14 +90,25 @@ toast_bg() {
 # State
 # -------------------------------------------------------------------
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/gallery-link.XXXXXX")"
+if [ -n "$RESUME" ] && [ -d "$RESUME" ]; then
+  TMP="$RESUME"
+else
+  RESUME=""
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/gallery-link.XXXXXX")"
+fi
+
 ID=""
 UPID=""
 CUR_I=""
 LIVE=0
 MAXT=120
 
-trap 'rm -rf "$TMP"' EXIT
+KEEP_TMP=0
+trap '[ "$KEEP_TMP" = 1 ] || rm -rf "$TMP"' EXIT
+
+mime_of() {
+  /usr/bin/file -b --mime-type "$1" 2>/dev/null || echo "application/octet-stream"
+}
 
 fsize() { /usr/bin/stat -f%z "$1"; }
 fmtime() { /usr/bin/stat -f%m "$1"; }
@@ -131,7 +158,7 @@ call_retry() {
     call "$@"
     [ "$CODE" = "200" ] && return 0
     # refusals do not improve with retries
-    case "$CODE" in 302|400|403|404|413) return 1 ;; esac
+    case "$CODE" in 302|400|401|403|404|411|413) return 1 ;; esac
     [ "$tries" -ge 4 ] && return 1
     log "Retry $((tries + 1)) of 4"
     sleep $((RETRY_SLEEP * tries))
@@ -141,7 +168,8 @@ call_retry() {
 
 why() {
   case "$CODE" in
-    302|403|404) echo "the Mac's sign-in was refused; run mac/setup.sh again" ;;
+    302|401|403|404) echo "the Mac's sign-in was refused; run chau/setup.sh again, and check that the Access policy 'Service Auth' includes the token gallery-chau" ;;
+    411) echo "the request had no length" ;;
     400) echo "bad request" ;;
     413) echo "file too large for one request" ;;
     429) echo "rate limited, try again shortly" ;;
@@ -158,14 +186,14 @@ why() {
 abort_upload() {
   [ -n "$UPID" ] || return 0
   log "Aborting multipart upload"
-  call -X POST "$BASE/main/api/upload?action=abort&id=$ID&i=$CUR_I&uploadId=$(enc "$UPID")"
+  call -X POST -d "" "$BASE/main/api/upload?action=abort&id=$ID&i=$CUR_I&uploadId=$(enc "$UPID")"
   UPID=""
 }
 
 cancel_link() {
   [ "$LIVE" = "1" ] || return 0
   log "Marking unfinished items failed"
-  call -X POST "$BASE/main/api/link?action=cancel&id=$ID"
+  call -X POST -d "" "$BASE/main/api/link?action=cancel&id=$ID"
   LIVE=0
 }
 
@@ -180,8 +208,133 @@ fail() {
 
 trap 'log "Interrupted"; abort_upload; cancel_link; exit 1' INT TERM
 
-[ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] ||
-  fail "This Mac isn't signed in to Gallery yet. Run mac/setup.sh once."
+if [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+  log "Keychain read returned nothing for service gallery-access"
+  fail "This Mac isn't signed in to Gallery yet. Run chau/setup.sh once."
+fi
+
+# -------------------------------------------------------------------
+# Upload one file: one request up to BIG, parts above it
+# -------------------------------------------------------------------
+
+upload_one() {
+  local f="$1" i="$2"
+  local size name mime qs
+
+  size="$(fsize "$f")"
+  name="$(basename "$f")"
+  mime="$(mime_of "$f")"
+  CUR_I="$i"
+  qs="id=$ID&i=$i&name=$(enc "$name")&days=$DAYS&t=$(( $(fmtime "$f") * 1000 ))&hasArt=0"
+
+  log "Uploading #$((i + 1)): $name ($size bytes, $mime)"
+
+  if [ "$size" -le "$BIG" ]; then
+    MAXT=900
+    call_retry -X PUT -T "$f" -H "content-type: $mime" "$BASE/main/api/upload?$qs" ||
+      fail "$name: $(why)"
+    MAXT=120
+    return 0
+  fi
+
+  local part_bytes total parts n etag
+  part_bytes=$((PART_MB * 1024 * 1024))
+  total=$(( (size + part_bytes - 1) / part_bytes ))
+
+  call -X POST -d "" "$BASE/main/api/upload?action=start&$qs&total=$total&type=$(enc "$mime")"
+  [ "$CODE" = "200" ] || fail "$name: could not start the upload ($(why))"
+
+  UPID="$(/usr/bin/printf %s "$RESP" | /usr/bin/tr -d '\r\n ')"
+  [ -n "$UPID" ] || fail "$name: the server returned no upload id"
+
+  parts=""
+  n=1
+
+  while [ "$n" -le "$total" ]; do
+    /bin/dd if="$f" of="$TMP/chunk" bs=1048576 skip=$(( (n - 1) * PART_MB )) count="$PART_MB" 2>/dev/null
+    notify "$name: part $n of $total"
+
+    MAXT=900
+    call_retry -X PUT -T "$TMP/chunk" -H "content-type: application/octet-stream" \
+      "$BASE/main/api/upload?action=part&id=$ID&i=$i&uploadId=$(enc "$UPID")&part=$n&total=$total" ||
+      fail "$name: part $n of $total failed ($(why))"
+    MAXT=120
+
+    etag="$(/usr/bin/printf %s "$RESP" | /usr/bin/tr -d '"\r\n ')"
+    [ -n "$etag" ] || fail "$name: part $n returned no ETag"
+
+    parts="$parts{\"partNumber\":$n,\"etag\":\"$etag\"},"
+    n=$((n + 1))
+  done
+
+  rm -f "$TMP/chunk"
+
+  call_retry -X POST -H "content-type: application/json" --data "[${parts%,}]" \
+    "$BASE/main/api/upload?action=complete&id=$ID&i=$i&uploadId=$(enc "$UPID")" ||
+    fail "$name: could not finish ($(why))"
+
+  UPID=""
+}
+
+# smallest first, so photos are viewable while a big video is still going up
+make_order() {
+  ORDER=$(
+    j=0
+    for f in "${FILES[@]}"; do
+      printf '%s %s\n' "$(fsize "$f")" "$j"
+      j=$((j + 1))
+    done | /usr/bin/sort -n | /usr/bin/cut -d' ' -f2
+  )
+}
+
+run_uploads() {
+  local idx ok=0 _
+
+  for idx in $ORDER; do
+    upload_one "${FILES[$idx]}" "$idx"
+  done
+
+  # -------------------------------------------------------------------
+  # Check the gallery shows everything (informational only)
+  # -------------------------------------------------------------------
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    case "$(/usr/bin/curl -sS --max-time 30 "$BASE/api/gallery?id=$ID" 2>/dev/null)" in
+      *'"complete":true'*) ok=1; break ;;
+    esac
+    sleep 1
+  done
+
+  [ "$ok" = "1" ] || log "Warning: the gallery did not confirm every item within 10s"
+
+  LIVE=0
+  log "Done: $LINK"
+  notify "All $COUNT file(s) uploaded."
+}
+
+# -------------------------------------------------------------------
+# The detached copy: the link exists already, so it only uploads
+# -------------------------------------------------------------------
+
+if [ -n "$RESUME" ]; then
+  ID="${GALLERY_ID:-}"
+  LINK="${GALLERY_LINK:-}"
+  [ -n "$ID" ] || fail "The upload helper started without a link."
+
+  LIVE=1
+  FILES=()
+
+  while IFS= read -r f; do
+    [ -n "$f" ] && FILES+=("$f")
+  done < "$TMP/files.txt"
+
+  COUNT="${#FILES[@]}"
+  log "Detached uploader running for $LINK ($COUNT file(s), pid $$)"
+
+  make_order
+  run_uploads
+  exit 0
+fi
 
 # -------------------------------------------------------------------
 # Input: arguments, or one path per line on stdin
@@ -196,6 +349,25 @@ if [ "$#" -eq 0 ] && [ ! -t 0 ]; then
 fi
 
 [ "$#" -gt 0 ] || fail "Nothing was selected. In Automator, set 'Pass input' to 'as arguments'."
+
+# -------------------------------------------------------------------
+# How long the link lasts (GALLERY_DAYS skips the question)
+# -------------------------------------------------------------------
+
+if [ -z "${GALLERY_DAYS:-}" ]; then
+  pick="$(
+    /usr/bin/osascript \
+      -e 'choose from list {"1 day", "7 days", "30 days"} with title "Gallery" with prompt "Link expires after:" default items {"7 days"}' \
+      2>/dev/null
+  )"
+  case "$pick" in
+    "1 day") DAYS=1 ;;
+    "7 days") DAYS=7 ;;
+    "30 days") DAYS=30 ;;
+    *) log "Cancelled at the expiry choice"; exit 0 ;;
+  esac
+  log "Expiry: $DAYS day(s)"
+fi
 
 # -------------------------------------------------------------------
 # Already online: a folder (or anything inside one) in Gallery/Public
@@ -218,7 +390,7 @@ case "$1" in
     done
 
     log "Public folder: $folder"
-    call -X POST "$BASE/main/api/link?action=folder&name=$(enc "$folder")&days=$DAYS"
+    call -X POST -d "" "$BASE/main/api/link?action=folder&name=$(enc "$folder")&days=$DAYS"
 
     case "$CODE" in
       200) ;;
@@ -254,10 +426,6 @@ COUNT="$#"
 for f in "${FILES[@]}"; do
   [ -f "$f" ] || fail "Not a file: $f (to share a folder, put it in Gallery/Public)"
 done
-
-mime_of() {
-  /usr/bin/file -b --mime-type "$1" 2>/dev/null || echo "application/octet-stream"
-}
 
 # one line per file: size, taken (ms), type, name
 : > "$TMP/items.txt"
@@ -298,97 +466,31 @@ if [ "$OPEN_GALLERY" = "1" ]; then
   /usr/bin/open "$LINK" >/dev/null 2>&1 &
 fi
 
-# -------------------------------------------------------------------
-# Upload one file: one request up to BIG, parts above it
-# -------------------------------------------------------------------
+# Foreground mode (for Terminal debugging): GALLERY_FOREGROUND=1
+if [ "${GALLERY_FOREGROUND:-0}" = "1" ]; then
+  make_order
+  run_uploads
+  echo "$LINK"
+  exit 0
+fi
 
-upload_one() {
-  local f="$1" i="$2"
-  local size name mime qs
+# Normal mode: hand the uploads to a second copy of this script and return now, so the Quick Action
+# finishes at once, the link is already on the clipboard, and the gallery fills in live.
+# The copy gets its own session (perl's setsid; macOS has no setsid command), because Automator
+# ends everything left in its own session when the action returns.
+printf '%s\n' "${FILES[@]}" > "$TMP/files.txt"
+KEEP_TMP=1
 
-  size="$(fsize "$f")"
-  name="$(basename "$f")"
-  mime="$(mime_of "$f")"
-  CUR_I="$i"
-  qs="id=$ID&i=$i&name=$(enc "$name")&days=$DAYS&t=$(( $(fmtime "$f") * 1000 ))&hasArt=0"
+if [ -x /usr/bin/perl ]; then
+  GALLERY_RESUME="$TMP" GALLERY_ID="$ID" GALLERY_LINK="$LINK" \
+    /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' /bin/bash "$SELF" </dev/null >/dev/null 2>&1 &
+else
+  GALLERY_RESUME="$TMP" GALLERY_ID="$ID" GALLERY_LINK="$LINK" \
+    nohup /bin/bash "$SELF" </dev/null >/dev/null 2>&1 &
+fi
 
-  log "Uploading #$((i + 1)): $name ($size bytes, $mime)"
+log "Uploads continuing in a detached process (pid $!)"
+disown 2>/dev/null || true
 
-  if [ "$size" -le "$BIG" ]; then
-    MAXT=900
-    call_retry -X PUT -T "$f" -H "content-type: $mime" "$BASE/main/api/upload?$qs" ||
-      fail "$name: $(why)"
-    MAXT=120
-    return 0
-  fi
-
-  local part_bytes total parts n etag
-  part_bytes=$((PART_MB * 1024 * 1024))
-  total=$(( (size + part_bytes - 1) / part_bytes ))
-
-  call -X POST "$BASE/main/api/upload?action=start&$qs&total=$total&type=$(enc "$mime")"
-  [ "$CODE" = "200" ] || fail "$name: could not start the upload ($(why))"
-
-  UPID="$(/usr/bin/printf %s "$RESP" | /usr/bin/tr -d '\r\n ')"
-  [ -n "$UPID" ] || fail "$name: the server returned no upload id"
-
-  parts=""
-  n=1
-
-  while [ "$n" -le "$total" ]; do
-    /bin/dd if="$f" of="$TMP/chunk" bs=1048576 skip=$(( (n - 1) * PART_MB )) count="$PART_MB" 2>/dev/null
-    notify "$name: part $n of $total"
-
-    MAXT=900
-    call_retry -X PUT -T "$TMP/chunk" -H "content-type: application/octet-stream" \
-      "$BASE/main/api/upload?action=part&id=$ID&i=$i&uploadId=$(enc "$UPID")&part=$n&total=$total" ||
-      fail "$name: part $n of $total failed ($(why))"
-    MAXT=120
-
-    etag="$(/usr/bin/printf %s "$RESP" | /usr/bin/tr -d '"\r\n ')"
-    [ -n "$etag" ] || fail "$name: part $n returned no ETag"
-
-    parts="$parts{\"partNumber\":$n,\"etag\":\"$etag\"},"
-    n=$((n + 1))
-  done
-
-  rm -f "$TMP/chunk"
-
-  call_retry -X POST -H "content-type: application/json" --data "[${parts%,}]" \
-    "$BASE/main/api/upload?action=complete&id=$ID&i=$i&uploadId=$(enc "$UPID")" ||
-    fail "$name: could not finish ($(why))"
-
-  UPID=""
-}
-
-# smallest first, so photos are viewable while a big video is still going up
-ORDER=$(
-  j=0
-  for f in "${FILES[@]}"; do
-    printf '%s %s\n' "$(fsize "$f")" "$j"
-    j=$((j + 1))
-  done | /usr/bin/sort -n | /usr/bin/cut -d' ' -f2
-)
-
-for idx in $ORDER; do
-  upload_one "${FILES[$idx]}" "$idx"
-done
-
-# -------------------------------------------------------------------
-# Check the gallery shows everything
-# -------------------------------------------------------------------
-
-ok=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  case "$(/usr/bin/curl -sS --max-time 30 "$BASE/api/gallery?id=$ID" 2>/dev/null)" in
-    *'"complete":true'*) ok=1; break ;;
-  esac
-  sleep 1
-done
-
-[ "$ok" = "1" ] || fail "Uploads finished, but the gallery doesn't show every item yet."
-
-LIVE=0
-log "Done: $LINK"
-notify "All $COUNT file(s) uploaded."
 echo "$LINK"
+exit 0

@@ -203,5 +203,12 @@ input[type=password]{
 }
 
 #signin a{
-  color:var(--blue)
+  color:var(--blue);
+.back{
+  margin:0 0 12px 4px;
+}
+.back a,
+.back a:visited {
+  color:var(--blue);
+text-decoration:none;
 }

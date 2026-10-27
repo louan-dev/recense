@@ -10,6 +10,11 @@ tmp="$(mktemp -d)"
 
 swiftc -O "$here/main.swift" -o "$tmp/Gallery" -framework AppKit -framework LocalAuthentication
 
+if pgrep -x Gallery >/dev/null; then
+  osascript -e 'tell application id "local.gallery" to quit' >/dev/null 2>&1 || pkill -x Gallery || true
+  sleep 1
+fi
+
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 mv "$tmp/Gallery" "$app/Contents/MacOS/Gallery"

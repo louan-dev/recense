@@ -1,0 +1,1953 @@
+/* The home bar and the vertical bar: one stylesheet for Gallery's player and Recense's window
+   (copied into Recense.app by recense/build.sh). Pairs with homebar.js; never fork it (SPEC P2).
+
+   The horizontal bar: at rest only a thin stroke, like the iOS home indicator: no container, no
+   border, no label. Hover (mouse) or tap (touch) and it unfolds along its length; above it a
+   barrel of slides rolls sideways, three things at most to a slide, each above one third of the
+   bar (where Loop, A and B stand). No blur behind it: the lyrics already sit on black, so all it
+   gets is a transparent, iridescent sheen, the way the EQ curve is drawn.
+   Every size comes from the tokens below, so one design takes a different spatial form on a
+   laptop, an iPad, an iPhone and Recense's small window. A host places the bar with --bb0 (the
+   height of what sits under it) and --cl (how far above that the control line runs). */
+
+.p-hb{
+  --hbw:372px;   /* unfolded width */
+  --hbc:120px;   /* press width of the collapsed stroke */
+  --hbl:48px;    /* visible length of the collapsed stroke */
+  --hbh:44px;    /* press height of the stroke: the hitbox (taller since P2; the stroke itself is unchanged) */
+  --hbt:4px;     /* thickness of the stroke */
+  --rowh:42px;   /* press height of a control */
+  --fs:13px;
+  --dot:7px;
+  --pad:8px;
+  --hbs:640px;   /* width of the stroke while it is a time ruler */
+  --skpad:26px;  /* room at each end of the ruler for its first and last label (set per media) */
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:calc(var(--bb0) + var(--cl) - var(--hbh) / 2); /* the stroke is centred on the control line */
+  display:flex;
+  justify-content:center;
+  box-sizing:border-box;
+  padding:0 max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left));
+  pointer-events:none;
+  z-index:6;
+  transition:opacity .3s
+}
+
+.p-hbbox{
+  position:relative;
+  width:var(--hbc);
+  max-width:100%;
+  pointer-events:auto;
+  transition:width .5s cubic-bezier(.2,.9,.25,1.04)
+}
+
+.p-hb[data-open="true"] .p-hbbox{
+  width:min(var(--hbw),100%)
+}
+
+/* one tray at a time: while the EQ panel is open the whole home bar steps aside, so the
+   stroke can never show through the panel */
+.p-hb.away{
+  opacity:0 !important;
+  pointer-events:none
+}
+
+.p-hb.away .p-hbbox{
+  pointer-events:none
+}
+
+/* ---- the stroke itself ---- */
+
+.p-hline{
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:var(--hbh);
+  outline:none;
+  touch-action:none;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none
+}
+
+.p-hline i{
+  position:relative;
+  display:block;
+  width:var(--hbl);
+  height:var(--hbt);
+  border-radius:99px;
+  opacity:.78;
+  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.56));
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.7),0 1px 3px rgba(0,0,0,.34);
+  transition:width .5s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease,background .25s ease,box-shadow .25s ease,transform .18s ease
+}
+
+.p-hb[data-open="false"] .p-hline:hover i{
+  width:calc(var(--hbl) + 8px);
+  opacity:1
+}
+
+.p-hb[data-open="true"] .p-hline i{
+  width:calc(100% - 8px);
+  opacity:1
+}
+
+.p-hline:focus-visible i{
+  opacity:1;
+  box-shadow:0 0 0 2px var(--blue,#0a84ff),0 1px 3px rgba(0,0,0,.34)
+}
+
+/* Track Loop on: the stroke turns blue glass, with a little glow */
+.p-hb.lp .p-hline i{
+  opacity:1;
+  background:linear-gradient(180deg,#c3e2ff,#0a84ff 80%);
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.85),0 0 8px rgba(10,132,255,.7),0 1px 3px rgba(0,0,0,.25)
+}
+
+/* While it is folded, the A–B points are beads at the two ends of the stroke: A●──●B.
+   Unfolded, the controls say the same thing, so the beads step aside. */
+.p-hline i::before,
+.p-hline i::after{
+  content:"";
+  position:absolute;
+  top:50%;
+  width:var(--dot);
+  height:var(--dot);
+  margin-top:calc(var(--dot) / -2);
+  border-radius:50%;
+  opacity:0;
+  transform:scale(.4);
+  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
+  box-shadow:0 0 8px rgba(10,132,255,.95);
+  transition:opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1)
+}
+
+.p-hline i::before{
+  left:calc(var(--dot) / -2)
+}
+
+.p-hline i::after{
+  right:calc(var(--dot) / -2)
+}
+
+.p-hb[data-open="false"].pa:not(.kept) .p-hline i::before,
+.p-hb[data-open="false"].pb:not(.kept) .p-hline i::after{
+  opacity:1;
+  transform:none
+}
+
+/* A and B remembered but A–B is off: hollow beads, waiting */
+.p-hb[data-open="false"].kept .p-hline i::before,
+.p-hb[data-open="false"].kept .p-hline i::after{
+  opacity:1;
+  transform:none;
+  background:rgba(255,255,255,.1);
+  box-shadow:inset 0 0 0 1.5px rgba(170,210,255,.95)
+}
+
+.p-hline.ripple i{
+  animation:hbline .7s ease-out
+}
+
+@keyframes hbline{
+  0%{filter:brightness(1.9) saturate(1.3)}
+  100%{filter:none}
+}
+
+
+/* ---- the sheen under the unfolded bar ----
+   Transparent: no blur and no shade, only light. A soft blue bloom rises from the stroke, as the
+   EQ curve's fill does, and an iridescent hairline runs just under it. */
+
+.p-hbholo{
+  position:absolute;
+  left:-24px;
+  right:-24px;
+  bottom:calc(var(--hbh) / 2 - 10px);
+  height:calc(var(--rowh) + 28px);
+  opacity:0;
+  pointer-events:none;
+  background:radial-gradient(60% 100% at 50% 100%,rgba(10,132,255,.16),rgba(10,132,255,.02) 70%,transparent);
+  transition:opacity .4s ease
+}
+
+.p-hbholo::after{
+  content:"";
+  position:absolute;
+  left:24px;
+  right:24px;
+  bottom:4px;
+  height:1px;
+  opacity:.55;
+  background:linear-gradient(90deg,transparent,#7fbcff 18%,#c7a6ff 50%,#7fffe0 82%,transparent)
+}
+
+.p-hb[data-open="true"]:not([data-mode="seek"]) .p-hbholo{
+  opacity:1
+}
+
+/* ---- the barrel above the stroke ----
+   One slide faces you; the others are turned away round a drum. Clicking the stroke (or two
+   fingers upright over it) rolls the next one in from the right as this one turns off to the left. */
+
+.p-hbbarrel{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:calc(var(--hbh) / 2 + 8px);
+  height:var(--rowh);
+  box-sizing:border-box;
+  padding:0 var(--pad);
+  color:#fff;
+  font-size:var(--fs);
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 1px 2px rgba(0,0,0,.5);
+  perspective:700px;
+  visibility:hidden;
+  opacity:0;
+  transform:translateY(8px) scale(.96);
+  transform-origin:50% 100%;
+  pointer-events:none;
+  transition:opacity .2s ease,transform .46s cubic-bezier(.2,.9,.25,1.06),visibility 0s .3s
+}
+
+.p-hb[data-open="true"]:not([data-mode="seek"]) .p-hbbarrel{
+  visibility:visible;
+  opacity:1;
+  transform:none;
+  /* the menu's whole rectangle, the bar's width by the row's height, is the swipe's: gaps and edges too,
+     over the top of the stroke's hitbox; a finger's sideways drag stays ours (notes 2026-10-26, swipe hitbox) */
+  z-index:1;
+  pointer-events:auto;
+  touch-action:none;
+  transition-delay:.07s,.07s,0s
+}
+
+/* a slide: three thirds, Loop · A · B */
+.p-slide{
+  position:absolute;
+  inset:0 var(--pad);
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  align-items:center;
+  backface-visibility:hidden;
+  transition:transform .46s cubic-bezier(.2,.9,.25,1.04),opacity .3s ease,visibility 0s
+}
+
+.p-slide[data-pos="cur"]{
+  opacity:1;
+  transform:none
+}
+
+.p-hb[data-open="true"]:not([data-mode="seek"]) .p-slide[data-pos="cur"]{
+  pointer-events:auto
+}
+
+.p-slide[data-pos="next"]{
+  opacity:0;
+  transform:translateX(42%) rotateY(-64deg)
+}
+
+.p-slide[data-pos="prev"]{
+  opacity:0;
+  transform:translateX(-42%) rotateY(64deg)
+}
+
+.p-slide[data-pos="off"]{
+  opacity:0;
+  visibility:hidden;
+  transition:none
+}
+
+.p-slide.snap{
+  transition:none !important
+}
+
+/* one slider across all three thirds (Speed, Text size) */
+.p-slide.p-wide{
+  display:block
+}
+
+.p-third{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-width:0;
+  height:100%
+}
+
+/* every control in a slide: white, no fill, no border; blue under the pointer or while selected */
+.p-slide button{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  flex:none;
+  min-width:40px;
+  max-width:100%;
+  height:var(--rowh);
+  padding:0 8px;
+  color:#fff;
+  background:none;
+  border:0;
+  font:inherit;
+  text-shadow:inherit;
+  outline:none;
+  white-space:nowrap;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:color .18s ease,filter .18s ease
+}
+
+.p-slide button .n{
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+
+.p-slide button svg{
+  flex:none;
+  width:18px;
+  height:18px
+}
+
+.p-slide button:hover,
+.p-slide button.on,
+.p-slide button.blue{
+  color:#7fbcff
+}
+
+.p-slide button.on svg,
+.p-slide button.blue svg{
+  filter:drop-shadow(0 0 5px rgba(10,132,255,.95))
+}
+
+.p-slide button:active{
+  opacity:.7
+}
+
+.p-slide button:focus-visible{
+  color:#7fbcff;
+  text-decoration:underline;
+  text-underline-offset:4px
+}
+
+.p-slide button:disabled{
+  opacity:.4;
+  cursor:default
+}
+
+.p-slide button.ripple{
+  animation:hbpulse .6s cubic-bezier(.2,.9,.3,1.3)
+}
+
+@keyframes hbpulse{
+  0%{transform:scale(.9)}
+  50%{transform:scale(1.08)}
+  100%{transform:none}
+}
+
+/* an item with an icon in a slide: the icon over a small name, so three fit a phone's width */
+.p-slide .p-stack{
+  flex-direction:column;
+  gap:2px;
+  font-size:.82em;
+  font-weight:500;
+  line-height:1.1
+}
+
+/* bookmarks: the name over its time */
+.p-slide .p-bm{
+  flex-direction:column;
+  gap:0;
+  line-height:1.1
+}
+
+.p-bm .t{
+  font-size:.82em;
+  font-weight:500;
+  opacity:.7
+}
+
+/* ---- Loop · A · B ---- */
+
+.p-hloop svg{
+  transition:filter .25s ease
+}
+
+.p-hloop.on{
+  color:#7fbcff
+}
+
+.p-hloop.on svg{
+  filter:drop-shadow(0 0 5px rgba(10,132,255,.95))
+}
+
+.p-pa .l,
+.p-pb .l{
+  font-weight:700
+}
+
+.p-slide .p-pa,
+.p-slide .p-pb{
+  gap:4px;
+  padding:0 6px
+}
+
+.p-slide .dot{
+  display:block;
+  width:var(--dot);
+  height:var(--dot);
+  border-radius:50%;
+  opacity:0;
+  transform:scale(.4);
+  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
+  box-shadow:0 0 8px rgba(10,132,255,.95);
+  transition:opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1)
+}
+
+.p-slide .set .dot{
+  opacity:1;
+  transform:none
+}
+
+.p-slide .set .l{
+  color:#7fbcff
+}
+
+/* the line from A to B: it exists once there is something to connect, and it is the A–B switch
+   (tap: on / off; hold: clear). It runs from the middle third to the right one. */
+.p-slide .p-pc{
+  position:absolute;
+  left:calc(var(--pad) + (100% - var(--pad) * 2) * .5 + 26px);
+  right:calc(var(--pad) + (100% - var(--pad) * 2) / 6 + 26px);
+  top:0;
+  bottom:0;
+  width:auto;
+  min-width:0;
+  padding:0
+}
+
+.p-pc i{
+  display:block;
+  width:100%;
+  height:2px;
+  border-radius:1px;
+  opacity:0;
+  background:repeating-linear-gradient(90deg,rgba(170,210,255,.95) 0 4px,transparent 4px 8px);
+  transition:opacity .25s ease,background .25s ease,box-shadow .25s ease
+}
+
+.p-pc.kept i{
+  opacity:1
+}
+
+.p-pc.on i{
+  opacity:1;
+  height:3px;
+  background:linear-gradient(90deg,#9fd0ff,#0a84ff,#9fd0ff);
+  box-shadow:0 0 8px rgba(10,132,255,.95)
+}
+
+/* ---- Play · ±15s ---- */
+
+.p-hplay .pa,
+.p-hplay.playing .pl{
+  display:none
+}
+
+.p-hplay.playing .pa{
+  display:block
+}
+
+.p-slide .p-hplay svg{
+  width:22px;
+  height:22px
+}
+
+.p-slide[data-slide="play"] .p-pa svg,
+.p-slide[data-slide="play"] .p-pb svg{
+  width:20px;
+  height:20px
+}
+
+/* ---- the language: Vietnamese · English · French ---- */
+
+.p-slide .p-lang{
+  font-weight:500
+}
+
+.p-slide .p-lang.on{
+  font-weight:700
+}
+
+/* ---- Text size: three segments, one shape ----
+   A wedge, a lens, a wedge, each fitting into the next with a hair of black between them. No
+   fill: an iridescent hairline. They slide out of the middle as the slide arrives. */
+
+.p-tsz{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  align-items:center;
+  height:100%
+}
+
+.p-slide .p-tseg{
+  justify-self:center;
+  width:min(100%,104px);
+  height:calc(var(--rowh) - 8px);
+  padding:0;
+  font-size:calc(var(--fs) + 1px);
+  font-weight:600;
+  transition:transform .5s cubic-bezier(.2,.9,.25,1.06),opacity .3s ease,color .18s ease
+}
+
+.p-tseg.dn{
+  justify-self:end;
+  margin-right:-4px
+}
+
+.p-tseg.up{
+  justify-self:start;
+  margin-left:-4px
+}
+
+.p-tsh{
+  position:absolute;
+  inset:0;
+  width:100% !important;
+  height:100% !important;
+  fill:none;
+  stroke-width:1;
+  opacity:.75;
+  overflow:visible;
+  transition:opacity .18s ease,filter .18s ease
+}
+
+.p-tsg{
+  position:relative;
+  letter-spacing:.02em
+}
+
+.p-tseg.dn .p-tsg{
+  font-size:.86em;
+  margin-left:10%
+}
+
+.p-tseg.up .p-tsg{
+  font-size:1.18em;
+  margin-right:10%
+}
+
+.p-tsg sup{
+  font-size:.62em;
+  margin-left:1px
+}
+
+.p-tseg:hover .p-tsh,
+.p-tseg.on .p-tsh{
+  opacity:1;
+  filter:drop-shadow(0 0 4px rgba(10,132,255,.9))
+}
+
+/* the reveal: the two wedges were folded into the lens */
+.p-slide[data-pos="cur"] .p-tseg{
+  transform:none;
+  opacity:1
+}
+
+.p-slide:not([data-pos="cur"]) .p-tseg.dn{
+  transform:translateX(70%) scale(.8);
+  opacity:0
+}
+
+.p-slide:not([data-pos="cur"]) .p-tseg.up{
+  transform:translateX(-70%) scale(.8);
+  opacity:0
+}
+
+.p-slide:not([data-pos="cur"]) .p-tseg.pct{
+  transform:scaleX(.6);
+  opacity:0
+}
+
+.p-slide[data-pos="cur"] .p-tseg.dn,
+.p-slide[data-pos="cur"] .p-tseg.up{
+  transition-delay:.06s
+}
+
+/* ---- Speed, only when asked for ----
+   Six values across the width the two actions were using, so each one is a generous target.
+   The selected one lights up, and a bead rides the stroke underneath it. */
+
+.p-strack{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  height:100%;
+  touch-action:none;
+  cursor:pointer;
+  outline:none;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none
+}
+
+.p-strack:focus-visible{
+  outline:2px solid var(--blue,#0a84ff);
+  outline-offset:-2px;
+  border-radius:12px
+}
+
+.p-sv{
+  display:grid;
+  place-items:center;
+  color:rgba(235,235,245,.74);
+  transition:color .2s ease,text-shadow .2s ease
+}
+
+.p-strack:hover .p-sv{
+  color:rgba(245,245,250,.9)
+}
+
+.p-sv.on,
+.p-strack:hover .p-sv.on{
+  color:#fff;
+  font-weight:700
+}
+
+.p-hb.sp .p-sv.on,
+.p-hb.sp .p-strack:hover .p-sv.on{
+  color:#7fbcff;
+  text-shadow:0 0 10px rgba(10,132,255,.9),0 1px 2px rgba(0,0,0,.5)
+}
+
+.p-sbead{
+  position:absolute;
+  top:50%;
+  left:calc(var(--pad) + (100% - var(--pad) * 2) * var(--sf,.5));
+  width:calc(var(--dot) + 3px);
+  height:calc(var(--dot) + 3px);
+  margin:calc((var(--dot) + 3px) / -2) 0 0 calc((var(--dot) + 3px) / -2);
+  border-radius:50%;
+  opacity:0;
+  transform:scale(.4);
+  pointer-events:none;
+  background:radial-gradient(circle at 35% 30%,#fff,#dbe9ff 72%);
+  box-shadow:0 1px 4px rgba(0,0,0,.4);
+  transition:left .3s cubic-bezier(.3,1.2,.5,1),opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1),background .25s ease,box-shadow .25s ease
+}
+
+.p-hb[data-open="true"][data-mode="speed"] .p-sbead{
+  opacity:1;
+  transform:none
+}
+
+.p-hb.sp .p-sbead{
+  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 72%);
+  box-shadow:0 0 10px rgba(10,132,255,.95)
+}
+
+/* the value hangs under the stroke when speed isn't 1×, and it is the way back: one tap puts
+   speed back to 1×. Quiet text, no box (the padding is only there to make it a finger-sized
+   target). At 1× it isn't there. */
+.p-hbval{
+  position:absolute;
+  left:50%;
+  top:calc(50% + var(--hbt) / 2 + 1px); /* never over the stroke itself, so a hold still seeks */
+  padding:3px 14px 11px;
+  border-radius:15px;
+  font-size:12px;
+  line-height:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  color:#7fbcff;
+  text-shadow:0 0 10px rgba(10,132,255,.8),0 1px 2px rgba(0,0,0,.6);
+  opacity:0;
+  transform:translateX(-50%) translateY(-3px);
+  pointer-events:none;
+  transition:opacity .25s ease,transform .35s cubic-bezier(.2,.9,.25,1.06),background .15s ease
+}
+
+.p-hb[data-open="true"]:not([data-mode="seek"]):not([data-mode="speed"]).sp .p-hbval{
+  opacity:1;
+  transform:translateX(-50%);
+  pointer-events:auto
+}
+
+.p-hbval:hover{
+  background:rgba(10,132,255,.16)
+}
+
+.p-hbval:active{
+  background:rgba(10,132,255,.3)
+}
+
+.p-hbval:focus-visible{
+  outline:2px solid var(--blue,#0a84ff);
+  outline-offset:-2px
+}
+
+/* ---- the stroke while it is held ----
+   Hold it and it becomes a temporary time ruler, with the playhead where you are. This is not a
+   scrubber and not a progress bar: it exists only for as long as you hold, shows the time scale
+   for that moment, and is put away on release. */
+
+.p-hb[data-open="true"][data-mode="seek"] .p-hbbox{
+  width:min(var(--hbs),100%)
+}
+
+.p-hbseek{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:calc(var(--hbh) / 2 + var(--hbt) / 2 + 4px);
+  height:80px;
+  color:#fff;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 1px 2px rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.45);
+  visibility:hidden;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .2s ease,visibility 0s .25s
+}
+
+.p-hb[data-open="true"][data-mode="seek"] .p-hbseek{
+  visibility:visible;
+  opacity:1;
+  transition-delay:.05s,0s
+}
+
+.p-sktrack{
+  position:absolute;
+  left:var(--skpad);
+  right:var(--skpad);
+  top:0;
+  bottom:0
+}
+
+.p-skticks{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:30px
+}
+
+.p-sktk{
+  position:absolute;
+  bottom:0;
+  width:1px;
+  height:4px;
+  margin-left:-.5px;
+  background:rgba(255,255,255,.45)
+}
+
+.p-sktk.M{
+  height:8px;
+  background:rgba(255,255,255,.88)
+}
+
+.p-sklb{
+  position:absolute;
+  bottom:12px;
+  font-size:11.5px;
+  font-weight:600;
+  white-space:nowrap;
+  color:rgba(235,235,245,.8);
+  transform:translateX(-50%)
+}
+
+.p-skread{
+  position:absolute;
+  bottom:36px;
+  font-size:22px;
+  line-height:26px;
+  font-weight:700;
+  letter-spacing:-.01em;
+  white-space:nowrap;
+  transform:translateX(-50%)
+}
+
+.p-skhint{
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  text-align:center;
+  font-size:11px;
+  line-height:13px;
+  font-weight:600;
+  color:rgba(235,235,245,.62)
+}
+
+/* the playhead of the moment: a bead on the stroke */
+.p-tbead{
+  position:absolute;
+  top:50%;
+  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--tx,0));
+  width:calc(var(--dot) + 5px);
+  height:calc(var(--dot) + 5px);
+  margin:calc((var(--dot) + 5px) / -2) 0 0 calc((var(--dot) + 5px) / -2);
+  border-radius:50%;
+  opacity:0;
+  transform:scale(.4);
+  pointer-events:none;
+  background:radial-gradient(circle at 35% 30%,#fff,#dbe9ff 72%);
+  box-shadow:0 0 0 3px rgba(255,255,255,.18),0 1px 5px rgba(0,0,0,.45);
+  transition:opacity .2s ease,transform .3s cubic-bezier(.3,1.4,.5,1)
+}
+
+.p-hb.seeking .p-tbead{
+  opacity:1;
+  transform:none
+}
+
+/* A and B, where they fall on the ruler: A●──●B */
+.p-skmark{
+  position:absolute;
+  top:50%;
+  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--x,0));
+  width:calc(var(--dot) + 2px);
+  height:calc(var(--dot) + 2px);
+  margin:calc((var(--dot) + 2px) / -2) 0 0 calc((var(--dot) + 2px) / -2);
+  border-radius:50%;
+  opacity:0;
+  transform:scale(.4);
+  pointer-events:none;
+  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
+  box-shadow:0 0 8px rgba(10,132,255,.95);
+  transition:opacity .2s ease,transform .3s cubic-bezier(.3,1.4,.5,1)
+}
+
+.p-skmark b{
+  position:absolute;
+  top:calc(100% + 2px);
+  left:50%;
+  font-size:10px;
+  line-height:12px;
+  font-weight:700;
+  color:#7fbcff;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+  transform:translateX(-50%)
+}
+
+.p-hb.seeking .p-skmark.on{
+  opacity:1;
+  transform:none
+}
+
+.p-skreg{
+  position:absolute;
+  top:50%;
+  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--x0,0));
+  width:calc((100% - var(--skpad) * 2) * var(--w,0));
+  height:3px;
+  margin-top:-1.5px;
+  border-radius:2px;
+  opacity:0;
+  pointer-events:none;
+  background:linear-gradient(90deg,#9fd0ff,#0a84ff,#9fd0ff);
+  box-shadow:0 0 8px rgba(10,132,255,.95);
+  transition:opacity .2s ease
+}
+
+.p-hb.seeking.hasreg .p-skreg{
+  opacity:1
+}
+
+/* after you let go, the time you landed on hangs under the stroke for a moment, then goes */
+.p-hbtime{
+  position:absolute;
+  left:50%;
+  top:calc(50% + var(--hbt) / 2 + 4px);
+  font-size:12px;
+  line-height:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+  opacity:0;
+  transform:translateX(-50%);
+  pointer-events:none;
+  transition:opacity .35s ease
+}
+
+.p-hb.tshow .p-hbtime{
+  opacity:1
+}
+
+.p-hb[data-open="true"] .p-hbtime{
+  opacity:0
+}
+
+/* ---- sizes: one design, three spatial expressions ---- */
+
+/* every touch screen: full finger-sized targets */
+@media (pointer:coarse){
+  .p-hb{
+    --hbh:44px;
+    --hbt:5px;
+    --rowh:48px;
+    --fs:14px;
+    --dot:8px
+  }
+
+  .p-slide button{
+    min-width:44px
+  }
+}
+
+/* iPad Air 13", iPad Pro, other big touch screens, either orientation:
+   more room to breathe, but the bar stays a short stroke, not a toolbar */
+@media (pointer:coarse) and (min-width:700px) and (min-height:700px){
+  .p-hb{
+    --hbw:600px;
+    --hbc:180px;
+    --hbl:72px;
+    --hbh:52px;
+    --rowh:56px;
+    --fs:17px;
+    --pad:16px;
+    --dot:10px;
+    --hbs:900px
+  }
+}
+
+/* very large monitors with a mouse: a touch wider, never a toolbar */
+@media (pointer:fine) and (min-width:1900px){
+  .p-hb{
+    --hbw:400px;
+    --hbl:56px;
+    --hbs:760px
+  }
+}
+
+/* phones (and Recense's narrow window): the unfolded bar follows the width of the screen */
+@media (max-width:600px){
+  .p-hb{
+    --hbw:372px;
+    --hbc:112px;
+    --hbl:44px;
+    --pad:4px;
+    --hbs:9999px /* as wide as the screen allows */
+  }
+
+  /* equal room on both sides, so the bar stops short of the vertical bar at the right edge
+     instead of running through it. The time ruler (data-mode="seek") keeps the full width. */
+  .p-hb[data-open="true"]:not([data-mode="seek"]){
+    padding-left:max(56px,calc(env(safe-area-inset-left) + 44px));
+    padding-right:max(56px,calc(env(safe-area-inset-right) + 44px))
+  }
+}
+
+/* phones on their side (iPhone 12 Pro Max landscape is 926x428): width is plenty, height is
+   scarce. The horizontal bar grows along its length so it reads as the same proportion of the
+   screen as in portrait, and gives back height (shorter hitbox, rows at the 44px floor). */
+@media (pointer:coarse) and (max-height:500px) and (min-width:700px){
+  .p-hb{
+    --hbw:460px;
+    --hbc:150px;
+    --hbl:60px;
+    --hbh:36px;
+    --rowh:44px;
+    --pad:6px;
+    --hbs:min(780px,calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 120px))
+  }
+}
+
+@media (max-width:380px){
+  .p-slide button{
+    min-width:38px;
+    padding:0 4px
+  }
+
+  .p-slide .p-lang{
+    font-size:.92em
+  }
+}
+
+@media (max-width:340px){
+  .p-hloop .n{
+    display:none
+  }
+}
+
+/* ---- the vertical bar ----
+   The vertical twin of the home bar. Time runs left to right along the bottom stroke; hearing
+   stands upright at the right edge, as a second stroke crossing the same control line. Swiped
+   (two fingers) or dragged, it sets the original language's prominence; it is blue glass while
+   anything it stands for is changed (text size, the original's prominence, and in Gallery the
+   EQ, C/Đô and reverb), and a press puts it all back. Gallery's EQ tray unfolds from it
+   (gallery.css); Recense has no tray, and wraps it in a .p-eqwrap too so it looks the same. */
+
+.p-eqwrap{
+  position:relative;
+  flex:none
+}
+
+.p-eqbtn{
+  --sl:40px; /* length of the folded stroke */
+  position:relative;
+  display:block;
+  width:44px;
+  height:64px;
+  outline:none;
+  touch-action:none;
+  -webkit-tap-highlight-color:transparent
+}
+
+.p-eqbtn i{
+  position:absolute;
+  left:20px;
+  bottom:12px;
+  width:4px;
+  height:var(--sl);
+  border-radius:99px;
+  opacity:.78;
+  background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,.56));
+  box-shadow:inset .5px 0 0 rgba(255,255,255,.7),0 1px 3px rgba(0,0,0,.34);
+  transition:height .5s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease,background .25s ease,box-shadow .25s ease
+}
+
+.p-eqwrap:not(.open) .p-eqbtn:hover i{
+  height:calc(var(--sl) + 8px);
+  opacity:1
+}
+
+.p-eqbtn:focus-visible i{
+  opacity:1;
+  box-shadow:0 0 0 2px var(--blue,#0a84ff),0 1px 3px rgba(0,0,0,.34)
+}
+
+/* something has been changed: blue glass, as the home bar is for Loop */
+.p-eqbtn.on i{
+  opacity:1;
+  background:linear-gradient(90deg,#c3e2ff,#0a84ff 80%);
+  box-shadow:inset .5px 0 0 rgba(255,255,255,.85),0 0 8px rgba(10,132,255,.7),0 1px 3px rgba(0,0,0,.25)
+}
+
+/* open: the stroke rises to the full height of what it holds, and stays as its spine */
+.p-eqwrap.open .p-eqbtn i{
+  height:var(--sph,180px);
+  opacity:1
+}
+
+.p-eqbtn.ripple i{
+  animation:hbline .7s ease-out
+}
+
+/* the tare (SPEC 52): press and hold. A white light climbs the stroke while you hold; when it reaches
+   the top everything goes back. Letting go before that does nothing. */
+.p-vhold{
+  position:absolute;
+  left:20px;
+  bottom:12px;
+  width:4px;
+  height:var(--sl);
+  border-radius:99px;
+  background:#fff;
+  box-shadow:0 0 10px rgba(255,255,255,.85);
+  transform:scaleY(0);
+  transform-origin:50% 100%;
+  opacity:0;
+  pointer-events:none;
+  transition:transform .15s ease,opacity .15s ease
+}
+
+.p-eqbtn.holding .p-vhold{
+  transform:scaleY(1);
+  opacity:1;
+  transition:transform var(--hold,550ms) linear,opacity .1s ease
+}
+
+.p-eqwrap.open .p-vhold{
+  height:var(--sph,180px)
+}
+
+/* ---------- prominence: the temporary ruler beside the stroke (two fingers along it, or a drag) ---------- */
+
+.p-eqwrap:not(.open) .p-eqbtn::before{
+  content:"";
+  position:absolute;
+  left:-30px;
+  right:-16px;
+  top:-100px;
+  bottom:-8px
+}
+
+.p-vol{
+  position:absolute;
+  left:22px;
+  bottom:12px;
+  width:0;
+  height:var(--sph,180px);
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .18s ease
+}
+
+.p-vol.on{
+  opacity:1
+}
+
+.p-vt{
+  display:none;
+}
+
+.p-vf{
+  position:absolute;
+  left:-1.5px;
+  bottom:0;
+  width:3px;
+  height:calc(var(--v,1) * 100%);
+  border-radius:2px;
+  background:linear-gradient(0deg,#0a84ff,#c3e2ff);
+  box-shadow:0 0 8px rgba(10,132,255,.6)
+}
+
+.p-vb{
+  position:absolute;
+  left:-4px;
+  bottom:calc(var(--v,1) * 100% - 4px);
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:rgba(255,255,255,.88)
+}
+
+/* prominence: marks at 50% (both crisp) and 90% (the detent), and the value beside the ruler */
+.p-vm{
+  position:absolute;
+  left:-5px;
+  width:10px;
+  height:1px;
+  background:rgba(255,255,255,.5)
+}
+
+.p-vm.m50{
+  bottom:50%
+}
+
+.p-vm.m90{
+  bottom:90%
+}
+
+.p-vr{
+  position:absolute;
+  right:12px;
+  bottom:calc(var(--v,1) * 100% - 8px);
+  font:600 11px/16px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;
+  color:#fff;
+  white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.7)
+}
+
+/* ---- the hover list beside the vertical bar (Recense's bookmarks) ----
+   A vertical barrel, front-facing and flat: no border, no fill, white on black. The row in front
+   is full white; the rows above and below it recede, smaller and fainter, as if round a drum. */
+
+.p-vbar{
+  position:relative
+}
+
+.p-vlist{
+  position:absolute;
+  right:calc(100% + 4px);
+  bottom:12px;
+  width:220px;
+  height:var(--sph,180px);
+  overflow:hidden;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .25s ease;
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 22%,#000 78%,transparent);
+  mask-image:linear-gradient(180deg,transparent,#000 22%,#000 78%,transparent)
+}
+
+.p-vlist.on{
+  opacity:1;
+  pointer-events:auto
+}
+
+/* while the ruler is out, the list steps aside */
+.p-vbar:has(.p-vol.on) .p-vlist{
+  opacity:0;
+  pointer-events:none
+}
+
+.p-vreel{
+  position:absolute;
+  left:0;
+  right:0;
+  top:50%;
+  height:0
+}
+
+.p-vrow{
+  --d:0;
+  position:absolute;
+  right:0;
+  left:0;
+  top:-15px;
+  height:30px;
+  display:flex;
+  align-items:baseline;
+  justify-content:flex-end;
+  gap:8px;
+  padding:0 6px;
+  border:0;
+  background:none;
+  color:#fff;
+  font:600 14px/30px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  text-align:right;
+  white-space:nowrap;
+  cursor:pointer;
+  opacity:calc(1 - min(1, max(var(--d), calc(var(--d) * -1)) * .34));
+  transform:translateY(calc(var(--d) * 30px)) scale(calc(1 - min(1, max(var(--d), calc(var(--d) * -1)) * .1)));
+  transform-origin:100% 50%;
+  transition:transform .35s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease,color .18s ease
+}
+
+.p-vrow .n{
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+
+.p-vrow .t{
+  font-weight:500;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  opacity:.7
+}
+
+.p-vrow:hover{
+  color:#7fbcff
+}
+
+@media(prefers-reduced-motion:reduce){
+  .p-hbbox,
+  .p-hbbarrel,
+  .p-slide,
+  .p-tseg,
+  .p-hbseek,
+  .p-hbholo,
+  .p-hbval,
+  .p-hbtime,
+  .p-tbead,
+  .p-skmark,
+  .p-skreg,
+  .p-sbead,
+  .p-hline i,
+  .p-hline.ripple i,
+  .p-slide button.ripple,
+  .p-eqbtn i,
+  .p-vrow{
+    animation:none !important;
+    transition:none !important
+  }
+}
+
+/* ---- videos: frosted glass (SPEC 38) ----
+   Over a picture the sheen is not enough: the unfolded bar sits on macOS-style frosted glass that
+   darkens whatever plays underneath, with a faint top light and a soft shadow. Audio keeps the sheen. */
+.p-hb.frost .p-hbbox::before{
+  content:"";
+  position:absolute;
+  inset:-10px -14px;
+  border-radius:16px;
+  background:rgba(18,18,22,.46);
+  -webkit-backdrop-filter:blur(16px) saturate(1.4);
+  backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 8px 28px rgba(0,0,0,.38);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .3s
+}
+.p-hb.frost[data-open="true"] .p-hbbox::before{opacity:1}
+.p-hb.frost .p-hbholo{display:none}
+
+/* ---- folded items: more than three things kept in one third ---- */
+.p-fold{position:relative;display:flex;justify-content:center}
+.p-foldi{display:inline-flex}
+.p-foldi svg + svg{margin-left:-10px}
+.p-foldrow{
+  position:absolute;
+  bottom:100%;
+  left:50%;
+  display:flex;
+  gap:6px;
+  transform:translate(-50%,6px);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .2s,transform .2s
+}
+.p-fold.open .p-foldrow{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.p-fold.open .p-foldb{color:var(--blue,#0a84ff)}
+
+/* ---- the transcript editor's tools (SPEC 57) ----
+   Moved out of the home bar into the editor that tapping the transcript opens. The same look as the
+   bar's items: white, no fill, no border, blue on hover or while chosen; icons only (their names are
+   their labels and tooltips). Two rows: what the lines trail in and how they show, then the tools. */
+.p-tools{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  color:#fff;
+  font:500 15px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  -webkit-user-select:none;
+  user-select:none
+}
+.p-ttop{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:6px 28px
+}
+.p-tchoice{
+  display:flex;
+  gap:2px
+}
+.p-trow{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:2px 6px
+}
+.p-ti{
+  appearance:none;
+  border:0;
+  background:none;
+  color:#fff;
+  font:inherit;
+  margin:0;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:color .15s ease
+}
+.p-tword{
+  padding:6px 8px
+}
+.p-ticon{
+  width:40px;
+  height:36px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0
+}
+.p-ticon[hidden]{display:none}
+.p-ticon svg{
+  width:20px;
+  height:20px
+}
+.p-ti:hover,
+.p-ti.on{
+  color:#7fbcff
+}
+.p-ti.on svg,
+.p-ticon:hover svg{
+  filter:drop-shadow(0 0 5px rgba(10,132,255,.95))
+}
+.p-ti:active{opacity:.7}
+.p-ti:focus-visible{
+  color:#7fbcff;
+  outline:none;
+  text-decoration:underline
+}
+.p-ti.ripple{animation:none}
+
+/* ---- SPEC 25: icons float, as Loop · A · B do ----
+   The text-size (and Recense's volume) segments lose their outlines: a, 100% and A float above the bar and turn
+   blue under the pointer or while chosen. Items with an icon keep the icon exactly where it is and lose the word
+   under it (its name stays its label and tooltip). */
+.p-tsh{display:none}
+.p-tseg:hover,
+.p-tseg.on{
+  color:#7fbcff;
+  filter:drop-shadow(0 0 5px rgba(10,132,255,.9))
+}
+.p-slide .p-stack .n{visibility:hidden}
+
+/* ---------- the sound tray (Homebar.tray): EQ, Key, Reverb. Moved from gallery.css so Recense has it too (SPEC 54) ---------- */
+
+/* what unfolds: no panel, no edge. It stands on the stroke's foot and opens leftwards out of
+   the stroke, over a feathered shade like the one behind the unfolded home bar. */
+.p-eq{
+  touch-action:none;
+  --eqt:116px;   /* slider length */
+  --eqtw:38px;   /* slider width: the finger target of one band */
+  position:absolute;
+  right:calc(100% - 10px);
+  bottom:12px;
+  z-index:20;
+  pointer-events:none
+}
+
+.p-eq::before{
+  content:"";
+  position:absolute;
+  inset:-34px -40px -30px -34px;
+  z-index:-1;
+  opacity:0;
+  pointer-events:none;
+  background:rgba(12,12,14,.36);
+  -webkit-backdrop-filter:blur(16px) saturate(160%) brightness(.72);
+  backdrop-filter:blur(16px) saturate(160%) brightness(.72);
+  -webkit-mask-image:radial-gradient(closest-side,#000 62%,transparent 100%);
+  mask-image:radial-gradient(closest-side,#000 62%,transparent 100%);
+  transition:opacity .35s ease
+}
+
+.p-eqin{
+  padding:0 4px;
+  clip-path:inset(0 0 0 100%);
+  transition:clip-path .26s cubic-bezier(.4,0,.6,1)
+}
+
+.p-eqwrap.open .p-eq{
+  pointer-events:auto
+}
+
+.p-eqwrap.open .p-eq::before{
+  opacity:1
+}
+
+.p-eqwrap.open .p-eqin{
+  clip-path:inset(-20px -20px -20px 0);
+  transition:clip-path .55s cubic-bezier(.2,.9,.25,1.04) .06s
+}
+
+.p-eqtop{
+  display:flex;
+  align-items:center;
+  height:20px;
+  padding:0 2px
+}
+
+.p-eqflat{
+  height:20px;
+  padding:0 6px;
+  border-radius:10px;
+  font-size:11px;
+  font-weight:700;
+  color:#6fb4ff;
+  transition:background .15s ease
+}
+
+.p-eqflat:hover{
+  background:rgba(255,255,255,.1)
+}
+
+.p-eqflat:active{
+  background:rgba(255,255,255,.2)
+}
+
+.p-eqcols{
+  display:flex;
+  align-items:flex-end
+}
+
+/* the three bands share one picture: the curve they make together, drawn from the same
+   filter maths the audio uses. The bands' own bars step back to faint guides. */
+.p-eqgraph{
+  position:relative;
+  display:flex;
+  gap:2px
+}
+
+.p-eqcurve{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:visible;
+  pointer-events:none
+}
+
+.p-eqcurve .z{
+  stroke:rgba(255,255,255,.3);
+  stroke-width:1;
+  stroke-dasharray:2 3
+}
+
+.p-eqcurve .l{
+  fill:none;
+  stroke:rgba(255,255,255,.88);
+  stroke-width:2;
+  stroke-linejoin:round;
+  stroke-linecap:round;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))
+}
+
+.p-eqcurve .f{
+  opacity:0;
+  transition:opacity .3s ease
+}
+
+.p-eqgraph.on .p-eqcurve .f{
+  opacity:1
+}
+
+.p-eqgraph .p-bbase{
+  width:2px;
+  margin-left:-1px;
+  background:rgba(255,255,255,.1)
+}
+
+.p-eqgraph .p-bzero,
+.p-eqgraph .p-bfill{
+  display:none
+}
+
+/* Key and Space stand apart from the curve, each behind a hairline */
+.p-band.key,
+.p-band.space{
+  margin-left:4px;
+  padding-left:4px;
+  box-shadow:inset .5px 0 0 rgba(255,255,255,.14)
+}
+
+.p-band.space .p-bzero{
+  display:none
+}
+
+/* Key's ladder: a tick for every semitone, longer at the octave and at the original key */
+.p-kticks{
+  position:absolute;
+  left:50%;
+  top:0;
+  bottom:0;
+  width:8px;
+  margin-left:-4px;
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.26) 0 1px,transparent 1px calc(100% / 24 - .01px));
+  border-bottom:1px solid rgba(255,255,255,.26)
+}
+
+.p-band{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  width:var(--eqtw)
+}
+
+.p-bval{
+  height:16px;
+  font-size:12px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  color:#fff
+}
+
+.p-band.on .p-bval{
+  color:#6fb4ff
+}
+
+.p-btrack{
+  position:relative;
+  width:var(--eqtw);
+  height:var(--eqt);
+  touch-action:none;
+  cursor:pointer;
+  outline:none
+}
+
+.p-btrack:focus-visible{
+  outline:2px solid var(--blue);
+  outline-offset:1px;
+  border-radius:12px
+}
+
+.p-bin{
+  position:absolute;
+  left:0;
+  right:0;
+  top:9px;
+  bottom:9px
+}
+
+.p-bbase{
+  position:absolute;
+  left:50%;
+  top:0;
+  bottom:0;
+  width:4px;
+  margin-left:-2px;
+  border-radius:2px;
+  background:rgba(255,255,255,.22)
+}
+
+/* the 0 line */
+.p-bzero{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:16px;
+  height:2px;
+  margin:-1px 0 0 -8px;
+  border-radius:1px;
+  background:rgba(255,255,255,.75)
+}
+
+.p-bfill{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:4px;
+  height:0;
+  margin-left:-2px;
+  border-radius:2px;
+  background:rgba(255,255,255,.9)
+}
+
+.p-band.on .p-bfill{
+  background:linear-gradient(180deg,#bfe0ff,#0a84ff);
+  box-shadow:0 0 10px rgba(10,132,255,.8)
+}
+
+.p-bknob{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:17px;
+  height:17px;
+  margin:-8.5px 0 0 -8.5px;
+  border-radius:50%;
+  pointer-events:none;
+  background:radial-gradient(circle at 35% 30%,#fff 0%,rgba(255,255,255,.82) 72%);
+  box-shadow:0 1px 6px rgba(0,0,0,.45),inset 0 0 0 .5px rgba(255,255,255,.8);
+  transition:top .08s ease,box-shadow .2s ease
+}
+
+.p-band.on .p-bknob{
+  box-shadow:0 1px 6px rgba(0,0,0,.45),inset 0 0 0 .5px rgba(255,255,255,.8),0 0 0 3px rgba(10,132,255,.55),0 0 14px rgba(10,132,255,.9)
+}
+
+.p-blabel{
+  display:inline-grid;
+  place-items:center;
+  height:22px;
+  padding:0 6px;
+  border-radius:11px;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap;
+  color:rgba(235,235,245,.82);
+  transition:background .15s ease,color .15s ease
+}
+
+button.p-blabel:hover{
+  background:rgba(255,255,255,.12)
+}
+
+button.p-blabel:active{
+  background:rgba(255,255,255,.24)
+}
+
+.p-band.on .p-blabel{
+  color:#6fb4ff
+}
+
+.p-band.ripple .p-bknob{
+  animation:liq .55s cubic-bezier(.2,.9,.3,1.3)
+}
+
+/* labels and values arrive a moment after the stroke has risen */
+.p-eqin .p-bval,
+.p-eqin .p-blabel,
+.p-eqtop{
+  opacity:0;
+  transition:opacity .15s ease
+}
+
+.p-eqwrap.open .p-eqin .p-bval,
+.p-eqwrap.open .p-eqin .p-blabel,
+.p-eqwrap.open .p-eqtop{
+  opacity:1;
+  transition:opacity .3s ease .28s
+}
+
+/* touch screens get longer sliders; a big tablet gets room for a thumb */
+@media (pointer:coarse){
+  .p-eq{
+    --eqt:112px
+  }
+}
+
+@media (pointer:coarse) and (min-width:700px) and (min-height:700px){
+  .p-eq{
+    --eqt:200px;
+    --eqtw:62px
+  }
+  .p-eqcols{gap:4px}
+  .p-bval{height:20px;font-size:15px}
+  .p-blabel{height:26px;font-size:14px;padding:0 8px}
+  .p-eq .p-bknob{width:10px;height:10px;margin:-5px 0 0 -5px}
+}
+
+/* phones (iPhone 12 Pro Max is 428 wide): the bands get a thumb's room and the labels stop touching */
+@media (pointer:coarse) and (max-width:600px) and (min-height:700px){
+  .p-eq{
+    --eqt:150px;
+    --eqtw:46px
+  }
+  .p-eqcols{gap:2px}
+  .p-bval{font-size:13px}
+  .p-blabel{font-size:12px;padding:0 4px}
+  .p-eq .p-bknob{width:9px;height:9px;margin:-4.5px 0 0 -4.5px}
+}
+
+/* phones on their side: the vertical stroke folds shorter and its press area narrows to match
+   the horizontal stroke's thickness, so neither stroke dominates the short screen */
+@media (pointer:coarse) and (max-height:500px) and (min-width:700px){
+  .p-eqbtn{
+    --sl:30px;
+    height:52px
+  }
+}
+
+@media (max-height:560px){
+  .p-eq{
+    --vh100:100vh;
+    /* the sliders are as long as the room between the top bar and the control line allows */
+    --eqt:clamp(56px,calc(var(--vh100) - var(--tb) - var(--bb) - 120px),108px)
+  }
+}
+
+@supports (height:100dvh){
+  @media (max-height:560px){
+    .p-eq{
+      --vh100:100dvh
+    }
+  }
+}
+
+@media(prefers-reduced-transparency:reduce){
+  .p-eq::before{
+    background:rgba(12,12,14,.72);
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .p-eqin,
+  .p-eqwrap.open .p-eqin{
+    transition:none !important
+  }
+
+  .p-eq,
+  .p-band.ripple .p-bknob{
+    animation:none;
+    transition:none
+  }
+}
+
+/* ---------- Sound control, refined: one hairline curve through five tiny translucent beads ---------- */
+
+.p-bknob{
+  width:7px;
+  height:7px;
+  margin:-3.5px 0 0 -3.5px;
+  background:rgba(255,255,255,.55);
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.5)
+}
+
+.p-band.on .p-bknob{
+  background:rgba(111,180,255,.82);
+  box-shadow:0 0 0 2px rgba(10,132,255,.26),0 0 7px rgba(10,132,255,.65)
+}
+
+.p-eqcurve{
+  z-index:1
+}
+
+.p-eqcurve .z{
+  stroke:rgba(255,255,255,.1);
+  stroke-dasharray:none
+}
+
+.p-eqcurve .l{
+  stroke:rgba(255,255,255,.42);
+  stroke-width:1;
+  filter:drop-shadow(0 0 .6px rgba(0,0,0,.7))
+}
+
+.p-eqgraph .p-bbase{
+  background:rgba(255,255,255,.07)
+}
+
+/* Key and Space are no longer set apart: the curve runs through all five columns */
+.p-band.key,
+.p-band.space{
+  margin-left:0;
+  padding-left:0;
+  box-shadow:none
+}
+
+/* ---------- Key labels: the value spelled in the notation its caption names ---------- */
+
+/* The spec's stack ('Apple Symbols', … ) is used for the accidentals ♭ ♮ ♯ only: Apple Symbols has
+   Latin letters too, and drew "Tông" and "¼" badly in them. Letters and kana come from the page font,
+   then the same stack. */
+@font-face{
+  font-family:"Key Accidentals";
+  src:local("Apple Symbols"),local("Segoe UI Symbol"),local("Noto Music"),local("NotoMusic-Regular");
+  unicode-range:U+266D-266F
+}
+
+.p-band.key{
+  --keyfont:"Key Accidentals",-apple-system,BlinkMacSystemFont,'Apple Symbols','Segoe UI Symbol','Noto Music','Hiragino Sans','PingFang SC',sans-serif
+}
+
+/* one or two lines, standing on the slider and growing upward; never wider than the column */
+.p-band.key .kval{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  width:100%;
+  white-space:nowrap;
+  font-family:var(--keyfont)
+}
+
+.p-band.key .kval span{
+  display:block;
+  max-width:100%;
+  overflow-x:clip;
+  overflow-y:visible;
+  line-height:16px
+}
+
+.p-band.key .kval.two span{
+  font-size:10px;
+  line-height:1.05
+}
+
+/* the caption is the one tap target here, and it stays blue */
+.p-band.key .kcap,
+.p-band.key.on .kcap{
+  max-width:100%;
+  overflow:hidden;
+  padding:0 2px;
+  font-family:var(--keyfont);
+  color:var(--blue);
+  cursor:pointer
+}
+
+.p-band.key .kcap,
+.p-band.key .kpop{
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+  touch-action:manipulation
+}
+
+/* held: every caption in a dark pill over the Key column, growing upward from the caption */
+.p-band.key .kpop{
+  position:absolute;
+  left:50%;
+  bottom:24px;
+  z-index:5;
+  display:flex;
+  flex-direction:column;
+  width:48px;
+  padding:4px 0;
+  box-sizing:border-box;
+  transform:translateX(-50%);
+  border-radius:24px;
+  background:rgba(28,28,30,.97);
+  box-shadow:0 6px 20px rgba(0,0,0,.55),inset 0 0 0 .5px rgba(255,255,255,.16)
+}
+
+.p-band.key .kpop[hidden]{
+  display:none
+}
+
+.kpop .krow{
+  display:block;
+  width:100%;
+  height:20px;
+  padding:0 4px;
+  box-sizing:border-box;
+  overflow:hidden;
+  white-space:nowrap;
+  text-align:center;
+  font:600 11px/20px var(--keyfont);
+  color:rgba(235,235,245,.82);
+  border-radius:10px
+}
+
+.kpop .krow.on{
+  color:var(--blue);
+  background:rgba(10,132,255,.18)
+}
+
+.kpop .krow.hover,
+.kpop .krow:hover{
+  background:rgba(255,255,255,.12)
+}
+
+/* while the list is up, nothing of it is cut off by the tray's unfolding mask */
+.p-eqwrap.open.kpop .p-eqin{
+  clip-path:none
+}
+
+@media (pointer:coarse){
+  .kpop .krow{
+    height:24px;
+    line-height:24px
+  }
+}
+
+/* the notation tags as a vertical barrel: one rectangle at a time. Sliding up shows the previous one,
+   sliding down the next; the rows ride a column that moves by --ki rows, and only the one in view shows */
+.p-band.key .kpop{
+  flex-direction:column;
+  align-items:stretch;
+  width:auto;
+  min-width:64px;
+  height:28px;
+  padding:0;
+  bottom:26px;
+  transform:translateX(-50%);
+  overflow:hidden;
+  touch-action:none;
+  border-radius:14px
+}
+.kpop .krow{
+  flex:none;
+  width:100%;
+  height:28px;
+  line-height:28px;
+  padding:0 10px;
+  font-size:12px;
+  border-radius:14px;
+  transform:translateY(calc(var(--ki,0) * -100%));
+  transition:transform .28s cubic-bezier(.2,.9,.25,1.04)
+}
+.kpop .krow.hover{
+  background:none
+}
+@media (prefers-reduced-motion:reduce){
+  .kpop .krow{transition:none}
+}
+
+/* the widget menu (SPEC 40): page dots, and the chord detector page */
+.p-wdots{display:flex;flex-direction:column;gap:3px;margin-right:6px}
+.p-wdot{width:6px;height:6px;padding:0;border:0;border-radius:3px;background:rgba(255,255,255,.35);cursor:pointer}
+.p-wdot.on{background:#fff}
+.p-chordpage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:var(--eqt,96px);touch-action:none}
+.p-chordpage[hidden]{display:none}
+.p-chordnow{font-size:28px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;min-width:4em;text-align:center}
+.p-eqcols[hidden]{display:none}

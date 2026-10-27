@@ -24,4 +24,20 @@ crons = ["0 3 * * *"]
 
 [vars]
 ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
-# ACCESS_AUD, OWNER_EMAIL and SERVICE_CLIENT_ID are set with `wrangler secret put`.
+# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
+# NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
+
+# Recense's bucket: Gallery reads its transcripts (keep/<key>.v2.json) and writes only corrections
+# (keep/<key>.edits.json, keep/history/) and transcription requests (keep/locks/)
+[[r2_buckets]]
+binding = "KEEP"
+bucket_name = "recense-tmp"
+
+# SPEC 42: temporary downloads (/t/<id>/<name>, PUT /main/api/tmp), deleted after a day (src/tmp.js).
+# The bucket and its lifecycle rule are NOT created yet; until the owner runs these, `wrangler deploy` fails on this binding:
+#   npx wrangler r2 bucket create gallery-tmp
+#   npx wrangler r2 bucket lifecycle add gallery-tmp expire-tmp-1d tmp/ --expire-days 1 --force
+#   npx wrangler r2 bucket lifecycle add gallery-tmp abort-mpu-1d --abort-multipart-days 1 --force
+[[r2_buckets]]
+binding = "TMP"
+bucket_name = "gallery-tmp"

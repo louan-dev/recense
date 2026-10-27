@@ -1,4 +1,3 @@
-
 :root{
   --bg:#1c1c1e;
   --panel:#2c2c2e;
@@ -19,7 +18,9 @@
 }
 
 html{
-  background:var(--bg)
+  background:var(--bg);
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%
 }
 
 body{
@@ -27,6 +28,23 @@ body{
   color:#fff;
   font:15px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
   -webkit-font-smoothing:antialiased
+}
+
+a,
+a:link,
+a:visited {
+  color: #fff !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease;
+}
+
+a:link:hover,
+a:visited:hover,
+a:link:active,
+a:visited:active,
+a:hover,
+a:active {
+  color: var(--blue) !important;
 }
 
 button{
@@ -69,9 +87,9 @@ main{
   background:#000;
   overflow:hidden;
   cursor:pointer;
-  border-radius:var(--r)
+  border-radius:var(--r);
+  box-shadow: inset 0 .5px 0 rgba(255, 255, 255, .45);
 }
-
 .hero:not([hidden]) + .info{
   position:relative;
   z-index:1;
@@ -149,12 +167,6 @@ main{
   display:flex;
   gap:8px;
   flex-shrink:0
-}
-
-/* the owner's second-tier controls sit beside Download, quieter than it */
-#up,
-#del{
-  padding:6px 13px
 }
 
 @media (max-width:400px){
@@ -320,12 +332,38 @@ main{
   padding:56px 16px calc(64px + env(safe-area-inset-bottom));
   text-align:center;
   font-size:17px;
-  font-weight:600
+  font-weight:600;
 }
+.foot.sel{
+  position:sticky;
+  bottom:calc(12px + env(safe-area-inset-bottom));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin:0 12px 12px;
+  padding:12px 14px 12px 18px;
+  border-radius:14px;
+  background:var(--panel);
+  color:#fff;
+  text-align:left
+}
+
+#del,#del:hover,#del:active,#del:focus-visible{
+  background:var(--panel);
+  color:#fff;
+  opacity:1
+}
+
+#del{width:36px;height:36px;display:grid;place-items:center;border-radius:50%}
+#mv{margin-left:auto;margin-right:6px;padding:7px 10px}
+#del svg{width:22px;height:22px}
 
 #lb{
   --tb:calc(56px + env(safe-area-inset-top));
   --bb:calc(66px + env(safe-area-inset-bottom));
+  /* the bottom bar's real height (thumbnails and the comment label), measured by gallery.js (--botH): the two bars
+     stand right above it on every screen (SPEC 55); the figure after it is only the first paint's guess */
+  --bb0:var(--botH,calc(96px + env(safe-area-inset-bottom)));
   /* the control line: how far above the bottom bar the two strokes are centred. The home bar
      (time, horizontal) runs along it and the sound stroke (vertical) stands across it, so the
      two read as one pair of axes. It used to sit 88px up, to leave room for a scrubber that is
@@ -336,7 +374,7 @@ main{
   z-index:10;
   display:flex;
   flex-direction:column;
-  background:var(--bg);
+  background:#000;
   animation:in .18s ease
 }
 
@@ -483,6 +521,11 @@ main{
   display:none
 }
 
+/* the player's media sits in a shadow root (gallery.js shelter): the box itself lays nothing out */
+.mbox{
+  display:contents
+}
+
 .dv{
   position:absolute;
   inset:0;
@@ -514,7 +557,7 @@ main{
 
 .p-ctrl{
   position:absolute;
-  bottom:calc(var(--bb) + var(--cl) - 32px); /* the sound stroke's 64px target, centred on the control line */
+  bottom:calc(var(--bb0) + var(--cl) - 32px); /* the sound stroke's 64px target, centred on the control line */
   left:auto;
   right:max(20px,calc(env(safe-area-inset-right) + 12px));
   display:flex;
@@ -557,1184 +600,6 @@ main{
   transform:scale(.93)
 }
 
-/* ---- the home bar ----
-   Collapsed it is only a thin stroke, like the iOS home indicator: no container, no border,
-   no label. Hover (mouse) or tap (touch) and the stroke unfolds along its length into two
-   actions, Track Loop and A–B. Speed is not one of them. It appears only when it is asked for
-   (tap the unfolded stroke, or < and > on the keyboard), takes the controls' place for a
-   moment, and uses the stroke itself as its rail. Nothing permanent is spent on it.
-   Every size comes from the tokens below, so one design takes a different spatial form on a
-   laptop, an iPad and an iPhone. */
-
-.p-hb{
-  --hbw:372px;   /* unfolded width */
-  --hbc:120px;   /* press width of the collapsed stroke */
-  --hbl:48px;    /* visible length of the collapsed stroke */
-  --hbh:36px;    /* press height of the stroke */
-  --hbt:4px;     /* thickness of the stroke */
-  --rowh:42px;   /* press height of a control */
-  --fs:13px;
-  --dot:7px;
-  --pad:8px;
-  --xw:34px;     /* width of the clear (×) button, and of the spacer that balances it */
-  --hbs:640px;   /* width of the stroke while it is a time ruler */
-  --skpad:26px;  /* room at each end of the ruler for its first and last label (set per media) */
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:calc(var(--bb) + var(--cl) - var(--hbh) / 2); /* the stroke is centred on the control line */
-  display:flex;
-  justify-content:center;
-  box-sizing:border-box;
-  padding:0 max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left));
-  pointer-events:none;
-  z-index:6;
-  transition:opacity .3s
-}
-
-.p-hbbox{
-  position:relative;
-  width:var(--hbc);
-  max-width:100%;
-  pointer-events:auto;
-  transition:width .5s cubic-bezier(.2,.9,.25,1.04)
-}
-
-.p-hb[data-open="true"] .p-hbbox{
-  width:min(var(--hbw),100%)
-}
-
-/* one tray at a time: while the EQ panel is open the whole home bar steps aside, so the
-   stroke can never show through the panel */
-.p-hb.away{
-  opacity:0 !important;
-  pointer-events:none
-}
-
-.p-hb.away .p-hbbox{
-  pointer-events:none
-}
-
-/* ---- the stroke itself ---- */
-
-.p-hline{
-  position:relative;
-  display:grid;
-  place-items:center;
-  width:100%;
-  height:var(--hbh);
-  outline:none;
-  touch-action:none;
-  -webkit-user-select:none;
-  user-select:none;
-  -webkit-touch-callout:none
-}
-
-.p-hline i{
-  position:relative;
-  display:block;
-  width:var(--hbl);
-  height:var(--hbt);
-  border-radius:99px;
-  opacity:.78;
-  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.56));
-  box-shadow:inset 0 .5px 0 rgba(255,255,255,.7),0 1px 3px rgba(0,0,0,.34);
-  transition:width .5s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease,background .25s ease,box-shadow .25s ease,transform .18s ease
-}
-
-.p-hb[data-open="false"] .p-hline:hover i{
-  width:calc(var(--hbl) + 8px);
-  opacity:1
-}
-
-.p-hb[data-open="true"] .p-hline i{
-  width:calc(100% - 8px);
-  opacity:1
-}
-
-.p-hline:focus-visible i{
-  opacity:1;
-  box-shadow:0 0 0 2px var(--blue),0 1px 3px rgba(0,0,0,.34)
-}
-
-/* Track Loop on: the stroke turns blue glass, with a little glow */
-.p-hb.lp .p-hline i{
-  opacity:1;
-  background:linear-gradient(180deg,#c3e2ff,#0a84ff 80%);
-  box-shadow:inset 0 .5px 0 rgba(255,255,255,.85),0 0 8px rgba(10,132,255,.7),0 1px 3px rgba(0,0,0,.25)
-}
-
-/* While it is folded, the A–B points are beads at the two ends of the stroke: A●──●B.
-   Unfolded, the controls say the same thing, so the beads step aside. */
-.p-hline i::before,
-.p-hline i::after{
-  content:"";
-  position:absolute;
-  top:50%;
-  width:var(--dot);
-  height:var(--dot);
-  margin-top:calc(var(--dot) / -2);
-  border-radius:50%;
-  opacity:0;
-  transform:scale(.4);
-  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
-  box-shadow:0 0 8px rgba(10,132,255,.95);
-  transition:opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1)
-}
-
-.p-hline i::before{
-  left:calc(var(--dot) / -2)
-}
-
-.p-hline i::after{
-  right:calc(var(--dot) / -2)
-}
-
-.p-hb[data-open="false"].pa:not(.kept) .p-hline i::before,
-.p-hb[data-open="false"].pb:not(.kept) .p-hline i::after{
-  opacity:1;
-  transform:none
-}
-
-/* A and B remembered but A–B is off: hollow beads, waiting */
-.p-hb[data-open="false"].kept .p-hline i::before,
-.p-hb[data-open="false"].kept .p-hline i::after{
-  opacity:1;
-  transform:none;
-  background:rgba(255,255,255,.1);
-  box-shadow:inset 0 0 0 1.5px rgba(170,210,255,.95)
-}
-
-.p-hline.ripple i{
-  animation:hbline .7s ease-out
-}
-
-@keyframes hbline{
-  0%{filter:brightness(1.9) saturate(1.3)}
-  100%{filter:none}
-}
-
-/* ---- a feathered shade behind the unfolded controls ----
-   Not a box: it has no edge. It only dims what is directly behind the labels so white type
-   stays readable over a bright video, and fades to nothing in every direction. */
-
-.p-hbscrim{
-  position:absolute;
-  left:-64px;
-  right:-64px;
-  bottom:-14px;
-  height:calc(var(--rowh) + var(--hbh) / 2 + 48px);
-  opacity:0;
-  pointer-events:none;
-  background:rgba(12,12,14,.34);
-  -webkit-backdrop-filter:blur(14px) saturate(160%) brightness(.76);
-  backdrop-filter:blur(14px) saturate(160%) brightness(.76);
-  -webkit-mask-image:radial-gradient(closest-side,#000 58%,transparent 100%);
-  mask-image:radial-gradient(closest-side,#000 58%,transparent 100%);
-  transition:opacity .4s ease
-}
-
-.p-hb[data-open="true"] .p-hbscrim{
-  opacity:1
-}
-
-/* the ruler stands taller than the Loop · A–B row, so its shade does too */
-.p-hb[data-mode="seek"] .p-hbscrim{
-  height:calc(var(--hbh) / 2 + 150px)
-}
-
-/* ---- what is laid along the unfolded stroke: Loop · A–B, or (when asked for) Speed ----
-   Both sit in the same place, so asking for speed swaps them: the stroke never moves. */
-
-.p-hbrow,
-.p-hbspeed{
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:calc(var(--hbh) / 2 + 8px);
-  height:var(--rowh);
-  box-sizing:border-box;
-  padding:0 var(--pad);
-  color:#fff;
-  font-size:var(--fs);
-  font-weight:600;
-  font-variant-numeric:tabular-nums;
-  text-shadow:0 1px 2px rgba(0,0,0,.5);
-  visibility:hidden;
-  opacity:0;
-  transform:translateY(8px) scale(.96);
-  transform-origin:50% 100%;
-  pointer-events:none;
-  transition:opacity .2s ease,transform .46s cubic-bezier(.2,.9,.25,1.06),visibility 0s .3s
-}
-
-.p-hb[data-open="true"][data-mode="loop"] .p-hbrow,
-.p-hb[data-open="true"][data-mode="speed"] .p-hbspeed{
-  visibility:visible;
-  opacity:1;
-  transform:none;
-  pointer-events:auto;
-  transition-delay:.07s,.07s,0s
-}
-
-/* two halves, one hairline between them: Loop on the left, A–B on the right */
-.p-hbrow{
-  display:grid;
-  grid-template-columns:minmax(0,.9fr) 1px minmax(0,1.1fr);
-  align-items:center
-}
-
-.p-hbrow button{
-  position:relative;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:6px;
-  flex:none;
-  min-width:40px;
-  height:var(--rowh);
-  padding:0 8px;
-  color:inherit;
-  text-shadow:inherit;
-  outline:none
-}
-
-.p-hbrow button > *{
-  position:relative
-}
-
-/* a soft lens that only exists while you are on a control */
-.p-hbrow button::before{
-  content:"";
-  position:absolute;
-  inset:3px 0;
-  border-radius:12px;
-  background:rgba(255,255,255,0);
-  transition:background .18s ease
-}
-
-.p-hbrow button:hover::before{
-  background:rgba(255,255,255,.12)
-}
-
-.p-hbrow button:active::before{
-  background:rgba(255,255,255,.26)
-}
-
-.p-hbrow button:focus-visible::before{
-  background:rgba(255,255,255,.1);
-  box-shadow:inset 0 0 0 2px var(--blue)
-}
-
-.p-hbrow button.ripple{
-  animation:hbpulse .6s cubic-bezier(.2,.9,.3,1.3)
-}
-
-@keyframes hbpulse{
-  0%{transform:scale(.9)}
-  50%{transform:scale(1.08)}
-  100%{transform:none}
-}
-
-@keyframes liq{
-  0%{transform:scale(.8)}
-  50%{transform:scale(1.25)}
-  100%{transform:none}
-}
-
-.p-sep{
-  justify-self:center;
-  width:1px;
-  height:16px;
-  background:rgba(255,255,255,.22)
-}
-
-/* Track Loop */
-.p-hbrow .p-hloop{
-  justify-self:center;
-  padding:0 12px
-}
-
-.p-hloop svg{
-  width:18px;
-  height:18px;
-  transition:filter .25s ease
-}
-
-.p-hloop.on{
-  color:#7fbcff
-}
-
-.p-hloop.on svg{
-  filter:drop-shadow(0 0 5px rgba(10,132,255,.95))
-}
-
-/* A–B:  A ●───● B   with a small × once there is something to clear.
-   The spacer on the left is as wide as the ×, so the group stays centred whether or not the ×
-   is there. */
-.p-hab{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  min-width:0
-}
-
-.p-hab::before{
-  content:"";
-  flex:none;
-  width:var(--xw)
-}
-
-.p-hbrow .p-pa,
-.p-hbrow .p-pb{
-  gap:4px;
-  padding:0 6px
-}
-
-.p-pa .l,
-.p-pb .l{
-  font-weight:700
-}
-
-.p-hbrow .dot{
-  display:block;
-  width:var(--dot);
-  height:var(--dot);
-  border-radius:50%;
-  opacity:0;
-  transform:scale(.4);
-  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
-  box-shadow:0 0 8px rgba(10,132,255,.95);
-  transition:opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1)
-}
-
-.p-hbrow .set .dot{
-  opacity:1;
-  transform:none
-}
-
-.p-hbrow .set .l{
-  color:#7fbcff
-}
-
-/* the line between the dots: it exists once there is something to connect, and it is also
-   the switch that turns A–B on and off */
-.p-hbrow .p-pc{
-  flex:1 1 30px;
-  min-width:26px;
-  max-width:88px;
-  padding:0
-}
-
-.p-pc i{
-  display:block;
-  width:100%;
-  height:2px;
-  border-radius:1px;
-  opacity:0;
-  background:repeating-linear-gradient(90deg,rgba(170,210,255,.95) 0 4px,transparent 4px 8px);
-  transition:opacity .25s ease,background .25s ease,box-shadow .25s ease
-}
-
-.p-pc.kept i{
-  opacity:1
-}
-
-.p-pc.on i{
-  opacity:1;
-  height:3px;
-  background:linear-gradient(90deg,#9fd0ff,#0a84ff,#9fd0ff);
-  box-shadow:0 0 8px rgba(10,132,255,.95)
-}
-
-.p-hbrow .p-px{
-  flex:none;
-  width:var(--xw);
-  min-width:0;
-  padding:0;
-  color:rgba(235,235,245,.72)
-}
-
-.p-px svg{
-  width:14px;
-  height:14px
-}
-
-.p-hbrow .p-px:disabled{
-  visibility:hidden
-}
-
-/* ---- Speed, only when asked for ----
-   Six values across the width the two actions were using, so each one is a generous target.
-   The selected one lights up, and a bead rides the stroke underneath it. */
-
-.p-strack{
-  display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
-  height:100%;
-  touch-action:none;
-  cursor:pointer;
-  outline:none;
-  -webkit-user-select:none;
-  user-select:none;
-  -webkit-touch-callout:none
-}
-
-.p-strack:focus-visible{
-  outline:2px solid var(--blue);
-  outline-offset:-2px;
-  border-radius:12px
-}
-
-.p-sv{
-  display:grid;
-  place-items:center;
-  color:rgba(235,235,245,.74);
-  transition:color .2s ease,text-shadow .2s ease
-}
-
-.p-strack:hover .p-sv{
-  color:rgba(245,245,250,.9)
-}
-
-.p-sv.on,
-.p-strack:hover .p-sv.on{
-  color:#fff;
-  font-weight:700
-}
-
-.p-hb.sp .p-sv.on,
-.p-hb.sp .p-strack:hover .p-sv.on{
-  color:#7fbcff;
-  text-shadow:0 0 10px rgba(10,132,255,.9),0 1px 2px rgba(0,0,0,.5)
-}
-
-.p-sbead{
-  position:absolute;
-  top:50%;
-  left:calc(var(--pad) + (100% - var(--pad) * 2) * var(--sf,.5));
-  width:calc(var(--dot) + 3px);
-  height:calc(var(--dot) + 3px);
-  margin:calc((var(--dot) + 3px) / -2) 0 0 calc((var(--dot) + 3px) / -2);
-  border-radius:50%;
-  opacity:0;
-  transform:scale(.4);
-  pointer-events:none;
-  background:radial-gradient(circle at 35% 30%,#fff,#dbe9ff 72%);
-  box-shadow:0 1px 4px rgba(0,0,0,.4);
-  transition:left .3s cubic-bezier(.3,1.2,.5,1),opacity .25s ease,transform .32s cubic-bezier(.3,1.4,.5,1),background .25s ease,box-shadow .25s ease
-}
-
-.p-hb[data-open="true"][data-mode="speed"] .p-sbead{
-  opacity:1;
-  transform:none
-}
-
-.p-hb.sp .p-sbead{
-  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 72%);
-  box-shadow:0 0 10px rgba(10,132,255,.95)
-}
-
-/* the value hangs under the stroke when speed isn't 1×, and it is the way back: one tap puts
-   speed back to 1×. Quiet text, no box (the padding is only there to make it a finger-sized
-   target). At 1× it isn't there. */
-.p-hbval{
-  position:absolute;
-  left:50%;
-  top:calc(50% + var(--hbt) / 2 + 1px); /* never over the stroke itself, so a hold still seeks */
-  padding:3px 14px 11px;
-  border-radius:15px;
-  font-size:12px;
-  line-height:14px;
-  font-weight:700;
-  font-variant-numeric:tabular-nums;
-  white-space:nowrap;
-  color:#7fbcff;
-  text-shadow:0 0 10px rgba(10,132,255,.8),0 1px 2px rgba(0,0,0,.6);
-  opacity:0;
-  transform:translateX(-50%) translateY(-3px);
-  pointer-events:none;
-  transition:opacity .25s ease,transform .35s cubic-bezier(.2,.9,.25,1.06),background .15s ease
-}
-
-.p-hb[data-open="true"][data-mode="loop"].sp .p-hbval{
-  opacity:1;
-  transform:translateX(-50%);
-  pointer-events:auto
-}
-
-.p-hbval:hover{
-  background:rgba(10,132,255,.16)
-}
-
-.p-hbval:active{
-  background:rgba(10,132,255,.3)
-}
-
-.p-hbval:focus-visible{
-  outline:2px solid var(--blue);
-  outline-offset:-2px
-}
-
-/* ---- the stroke while it is held ----
-   Hold it and it becomes a temporary time ruler, with the playhead where you are. This is not a
-   scrubber and not a progress bar: it exists only for as long as you hold, shows the time scale
-   for that moment, and is put away on release. */
-
-.p-hb[data-open="true"][data-mode="seek"] .p-hbbox{
-  width:min(var(--hbs),100%)
-}
-
-.p-hbseek{
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:calc(var(--hbh) / 2 + var(--hbt) / 2 + 4px);
-  height:80px;
-  color:#fff;
-  font-variant-numeric:tabular-nums;
-  text-shadow:0 1px 2px rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.45);
-  visibility:hidden;
-  opacity:0;
-  pointer-events:none;
-  transition:opacity .2s ease,visibility 0s .25s
-}
-
-.p-hb[data-open="true"][data-mode="seek"] .p-hbseek{
-  visibility:visible;
-  opacity:1;
-  transition-delay:.05s,0s
-}
-
-.p-sktrack{
-  position:absolute;
-  left:var(--skpad);
-  right:var(--skpad);
-  top:0;
-  bottom:0
-}
-
-.p-skticks{
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:0;
-  height:30px
-}
-
-.p-sktk{
-  position:absolute;
-  bottom:0;
-  width:1px;
-  height:4px;
-  margin-left:-.5px;
-  background:rgba(255,255,255,.45)
-}
-
-.p-sktk.M{
-  height:8px;
-  background:rgba(255,255,255,.88)
-}
-
-.p-sklb{
-  position:absolute;
-  bottom:12px;
-  font-size:11.5px;
-  font-weight:600;
-  white-space:nowrap;
-  color:rgba(235,235,245,.8);
-  transform:translateX(-50%)
-}
-
-.p-skread{
-  position:absolute;
-  bottom:36px;
-  font-size:22px;
-  line-height:26px;
-  font-weight:700;
-  letter-spacing:-.01em;
-  white-space:nowrap;
-  transform:translateX(-50%)
-}
-
-.p-skhint{
-  position:absolute;
-  left:0;
-  right:0;
-  top:0;
-  text-align:center;
-  font-size:11px;
-  line-height:13px;
-  font-weight:600;
-  color:rgba(235,235,245,.62)
-}
-
-/* the playhead of the moment: a bead on the stroke */
-.p-tbead{
-  position:absolute;
-  top:50%;
-  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--tx,0));
-  width:calc(var(--dot) + 5px);
-  height:calc(var(--dot) + 5px);
-  margin:calc((var(--dot) + 5px) / -2) 0 0 calc((var(--dot) + 5px) / -2);
-  border-radius:50%;
-  opacity:0;
-  transform:scale(.4);
-  pointer-events:none;
-  background:radial-gradient(circle at 35% 30%,#fff,#dbe9ff 72%);
-  box-shadow:0 0 0 3px rgba(255,255,255,.18),0 1px 5px rgba(0,0,0,.45);
-  transition:opacity .2s ease,transform .3s cubic-bezier(.3,1.4,.5,1)
-}
-
-.p-hb.seeking .p-tbead{
-  opacity:1;
-  transform:none
-}
-
-/* A and B, where they fall on the ruler: A●──●B */
-.p-skmark{
-  position:absolute;
-  top:50%;
-  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--x,0));
-  width:calc(var(--dot) + 2px);
-  height:calc(var(--dot) + 2px);
-  margin:calc((var(--dot) + 2px) / -2) 0 0 calc((var(--dot) + 2px) / -2);
-  border-radius:50%;
-  opacity:0;
-  transform:scale(.4);
-  pointer-events:none;
-  background:radial-gradient(circle at 35% 30%,#fff,#7bb9ff 70%);
-  box-shadow:0 0 8px rgba(10,132,255,.95);
-  transition:opacity .2s ease,transform .3s cubic-bezier(.3,1.4,.5,1)
-}
-
-.p-skmark b{
-  position:absolute;
-  top:calc(100% + 2px);
-  left:50%;
-  font-size:10px;
-  line-height:12px;
-  font-weight:700;
-  color:#7fbcff;
-  text-shadow:0 1px 2px rgba(0,0,0,.6);
-  transform:translateX(-50%)
-}
-
-.p-hb.seeking .p-skmark.on{
-  opacity:1;
-  transform:none
-}
-
-.p-skreg{
-  position:absolute;
-  top:50%;
-  left:calc(var(--skpad) + (100% - var(--skpad) * 2) * var(--x0,0));
-  width:calc((100% - var(--skpad) * 2) * var(--w,0));
-  height:3px;
-  margin-top:-1.5px;
-  border-radius:2px;
-  opacity:0;
-  pointer-events:none;
-  background:linear-gradient(90deg,#9fd0ff,#0a84ff,#9fd0ff);
-  box-shadow:0 0 8px rgba(10,132,255,.95);
-  transition:opacity .2s ease
-}
-
-.p-hb.seeking.hasreg .p-skreg{
-  opacity:1
-}
-
-/* after you let go, the time you landed on hangs under the stroke for a moment, then goes */
-.p-hbtime{
-  position:absolute;
-  left:50%;
-  top:calc(50% + var(--hbt) / 2 + 4px);
-  font-size:12px;
-  line-height:14px;
-  font-weight:700;
-  font-variant-numeric:tabular-nums;
-  white-space:nowrap;
-  color:#fff;
-  text-shadow:0 1px 2px rgba(0,0,0,.6);
-  opacity:0;
-  transform:translateX(-50%);
-  pointer-events:none;
-  transition:opacity .35s ease
-}
-
-.p-hb.tshow .p-hbtime{
-  opacity:1
-}
-
-.p-hb[data-open="true"] .p-hbtime{
-  opacity:0
-}
-
-/* ---- sizes: one design, three spatial expressions ---- */
-
-/* every touch screen: full finger-sized targets */
-@media (pointer:coarse){
-  .p-hb{
-    --hbh:44px;
-    --hbt:5px;
-    --rowh:48px;
-    --fs:14px;
-    --dot:8px;
-    --xw:40px
-  }
-
-  .p-hbrow button{
-    min-width:44px
-  }
-}
-
-/* iPad Air 13", iPad Pro, other big touch screens, either orientation:
-   more room to breathe, but the bar stays a short stroke, not a toolbar */
-@media (pointer:coarse) and (min-width:700px) and (min-height:700px){
-  .p-hb{
-    --hbw:480px;
-    --hbc:150px;
-    --hbl:60px;
-    --fs:15px;
-    --pad:12px;
-    --xw:44px;
-    --hbs:820px
-  }
-}
-
-/* very large monitors with a mouse: a touch wider, never a toolbar */
-@media (pointer:fine) and (min-width:1900px){
-  .p-hb{
-    --hbw:400px;
-    --hbl:56px;
-    --hbs:760px
-  }
-}
-
-/* phones: the unfolded bar follows the width of the screen (safe areas included), and A–B gets
-   the larger share of it, because it is the half with three small things in it */
-@media (max-width:600px){
-  .p-hb{
-    --hbw:372px;
-    --hbc:112px;
-    --hbl:44px;
-    --pad:4px;
-    --hbs:9999px /* as wide as the screen allows */
-  }
-}
-
-/* …which is also true of a phone on its side */
-@media (max-width:600px),(pointer:coarse) and (max-height:699px){
-  .p-hbrow{
-    grid-template-columns:minmax(0,.66fr) 1px minmax(0,1.34fr)
-  }
-}
-
-@media (max-width:380px){
-  .p-hb{
-    --xw:34px
-  }
-
-  .p-hbrow button{
-    min-width:38px
-  }
-
-  .p-hbrow .p-pa,
-  .p-hbrow .p-pb{
-    padding:0 4px
-  }
-
-  .p-hbrow .p-hloop{
-    padding:0 8px
-  }
-}
-
-@media (max-width:340px){
-  .p-hloop .n{
-    display:none
-  }
-
-  .p-hab::before{
-    display:none
-  }
-}
-
-/* ---- island 3: the sound ----
-   The vertical twin of the home bar. Time runs left to right along the bottom stroke; sound
-   stands upright at the right edge, as a second stroke crossing the same control line.
-   Collapsed it is only that stroke, blue glass while the sound has been shaped. Hover (mouse)
-   or tap (touch) and the stroke rises to its full height and the properties of the sound unfold
-   from it, as if they had been folded inside it all along: the EQ as one curve over three
-   upright bands, Key as a ladder of semitones, Space as an upright fader. Every control in it
-   moves up and down; nothing in it is a timeline. */
-
-.p-eqwrap{
-  position:relative;
-  flex:none
-}
-
-.p-eqbtn{
-  --sl:40px; /* length of the folded stroke */
-  position:relative;
-  display:block;
-  width:44px;
-  height:64px;
-  outline:none;
-  touch-action:none;
-  -webkit-tap-highlight-color:transparent
-}
-
-.p-eqbtn i{
-  position:absolute;
-  left:20px;
-  bottom:12px;
-  width:4px;
-  height:var(--sl);
-  border-radius:99px;
-  opacity:.78;
-  background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,.56));
-  box-shadow:inset .5px 0 0 rgba(255,255,255,.7),0 1px 3px rgba(0,0,0,.34);
-  transition:height .5s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease,background .25s ease,box-shadow .25s ease
-}
-
-.p-eqwrap:not(.open) .p-eqbtn:hover i{
-  height:calc(var(--sl) + 8px);
-  opacity:1
-}
-
-.p-eqbtn:focus-visible i{
-  opacity:1;
-  box-shadow:0 0 0 2px var(--blue),0 1px 3px rgba(0,0,0,.34)
-}
-
-/* the sound has been shaped (EQ, Key or Space): blue glass, as the home bar is for Loop */
-.p-eqbtn.on i{
-  opacity:1;
-  background:linear-gradient(90deg,#c3e2ff,#0a84ff 80%);
-  box-shadow:inset .5px 0 0 rgba(255,255,255,.85),0 0 8px rgba(10,132,255,.7),0 1px 3px rgba(0,0,0,.25)
-}
-
-/* open: the stroke rises to the full height of what it holds, and stays as its spine */
-.p-eqwrap.open .p-eqbtn i{
-  height:var(--sph,180px);
-  opacity:1
-}
-
-.p-eqbtn.ripple i{
-  animation:hbline .7s ease-out
-}
-
-/* what unfolds: no panel, no edge. It stands on the stroke's foot and opens leftwards out of
-   the stroke, over a feathered shade like the one behind the unfolded home bar. */
-.p-eq{
-  touch-action:none;
-  --eqt:116px;   /* slider length */
-  --eqtw:38px;   /* slider width: the finger target of one band */
-  position:absolute;
-  right:calc(100% - 10px);
-  bottom:12px;
-  z-index:20;
-  pointer-events:none
-}
-
-.p-eq::before{
-  content:"";
-  position:absolute;
-  inset:-34px -40px -30px -34px;
-  z-index:-1;
-  opacity:0;
-  pointer-events:none;
-  background:rgba(12,12,14,.36);
-  -webkit-backdrop-filter:blur(16px) saturate(160%) brightness(.72);
-  backdrop-filter:blur(16px) saturate(160%) brightness(.72);
-  -webkit-mask-image:radial-gradient(closest-side,#000 62%,transparent 100%);
-  mask-image:radial-gradient(closest-side,#000 62%,transparent 100%);
-  transition:opacity .35s ease
-}
-
-.p-eqin{
-  padding:0 4px;
-  clip-path:inset(0 0 0 100%);
-  transition:clip-path .26s cubic-bezier(.4,0,.6,1)
-}
-
-.p-eqwrap.open .p-eq{
-  pointer-events:auto
-}
-
-.p-eqwrap.open .p-eq::before{
-  opacity:1
-}
-
-.p-eqwrap.open .p-eqin{
-  clip-path:inset(-20px -20px -20px 0);
-  transition:clip-path .55s cubic-bezier(.2,.9,.25,1.04) .06s
-}
-
-.p-eqtop{
-  display:flex;
-  align-items:center;
-  height:20px;
-  padding:0 2px
-}
-
-.p-eqflat{
-  height:20px;
-  padding:0 6px;
-  border-radius:10px;
-  font-size:11px;
-  font-weight:700;
-  color:#6fb4ff;
-  transition:background .15s ease
-}
-
-.p-eqflat:hover{
-  background:rgba(255,255,255,.1)
-}
-
-.p-eqflat:active{
-  background:rgba(255,255,255,.2)
-}
-
-.p-eqcols{
-  display:flex;
-  align-items:flex-end
-}
-
-/* the three bands share one picture: the curve they make together, drawn from the same
-   filter maths the audio uses. The bands' own bars step back to faint guides. */
-.p-eqgraph{
-  position:relative;
-  display:flex;
-  gap:2px
-}
-
-.p-eqcurve{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  overflow:visible;
-  pointer-events:none
-}
-
-.p-eqcurve .z{
-  stroke:rgba(255,255,255,.3);
-  stroke-width:1;
-  stroke-dasharray:2 3
-}
-
-.p-eqcurve .l{
-  fill:none;
-  stroke:rgba(255,255,255,.88);
-  stroke-width:2;
-  stroke-linejoin:round;
-  stroke-linecap:round;
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))
-}
-
-.p-eqcurve .f{
-  opacity:0;
-  transition:opacity .3s ease
-}
-
-.p-eqgraph.on .p-eqcurve .f{
-  opacity:1
-}
-
-.p-eqgraph .p-bbase{
-  width:2px;
-  margin-left:-1px;
-  background:rgba(255,255,255,.1)
-}
-
-.p-eqgraph .p-bzero,
-.p-eqgraph .p-bfill{
-  display:none
-}
-
-/* Key and Space stand apart from the curve, each behind a hairline */
-.p-band.key,
-.p-band.space{
-  margin-left:4px;
-  padding-left:4px;
-  box-shadow:inset .5px 0 0 rgba(255,255,255,.14)
-}
-
-.p-band.space .p-bzero{
-  display:none
-}
-
-/* Key's ladder: a tick for every semitone, longer at the octave and at the original key */
-.p-kticks{
-  position:absolute;
-  left:50%;
-  top:0;
-  bottom:0;
-  width:8px;
-  margin-left:-4px;
-  background:repeating-linear-gradient(180deg,rgba(255,255,255,.26) 0 1px,transparent 1px calc(100% / 24 - .01px));
-  border-bottom:1px solid rgba(255,255,255,.26)
-}
-
-.p-band{
-  position:relative;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:2px;
-  width:var(--eqtw)
-}
-
-.p-bval{
-  height:16px;
-  font-size:12px;
-  font-weight:700;
-  font-variant-numeric:tabular-nums;
-  color:#fff
-}
-
-.p-band.on .p-bval{
-  color:#6fb4ff
-}
-
-.p-btrack{
-  position:relative;
-  width:var(--eqtw);
-  height:var(--eqt);
-  touch-action:none;
-  cursor:pointer;
-  outline:none
-}
-
-.p-btrack:focus-visible{
-  outline:2px solid var(--blue);
-  outline-offset:1px;
-  border-radius:12px
-}
-
-.p-bin{
-  position:absolute;
-  left:0;
-  right:0;
-  top:9px;
-  bottom:9px
-}
-
-.p-bbase{
-  position:absolute;
-  left:50%;
-  top:0;
-  bottom:0;
-  width:4px;
-  margin-left:-2px;
-  border-radius:2px;
-  background:rgba(255,255,255,.22)
-}
-
-/* the 0 line */
-.p-bzero{
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:16px;
-  height:2px;
-  margin:-1px 0 0 -8px;
-  border-radius:1px;
-  background:rgba(255,255,255,.75)
-}
-
-.p-bfill{
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:4px;
-  height:0;
-  margin-left:-2px;
-  border-radius:2px;
-  background:rgba(255,255,255,.9)
-}
-
-.p-band.on .p-bfill{
-  background:linear-gradient(180deg,#bfe0ff,#0a84ff);
-  box-shadow:0 0 10px rgba(10,132,255,.8)
-}
-
-.p-bknob{
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:17px;
-  height:17px;
-  margin:-8.5px 0 0 -8.5px;
-  border-radius:50%;
-  pointer-events:none;
-  background:radial-gradient(circle at 35% 30%,#fff 0%,rgba(255,255,255,.82) 72%);
-  box-shadow:0 1px 6px rgba(0,0,0,.45),inset 0 0 0 .5px rgba(255,255,255,.8);
-  transition:top .08s ease,box-shadow .2s ease
-}
-
-.p-band.on .p-bknob{
-  box-shadow:0 1px 6px rgba(0,0,0,.45),inset 0 0 0 .5px rgba(255,255,255,.8),0 0 0 3px rgba(10,132,255,.55),0 0 14px rgba(10,132,255,.9)
-}
-
-.p-blabel{
-  display:inline-grid;
-  place-items:center;
-  height:22px;
-  padding:0 6px;
-  border-radius:11px;
-  font-size:11px;
-  font-weight:600;
-  white-space:nowrap;
-  color:rgba(235,235,245,.82);
-  transition:background .15s ease,color .15s ease
-}
-
-button.p-blabel:hover{
-  background:rgba(255,255,255,.12)
-}
-
-button.p-blabel:active{
-  background:rgba(255,255,255,.24)
-}
-
-.p-band.on .p-blabel{
-  color:#6fb4ff
-}
-
-.p-band.ripple .p-bknob{
-  animation:liq .55s cubic-bezier(.2,.9,.3,1.3)
-}
-
-/* labels and values arrive a moment after the stroke has risen */
-.p-eqin .p-bval,
-.p-eqin .p-blabel,
-.p-eqtop{
-  opacity:0;
-  transition:opacity .15s ease
-}
-
-.p-eqwrap.open .p-eqin .p-bval,
-.p-eqwrap.open .p-eqin .p-blabel,
-.p-eqwrap.open .p-eqtop{
-  opacity:1;
-  transition:opacity .3s ease .28s
-}
-
-/* touch screens get longer sliders; a big tablet gets room for a thumb */
-@media (pointer:coarse){
-  .p-eq{
-    --eqt:112px
-  }
-}
-
-@media (pointer:coarse) and (min-width:700px) and (min-height:700px){
-  .p-eq{
-    --eqt:136px;
-    --eqtw:46px
-  }
-}
 
 .p-center-controls{
   position:absolute;
@@ -1876,13 +741,19 @@ button.p-blabel:active{
   right:0;
   bottom:0;
   z-index:6;
-  height:var(--bb);
   display:grid;
-  grid-template-columns:44px 1fr 44px;
+  grid-template-columns:44px minmax(0,1fr) 44px;
+  grid-template-areas:". strp ." "inf cm sav";
   align-items:center;
-  gap:8px;
+  column-gap:8px;
+  row-gap:0;
   padding:10px max(12px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))
 }
+
+#info{grid-area:inf}
+#strip{grid-area:strp}
+#vshare{grid-area:sav}
+#cm{grid-area:cm}
 
 .ic{
   width:44px;
@@ -1973,12 +844,22 @@ button.p-blabel:active{
   #lb{
     --tb:calc(44px + env(safe-area-inset-top));
     --bb:calc(56px + env(safe-area-inset-bottom));
+    --bb0:var(--botH,calc(56px + env(safe-area-inset-bottom)));
     --cl:36px
   }
 
+  /* one row instead of two: Info · thumbnails · comment · Save. The bar drops from about
+     114pt to about 77pt and the media gets that height back. */
   .bot{
+    grid-template-columns:44px minmax(0,1fr) auto 44px;
+    grid-template-areas:"inf strp cm sav";
+    column-gap:10px;
     padding-top:6px;
     padding-bottom:calc(6px + env(safe-area-inset-bottom))
+  }
+
+  .bot #cm .cmlabel{
+    min-width:0
   }
 
   .p-hb{
@@ -2018,20 +899,6 @@ button.p-blabel:active{
   .aw.tools .p-center-controls{
     opacity:0 !important;
     pointer-events:none
-  }
-
-  .p-eq{
-    --vh100:100vh;
-    /* the sliders are as long as the room between the top bar and the control line allows */
-    --eqt:clamp(56px,calc(var(--vh100) - var(--tb) - var(--bb) - 120px),108px)
-  }
-}
-
-@supports (height:100dvh){
-  @media (max-height:560px){
-    .p-eq{
-      --vh100:100dvh
-    }
   }
 }
 
@@ -2331,7 +1198,6 @@ button.p-blabel:active{
   --sheen:radial-gradient(140% 170% at 0% 0%,rgba(255,255,255,.17) 0%,rgba(255,255,255,.05) 42%,rgba(255,255,255,0) 64%)
 }
 
-.lnk,
 .back,
 .p-pip,
 .p-center-btn,
@@ -2347,8 +1213,7 @@ button.p-blabel:active{
 }
 
 .p-toast,
-.pg,
-.lnk{
+.pg{
   text-shadow:0 1px 2px rgba(0,0,0,.4)
 }
 
@@ -2370,14 +1235,38 @@ button.p-blabel:active{
   pointer-events:none
 }
 
-#up,
-#del{
-  background:rgba(255,255,255,.14);
-  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.20)
+#up{opacity:.5;transition:opacity .2s,box-shadow .2s}
+#dl{opacity:.45;transition:opacity .2s,box-shadow .2s}
+
+@media(hover:hover){
+  #up:hover{
+    opacity:1;
+    box-shadow:inset 0 .5px 0 rgba(255,255,255,.55),0 0 0 1px rgba(10,132,255,.9),0 0 16px 3px rgba(10,132,255,.8)
+  }
 }
 
-#del.on{
-  background:rgba(255,69,58,.85)
+#up:active{opacity:1}
+
+#up,
+#dl{
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:136px;
+  height:34px;
+  padding:0;
+  font-variant-numeric:tabular-nums
+}
+
+@media(max-width:400px){
+  #up,
+  #dl{width:108px}
+}
+
+#dl.glow{
+  opacity:1;
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.55),0 0 0 1px rgba(10,132,255,.9),0 0 16px 3px rgba(10,132,255,.8)
 }
 
 /* ---------- Smoked glass for anything that carries text ----------
@@ -2392,11 +1281,22 @@ button.p-blabel:active{
     inset 0 0 0 .5px rgba(255,255,255,.12)
 }
 
-.top,
+/* viewer chrome sits on the media as a dark scrim, not a gray bar (README §1.1, §5.8) */
 .bot{
-  background:rgba(28,28,30,.68);
-  -webkit-backdrop-filter:blur(30px) saturate(180%) brightness(.62);
-  backdrop-filter:blur(30px) saturate(180%) brightness(.62)
+  background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0))
+}
+
+.foot.sel{
+  background:var(--panel);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  border-radius:14px;
+  font:500 15px -apple-system,BlinkMacSystemFont,sans-serif
+}
+
+.foot.sel{
+  min-height:48px;
+  padding:0 14px 0 18px
 }
 
 .top .back,
@@ -2408,11 +1308,7 @@ button.p-blabel:active{
 }
 
 .top{
-  box-shadow:inset 0 -.5px 0 rgba(255,255,255,.14)
-}
-
-.bot{
-  box-shadow:inset 0 .5px 0 rgba(255,255,255,.14)
+  background:linear-gradient(180deg,rgba(0,0,0,.6),rgba(0,0,0,0))
 }
 
 /* every floating control surface. (Neither the home bar nor the sound stroke is on this list: they have no surface.) */
@@ -2452,46 +1348,706 @@ button.p-blabel:active{
     -webkit-backdrop-filter:none;
     backdrop-filter:none
   }
-
-  .p-hbscrim,
-  .p-eq::before{
-    background:rgba(12,12,14,.72);
-    -webkit-backdrop-filter:none;
-    backdrop-filter:none
-  }
 }
 
 @media(prefers-reduced-motion:reduce){
-  .p-eqin,
-  .p-eqwrap.open .p-eqin,
-  .p-eqbtn i{
-    transition:none !important
-  }
-
   .tile .shim,
   .th.pending::after,
   .appear,
-  .p-eq,
-  .p-hbbox,
-  .p-hbrow,
-  .p-hbspeed,
-  .p-hbseek,
-  .p-hbscrim,
-  .p-hbval,
-  .p-hbtime,
-  .p-tbead,
-  .p-skmark,
-  .p-skreg,
-  .p-sbead,
-  .p-hline i,
-  .p-hline.ripple i,
-  .p-hbrow button.ripple,
-  .p-band.ripple .p-bknob,
   .pdfp canvas,
   .pg,
   .p-center-play svg,
   .p-toast{
     animation:none;
     transition:none
+  }
+}
+
+/* ---------- the viewer: plain controls, no glass badges; and the owner's note ---------- */
+
+.top .back {
+  background: transparent;
+  color: var(--blue);
+  height: 36px;
+  padding: 0 16px 0 8px;
+  border-radius: 10px;
+  font: 500 15px -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  box-shadow:none;
+}
+
+.bot .ic {
+  background: none;
+  color: var(--blue);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  box-shadow:none;
+}
+
+body.lbopen main{
+  visibility:hidden
+}
+
+/* ---------- comments (README §3, §4.4) ----------
+   COLLAPSED: #cm is one blue label in the bottom bar.
+   EXPANDED (body.comments-open): the media box shrinks to the top (--mh tall), the bottom bar
+   steps aside, and #thread fills the rest: Hide Comments, the comments oldest first, then the
+   field directly under the newest one. */
+
+#lb{--mh:min(100vw,50dvh)}
+
+#cm{
+  min-width:0;
+  font:400 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif
+}
+
+#cm .cmlabel{
+  display:block;
+  margin:0 auto;
+  max-width:100%;
+  min-height:44px;
+  padding:0 12px;
+  border:0;
+  background:none;
+  color:var(--blue);
+  font:inherit;
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  -webkit-tap-highlight-color:transparent
+}
+
+#cm .cmlabel:active{opacity:.6}
+#cm .cmlabel:not(.has){color:#fff}
+
+#thread{
+  position:absolute;
+  left:0;
+  right:0;
+  top:var(--mh);
+  bottom:0;
+  z-index:5;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  background:#000;
+  padding:0 max(0px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0px,env(safe-area-inset-left));
+  font:400 17px/22px -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+  animation:thread-in .28s cubic-bezier(.2,.8,.2,1)
+}
+
+@keyframes thread-in{
+  from{transform:translateY(40px);opacity:0}
+}
+
+#thread .tact{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  height:44px;
+  padding:0 16px;
+  border-bottom:1px solid #2a2a2c
+}
+
+#thread .lnk,
+#thread .cbtns button{
+  border:0;
+  background:none;
+  padding:0;
+  color:var(--blue);
+  font:inherit;
+  min-height:44px;
+  -webkit-tap-highlight-color:transparent
+}
+
+#thread .lnk:disabled,
+#thread .cbtns button:disabled{opacity:.4}
+
+#thread .crow{
+  padding:8px 20px 8px 16px;
+  border-bottom:1px solid #2a2a2c
+}
+
+#thread .ctext{
+  margin:0;
+  color:#fff;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere
+}
+
+#thread .cmeta{
+  margin:2px 0 0;
+  font-size:13px;
+  line-height:18px;
+  color:#939297;
+  font-variant-numeric:tabular-nums
+}
+
+#thread .cmeta b{color:#fff;font-weight:600}
+#thread .cops{float:right;display:inline-flex;gap:16px}
+#thread .cops .lnk{min-height:18px;font-size:13px;padding:13px 0;margin:-13px 0}
+#thread .crow textarea.cedit{border-bottom:1px solid #2a2a2c}
+
+#thread .cfield{padding:0 16px 24px}
+
+#thread textarea{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  min-height:44px;
+  margin:0;
+  padding:11px 0;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#fff;
+  caret-color:var(--blue);
+  font:inherit;
+  font-size:17px; /* 16px or more: iOS Safari doesn't zoom the page on focus */
+  resize:none;
+  overflow:hidden
+}
+
+#thread textarea::placeholder{color:var(--blue);opacity:1}
+
+#thread .cbtns{
+  display:flex;
+  justify-content:flex-end;
+  gap:24px
+}
+
+#thread .cbtns[hidden]{display:none}
+
+/* expanded geometry: the media box is the top --mh; the bars inside it re-anchor to it */
+body.comments-open .stage-container{
+  bottom:auto;
+  height:var(--mh);
+  transition:height .28s cubic-bezier(.2,.8,.2,1)
+}
+
+body.comments-open #stage>img{
+  padding:var(--tb) 0 0;
+  object-fit:cover;
+  object-position:top
+}
+
+body.comments-open .vw,
+body.comments-open .aw img{padding:var(--tb) 0 0}
+
+body.comments-open #lb{--bb:0px;--bb0:0px}
+
+body.comments-open .bot{
+  opacity:0;
+  pointer-events:none
+}
+
+body.comments-open #prev,
+body.comments-open #next{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  #thread{animation:none}
+  body.comments-open .stage-container{transition:none}
+}
+
+/* landscape phones: media left, thread right */
+@media (orientation:landscape) and (max-height:560px){
+  body.comments-open .stage-container{height:auto;bottom:0;right:45%}
+  #thread{top:var(--tb);left:55%}
+}
+
+.crbar {
+  background: rgba(20, 20, 22, .40);
+  -webkit-backdrop-filter: var(--ink-blur);
+  backdrop-filter: var(--ink-blur);
+  border-top-left-radius: var(--r);
+  border-top-right-radius: var(--r);
+  box-shadow: none;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  font: 500 15px -apple-system, BlinkMacSystemFont, sans-serif;
+  color: rgba(255, 255, 255, .55);
+  overflow-wrap: anywhere;
+}
+
+/* crumbs as tabs: the current folder is the raised one */
+.crbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 0;
+}
+
+.crbar a {
+  color: inherit;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 8px 8px 0 0;
+  background: rgba(255, 255, 255, .06);
+}
+
+.crbar a:hover {
+  color: #fff;
+}
+
+.crbar a:last-child {
+  color: #fff;
+  font-weight: 600;
+  background: #000;
+}
+
+.crbar i {
+  display: none;
+}
+
+.bar {
+  justify-content: space-between;
+}
+
+.barr {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* the "… Select" row continues the same glass pane, flush with the hero below */
+.crbar + .bar {
+  height: 48px;
+  padding-top: 0;
+  background: rgba(20, 20, 22, .40);
+  -webkit-backdrop-filter: var(--ink-blur);
+  backdrop-filter: var(--ink-blur);
+  box-shadow: none;
+}
+/* the hero's top corners square off where the header meets it */
+.crbar ~ .hero {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.bar {
+  justify-content: space-between;
+}
+
+/* ================= "…" menu, invite sheet, upload tile ================= */
+
+/* keep the header row (and the menu hanging from it) above the hero */
+.bar{position:relative;z-index:5}
+.barr{position:relative;gap:4px}
+
+/* the "…" button */
+.mbtn{
+  display:grid;place-items:center;
+  width:34px;height:34px;border-radius:50%;
+  color:var(--blue);
+  background:transparent;
+  transition:background .15s ease
+}
+.mbtn svg{width:20px;height:20px}
+.mbtn:hover{background:transparent}
+.mbtn:active,.mbtn[aria-expanded="true"]{background:rgba(10,132,255,.28)}
+
+/* the menu: opens under the button, right edge level with Select.
+   Near-opaque on purpose: the header row already has a backdrop blur, and a blur
+   nested inside it can't see the page behind it. */
+.mnu{
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  z-index:30;
+  width:min(300px,calc(100vw - 24px));
+  padding:0 0 6px;
+  overflow:hidden;
+  border-radius:22px;
+  background:rgba(44,44,46,.97);
+  box-shadow:
+    inset 0 .5px 0 rgba(255,255,255,.22),
+    inset 0 0 0 .5px rgba(255,255,255,.12),
+    0 18px 48px rgba(0,0,0,.5);
+  transform-origin:100% 0;
+  animation:mnuin .24s cubic-bezier(.2,.9,.25,1.06)
+}
+@keyframes mnuin{from{opacity:0;transform:scale(.9)}}
+
+.mhd{padding:16px 18px 12px}
+.mhd b{display:block;font-size:17px;font-weight:600}
+.mhd span{display:block;margin-top:2px;font-size:14px;color:var(--mut);font-variant-numeric:tabular-nums}
+
+.msep{height:.5px;margin:6px 18px;background:rgba(255,255,255,.14)}
+
+.mi{
+  display:flex;align-items:center;gap:14px;
+  width:100%;min-height:48px;padding:0 18px;
+  color:var(--blue);font-size:17px;text-align:left;text-decoration:none
+}
+.mi svg{
+  flex:none;width:22px;height:22px;
+  fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round
+}
+.mi:hover{background:rgba(255,255,255,.07)}
+.mi:active{background:rgba(255,255,255,.14)}
+.mi:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.mi .n{margin-left:auto;color:var(--mut);font-variant-numeric:tabular-nums}
+.mi.danger{color:var(--blue)}
+
+/* ---- Invite sheet: bottom sheet on phones, centred card on larger screens ---- */
+.inv{
+  position:fixed;inset:0;z-index:40;
+  display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.45);
+  color-scheme:dark;
+  animation:in .18s ease
+}
+.invc{
+  width:min(100%,520px);
+  max-height:86vh;overflow:auto;
+  padding:4px 0 calc(16px + env(safe-area-inset-bottom));
+  border-radius:22px 22px 0 0;
+  background:var(--panel);
+  animation:sheetup .3s cubic-bezier(.2,.9,.25,1.04)
+}
+@keyframes sheetup{from{transform:translateY(100%)}}
+@media(min-width:620px){
+  .inv{align-items:center}
+  .invc{border-radius:22px}
+}
+.invh{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px 18px}
+.invh b{font-size:17px;font-weight:600}
+
+.invf{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:6px 16px 14px}
+.invf input,.invf select{
+  height:44px;padding:0 14px;border:0;border-radius:12px;
+  background:rgba(255,255,255,.10);color:#fff;
+  font:inherit;font-size:17px;outline:none
+}
+.invf input:focus,.invf select:focus{box-shadow:0 0 0 2px var(--blue)}
+#invname{grid-column:1 / -1}
+.invf .pill{height:44px;border-radius:12px}
+
+.invl{list-style:none;margin:0;padding:0}
+.invr{display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:.5px solid rgba(255,255,255,.12)}
+.invw{flex:1;min-width:0}
+.invw b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invw small{display:block;margin-top:2px;font-size:13px;color:var(--mut)}
+.invb{padding:8px 10px;border-radius:10px;color:var(--blue);font-weight:600}
+.invb:active{background:rgba(255,255,255,.12)}
+.invb.rev{color:var(--blue);font-weight:400}
+.inve{margin:8px 18px;color:var(--mut);text-align:center}
+.mvcr{text-align:left;overflow-wrap:anywhere}
+.mvcr .invb{padding:4px 2px;font-weight:400}
+.invb.mvf{flex:1;text-align:left;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invf .pill:disabled{opacity:.4}
+.invn{margin:10px 18px 0;color:var(--mut);font-size:13px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* ---- small toast for "Link copied" etc. ---- */
+.mtoast{
+  position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top));
+  transform:translateX(-50%);z-index:50;
+  padding:9px 16px;border-radius:99px;
+  background:rgba(44,44,46,.96);font-weight:600;
+  opacity:0;pointer-events:none;transition:opacity .25s ease
+}
+.mtoast.on{opacity:1}
+
+/* ---- the blue "+" tile after the last media = upload button ---- */
+.tile.add{order:2147483647;background:var(--panel);color:var(--blue)}   /* order keeps it last even when new tiles are appended */
+.tile.add::before,
+.tile.add::after{
+  content:"";position:absolute;left:50%;top:50%;
+  background:currentColor;border-radius:2px;
+  transform:translate(-50%,-50%)
+}
+.tile.add::before{width:30px;height:4px}
+.tile.add::after{width:4px;height:30px}
+.tile.add:hover{background:#3a3a3c}
+.tile.add:active{background:#48484a}
+.tile.add:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.selecting .tile.add{display:none}
+
+/* ---- the old Upload pill goes away (kept in the DOM so your upload code still works) ---- */
+#up{display:none!important}
+
+@media(prefers-reduced-motion:reduce){
+  .mnu,.inv,.invc{animation:none}
+  .mtoast{transition:none}
+}
+.mtoast{
+  max-width:calc(100vw - 32px);
+  text-align:center;
+  white-space:normal
+}
+/* ---------- transcripts from Recense ---------- */
+.tx{
+  position:absolute;
+  left:50%;
+  top:calc(var(--tb) + 8px);
+  transform:translateX(-50%);
+  z-index:4;
+  width:min(92%,640px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  pointer-events:none
+}
+
+/* Learn mode: two places, one over the other; a phrase and its English share one slot */
+.txp{
+  pointer-events:auto;
+  box-sizing:border-box;
+  max-width:100%;
+  min-height:calc(2.6em + 12px);
+  padding:6px 12px;
+  border:0;
+  border-radius:12px;
+  background:rgba(0,0,0,.5);
+  color:#fff;
+  font:600 clamp(22px,3vw,30px)/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+  letter-spacing:.012em;
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  align-content:center;
+  column-gap:.3em;
+  text-align:center;
+  -webkit-tap-highlight-color:transparent
+}
+.txp[hidden]{display:none}
+.txc{display:inline-grid;justify-items:stretch;white-space:nowrap;max-width:100%}
+/* a phrase wider than the place wraps inside it (one size for every line, SPEC 59: never shrunk to fit) */
+.txc>.txs,.txc>.txe{white-space:normal;overflow-wrap:anywhere}
+.txc>.txs,.txc>.txe{grid-area:1/1;text-align:center}
+.txw,:root.prom .txe{-webkit-background-clip:text;background-clip:text}
+.txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
+
+/* Learn and Follow: the lyrics are centred in the band between the top bar (with its day and time) and the two bars,
+   in either orientation: never under the date or the browser's chrome, never over the bars (SPEC 55, 56). A tap on
+   them opens the editor (SPEC 57) */
+.tx.learn{top:calc(var(--tb) + 4px);bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);justify-content:center}
+.tx.learn .txp{cursor:pointer}
+/* Follow: the line being heard, its trailing language under it (each phrase over its own translation) */
+.tx.follow .txc{grid-template-rows:auto auto}
+.tx.follow .txc>.txs{grid-area:1/1;visibility:visible !important;-webkit-mask-image:none !important;mask-image:none !important}
+.tx.follow .txc>.txe{grid-area:2/1;visibility:visible !important;-webkit-mask-image:none !important;mask-image:none !important}
+/* comments open: the lyrics centre in the shrunk media box, below the top bar */
+body.comments-open .tx.learn{top:calc((var(--tb) + 100%) / 2);bottom:auto;transform:translate(-50%,-50%);max-height:calc(100% - var(--tb) - 8px)}
+#thread .ctext.cmine{cursor:text;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+body.comments-open .tx{top:calc(var(--tb) + 4px)}
+
+/* correcting a line in place; waiting for a transcript */
+.txed{pointer-events:auto;width:100%;display:flex;flex-direction:column;align-items:stretch;gap:4px}
+.txin{box-sizing:border-box;width:100%;resize:none;padding:8px 12px;border:0;border-radius:12px;background:rgba(0,0,0,.72);color:#fff;letter-spacing:.012em;font:600 calc(clamp(22px,3vw,30px) * var(--txs,1))/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
+.txbar{display:flex;justify-content:center;gap:4px}
+.txbtn{pointer-events:auto;border:0;background:rgba(0,0,0,.5);font:inherit;font-size:17px;cursor:pointer}
+.txall{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;background:rgba(0,0,0,.84);color:#fff;font:calc(17px * var(--txs,1))/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
+.txallbar{justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:calc(var(--tb,0px) + 8px) 12px 8px}
+.txallbar .txbtn{background:none}
+/* the editor's tools (homebar.js tools, SPEC 57): language and view, then the icons; Changes and Done to the right */
+.txallbar .p-tools{flex:1 1 300px;min-width:0}
+.txbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.txtrl{color:rgba(255,255,255,.42);font-size:.92em}
+.txrow.cur .txtrl{color:rgba(255,255,255,.7)}
+.txrow .txin.txtr{font-weight:400;color:rgba(255,255,255,.85)}
+.txlist{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 16px 40vh}
+.txrow{display:flex;gap:12px;align-items:baseline;max-width:720px;margin:0 auto;padding:6px 0}
+.txt{flex:none;width:44px;color:rgba(255,255,255,.4);font-size:13px;font-variant-numeric:tabular-nums}
+.txline{flex:1;text-align:start;border:0;padding:0;background:none;color:rgba(255,255,255,.62);font:inherit;cursor:pointer}
+.txline:hover{color:#fff}
+.txrow.cur .txline{color:#fff}
+.txrow .txin{text-align:start;font-size:17px;background:rgba(255,255,255,.1)}
+.txchg{flex-wrap:wrap}
+.txchg .txt{width:auto;flex-basis:100%}
+.txdiff{flex:1;display:flex;flex-direction:column;gap:2px}
+.txwas{color:rgba(255,255,255,.45)}
+.txnow{text-decoration:none}
+.txlist>.txmsg{text-align:center;color:rgba(255,255,255,.6);padding:24px}
+.txst{flex-direction:row;justify-content:center;color:rgba(255,255,255,.8);font-size:15px}
+.txst .txmsg{background:rgba(0,0,0,.5);padding:6px 12px;border-radius:12px}
+
+/* ---------- Create Share Link from a selection: how long the link lasts ---------- */
+#shr .seg{display:flex;margin:6px 16px 8px;padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#shr .seg label{flex:1;position:relative}
+#shr .seg input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+#shr .seg span{display:block;padding:9px 0;border-radius:8px;text-align:center;font-size:15px;color:var(--blue)}
+#shr .seg input:checked + span{background:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+#shr .seg input:focus-visible + span{outline:2px solid var(--blue)}
+
+/* the info panel's owner actions: Rename, Change Cover */
+#meta .mops{display:flex;flex-wrap:wrap;gap:0 20px;margin-top:8px}
+#meta .mops .lnk{border:0;background:none;padding:0;min-height:44px;color:var(--blue);font:inherit;font-size:17px}
+
+/* ---------- spec §2: the viewer's two modes for audio ----------
+   mode 1: the cover (and, while it is being transcribed, a small progress pill on it);
+   mode 2 (.aw.lyrics): a transcript exists, so the lyrics on black, where Learn mode always shows them. */
+.aw.lyrics img{display:none}
+.txst{font-size:13px}
+.txst .txmsg{padding:4px 10px;border-radius:10px;font-variant-numeric:tabular-nums}
+
+/* ---------- spec §1: the native language picker in Info, Create Share Link's segmented control ---------- */
+#meta .mlang{margin-top:8px}
+#meta .mlang .mlcap{display:block;margin-bottom:4px;color:var(--mut);font-size:13px}
+#meta .seg{display:flex;padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#meta .seg label{flex:1;position:relative}
+#meta .seg input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+#meta .seg span{display:block;padding:9px 12px;border-radius:8px;text-align:center;font-size:15px;color:var(--blue)}
+#meta .seg input:checked + span{background:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+#meta .seg input:focus-visible + span{outline:2px solid var(--blue)}
+
+/* ---------- spec §7: swipe a comment of yours left (touch), or two-finger swipe over it (trackpad), for Delete ---------- */
+#thread .crow.sw{position:relative;overflow:hidden;padding:0;touch-action:pan-y}
+#thread .crow.sw .cslide{position:relative;z-index:1;padding:8px 20px 8px 16px;background:#000;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+#thread .crow.sw.drag .cslide{transition:none}
+#thread .crow.sw.open .cslide{transform:translateX(calc(-1 * var(--cdw,88px)))}
+#thread .crow.sw .cdel{position:absolute;top:0;right:0;bottom:0;width:var(--cdw,88px);display:flex;align-items:center;justify-content:center;padding:0;border:0;background:none;color:var(--blue);font:inherit;font-size:17px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#thread .crow.sw .cdel:disabled{opacity:.4}
+
+/* text documents (Markdown, Word, plain text) on a page like a PDF's */
+.pdfp.txtdoc{height:auto;overflow:visible;box-sizing:border-box;padding:clamp(20px,6%,56px);color:#1d1d1f;font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;user-select:text;-webkit-user-select:text;word-wrap:break-word}
+.txtdoc h1,.txtdoc h2,.txtdoc h3,.txtdoc h4{line-height:1.25;margin:1.2em 0 .5em}
+.txtdoc h1{font-size:1.8em}.txtdoc h2{font-size:1.45em}.txtdoc h3{font-size:1.2em}
+.txtdoc>:first-child{margin-top:0}
+.txtdoc p,.txtdoc ul,.txtdoc ol,.txtdoc blockquote,.txtdoc table,.txtdoc pre{margin:0 0 .9em}
+.txtdoc a{color:#0066cc}
+.txtdoc img{max-width:100%;height:auto}
+.txtdoc blockquote{padding-left:1em;border-left:3px solid #d2d2d7;color:#515154}
+.txtdoc pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f5f5f7;padding:12px;border-radius:6px}
+.txtdoc code{font:.9em ui-monospace,SFMono-Regular,Menlo,monospace;background:#f5f5f7;padding:.1em .3em;border-radius:4px}
+.txtdoc pre code{background:none;padding:0}
+.txtdoc table{border-collapse:collapse;display:block;overflow-x:auto}
+.txtdoc th,.txtdoc td{border:1px solid #d2d2d7;padding:6px 10px}
+.txtdoc hr{border:0;border-top:1px solid #d2d2d7;margin:1.5em 0}
+
+/* Info: the name, its size alone under it, both to the left; the key controls a row of their own */
+#meta .mname,#meta .msize{display:block;text-align:left}
+#meta .mops + .mops{margin-top:0}
+
+/* [Ambient Sounds]: between lines and over an instrumental, where Learn mode's lines sit */
+.txamb{position:absolute;left:50%;top:calc(var(--tb) + (100% - var(--tb) - var(--bb0) - var(--cl) - 30px) / 2);transform:translate(-50%,-50%);z-index:3;pointer-events:none;
+  font:italic 500 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;color:rgba(255,255,255,.7);
+  text-shadow:0 1px 6px rgba(0,0,0,.8);white-space:nowrap}
+.txamb[hidden]{display:none}
+
+/* playback that outlives the viewer: the dock, the now-playing pill, frames over the page */
+.dock{display:none}
+.nowpl{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 12px);transform:translateX(-50%);z-index:2147483600;
+  display:flex;align-items:center;gap:6px;max-width:min(80vw,420px);padding:4px 4px 4px 14px;border-radius:22px;
+  background:rgba(40,40,44,.92);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:0 2px 12px rgba(0,0,0,.5)}
+.nowpl[hidden]{display:none}
+.nowpl-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:none;border:0;color:#fff;font:500 14px -apple-system,BlinkMacSystemFont,sans-serif;text-align:left;padding:8px 0}
+.nowpl-p{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;padding:0}
+.nowpl-p svg{width:18px;height:18px}
+.shellfr{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483000;background:#000}
+body.shelled{overflow:hidden}
+body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
+
+/* phones upright: with the sound tray open, the play controls rise clear of it */
+@media (max-width:600px) and (min-height:561px){
+  .aw:has(.p-eqwrap.open) .p-center-controls,
+  .vw:has(.p-eqwrap.open) .p-center-controls{
+    transform:translate(-50%,calc(-50% - 120px))
+  }
+}
+
+/* Info: tap the name to rename (owner, Main); Transpose on the last row, to the left */
+#meta .mname.mrn{cursor:pointer}
+#meta .mops.mkey{justify-content:flex-start;margin-top:8px}
+
+/* ---------- Text Size: the top-right pill (opposite Back), Info's row, and a pinch over the lyrics ---------- */
+.tsz{display:flex;align-items:center}
+.tsz button{border:0;background:none;color:var(--blue);font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tsz button:disabled{opacity:.32;cursor:default}
+.tsz .txs-pct{display:none;min-width:3.2em;text-align:center;font-size:13px;color:#fff;font-variant-numeric:tabular-nums}
+.tsz.live .txs-pct{display:block}
+.tsz button.pulse{animation:tszp .26s ease-out}
+@keyframes tszp{40%{transform:scale(.86)}}
+.tpill{height:34px;padding:0 4px;border-radius:17px;background:rgba(44,44,46,.55);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14)}
+.tpill[hidden]{display:none}
+.tpill button{display:grid;place-items:center;width:34px;height:34px;padding:0}
+.tpill button+button,.tpill .txs-pct+button{border-left:.5px solid rgba(255,255,255,.16)}
+.tpill .sm{font-size:13px;font-weight:600}
+.tpill .lg{font-size:19px;font-weight:600}
+.tpill.live{box-shadow:inset 0 0 0 1px var(--blue)}
+#meta .mtsz .tsz{padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#meta .mtsz .tsz button{flex:1;padding:9px 12px;border-radius:8px;font-size:15px}
+#meta .mtsz .tsz sup{font-size:.7em}
+@media (prefers-reduced-motion:reduce){.tsz button.pulse{animation:none}}
+
+/* ---------- P2: the home bar holds the player's Info, comments and Share (homebar.js) ---------- */
+
+/* audio and video: Info, the comment label and Share live in the home bar; photos and documents keep them here */
+#lb.hasbar #info,
+#lb.hasbar #vshare{
+  visibility:hidden;
+  pointer-events:none
+}
+
+/* the comment count: white while there are none, blue with comments. It is the slide's only item,
+   so it may run past its third on both sides */
+.p-slide .p-cmt{
+  max-width:none;
+  font-weight:500
+}
+
+.p-slide .p-cmt .n{
+  overflow:visible
+}
+
+/* Original-language prominence (the vertical bar): the original stacked over the trailing
+   language, each at its own opacity; neither turns into the other. A side at 0 takes no room;
+   at 100% the canvas is blank. */
+:root.prom .tx .txc{
+  grid-template-rows:auto auto
+}
+
+:root.prom .tx .txc>.txs{
+  grid-area:1/1;
+  opacity:var(--po);
+  visibility:visible !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+  transition:opacity .2s ease
+}
+
+:root.prom .tx .txc>.txe{
+  grid-area:2/1;
+  opacity:var(--pt);
+  visibility:visible !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+  transition:opacity .2s ease
+}
+
+:root.prom-o0 .tx .txc>.txs,
+:root.prom-t0 .tx .txc>.txe{
+  display:none
+}
+
+:root.prom-o0.prom-t0 .tx{
+  visibility:hidden
+}
+
+/* the chord detector (SPEC 40): directly above the transcript's lines (.over, inside .tx.learn), or alone where they would be */
+.txchord{position:absolute;left:50%;top:calc(var(--tb) + 4px);bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2;font:600 clamp(22px,5vw,40px)/1.1 system-ui,-apple-system,sans-serif;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap}
+.txchord.over{position:static;transform:none;display:block;text-align:center;font-size:clamp(16px,3.2vw,26px);color:#8fc4ff;margin:0 0 .3em}
+.txchord[hidden]{display:none}
+
+/* Notes 23: a phone held upright (iPhone 12 Pro Max: 428×746 in Safari). The square cover leaves a black
+   band about 90px tall between its bottom and the thumbnails; the whole home bar, open (stroke, hitbox,
+   sheen and the slide row: a⁻ · 100% · A⁺), fits inside it: a little shorter, its stroke low in the band
+   with a small even gap above the strip, and the bar spanning from just right of the strip's left end to
+   just left of the vertical bar. The vertical bar keeps its place. Landscape and the Mac are unchanged. */
+@media (pointer:coarse) and (orientation:portrait) and (max-width:600px){
+  #lb .p-hb{
+    --hbh:36px;
+    --rowh:38px;
+    --fs:13px;
+    bottom:calc(var(--bb0) - 4px) /* the strip's top sits about 10px inside the bottom bar: a 6px gap */
+  }
+  #lb .p-hb .p-hbholo{left:-8px;right:-8px;height:calc(var(--rowh) + 16px)}
+  #lb .p-hb[data-open="true"]:not([data-mode="seek"]){
+    padding-left:max(76px,calc(env(safe-area-inset-left) + 64px));
+    padding-right:max(76px,calc(env(safe-area-inset-right) + 64px))
   }
 }

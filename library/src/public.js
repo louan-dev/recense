@@ -5,9 +5,11 @@
 //   - folder links: a folder in Gallery/Public, kept under folders/<name>/
 // Everything here expires and is deleted; nothing here reads or writes MAIN.
 
-import { OWNER, ID_RE, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, notice, jsonResponse, serveObject } from "./common.js";
+import { OWNER, ID_RE, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, notice, jsonResponse, serveObject, viewOf } from "./common.js";
 import { extractArt } from "./art.js";
 import { galleryPage } from "./page/gallery.js";
+import { transcriptChanges, transcriptResponse, transcriptRun, transcriptSave } from "./transcript.js";
+import { mainKeys, keyFields } from "./main.js";
 
 const LINKS = "links/";
 
@@ -77,6 +79,8 @@ export async function linkApi(req, env, url) {
   const action = q.get("action") || "";
 
   if (action === "folder") return folderLinkApi(env, q);
+  if (action === "fromMain") return fromMainLink(req, env, q);
+  if (action === "copy") return copyFromMain(env, q);
 
   if (action === "start") {
     const id = newLinkId();
@@ -131,6 +135,371 @@ export async function linkApi(req, env, url) {
     await writeManifest(env, manifest);
 
     return jsonResponse({ ok: true });
+  }
+
+  return new Response("Bad request", { status: 400 });
+}
+
+// POST /main/api/link?action=fromMain&days=7   body: { paths: ["Folder/a.jpg", …] } (files in Main)
+//   -> { ok, id, exp, count, url }   the link exists at once; its items show as pending until copied
+// POST /main/api/link?action=copy&id=ID&i=N      copies item N from Main into the link (one file per call,
+//   so a big video never has to fit in one request's time)
+async function fromMainLink(req, env, q) {
+  let b;
+
+  try {
+    b = await req.json();
+  } catch (e) {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const paths = Array.isArray(b && b.paths) ? b.paths : [];
+  if (!paths.length || paths.length > 1000) return new Response("Bad file count", { status: 400 });
+
+  const days = Math.min(365, Math.max(1, parseInt(q.get("days") || "", 10) || 7));
+  const items = [];
+  const keysByDir = new Map(); // each file's original key rides along into the link (Key slider labels)
+
+  for (const p of paths) {
+    const rel = cleanPath(String(p || ""));
+    if (!rel) return new Response("Bad file path", { status: 400 });
+
+    const h = await env.MAIN.head("files/" + rel);
+    if (!h) return new Response("Not found: " + rel, { status: 404 });
+
+    const mtime = Number((h.customMetadata || {}).mtime);
+    const dir = rel.split("/").slice(0, -1).join("/");
+    if (!keysByDir.has(dir)) keysByDir.set(dir, await mainKeys(env, dir));
+    const k = keyFields(keysByDir.get(dir)[rel.split("/").pop()]).key;
+
+    items.push({
+      i: items.length,
+      size: h.size,
+      taken: mtime > 0 ? Math.round(mtime * 1000) : h.uploaded.getTime(),
+      type: (h.httpMetadata && h.httpMetadata.contentType) || "application/octet-stream",
+      name: rel.split("/").pop().slice(0, 120),
+      src: rel,
+      ...(k ? { key: k } : {}),
+    });
+  }
+
+  const id = newLinkId();
+  const manifest = { id, owner: OWNER, created: Date.now(), exp: Date.now() + days * 864e5, count: items.length, items };
+  const view = viewOf(b);
+  if (view) manifest.view = view;
+
+  await writeManifest(env, manifest);
+
+  return jsonResponse({ ok: true, id, exp: manifest.exp, count: items.length, url: "/s/" + id });
+}
+
+async function copyFromMain(env, q) {
+  const id = q.get("id") || "";
+  const i = parseInt(q.get("i") || "", 10);
+  if (!ID_RE.test(id) || !(i >= 0 && i < 1000)) return new Response("Bad request", { status: 400 });
+
+  const manifest = await readManifest(env, id);
+  const it = manifest && (manifest.items || []).find((x) => x.i === i);
+  if (!it || !it.src) return new Response("Not found", { status: 404 });
+
+  const key = LINKS + id + "/" + String(i).padStart(3, "0");
+  if (await env.PUBLIC.head(key)) return jsonResponse({ ok: true });
+
+  const obj = await env.MAIN.get("files/" + it.src);
+  if (!obj) return new Response("Not found", { status: 404 });
+
+  const { readable, writable } = new FixedLengthStream(obj.size);
+  const copied = obj.body.pipeTo(writable);
+
+  await env.PUBLIC.put(key, readable, {
+    httpMetadata: { contentType: it.type },
+    customMetadata: {
+      name: encodeURIComponent(it.name),
+      expires: String(manifest.exp),
+      taken: String(it.taken),
+      hasArt: "0",
+    },
+  });
+  await copied;
+
+  // a cover the owner chose or deleted in Main comes along (art/ is outside files/)
+  const ah = await env.MAIN.head("art/" + it.src);
+  const am = (ah && ah.customMetadata) || {};
+  if (am.deleted === "1") {
+    await putLinkCover(env, key, null);
+  } else if (am.custom === "1") {
+    const a = await env.MAIN.get("art/" + it.src);
+    if (a) await putLinkCover(env, key, { data: new Uint8Array(await a.arrayBuffer()), mime: (a.httpMetadata && a.httpMetadata.contentType) || "image/jpeg" });
+  }
+
+  return jsonResponse({ ok: true });
+}
+
+// An upload-link item's cover, beside it (<n>.art), as Main has it: a picture, or none (pic null,
+// the owner deleted it). It expires with the item. An item not copied yet gets it when it is.
+async function putLinkCover(env, key, pic) {
+  const head = await env.PUBLIC.head(key);
+  if (!head) return;
+
+  const meta = head.customMetadata || {};
+  const stamp = { expires: meta.expires || "0", taken: meta.taken || String(Date.now()) };
+
+  if (!pic) {
+    await env.PUBLIC.put(key + ".art", new Uint8Array(0), { customMetadata: { ...stamp, name: "cover", none: "1", deleted: "1" } });
+    return;
+  }
+
+  await env.PUBLIC.put(key + ".art", pic.data, {
+    httpMetadata: { contentType: pic.mime },
+    customMetadata: { ...stamp, name: encodeURIComponent("cover." + (pic.mime === "image/png" ? "png" : "jpg")) },
+  });
+}
+
+// A Main file's cover changed (pic) or was deleted (null): every live upload link made from that
+// file gets the same, so its grid matches Main's. Folder links show the Public bucket, not Main.
+export async function syncLinkCovers(env, rel, pic) {
+  const now = Date.now();
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({ prefix: LINKS, delimiter: "/", cursor });
+
+    await Promise.all(
+      (r.delimitedPrefixes || []).map(async (p) => {
+        const id = p.slice(LINKS.length, -1);
+        if (!ID_RE.test(id)) return;
+
+        const manifest = await readManifest(env, id);
+        if (!manifest || !(Number(manifest.exp) > now)) return;
+
+        for (const it of manifest.items || []) {
+          if (it.src === rel) await putLinkCover(env, LINKS + id + "/" + String(it.i).padStart(3, "0"), pic);
+        }
+      })
+    );
+
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
+// GET /api/transcript?id=ID&n=NNN   an upload link's item made from a Main file: Recense's transcript of that file
+// PUT /api/transcript?id=ID&n=NNN   a correction to it (anyone with the link; rate-limited per address)
+// POST /api/transcript/run?id=ID&n=NNN   no transcript yet: ask Recense for one
+async function linkSource(env, url) {
+  const id = url.searchParams.get("id") || "";
+  const n = url.searchParams.get("n") || "";
+  if (!ID_RE.test(id) || !/^\d{3}$/.test(n)) return { error: new Response("Bad request", { status: 400 }) };
+
+  const manifest = await readManifest(env, id);
+  const it = manifest && manifest.exp > Date.now() && (manifest.items || []).find((x) => String(x.i).padStart(3, "0") === n);
+  return { src: it && it.src ? it.src : null };
+}
+
+export async function linkTranscript(env, url) {
+  const { src, error } = await linkSource(env, url);
+  if (error) return error;
+  if (!src) return jsonResponse({ none: true });
+  return transcriptResponse(env, src);
+}
+
+export async function linkTranscriptChanges(env, url) {
+  const { src, error } = await linkSource(env, url);
+  if (error) return error;
+  if (!src) return jsonResponse({ changes: [] });
+  return transcriptChanges(env, src);
+}
+
+export async function linkTranscriptWrite(req, env, url, run) {
+  // a header a page from another site can't send without asking first
+  if (req.headers.get("x-gallery") !== "1") return new Response("Forbidden", { status: 403 });
+  const { src, error } = await linkSource(env, url);
+  if (error) return error;
+  if (!src) return new Response("Not found", { status: 404 });
+  return run ? transcriptRun(req, env, src, "share") : transcriptSave(req, env, src, "share");
+}
+
+// ---------- comments ----------
+//
+// One owner comment per item, shown under the picture strip: { text, at } (at = when it was written).
+//   Main            notes/<folder>/.comments.json   { "<file name>": { text, at } }  (outside files/ and art/)
+//   upload links    inside the link's manifest, on the item:  item.comment
+//   folder links    index/note/<link id>.json       { "<path in folder>": { text, at } }
+// Visitors only ever read them (they ride along in the item lists); only the owner can write.
+
+const NOTES = "notes/";
+const COMMENT_MAX = 4000;
+const THREAD_MAX = 500;
+
+// A stored value is either the old single comment { text, at } or { list: [{ id, text, at, by }] }.
+export function thread(v) {
+  if (!v || typeof v !== "object") return [];
+  if (Array.isArray(v.list)) return v.list.filter((c) => c && c.text);
+  return v.text ? [{ id: "c0", text: v.text, at: v.at || 0, by: OWNER }] : [];
+}
+
+// What every item list carries: the whole thread, plus caption/capAt (the first comment) for old pages.
+export function commentFields(v) {
+  const list = thread(v);
+  return { caption: list.length ? list[0].text : "", capAt: list.length ? list[0].at : 0, comments: list };
+}
+
+// op "add" appends, op "edit" rewrites one of your own by id, op "del" removes one comment by id, no op replaces the thread with one comment (or none).
+// Returns the new stored value (null = nothing left) or a string error.
+function applyComment(v, b, by, participant) {
+  const text = String((b && b.text) || "").trim().slice(0, COMMENT_MAX);
+  const list = thread(v);
+
+  if (b.op === "add") {
+    if (!text) return "Empty comment";
+    if (list.length >= THREAD_MAX) return "Too many comments";
+    const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    list.push({ id, text, at: Date.now(), by });
+  } else if (b.op === "edit") {
+    // only the comment's own author changes it (the owner too: never someone else's words)
+    if (!text) return "Empty comment";
+    const c = list.find((c) => c.id === String(b.cid || "") && (c.by || OWNER) === by);
+    if (!c) return "Comment not found";
+    c.text = text;
+    c.edited = Date.now();
+  } else if (b.op === "del") {
+    // a participant may only remove their own
+    const i = list.findIndex((c) => c.id === String(b.cid || "") && (!participant || c.by === by));
+    if (i < 0) return "Comment not found";
+    list.splice(i, 1);
+  } else {
+    list.length = 0;
+    if (text) list.push({ id: "c" + Date.now().toString(36), text, at: Date.now(), by });
+  }
+
+  return list.length ? { list } : null;
+}
+
+const noteKey = (id) => INDEX + "note/" + id + ".json";
+const mainNotesKey = (dir) => NOTES + (dir ? dir + "/" : "") + ".comments.json";
+
+async function readJson(bucket, key) {
+  try {
+    const o = await bucket.get(key);
+    const j = o ? await o.json() : null;
+    return j && typeof j === "object" ? j : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// Writes (or, when the map is empty, removes) a { name: { text, at } } map.
+async function saveMap(bucket, key, map) {
+  if (!Object.keys(map).length) return bucket.delete(key);
+
+  return bucket.put(key, JSON.stringify(map), { httpMetadata: { contentType: "application/json" } });
+}
+
+// The comments of one Main folder, by file name.
+export const mainComments = (env, dir) => readJson(env.MAIN, mainNotesKey(dir));
+
+// Main: a file went to the trash, so its comment goes too.
+export async function dropMainComment(env, rel) {
+  const dir = rel.split("/").slice(0, -1).join("/");
+  const name = rel.split("/").pop();
+  const map = await mainComments(env, dir);
+
+  if (map[name]) {
+    delete map[name];
+    await saveMap(env.MAIN, mainNotesKey(dir), map);
+  }
+}
+
+// Main: a file was renamed or moved to another folder, so its comments follow it.
+export async function renameComment(env, rel, to) {
+  const dir = rel.split("/").slice(0, -1).join("/");
+  const toDir = to.split("/").slice(0, -1).join("/");
+  const map = await mainComments(env, dir);
+  const a = rel.split("/").pop();
+
+  if (map[a]) {
+    const there = toDir === dir ? map : await mainComments(env, toDir);
+    there[to.split("/").pop()] = map[a];
+    delete map[a];
+    if (there !== map) await saveMap(env.MAIN, mainNotesKey(toDir), there);
+    await saveMap(env.MAIN, mainNotesKey(dir), map);
+  }
+}
+
+// PUT /main/api/caption   body: { kind: "main", path, ... }  or  { kind: "link", id, key, ... }
+//   plus { op: "add", text } to append, { op: "edit", cid, text } to rewrite your own, { op: "del", cid } to remove one, or { text } to replace
+//   the whole thread (empty text clears it).  -> { ok, text, at, comments }
+// by: who is writing (the owner, or an invited participant's name).
+export async function commentApi(req, env, by = OWNER, participant = false) {
+  let b;
+
+  try {
+    b = await req.json();
+  } catch (e) {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  if (!b || typeof b !== "object") return new Response("Bad request", { status: 400 });
+
+  // the stored value goes in, the new one comes out; null means remove
+  const change = (v) => applyComment(v, b, by, participant);
+  const done = (v) => jsonResponse({ ok: true, ...commentFields(v), text: commentFields(v).caption, at: commentFields(v).capAt });
+  const bad = (e) => new Response(e, { status: e === "Comment not found" ? 404 : 400 });
+
+  if (b.kind === "main") {
+    const rel = cleanPath(b.path);
+    if (!rel) return new Response("Bad file path", { status: 400 });
+    if (!(await env.MAIN.head("files/" + rel))) return new Response("Not found", { status: 404 });
+
+    const dir = rel.split("/").slice(0, -1).join("/");
+    const name = rel.split("/").pop();
+    const map = await mainComments(env, dir);
+    const v = change(map[name]);
+    if (typeof v === "string") return bad(v);
+
+    if (v) map[name] = v;
+    else delete map[name];
+
+    await saveMap(env.MAIN, mainNotesKey(dir), map);
+    return done(v);
+  }
+
+  if (b.kind === "link") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return new Response("Bad request", { status: 400 });
+
+    const manifest = await readManifest(env, id);
+
+    if (manifest) {
+      const n = String(b.key || "");
+      if (!/^\d{3}$/.test(n)) return new Response("Bad item", { status: 400 });
+
+      const it = (manifest.items || []).find((x) => String(x.i).padStart(3, "0") === n);
+      if (!it) return new Response("Not found", { status: 404 });
+
+      const v = change(it.comment);
+      if (typeof v === "string") return bad(v);
+
+      if (v) it.comment = v;
+      else delete it.comment;
+
+      await writeManifest(env, manifest);
+      return done(v);
+    }
+
+    const link = await readLink(env, id);
+    const rel = cleanPath(b.key);
+    if (!link || !rel) return new Response("Not found", { status: 404 });
+    if (!(await env.PUBLIC.head(FOLDERS + link.folder + "/" + rel))) return new Response("Not found", { status: 404 });
+
+    const map = await readJson(env.PUBLIC, noteKey(id));
+    const v = change(map[rel]);
+    if (typeof v === "string") return bad(v);
+
+    if (v) map[rel] = v;
+    else delete map[rel];
+
+    await saveMap(env.PUBLIC, noteKey(id), map);
+    return done(v);
   }
 
   return new Response("Bad request", { status: 400 });
@@ -197,6 +566,7 @@ async function folderHasFiles(env, folder) {
 // Deletes a public folder and its link.
 async function purgeFolder(env, link) {
   await deletePrefix(env, FOLDERS + link.folder + "/");
+  await env.PUBLIC.delete(noteKey(link.id)).catch(() => {});
 
   const idx = await env.PUBLIC.get(folderKey(link.folder));
   const owner = idx ? await idx.json().catch(() => null) : null;
@@ -314,6 +684,8 @@ async function folderGalleryData(env, link) {
     cursor = r.truncated && objs.length < FOLDER_MAX ? r.cursor : undefined;
   } while (cursor);
 
+  const notes = await readJson(env.PUBLIC, noteKey(link.id));
+
   const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   const niceName = (s) => s.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
   /** @type {any[]} */
@@ -344,6 +716,7 @@ async function folderGalleryData(env, link) {
       taken: mtime > 0 ? Math.round(mtime * 1000) : o.uploaded.getTime(),
       src: at,
       art: isAudioish(type, name) ? at + "?art=1" : null,
+      ...commentFields(notes[rel]),
     });
   }
 
@@ -359,7 +732,6 @@ async function folderGalleryData(env, link) {
     id: link.id,
     owner: OWNER,
     title: link.folder,
-    heading: link.folder,
     zip: link.folder + ".zip",
     exp: link.exp,
     expected: items.length,
@@ -762,6 +1134,7 @@ export async function getGalleryData(env, id) {
 
   const ready = {};
   const progress = {};
+  const arts = {};
   let lastActivity = manifest ? Number(manifest.created) || 0 : 0;
 
   for (const o of objs) {
@@ -772,10 +1145,18 @@ export async function getGalleryData(env, id) {
     if (!m) continue; // the manifest
 
     if (m[2] === ".progress") progress[m[1]] = o;
+    else if (m[2] === ".art") arts[m[1]] = o;
     else if (!m[2]) ready[m[1]] = o;
   }
 
   const manifestItems = manifest && Array.isArray(manifest.items) ? manifest.items : [];
+  const said = {};
+  const keyOf = {};
+
+  manifestItems.forEach((it) => {
+    if (it.comment) said[String(it.i).padStart(3, "0")] = it.comment;
+    if (it.key) keyOf[String(it.i).padStart(3, "0")] = it.key;
+  });
 
   if (!manifest && !Object.keys(ready).length) {
     // not an upload link: maybe a folder link
@@ -802,6 +1183,19 @@ export async function getGalleryData(env, id) {
     const ctype =
       (o.httpMetadata && o.httpMetadata.contentType) || "application/octet-stream";
 
+    // the cover's version is part of its address (the .art's etag, else the file's), so a cover
+    // changed in Main is never hidden by a cached copy; a deleted one shows the file tile
+    const ao = arts[n];
+    const cover =
+      ao && (ao.customMetadata || {}).deleted === "1"
+        ? { art: null, nocover: true }
+        : {
+            art:
+              meta.hasArt === "1" || isAudioish(ctype, rawName)
+                ? "/f/" + id + "/" + n + "?art=1&v=" + String((ao || o).etag || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 12)
+                : null,
+          };
+
     items.push({
       n,
       name: niceName(rawName),
@@ -809,10 +1203,9 @@ export async function getGalleryData(env, id) {
       size: o.size,
       exp,
       taken: Number(meta.taken) || o.uploaded.getTime(),
-      art:
-        meta.hasArt === "1" || isAudioish(ctype, rawName)
-          ? "/f/" + id + "/" + n + "?art=1"
-          : null,
+      ...cover,
+      ...commentFields(said[n]),
+      ...(keyOf[n] ? { key: keyOf[n] } : {}),
     });
   }
 
@@ -835,6 +1228,7 @@ export async function getGalleryData(env, id) {
       type: it.type || "application/octet-stream",
       size: Number(it.size) || 0,
       taken: Number(it.taken) || now,
+      ...commentFields(said[n]),
       pending: true,
       progress: total > 0 ? Math.min(1, Number(pm.done) / total) : null,
       stalled: stalled && !failed,
@@ -859,6 +1253,7 @@ export async function getGalleryData(env, id) {
     ready: readyItems.length,
     complete: readyItems.length >= expected,
     items: items.map(({ exp, ...f }) => f),
+    ...(manifest && manifest.view ? { view: manifest.view } : {}),
   };
 }
 
@@ -921,6 +1316,20 @@ export async function deleteFromLink(env, url) {
     }
 
     await env.PUBLIC.delete(keys);
+
+    const notes = await readJson(env.PUBLIC, noteKey(link.id));
+    let touched = false;
+
+    for (const p of picked) {
+      const rel = cleanPath(p);
+      if (notes[rel]) {
+        delete notes[rel];
+        touched = true;
+      }
+    }
+
+    if (touched) await saveMap(env.PUBLIC, noteKey(link.id), notes);
+
     return jsonResponse({ ok: true, deleted: keys.length });
   }
 

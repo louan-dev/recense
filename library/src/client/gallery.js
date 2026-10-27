@@ -1,4 +1,3 @@
-
 (() => {
   "use strict";
 
@@ -27,6 +26,36 @@
     const e = document.createElement(t);
     if (c) e.className = c;
     return e;
+  };
+
+  // The player's <audio>/<video> lives in a shadow root of its own. Add-ons that take over every
+  // media element on a page (Firefox's Audio Controller) find them with querySelectorAll and a
+  // MutationObserver, and neither looks inside one. A taken element plays only through the add-on's
+  // AudioContext, made before any click; on some Macs that never starts, so the track ran on in
+  // silence. play/pause don't leave a shadow root, so they are handed to mediaWatch (set below).
+  const mediaWatch = { play() {}, pause() {} };
+  const MEDIA_CSS =
+    "video{display:block;width:100%;height:auto;max-height:100%;object-fit:contain;background:#000}audio{display:none}";
+
+  const shelter = (el) => {
+    const box = mkEl("span", "mbox");
+    el.addEventListener("play", () => mediaWatch.play(el));
+    el.addEventListener("pause", () => mediaWatch.pause(el));
+    if (!box.attachShadow) {
+      box.appendChild(el);
+      return box;
+    }
+    const root = box.attachShadow({ mode: "open" });
+    const st = mkEl("style");
+    st.textContent = MEDIA_CSS;
+    root.append(st, el);
+    return box;
+  };
+
+  // the player's element on stage, inside its shelter or not
+  const stageMedia = () => {
+    const box = stage.querySelector(".mbox");
+    return (box && box.shadowRoot ? box.shadowRoot : stage).querySelector("video, audio");
   };
 
   const mkBtn = (c, label, html) => {
@@ -104,6 +133,7 @@
     "</svg>";
 
   const artSrc = (f) => {
+    if (f.nocover) return null; // the owner deleted its cover: the file tile, not a same-named picture
     if (f.art && !f.noart) return f.art;
     if (kind(f) !== "aud") return null;
 
@@ -183,6 +213,199 @@
       } finally {
         task.destroy();
       }
+    }));
+
+  // ----- text documents, shown in the PDF viewer's layout: white pages on the dark stage -----
+  // Markdown is drawn as formatted text, Word (.docx) through mammoth (loaded only when one is opened), and
+  // plain-text kinds (text, CSV, JSON, logs, code, RTF with its markup taken out) as they are.
+  const MD_RE = /\.(md|markdown|mdown|mkd)$/i;
+  const DOCX_RE = /\.docx$/i;
+  const TEXT_RE = /\.(txt|text|csv|tsv|json|log|xml|yaml|yml|ini|conf|srt|vtt|rtf|js|mjs|ts|py|swift|sh|zsh|css|html?|c|h|cpp|java|go|rs|rb|sql|tex)$/i;
+  const isTextDoc = (f) =>
+    MD_RE.test(f.name) || DOCX_RE.test(f.name) || TEXT_RE.test(f.name) ||
+    /^text\//.test(f.type || "") || /officedocument\.wordprocessingml/.test(f.type || "");
+  const MAMMOTH = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+  let mammothLib = null;
+  const loadMammoth = () =>
+    mammothLib ||
+    (mammothLib = new Promise((res, rej) => {
+      const sc = document.createElement("script");
+      sc.src = MAMMOTH;
+      sc.onload = () => (window.mammoth ? res(window.mammoth) : rej(new Error("mammoth did not load")));
+      sc.onerror = () => {
+        mammothLib = null;
+        rej(new Error("mammoth did not load"));
+      };
+      document.head.appendChild(sc);
+    }));
+
+  const escHtml = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // a small Markdown: headings, lists, quotes, code, rules, tables, emphasis, links and images (escaped first)
+  const mdHtml = (md) => {
+    const inline = (t) =>
+      escHtml(t)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, (m, a, u) => (/^(https?:|\/)/.test(u) ? '<img alt="' + a + '" src="' + u + '">' : a))
+        .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (m, a, u) => (/^(https?:|\/|#|mailto:)/.test(u) ? '<a href="' + u + '" target="_blank" rel="noopener">' + a + "</a>" : a))
+        .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (m, a, b) => "<strong>" + (a || b) + "</strong>")
+        .replace(/\*([^*]+)\*|\b_([^_]+)_\b/g, (m, a, b) => "<em>" + (a || b) + "</em>")
+        .replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    const out = [];
+    const L = md.replace(/\r\n?/g, "\n").split("\n");
+    for (let i = 0; i < L.length; ) {
+      const l = L[i];
+      let m;
+      if (/^```/.test(l)) {
+        const code = [];
+        for (i++; i < L.length && !/^```/.test(L[i]); i++) code.push(L[i]);
+        i++;
+        out.push("<pre><code>" + escHtml(code.join("\n")) + "</code></pre>");
+      } else if ((m = l.match(/^(#{1,6})\s+(.*)$/))) {
+        out.push("<h" + m[1].length + ">" + inline(m[2].replace(/\s#+$/, "")) + "</h" + m[1].length + ">");
+        i++;
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) {
+        out.push("<hr>");
+        i++;
+      } else if (/^\s*>/.test(l)) {
+        const q = [];
+        for (; i < L.length && /^\s*>/.test(L[i]); i++) q.push(L[i].replace(/^\s*>\s?/, ""));
+        out.push("<blockquote>" + mdHtml(q.join("\n")) + "</blockquote>");
+      } else if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) {
+        const ordered = /^\s*\d/.test(l);
+        const items = [];
+        for (; i < L.length && /^\s*([-*+]|\d+[.)])\s+/.test(L[i]); i++) {
+          const t = L[i].replace(/^\s*([-*+]|\d+[.)])\s+/, "");
+          const box = t.match(/^\[([ xX])\]\s+(.*)$/);
+          items.push("<li>" + (box ? '<input type="checkbox" disabled' + (box[1] !== " " ? " checked" : "") + "> " + inline(box[2]) : inline(t)) + "</li>");
+        }
+        out.push((ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>"));
+      } else if (/\|/.test(l) && i + 1 < L.length && /^\s*\|?\s*:?-{2,}/.test(L[i + 1])) {
+        const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        const head = cells(l);
+        const rows = [];
+        for (i += 2; i < L.length && /\|/.test(L[i]) && L[i].trim(); i++) rows.push(cells(L[i]));
+        out.push("<table><thead><tr>" + head.map((c) => "<th>" + inline(c) + "</th>").join("") + "</tr></thead><tbody>" +
+          rows.map((r) => "<tr>" + r.map((c) => "<td>" + inline(c) + "</td>").join("") + "</tr>").join("") + "</tbody></table>");
+      } else if (!l.trim()) {
+        i++;
+      } else {
+        const para = [];
+        for (; i < L.length && L[i].trim() && !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+[.)])\s+)/.test(L[i]); i++) para.push(L[i]);
+        out.push("<p>" + para.map(inline).join("<br>") + "</p>");
+      }
+    }
+    return out.join("\n");
+  };
+  const rtfText = (r) =>
+    r.replace(/\\par[d]?/g, "\n").replace(/\{\\\*[^{}]*\}/g, "").replace(/\\'([0-9a-f]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\[a-z]+-?\d* ?/gi, "").replace(/[{}]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  const buildTextDoc = (f) => {
+    const wrap = mkEl("div", "pdfw");
+    const spin = mkEl("div", "spin");
+    wrap.appendChild(spin);
+    (async () => {
+      const r = await fetch(src(f));
+      if (!r.ok) throw new Error("couldn’t load");
+      let html;
+      if (DOCX_RE.test(f.name) || /wordprocessingml/.test(f.type || "")) {
+        const lib = await loadMammoth();
+        const res = await lib.convertToHtml({ arrayBuffer: await r.arrayBuffer() });
+        html = res.value;
+      } else {
+        const text = await r.text();
+        if (MD_RE.test(f.name) || f.type === "text/markdown") html = mdHtml(text);
+        else html = "<pre>" + escHtml(/\.rtf$/i.test(f.name) ? rtfText(text) : text) + "</pre>";
+      }
+      const scroller = mkEl("div", "pdfv");
+      const col = mkEl("div", "pdfd");
+      const page = mkEl("div", "pdfp txtdoc");
+      page.innerHTML = html;
+      // nothing from a document runs: scripts and handlers out (mammoth and the Markdown above write none, but a .docx can carry odd HTML)
+      page.querySelectorAll("script, iframe, object, embed").forEach((e) => e.remove());
+      page.querySelectorAll("*").forEach((e) => [...e.attributes].forEach((a) => /^on/i.test(a.name) && e.removeAttribute(a.name)));
+      scroller.tabIndex = 0;
+      col.appendChild(page);
+      scroller.appendChild(col);
+      wrap.replaceChildren(scroller);
+    })().catch(() => wrap.replaceChildren(docView(f)));
+    return wrap;
+  };
+
+  // SPEC 14: a text document's tile shows its first page, like a PDF's: the opening text drawn on a white
+  // page to a small JPEG (cached with the PDF thumbnails). Text kinds only fetch their first 16 KB; Word
+  // goes through mammoth's plain text. A file that fails keeps the icon tile.
+  const isDocx = (f) => DOCX_RE.test(f.name) || /wordprocessingml/.test(f.type || "");
+  const docThumbText = async (f) => {
+    if (isDocx(f)) {
+      const r = await fetch(src(f));
+      if (!r.ok) throw new Error("couldn’t load");
+      const lib = await loadMammoth();
+      return { text: (await lib.extractRawText({ arrayBuffer: await r.arrayBuffer() })).value, md: false };
+    }
+    const r = await fetch(src(f), { headers: { Range: "bytes=0-16383" } });
+    if (!r.ok) throw new Error("couldn’t load");
+    const raw = new TextDecoder().decode(new Uint8Array(await r.arrayBuffer()).subarray(0, 16384));
+    return { text: /\.rtf$/i.test(f.name) ? rtfText(raw) : raw, md: MD_RE.test(f.name) || f.type === "text/markdown" };
+  };
+  const textThumb = (f) =>
+    thumbCache[f.n] ||
+    (thumbCache[f.n] = docThumbText(f).then(({ text, md }) => {
+      const W = 420, H = Math.round(W * 1.294), pad = 30, maxW = W - pad * 2; // A4/Letter-ish page
+      const c = document.createElement("canvas");
+      c.width = W;
+      c.height = H;
+      const g = c.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, W, H);
+      g.textBaseline = "top";
+      const SANS = '-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif';
+      const MONO = "ui-monospace,SFMono-Regular,Menlo,monospace";
+      const prose = md || isDocx(f);
+      let y = pad;
+      const lines = text.replace(/\r\n?/g, "\n").split("\n").slice(0, 400);
+      for (let l of lines) {
+        if (y > H - pad) break;
+        let size = prose ? 15 : 12, weight = "400", color = "#1d1d1f";
+        if (md) {
+          const h = l.match(/^(#{1,6})\s+(.*)$/);
+          if (h) {
+            size = [26, 21, 18, 16, 15, 15][h[1].length - 1];
+            weight = "700";
+            l = h[2];
+          } else if (/^```/.test(l) || /^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) continue;
+          l = l.replace(/^\s*>\s?/, "").replace(/^\s*[-*+]\s+/, "• ").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+            .replace(/\*\*|__|~~|`/g, "").replace(/(^|\W)[*_]([^*_]+)[*_](?=\W|$)/g, "$1$2");
+        }
+        g.font = weight + " " + size + "px " + (prose ? SANS : MONO);
+        g.fillStyle = color;
+        const lh = Math.round(size * (prose ? 1.45 : 1.4));
+        if (!l.trim()) {
+          y += Math.round(lh * (prose ? 0.6 : 1));
+          continue;
+        }
+        // wrap by width (break long words too)
+        let rest = l.replace(/\t/g, "    ");
+        while (rest && y <= H - pad) {
+          let n = rest.length;
+          if (g.measureText(rest).width > maxW) {
+            let lo = 1, hi = rest.length;
+            while (lo < hi) {
+              const mid = (lo + hi + 1) >> 1;
+              if (g.measureText(rest.slice(0, mid)).width <= maxW) lo = mid;
+              else hi = mid - 1;
+            }
+            n = lo;
+            const sp = rest.lastIndexOf(" ", n);
+            if (prose && sp > n * 0.5) n = sp + 1;
+          }
+          g.fillText(rest.slice(0, n).trimEnd(), pad, y);
+          y += lh;
+          rest = prose ? rest.slice(n).trimStart() : rest.slice(n);
+        }
+        if (prose) y += Math.round(size * 0.5);
+      }
+      return c.toDataURL("image/jpeg", 0.82);
     }));
 
   // Shown when a non-previewable file is opened, or when a PDF fails.
@@ -507,26 +730,140 @@
     speed: 1,
     loop: "off",
     eq: { low: 0, mid: 0, high: 0 },
-    key: 0, // semitones, -12 to +12; 0 is the original key
-    space: { mix: 0, on: false, room: "room" }, // reverb: wet amount 0-100, bypass, which room
+    key: 0, // semitones, -12 to +12; 0 is the original key (halves in Key state 8, cents in state 9)
+    keyNotation: 0, // the Key slider's label state, 0–9 (see keylabel.js); kept in this browser
+    nativeLang: "en", // the trailing language, "en" | "vi" | "fr": the second line of Key state 0
+    vol: 1, // playback level, 0 to 1
+    vox: 0, // the extractor (SPEC 30): -1 the vocals out, 1 the vocals alone, 0 as recorded; not kept between items
+    space: { mix: 0, on: false, room: "room" }, // reverb, -100 to +100: + is the room, − the same room reversed; 0 is dry
+    txScale: 1, // subtitle size, times the base size (the a|A pill, Info › Text Size, a pinch over the lyrics)
   };
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const KEY_NOTATION = "gallery.keyNotation";
+
+  // the native language (spec §1)
+  const NATIVE_LANG = "gallery.nativeLang";
+  const NATIVE_LANGS = [
+    ["en", "English"],
+    ["vi", "Vietnamese"],
+    ["fr", "French"],
+  ];
+  const isLang = (l) => NATIVE_LANGS.some((x) => x[0] === l);
+  const isNotation = (n) => Number.isInteger(n) && n >= 0 && n < GalleryKey.STATES;
+
+  // Notation follows the language where the two are one thing: the solfège captions are Ton. (French)
+  // and Tông (Vietnamese), so a language change moves one to the other; English goes back to Key.
+  // Every other notation (Tonart, 調 …) is left as chosen.
+  const LANG_NOTATION = { en: 0, fr: 1, vi: 2 };
+  const notationFor = (lang, n) => ((n === 1 || n === 2) && LANG_NOTATION[lang] !== undefined ? LANG_NOTATION[lang] : n);
+
+  // Main keeps both in this browser. A share link (public /s/ or a room /m/) carries the sharer's
+  // own, written into the link when it was made (G.view), and never reads this browser's: the same
+  // link looks the same on every device. Changes made on a share link last for the visit.
+  const SHARED = !G.main;
+  if (SHARED) {
+    const v = G.view || {};
+    const q = new URLSearchParams(location.search).get("lang"); // links made before G.view
+    prefs.nativeLang = isLang(v.lang) ? v.lang : isLang(q) ? q : "en";
+    prefs.keyNotation = isNotation(v.notation) ? v.notation : LANG_NOTATION[prefs.nativeLang] || 0;
+  } else {
+    try {
+      const n = parseInt(localStorage.getItem(KEY_NOTATION), 10);
+      if (isNotation(n)) prefs.keyNotation = n;
+      const l = localStorage.getItem(NATIVE_LANG);
+      if (isLang(l)) prefs.nativeLang = l;
+    } catch (e) {}
+  }
+  prefs.keyNotation = notationFor(prefs.nativeLang, prefs.keyNotation);
+  // what a share link made from here carries (page script: Create Share Link, Share, Invite)
+  window.galleryView = () => ({ lang: prefs.nativeLang, notation: prefs.keyNotation });
+
+  // Subtitle size: one value, kept in this browser (a share link's visitor keeps their own), and
+  // every control that shows it repaints when it changes, wherever the change came from.
+  const TEXT_SCALE = "gallery.textScale";
+  const TXS_MIN = 0.7;
+  const TXS_MAX = 1.8;
+  const TXS_STEP = 0.1;
+  const txsViews = new Set(); // (live) => repaint
+  try {
+    const v = parseFloat(localStorage.getItem(TEXT_SCALE));
+    if (v >= TXS_MIN && v <= TXS_MAX) prefs.txScale = v;
+  } catch (e) {}
+  document.documentElement.style.setProperty("--txs", String(prefs.txScale));
+
+  // Original-language prominence (the vertical bar, homebar.js): null at rest (Learn mode as it is),
+  // else 0…1. Kept in this browser like Text Size. On the lyrics it is two opacities, --po for the
+  // original and --pt for the trailing language, with the original stacked over its translation.
+  // The view the transcript shows in (chosen in the editor, SPEC 57): Learn, the two places the lines take in
+  // turn (the default, SPEC 23), or Follow, the line being heard with its trailing language under it.
+  const VIEW = "gallery.view";
+  prefs.view = "learn";
+  try {
+    if (localStorage.getItem(VIEW) === "follow") prefs.view = "follow";
+  } catch (e) {}
+  const setView = (v) => {
+    prefs.view = v === "follow" ? "follow" : "learn";
+    try {
+      localStorage.setItem(VIEW, prefs.view);
+    } catch (e) {}
+  };
+
+  const PROMINENCE = "gallery.prominence";
+  const promViews = new Set(); // () => repaint
+  prefs.prominence = null;
+  try {
+    const v = localStorage.getItem(PROMINENCE);
+    if (v !== null && v !== "" && isFinite(+v)) prefs.prominence = Homebar.snapProminence(+v);
+  } catch (e) {}
+
+  const paintProminence = () => {
+    const m = Homebar.prominence(prefs.prominence);
+    const r = document.documentElement;
+    r.classList.toggle("prom", !!m);
+    r.classList.toggle("prom-o0", !!m && m.orig === 0);
+    r.classList.toggle("prom-t0", !!m && m.trail === 0);
+    r.style.setProperty("--po", m ? String(m.orig) : "1");
+    r.style.setProperty("--pt", m ? String(m.trail) : "1");
+  };
+  paintProminence();
+
+  const setProminence = (p) => {
+    prefs.prominence = p == null ? null : Homebar.snapProminence(p);
+    paintProminence();
+    promViews.forEach((f) => f());
+    try {
+      if (prefs.prominence == null) localStorage.removeItem(PROMINENCE);
+      else localStorage.setItem(PROMINENCE, String(prefs.prominence));
+    } catch (e) {}
+  };
+
+  const setTextScale = (v, live) => {
+    v = Math.round(clamp(v, TXS_MIN, TXS_MAX) * 100) / 100;
+    prefs.txScale = v;
+    document.documentElement.style.setProperty("--txs", String(v));
+    txsViews.forEach((f) => f(live));
+    if (!live) {
+      try {
+        localStorage.setItem(TEXT_SCALE, String(v));
+      } catch (e) {}
+    }
+  };
 
   // one audio context for the whole viewer, created the first time you touch the EQ
   // (a user gesture, so it is allowed to run) and reused for every later player
   let audioCtx = null;
 
-  const EQ_MAX = 15;
+  // Firefox: once Web Audio has taken an element, its sound only comes out through the context,
+  // and on some Macs that context goes quiet while the track plays on. When that's seen, Sound is
+  // left off for the rest of the visit and the player is rebuilt as plain playback.
+  let webAudioDead = false;
+  const sayAll = (t) => say(t); // the viewer's own toast, which outlives the player
 
-  const EQ_BANDS = [
-    { id: "low", label: "Low", type: "lowshelf", f: 160, q: 0.7 },
-    { id: "mid", label: "Mid", type: "peaking", f: 1000, q: 0.7 },
-    { id: "high", label: "High", type: "highshelf", f: 5000, q: 0.7 },
-  ];
+  // the bands, and the ranges of the bands and of Key, are the tray's (homebar.js), the same for the sound here and for downloads
+  const { EQ_BANDS, KEY_MAX } = Homebar;
 
   // Key: transposition in semitones, by a phase vocoder in an AudioWorklet (see keyProcessor in
   // the Worker). Tempo and Speed are untouched by it. Loaded once per viewer, on first use.
-  const KEY_MAX = 12;
   let keyModule = null;
 
   const workletReady = () => {
@@ -542,58 +879,53 @@
     return keyModule;
   };
 
-  // Space: a convolution reverb whose impulse responses are synthesised here (decaying,
-  // darkening noise), so nothing is downloaded. Two rooms; one per viewer, built on first use.
-  const ROOMS = {
-    room: { label: "Room", rt: 0.9, pre: 0.008, dark: 0.55 },
-    hall: { label: "Hall", rt: 2.4, pre: 0.022, dark: 0.75 },
-  };
+  // Space: a convolution reverb (the rooms and their sound are room.js's, shared with Recense). One per
+  // viewer, built on first use.
+  const { ROOMS, irData, reverseIR, spaceGain } = GalleryRoom;
   const roomIRs = {};
 
-  // The same noise every time (a fixed seed), so a download has exactly the room you heard.
-  const irData = (id, sr) => {
-    const r = ROOMS[id];
-    const pre = Math.round(r.pre * sr);
-    const len = pre + Math.round(r.rt * 1.1 * sr);
-    const out = [];
-
-    for (let c = 0; c < 2; c++) {
-      const d = new Float32Array(len);
-      let seed = 0x9e3779b9 ^ (c + 1) * 0x85ebca6b;
-      let lp = 0;
-
-      const rnd = () => {
-        seed = (seed + 0x6d2b79f5) | 0;
-        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
-
-      for (let i = pre; i < len; i++) {
-        const t = (i - pre) / sr;
-        // the tail closes down as it decays, the way air and walls swallow the highs first
-        const k = 0.12 + r.dark * Math.min(1, t / r.rt) * 0.8;
-        lp += (1 - k) * (rnd() * 2 - 1 - lp);
-        d[i] = lp * Math.pow(10, (-3 * t) / r.rt) * Math.min(1, t / 0.004); // -60 dB at rt
-      }
-
-      out.push(d);
-    }
-
-    return out;
+  // Firefox keeps an output stream open for as long as a context runs. With an audio routing app on
+  // the Mac (SoundSource) one that got stuck silenced every Gallery tab in the browser (one site,
+  // one process), share links and Main alike, while their time bars moved on. So the context runs
+  // only while a player plays through it, sleeps a few seconds after the last pause, and is closed,
+  // not left behind, once no player uses it or its sound died. (Safari's deck keeps its own.)
+  const ctxEls = new Set();
+  let ctxSleepT = 0;
+  const ctxSleep = () => {
+    clearTimeout(ctxSleepT);
+    ctxSleepT = setTimeout(() => {
+      if (audioCtx && audioCtx.state === "running" && ![...ctxEls].some((e) => !e.paused)) audioCtx.suspend().catch(() => {});
+    }, 4000);
   };
+  const ctxClose = () => {
+    const c = audioCtx;
+    audioCtx = null;
+    keyModule = null;
+    Object.keys(roomIRs).forEach((k) => delete roomIRs[k]);
+    ctxEls.clear();
+    clearTimeout(ctxSleepT);
+    if (c && c.state !== "closed") c.close().catch(() => {});
+  };
+  addEventListener("pagehide", (e) => {
+    if (!e.persisted && !DECK) ctxClose();
+  });
 
-  const irBuffer = (ctx, id) => {
-    const d = irData(id, ctx.sampleRate);
+  const irBuffer = (ctx, id, rev) => {
+    let d = irData(id, ctx.sampleRate);
+
+    if (rev) d = reverseIR(d);
     const buf = ctx.createBuffer(2, d[0].length, ctx.sampleRate);
 
     d.forEach((x, c) => buf.getChannelData(c).set(x));
     return buf;
   };
 
-  const roomIR = (id) => roomIRs[id] || (roomIRs[id] = irBuffer(audioCtx, id));
+  const roomIR = (id, rev) => {
+    const k = id + (rev ? "~" : "");
+    return roomIRs[k] || (roomIRs[k] = irBuffer(audioCtx, id, rev));
+  };
 
-  const spaceOn = () => prefs.space.on && prefs.space.mix > 0;
+  const spaceOn = () => prefs.space.on && prefs.space.mix !== 0;
 
   // ----- reading a file's sound directly (Safari's deck, and downloads with the sound baked in) -----
   //
@@ -735,6 +1067,44 @@
   // A file's sound, a chunk of frames at a time. PCM WAV and AIFF are read in byte ranges, so even
   // an hour of it only ever holds a few seconds. Anything else is decoded whole, within limits.
   // Resolves to null for a file that can't be read this way.
+  // A compressed file's sample rate from its header (MP3, AAC in ADTS or MP4, FLAC, Ogg), or 0.
+  const nativeRate = (b) => {
+    try {
+      const n = b.length;
+      const u32 = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+      const tag = (o, t) => [...t].every((c, i) => b[o + i] === c.charCodeAt(0));
+
+      if (tag(0, "fLaC")) return (b[18] << 12) | (b[19] << 4) | (b[20] >> 4);
+      if (tag(0, "OggS")) {
+        for (let o = 0; o < Math.min(n - 16, 512); o++) {
+          if (tag(o, "\x01vorbis")) return (b[o + 12] | (b[o + 13] << 8) | (b[o + 14] << 16)) >>> 0;
+          if (tag(o, "OpusHead")) return 48000;
+        }
+      }
+      // MP4: the first audio sample entry's rate (16.16 at +32 of mp4a/alac/...)
+      for (let o = 4; o < n - 40; o++) {
+        if (tag(o, "mp4a") || tag(o, "alac") || tag(o, "ac-3") || tag(o, "Opus")) {
+          const r = (b[o + 28] << 8) | b[o + 29];
+          if (r >= 8000 && r <= 192000) return r;
+        }
+      }
+      let o = 0;
+      if (tag(0, "ID3")) o = 10 + ((b[6] << 21) | (b[7] << 14) | (b[8] << 7) | b[9]);
+      const end = Math.min(n - 4, o + 65536);
+      for (; o < end; o++) {
+        if (b[o] !== 0xff) continue;
+        if ((b[o + 1] & 0xf6) === 0xf0) return [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000][(b[o + 2] >> 2) & 15] || 0; // ADTS
+        if ((b[o + 1] & 0xe0) === 0xe0) {
+          const v = (b[o + 1] >> 3) & 3;
+          const i = (b[o + 2] >> 2) & 3;
+          if (v === 1 || i === 3) continue;
+          return [44100, 48000, 32000][i] / (v === 3 ? 1 : v === 2 ? 2 : 4);
+        }
+      }
+    } catch (e) {}
+    return 0;
+  };
+
   const openSound = async (url, ctx) => {
     const head = await fetch(url, { headers: { range: "bytes=0-131071" } });
     if (!head.ok) return null;
@@ -770,7 +1140,9 @@
     if (size > BIG_DECODE) return null;
 
     const all = head.status === 200 ? first.buffer : await (await fetch(url)).arrayBuffer();
-    const ab = await new Promise((ok, no) => ctx.decodeAudioData(all, ok, no));
+    // no context given (bake): one at the file's own rate, so nothing is resampled
+    const dc = ctx || new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 1, nativeRate(first) || 44100);
+    const ab = await new Promise((ok, no) => dc.decodeAudioData(all, ok, no));
     if (ab.duration > LONG_DECODE) return null;
 
     const ch = [];
@@ -785,28 +1157,32 @@
     };
   };
 
-  const soundOn = () => !!prefs.key || !!(prefs.eq.low || prefs.eq.mid || prefs.eq.high) || spaceOn();
+  // The safety stage at the very end, live (a WaveShaper) and in a download (bake's write()): the sound
+  // is untouched up to SAFE_KNEE and bent smoothly (tanh, slope 1 at the knee) above it so it never
+  // passes 0.99. The EQ trim only knows the response's peak; a boost's filters still overshoot on
+  // dense sound (measured to 1.57), and a big room at full mix to 1.21: this catches both.
+  // the worklets' true delays in frames (player-key.js PDC_DELAY, measured by noise cross-correlation):
+  // Key and the deck a whole 2048-frame frame, the extractor a whole 4096-frame frame
+  const DELAY = { key: 2048, deck: 2048, vox: 4096 };
 
-  // The level (dB) one EQ band adds at frequency f: the Audio EQ Cookbook formulas, which are
-  // the ones Web Audio's BiquadFilterNode uses, so the curve drawn is the sound you hear.
-  const bandDb = (b, gain, f) => {
-    if (!gain) return 0;
-
-    const fs = 48000;
-    const [b0, b1, b2, a0, a1, a2] = coefs(b, gain, fs);
-    const w = (2 * Math.PI * clamp(f, 20, 20000)) / fs;
-    const c1 = Math.cos(w);
-    const s1 = Math.sin(w);
-    const c2 = Math.cos(2 * w);
-    const s2 = Math.sin(2 * w);
-    const nr = b0 + b1 * c1 + b2 * c2;
-    const ni = b1 * s1 + b2 * s2;
-    const dr = a0 + a1 * c1 + a2 * c2;
-    const di = a1 * s1 + a2 * s2;
-
-    return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+  const SAFE_KNEE = 0.9;
+  const safeBend = (a) => SAFE_KNEE + (0.99 - SAFE_KNEE) * Math.tanh((a - SAFE_KNEE) / (0.99 - SAFE_KNEE));
+  // the shaper's curve over -2..2 (it is fed half the level, see the graph)
+  const safeCurve = () => {
+    const n = 8193;
+    const c = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (4 * i) / (n - 1) - 2;
+      const a = Math.abs(x);
+      c[i] = a <= SAFE_KNEE ? x : Math.sign(x) * safeBend(a);
+    }
+    return c;
   };
 
+  const soundOn = () => !!prefs.key || !!prefs.vox || !!(prefs.eq.low || prefs.eq.mid || prefs.eq.high) || spaceOn();
+
+  // One EQ band's biquad coefficients: the Audio EQ Cookbook formulas, which are the ones Web
+  // Audio's BiquadFilterNode uses, so a download has the sound you heard.
   const coefs = (b, gain, fs) => {
     const A = Math.pow(10, gain / 40);
     const w0 = (2 * Math.PI * b.f) / fs;
@@ -836,16 +1212,231 @@
     return [b0, b1, b2, a0, a1, a2];
   };
 
-  let playerN = 0;
-
   let activePlayer = null;
+  let galleryComments = () => null; // the comment count for the home bar (set with the comments, below)
+  // a short note on the open player (Info, comments, covers, keys); nothing when no player is open
+  const tell = (t) => activePlayer && activePlayer.note(t);
+
+  // ----- the shell: another folder opens in a frame over this page while sound plays -----
+  //
+  // The top page keeps a stack of frames. Following a link while something plays opens the link in a
+  // new frame and keeps the playing page alive, hidden; a play anywhere stops every other page. Back
+  // past a frame's first page closes it. Same origin only; files (/f/) and downloads are left alone.
+  const SHELL = (() => {
+    let top = null;
+    try {
+      top = window.top !== window && window.top.__galleryShell ? window.top.__galleryShell : null;
+    } catch (x) {}
+    if (top) return { framed: true, played: (w) => top.played(w), go: (u, w) => top.go(u, w) };
+
+    const frames = []; // { fr, win }
+    const docs = () => [window, ...frames.map((x) => x.fr.contentWindow)].filter(Boolean);
+    const playingIn = (w) => {
+      try {
+        return !!(w.__galleryPlaying && w.__galleryPlaying());
+      } catch (x) {
+        return false;
+      }
+    };
+    const shell = {
+      framed: false,
+      played(src) {
+        if (src !== window && window.__galleryRemoteClear) window.__galleryRemoteClear();
+        for (const w of docs()) {
+          if (w === src) continue;
+          try {
+            if (w.__galleryStop) w.__galleryStop();
+          } catch (x) {}
+        }
+        // hidden frames kept only for their sound go once nothing plays in them
+        for (const x of frames.slice()) {
+          if (x.fr.style.visibility === "hidden" && x.fr.contentWindow !== src && !playingIn(x.fr.contentWindow)) {
+            x.fr.remove();
+            frames.splice(frames.indexOf(x), 1);
+          }
+        }
+      },
+      go(url, from) {
+        const fr = document.createElement("iframe");
+        fr.className = "shellfr";
+        fr.src = url;
+        fr.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
+        // the page we leave: kept, hidden, if it plays; else dropped
+        const last = frames[frames.length - 1];
+        if (last && last.fr.contentWindow === from) {
+          if (playingIn(from)) {
+            last.fr.style.visibility = "hidden";
+            try {
+              window.__galleryRemote(from, from.__galleryPlayingName());
+            } catch (x) {}
+          }
+          else {
+            last.fr.remove();
+            frames.pop();
+          }
+        }
+        frames.push({ fr });
+        document.body.appendChild(fr);
+        document.body.classList.add("shelled");
+        fr.addEventListener("load", () => {
+          try {
+            const w = fr.contentWindow;
+            history.replaceState(history.state, "", w.location.href);
+            document.title = w.document.title;
+          } catch (x) {}
+        });
+        history.pushState({ shell: frames.length }, "", url);
+      },
+    };
+    addEventListener("popstate", () => {
+      const vis = frames.filter((x) => x.fr.style.visibility !== "hidden");
+      const want = (history.state && history.state.shell) || 0;
+      if (vis.length > want) {
+        const x = vis[vis.length - 1];
+        if (!playingIn(x.fr.contentWindow)) {
+          x.fr.remove();
+          frames.splice(frames.indexOf(x), 1);
+        } else x.fr.style.visibility = "hidden";
+        const still = frames.filter((y) => y.fr.style.visibility !== "hidden");
+        if (still.length) still[still.length - 1].fr.style.visibility = "";
+        else document.body.classList.remove("shelled");
+      }
+    });
+    window.__galleryShell = shell;
+    return shell;
+  })();
+
+  // a link followed while sound plays (or with frames up) opens over this page instead of replacing it
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a || a.target || a.hasAttribute("download")) return;
+    const u = new URL(a.href, location.href);
+    if (u.origin !== location.origin || /^\/(f|player)\//.test(u.pathname) || u.search.includes("dl=1")) return;
+    if (u.pathname === location.pathname && u.hash) return;
+    const shelled = !SHELL.framed && document.body.classList.contains("shelled");
+    if (!window.__galleryPlaying() && !shelled) return;
+    e.preventDefault();
+    SHELL.go(u.href, window);
+  }, true);
+  const PAUSE_PATH_EARLY =
+    '<rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/>';
+
+  // ----- playback that outlives the viewer -----
+  //
+  // A playing track keeps playing when the viewer closes, moves to another item (a PDF, a photo) or
+  // the page goes to another folder; it stops only on Pause or when another track plays. Its player
+  // is parked, whole, in a hidden dock; opening its item again puts it back on stage. Another folder
+  // opens in a frame over this page (shell, below), so this page and its sound stay alive.
+  let parked = null;
+  const dock = mkEl("div", "dock");
+  dock.hidden = true;
+  document.body.appendChild(dock);
+  const pill = mkEl("div", "nowpl");
+  pill.hidden = true;
+  pill.innerHTML = '<button type="button" class="nowpl-t"></button><button type="button" class="nowpl-p" aria-label="Pause">' + SVG(PAUSE_PATH_EARLY, true) + "</button>";
+  document.body.appendChild(pill);
+
+  const stopParked = () => {
+    if (!parked) return;
+    const p = parked;
+    parked = null;
+    pill.hidden = true;
+    try {
+      p.el.pause();
+    } catch (x) {}
+    p.kill();
+    p.wrap.remove();
+  };
+
+  const playingHere = () => !!((parked && !parked.el.paused) || (activePlayer && activePlayer.el && !activePlayer.el.paused));
+  const stopHere = () => {
+    stopParked();
+    if (activePlayer && activePlayer.el) activePlayer.el.pause();
+  };
+  window.__galleryPlaying = playingHere;
+  window.__galleryStop = stopHere;
 
   const endPlayer = () => {
-    if (activePlayer) {
-      activePlayer.kill();
-      activePlayer = null;
+    if (!activePlayer) return;
+    const p = activePlayer;
+    activePlayer = null;
+    if (p.el && !p.el.paused && !p.el.ended) {
+      stopParked();
+      parked = p;
+      dock.appendChild(p.wrap);
+      pill.querySelector(".nowpl-t").textContent = "♪ " + (p.item ? p.item.name : "");
+      pill.hidden = false;
+      return;
     }
+    p.kill();
   };
+
+  let remote = null; // a hidden frame, under this page's frames, whose track still plays
+  pill.querySelector(".nowpl-p").onclick = (e) => {
+    e.stopPropagation();
+    if (remote) {
+      try {
+        remote.__galleryStop();
+      } catch (x) {}
+      remote = null;
+      pill.hidden = true;
+    } else stopParked();
+  };
+  window.__galleryRemote = (w, name) => {
+    if (parked) stopParked();
+    remote = w;
+    pill.querySelector(".nowpl-t").textContent = "♪ " + (name || "");
+    pill.hidden = false;
+  };
+  // a rename anywhere: retitle the pill if it names that file
+  window.__galleryRetitle = (oldPath, newPath, newName) => {
+    if (parked && parked.item && parked.item.path === oldPath) {
+      parked.item.path = newPath;
+      parked.item.name = newName;
+    }
+    const t = pill.querySelector(".nowpl-t");
+    if (!pill.hidden && (parked ? parked.item && parked.item.path === newPath : remote && remote.__galleryPlayingPath && remote.__galleryPlayingPath() === newPath))
+      t.textContent = "♪ " + newName;
+  };
+  window.__galleryRemoteClear = () => {
+    if (!remote) return;
+    remote = null;
+    pill.hidden = true;
+  };
+  window.__galleryPlayingPath = () => (parked && parked.item ? parked.item.path : activePlayer && activePlayer.item ? activePlayer.item.path : "");
+  window.__galleryPlayingName = () => (parked && parked.item ? parked.item.name : activePlayer && activePlayer.item ? activePlayer.item.name : "");
+  pill.querySelector(".nowpl-t").onclick = () => {
+    const i = parked ? items.indexOf(parked.item) : -1;
+    if (i >= 0) openAt(i);
+  };
+
+  // any media starting anywhere (this page, a frame over it, or the page under it) stops the others
+  mediaWatch.play = (m) => {
+    if (parked && parked.el !== m) stopParked();
+    if (remote) {
+      remote = null;
+      pill.hidden = true;
+    }
+    SHELL.played(window);
+  };
+  mediaWatch.pause = (m) => {
+    if (parked && parked.el === m) stopParked(); // Pause (lock screen, keys) ends it
+  };
+  document.addEventListener(
+    "play",
+    (e) => {
+      if (e.target instanceof HTMLMediaElement) mediaWatch.play(e.target);
+    },
+    true
+  );
+  document.addEventListener(
+    "pause",
+    (e) => {
+      if (e.target instanceof HTMLMediaElement) mediaWatch.pause(e.target);
+    },
+    true
+  );
 
   const TEN =
     '<text x="12" y="16" font-size="7" font-weight="bold" fill="currentColor" text-anchor="middle" stroke="none">10</text>';
@@ -856,12 +1447,12 @@
   const PAUSE_PATH =
     '<rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/>';
 
-  const I_BACK10 = SVG(
-    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>' + TEN
+  const I_BACK15 = SVG(
+    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>' + TEN.replace(">10<", ">15<")
   );
 
-  const I_FWD10 = SVG(
-    '<path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>' + TEN
+  const I_FWD15 = SVG(
+    '<path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>' + TEN.replace(">10<", ">15<")
   );
 
   const I_PIP = SVG(
@@ -874,7 +1465,10 @@
 
   const I_X = SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
 
+  let nowEl = null; // the element the lock screen's Now Playing speaks for (SPEC 69)
+
   const buildMedia = (tag, mediaSrc, artUrl) => {
+    const item = items[cur]; // whose original key the Key labels spell
     const w = mkEl("div", tag === "video" ? "vw" : "aw");
     const el = mkEl(tag === "video" ? "video" : "audio");
 
@@ -890,81 +1484,26 @@
     }
 
     el.preload = "metadata";
-    el.src = mediaSrc;
+    // a video shows its first frame instead of black before play (iOS paints nothing at t=0)
+    el.src = tag === "video" ? mediaSrc + "#t=0.001" : mediaSrc;
 
-    // ----- state -----
-    //
-    // Two facts and one rule:
-    //   track  = repeat the whole track
-    //   abEn   = loop between A and B   (needs both points)
-    //   rule   = A–B can only be on while Track Loop is on
-    // A and B are remembered while A–B is off, so it can be switched back on.
+    // ----- state: the home bar (below) keeps Track Loop, A–B and speed; this is what it last said -----
 
-    let speed = prefs.speed;
-    let track = prefs.loop === "track";
-    let abEn = false;
-    let A = null;
-    let B = null;
-    let dragging = false;
+    let bar = null;
+    let loopNow = { track: false, ab: false, a: null, b: null };
+    let dragging = false; // a seek is under way: A–B holds off
 
     el.preservesPitch = true;   // speed changes tempo, never pitch
-    el.playbackRate = speed;
-
-    const ready = () => A !== null && B !== null;
-
-    // ----- centre controls -----
-
-    const center = mkEl("div", "p-center-controls");
-    const bBack = mkBtn("p-center-btn", "Back 10 seconds", I_BACK10);
-    const bPlay = mkBtn(
-      "p-center-play",
-      "Play",
-      SVG(PLAY_PATH, true, "pl") + SVG(PAUSE_PATH, true, "pa")
-    );
-    const bFwd = mkBtn("p-center-btn", "Forward 10 seconds", I_FWD10);
-
-    center.append(bBack, bPlay, bFwd);
+    el.playbackRate = prefs.speed;
 
     const toggle = () => {
       if (el.paused) el.play().catch(() => {});
       else el.pause();
     };
 
-    bPlay.onclick = (e) => {
-      e.stopPropagation();
-      toggle();
-      wake();
-    };
-
-    bBack.onclick = (e) => {
-      e.stopPropagation();
-      el.currentTime = Math.max(0, el.currentTime - 10);
-      wake();
-    };
-
-    bFwd.onclick = (e) => {
-      e.stopPropagation();
-      el.currentTime = Math.min(el.duration || 0, el.currentTime + 10);
-      wake();
-    };
-
-    const sync = () => {
-      bPlay.classList.toggle("playing", !el.paused);
-      bPlay.setAttribute("aria-label", el.paused ? "Play" : "Pause");
-    };
-
-    // ----- the transport row -----
-    //
-    // Just the EQ, at the right. There is no progress rail and no running clock: where you are in
-    // time shows only when you ask for it (Time Seeking on the home bar), so the player stays
-    // quiet and the picture stays the picture. Speed shows (and resets) on the home bar itself.
+    const sync = () => bar && bar.paint();
 
     const ctrl = mkEl("div", "p-ctrl");
-
-    const fracOf = (node, e) => {
-      const r = node.getBoundingClientRect();
-      return r.width ? clamp((e.clientX - r.left) / r.width) : 0;
-    };
 
     // ----- toast -----
 
@@ -978,576 +1517,300 @@
       toastT = setTimeout(() => toast.classList.remove("on"), 1300);
     };
 
-    // ----- the home bar -----
+    // ----- the home bar (homebar.js, shared with Recense) -----
     //
-    //   [ Loop · A–B ]   or   [ 0.5× … 2× ]     only while unfolded; speed only when asked for
-    //   ─────────────────────────────────       the stroke itself
-    //            1.25×                          under the stroke, when speed isn't 1×
-    //
-    // Collapsed, only the stroke is there: no box, no border, no label. Its colour and its
-    // end-beads quietly say what is on, so state is never lost.
-
-    const hb = mkEl("div", "p-hb");
-    const box = mkEl("div", "p-hbbox");
-    const scrim = mkEl("div", "p-hbscrim");
-    const line = mkBtn("p-hline", "Open loop controls", "<i></i>");
-    const bead = mkEl("i", "p-sbead");
-    const sval = mkBtn("p-hbval", "Speed — tap to reset to 1×", "");
-
-    // Time Seeking (see below): playhead bead, A and B markers, the span between them, the time
-    // that hangs under the stroke after you let go, and the ruler itself
-    const tbead = mkEl("i", "p-tbead");
-    const mkA = mkEl("i", "p-skmark");
-    const mkB = mkEl("i", "p-skmark");
-    const skReg = mkEl("i", "p-skreg");
-    const tval = mkEl("span", "p-hbtime");
-    const seekL = mkEl("div", "p-hbseek");
-    const skTrack = mkEl("div", "p-sktrack");
-    const skHint = mkEl("div", "p-skhint");
-    const skRead = mkEl("div", "p-skread");
-    const skTicks = mkEl("div", "p-skticks");
-    const row = mkEl("div", "p-hbrow");
-    const speedRow = mkEl("div", "p-hbspeed");
-
-    const loopBtn = mkBtn("p-hloop", "Track loop", I_REPEAT + '<span class="n">Loop</span>');
-    const abG = mkEl("div", "p-hab");
-    const aBtn = mkBtn("p-pa", "Set loop start A", '<span class="l">A</span><i class="dot"></i>');
-    const conn = mkBtn("p-pc", "A–B loop", "<i></i>");
-    const bBtn = mkBtn("p-pb", "Set loop end B", '<i class="dot"></i><span class="l">B</span>');
-    const clearBtn = mkBtn("p-px", "Clear A and B", I_X);
-    const sTrack = mkEl("div", "p-strack");
-
-    const cells = SPEEDS.map((v) => {
-      const c = mkEl("span", "p-sv");
-      c.textContent = v + "×";
-      return c;
-    });
-
-    row.setAttribute("role", "group");
-    row.setAttribute("aria-label", "Track loop and A–B loop");
-    row.setAttribute("aria-hidden", "true");
-    speedRow.setAttribute("role", "group");
-    speedRow.setAttribute("aria-label", "Playback speed");
-    speedRow.setAttribute("aria-hidden", "true");
-    line.setAttribute("aria-expanded", "false");
-    hb.dataset.open = "false";
-    hb.dataset.mode = "loop";
-    clearBtn.disabled = true;
-
-    sTrack.tabIndex = 0;
-    sTrack.setAttribute("role", "slider");
-    sTrack.setAttribute("aria-label", "Playback speed");
-    sTrack.setAttribute("aria-valuemin", String(SPEEDS[0]));
-    sTrack.setAttribute("aria-valuemax", String(SPEEDS[SPEEDS.length - 1]));
-
-    cells.forEach((c) => sTrack.appendChild(c));
-    speedRow.appendChild(sTrack);
-
-    abG.append(aBtn, conn, bBtn, clearBtn);
-    row.append(loopBtn, mkEl("i", "p-sep"), abG);
-
-    // the stroke goes in before the rows, so a control in a row always sits on top of it
-    mkA.innerHTML = "<b>A</b>";
-    mkB.innerHTML = "<b>B</b>";
-    skTrack.append(skHint, skRead, skTicks);
-    seekL.appendChild(skTrack);
-    seekL.setAttribute("aria-hidden", "true"); // visual only: the stroke itself takes the arrow keys (below)
-
-    box.append(scrim, line, skReg, bead, tbead, mkA, mkB, sval, tval, row, speedRow, seekL);
-    hb.appendChild(box);
-
-    // ----- the EQ island -----
-
-    const eqWrap = mkEl("div", "p-eqwrap");
-    const eqBtn = mkBtn("p-eqbtn", "Sound", "<i></i>");
-    const eq = mkEl("div", "p-eq");
-    const eqIn = mkEl("div", "p-eqin");
-    const eqTop = mkEl("div", "p-eqtop");
-    const eqFlat = mkBtn("p-eqflat", "Reset the EQ to flat", "Flat");
-    const eqCols = mkEl("div", "p-eqcols");
-    const graph = mkEl("div", "p-eqgraph");
-    const bands = {};
-
-    eq.hidden = true;
-    eqFlat.hidden = true;
-    eqBtn.setAttribute("aria-haspopup", "true");
-    eqBtn.setAttribute("aria-expanded", "false");
-    eqBtn.title = "Sound: EQ, Key, Space";
-
-    eqTop.append(eqFlat);
-
-    // the curve the three bands make together
-    const SVGNS = "http://www.w3.org/2000/svg";
-    const gradId = "p-eqgrad" + ++playerN;
-    const curve = document.createElementNS(SVGNS, "svg");
-    curve.setAttribute("class", "p-eqcurve");
-    curve.setAttribute("aria-hidden", "true");
-    curve.innerHTML =
-      '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#0a84ff" stop-opacity=".34"/>' +
-      '<stop offset=".5" stop-color="#0a84ff" stop-opacity=".06"/>' +
-      '<stop offset="1" stop-color="#0a84ff" stop-opacity=".34"/></linearGradient></defs>' +
-      '<path class="z"/><path class="f" fill="url(#' + gradId + ')"/><path class="l"/>';
-    const [cZero, cFill, cLine] = curve.querySelectorAll("path");
-
-    EQ_BANDS.forEach((b) => {
-      const col = mkEl("div", "p-band");
-      const val = mkEl("span", "p-bval");
-      const trkB = mkEl("div", "p-btrack");
-      const inn = mkEl("div", "p-bin");
-      const base = mkEl("div", "p-bbase");
-      const zero = mkEl("i", "p-bzero");
-      const fillB = mkEl("div", "p-bfill");
-      const knob = mkEl("i", "p-bknob");
-      const lab = mkBtn("p-blabel", "Reset " + b.label, b.label);
-
-      trkB.tabIndex = 0;
-      trkB.setAttribute("role", "slider");
-      trkB.setAttribute("aria-orientation", "vertical");
-      trkB.setAttribute("aria-label", b.label + " (dB)");
-      trkB.setAttribute("aria-valuemin", String(-EQ_MAX));
-      trkB.setAttribute("aria-valuemax", String(EQ_MAX));
-
-      inn.append(base, zero, fillB, knob);
-      trkB.appendChild(inn);
-      col.append(val, trkB, lab);
-      graph.appendChild(col);
-
-      bands[b.id] = { col, val, trk: trkB, inn, fill: fillB, knob, lab };
-    });
-
-    graph.appendChild(curve);
-    eqCols.appendChild(graph);
-
-    // Key: a ladder of semitones, up is higher, as on a stave or a piano roll. Drag up or down
-    // to climb it (relative to where you are, a semitone every few pixels, so it is precise
-    // under a thumb); tap above or below the bead for one semitone; tap the value to go home.
-    const key = (() => {
-      const col = mkEl("div", "p-band key");
-      const val = mkBtn("p-bval", "Key", "");
-      const trk = mkEl("div", "p-btrack");
-      const inn = mkEl("div", "p-bin");
-      const fill = mkEl("div", "p-bfill");
-      const knob = mkEl("i", "p-bknob");
-      const lab = mkEl("span", "p-blabel");
-
-      lab.textContent = "Key";
-      trk.tabIndex = 0;
-      trk.setAttribute("role", "slider");
-      trk.setAttribute("aria-orientation", "vertical");
-      trk.setAttribute("aria-label", "Key (semitones)");
-      trk.setAttribute("aria-valuemin", String(-KEY_MAX));
-      trk.setAttribute("aria-valuemax", String(KEY_MAX));
-
-      inn.append(mkEl("i", "p-kticks"), mkEl("i", "p-bzero"), fill, knob);
-      trk.appendChild(inn);
-      col.append(val, trk, lab);
-      eqCols.appendChild(col);
-
-      return { col, val, trk, inn, fill, knob };
-    })();
-
-    // Space: the same vertical slider as a band, filling from the bottom (dry) up. Its value is the
-    // bypass (tap: dry, tap again: back to where it was); its name is the room (tap: the other one).
-    const sp = (() => {
-      const col = mkEl("div", "p-band space");
-      const val = mkBtn("p-bval", "Space", "");
-      const trk = mkEl("div", "p-btrack");
-      const inn = mkEl("div", "p-bin");
-      const fill = mkEl("div", "p-bfill");
-      const knob = mkEl("i", "p-bknob");
-      const lab = mkBtn("p-blabel", "Room", "");
-
-      trk.tabIndex = 0;
-      trk.setAttribute("role", "slider");
-      trk.setAttribute("aria-orientation", "vertical");
-      trk.setAttribute("aria-label", "Space (reverb amount)");
-      trk.setAttribute("aria-valuemin", "0");
-      trk.setAttribute("aria-valuemax", "100");
-
-      inn.append(mkEl("div", "p-bbase"), fill, knob);
-      trk.appendChild(inn);
-      col.append(val, trk, lab);
-      eqCols.appendChild(col);
-
-      return { col, val, trk, inn, fill, knob, lab };
-    })();
-
-    eqIn.append(eqTop, eqCols);
-    eq.appendChild(eqIn);
-    eqWrap.append(eqBtn, eq);
-
-    // The curve: x is frequency (low to high, each band's column at its own frequency), y is
-    // level on the same ±15 dB scale as the beads. Drawn from the real filter response.
-    let shown = { low: 0, mid: 0, high: 0 }; // the gains the curve is drawn with right now
-    let curveRaf = 0;
-
-    const drawCurve = (g) => {
-      const gr = graph.getBoundingClientRect();
-      if (!gr.width) return;
-
-      const ins = EQ_BANDS.map((b) => bands[b.id].inn.getBoundingClientRect());
-      const top = ins[0].top - gr.top;
-      const h = ins[0].height;
-      const xs = ins.map((r) => r.left + r.width / 2 - gr.left);
-      const lf = EQ_BANDS.map((b) => Math.log(b.f));
-      const W = gr.width;
-      const yOf = (db) => top + ((EQ_MAX - clamp(db, -EQ_MAX, EQ_MAX)) / (EQ_MAX * 2)) * h;
-      let d = "";
-
-      for (let k = 0; k <= 64; k++) {
-        const x = (W * k) / 64;
-        const i = x < xs[1] ? 0 : 1;
-        const f = Math.exp(lf[i] + ((x - xs[i]) / (xs[i + 1] - xs[i])) * (lf[i + 1] - lf[i]));
-        let db = 0;
-
-        EQ_BANDS.forEach((b) => {
-          db += bandDb(b, g[b.id], f);
-        });
-
-        d += (k ? "L" : "M") + x.toFixed(1) + " " + yOf(db).toFixed(1);
-      }
-
-      const y0 = yOf(0).toFixed(1);
-
-      curve.setAttribute("viewBox", "0 0 " + W.toFixed(1) + " " + gr.height.toFixed(1));
-      cZero.setAttribute("d", "M0 " + y0 + "H" + W.toFixed(1));
-      cLine.setAttribute("d", d);
-      cFill.setAttribute("d", d + "L" + W.toFixed(1) + " " + y0 + "L0 " + y0 + "Z");
-    };
-
-    // the curve eases from one shape to another (opening: from the flat line it was folded as)
-    const morph = (to, ms) => {
-      cancelAnimationFrame(curveRaf);
-
-      const from = { ...shown };
-      const t0 = performance.now();
-
-      const step = (now) => {
-        const t = Math.min(1, (now - t0) / ms);
-        const e = 1 - Math.pow(1 - t, 3);
-
-        EQ_BANDS.forEach((b) => {
-          shown[b.id] = from[b.id] + (to[b.id] - from[b.id]) * e;
-        });
-
-        drawCurve(shown);
-        if (t < 1) curveRaf = requestAnimationFrame(step);
-      };
-
-      curveRaf = requestAnimationFrame(step);
-    };
-
-    ctrl.append(eqWrap);
-
-    // ----- painting -----
-
-    const paintSpeed = () => {
-      const i = Math.max(0, SPEEDS.indexOf(speed));
-
-      cells.forEach((c, k) => c.classList.toggle("on", k === i));
-      hb.style.setProperty("--sf", String((i + 0.5) / SPEEDS.length)); // where the bead rides the stroke
-      sval.textContent = speed + "×";
-      sTrack.setAttribute("aria-valuenow", String(speed));
-      sTrack.setAttribute("aria-valuetext", speed + "×");
-
-      // when speed isn't 1x its value hangs under the stroke, and one tap on it puts it back
-      sval.tabIndex = speed === 1 ? -1 : 0;
-      hb.classList.toggle("sp", speed !== 1);
-    };
-
-    // The only place the home bar's state is painted.
-    //   hb.lp   Track Loop is on      → the bar turns blue
-    //   hb.pa   A is set              → a bead at the left end
-    //   hb.pb   B is set              → a bead at the right end
-    //   hb.ab   A–B is on             → both beads lit and the connector glows (Track Loop is on too)
-    //   hb.kept A and B are remembered but A–B is off → hollow beads, dashed connector
-    const paintLoop = () => {
-      if (abEn && !ready()) abEn = false; // A–B needs both points…
-      if (abEn) track = true; //           …and needs Track Loop
-      prefs.loop = track ? "track" : "off";
-
-      hb.classList.toggle("lp", track);
-      hb.classList.toggle("pa", A !== null);
-      hb.classList.toggle("pb", B !== null);
-      hb.classList.toggle("ab", abEn);
-      hb.classList.toggle("kept", !abEn && ready());
-
-      loopBtn.classList.toggle("on", track);
-      loopBtn.setAttribute("aria-pressed", String(track));
-      loopBtn.setAttribute("aria-label", track ? "Track loop on — press to turn off" : "Track loop off — press to turn on");
-
-      aBtn.classList.toggle("set", A !== null);
-      bBtn.classList.toggle("set", B !== null);
-      aBtn.setAttribute("aria-label", A === null ? "Set loop start A" : "A is " + dur(A) + " — press to set again");
-      bBtn.setAttribute("aria-label", B === null ? "Set loop end B" : "B is " + dur(B) + " — press to set again");
-      aBtn.title = A === null ? "Set A" : "A " + dur(A);
-      bBtn.title = B === null ? "Set B" : "B " + dur(B);
-
-      conn.classList.toggle("on", abEn);
-      conn.classList.toggle("kept", !abEn && ready());
-      conn.setAttribute("aria-pressed", String(abEn));
-      conn.setAttribute(
-        "aria-label",
-        abEn ? "A–B loop on — press to turn off" : ready() ? "A–B loop off — press to turn on" : "A–B loop: set A and B first"
-      );
-      conn.title = ready() ? dur(A) + " – " + dur(B) : "A–B loop";
-
-      clearBtn.disabled = A === null && B === null;
-
-      // A–B does its own looping (it jumps at B); the native repeat is for the whole track only.
-      // This flag is the only thing painted onto the media element.
-      el.loop = track && !abEn;
-
-    };
-
-    // a quick glow on whatever just changed, so a selection can never go unnoticed
-    const flash = (...nodes) => {
-      nodes.forEach((node) => {
-        node.classList.remove("ripple");
-        void node.offsetWidth; // restart the animation
-        node.classList.add("ripple");
-        setTimeout(() => node.classList.remove("ripple"), 800);
-      });
-    };
-
-    // ----- speed: a slider with six detents -----
-    // Changing it only sets the playback rate: no pause, no seek, no restart.
-
-    const setSpeed = (v) => {
-      // see startDeck: a file Safari plays through the element itself, with Sound on
-      if (v !== 1 && DECK && nodes && nodes.mode === "tap") {
-        say("Speed is 1× with Sound on, for this file");
-        v = 1;
-      }
-
-      speed = v;
-      prefs.speed = v;
-      el.playbackRate = v;
-      paintSpeed();
-    };
-
-    let sDrag = false;
-
-    const speedFrom = (e) => {
-      const f = fracOf(sTrack, e);
-      setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.floor(f * SPEEDS.length))]);
-    };
-
-    // Dragging along the speed ruler. Capture keeps every move and the release coming here
-    // wherever the finger goes. Should a browser ever drop it mid-drag, the window picks up the
-    // rest, but only while this drag is on, only for this finger, and never twice (events that do
-    // reach the ruler are skipped there). Without that, a lost capture stalls the drag and leaves
-    // it stuck on.
-    let sPid = -1;
-
-    const endSpeedDrag = (e) => {
-      if (!sDrag || (e && e.pointerId !== sPid)) return;
-
-      sDrag = false;
-      sPid = -1;
-      window.removeEventListener("pointermove", sWinMove);
-      window.removeEventListener("pointerup", endSpeedDrag);
-      window.removeEventListener("pointercancel", endSpeedDrag);
-      bumpHb();
-    };
-
-    const sWinMove = (e) => {
-      if (!sDrag || e.pointerId !== sPid || sTrack.contains(e.target)) return;
-      speedFrom(e);
-      bumpHb();
-    };
-
-    sTrack.onpointerdown = (e) => {
-      sDrag = true;
-      sPid = e.pointerId;
-
-      try {
-        sTrack.setPointerCapture(e.pointerId);
-      } catch (x) {}
-
-      window.addEventListener("pointermove", sWinMove);
-      window.addEventListener("pointerup", endSpeedDrag);
-      window.addEventListener("pointercancel", endSpeedDrag);
-
-      speedFrom(e);
-      bumpHb();
-      wake();
-    };
-
-    sTrack.onpointermove = (e) => {
-      if (!sDrag || e.pointerId !== sPid) return;
-
-      // a mouse that moves with no button down: the release was missed, so the drag is over
-      if (e.pointerType === "mouse" && e.buttons === 0) {
-        endSpeedDrag(e);
-        return;
-      }
-
-      speedFrom(e);
-      bumpHb();
-    };
-
-    sTrack.onpointerup = sTrack.onpointercancel = endSpeedDrag;
-
-    // capture dropped while the finger is still down: take it back
-    sTrack.onlostpointercapture = (e) => {
-      if (!sDrag || e.pointerId !== sPid) return;
-
-      try {
-        sTrack.setPointerCapture(e.pointerId);
-      } catch (x) {}
-    };
-
-    sTrack.onkeydown = (e) => {
-      const i = SPEEDS.indexOf(speed);
-      let n = null;
-
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") n = i - 1;
-      else if (e.key === "ArrowRight" || e.key === "ArrowUp") n = i + 1;
-      else if (e.key === "Home") n = 0;
-      else if (e.key === "End") n = SPEEDS.length - 1;
-
-      if (n === null) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      setSpeed(SPEEDS[clamp(n, 0, SPEEDS.length - 1)]);
-      bumpHb();
-    };
-
-    sval.onclick = (e) => {
-      e.stopPropagation();
-      setSpeed(1);
-      flash(line);
-      say("Speed 1×");
-      bumpHb();
-      wake();
-    };
-
-    // ----- looping -----
-    //
-    // Nothing in this section may pause, seek, reload or recreate the media. The ONLY places
-    // that move the playhead are tick() / onended, and only while A–B is ON.
+    // The bar owns Track Loop, A–B and speed and hands them here; nothing else in the player moves
+    // the playhead. A–B does its own looping (it jumps at B); the native repeat is for the whole track.
 
     let raf = 0;
 
+    const atB = () => {
+      if (loopNow.ab && !el.paused && !dragging && el.currentTime >= loopNow.b) el.currentTime = loopNow.a; // (not while you are seeking)
+    };
+
     const tick = () => {
-      if (abEn && !el.paused) {
-        if (!dragging && el.currentTime >= B) el.currentTime = A; // (not while you are seeking)
+      if (loopNow.ab && !el.paused) {
+        atB();
         raf = requestAnimationFrame(tick);
       }
     };
 
+    // A tab out of sight gets no animation frames, so A–B stopped looping as soon as another tab or
+    // another app was in front: there the element's own timeupdate (a few times a second) jumps back.
+    el.addEventListener("timeupdate", atB);
+
     const watch = () => {
       cancelAnimationFrame(raf);
-      if (abEn && !el.paused) raf = requestAnimationFrame(tick);
+      if (loopNow.ab && !el.paused) raf = requestAnimationFrame(tick);
     };
 
     el.onended = () => {
-      if (abEn) {
-        el.currentTime = A;
+      if (loopNow.ab) {
+        el.currentTime = loopNow.a;
         el.play().catch(() => {});
       }
     };
 
-    // repaint after any change of loop state (pure bookkeeping + painting)
-    const changed = (...nodes) => {
-      paintLoop();
-      watch();
-      flash(line, ...nodes);
-    };
-
-    // Track Loop on / off. Turning it off also switches A–B off, but keeps the points.
-    const pressLoop = () => {
-      if (track) {
-        track = false;
-        abEn = false;
-        say("Loop off");
-      } else {
-        track = true;
-        say("Loop on");
-      }
-
-      changed(loopBtn);
-    };
-
-    // DISABLE A–B: stop looping between the points. The points stay. Track Loop stays.
-    const disableAB = () => {
-      abEn = false;
-    };
-
-    // ENABLE A–B: needs both points; switches Track Loop on as its prerequisite.
-    const enableAB = () => {
-      if (!ready()) return;
-      abEn = true;
-      track = true;
-    };
-
-    // CLEAR A/B: forget both points. A–B is off; Track Loop is left exactly as it was.
-    const clearAB = () => {
-      A = null;
-      B = null;
-      abEn = false;
-    };
-
-    // the little line between A and B
-    const pressConn = () => {
-      if (abEn) {
-        disableAB();
-        say("A–B off");
-      } else if (ready()) {
-        enableAB();
-        say("A–B on · " + dur(A) + "–" + dur(B));
-      } else {
-        say(A === null ? "Set A and B first" : "Now set B");
-        return;
-      }
-
-      changed(conn);
-    };
-
-    const pressClear = () => {
-      clearAB();
-      say("A–B cleared");
-      changed(clearBtn);
-    };
-
-    const captureA = () => {
-      A = el.currentTime;
-      if (B !== null && B <= A + 0.3) B = null;
-
-      if (ready()) enableAB(); // both points are there: A–B starts
-      else abEn = false;
-
-      say("A set · " + dur(A));
-      changed(aBtn);
-    };
-
-    const captureB = () => {
-      const now = el.currentTime;
-
-      if (A === null) {
-        // B first means "loop from the start up to here"
-        if (now <= 0.5) {
-          say("Play a little, then tap B");
-          return;
+    bar = Homebar.horizontal({
+      time: () => el.currentTime,
+      duration: () => el.duration,
+      paused: () => el.paused,
+      seek: (t) => {
+        el.currentTime = t;
+      },
+      toggle,
+      skip: (d) => {
+        el.currentTime = clamp(el.currentTime + d, 0, el.duration || 0);
+      },
+      setRate: (v) => {
+        // see startDeck: a file Safari plays through the element itself, with Sound on
+        if (v !== 1 && DECK && nodes && nodes.mode === "tap") {
+          say("Speed is 1× with Sound on, for this file");
+          v = 1;
         }
+        prefs.speed = v;
+        el.playbackRate = v;
+        return v;
+      },
+      setLoop: (l) => {
+        loopNow = l;
+        prefs.loop = l.track ? "track" : "off";
+        el.loop = l.track && !l.ab; // the only loop flag painted onto the media element
+        watch();
+      },
+      scrub: (on) => {
+        dragging = on;
+      },
+      say: (t) => say(t),
+      wake: () => wake(),
+      onOpen: (on) => {
+        w.classList.toggle("tools", on);
+        if (on && tray.isOpen()) tray.hide(); // one tray at a time
+      },
+      onSeekStart: () => {
+        if (tray.isOpen()) tray.hide();
+      },
+      lang: { get: () => prefs.nativeLang, set: (v) => setNativeLang(v) },
+      size: { get: () => prefs.txScale, set: (v) => setTextScale(v), min: TXS_MIN, max: TXS_MAX, step: TXS_STEP },
+      // (no hover slide: the language moved into the transcript editor, SPEC 57; hovering unfolds the first slide)
+      frost: kind(item) === "vid", // frosted glass for videos only (SPEC 38)
+      slides: () => barSlides(item),
+    });
 
-        A = 0;
-        B = now;
-        say("Looping 0:00–" + dur(now));
-      } else if (now <= A + 0.5) {
-        say("B must come after A");
-        return;
-      } else {
-        B = now;
-        say("Looping A–B");
-      }
+    const hb = bar.el;
 
-      enableAB();
-      changed(bBtn);
+    // ----- lock screen / Control Center Now Playing (SPEC 69) -----
+    //
+    // The file's own title and cover instead of "Music", and a scrubber that works: Play, Pause,
+    // Seek and ±15 s act on this element, and its position, length and speed are kept current.
+    // Whichever element last started playing has it; a parked track keeps it while it plays on.
+
+    const ms = navigator.mediaSession;
+
+    const nowPos = () => {
+      if (!ms || nowEl !== el) return;
+      try {
+        ms.playbackState = el.paused ? "paused" : "playing";
+        const d = el.duration;
+        if (!isFinite(d) || d <= 0) return;
+        ms.setPositionState({ duration: d, playbackRate: el.playbackRate || 1, position: clamp(el.currentTime || 0, 0, d) });
+      } catch (x) {}
     };
+
+    const nowAct = (a, h) => {
+      try {
+        ms.setActionHandler(a, h);
+      } catch (x) {}
+    };
+
+    const nowSkip = (d) => {
+      el.currentTime = clamp(el.currentTime + d, 0, el.duration || 0);
+      nowPos();
+    };
+
+    const nowClaim = () => {
+      if (!ms) return;
+      nowEl = el;
+
+      const title = String(item.name || item.path || "").replace(/\.[^/.]+$/, "") || "Gallery";
+      const art = artUrl || artSrc(item);
+      const meta = { title, artist: "", album: "" };
+
+      try {
+        if (art) meta.artwork = [{ src: new URL(art, location.href).href }];
+      } catch (x) {}
+
+      try {
+        ms.metadata = new MediaMetadata(meta);
+      } catch (x) {}
+
+      nowAct("play", () => el.play().catch(() => {}));
+      nowAct("pause", () => el.pause());
+      nowAct("seekto", (e) => {
+        if (typeof e.seekTime !== "number") return;
+        if (e.fastSeek && el.fastSeek) el.fastSeek(e.seekTime);
+        else el.currentTime = e.seekTime;
+        nowPos();
+      });
+      nowAct("seekbackward", (e) => nowSkip(-((e && e.seekOffset) || 15)));
+      nowAct("seekforward", (e) => nowSkip((e && e.seekOffset) || 15));
+      nowPos();
+    };
+
+    const nowDrop = () => {
+      if (!ms || nowEl !== el) return;
+      nowEl = null;
+      try {
+        ms.metadata = null;
+        ms.playbackState = "none";
+        ms.setPositionState();
+      } catch (x) {}
+      ["play", "pause", "seekto", "seekbackward", "seekforward"].forEach((a) => nowAct(a, null));
+    };
+
+    el.addEventListener("play", nowClaim);
+    ["pause", "ratechange", "durationchange", "seeked", "timeupdate"].forEach((ev) => el.addEventListener(ev, nowPos));
+
+    // ----- the EQ island: Gallery's tray on the shared vertical bar -----
+    //
+    // The bar itself (homebar.js) is the original language's prominence: swipe or drag it. A tap opens
+    // and closes the tray, as hovering it does, however many times the sound is reshaped (SPEC 52).
+    // Press and hold puts everything changed (text size, prominence, EQ, C/Đô, reverb) back; a tap
+    // right after brings it all back again.
+
+    const vbar = Homebar.vertical({
+      prominence: { get: () => prefs.prominence, set: (v) => setProminence(v) },
+      shaped: () => !soundPlain() || prefs.txScale !== 1 || prefs.prominence != null,
+      tap: () => (tray.isOpen() ? tray.hide() : tray.show(5000)),
+      tare: () => {
+        const snap = { eq: { ...prefs.eq }, key: prefs.key, vox: prefs.vox, space: { ...prefs.space }, txScale: prefs.txScale, prominence: prefs.prominence };
+        resetAll();
+        tray.bump();
+        return snap;
+      },
+      untare: (s) => {
+        restoreAll(s);
+        tray.bump();
+      },
+      say: (t) => say(t),
+      wake: () => wake(),
+      onGestureEnd: () => unlockAudio(),
+    });
+    let chordAn = null;
+    const tray = Homebar.tray({
+      state: prefs,
+      vbar,
+      rooms: ROOMS,
+      keyName: () => (item && item.key) || "",
+      // the chord detector (SPEC 40): a live chroma off the sound engine's output; it starts the engine
+      chroma: () => {
+        if (!nodes && !ensureEq()) return null;
+        if (!nodes || el.paused) return null;
+        if (!chordAn || chordAn.n !== nodes) {
+          const a = audioCtx.createAnalyser();
+          a.fftSize = 8192;
+          a.smoothingTimeConstant = 0.6;
+          nodes.master.connect(a);
+          chordAn = { n: nodes, a, db: new Float32Array(a.frequencyBinCount) };
+        }
+        chordAn.a.getFloatFrequencyData(chordAn.db);
+        return GalleryKey.chromaOfSpectrum(chordAn.db, audioCtx.sampleRate);
+      },
+      // directly above the transcript's lines; with no transcript, where the lines would be
+      chords: (t) => {
+        const st = el.closest(".vw, .aw") || w;
+        let c = st.querySelector(".txchord");
+        if (!t) return c && (c.hidden = true);
+        if (!c) {
+          c = document.createElement("div");
+          c.className = "txchord";
+          c.setAttribute("aria-live", "polite");
+        }
+        const box = st.querySelector(".tx.learn");
+        if (box ? c.parentNode !== box || box.firstChild !== c : c.parentNode !== st) box ? box.prepend(c) : st.appendChild(c);
+        c.classList.toggle("over", !!box);
+        c.textContent = t;
+        c.hidden = false;
+      },
+      notation: () => {
+        if (!SHARED) {
+          try {
+            localStorage.setItem(KEY_NOTATION, String(prefs.keyNotation));
+          } catch (e) {}
+        }
+      },
+      sound: {
+        band: (id, db) => {
+          // back to flat with no Web Audio yet: nothing to change but the setting
+          if (!db && !nodes) return true;
+          if (!ensureEq()) return false;
+          if (!nodes) return true; // taken up with the graph once the sound engine runs
+
+          // the trim comes down with the boost, never after it, and goes back up as the boost eases
+          const t = audioCtx.currentTime;
+          const g = eqTrim();
+          nodes.f[id].gain.cancelScheduledValues(t);
+          nodes.f[id].gain.setTargetAtTime(db, t, 0.03);
+          nodes.trim.gain.cancelScheduledValues(t);
+          nodes.trim.gain.setTargetAtTime(g, t, g < nodes.trim.gain.value ? 0.005 : 0.06);
+          return true;
+        },
+        key: (st) => {
+          if (!st && !nodes) return true; // back to 0 with no Web Audio yet: just the setting
+          if (!ensureEq()) return false;
+          if (nodes) applyKey();
+          return true;
+        },
+        space: () => {
+          if (!ensureEq()) return false;
+          if (nodes) applySpace();
+          return true;
+        },
+        vox: (v) => {
+          if (!v && !nodes) return true; // back to off with no Web Audio yet: just the setting
+          if (!window.AudioWorkletNode && !DECK) return false;
+          if (!ensureEq()) return false;
+          if (nodes) applyVox();
+          return true;
+        },
+        live: () => !!nodes,
+      },
+      onOpen: (on) => hb.classList.toggle("away", on),
+      onShow: () => {
+        if (bar.open) bar.hide();
+      },
+      say: (t) => say(t),
+      wake: () => wake(),
+    });
+
+    ctrl.append(tray.el);
+
+    // Recense's tray (note 30) is its own controller: while Recense follows this tab its values drive this
+    // chain (not saved as Gallery's prefs), and the bridge is told so it never takes the element a second time
+    if (document.documentElement.dataset.recenseFx === "1") {
+      window.addEventListener("message", (e) => {
+        const fx = e.source === window && e.data && e.data.recenseFx;
+        if (!fx) return;
+        window.postMessage({ recenseFxAck: true }, location.origin);
+        EQ_BANDS.forEach((b) => (prefs.eq[b.id] = Number(fx.eq && fx.eq[b.id]) || 0));
+        prefs.key = Number(fx.key) || 0;
+        prefs.space.mix = Math.max(-100, Math.min(100, Number(fx.mix) || 0));
+        prefs.space.on = !!prefs.space.mix;
+        if (fx.room && ROOMS[fx.room]) prefs.space.room = fx.room;
+        if (!ensureEq() || !nodes) return tray.bump();
+        const t = audioCtx.currentTime;
+        EQ_BANDS.forEach((b) => {
+          nodes.f[b.id].gain.cancelScheduledValues(t);
+          nodes.f[b.id].gain.setTargetAtTime(prefs.eq[b.id], t, 0.03);
+        });
+        const g = eqTrim();
+        nodes.trim.gain.cancelScheduledValues(t);
+        nodes.trim.gain.setTargetAtTime(g, t, g < nodes.trim.gain.value ? 0.005 : 0.06);
+        applyKey();
+        applySpace();
+        tray.bump();
+      });
+    }
 
     // ----- the sound: EQ, then Key, then Space, one chain on the media element -----
     //
@@ -1564,10 +1827,65 @@
 
     let nodes = null;
 
+    // Volume: a gentle taper (level squared) so equal steps sound equal. With the graph running it
+    // is a master gain at the very end; before that it is the element's own volume. (iPhone keeps
+    // the element at full and ignores changes to it, so there the graph is started on the first
+    // change and the gain does the work.)
+    const volGain = () => prefs.vol * prefs.vol;
+
+    const applyVol = () => {
+      if (nodes && nodes.master) {
+        nodes.master.gain.setTargetAtTime(volGain(), audioCtx.currentTime, 0.015);
+        return;
+      }
+
+      try {
+        el.volume = volGain();
+      } catch (x) {}
+    };
+
+    const setVol = (v) => {
+      prefs.vol = clamp(v);
+      applyVol();
+
+      if (!nodes && Math.abs(el.volume - volGain()) > 0.02 && ensureEq()) applyVol();
+    };
+
+    // the gain that takes back the EQ's highest peak (1 when nothing is boosted), worked out from
+    // the bands as they will be, across the audible range
+    const TRIM_F = new Float32Array(96).map((_, i) => 20 * Math.pow(1000, i / 95));
+    const eqTrim = () => {
+      if (!audioCtx || !EQ_BANDS.some((b) => prefs.eq[b.id] > 0)) return 1;
+
+      const sum = new Float32Array(TRIM_F.length);
+      const mag = new Float32Array(TRIM_F.length);
+      const ph = new Float32Array(TRIM_F.length);
+
+      try {
+        const probe = audioCtx.createBiquadFilter();
+        EQ_BANDS.forEach((b) => {
+          probe.type = b.type;
+          probe.frequency.value = b.f;
+          probe.Q.value = b.q;
+          probe.gain.value = prefs.eq[b.id];
+          probe.getFrequencyResponse(TRIM_F, mag, ph);
+          mag.forEach((m, i) => (sum[i] += 20 * Math.log10(Math.max(m, 1e-6))));
+        });
+      } catch (x) {
+        return Math.pow(10, -Math.max(...EQ_BANDS.map((b) => prefs.eq[b.id])) / 20);
+      }
+
+      return Math.min(1, Math.pow(10, -Math.max(0, ...sum) / 20));
+    };
+
     const eqIsFlat = () => !prefs.eq.low && !prefs.eq.mid && !prefs.eq.high;
+    const soundPlain = () => eqIsFlat() && !prefs.key && !spaceOn() && !prefs.vox;
+
+    let ctxWait = false;
 
     const ensureEq = () => {
       if (nodes) return true;
+      if (webAudioDead && !DECK) return false;
 
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return false;
@@ -1579,9 +1897,34 @@
           audioCtx = new AC();
         }
 
+        // Firefox: an element taken into a context that isn't running goes silent, and on some Macs
+        // the context never starts. So the element stays as it is until the context runs; the
+        // graph is built then, with every setting as it is by that time.
+        if (!DECK && audioCtx.state !== "running") {
+          if (!ctxWait) {
+            ctxWait = true;
+            const c = audioCtx;
+            const go = () => {
+              if (c !== audioCtx) {
+                // closed meanwhile: the next play makes a new one
+                ctxWait = false;
+                return c.removeEventListener("statechange", go);
+              }
+              if (c.state !== "running" || !ctxWait) return;
+              ctxWait = false;
+              c.removeEventListener("statechange", go);
+              if (!nodes && (!eqIsFlat() || prefs.key || spaceOn()) && ensureEq()) applyVol();
+            };
+            audioCtx.addEventListener("statechange", go);
+            audioCtx.resume().then(go, () => {});
+          }
+          return "wait";
+        }
+
         // Safari: the deck plays into this once it has sound, and the element stays as it is until
         // then. Elsewhere: the element itself.
         const src = DECK ? audioCtx.createGain() : audioCtx.createMediaElementSource(el);
+        if (!DECK) el.dataset.galleryFx = "1"; // Recense's bridge drives this chain instead of taking the element twice
         const f = {};
         let prev = src;
 
@@ -1596,31 +1939,162 @@
           f[b.id] = n;
         });
 
+        // headroom: as much as the EQ raises its loudest frequency is taken off again, so a boost
+        // never clips (clipping is the crackle); flat EQ leaves it at exactly 1
+        const trim = audioCtx.createGain();
+        trim.gain.value = eqTrim();
+        prev.connect(trim);
+        prev = trim;
+
+        // the extractor (SPEC 30): dry until it is asked for, then crossfaded to the worklet
+        const voxDry = audioCtx.createGain();
+        const voxWet = audioCtx.createGain();
+        const voxSum = audioCtx.createGain();
+        voxWet.gain.value = 0;
+        // The dry paths run as late as the worklets do (Vox a 4096-frame frame, Key 2048), so a crossfade
+        // joins the same moment of the sound, not two 46-85 ms apart. That delay is there all the time
+        // (moving it would be the same jump), so it is only on a sound-only element: a video keeps its
+        // dry path undelayed, lips in sync, and its crossfades jump.
+        const lag = el.tagName === "VIDEO" ? 0 : 1;
+        const voxDly = audioCtx.createDelay(1);
+        voxDly.delayTime.value = (lag * DELAY.vox) / audioCtx.sampleRate;
+        prev.connect(voxDly);
+        voxDly.connect(voxDry);
+        voxDry.connect(voxSum);
+        voxWet.connect(voxSum);
+        prev = voxSum;
+
         const keyDry = audioCtx.createGain();
         const keyWet = audioCtx.createGain();
         const mix = audioCtx.createGain();
         const spDry = audioCtx.createGain();
+        const master = audioCtx.createGain();
 
         keyWet.gain.value = 0;
-        prev.connect(keyDry);
+        master.gain.value = volGain();
+        const keyDly = audioCtx.createDelay(1);
+        // (on the deck the Key stage here stays dry: the deck shifts the key itself)
+        const klag = DECK ? 0 : lag;
+        keyDly.delayTime.value = (klag * DELAY.key) / audioCtx.sampleRate;
+        const dryLag = (lag * DELAY.vox + klag * DELAY.key) / audioCtx.sampleRate;
+        prev.connect(keyDly);
+        keyDly.connect(keyDry);
         keyDry.connect(mix);
         keyWet.connect(mix);
         mix.connect(spDry);
-        spDry.connect(audioCtx.destination);
+        spDry.connect(master);
 
-        nodes = { src, mode: DECK ? "deck" : "tap", tap: null, f, last: prev, keyDry, keyWet, mix, spDry, key: null, keyState: "off", sp: null };
+        // the safety stage (see safeCurve()): half the level in, the curve gives it back whole
+        const half = audioCtx.createGain();
+        const safe = audioCtx.createWaveShaper();
+        half.gain.value = 0.5;
+        safe.curve = safeCurve();
+        master.connect(half);
+        half.connect(safe);
+        safe.connect(audioCtx.destination);
+
+        if (!DECK) ctxEls.add(el);
+        nodes = { src, mode: DECK ? "deck" : "tap", tap: null, f, trim, last: prev, half, safe, keyDly, voxDly, dryLag, keyDry, keyWet, mix, spDry, master, key: null, keyState: "off", sp: null, voxDry, voxWet, voxSum, vox: null, voxState: "off" };
+
+        // the master gain carries the level from here on
+        if (!DECK) {
+          try {
+            el.volume = 1;
+          } catch (x) {}
+        }
 
         if (audioCtx.state !== "running") audioCtx.resume().catch(() => {});
+        if (!DECK) {
+          const n = nodes;
+          const an = audioCtx.createAnalyser();
+          const buf = new Float32Array(512);
+          let quiet = 0;
+          let stuck = 0;
+          let last = -1;
+          let lastCtx = -1;
+          let waiting = 0;
+
+          an.fftSize = 512;
+          n.master.connect(an);
+
+          const watch = setInterval(() => {
+            if (nodes !== n) return clearInterval(watch);
+            if (el.paused || el.ended) {
+              quiet = stuck = waiting = 0;
+              last = el.currentTime;
+              lastCtx = audioCtx.currentTime;
+              return;
+            }
+
+            if (!audioCtx) return clearInterval(watch);
+            if (audioCtx.state !== "running") {
+              audioCtx.resume().catch(() => {});
+              // waking from its sleep after a pause takes a moment; only a context that stays down is said
+              if (++waiting >= 2) say("Sound engine is waiting: press play once more");
+              return;
+            }
+            waiting = 0;
+
+            an.getFloatTimeDomainData(buf);
+
+            let peak = 0;
+            for (const x of buf) peak = Math.max(peak, Math.abs(x));
+
+            const moving = el.currentTime !== last;
+            last = el.currentTime;
+            quiet = moving && peak < 1e-5 && prefs.vol > 0 ? quiet + 1 : 0;
+
+            // the context says it runs but its clock stands still: nothing is being played out
+            stuck = moving && audioCtx.currentTime === lastCtx ? stuck + 1 : 0;
+            lastCtx = audioCtx.currentTime;
+
+            if (stuck >= 2 || quiet >= 6) {
+              clearInterval(watch);
+              soundDied();
+            }
+          }, 1000);
+        }
+
         if (DECK) startDeck();
 
         // a later player picks Key and Space up where you left them
         if (prefs.key) applyKey();
         if (spaceOn()) applySpace();
+        if (prefs.vox) applyVox();
 
         return true;
       } catch (e) {
         return false;
       }
+    };
+
+    // the graph went silent: carry on from here as plain playback, in a fresh element
+    const soundDied = () => {
+      if (webAudioDead) return;
+      webAudioDead = true;
+      ctxClose(); // a dead context still holds the browser's output: let it go
+
+      const at = el.currentTime;
+      const go = !el.paused;
+      const item = items[cur];
+
+      show(cur);
+      if (items[cur] !== item) return;
+
+      const n = stageMedia();
+      if (!n) return;
+
+      const resume = () => {
+        try {
+          n.currentTime = at;
+        } catch (x) {}
+        if (go) n.play().catch(() => {});
+      };
+
+      if (n.readyState >= 1) resume();
+      else n.addEventListener("loadedmetadata", resume, { once: true });
+
+      sayAll("Sound effects stopped working in this browser: playing without them");
     };
 
     // ----- the deck (Safari) -----
@@ -1645,7 +2119,23 @@
       if (!deck || deck.live) return;
 
       deck.live = true;
-      el.muted = true;
+
+      // Now Playing (lock screen, Control Center) follows only an audible element, and a muted
+      // one drops out of it (SPEC 69). So the element's own sound is taken into Web Audio and let
+      // out at nothing instead: the element stays what the lock screen shows and scrubs.
+      if (!deck.hush) {
+        try {
+          const t = audioCtx.createMediaElementSource(el);
+          const z = audioCtx.createGain();
+          z.gain.value = 0;
+          t.connect(z);
+          z.connect(audioCtx.destination);
+          deck.hush = { t, z };
+        } catch (x) {
+          el.muted = true;
+        }
+      }
+
       deckGo();
     };
 
@@ -1694,7 +2184,13 @@
       const d = deck;
       if (!d || !d.live || typeof m.at !== "number") return;
 
-      if (!el.paused && !el.seeking && m.playing && Math.abs(m.at - el.currentTime) > 0.3 + 0.15 * el.playbackRate) {
+      // where the deck is, and when we heard so: the transcript runs on this, the sound you hear
+      d.at = m.at;
+      d.atWall = performance.now();
+      d.playing = !!m.playing;
+
+      // kept within a beat of the picture; at speed a drift grows faster, so it is caught sooner
+      if (!el.paused && !el.seeking && m.playing && Math.abs(m.at - el.currentTime) > 0.2 + 0.05 * el.playbackRate) {
         deckPost({ seek: el.currentTime });
       }
 
@@ -1704,6 +2200,23 @@
         d.lastCi = ci;
         feed();
       }
+    };
+
+    // The media time being heard right now. With the deck (Safari) that is the deck's own position,
+    // carried forward from its last report, less its vocoder delay and the device's output latency;
+    // otherwise the element's clock, less the output latency once Web Audio carries the sound.
+    const heard = () => {
+      const r = el.playbackRate || 1;
+      const out = audioCtx ? (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0) : 0;
+      const d = deck;
+
+      if (d && d.live && typeof d.at === "number" && !el.paused && !el.seeking) {
+        const ran = d.playing ? (performance.now() - d.atWall) / 1000 : 0;
+        const t = d.at + (Math.min(ran, 0.5) - out - DELAY.deck / audioCtx.sampleRate - (nodes ? nodes.dryLag || 0 : 0)) * r;
+        if (Math.abs(t - el.currentTime) < 1.5) return Math.max(0, t);
+      }
+
+      return Math.max(0, el.currentTime - (nodes && !el.paused ? (out + (nodes.dryLag || 0)) * r : 0));
     };
 
     const startDeck = () => {
@@ -1742,8 +2255,8 @@
 
           n.mode = "tap";
 
-          if (speed !== 1) {
-            setSpeed(1);
+          if (bar.speed !== 1) {
+            bar.setSpeed(1);
             say("Speed is 1× with Sound on, for this file");
           }
 
@@ -1769,6 +2282,74 @@
       deckPost({ speed: el.playbackRate });
       feed();
     });
+
+    // --- the extractor (SPEC 30) ---
+    //
+    // Like Key: the worklet (player-key.js, "pdc-vox") is crossfaded in once it has had a frame to
+    // work on, and out to the dry path at 0. A recording with no stereo (all centre) says so once.
+
+    const applyVox = () => {
+      const n = nodes;
+      const v = prefs.vox;
+
+      if (!v) {
+        if (n.voxState === "off") return;
+        n.voxState = "off";
+        n.voxDry.gain.setTargetAtTime(1, audioCtx.currentTime, 0.012);
+        n.voxWet.gain.setTargetAtTime(0, audioCtx.currentTime, 0.012);
+        setTimeout(() => {
+          if (nodes === n && n.voxState === "off" && n.vox) {
+            n.vox.port.postMessage({ end: true });
+            n.vox.disconnect();
+            n.vox = null;
+          }
+        }, 150);
+        return;
+      }
+
+      if (n.vox) {
+        n.vox.port.postMessage({ amount: v });
+        return;
+      }
+
+      workletReady().then(
+        () => {
+          if (nodes !== n || !prefs.vox || n.vox) return;
+
+          const x = new AudioWorkletNode(audioCtx, "pdc-vox", {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: "explicit",
+            channelInterpretation: "speakers",
+            processorOptions: { amount: prefs.vox },
+          });
+
+          x.port.onmessage = (e) => {
+            if (e.data && e.data.mono && nodes === n && prefs.vox < 0) say("This recording is mono: there is no centre to take the vocals out of");
+          };
+
+          n.trim.connect(x);
+          x.connect(n.voxWet);
+          n.vox = x;
+          n.voxState = "warming";
+
+          setTimeout(() => {
+            if (nodes !== n || n.voxState !== "warming") return;
+            n.voxState = "on";
+            n.voxDry.gain.setTargetAtTime(0, audioCtx.currentTime, 0.012);
+            n.voxWet.gain.setTargetAtTime(1, audioCtx.currentTime, 0.012);
+          }, 120);
+        },
+        () => {
+          if (nodes !== n) return;
+          prefs.vox = 0;
+          tray.paint();
+          say("The extractor isn’t available in this browser");
+        }
+      );
+    };
 
     // --- Key ---
     //
@@ -1847,28 +2428,11 @@
           if (nodes !== n) return;
 
           prefs.key = 0;
-          paintKey();
-          paintEq();
+          tray.paintKey();
+          tray.paintEq();
           say("Key isn’t available in this browser");
         }
       );
-    };
-
-    const setKey = (st) => {
-      st = Math.round(clamp(st, -KEY_MAX, KEY_MAX));
-      if (st === prefs.key) return;
-
-      prefs.key = st;
-
-      if (!ensureEq()) {
-        prefs.key = 0;
-        say("Key isn’t available in this browser");
-      } else {
-        applyKey();
-      }
-
-      paintKey();
-      paintEq();
     };
 
     // --- Space ---
@@ -1888,21 +2452,22 @@
     const applySpace = () => {
       const n = nodes;
       const t = audioCtx.currentTime;
-      const m = spaceOn() ? prefs.space.mix / 100 : 0;
+      const m = spaceOn() ? Math.abs(prefs.space.mix) / 100 : 0;
+      const rev = prefs.space.mix < 0;
 
-      if (m > 0 && (!n.sp || n.sp.room !== prefs.space.room)) {
+      if (m > 0 && (!n.sp || n.sp.room !== prefs.space.room || n.sp.rev !== rev)) {
         const old = n.sp;
 
         try {
           const conv = audioCtx.createConvolver();
           const wet = audioCtx.createGain();
 
-          conv.buffer = roomIR(prefs.space.room);
+          conv.buffer = roomIR(prefs.space.room, rev);
           wet.gain.value = 0;
           n.mix.connect(conv);
           conv.connect(wet);
-          wet.connect(audioCtx.destination);
-          n.sp = { conv, wet, room: prefs.space.room };
+          wet.connect(n.master);
+          n.sp = { conv, wet, room: prefs.space.room, rev };
         } catch (e) {
           say("Space isn’t available in this browser");
           return;
@@ -1918,12 +2483,12 @@
       }
 
       // a little less dry as the room grows, so the whole stays about as loud
-      n.spDry.gain.setTargetAtTime(1 - 0.35 * m, t, 0.02);
+      n.spDry.gain.setTargetAtTime(spaceGain(m).dry, t, 0.012);
 
       if (!n.sp) return;
 
       if (m > 0) {
-        n.sp.wet.gain.setTargetAtTime(m * 0.85, t, 0.02);
+        n.sp.wet.gain.setTargetAtTime(spaceGain(m).wet, t, 0.012);
       } else {
         const r = n.sp;
 
@@ -1938,1328 +2503,29 @@
       }
     };
 
-    const setSpace = (mix, on) => {
-      const old = { ...prefs.space };
-
-      prefs.space.mix = Math.round(clamp(mix, 0, 100));
-      prefs.space.on = on;
-
-      if (!ensureEq()) {
-        prefs.space = old;
-        say("Space isn’t available in this browser");
-      } else {
-        applySpace();
-      }
-
-      paintSpace();
-      paintEq();
-    };
-
-    const paintBand = (id) => {
-      const db = prefs.eq[id];
-      const b = bands[id];
-      const pct = ((EQ_MAX - db) / (EQ_MAX * 2)) * 100;
-
-      b.knob.style.top = pct + "%";
-
-      if (db >= 0) {
-        b.fill.style.top = pct + "%";
-        b.fill.style.height = 50 - pct + "%";
-      } else {
-        b.fill.style.top = "50%";
-        b.fill.style.height = pct - 50 + "%";
-      }
-
-      b.val.textContent = (db > 0 ? "+" : db < 0 ? "−" : "") + Math.abs(db);
-      b.col.classList.toggle("on", db !== 0);
-      b.trk.setAttribute("aria-valuenow", String(db));
-      b.trk.setAttribute("aria-valuetext", (db > 0 ? "+" : "") + db + " dB");
-    };
-
-    const paintKey = () => {
-      const st = prefs.key;
-      const txt = (st > 0 ? "+" : st < 0 ? "−" : "") + Math.abs(st);
-      const pct = ((KEY_MAX - st) / (KEY_MAX * 2)) * 100;
-
-      key.knob.style.top = pct + "%";
-      key.fill.style.top = Math.min(pct, 50) + "%";
-      key.fill.style.height = Math.abs(50 - pct) + "%";
-      key.val.textContent = txt;
-      key.val.setAttribute(
-        "aria-label",
-        st ? "Key " + txt + " semitones — tap to return to the original key" : "Key: original"
-      );
-      key.val.title = st ? "Tap for the original key" : "Original key";
-      key.col.classList.toggle("on", st !== 0);
-      key.trk.setAttribute("aria-valuenow", String(st));
-      key.trk.setAttribute("aria-valuetext", st ? txt + " semitones" : "original key");
-    };
-
-    const paintSpace = () => {
-      const m = prefs.space.mix;
-      const on = spaceOn();
-      const room = ROOMS[prefs.space.room].label;
-
-      sp.knob.style.top = 100 - m + "%";
-      sp.fill.style.top = 100 - m + "%";
-      sp.fill.style.height = m + "%";
-      sp.val.textContent = on ? m + "%" : "Off";
-      sp.val.setAttribute(
-        "aria-label",
-        on ? "Space " + m + "% — tap to bypass" : m ? "Space bypassed — tap to bring it back" : "Space off"
-      );
-      sp.lab.textContent = room;
-      sp.lab.setAttribute("aria-label", room + " — tap for " + (room === "Room" ? "Hall" : "Room"));
-      sp.col.classList.toggle("on", on);
-      sp.trk.setAttribute("aria-valuenow", String(on ? m : 0));
-      sp.trk.setAttribute("aria-valuetext", on ? room + " " + m + "%" : "off");
-    };
-
-    // keepCurve: leave the curve to an animation that is under way
-    const paintEq = (keepCurve) => {
-      EQ_BANDS.forEach((b) => paintBand(b.id));
-
-      const flat = eqIsFlat();
-      const plain = flat && !prefs.key && !spaceOn();
-
-      eqBtn.classList.toggle("on", !plain);
-      eqFlat.hidden = flat;
-      graph.classList.toggle("on", !flat);
-      eqBtn.setAttribute("aria-label", plain ? "Sound (untouched)" : "Sound (shaped)");
-
-      if (!keepCurve && !eq.hidden) {
-        cancelAnimationFrame(curveRaf);
-        shown = { ...prefs.eq };
-        drawCurve(shown);
-      }
-    };
-
-    const setBand = (id, db) => {
-      db = Math.round(clamp(db, -EQ_MAX, EQ_MAX));
-
-      const old = prefs.eq[id];
-      prefs.eq[id] = db;
-
-      if (!ensureEq()) {
-        prefs.eq[id] = old;
-        paintEq();
-        say("EQ isn’t available in this browser");
-        return;
-      }
-
-      nodes.f[id].gain.setTargetAtTime(db, audioCtx.currentTime, 0.015);
-      paintEq();
-    };
-
-    let bDrag = null;
-
-    EQ_BANDS.forEach((b) => {
-      const o = bands[b.id];
-
-      const from = (e) => {
-        const r = o.inn.getBoundingClientRect();
-        const f = r.height ? clamp((e.clientY - r.top) / r.height) : 0.5;
-        setBand(b.id, EQ_MAX - f * EQ_MAX * 2);
-      };
-
-      o.trk.onpointerdown = (e) => {
-        bDrag = b.id;
-
-        try {
-          o.trk.setPointerCapture(e.pointerId);
-        } catch (x) {}
-
-        from(e);
-        bumpEq();
-        wake();
-      };
-
-      o.trk.onpointermove = (e) => {
-        if (bDrag !== b.id) return;
-        from(e);
-        bumpEq();
-      };
-
-      o.trk.onpointerup = o.trk.onpointercancel = () => {
-        bDrag = null;
-        bumpEq();
-      };
-
-      o.trk.onkeydown = (e) => {
-        const db = prefs.eq[b.id];
-        let n = null;
-
-        if (e.key === "ArrowUp") n = db + 1;
-        else if (e.key === "ArrowDown") n = db - 1;
-        else if (e.key === "PageUp") n = db + 3;
-        else if (e.key === "PageDown") n = db - 3;
-        else if (e.key === "Home") n = EQ_MAX;
-        else if (e.key === "End") n = -EQ_MAX;
-        else if (e.key === "0" || e.key === "Backspace") n = 0;
-
-        if (n === null) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-        setBand(b.id, n);
-        bumpEq();
-      };
-
-      // tap a band's name to put just that band back to flat
-      o.lab.onclick = (e) => {
-        e.stopPropagation();
-        setBand(b.id, 0);
-        flash(o.col);
-        bumpEq();
-      };
-    });
-
-    eqFlat.onclick = (e) => {
-      e.stopPropagation();
-      EQ_BANDS.forEach((b) => setBand(b.id, 0));
-      say("EQ flat");
-      bumpEq();
-    };
-
-    const KEY_PX = 9; // finger travel per semitone
-    let kg = null;
-
-    key.trk.onpointerdown = (e) => {
-      kg = { id: e.pointerId, y: e.clientY, st: prefs.key, moved: false };
-      bDrag = "key";
-
-      try {
-        key.trk.setPointerCapture(e.pointerId);
-      } catch (x) {}
-
-      bumpEq();
-      wake();
-    };
-
-    key.trk.onpointermove = (e) => {
-      if (!kg || e.pointerId !== kg.id) return;
-
-      const dy = kg.y - e.clientY;
-
-      if (!kg.moved && Math.abs(dy) < 5) return;
-
-      kg.moved = true;
-      setKey(kg.st + Math.round(dy / KEY_PX));
-      bumpEq();
-    };
-
-    key.trk.onpointerup = (e) => {
-      if (kg && !kg.moved) {
-        // a tap: one semitone towards where you tapped
-        const r = key.knob.getBoundingClientRect();
-        const mid = r.top + r.height / 2;
-
-        if (e.clientY < mid - 3) setKey(prefs.key + 1);
-        else if (e.clientY > mid + 3) setKey(prefs.key - 1);
-      }
-
-      kg = null;
-      bDrag = null;
-      bumpEq();
-    };
-
-    key.trk.onpointercancel = () => {
-      kg = null;
-      bDrag = null;
-    };
-
-    key.trk.onkeydown = (e) => {
-      let n = null;
-
-      if (e.key === "ArrowUp") n = prefs.key + 1;
-      else if (e.key === "ArrowDown") n = prefs.key - 1;
-      else if (e.key === "PageUp") n = prefs.key + 12;
-      else if (e.key === "PageDown") n = prefs.key - 12;
-      else if (e.key === "0" || e.key === "Backspace" || e.key === "Home") n = 0;
-
-      if (n === null) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      setKey(n);
-      bumpEq();
-    };
-
-    key.val.onclick = (e) => {
-      e.stopPropagation();
-      if (!prefs.key) return;
-      say("Original key");
-      setKey(0);
-      flash(key.col);
-      bumpEq();
-    };
-
-    const spFrom = (e) => {
-      const r = sp.inn.getBoundingClientRect();
-      const f = r.height ? clamp((e.clientY - r.top) / r.height) : 1;
-      setSpace((1 - f) * 100, true);
-    };
-
-    sp.trk.onpointerdown = (e) => {
-      bDrag = "space";
-
-      try {
-        sp.trk.setPointerCapture(e.pointerId);
-      } catch (x) {}
-
-      spFrom(e);
-      bumpEq();
-      wake();
-    };
-
-    sp.trk.onpointermove = (e) => {
-      if (bDrag !== "space") return;
-      spFrom(e);
-      bumpEq();
-    };
-
-    sp.trk.onpointerup = sp.trk.onpointercancel = () => {
-      bDrag = null;
-      bumpEq();
-    };
-
-    sp.trk.onkeydown = (e) => {
-      const m = spaceOn() ? prefs.space.mix : 0;
-      let n = null;
-
-      if (e.key === "ArrowUp") n = m + 5;
-      else if (e.key === "ArrowDown") n = m - 5;
-      else if (e.key === "PageUp") n = m + 20;
-      else if (e.key === "PageDown") n = m - 20;
-      else if (e.key === "Home") n = 100;
-      else if (e.key === "End" || e.key === "0" || e.key === "Backspace") n = 0;
-
-      if (n === null) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      setSpace(n, true);
-      bumpEq();
-    };
-
-    // the value is the bypass: dry and back, keeping the amount
-    sp.val.onclick = (e) => {
-      e.stopPropagation();
-      if (!prefs.space.mix) return;
-      setSpace(prefs.space.mix, !prefs.space.on);
-      say(spaceOn() ? "Space on" : "Space bypassed");
-      flash(sp.col);
-      bumpEq();
-    };
-
-    // the name is the room
-    sp.lab.onclick = (e) => {
-      e.stopPropagation();
-      prefs.space.room = prefs.space.room === "room" ? "hall" : "room";
-      if (nodes && spaceOn()) applySpace();
-      paintSpace();
-      say(ROOMS[prefs.space.room].label);
-      flash(sp.col);
-      bumpEq();
-    };
-
-    // ----- the gestures on the home bar -----
+    // ----- the vertical bar's gestures are homebar.js's -----
     //
-    //                  mouse (macOS, or any pointer)       touch (iPhone, iPad, pen)
-    //   rest           just the stroke                     just the stroke
-    //   hover          unfolds to Loop · A–B               (no hover)
-    //   click / tap    Speed (click again: Loop · A–B)     1st tap: Loop · A–B
-    //                                                      2nd tap: Speed   3rd tap: Loop · A–B
-    //   press and hold  Time Seeking (ruler opens at now)   Time Seeking (ruler opens at now)
-    //   two fingers     swipe on the trackpad: Time Seeking  two fingers on the stroke, swipe: Time Seeking
-    //
-    // Hover never changes anything but the fold. A tap or click never seeks: seeking needs a press
-    // that is held (0.22s with a mouse, 0.4s with a finger), which opens the ruler where you are,
-    // and then slides along the stroke; or two fingers swiping along it. A single finger that moves
-    // before the hold is a swipe and is ignored. The bar folds itself after a few
-    // quiet seconds, when you tap elsewhere, or on Escape; Speed hands back to Loop · A–B after a
-    // few quiet seconds of its own. < and > on the keyboard bring Speed up too.
-
-    let hbOpen = false;
-    let hbMode = "loop"; // what the bar shows: "loop" (Track Loop · A–B), "speed", or "seek" (the ruler)
-    let modeT = 0;
-    let hbT = 0;
-    let hbEnterT = 0;
-    let hbEnterArmed = false;
-    let hbHover = false;
-
-    let g = null; // the press that is on the stroke right now
-    let holdT = 0;
-    let ptype = ""; // who pressed last: "mouse", "touch", or "" for the keyboard
-    let suppressClick = false; // a press that turned into a seek (or a swipe) is not also a click
-    let tDrag = false; // a time seek is under way
-    let sk = null; // the seek session (ruler geometry, window, position)
-    let seekT = 0;
-    let liveT = 0;
-    let lastSeekAt = 0;
-    let tFlashT = 0;
-    let seekEndAt = -1e9;
-
-    let eqOpen = false;
-    let eqT = 0;
-    let eqEnterT = 0;
-    let hoverEqBtn = false;
-    let hoverEq = false;
-
-    // paint which of the two layers is showing, and what tapping the stroke would do next
-    const paintMode = () => {
-      hb.dataset.mode = hbMode;
-      row.setAttribute("aria-hidden", String(!hbOpen || hbMode !== "loop"));
-      speedRow.setAttribute("aria-hidden", String(!hbOpen || hbMode !== "speed"));
-
-      line.setAttribute(
-        "aria-label",
-        !hbOpen
-          ? "Open loop controls"
-          : hbMode === "loop"
-          ? "Playback speed"
-          : hbMode === "speed"
-          ? "Back to loop controls"
-          : "Seeking"
-      );
+    // Safari and iPhone only let a context start (or restart) on a finger lifting or a click, so
+    // the end of a swipe on the vertical bar is where a graph the swipe had to start is brought to life.
+    const unlockAudio = () => {
+      if (audioCtx && audioCtx.state !== "running") audioCtx.resume().catch(() => {});
     };
 
-    const setHb = (on) => {
-      hbOpen = on;
-      hb.dataset.open = on ? "true" : "false";
-      line.setAttribute("aria-expanded", String(on));
-      w.classList.toggle("tools", on);
-      paintMode();
+    // Holding the vertical bar while it is blue puts everything it stands for back: the sound, the
+    // text size and the original's prominence. It turns white again.
+    const resetAll = () => {
+      if (!soundPlain()) tray.reset();
+      if (prefs.txScale !== 1) setTextScale(1);
+      if (prefs.prominence != null) setProminence(null);
+      vbar.paint();
     };
 
-    // Speed hands the bar back to Loop · A–B after a few quiet seconds (never mid-drag).
-    const armMode = () => {
-      clearTimeout(modeT);
-
-      modeT = setTimeout(() => {
-        if (sDrag) armMode();
-        else setMode("loop");
-      }, 5200);
-    };
-
-    const setMode = (m) => {
-      hbMode = m;
-      clearTimeout(modeT);
-      paintMode();
-      if (m === "speed") armMode();
-    };
-
-    const hideHb = () => {
-      clearTimeout(hbT);
-      clearTimeout(modeT); // the mode is left as it is while the bar folds; the next unfold resets it
-      setHb(false);
-      wake();
-    };
-
-    // Opening: the stroke rises to the height of what it holds; the controls are uncovered
-    // leftwards out of it; the beads travel up from rest and the curve swells out of the flat
-    // line, so the shaping you left reappears as if it had been inside the stroke all along.
-    // Closing runs the same story backwards, quicker.
-    let eqShowT = 0;
-    let travels = [];
-    const still = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
-    const EASE = "cubic-bezier(.2,.9,.25,1.04)";
-
-    // every bead (and the fills that follow Key and Space), with where it rests when folded
-    const beads = () => [
-      ...EQ_BANDS.map((b) => [bands[b.id].knob, { top: "50%" }]),
-      [key.knob, { top: "50%" }],
-      [key.fill, { top: "50%", height: "0%" }],
-      [sp.knob, { top: "100%" }],
-      [sp.fill, { top: "100%", height: "0%" }],
-    ];
-
-    const stopTravels = () => {
-      travels.forEach((a) => a.cancel());
-      travels = [];
-    };
-
-    // the beads travel between rest and where they were left (Web Animations, so the browser
-    // can never skip the starting point the way a style change on a just-shown element can be)
-    const travel = (rising, ms) => {
-      stopTravels();
-      if (!document.body.animate) return;
-
-      beads().forEach(([el, rest]) => {
-        const left = {};
-        Object.keys(rest).forEach((k) => {
-          left[k] = el.style[k] || rest[k];
-        });
-
-        travels.push(
-          el.animate(rising ? [rest, left] : [left, rest], { duration: ms, easing: EASE, fill: rising ? "none" : "forwards" })
-        );
-      });
-    };
-
-    const paintSound = (keepCurve) => {
-      paintEq(keepCurve);
-      paintKey();
-      paintSpace();
-    };
-
-    const setEq = (on) => {
-      if (on === eqOpen) return;
-
-      eqOpen = on;
-      hb.classList.toggle("away", on);
-      eqBtn.setAttribute("aria-expanded", String(on));
-      clearTimeout(eqShowT);
-
-      const calm = still();
-
-      if (on) {
-        stopTravels();
-        eq.hidden = false;
-        paintSound(true);
-        eqWrap.style.setProperty("--sph", eqIn.offsetHeight + "px");
-
-        if (calm) {
-          paintEq();
-        } else {
-          cancelAnimationFrame(curveRaf);
-          shown = { low: 0, mid: 0, high: 0 };
-          drawCurve(shown);
-          travel(true, 520);
-          morph(prefs.eq, 520);
-        }
-
-        eqWrap.classList.add("open");
-        return;
-      }
-
-      eqWrap.classList.remove("open");
-
-      if (!calm) {
-        travel(false, 240);
-        morph({ low: 0, mid: 0, high: 0 }, 240);
-      }
-
-      eqShowT = setTimeout(() => {
-        if (eqOpen) return;
-        cancelAnimationFrame(curveRaf);
-        stopTravels();
-        eq.hidden = true;
-      }, calm ? 0 : 320);
-    };
-
-    // a finger on a bead mid-flight takes it from there
-    eq.addEventListener("pointerdown", () => stopTravels(), true);
-
-    // ----- two fingers on a trackpad, upright -----
-    //
-    // The vertical twin of the swipe on the home bar, at the same sensitivity: one pixel of
-    // fingers is one pixel of control, exactly as one pixel is one pixel of ruler there. Over a
-    // band, Key or Space, swiping up raises it and down lowers it, following the fingers whatever
-    // "natural scrolling" is set to. Over the folded stroke, swiping up unfolds it. The swipe is
-    // over when the wheel events stop coming. Sideways swipes are left alone.
-
-    let vs = null; // { col, from, sum, t }
-
-    const colOf = (t) => {
-      const c = t && t.closest && t.closest(".p-band");
-      if (!c) return null;
-      if (c === key.col) return "key";
-      if (c === sp.col) return "space";
-      const b = EQ_BANDS.find((x) => bands[x.id].col === c);
-      return b ? b.id : null;
-    };
-
-    const valueOf = (c) => (c === "key" ? prefs.key : c === "space" ? (spaceOn() ? prefs.space.mix : 0) : prefs.eq[c]);
-
-    const wheelUp = (e) => {
-      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      const inverted = e.webkitDirectionInvertedFromDevice !== false;
-      return { up: (inverted ? e.deltaY : -e.deltaY) * k, side: Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2 };
-    };
-
-    eqWrap.addEventListener(
-      "wheel",
-      (e) => {
-        if (e.ctrlKey) return; // a pinch
-
-        const w2 = wheelUp(e);
-
-        if (!eqOpen) {
-          if (w2.side || !e.target.closest(".p-eqbtn")) return;
-          e.preventDefault();
-          if (w2.up > 8) showEq(4000);
-          return;
-        }
-
-        if (!vs) {
-          if (w2.side) return;
-          const c = colOf(e.target);
-          if (!c) return;
-          vs = { col: c, from: valueOf(c), sum: 0, t: 0 };
-        }
-
-        e.preventDefault(); // (also keeps the page from scrolling, or going Back)
-        if (w2.side) return;
-
-        vs.sum += w2.up;
-
-        if (vs.col === "key") {
-          setKey(vs.from + Math.round(vs.sum / KEY_PX));
-        } else {
-          const h = (vs.col === "space" ? sp.inn : bands[vs.col].inn).getBoundingClientRect().height || 100;
-
-          if (vs.col === "space") setSpace(vs.from + (vs.sum / h) * 100, true);
-          else setBand(vs.col, vs.from + (vs.sum / h) * EQ_MAX * 2);
-        }
-
-        bumpEq();
-        wake();
-        clearTimeout(vs.t);
-        vs.t = setTimeout(() => {
-          vs = null;
-        }, 180);
-      },
-      { passive: false }
-    );
-
-    const hideEq = () => {
-      clearTimeout(eqT);
-      setEq(false);
-      wake();
-    };
-
-    const showHb = (ms = 4500, mode) => {
-      if (eqOpen) hideEq(); // one tray at a time
-      if (!hbOpen) hbMode = "loop"; // every unfold starts with Loop · A–B…
-      if (mode) hbMode = mode; //      …unless speed is what was asked for
-      setHb(true);
-      if (mode === "speed") armMode();
-      clearTimeout(hbT);
-
-      hbT = setTimeout(() => {
-        if (hbHover || sDrag || tDrag) showHb(1200);
-        else hideHb();
-      }, ms);
-
-      wake();
-    };
-
-    const showEq = (ms = 4000) => {
-      if (hbOpen) hideHb();
-      setEq(true);
-      clearTimeout(eqT);
-
-      eqT = setTimeout(() => {
-        if (hoverEqBtn || hoverEq || bDrag) showEq(1200);
-        else hideEq();
-      }, ms);
-
-      wake();
-    };
-
-    const bumpHb = () => {
-      if (!hbOpen) return;
-      showHb(4500);
-      if (hbMode === "speed") armMode();
-    };
-
-    const bumpEq = () => {
-      if (eqOpen) showEq(4000);
-    };
-
-    // Resting on the bar unfolds it a moment later. (One timer at a time.)
-    const armEnter = () => {
-      if (hbEnterArmed) return;
-
-      hbEnterArmed = true;
-
-      hbEnterT = setTimeout(() => {
-        hbEnterArmed = false;
-        if (hbHover && !sk) showHb(4500);
-      }, 130);
-    };
-
-    const cancelEnter = () => {
-      clearTimeout(hbEnterT);
-      hbEnterArmed = false;
-    };
-
-    box.addEventListener("pointerenter", (e) => {
-      if (e.pointerType !== "mouse") return;
-
-      hbHover = true;
-      cancelEnter();
-      armEnter();
-    });
-
-    box.addEventListener("pointerleave", (e) => {
-      if (e.pointerType !== "mouse") return;
-
-      hbHover = false;
-      cancelEnter();
-      if (hbOpen && !sk) showHb(900);
-    });
-
-    // Browsers only report "entered" and "left" when they next look under the pointer, and the bar
-    // changes size under a resting pointer (the ruler collapses when a seek ends), so those
-    // reports can be stale. Any movement over the bar is proof the pointer is on it.
-    box.addEventListener("pointermove", (e) => {
-      if (e.pointerType !== "mouse" || sk || g) return;
-
-      hbHover = true;
-
-      if (!hbOpen && performance.now() - seekEndAt > 250) armEnter();
-    });
-
-    // ----- Time Seeking -----
-    //
-    // Press and hold the stroke and it becomes a temporary time ruler for the media's own length,
-    // showing where you are right now. Keep holding and slide along it to move through time from
-    // there. It is not a progress bar: it exists only while you hold, and is put away when you let
-    // go, leaving the media where you left it (or, if you never moved, exactly where it was).
-    //
-    //   - until you move, the ruler is LIVE: the playhead follows the playback, so holding still
-    //     just shows you where you are, and letting go changes nothing
-    //   - the first movement hands the playhead to your finger, measured from where you are then
-    //   - the ruler is as wide as the screen sensibly allows, with ticks and labels chosen to fit
-    //     (0:00 5:00 10:00 … for a concerto, 0:00 0:30 1:00 … for a clip, 0:00 20:00 40:00 … for a film)
-    //   - one pixel of finger is one pixel of ruler, starting from where the media is now
-    //   - slide up and the ruler zooms in around where you are (4×, 16×, 64×), so a long recording
-    //     can be settled on to the second: coarse first, then fine
-    //   - A and B show up on it, and the playhead is drawn to them like a magnet when it passes
-
-    const NICE = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 7200, 14400, 28800];
-    const MINOR = { 1: 1, 2: 2, 5: 5, 10: 5, 15: 3, 30: 6, 60: 6, 120: 4, 300: 5, 600: 5, 900: 3, 1200: 4, 1800: 6, 3600: 6, 7200: 4, 14400: 4, 28800: 4 };
-    const ZOOMS = [1, 4, 16, 64];
-    // how long a press has to last to be a hold: longer than any ordinary click or tap, so those
-    // never get taken for one
-    const HOLD = { mouse: 220, touch: 400 };
-
-    // ticks and labels for whatever stretch of time the ruler is showing right now
-    const buildRuler = () => {
-      // Pick the smallest "nice" step whose labels still fit: each label needs its own width plus
-      // some air, and a ruler never carries more than about eight stretches however wide it is.
-      // (A little tolerance, because a 30:00 file is often 1800.04 seconds long.)
-      const lblW = dur(sk.win0 + sk.L).length * 6.6 + 18;
-      const maxStretches = clamp(Math.floor(sk.W / lblW), 3, 8);
-      let step = NICE[NICE.length - 1];
-
-      for (let i = 0; i < NICE.length; i++) {
-        if (sk.L / NICE[i] <= maxStretches * 1.02) {
-          step = NICE[i];
-          break;
-        }
-      }
-
-      const sub = step / (MINOR[step] || 1);
-      const end = sk.win0 + sk.L;
-      const frag = document.createDocumentFragment();
-
-      for (let k = Math.ceil(sk.win0 / sub - 1e-9); k * sub <= end + 1e-9; k++) {
-        const t = k * sub;
-        const major = Math.abs(t / step - Math.round(t / step)) < 1e-6;
-
-        if (!major && (sk.W * sub) / sk.L < 6) continue; // too crowded to be worth drawing
-
-        const at = ((t - sk.win0) / sk.L) * 100 + "%";
-        const tk = mkEl("i", major ? "p-sktk M" : "p-sktk");
-        tk.style.left = at;
-        frag.appendChild(tk);
-
-        if (major) {
-          const lb = mkEl("span", "p-sklb");
-          lb.textContent = dur(t);
-          lb.style.left = at;
-          frag.appendChild(lb);
-        }
-      }
-
-      skTicks.replaceChildren(frag);
-    };
-
-    const paintHint = () => {
-      skHint.textContent = sk.live
-        ? "slide to seek"
-        : sk.maxLvl === 0
-        ? ""
-        : sk.lvl === 0
-        ? "slide up for finer control"
-        : "finer · " + ZOOMS[sk.lvl] + "×";
-    };
-
-    const markOnRuler = (node, t) => {
-      const x = t === null ? -1 : (t - sk.win0) / sk.L;
-      const on = x >= 0 && x <= 1;
-
-      node.classList.toggle("on", on);
-      if (on) node.style.setProperty("--x", String(x));
-    };
-
-    // the playhead, the readout that follows it, A and B, and the span between them
-    const paintSeek = () => {
-      const f = clamp((sk.t - sk.win0) / sk.L);
-      const half = 42;
-
-      hb.style.setProperty("--tx", String(f));
-      skRead.textContent = (sk.snap ? sk.snap + " · " : "") + dur(sk.t);
-      skRead.style.left = clamp(f * sk.W, half - sk.pad + 4, sk.W + sk.pad - half - 4) + "px";
-
-      markOnRuler(mkA, A);
-      markOnRuler(mkB, B);
-
-      const both = A !== null && B !== null && B > A;
-
-      if (both) {
-        const x0 = clamp((A - sk.win0) / sk.L);
-        const x1 = clamp((B - sk.win0) / sk.L);
-
-        skReg.style.setProperty("--x0", String(x0));
-        skReg.style.setProperty("--w", String(Math.max(0, x1 - x0)));
-      }
-
-      hb.classList.toggle("hasreg", both);
-    };
-
-    // the media itself is asked to move at most every 90ms, and always lands on the last value
-    const applySeek = (t, force) => {
-      const now = performance.now();
-
-      clearTimeout(seekT);
-
-      if (force || now - lastSeekAt > 90) {
-        lastSeekAt = now;
-        el.currentTime = t;
-      } else {
-        seekT = setTimeout(() => {
-          lastSeekAt = performance.now();
-          el.currentTime = t;
-        }, 90);
-      }
-    };
-
-    // sliding up zooms the ruler around the playhead; the playhead keeps its place on screen
-    const rezoom = (lvl, clientX) => {
-      const f = clamp((sk.t - sk.win0) / sk.L);
-
-      sk.lvl = lvl;
-      sk.L = lvl === 0 ? sk.d : sk.d / ZOOMS[lvl];
-      sk.win0 = lvl === 0 ? 0 : clamp(sk.t - f * sk.L, 0, sk.d - sk.L);
-      sk.x0 = clientX; // from here the finger is measured against the new scale
-      sk.t0 = sk.t;
-
-      buildRuler();
-      paintHint();
-    };
-
-    const seekMove = (e) => {
-      if (sk.live) {
-        // A held finger is never perfectly still. Movement smaller than this is the finger
-        // settling, not you sliding: ignore it, and the ruler stays live.
-        const slop = g && g.kind === "mouse" ? 3 : 6;
-
-        if (Math.abs(e.clientX - sk.x0) < slop && Math.abs(e.clientY - g.y0) < slop) return;
-
-        // the first real movement: from here your finger decides where we are, measured from where
-        // the playback is at this moment (so nothing jumps)
-        sk.live = false;
-        clearInterval(liveT);
-        sk.t = sk.t0 = el.currentTime;
-        sk.x0 = e.clientX;
-        paintHint();
-      }
-
-      const up = Math.max(0, sk.lineY - e.clientY);
-      const want = up < sk.u ? 0 : up < sk.u * 2.4 ? 1 : up < sk.u * 4 ? 2 : 3;
-      const lvl = Math.min(want, sk.maxLvl);
-
-      if (lvl !== sk.lvl) rezoom(lvl, e.clientX);
-
-      let t = clamp(sk.t0 + ((e.clientX - sk.x0) * sk.L) / sk.W, sk.win0, sk.win0 + sk.L);
-
-      sk.snap = "";
-
-      [["A", A], ["B", B]].forEach((m) => {
-        if (m[1] !== null && (Math.abs(m[1] - t) * sk.W) / sk.L < 7) {
-          t = m[1];
-          sk.snap = m[0];
-        }
-      });
-
-      sk.t = t;
-      paintSeek();
-      applySeek(t);
-    };
-
-    // Opens the ruler. Every way of seeking (a held press, two fingers, a trackpad swipe) comes
-    // through here, so they all get the same ruler, zoom and snapping. x0 is where the finger
-    // (or the pretend finger of a swipe) is when it starts. Returns false if there is no time to
-    // move through (a live stream, or nothing loaded yet).
-    const beginSeek = (x0, live) => {
-      const d = el.duration;
-
-      if (!isFinite(d) || d <= 0) return false;
-
-      tDrag = true;
-      dragging = true; // A–B stops jumping back while you are seeking
-      clearTimeout(modeT);
-      clearTimeout(hbT);
-      clearTimeout(tFlashT);
-      hb.classList.remove("tshow");
-
-      if (eqOpen) hideEq();
-
-      // The ruler's geometry comes from the width the stroke is about to have, not from measuring
-      // it mid-animation.
-      const cs = getComputedStyle(hb);
-      const padL = parseFloat(cs.paddingLeft) || 0;
-      const padR = parseFloat(cs.paddingRight) || 0;
-      const room = hb.clientWidth - padL - padR;
-      const target = Math.min(parseFloat(cs.getPropertyValue("--hbs")) || 640, room);
-      const pad = Math.max(26, Math.ceil(dur(d).length * 3.6) + 10);
-      const lr = line.getBoundingClientRect();
-
-      sk = {
-        d: d,
-        pad: pad,
-        W: Math.max(120, target - pad * 2),
-        lvl: 0,
-        win0: 0,
-        L: d,
-        maxLvl: ZOOMS.reduce((m, z, i) => (d / z >= 10 ? i : m), 0),
-        t: el.currentTime,
-        t0: el.currentTime,
-        x0: x0,
-        lineY: lr.top + lr.height / 2,
-        u: clamp(innerHeight * 0.1, 34, 64),
-        snap: "",
-        live: !!live,
-      };
-
-      hb.style.setProperty("--skpad", pad + "px");
-      hbMode = "seek";
-      setHb(true);
-      hb.classList.add("seeking");
-
-      buildRuler();
-      paintHint();
-      paintSeek();
-      wake();
-
-      // held still: the playhead keeps following the playback until you move
-      clearInterval(liveT);
-
-      if (sk.live) {
-        liveT = setInterval(() => {
-          if (!sk || !sk.live) return;
-          sk.t = sk.t0 = el.currentTime;
-          paintSeek();
-        }, 100);
-      }
-
-      return true;
-    };
-
-    // a press that was held (the ruler opens where you are), or a mouse that clearly dragged
-    const startSeek = (live) => {
-      suppressClick = true;
-
-      if (beginSeek(g.x0, live)) g.seeking = true;
-      else g.dead = true;
-    };
-
-    // the time you landed on hangs under the stroke for a moment, then goes
-    const flashTime = (t) => {
-      tval.textContent = dur(t);
-      hb.classList.add("tshow");
-      clearTimeout(tFlashT);
-      tFlashT = setTimeout(() => hb.classList.remove("tshow"), 1700);
-    };
-
-    const finishSeek = () => {
-      const s = sk;
-
-      sk = null;
-      clearTimeout(seekT);
-      clearInterval(liveT);
-
-      // land exactly where the finger let go. (Held still and let go: nothing to do at all, the
-      // media has just carried on playing.)
-      if (!s.live) el.currentTime = clamp(s.t, 0, s.d);
-      tDrag = false;
-      dragging = false;
-      seekEndAt = performance.now();
-
-      hb.classList.remove("seeking", "hasreg");
-      hbHover = false; // the bar is about to shrink under the pointer: don't trust the old hover
-      cancelEnter();
-      hideHb(); // back to the quiet stroke
-
-      flashTime(s.live ? el.currentTime : s.t);
-    };
-
-    // ----- the press itself -----
-
-    // where the fingers (or the one finger) on the stroke are, as one point
-    const centroid = () => {
-      const p = Object.keys(g.pos).map((k) => g.pos[k]);
-
-      return {
-        clientX: p.reduce((a, q) => a + q.x, 0) / p.length,
-        clientY: p.reduce((a, q) => a + q.y, 0) / p.length,
-      };
-    };
-
-    line.addEventListener("pointerdown", (e) => {
-      if (e.button) return; // the main button, or a touch contact
-
-      // A second finger on the stroke: two fingers swiping along it are the same as hold-and-drag,
-      // with no hold needed. The two fingers count as one point, halfway between them.
-      if (g && g.kind === "touch" && e.pointerType !== "mouse" && !g.two && !ws) {
-        const c0 = centroid();
-
-        g.pos[e.pointerId] = { x: e.clientX, y: e.clientY };
-        g.two = true;
-        suppressClick = true; // two fingers are never a tap
-        clearTimeout(holdT);
-
-        try {
-          line.setPointerCapture(e.pointerId);
-        } catch (x) {}
-
-        const c = centroid();
-
-        g.cx0 = c.clientX;
-        g.cy0 = c.clientY;
-
-        // already seeking with the first finger: carry on from here, without a jump
-        if (g.seeking) {
-          sk.x0 = c.clientX;
-          sk.t0 = sk.t;
-        }
-
-        return;
-      }
-
-      ptype = e.pointerType === "mouse" ? "mouse" : "touch"; // a pen behaves like a finger
-      suppressClick = false;
-      clearTimeout(holdT);
-
-      g = {
-        id: e.pointerId,
-        kind: ptype,
-        x0: e.clientX,
-        y0: e.clientY,
-        seeking: false,
-        dead: false,
-        two: false,
-        pos: {},
-      };
-
-      g.pos[e.pointerId] = { x: e.clientX, y: e.clientY };
-
-      try {
-        line.setPointerCapture(e.pointerId);
-      } catch (x) {}
-
-      window.addEventListener("pointermove", winMove);
-      window.addEventListener("pointerup", winEnd);
-      window.addEventListener("pointercancel", winEnd);
-
-      holdT = setTimeout(() => {
-        if (!g || g.dead || g.seeking || g.two) return;
-        startSeek(true); // held: the ruler opens right here, at where you are
-      }, HOLD[ptype]);
-    });
-
-    const onLineMove = (e) => {
-      if (!g || !g.pos[e.pointerId]) return;
-
-      // a mouse that moves with no button down: the release was missed, so the press is over
-      if (e.pointerType === "mouse" && e.buttons === 0) {
-        endPress(e);
-        return;
-      }
-
-      g.pos[e.pointerId] = { x: e.clientX, y: e.clientY };
-
-      if (g.two) {
-        const c = centroid();
-
-        // the two fingers have to actually travel along the stroke before the ruler opens
-        if (!g.seeking && !g.dead && Math.abs(c.clientX - g.cx0) >= 6) {
-          suppressClick = true;
-
-          if (beginSeek(g.cx0)) g.seeking = true;
-          else g.dead = true;
-        }
-
-        if (g.seeking) {
-          seekMove(c);
-          wake();
-        }
-
-        return;
-      }
-
-      if (e.pointerId !== g.id) return;
-
-      if (g.seeking) {
-        seekMove(e);
-        wake();
-        return;
-      }
-
-      if (g.dead) return;
-
-      const dx = e.clientX - g.x0;
-      const dy = e.clientY - g.y0;
-
-      if (g.kind === "mouse") {
-        // a mouse that clearly drags is seeking, held or not
-        if (Math.abs(dx) >= 14) {
-          startSeek(false);
-          if (g.seeking) seekMove(e);
-        }
-      } else if (Math.hypot(dx, dy) > 12) {
-        // a finger that moves before the hold is a swipe, not a hold: leave it alone
-        g.dead = true;
-        suppressClick = true;
-        clearTimeout(holdT);
-      }
-    };
-
-    line.addEventListener("pointermove", onLineMove);
-
-    // Capture keeps every move and the release coming to the stroke wherever the finger goes.
-    // Should a browser ever drop it mid-press, these pick up the rest from the window: only while a
-    // press is on, and never twice (events that do reach the stroke are skipped here).
-    const winMove = (e) => {
-      if (g && !line.contains(e.target)) onLineMove(e);
-    };
-
-    const winEnd = (e) => {
-      if (g && !line.contains(e.target)) endPress(e);
-    };
-
-    // lifting any finger is letting go
-    const endPress = (e) => {
-      if (!g || !g.pos[e.pointerId]) return;
-
-      const was = g;
-
-      g = null;
-      clearTimeout(holdT);
-      window.removeEventListener("pointermove", winMove);
-      window.removeEventListener("pointerup", winEnd);
-      window.removeEventListener("pointercancel", winEnd);
-
-      if (was.seeking) finishSeek();
-      else if (was.dead || was.two) suppressClick = true;
-
-      Object.keys(was.pos).forEach((id) => {
-        try {
-          line.releasePointerCapture(Number(id));
-        } catch (x) {}
-      });
-    };
-
-    line.addEventListener("pointerup", endPress);
-    line.addEventListener("pointercancel", endPress);
-    line.addEventListener("lostpointercapture", (e) => {
-      if (!g || !g.pos[e.pointerId]) return; // after a normal release the press has already ended
-
-      // dropped while the finger is still down: take it back, a few times at most
-      g.recaptured = (g.recaptured || 0) + 1;
-
-      if (g.recaptured <= 3) {
-        try {
-          line.setPointerCapture(e.pointerId);
-          return;
-        } catch (x) {}
-      }
-
-      endPress(e); // it really is gone
-    });
-    line.addEventListener("contextmenu", (e) => e.preventDefault());
-
-    // ----- two fingers on a trackpad -----
-    //
-    // Two fingers swiping sideways over the bar do what hold-and-drag does: left moves earlier,
-    // right moves later, and the swipe's own speed gives coarse and fine for free (a slow swipe
-    // moves a little, a fast one a lot). Two fingers swiping up zoom the ruler, as sliding up does.
-    // The swipe is over when the wheel events stop coming.
-    //
-    // It follows the fingers, not the scroll direction: the same swipe goes the same way whichever
-    // way "natural scrolling" is set. Chrome and Safari report which way it is; elsewhere (Firefox)
-    // the macOS default, natural scrolling, is assumed.
-
-    let ws = null; // the swipe in progress: { sum, up, x0, seeking, t }
-
-    const endWheel = () => {
-      if (!ws) return;
-
-      const w = ws;
-
-      ws = null;
-      clearTimeout(w.t);
-
-      if (w.seeking) finishSeek();
-    };
-
-    box.addEventListener(
-      "wheel",
-      (e) => {
-        if (e.ctrlKey || g) return; // a pinch arrives as ctrl+wheel; a press is already in charge
-
-        const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-        const dx = e.deltaX * k;
-        const dy = e.deltaY * k;
-        const inverted = e.webkitDirectionInvertedFromDevice !== false;
-        const fingerX = inverted ? -dx : dx; // + = the fingers moved right
-        const fingerUp = inverted ? dy : -dy; // + = the fingers moved up
-        const sideways = Math.abs(dx) > Math.abs(dy) * 1.2;
-
-        if (!ws) {
-          if (!sideways) return; // plain vertical scrolling is none of our business
-
-          const d = el.duration;
-
-          if (!isFinite(d) || d <= 0) return;
-
-          ws = { sum: 0, up: 0, x0: 0, seeking: false, t: 0 };
-        }
-
-        // (this also stops the browser turning a two-finger swipe into Back / Forward)
-        e.preventDefault();
-
-        if (sideways) ws.sum += fingerX;
-        else if (Math.abs(dy) > Math.abs(dx) * 0.6) ws.up = clamp(ws.up + fingerUp, 0, 400);
-
-        if (!ws.seeking && Math.abs(ws.sum) >= 8) {
-          const lr = line.getBoundingClientRect();
-
-          ws.x0 = lr.left + lr.width / 2;
-
-          if (beginSeek(ws.x0)) ws.seeking = true;
-          else {
-            ws = null;
-            return;
-          }
-        }
-
-        if (ws.seeking) {
-          seekMove({ clientX: ws.x0 + ws.sum, clientY: sk.lineY - ws.up });
-          wake();
-        }
-
-        clearTimeout(ws.t);
-        ws.t = setTimeout(endWheel, 180);
-      },
-      { passive: false }
-    );
-
-    // Keyboard: with the stroke focused, ← and → move 5 seconds and Home and End go to the ends.
-    // (The old scrubber was the keyboard's way to seek; the stroke is the one time surface now.)
-    line.addEventListener("keydown", (e) => {
-      const d = el.duration;
-
-      if (!isFinite(d) || !d) return;
-
-      let t = null;
-
-      if (e.key === "ArrowLeft") t = el.currentTime - 5;
-      else if (e.key === "ArrowRight") t = el.currentTime + 5;
-      else if (e.key === "Home") t = 0;
-      else if (e.key === "End") t = d;
-
-      if (t === null) return;
-
-      e.preventDefault();
-      e.stopPropagation(); // arrows seek here instead of changing file
-      t = clamp(t, 0, d);
-      el.currentTime = t;
-      flashTime(t);
-      wake();
-    });
-
-    // A click is a tap that did not turn into anything else. With a pointer, hovering already
-    // showed Loop · A–B, so a click asks for Speed. With a finger (or the keyboard) the first tap
-    // unfolds Loop · A–B, the second asks for Speed, and the third goes back.
-    line.onclick = (e) => {
-      e.stopPropagation();
-
-      const kind = ptype;
-
-      ptype = "";
-
-      if (suppressClick) {
-        suppressClick = false;
-        return;
-      }
-
-      if (kind === "mouse") {
-        if (hbOpen && hbMode === "speed") {
-          setMode("loop");
-          bumpHb();
-        } else {
-          showHb(4500, "speed");
-        }
-      } else if (!hbOpen) {
-        showHb(4500);
-      } else {
-        setMode(hbMode === "loop" ? "speed" : "loop");
-        bumpHb();
-      }
-
-      wake();
-    };
-
-    // every control inside: do its job, keep the bar open a little longer
-    const act = (fn) => (e) => {
-      e.stopPropagation();
-      fn();
-      bumpHb();
-      wake();
-    };
-
-    loopBtn.onclick = act(pressLoop);
-    conn.onclick = act(pressConn);
-    clearBtn.onclick = act(pressClear);
-    aBtn.onclick = act(captureA);
-    bBtn.onclick = act(captureB);
-
-    eqBtn.addEventListener("pointerenter", (e) => {
-      if (e.pointerType !== "mouse") return;
-
-      hoverEqBtn = true;
-      clearTimeout(eqEnterT);
-      eqEnterT = setTimeout(() => showEq(4000), 200);
-    });
-
-    eqBtn.addEventListener("pointerleave", (e) => {
-      if (e.pointerType !== "mouse") return;
-
-      hoverEqBtn = false;
-      clearTimeout(eqEnterT);
-      if (eqOpen) showEq(1200);
-    });
-
-    eq.addEventListener("pointerenter", (e) => {
-      if (e.pointerType === "mouse") hoverEq = true;
-    });
-
-    eq.addEventListener("pointerleave", (e) => {
-      if (e.pointerType !== "mouse") return;
-
-      hoverEq = false;
-      if (eqOpen) showEq(1200);
-    });
-
-    eqBtn.onclick = (e) => {
-      e.stopPropagation();
-      if (eqOpen) hideEq();
-      else showEq(5000);
+    // the undo of a tare: everything as it was just before
+    const restoreAll = (s) => {
+      tray.restore(s);
+      if (prefs.txScale !== s.txScale) setTextScale(s.txScale);
+      if (prefs.prominence !== s.prominence) setProminence(s.prominence);
+      vbar.paint();
     };
 
     // ----- picture in picture: lives in the top bar -----
@@ -3298,7 +2564,14 @@
 
     // ----- chrome fades while playing; it stays up while a tray is open or you drag -----
 
-    const chrome = [ctrl, center, hb];
+    const chrome = [ctrl, hb];
+    // the bar's blue follows text size and prominence, wherever they are changed
+    const onReading = () => {
+      vbar.paint();
+      bar.paintSize();
+    };
+    txsViews.add(onReading);
+    promViews.add(onReading);
     let hideT;
 
     const wake = () => {
@@ -3308,7 +2581,7 @@
 
       clearTimeout(hideT);
 
-      if (!el.paused && !dragging && !sDrag && !bDrag && !hbOpen && !eqOpen) {
+      if (!el.paused && !dragging && !bar.busy && !tray.busy() && !bar.open && !tray.isOpen()) {
         hideT = setTimeout(() => {
           chrome.forEach((c) => {
             c.style.opacity = "0";
@@ -3318,10 +2591,14 @@
     };
 
     el.onplay = () => {
+      // Web Audio only once Sound needs it: on some Macs (Firefox, audio routing apps) creating an
+      // AudioContext blocks the page for good, and plain playback never needs one
+      if (!DECK && !nodes && (!eqIsFlat() || prefs.key || spaceOn())) ensureEq();
       sync();
       watch();
 
-      // a suspended context would silence a connected element: wake it on the play gesture
+      // a suspended (or sleeping) context would silence a connected element: wake it on the play gesture
+      clearTimeout(ctxSleepT);
       if (nodes && audioCtx && audioCtx.state !== "running") audioCtx.resume().catch(() => {});
 
       wake();
@@ -3329,6 +2606,7 @@
 
     el.onpause = () => {
       sync();
+      if (nodes && !DECK) ctxSleep();
       cancelAnimationFrame(raf);
       wake();
     };
@@ -3343,90 +2621,90 @@
     w.ontouchstart = wake;
 
     w.onclick = (e) => {
-      if (performance.now() - seekEndAt < 450) return; // the tail of a seek drag is not a tap
+      if (performance.now() - bar.seekEndAt < 450) return; // the tail of a seek drag is not a tap
 
       const inTools = e.target.closest(".p-hb") || e.target.closest(".p-eq") || e.target.closest(".p-eqbtn");
 
-      if ((hbOpen || eqOpen) && !inTools) {
+      if ((bar.open || tray.isOpen()) && !inTools) {
         // tapping away only folds the trays back
-        if (hbOpen) hideHb();
-        if (eqOpen) hideEq();
+        if (bar.open) bar.hide();
+        if (tray.isOpen()) tray.hide();
         return;
       }
 
-      if (!e.target.closest(".p-ctrl") && !e.target.closest(".p-center-controls") && !inTools) {
+      if (!e.target.closest(".p-ctrl") && !inTools) {
         toggle();
       }
 
       wake();
     };
 
-    w.append(el, center, hb, ctrl, toast);
+    w.append(shelter(el), hb, ctrl, toast);
 
     // a later player picks the EQ up where you left it (the context already runs)
     if (audioCtx && (!eqIsFlat() || prefs.key || spaceOn())) ensureEq();
+    if (prefs.vol !== 1) setVol(prefs.vol);
 
-    paintSpeed();
-    paintKey();
-    paintSpace();
-    paintLoop();
-    paintEq();
+    // the bar starts where the last player left it
+    bar.setSpeed(prefs.speed);
+    if (prefs.loop === "track") bar.report({ loop: { track: true, ab: false, a: null, b: null } });
+    tray.paintKey();
+    tray.paintSpace();
+    tray.paintEq();
     sync();
 
     activePlayer = {
+      el,
+      wrap: w,
+      item,
       toggle,
+      heard,
       note: say,
+      repaintKey: () => tray.paintKey(), // after the item's original key, or the native language, changes
+      setNotation: (n) => tray.setKeyNotation(n),
+      paintChord: () => tray.paintChord(),
+      bar, // the home bar's own surface (homebar.js): paint() after an item's menus change
       toggleLoop: () => {
-        pressLoop();
+        bar.pressLoop();
         wake();
       },
       captureA: () => {
-        captureA();
+        bar.captureA();
         wake();
       },
       captureB: () => {
-        captureB();
+        bar.captureB();
         wake();
       },
-      speedStep: (dir) => {
-        setSpeed(SPEEDS[clamp(SPEEDS.indexOf(speed) + dir, 0, SPEEDS.length - 1)]);
-        // speed appears where you can see it, then folds away; a bar you already had open on
-        // Loop · A–B keeps its usual time
-        showHb(hbOpen && hbMode !== "speed" ? 4500 : 2400, "speed");
-      },
+      speedStep: (dir) => bar.speedStep(dir),
       // Escape folds an open tray first; returns true if it did, so the viewer stays open
       closeTools: () => {
-        if (hbOpen) {
-          hideHb();
-          return true;
-        }
+        if (bar.close()) return true;
 
-        if (eqOpen) {
-          hideEq();
+        if (tray.isOpen()) {
+          tray.hide();
           return true;
         }
 
         return false;
       },
       kill: () => {
+        // A player that's gone lets go of its file too (SPEC 35). Left as it was, a paused element out of the page
+        // could still be played by whatever held on to it (the Recense bridge on the global ⏯, the browser's
+        // media keys): unseen, out of reach of Pause and of the next track, and the ⏯ went to it, not the file open.
+        try {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        } catch (x) {}
+        nowDrop();
         clearTimeout(hideT);
         clearTimeout(toastT);
-        clearTimeout(hbT);
-        clearTimeout(modeT);
-        clearTimeout(hbEnterT);
-        clearTimeout(holdT);
-        clearTimeout(seekT);
-        clearInterval(liveT);
-        window.removeEventListener("pointermove", winMove);
-        window.removeEventListener("pointerup", winEnd);
-        window.removeEventListener("pointercancel", winEnd);
-        window.removeEventListener("pointermove", sWinMove);
-        window.removeEventListener("pointerup", endSpeedDrag);
-        window.removeEventListener("pointercancel", endSpeedDrag);
-        if (ws) clearTimeout(ws.t);
-        clearTimeout(tFlashT);
-        clearTimeout(eqT);
-        clearTimeout(eqEnterT);
+        tray.kill();
+        bar.kill();
+        vbar.kill();
+        txsViews.delete(onReading);
+        promViews.delete(onReading);
         cancelAnimationFrame(raf);
         if (pipBtn) pipBtn.remove();
 
@@ -3434,6 +2712,10 @@
           try {
             deck.node.port.postMessage({ end: true });
             deck.node.disconnect();
+            if (deck.hush) {
+              deck.hush.t.disconnect();
+              deck.hush.z.disconnect();
+            }
           } catch (x) {}
 
           deck = null;
@@ -3448,7 +2730,12 @@
             if (n.tap) n.tap.disconnect();
             n.src.disconnect();
             Object.keys(n.f).forEach((k) => n.f[k].disconnect());
-            [n.keyDry, n.keyWet, n.mix, n.spDry].forEach((x) => x.disconnect());
+            [n.voxDry, n.voxWet, n.voxSum, n.keyDry, n.keyWet, n.mix, n.spDry, n.master, n.half, n.safe, n.keyDly, n.voxDly].forEach((x) => x && x.disconnect());
+
+            if (n.vox) {
+              n.vox.port.postMessage({ end: true });
+              n.vox.disconnect();
+            }
 
             if (n.key) {
               n.key.port.postMessage({ end: true });
@@ -3461,6 +2748,10 @@
             }
           } catch (x) {}
         }
+
+        // the last player off the context closes it (the next play with Sound on makes a new one)
+        ctxEls.delete(el);
+        if (!DECK && audioCtx && !ctxEls.size) ctxClose();
       },
     };
 
@@ -3542,8 +2833,8 @@
 
     const d = ph();
 
-    if (isPdf(f)) {
-      pdfThumb(f)
+    if (isPdf(f) || isTextDoc(f)) {
+      (isPdf(f) ? pdfThumb(f) : textThumb(f))
         .then((u) => {
           const im = new Image();
           im.src = u;
@@ -3570,7 +2861,7 @@
   };
 
   const noun = (f) =>
-    ({ img: "photo", vid: "video", aud: "audio file", doc: isPdf(f) ? "document" : "file" })[kind(f)];
+    ({ img: "photo", vid: "video", aud: "audio file", doc: isPdf(f) || isTextDoc(f) ? "document" : "file" })[kind(f)];
 
   const ringHTML = (f) =>
     '<span class="ring"><svg class="rsvg" viewBox="0 0 44 44"><circle class="rt" cx="22" cy="22" r="18"/><circle class="rp" cx="22" cy="22" r="18"/></svg>' +
@@ -3639,15 +2930,30 @@
 
   const picked = new Set();
   let selecting = false;
+  let footBase = "";
 
   const readyItems = () => items.filter((f) => !f.pending);
 
+  // what is picked in Select mode, for the "…" menu's Create Share Link
+  window.gallerySelection = () => (selecting ? readyItems().filter((f) => picked.has(f.n)) : []);
+
   const label = () => {
-    dl.textContent = picked.size ? "Download (" + picked.size + ")" : "Download";
+    const n = picked.size;
+    const sel = selecting && n > 0;
+
+    dl.textContent = n ? "Download (" + n + ")" : "Download";
     dl.disabled = !readyItems().length;
-    del.textContent = selecting && picked.size ? "Delete (" + picked.size + ")" : "Delete";
-    del.classList.toggle("on", selecting && picked.size > 0);
+    dl.classList.toggle("glow", sel);
+
+    $("selall").hidden = !selecting;
+    $("selall").textContent = n ? "Deselect All" : "Select All";
+
+    $("ftxt").textContent = sel ? n + (n === 1 ? " Item Selected" : " Items Selected") : footBase;
+    $("foot").classList.toggle("sel", sel);
+
+    del.hidden = !(owner && sel);
     del.disabled = !readyItems().length;
+    $("mv").hidden = !(G.main && owner && sel);
   };
 
   const tapTile = (f, b) => {
@@ -3692,12 +2998,13 @@
 
     $("owner").textContent = G.heading || "Shared by " + G.owner;
     $("count").textContent = txt;
+    $("count").hidden = !!G.main && total === 0;
     $("exp").textContent = G.exp ? "Expires " + D(G.exp, { day: "numeric", month: "long" }) : "";
 
     const c = { img: 0, vid: 0, aud: 0, doc: 0 };
     ready.forEach((f) => c[kind(f)]++);
 
-    $("foot").textContent = [["Photo", c.img], ["Video", c.vid], ["Audio", c.aud], ["File", c.doc]]
+    footBase = [["Photo", c.img], ["Video", c.vid], ["Audio", c.aud], ["File", c.doc]]
       .filter((x) => x[1])
       .map((x) => x[1] + " " + x[0] + (x[1] > 1 ? "s" : ""))
       .join(", ");
@@ -3728,6 +3035,7 @@
   let cur = 0;
   let thumbs = null;
   let x0 = null;
+  let y0 = 0;
 
   const build = () => {
     if (thumbs) return;
@@ -3774,6 +3082,7 @@
     const f = items[cur];
     const k = kind(f);
     const s = src(f);
+    remember(f);
 
     if (killPdf) {
       killPdf();
@@ -3783,6 +3092,7 @@
     endPlayer();
     stage.replaceChildren();
     meta.hidden = true;
+    paintCap();
 
     $("t1").textContent =
       Date.now() - f.taken < 6 * 864e5
@@ -3799,20 +3109,48 @@
       im.alt = f.name;
       im.decoding = "async";
       stage.appendChild(im);
+    } else if (parked && parked.item === f) {
+      // the track still playing from before: back on stage as it is
+      const p = parked;
+      parked = null;
+      pill.hidden = true;
+      stage.appendChild(p.wrap);
+      activePlayer = p;
     } else if (k === "vid") {
       stage.appendChild(buildMedia("video", s));
+      showTranscript(f);
     } else if (k === "aud") {
       stage.appendChild(buildMedia("audio", s, artSrc(f)));
+      showTranscript(f);
+      autoKey(f);
     } else if (isPdf(f)) {
       stage.appendChild(buildPdf(f));
+    } else if (isTextDoc(f)) {
+      stage.appendChild(buildTextDoc(f));
     } else {
       stage.appendChild(docView(f));
     }
+
+    // audio and video carry Info, the comments and Share in the home bar (homebar.js); photos and
+    // documents keep them in the bottom bar
+    lb.classList.toggle("hasbar", !f.pending && (k === "aud" || k === "vid"));
 
     if (thumbs) {
       thumbs.forEach((t, j) => t.classList.toggle("on", j === cur));
       strip.scrollLeft = thumbs[cur].offsetLeft - (strip.clientWidth - 30) / 2;
     }
+  };
+
+  // The open item is in the address (?open=<n>, which a load opens onto), so a refresh stays on it instead of
+  // landing on the folder; in a shelled folder the top window's address follows too, as it is what reloads.
+  const remember = (f) => {
+    try {
+      const u = new URL(location.href);
+      if (f) u.searchParams.set("open", G.main && f.path ? f.path : f.n);
+      else u.searchParams.delete("open");
+      history.replaceState(history.state, "", u);
+      if (parent !== window && parent.location.origin === location.origin) parent.history.replaceState(parent.history.state, "", u);
+    } catch (x) {}
   };
 
   const openAt = (i) => {
@@ -3821,12 +3159,14 @@
     build();
     lb.hidden = false;
     document.body.style.overflow = "hidden";
+    document.body.classList.add("lbopen");
     history.pushState({ lb: 1 }, "");
     show(i);
   };
 
   const hide = () => {
     lb.hidden = true;
+    remember(null);
 
     if (killPdf) {
       killPdf();
@@ -3836,6 +3176,8 @@
     endPlayer();
     stage.replaceChildren();
     document.body.style.overflow = "";
+    document.body.classList.remove("lbopen", "comments-open");
+    thread.hidden = true;
   };
 
   $("sel").onclick = () => {
@@ -3846,6 +3188,14 @@
     $("sel").textContent = selecting ? "Cancel" : "Select";
 
     grid.querySelectorAll(".on").forEach((t) => t.classList.remove("on"));
+    label();
+  };
+
+  $("selall").onclick = () => {
+    if (picked.size) picked.clear();
+    else readyItems().forEach((f) => picked.add(f.n));
+
+    grid.querySelectorAll(".tile").forEach((b) => b.classList.toggle("on", picked.has(b.dataset.n)));
     label();
   };
 
@@ -3898,6 +3248,1381 @@
     label();
   };
 
+  // ---------- comments: a thread per item (README §3, §4.4) ----------
+  //
+  // COLLAPSED: one blue label in the bottom bar ("Add a comment…" / "3 comments").
+  // EXPANDED (body.comments-open): the media shrinks to the top, the thread fills the rest,
+  // oldest first, with the field directly under the newest comment. Tap the label or swipe up
+  // on the media to open; Hide Comments, swipe down, Delete or Cancel close it.
+  // Who may write: Main = the owner; an invite = the participant (if allowed); a public link =
+  // the owner only. The server enforces the same rules.
+
+  const cmEl = $("cm");
+  const botBar = document.querySelector(".bot");
+  // The two bars stand just above the bottom bar (the thumbnail strip and the comment label), whatever its real
+  // height on this screen and in this orientation (SPEC 55): --botH feeds the bars' --bb0 (gallery.css).
+  if (botBar && window.ResizeObserver) {
+    const fitBars = () => lb.style.setProperty("--botH", Math.round(botBar.getBoundingClientRect().height) + "px");
+    new ResizeObserver(fitBars).observe(botBar);
+    fitBars();
+  }
+  const ownerName = String(G.owner || "").split(" ")[0] || "Owner";
+  const me = G.invite ? G.invite.name : G.owner;
+  const API = G.api || "/main/api";
+  let owner = false;
+  let draft = "";
+
+  const thread = mkEl("div", "thread");
+  thread.id = "thread";
+  thread.hidden = true;
+  lb.appendChild(thread);
+
+  // the bottom bar's height drives the media padding; keep it current
+  const sizeBar = () => {
+    if (botBar && !lb.hidden && botBar.offsetHeight) lb.style.setProperty("--bb", botBar.offsetHeight + "px");
+  };
+
+  if (window.ResizeObserver && botBar) new ResizeObserver(sizeBar).observe(botBar);
+
+  const commentScope = (f) =>
+    G.main || G.invite ? { kind: "main", path: f.path || f.name } : { kind: "link", id: G.id, key: f.path || f.n };
+
+  const canWrite = () => (G.invite ? !!(G.invite.perms && G.invite.perms.comment) : owner);
+  const listOf = (f) => (f && Array.isArray(f.comments) ? f.comments : f && f.caption ? [{ id: "c0", text: f.caption, at: f.capAt, by: G.owner }] : []);
+  const mine = (c) => (G.invite ? c.by === me : !c.by || c.by === G.owner);
+  const nameOf = (c) => (mine(c) ? "You" : c.by === G.owner || !c.by ? ownerName : c.by);
+  const postedAt = (t) => D(t, { day: "numeric", month: "short", year: "numeric" }) + " at " + T(t);
+  const isOpen = () => document.body.classList.contains("comments-open");
+
+  const send = async (f, body) => {
+    const r = await fetch(API + "/caption", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-gallery": "1" },
+      body: JSON.stringify({ ...commentScope(f), ...body }),
+    });
+
+    if (!r.ok) throw new Error((await r.text()) || "Couldn’t save the comment");
+
+    const j = await r.json();
+    f.comments = j.comments || [];
+    f.caption = j.caption || "";
+    f.capAt = j.capAt || 0;
+  };
+
+  const setOpen = (o) => {
+    const f = items[cur];
+    if (o && (!f || f.pending || (!listOf(f).length && !canWrite()))) return;
+
+    document.body.classList.toggle("comments-open", !!o);
+    thread.hidden = !o;
+    if (!o) draft = "";
+    paintComment();
+  };
+
+  // the collapsed label in the bottom bar
+  // the comments, as the home bar's slide shows them: null when there is nothing to show or write
+  galleryComments = (f) => {
+    const n = listOf(f).length;
+    if (!f || f.pending || (!n && !canWrite())) return null;
+    return { n, text: n ? n + (n === 1 ? " comment" : " comments") : "Add a comment…", open: () => setOpen(true) };
+  };
+
+  const paintLabel = (f) => {
+    const n = listOf(f).length;
+
+    cmEl.replaceChildren();
+    cmEl.hidden = !f || f.pending || (!n && !canWrite());
+    if (cmEl.hidden) return;
+
+    const label = mkEl("button", "cmlabel");
+    label.type = "button";
+    label.textContent = n ? n + (n === 1 ? " comment" : " comments") : "Add a comment…";
+    label.classList.toggle("has", !!n); // white with none, blue with comments (SPEC 41)
+    label.onclick = () => setOpen(true);
+    cmEl.appendChild(label);
+  };
+
+  // Swipe to reveal Delete at a comment's right end (spec §7). Touch: a swipe leftward that starts on
+  // the right half of the comment. Trackpad: a two-finger swipe right to left while the pointer is
+  // over it (a horizontal wheel). The other way, a tap elsewhere or Escape folds it back.
+  let swOpen = null;
+  const swFold = () => {
+    if (swOpen) swOpen.classList.remove("open");
+    swOpen = null;
+  };
+  const swSet = (row, on) => {
+    if (on && swOpen !== row) swFold();
+    row.classList.toggle("open", on);
+    swOpen = on ? row : swOpen === row ? null : swOpen;
+  };
+
+  const swipeToDelete = (row, rm) => {
+    const slide = mkEl("div", "cslide");
+    slide.append(...row.childNodes);
+    row.classList.add("sw");
+    row.append(slide, rm);
+    const W = () => rm.offsetWidth || 88;
+
+    let t0 = null; // { x, y, open, h } while a finger is down
+    row.addEventListener(
+      "touchstart",
+      (e) => {
+        const r = row.getBoundingClientRect();
+        const x = e.touches[0].clientX;
+        const open = row.classList.contains("open");
+        t0 = open || x > r.left + r.width / 2 ? { x, y: e.touches[0].clientY, open, h: null } : null;
+      },
+      { passive: true }
+    );
+    row.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!t0) return;
+        const dx = e.touches[0].clientX - t0.x;
+        const dy = e.touches[0].clientY - t0.y;
+        if (t0.h === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) t0.h = Math.abs(dx) > Math.abs(dy);
+        if (!t0.h) return;
+        e.preventDefault();
+        row.classList.add("drag");
+        const off = clamp((t0.open ? -W() : 0) + dx, -W(), 0);
+        slide.style.transform = "translateX(" + off + "px)";
+      },
+      { passive: false }
+    );
+    row.addEventListener("touchend", (e) => {
+      if (!t0) return;
+      const dx = e.changedTouches[0].clientX - t0.x;
+      const h = t0.h;
+      const open = t0.open;
+      t0 = null;
+      row.classList.remove("drag");
+      slide.style.transform = "";
+      if (h) swSet(row, open ? dx < W() / 2 : dx < -W() / 2);
+    });
+
+    // the keyboard reaches it too: focusing Delete shows it
+    rm.addEventListener("focus", () => swSet(row, true));
+  };
+
+  // the trackpad: one listener on the thread, for whichever comment the pointer is over
+  let swAcc = 0;
+  let swAccT = 0;
+  thread.addEventListener(
+    "wheel",
+    (e) => {
+      const row = e.target.closest && e.target.closest(".crow.sw");
+      if (!row || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault(); // not the browser's back and forward
+      if (e.timeStamp - swAccT > 300) swAcc = 0;
+      swAccT = e.timeStamp;
+      swAcc += e.deltaX;
+      if (swAcc > 40) {
+        swSet(row, true);
+        swAcc = 0;
+      } else if (swAcc < -40) {
+        swSet(row, false);
+        swAcc = 0;
+      }
+    },
+    { passive: false }
+  );
+
+  document.addEventListener("pointerdown", (e) => {
+    if (swOpen && !swOpen.contains(e.target)) swFold();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !swOpen) return;
+    e.stopPropagation(); // fold Delete away, not the viewer
+    swFold();
+  });
+
+  const paintThread = (f) => {
+    const list = listOf(f);
+    const can = canWrite();
+
+    thread.replaceChildren();
+    swOpen = null;
+
+    const actions = mkEl("div", "tact");
+    const hideBtn = mkEl("button", "lnk");
+    hideBtn.type = "button";
+    hideBtn.textContent = "Hide Comments";
+    hideBtn.onclick = () => setOpen(false);
+    actions.appendChild(hideBtn);
+    thread.appendChild(actions);
+
+    for (const c of list) {
+      const row = mkEl("div", "crow");
+      const p = mkEl("p", "ctext");
+      const by = mkEl("p", "cmeta");
+      const b = mkEl("b");
+
+      p.textContent = c.text;
+      b.textContent = nameOf(c);
+      by.append(b, " " + (c.at ? postedAt(c.at) : "") + (c.edited ? " · Edited" : ""));
+      row.append(p, by);
+
+      // your own comments can be edited or deleted, any of them, at any time; Delete is revealed by
+      // a swipe to the left (spec §7)
+      if (can && mine(c) && c.id) {
+        const ed = { disabled: false }; // tapping the text edits it; a deliberate tap only, never a scroll or swipe
+        const rm = mkBtn("cdel", "Delete comment", "Delete");
+        p.classList.add("cmine");
+        p.title = "Tap to edit";
+        swipeToDelete(row, rm);
+        let tap = null;
+        p.addEventListener("pointerdown", (e) => {
+          tap = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, t: e.timeStamp, st: thread.scrollTop } : null;
+        });
+        p.addEventListener("pointermove", (e) => {
+          if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) tap = null;
+        });
+        p.addEventListener("pointercancel", () => (tap = null));
+        thread.addEventListener("scroll", () => (tap = null), { passive: true });
+        p.addEventListener("pointerup", (e) => {
+          const t = tap;
+          tap = null;
+          if (!t || ed.disabled || row.classList.contains("open")) return;
+          if (e.timeStamp - t.t > 450 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 6) return;
+          if (Math.abs(thread.scrollTop - t.st) > 1) return;
+          const sel = window.getSelection && String(window.getSelection());
+          if (sel) return;
+          // let any momentum scroll settle; a tap that only stopped a fling doesn't edit
+          setTimeout(() => {
+            if (Math.abs(thread.scrollTop - t.st) <= 1 && p.isConnected) ed.onclick();
+          }, 120);
+        });
+
+        rm.onclick = async () => {
+          if (!confirm("Delete this comment?")) return;
+          ed.disabled = rm.disabled = true;
+          try {
+            await send(f, { op: "del", cid: c.id });
+            paintComment();
+          } catch (e) {
+            ed.disabled = rm.disabled = false;
+            tell(e.message || "Couldn’t delete the comment", true);
+          }
+        };
+
+        ed.onclick = () => {
+          const box = mkEl("textarea", "cedit");
+          const bar = mkEl("div", "cbtns");
+          const save = mkBtn("lnk", "Save comment", "Save");
+          const back = mkBtn("lnk", "Cancel editing", "Cancel");
+          const fitE = () => {
+            box.style.height = "auto";
+            box.style.height = box.scrollHeight + "px";
+            save.disabled = !box.value.trim() || box.value.trim() === c.text;
+          };
+
+          box.maxLength = 4000;
+          box.value = c.text;
+          bar.append(save, back);
+          row.classList.remove("sw", "open");
+          row.replaceChildren(box, bar);
+          box.oninput = fitE;
+          fitE();
+          box.focus();
+
+          back.onclick = () => paintComment();
+          const doSave = async () => {
+            const text = box.value.trim();
+            if (!text || text === c.text) return paintComment();
+            save.disabled = back.disabled = true;
+            try {
+              await send(f, { op: "edit", cid: c.id, text });
+              paintComment();
+            } catch (e) {
+              save.disabled = back.disabled = false;
+              tell(e.message || "Couldn’t save the comment", true);
+            }
+          };
+          save.onclick = doSave;
+          box.onkeydown = (e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+              e.preventDefault();
+              doSave();
+            } else if (e.key === "Escape") paintComment();
+          };
+        };
+      }
+
+      thread.appendChild(row);
+    }
+
+    if (!can) return;
+
+    // the field, always directly under the newest comment
+    const field = mkEl("div", "cfield");
+    const ta = mkEl("textarea");
+    const btns = mkEl("div", "cbtns");
+    const post = mkBtn("lnk", "Post comment", "Post");
+    const del = mkBtn("lnk", "Delete my last comment", "Delete");
+    const cancel = mkBtn("lnk", "Cancel", "Cancel");
+    const last = [...list].reverse().find(mine);
+
+    ta.rows = 1;
+    ta.maxLength = 4000;
+    ta.placeholder = "Add a comment…";
+    ta.value = draft;
+    ta.setAttribute("enterkeyhint", "send");
+
+    const fit = () => {
+      ta.style.height = "auto";
+      ta.style.height = ta.scrollHeight + "px";
+      post.disabled = !ta.value.trim();
+    };
+
+    del.disabled = !last;
+    btns.append(post, del, cancel);
+    // always shown: after a post iPhone won't focus the new field by itself, which used to leave
+    // no way to delete or cancel
+    field.append(ta, btns);
+    thread.appendChild(field);
+
+    ta.oninput = () => {
+      draft = ta.value;
+      fit();
+    };
+    ta.onfocus = () => {
+      field.scrollIntoView({ block: "end", behavior: "smooth" });
+    };
+
+    const busy = (on) => {
+      [post, del, cancel].forEach((b) => (b.disabled = on));
+      if (!on) {
+        del.disabled = !last;
+        fit();
+      }
+    };
+
+    const doPost = async () => {
+      const text = ta.value.trim();
+      if (!text) return;
+
+      busy(true);
+
+      try {
+        await send(f, { op: "add", text });
+        draft = "";
+        paintComment();
+        // stay expanded with a fresh field under the new comment
+        const nta = thread.querySelector("textarea");
+        if (nta) nta.focus();
+        thread.scrollTop = thread.scrollHeight;
+      } catch (e) {
+        busy(false);
+        fit();
+        tell(e.message || "Couldn’t save the comment", true);
+      }
+    };
+
+    post.onclick = doPost;
+    ta.onkeydown = (e) => {
+      // Return posts (Shift+Return is a new line), like Messages
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        doPost();
+      }
+    };
+
+    del.onclick = async () => {
+      if (!last) return;
+
+      busy(true);
+
+      try {
+        await send(f, { op: "del", cid: last.id });
+        setOpen(false);
+      } catch (e) {
+        busy(false);
+        tell(e.message || "Couldn’t delete the comment", true);
+      }
+    };
+
+    cancel.onclick = () => setOpen(false);
+
+    fit();
+  };
+
+  const paintComment = () => {
+    if (!cmEl) return;
+
+    const f = items[cur];
+
+    // the thread belongs to one item: moving on closes it
+    if (isOpen() && (!f || f.pending || (!listOf(f).length && !canWrite()))) {
+      document.body.classList.remove("comments-open");
+      thread.hidden = true;
+    }
+
+    paintLabel(f);
+    if (activePlayer && activePlayer.bar) activePlayer.bar.paint();
+    if (isOpen()) paintThread(f);
+    sizeBar();
+  };
+
+  const paintCap = paintComment;
+
+  // swipe down on the thread (when it is scrolled to the top) closes it
+  let ty0 = null;
+  thread.addEventListener("touchstart", (e) => (ty0 = thread.scrollTop <= 0 ? e.touches[0].clientY : null), { passive: true });
+  thread.addEventListener("touchend", (e) => {
+    if (ty0 !== null && e.changedTouches[0].clientY - ty0 > 70 && !thread.contains(document.activeElement)) setOpen(false);
+    ty0 = null;
+  });
+
+  // ---------- transcripts from Recense (lyrics and speech, timed word by word) ----------
+  //
+  // Recense on the Mac transcribes Main's audio and video while it is idle; the Worker hands the
+  // result over (transcript.js). Shown the way Recense's Learn mode shows it: the original is lit
+  // word by word as it is heard, and about 0.3 s after a phrase of three or four words has been
+  // heard, a soft edge sweeps across it and its translation (the native language, prefs.nativeLang)
+  // surfaces in the same slot. Nothing slides or reflows. Lines take turns in two places, one over
+  // the other, so the end of a thought stays put, translated, while the next line plays. Everything
+  // runs on the time being heard (the deck's own clock on Safari), so it keeps in step at any
+  // speed. Tap a line to go to it.
+
+  const txUrl = (f) =>
+    G.main
+      ? "/main/api/transcript?" + new URLSearchParams({ path: f.path })
+      : G.invite
+      ? API + "/transcript?" + new URLSearchParams({ name: String(f.path || f.name).split("/").pop() })
+      : /^\d{3}$/.test(f.n || "")
+      ? "/api/transcript?" + new URLSearchParams({ id: G.id, n: f.n })
+      : null;
+
+  const txFetch = (f) => {
+    if (!f.tx) {
+      const u = txUrl(f);
+      f.tx = u
+        ? fetch(u, { headers: { "x-gallery": "1" }, cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null);
+    }
+    return f.tx;
+  };
+
+  // --- corrections (spec §9): anyone viewing on Main or a share link fixes a line in place ---
+  //
+  // Tap a line to go to it and correct it. Saved a second after the last change (PUT with the version
+  // the page has); on a conflict the saved corrections are fetched, merged per line (the later
+  // correction wins) and sent once more. No transcript yet: Recense is asked for one, under a lock
+  // shared by everyone viewing, and the page waits for it.
+
+  const txWrite = (f) => {
+    const q = G.main ? { path: f.path } : !G.invite && /^\d{3}$/.test(f.n || "") ? { id: G.id, n: f.n } : null;
+    if (!q) return null;
+    const base = G.main ? "/main/api/transcript" : "/api/transcript";
+    const qs = "?" + new URLSearchParams(q);
+    return { put: base + qs, run: base + "/run" + qs, changes: base + "/changes" + qs };
+  };
+
+  const txSend = (url, method, body) =>
+    fetch(url, { method, headers: { "content-type": "application/json", "x-gallery": "1" }, body: JSON.stringify(body) }).catch(() => null);
+
+  const txQueues = new Map(); // file -> { edits: Map, timer, busy, onLines }
+
+  const queueEdit = (f, edit) => {
+    let q = txQueues.get(f);
+    if (!q) txQueues.set(f, (q = { edits: new Map(), timer: 0, busy: false, onLines: null }));
+    q.edits.set(edit.segId + "|" + edit.field, edit);
+    clearTimeout(q.timer);
+    q.timer = setTimeout(() => flushEdits(f), 1000);
+    return q;
+  };
+
+  const flushEdits = async (f) => {
+    const q = txQueues.get(f);
+    const w = txWrite(f);
+    if (!q || !w || !q.edits.size) return;
+    if (q.busy) {
+      q.timer = setTimeout(() => flushEdits(f), 500);
+      return;
+    }
+    const edits = [...q.edits.values()];
+    q.edits.clear();
+    q.busy = true;
+    let r = await txSend(w.put, "PUT", { version: f.txv || 0, edits });
+    let kept = edits;
+    if (r && r.status === 409) {
+      // someone saved first: keep each of ours unless what they saved for that line is newer, and try once more
+      const c = await r.json().catch(() => null);
+      if (c) {
+        f.txv = c.version;
+        kept = edits.filter((e) => !(c.overrides || []).some((o) => o.segId === e.segId && o.field === e.field && o.updatedAt > e.updatedAt));
+        r = kept.length ? await txSend(w.put, "PUT", { version: c.version, edits: kept }) : null;
+      }
+    }
+    q.busy = false;
+    const back = () => kept.forEach((e) => !q.edits.has(e.segId + "|" + e.field) && q.edits.set(e.segId + "|" + e.field, e));
+    if (r && r.ok) {
+      const j = await r.json();
+      f.txv = j.version;
+      if (!q.edits.size) {
+        const t = { lines: j.lines, version: j.version };
+        f.tx = Promise.resolve(t);
+        if (q.onLines) q.onLines(j.lines);
+      }
+      say("");
+    } else if (!r && !kept.length) {
+      // all of ours were older than what is saved: show what is saved
+      f.tx = null;
+      const t = await txFetch(f);
+      if (t && t.lines && q.onLines) q.onLines(t.lines);
+    } else if (r && r.status === 429) {
+      back();
+      say("Too many corrections for now; saving again in a minute", true);
+      q.timer = setTimeout(() => flushEdits(f), 60000);
+    } else {
+      back();
+      say("Couldn’t save the correction", true);
+    }
+  };
+
+  // words for a corrected line until the server's timing arrives: spread over the line's own time
+  const spreadWords = (text, l) => {
+    const ws = text.split(/\s+/).filter(Boolean);
+    const span = Math.max(0.05 * ws.length, l.e - l.s);
+    return ws.map((t, i) => ({ t, s: l.s + (span * i) / ws.length, e: l.s + (span * (i + 1)) / ws.length }));
+  };
+
+  // No transcript yet: ask Recense for one (unless someone already has) and wait for it, with Retry when it fails.
+  const awaitTranscript = (f, el, host, t) => {
+    const w = txWrite(f);
+    if (!w || host.querySelector(".txst")) return;
+    const st = mkEl("div", "tx txst");
+    const msg = mkEl("span", "txmsg");
+    const retry = mkEl("button", "lnk txbtn");
+    retry.type = "button";
+    retry.textContent = "Retry";
+    retry.hidden = true;
+    st.append(msg, retry);
+    host.appendChild(st);
+    st.style.pointerEvents = "auto";
+    st.onclick = (ev) => {
+      ev.stopPropagation();
+      toolsSheet(f, host, el, msg.textContent || "Waiting for the transcript…");
+    };
+    let timer = 0;
+    const alive = () => items[cur] === f && el.isConnected && st.isConnected;
+    const showRun = (run) => {
+      const failed = !run || run.state === "failed";
+      msg.textContent = failed
+        ? "Transcription failed"
+        : run.state === "running"
+        ? "Transcribing… " + Math.round((run.progress || 0) * 100) + "%"
+        : "Waiting for the transcript…";
+      retry.hidden = !failed;
+    };
+    const poll = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        if (!alive()) return;
+        const u = txUrl(f);
+        const j = await fetch(u, { headers: { "x-gallery": "1" }, cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (!alive()) return;
+        // done once there are lines and no run under way (a retranscription keeps the old lines meanwhile)
+        if (j && Array.isArray(j.lines) && j.lines.length && !(j.run && j.run.state !== "failed")) {
+          st.remove();
+          f.tx = Promise.resolve(j);
+          if (j.run) say("Retranscribing failed; this is the transcript as it was", true);
+          showTranscript(f);
+          return;
+        }
+        showRun(j && j.run);
+        if (j && j.run && j.run.state !== "failed") poll();
+      }, 5000);
+    };
+    const start = async (body) => {
+      msg.textContent = "Waiting for the transcript…";
+      retry.hidden = true;
+      const r = await txSend(w.run, "POST", body);
+      const j = r && r.ok ? await r.json().catch(() => null) : null;
+      if (!alive()) return;
+      if (j && j.state === "done") return poll();
+      showRun(j);
+      if (j && j.state !== "failed") poll();
+    };
+    retry.onclick = (ev) => {
+      ev.stopPropagation();
+      start({ retry: true });
+    };
+    // opened for the first time: start it, unless it's under way or failed (then Retry is the viewer's call)
+    if (!t.run) start({});
+    else {
+      showRun(t.run);
+      if (t.run.state !== "failed") poll();
+    }
+  };
+
+  // --- Learn mode, ported from Recense (main.swift: phrases, readBy, learningPlaces, ink) ---
+
+  const TURN = 0.3; // how long a heard phrase takes to turn into its English
+
+  const endsClause = (w) => /[,.;:?!…]$/.test(String(w).replace(/["'»”’)]+$/, ""));
+  const leansOn = (w) => !endsClause(w) && (String(w).match(/\p{L}/gu) || []).length <= 3;
+  const LEAN_EN = new Set(
+    ("a an the of to in on at by for from with into about as and or but if than that which who whose this these those " +
+      "my your his her its our their i you he she it we they is are was were be been am do does did have has had will " +
+      "would shall should can could may might must not no").split(" ")
+  );
+  const leansOnEnglish = (w) => !endsClause(w) && LEAN_EN.has(String(w).toLowerCase().replace(/[^\p{L}']/gu, ""));
+  const readingTime = (n) => 0.7 + 0.28 * n;
+
+  // a line's words as beats: each lasts until the next one starts
+  const sourceBeats = (l) =>
+    l.words.map((w, i) => {
+      const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
+      // a short pause before the next word is bridged, so the light never drops out between words
+      const e = next - w.e < 0.6 ? next : w.e;
+      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)) };
+    });
+
+  // the original words an English word translates; one claiming most of a long line is a misread alignment
+  const sourcesOf = (w, m) => {
+    const s = (w.s || []).filter((x) => x >= 0 && x < m);
+    return m > 3 && s.length > Math.max(2, Math.floor(m / 2)) ? [] : s;
+  };
+
+  const translated = (l) => Array.isArray(l.enw) && l.enw.length > 0 && !(l.enw.length === 1 && l.enw[0].w === "…");
+
+  // A line's phrases: a run of original words and the run of English that translates it. Cut where
+  // the speech pauses or a clause ends, rarely on a short word that leans on the next, with the
+  // English cut at the same share of the English, a little behind rather than ahead.
+  const phrasesOf = (l) => {
+    const words = l.words.map((w) => w.t);
+    const en = l.enw;
+    const m = words.length;
+    const n = en.length;
+    if (m <= 1 || n <= 1) return [{ src: [0, m], en: [0, n] }];
+
+    const s = en.map((w) => sourcesOf(w, m));
+    const aligned = s.every((x) => x.length) && !s.every((x, i) => x.length === 1 && x[0] === i);
+    const shares = (w) => {
+      const c = [0];
+      for (const x of w) c.push(c[c.length - 1] + x.length + 1);
+      return c.map((v) => v / c[c.length - 1]);
+    };
+    const po = shares(words);
+    const pe = shares(en.map((w) => w.w));
+    const cut = new Map();
+
+    for (let i = 1; i < m; i++) {
+      let best = null;
+      for (let k = 1; k < n; k++) {
+        if (aligned && (s.slice(0, k).some((x) => Math.max(...x) >= i) || s.slice(k).some((x) => Math.min(...x) < i))) continue;
+        let c = Math.abs(pe[k] - (po[i] - 0.04)) * 4 + (leansOnEnglish(en[k - 1].w) ? 0.6 : 0);
+        if (endsClause(words[i - 1]) && endsClause(en[k - 1].w)) c -= 0.5;
+        if (!best || c < best.cost) best = { k, cost: c };
+      }
+      if (!best) continue;
+      if (endsClause(words[i - 1])) best.cost -= 1.2;
+      if (l.words[i].s - l.words[i - 1].e >= 0.25) best.cost -= 0.8;
+      if (leansOn(words[i - 1])) best.cost += 0.8;
+      if (!aligned) best.cost += 0.5; // a guessed cut can be a word out: fewer of them
+      cut.set(i, best);
+    }
+
+    // the cheapest run of cuts, with phrases of three or four words where it can
+    const size = [0, 2, 0.5, 0, 0.1, 0.7];
+    const path = [{ at: 0, k: 0, cost: 0, from: -1 }];
+    for (const j of [...[...cut.keys()].sort((x, y) => x - y), m]) {
+      const k = j < m ? cut.get(j).k : n;
+      const c = j < m ? cut.get(j).cost : 0;
+      let best = null;
+      path.forEach((p, i) => {
+        if (p.k >= k) return;
+        const len = j - p.at;
+        const cost = p.cost + (len < size.length ? size[len] : 0.7 + (len - 5)) + c;
+        if (!best || cost < best.cost) best = { from: i, cost };
+      });
+      if (best) path.push({ at: j, k, cost: best.cost, from: best.from });
+    }
+
+    const out = [];
+    for (let i = path.length - 1; i > 0; ) {
+      const p = path[i];
+      const q = path[p.from];
+      out.unshift({ src: [q.at, p.at], en: [q.k, p.k] });
+      i = p.from;
+    }
+    return out;
+  };
+
+  // The trailing language: the native language set in the viewer (spec §1), English until then.
+  const nativeLang = () => prefs.nativeLang || "en";
+
+  // A line's translation in the native language (Recense's tr/<lang>.json, or a correction of it),
+  // whole; else the English: phrase by phrase when it is aligned word by word, else the whole line in
+  // one piece. Never another language. null: none (yet).
+  const nativeOf = (l) => {
+    const lang = nativeLang();
+    const tr = l.tr || {};
+    const ok = (x) => typeof x === "string" && x.trim() && x.trim() !== "…";
+    if (lang !== "en" && ok(tr[lang])) return { text: tr[lang] };
+    if (translated(l)) return { phrases: true };
+    const any = [tr.en, l.en].find(ok);
+    return any ? { text: any } : null;
+  };
+
+  // per line, worked out once (again when the native language changes): its beats, phrases and when it has been read
+  const learnOf = (l) => {
+    const lang = nativeLang();
+    if (!l._learn || l._learn.lang !== lang) {
+      const beats = sourceBeats(l);
+      const nat = beats.length ? nativeOf(l) : null;
+      const parts = !nat ? null : nat.phrases ? phrasesOf(l) : [{ src: [0, beats.length], en: null, text: nat.text }];
+      const end = beats.length ? beats[beats.length - 1].e : l.e;
+      const last = parts && parts[parts.length - 1];
+      const read = last ? end + TURN + readingTime(last.en ? last.en[1] - last.en[0] : last.text.split(/\s+/).length) : l.e + 0.6;
+      l._learn = { lang, beats, parts, read };
+    }
+    return l._learn;
+  };
+
+  // Learn's two places, one over the other, which the lines take in turn (karaoke's way, SPEC 59). The
+  // light crosses the bottom line; when it has crossed it, that line stays and the next one fades in
+  // slowly at the top, in the place of the line before last (once that one has been read); then the
+  // light crosses the top line, and the next fades in at the bottom. A line always arrives a moment
+  // before it is spoken. A silence clears both; paused, the screen never clears. (Recense's
+  // learningPlaces in recense.swift is the same.)
+  const learningPlaces = (lines, t, held) => {
+    const n = lines.length;
+    const lead = 0.5;
+    const fadeOut = 0.15;
+    const fadeIn = 0.4;
+    if (!n) return [];
+
+    const opens = (k) => k === 0 || lines[k].s - lines[k - 1].e >= 12;
+    const place = (j) => {
+      let k = j;
+      while (!opens(k)) k--;
+      return (j - k) % 2;
+    };
+    const readAt = (j) => learnOf(lines[j]).read;
+    const clears = (j) => Math.max(lines[j].e + 2.5, readAt(j));
+    const from = (j) => {
+      if (opens(j)) return lines[j].s - 4;
+      const freed = opens(j - 1) ? -Infinity : readAt(j - 2);
+      const spoken = opens(j - 1) ? -Infinity : Math.min(lines[j - 2].e, lines[j].s - fadeOut - fadeIn);
+      return Math.max(Math.min(Math.max(lines[j - 1].e, freed), lines[j].s - lead), spoken); // once the light has crossed the line between
+    };
+    const until = (j) => {
+      if (j + 1 === n || opens(j + 1)) return clears(j);
+      if (j + 2 === n || opens(j + 2)) return clears(j + 1);
+      return from(j + 2);
+    };
+
+    let now = 0;
+    for (let lo = 0, hi = n - 1; lo <= hi; ) {
+      const m = (lo + hi) >> 1;
+      if (lines[m].s <= t) {
+        now = m;
+        lo = m + 1;
+      } else hi = m - 1;
+    }
+
+    const shown = [];
+    for (let j = Math.max(0, now - 2); j <= Math.min(n - 1, now + 2); j++) {
+      const a = Math.min((t - from(j) - fadeOut) / fadeIn, (until(j) + fadeOut - t) / fadeOut);
+      if (a > 0) shown.push({ line: j, place: place(j), alpha: Math.min(1, a) });
+    }
+    // paused: keep the line just heard up, but not one from far off (an instrumental's stray "you.")
+    if (!shown.length && held && t >= lines[now].s && t <= clears(now) + 3) return [{ line: now, place: place(now), alpha: 1 }];
+    return shown;
+  };
+
+  // A word against media time, so the motion scales with playback speed on its own: it brightens
+  // just before it is spoken, a light wipes across it over exactly the time it is spoken, its onset
+  // flashes gold and settles, then it eases into white.
+  const SPOKEN = [255, 255, 255, 1];
+  const GOLD = [255, 214, 51, 1];
+  const UPCOMING = [255, 255, 255, 0.42];
+  const AHEAD = [255, 255, 255, 0.6];
+  const mix = (a, b, f) => {
+    f = Math.max(0, Math.min(1, f));
+    return a.map((v, i) => v + (b[i] - v) * f);
+  };
+  const rgba = (c) => "rgba(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + "," + c[3].toFixed(3) + ")";
+
+  // Styles are only written when they change: a page that rewrites them every frame keeps style-watching
+  // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
+  const paintWord = (sp, b, t) => {
+    const st = sp.style;
+    if (t >= b.e || t < b.s) {
+      const c = t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : mix(UPCOMING, AHEAD, 1 - (b.s - t) / 0.2);
+      const col = rgba(c);
+      if (sp._c !== col) st.color = sp._c = col;
+      if (sp._bg) {
+        st.backgroundImage = st.textShadow = sp._bg = sp._sh = "";
+      }
+      return;
+    }
+    // the light stays full gold for the whole word and wipes across all of it, with a soft edge
+    const dur = Math.max(0.05, b.e - b.s);
+    const f = Math.min(1, (t - b.s) / dur);
+    const w = (f * 100).toFixed(1);
+    const edge = Math.min(100, f * 100 + 6).toFixed(1);
+    const lit = rgba(GOLD);
+    if (sp._c !== "transparent") st.color = sp._c = "transparent";
+    const bg = "linear-gradient(" + (sp.dir === "rtl" ? "to left," : "to right,") + lit + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
+    if (sp._bg !== bg) st.backgroundImage = sp._bg = bg;
+    const sh = "0 0 8px rgba(255,214,51,.45)";
+    if (sp._sh !== sh) st.textShadow = sp._sh = sh;
+  };
+
+  const RTL_RE = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
+
+  // [Ambient Sounds], as Recense shows it: while the media plays and no line is up
+  const ambient = (host, el, gap, always, onTap) => {
+    if (host.querySelector(".txamb")) return;
+    const a = mkEl("div", "txamb");
+    a.textContent = "[Ambient Sounds]";
+    a.hidden = true;
+    if (onTap) {
+      a.style.pointerEvents = "auto";
+      a.style.cursor = "pointer";
+      a.onclick = (ev) => {
+        ev.stopPropagation();
+        onTap();
+      };
+    }
+    host.appendChild(a);
+    // [Ambient Sounds] only ever sits on black: the cover goes to the thumbnail strip (mode 2), as with lyrics
+    if (host.classList.contains("aw")) host.classList.add("lyrics");
+    const tick = () => {
+      if (!a.isConnected) return;
+      const on = (always || (!el.paused && !el.ended)) && gap();
+      if (a.hidden === on) a.hidden = !on;
+      setTimeout(tick, 250);
+    };
+    tick();
+  };
+
+  const TX_LH = 1.45; // the subtitles' line height (.txp): stacked Vietnamese marks never touch the line above
+
+  const showTranscript = async (f) => {
+    const el = stageMedia();
+    const host = el && (el.getRootNode().host || el).closest(".vw, .aw");
+    if (!el || !host) return;
+
+    const t = await txFetch(f);
+    if (items[cur] !== f || !el.isConnected) return;
+    if (!t || !Array.isArray(t.lines) || !t.lines.length) {
+      if (t && t.pending) {
+        f.tx = null; // ask again next time: Recense may have finished meanwhile
+        awaitTranscript(f, el, host, t);
+      } else if (t) ambient(host, el, () => true, true, () => toolsSheet(f, host, el, "No words in this one: [Ambient Sounds]")); // an instrumental, playing or paused
+      return;
+    }
+    if (host.querySelector(".tx.learn")) return;
+
+    let lines = t.lines;
+    if (f.txv === undefined || (t.version || 0) > f.txv) f.txv = t.version || 0;
+    const w = txWrite(f);
+    let editing = null; // the whole transcript is open
+    const player = activePlayer;
+    // the time being heard: the deck's clock on Safari, less what is still on its way to the speakers
+    // media time is coarse on Firefox and jittery through the deck: interpolate with the frame clock,
+    // and never step backwards a little (a seek, a real jump, resets it)
+    let ck = { m: -1, at: 0, out: 0 };
+    const clock = () => {
+      const m = player && player.heard ? player.heard() : el.currentTime;
+      const now = performance.now();
+      if (el.paused) return (ck = { m, at: now, out: m }).out;
+      if (m !== ck.m) ck = { m, at: now, out: ck.out };
+      let v = ck.m + ((now - ck.at) / 1000) * (el.playbackRate || 1);
+      if (v < ck.out && ck.out - v < 0.3) v = ck.out;
+      ck.out = v;
+      return v;
+    };
+
+    const box = mkEl("div", "tx learn");
+    const places = [0, 1].map(() => {
+      const p = mkEl("button", "txp");
+      p.type = "button";
+      p.hidden = true;
+      box.appendChild(p);
+      return { el: p, line: -1, cells: [] };
+    });
+    host.appendChild(box);
+    box.onclick = (ev) => {
+      ev.stopPropagation();
+      openAll();
+    };
+    // spec §2: audio with a transcript shows its lyrics on black (mode 2) instead of the cover (mode 1)
+    if (host.classList.contains("aw")) host.classList.add("lyrics");
+
+    const fits = new Map(); // (width, size, language, view) → the transcript's one font size
+
+    // The transcript's one size: clamp(22px, 3vw, 30px) times Text Size, unless its longest line (original or
+    // trailing language, whichever is wider) would need more than three rows at that size; then every line is
+    // made smaller together, never below 60%. Measured once per width, size, language and view.
+    // The lyrics live in a band between the top bar (its day and time) and the two bars (gallery.css .tx.learn), so in
+    // landscape on a phone the size also comes down until the longest line fits its place in that band (SPEC 56).
+    const measure = document.createElement("canvas").getContext("2d");
+    const uniformSize = () => {
+      const base = Math.max(22, Math.min(30, innerWidth * 0.03)) * prefs.txScale;
+      const width = Math.max(120, box.clientWidth - 24);
+      const band = box.clientHeight || innerHeight / 2;
+      const stacked = prefs.view === "follow" || prefs.prominence != null; // the trailing line under the original
+      const key = [width, band, base, nativeLang(), prefs.view, stacked, lines.length].join("/");
+      if (fits.has(key)) return fits.get(key);
+      measure.font = "600 " + base + "px -apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif";
+      let wo = 0;
+      let wt = 0;
+      for (const l of lines) {
+        wo = Math.max(wo, measure.measureText(l.text || "").width);
+        const tr = trailOf(l);
+        if (tr) wt = Math.max(wt, measure.measureText(tr).width * 0.95); // (the trailing language is set lighter)
+      }
+      const placeH = (prefs.view === "follow" ? band : (band - 6) / 2) - 12;
+      const rows = (w, k) => (w ? Math.max(1, Math.ceil((w * k) / (width * 0.9))) : 0);
+      let size = base;
+      // the floor is the unscaled size's, so a Text Size too big for two lines to fit is held back: past that point
+      // it magnifies no further, and nothing is clipped (notes 2026-10-26: text above 100%)
+      const floor = Math.min(base, base / prefs.txScale) * 0.55;
+      for (; size > floor; size *= 0.95) {
+        const k = size / base;
+        const need = (stacked ? rows(wo, k) + rows(wt, k) : Math.max(rows(wo, k), rows(wt, k), 1)) * size * TX_LH;
+        if (need <= placeH && (stacked ? rows(wo, k) <= 3 : rows(Math.max(wo, wt), k) <= 3)) break;
+      }
+      fits.set(key, size);
+      return size;
+    };
+    // turned or resized: the band changes, and with it the size
+    const onResize = () => {
+      if (!box.isConnected) return removeEventListener("resize", onResize);
+      fits.clear();
+      places.forEach((pl) => (pl.line = -1));
+    };
+    addEventListener("resize", onResize);
+
+    // a line in its place: each phrase a cell holding its words and, stacked in the same slot, its English
+    const build = (pl, j) => {
+      const l = lines[j];
+      const L = learnOf(l);
+      pl.line = j;
+      pl.lang = nativeLang();
+      pl.cells = [];
+      box.classList.toggle("follow", prefs.view === "follow");
+      pl.el.replaceChildren();
+      pl.el.onclick = (ev) => {
+        ev.stopPropagation();
+        el.currentTime = Math.max(0, l.s - 0.05);
+        openAll();
+      };
+
+      const rtl = RTL_RE.test(l.text || "");
+      pl.el.dir = rtl ? "rtl" : "ltr";
+      const parts = L.parts || L.beats.map((_, i) => ({ src: [i, i + 1], en: null }));
+
+      for (const p of parts) {
+        const cell = mkEl("span", "txc");
+        const src = mkEl("span", "txs");
+        const words = [];
+        for (let i = p.src[0]; i < p.src[1]; i++) {
+          const sp = mkEl("span", "txw");
+          sp.textContent = L.beats[i].t;
+          sp.dir = rtl ? "rtl" : "ltr";
+          src.appendChild(sp);
+          if (i + 1 < p.src[1]) src.appendChild(document.createTextNode(" "));
+          words.push({ sp, b: L.beats[i] });
+        }
+        cell.appendChild(src);
+        let en = null;
+        const native = p.text != null ? p.text : p.en ? l.enw.slice(p.en[0], p.en[1]).map((w) => w.w).join(" ") : null;
+        if (native != null) {
+          en = mkEl("span", "txe");
+          en.dir = RTL_RE.test(native) ? "rtl" : "ltr";
+          en.textContent = native;
+          cell.appendChild(en);
+        }
+        pl.el.appendChild(cell);
+        pl.cells.push({ cell, src, en, words, start: L.beats[p.src[0]].s, end: L.beats[p.src[1] - 1].e, w: 0, p: -1 });
+      }
+
+      // One size for every line and both languages, from the first line to the last (SPEC 59): never one line
+      // bigger or smaller than another. The size is the transcript's (uniformSize: the reader's Text Size, made
+      // smaller only as far as the longest line needs to fit where the lines are shown); a long line wraps.
+      pl.sc = prefs.txScale;
+      pl.view = prefs.view;
+      pl.el.style.fontSize = uniformSize() + "px";
+      pl.cells.forEach((c) => (c.w = c.cell.offsetWidth));
+    };
+
+    // the soft edge that turns a phrase into its English, the way it is read
+    const turn = (c, raw, rtl, h) => {
+      const p = raw * raw * (3 - 2 * raw);
+      if (Math.abs(p - c.p) < 0.002) return;
+      c.p = p;
+      const w = c.w || c.cell.offsetWidth;
+      const fe = Math.min(w, 1.5 * h);
+      const e = -fe + (w + 2 * fe) * p;
+      const dir = rtl ? "to left" : "to right";
+      const so = p <= 0 ? "none" : "linear-gradient(" + dir + ",transparent " + e + "px,#000 " + (e + fe) + "px)";
+      const eo = "linear-gradient(" + dir + ",#000 " + (e - fe) + "px,transparent " + e + "px)";
+      c.src.style.webkitMaskImage = c.src.style.maskImage = so;
+      c.src.style.visibility = p >= 1 ? "hidden" : "visible";
+      c.en.style.webkitMaskImage = c.en.style.maskImage = p >= 1 ? "none" : eo;
+      c.en.style.visibility = p <= 0 ? "hidden" : "visible";
+    };
+
+    // Tap a line: the whole transcript opens over the media, scrolled to that line. Only the line being
+    // heard is a field (Return or leaving it saves, Escape puts it back); any other line takes you to its
+    // time and plays from there, and is then the one you can correct. Changes lists every correction made
+    // to this transcript, by anyone, with what it replaced; Restore puts that back (itself a correction).
+    const mmss = (x) => {
+      x = Math.max(0, Math.floor(x));
+      return Math.floor(x / 60) + ":" + String(x % 60).padStart(2, "0");
+    };
+    const lineAt = (t) => {
+      let k = -1;
+      lines.forEach((l, i) => l.s <= t + 0.05 && (k = i));
+      return k;
+    };
+    const openAll = () => {
+      if (editing) return;
+      editing = true;
+      box.hidden = true;
+      const sheet = mkEl("div", "txall");
+      const bar = mkEl("div", "txbar txallbar");
+      const list = mkEl("div", "txlist");
+      const btn = (label, fn) => {
+        const b = mkEl("button", "lnk txbtn");
+        b.type = "button";
+        b.textContent = label;
+        b.onpointerdown = (e) => e.preventDefault(); // keep the field's focus, so its blur doesn't save first
+        b.onclick = (e) => {
+          e.stopPropagation();
+          fn();
+        };
+        bar.appendChild(b);
+        return b;
+      };
+      let cur = -1;
+      let field = null;
+      let rows = [];
+      const save = (l, ta) => {
+        const text = ta.value.replace(/\s+/g, " ").trim();
+        if (text === l.text) return;
+        l.text = text;
+        l.words = spreadWords(text, l);
+        l.fixed = true;
+        delete l._learn;
+        fits.clear();
+        queueEdit(f, { segId: l.id, field: "text", to: text, updatedAt: Date.now() }).onLines = onLines;
+        if (!text) say("Line removed — Changes has it if you want it back");
+      };
+      const saveTr = (l, ta, lang) => {
+        const text = ta.value.replace(/\s+/g, " ").trim();
+        if (text === trailOf(l, lang)) return;
+        l.tr = { ...(l.tr || {}), [lang]: text };
+        delete l._learn;
+        fits.clear();
+        queueEdit(f, { segId: l.id, field: "tr." + lang, to: text, updatedAt: Date.now() }).onLines = onLines;
+      };
+      const row = (l, i) => {
+        const r = mkEl("div", "txrow" + (i === cur ? " cur" : ""));
+        const time = mkEl("span", "txt");
+        time.textContent = mmss(l.s);
+        r.appendChild(time);
+        const lang = nativeLang();
+        const tr = trailOf(l, lang);
+        const body = mkEl("div", "txbody");
+        r.appendChild(body);
+        // the trailing side (P3 4): the same line in the chosen language, its own field under the original's
+        const trField = () => {
+          const tb = mkEl("textarea", "txin txtr");
+          tb.value = tr;
+          tb.rows = 1;
+          tb.maxLength = 2000;
+          tb.placeholder = langName(lang);
+          tb.setAttribute("aria-label", "Correct this line in " + langName(lang));
+          tb.onfocus = () => el.pause();
+          tb.onkeydown = (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              tb.blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              tb.value = tr;
+              tb.blur();
+            }
+          };
+          tb.onblur = () => saveTr(l, tb, lang);
+          tb.onclick = (e) => e.stopPropagation();
+          return tb;
+        };
+        if (i === cur && w) {
+          const ta = mkEl("textarea", "txin");
+          ta.value = l.text;
+          ta.rows = 2;
+          ta.maxLength = 2000;
+          ta.setAttribute("aria-label", "Correct this line");
+          ta.onfocus = () => el.pause();
+          ta.onkeydown = (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              ta.blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              ta.value = l.text;
+              ta.blur();
+            }
+          };
+          ta.onblur = () => save(l, ta);
+          ta.onclick = (e) => e.stopPropagation();
+          field = ta;
+          body.append(ta, trField());
+        } else {
+          const b = mkEl("button", "txline");
+          b.type = "button";
+          b.textContent = l.text;
+          b.dir = RTL_RE.test(l.text || "") ? "rtl" : "ltr";
+          b.onclick = (e) => {
+            e.stopPropagation();
+            el.currentTime = Math.max(0, l.s - 0.05);
+            el.play().catch(() => {});
+            follow(i);
+          };
+          body.appendChild(b);
+          if (tr && tr !== (l.text || "").trim()) {
+            const t = mkEl("div", "txtrl");
+            t.textContent = tr;
+            t.dir = RTL_RE.test(tr) ? "rtl" : "ltr";
+            body.appendChild(t);
+          }
+        }
+        return r;
+      };
+      const render = () => {
+        if (field && document.activeElement === field) field.blur();
+        field = null;
+        rows = lines.map(row);
+        list.replaceChildren(...rows);
+      };
+      const follow = (i, scroll = true) => {
+        if (i === cur) return;
+        if (field && document.activeElement === field) field.blur(); // saves it
+        const old = cur;
+        cur = i;
+        field = null;
+        [old, cur].forEach((k) => {
+          if (k < 0 || !rows[k]) return;
+          const r = row(lines[k], k);
+          rows[k].replaceWith(r);
+          rows[k] = r;
+        });
+        if (scroll && rows[cur]) rows[cur].scrollIntoView({ block: "center", behavior: "smooth" });
+      };
+      const showChanges = async () => {
+        const u = txWrite(f);
+        list.replaceChildren(mkEl("div", "txmsg"));
+        list.firstChild.textContent = "Loading changes…";
+        changesBtn.hidden = true;
+        backBtn.hidden = false;
+        await flushEdits(f);
+        const r = await fetch(u.changes, { headers: { "x-gallery": "1" }, cache: "no-store" }).catch(() => null);
+        const j = r && r.ok ? await r.json().catch(() => null) : null;
+        if (!sheet.isConnected || backBtn.hidden) return;
+        const cs = ((j && j.changes) || []).filter((c) => c.field === "text");
+        if (!cs.length) {
+          list.firstChild.textContent = j ? "No corrections yet" : "Couldn’t load the changes";
+          return;
+        }
+        const byId = new Map(lines.map((l) => [String(l.id), l]));
+        list.replaceChildren(
+          ...cs.map((c) => {
+            const r = mkEl("div", "txrow txchg");
+            const meta = mkEl("span", "txt");
+            const l = byId.get(String(c.segId));
+            meta.textContent = (l ? mmss(l.s) + " · " : "") + new Date(c.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+            const was = mkEl("del", "txwas");
+            was.textContent = c.from || "(empty)";
+            const now = mkEl("ins", "txnow");
+            now.textContent = c.to || "(line removed)";
+            const body = mkEl("div", "txdiff");
+            body.append(was, now);
+            r.append(meta, body);
+            const live = l ? l.text : "";
+            if (live !== c.from) {
+              const b = mkEl("button", "lnk txbtn");
+              b.type = "button";
+              b.textContent = "Restore";
+              b.onclick = async (e) => {
+                e.stopPropagation();
+                b.disabled = true;
+                queueEdit(f, { segId: c.segId, field: "text", to: c.from, updatedAt: Date.now() }).onLines = onLines;
+                await flushEdits(f);
+                b.textContent = "Restored";
+              };
+              r.appendChild(b);
+            }
+            return r;
+          })
+        );
+      };
+      const backToLines = () => {
+        backBtn.hidden = true;
+        changesBtn.hidden = !w;
+        cur = lineAt(clock());
+        render();
+        if (rows[cur]) rows[cur].scrollIntoView({ block: "center" });
+      };
+      const changesBtn = btn("Changes", showChanges);
+      const backBtn = btn("Transcript", backToLines);
+      backBtn.hidden = true;
+      changesBtn.hidden = !w;
+      // Retranscribe: a new transcript and its translations, the chosen language first (SPEC 9, 57)
+      const redo = async () => {
+        close();
+        const r = await txSend(w.run, "POST", { retranscribe: true, lang: prefs.nativeLang });
+        if (r && r.ok) {
+          say("Retranscribing and retranslating; your corrections stay");
+          f.tx = null;
+          box.remove();
+          awaitTranscript(f, el, host, { run: await r.json().catch(() => ({ state: "queued" })) });
+        } else say("Couldn’t ask for a new transcript", true);
+      };
+      // Clear: every line goes; the cover (or [Ambient Sounds]) comes back
+      const wipe = async () => {
+        if (!(await clearTranscript(f, lines))) return;
+        close();
+        f.tx = null;
+        box.remove();
+        host.querySelectorAll(".txamb").forEach((x) => x.remove()); // its label went with the lines
+        host.classList.remove("lyrics");
+        showTranscript(f);
+      };
+      const tools = editorToolsFor(f, {
+        lines: () => lines,
+        relang: () => {
+          fits.clear();
+          if (backBtn.hidden) render();
+        },
+        clear: wipe,
+        redo,
+      });
+      bar.prepend(tools.el);
+      const close = () => {
+        if (!sheet.isConnected) return;
+        if (field && document.activeElement === field) field.blur();
+        sheet.remove();
+        box.hidden = false;
+        places.forEach((pl) => (pl.line = -1));
+        editing = null;
+        reRender = null;
+        document.removeEventListener("keydown", onKey, true);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape" && document.activeElement !== field) {
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+        }
+      };
+      document.addEventListener("keydown", onKey, true);
+      btn("Done", close);
+      sheet.onclick = (e) => e.stopPropagation();
+      sheet.append(bar, list);
+      host.appendChild(sheet);
+      cur = lineAt(clock());
+      render();
+      if (rows[cur]) rows[cur].scrollIntoView({ block: "center" });
+      // the field follows what is heard, unless you are typing in it
+      const tick = () => {
+        if (!sheet.isConnected) return;
+        if (backBtn.hidden && !(field && document.activeElement === field)) {
+          const i = lineAt(clock());
+          if (i !== cur) follow(i, !el.paused);
+        }
+        setTimeout(tick, 200);
+      };
+      tick();
+      reRender = () => backBtn.hidden && render();
+    };
+    let reRender = null;
+
+    // the server's corrected lines (its timing, glossary applied to other lines) replace the page's
+    const onLines = (fresh) => {
+      if (!box.isConnected || !Array.isArray(fresh)) return;
+      lines = fresh;
+      places.forEach((pl) => (pl.line = -1));
+      fits.clear();
+      if (reRender) reRender();
+    };
+    const q = txQueues.get(f);
+    if (q) q.onLines = onLines;
+
+    // Follow (chosen in the editor): the line being heard in the first place, its trailing language under it,
+    // until the next one begins (or a moment after it ends, before a silence); paused, it stays.
+    const followPlaces = (t) => {
+      const k = lineAt(t);
+      if (k < 0) return [];
+      const l = lines[k];
+      const next = lines[k + 1];
+      if (t > l.e + 2.5 && (!next || next.s - t > 0.6) && !(el.paused && t <= l.e + 6)) return [];
+      return [{ line: k, place: 0, alpha: 1 }];
+    };
+
+    let gapNow = false;
+    ambient(host, el, () => gapNow, false, () => openAll()); // between lines too, a tap is the editor
+    const paint = () => {
+      if (!box.isConnected) return;
+      if (editing) return requestAnimationFrame(paint);
+
+      const now = clock();
+      const follow = prefs.view === "follow";
+      const shown = follow ? followPlaces(now) : learningPlaces(lines, now, el.paused);
+      gapNow = !shown.length;
+      const want = [null, null];
+      for (const s of shown) if (!want[s.place] || s.alpha > want[s.place].alpha) want[s.place] = s;
+
+      places.forEach((pl, k) => {
+        const s = want[k];
+        if (!s) {
+          pl.el.hidden = true;
+          return;
+        }
+        pl.el.hidden = false;
+        if (pl.line !== s.line || pl.lang !== nativeLang() || pl.sc !== prefs.txScale || pl.view !== prefs.view) build(pl, s.line);
+        pl.el.style.opacity = s.alpha.toFixed(3);
+
+        const rtl = pl.el.dir === "rtl";
+        const h = parseFloat(pl.el.style.fontSize) * TX_LH;
+        // Prominence under 50%: the light follows the selected language, wiping across its phrase while the
+        // original is pronounced; 50% to 90%: the original's words, as at rest; past 90% nothing is shown.
+        const trailLit = prefs.prominence != null && prefs.prominence < 0.5;
+        for (const c of pl.cells) {
+          if (follow && !trailLit) {
+            c.words.forEach((w) => paintWord(w.sp, w.b, now)); // Follow: the light on the original; its translation stays under it
+            continue;
+          }
+          const raw = c.en ? Math.max(0, Math.min(1, (now - c.end) / TURN)) : 0;
+          if (trailLit && c.en) {
+            paintWord(c.en, { s: c.start, e: c.end }, now);
+            c.words.forEach((w) => paintWord(w.sp, { s: w.b.s, e: w.b.s }, now)); // no wipe on the original
+          } else if (raw < 1) {
+            c.words.forEach((w) => paintWord(w.sp, w.b, now));
+            if (c.en && c.en._c) (c.en.style.color = c.en.style.backgroundImage = c.en.style.textShadow = ""), (c.en._c = c.en._bg = c.en._sh = undefined);
+          }
+          if (c.en) turn(c, raw, rtl, h);
+        }
+      });
+
+      requestAnimationFrame(paint);
+    };
+
+    requestAnimationFrame(paint);
+  };
+
+
   // ---------- owner controls: Upload (Main) and Delete (everywhere) ----------
   //
   // Visitors never see these. On Main the owner is known; on a public link the page asks
@@ -3910,7 +4635,8 @@
   };
 
   const showOwner = () => {
-    del.hidden = false;
+    owner = true;
+    paintCap();
     if (G.main) up.hidden = false;
     label();
   };
@@ -3982,6 +4708,11 @@
     const keyOf = (f) => (G.dir ? G.dir + "/" : "") + f.name;
     const clash = files.filter((f) => items.some((x) => x.path === keyOf(f)));
 
+    if (G.invite && clash.length) {
+      say((clash.length === 1 ? "“" + clash[0].name + "” is" : clash.length + " files are") + " already here. Rename and try again.", true);
+      return;
+    }
+
     if (
       clash.length &&
       !confirm((clash.length === 1 ? "“" + clash[0].name + "” is" : clash.length + " files are") + " already here. Replace?")
@@ -3996,15 +4727,27 @@
       for (const file of files) {
         say("Uploading " + (done + 1) + " of " + files.length + "…");
 
-        const q = new URLSearchParams({ key: keyOf(file), mtime: String(file.lastModified || Date.now()) });
-        const r = await fetch("/main/api/file?" + q, {
+        const mtime = String(file.lastModified || Date.now());
+        // an invited person adds new files only, into their one folder (the server picks the folder)
+        const to = G.invite
+          ? API + "/file?" + new URLSearchParams({ name: file.name, mtime })
+          : "/main/api/file?" + new URLSearchParams({ key: keyOf(file), mtime });
+        const r = await fetch(to, {
           method: "PUT",
-          headers: { "content-type": file.type || "application/octet-stream" },
+          headers: { "content-type": file.type || "application/octet-stream", "x-gallery": "1" },
           body: file,
         });
 
         if (!r.ok) throw new Error((await r.text()) || "Upload failed");
         done++;
+
+        // the owner's audio: find its original key now, for the Key slider's labels (best effort)
+        if (!G.invite && kind({ type: file.type || "", name: file.name }) === "aud" && file.size <= DETECT_BYTES) {
+          say("Finding the key of " + file.name + "…");
+          await detectKey(file)
+            .then((k) => k && saveKey(keyOf(file), k, "auto"))
+            .catch(() => {});
+        }
       }
 
       location.reload();
@@ -4014,9 +4757,148 @@
     }
   };
 
-  $("back").onclick = () => history.back();
-  $("prev").onclick = () => show(cur - 1);
-  $("next").onclick = () => show(cur + 1);
+  // ----- the original key (Key slider labels) -----
+  //
+  // Found from the sound: the middle two minutes, mixed to mono at 22.05 kHz, folded into a chroma
+  // vector and matched against the 24 Krumhansl-Kessler key profiles (keylabel.js). Done for the
+  // owner's audio uploads, and on demand from Info. What the owner types in Info wins over it.
+  const DETECT_BYTES = 80 * 1024 * 1024;
+  const DETECT_SECONDS = 120;
+  const DETECT_SR = 22050;
+
+  const detectKey = async (from) => {
+    const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Off) return "";
+
+    const data = from instanceof Blob ? await from.arrayBuffer() : await (await fetch(from)).arrayBuffer();
+    const ctx = new Off(1, 1, DETECT_SR);
+    const audio = await new Promise((ok, no) => {
+      const p = ctx.decodeAudioData(data, ok, no);
+      if (p && p.then) p.then(ok, no);
+    });
+
+    const sr = audio.sampleRate;
+    const n = Math.min(audio.length, DETECT_SECONDS * sr);
+    const start = Math.floor((audio.length - n) / 2);
+    const mono = new Float32Array(n);
+
+    for (let c = 0; c < audio.numberOfChannels; c++) {
+      const d = audio.getChannelData(c);
+      for (let i = 0; i < n; i++) mono[i] += d[start + i];
+    }
+
+    return GalleryKey.keyOfChroma(GalleryKey.chromaOf(mono, sr));
+  };
+
+  const saveKey = async (path, key, src) => {
+    const r = await fetch("/main/api/key", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-gallery": "1" },
+      body: JSON.stringify({ path, key, src }),
+    });
+    if (!r.ok) throw new Error((await r.text()) || "Couldn’t save the key");
+    return r.json();
+  };
+
+  // an item's key changed: its labels, and Info, show it at once
+  const keySaved = (f, j) => {
+    f.key = j.key || "";
+    f.keySrc = j.keySrc || "";
+    if (items[cur] === f) {
+      if (activePlayer && activePlayer.repaintKey) activePlayer.repaintKey();
+      // refresh Info only if it is open: a key found in the background never pops it up
+      if (!meta.hidden) {
+        meta.hidden = true;
+        $("info").onclick();
+      }
+    }
+  };
+
+  const keyName = (k) => GalleryKey.label(0, 0, k, "en").lines[0];
+
+  // a key in words, for the prompt: "D minor", and in the language in use too ("D minor / Ré mineur")
+  const KEY_WORDS = {
+    en: [{ C: "C", D: "D", E: "E", F: "F", G: "G", A: "A", B: "B" }, "major", "minor"],
+    fr: [{ C: "Do", D: "Ré", E: "Mi", F: "Fa", G: "Sol", A: "La", B: "Si" }, "majeur", "mineur"],
+    vi: [{ C: "Đô", D: "Rê", E: "Mi", F: "Fa", G: "Sol", A: "La", B: "Si" }, "trưởng", "thứ"],
+  };
+  const keyWords = (key, lang) => {
+    const k = GalleryKey.parse(key);
+    if (!k) return "";
+    const w = KEY_WORDS[lang] || KEY_WORDS.en;
+    return w[0][k.letter] + (k.acc === "♮" ? "" : k.acc) + " " + (k.minor ? w[2] : w[1]);
+  };
+  const keySpoken = (key) => {
+    const en = keyWords(key, "en");
+    const own = prefs.nativeLang !== "en" ? keyWords(key, prefs.nativeLang) : "";
+    return own && own !== en ? en + " / " + own : en;
+  };
+
+  const setKeyOf = async (f) => {
+    // the original key, found now if the background detection hasn't finished yet
+    if (!f.autoKey && !(f.key && f.keySrc !== "manual")) {
+      tell("Finding the original key…");
+      await autoKey(f, true);
+    }
+    const orig = f.keySrc === "manual" ? f.autoKey || "" : f.key || f.autoKey || "";
+    const typed = prompt(
+      "Enter a starting key. " + (orig ? "Leave blank to keep " + keySpoken(orig) + "." : "Leave blank to keep the original key."),
+      f.keySrc === "manual" && f.key ? keyName(f.key) : ""
+    );
+    if (typed === null) return;
+    if (!typed.trim()) return clearKeyOf(f);
+
+    const k = GalleryKey.canon(GalleryKey.parseAny(typed));
+    if (!k) return tell("That isn’t a key (try E♭m, Rém, fis, ニ短, 6=D)", true);
+
+    try {
+      keySaved(f, await saveKey(f.path, k, "manual"));
+      tell("Starting key: " + keyName(f.key));
+    } catch (e) {
+      tell(e.message || "Couldn’t save the key", true);
+    }
+  };
+
+  // back to the original key: found from the sound again and applied
+  const clearKeyOf = async (f) => {
+    if (f.size > DETECT_BYTES) return tell("Too big to find the key of here; set it by hand", true);
+    tell("Finding the original key…");
+    try {
+      const k = f.autoKey || (await detectKey(src(f)));
+      if (!k) return tell("Couldn’t find a key in this sound", true);
+      keySaved(f, await saveKey(f.path, k, "auto"));
+      tell("Original key: " + keyName(k));
+    } catch (e) {
+      tell(e.message || "Couldn’t find the key", true);
+    }
+  };
+
+  // Key names need the original key: an audio file without one has it found quietly as soon as it is
+  // opened (a link onto one item: as the page loads), before Info or Transpose is ever touched, so the
+  // Key slider names keys (E♭m, Rê t, Ré♭maj …) instead of counting semitones (+1, +2 …). Main keeps
+  // what it finds; a share link keeps it for the visit. force: also when a key was typed by hand
+  // (the prompt names the original).
+  const autoTried = new Map(); // item → its detection
+  const autoKey = (f, force) => {
+    if ((f.key && !force) || f.size > DETECT_BYTES || f.pending) return Promise.resolve();
+    const id = f.path || f.n || f.name;
+    if (!autoTried.has(id)) {
+      autoTried.set(
+        id,
+        detectKey(src(f))
+          .then(async (k) => {
+            if (!k) return;
+            f.autoKey = k;
+            if (f.key) return; // a key typed by hand stays
+            if (G.main && f.path) keySaved(f, await saveKey(f.path, k, "auto"));
+            else keySaved(f, { key: k, keySrc: "auto" });
+          })
+          .catch(() => {})
+      );
+    }
+    return autoTried.get(id);
+  };
+
 
 
   // ----- downloads with the sound baked in -----
@@ -4026,15 +4908,18 @@
   // (so a long recording never has to be held whole) into a WAV at the file's own sample rate
   // and length. EQ and Key run straight in this page, carrying on from one stretch to the next
   // (Key with the player's own phase vocoder); Space is rendered by the browser, each stretch
-  // given the sound before it so the room's tail carries over. Speed isn't baked in: the file
-  // keeps its length. Video always downloads as it is.
+  // given the sound before it so the room's tail carries over. Speed is baked in too (SPEC P3 12):
+  // away from 1x the player's deck reads the file at that pace and its phase vocoder keeps the
+  // key (and moves it by Key), exactly as Safari's player does, so the file comes out shorter or
+  // longer by the speed. Video always downloads as it is.
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  let keyClass = null;
+  const procs = {}; // by sample rate: the deck reads the worklet's sampleRate
 
-  // the player's Key processor, run here instead of in an AudioWorklet
-  const pageKey = async (sr) => {
-    if (!keyClass) {
+  // the player's Key processor ("pdc-key") or deck ("pdc-deck"), run here instead of in an AudioWorklet
+  const pageKey = async (sr, which = "pdc-key") => {
+    if (!procs[sr]) {
       const code = await (await fetch("/player/key.js?v=" + G.version)).text();
+      const got = {};
 
       class Shim {
         constructor() {
@@ -4042,34 +4927,35 @@
         }
       }
 
-      new Function("AudioWorkletProcessor", "registerProcessor", "sampleRate", code)(
-        Shim,
-        (name, c) => {
-          if (name === "pdc-key") keyClass = c;
-        },
-        sr
-      );
+      new Function("AudioWorkletProcessor", "registerProcessor", "sampleRate", code)(Shim, (name, c) => (got[name] = c), sr);
+      procs[sr] = got;
+      if (globalThis.PDC_DELAY) Object.assign(DELAY, globalThis.PDC_DELAY);
     }
 
-    return keyClass;
+    return procs[sr][which];
   };
 
   const bakeName = (f, set) => {
     const bits = [];
 
+    if (set.vox) bits.push(set.vox < 0 ? "No vocals" : "Vocals only");
     if (set.key) bits.push("Key " + (set.key > 0 ? "+" : "−") + Math.abs(set.key));
     if (set.eq.low || set.eq.mid || set.eq.high) bits.push("EQ");
-    if (set.mix) bits.push(ROOMS[set.room].label + " " + Math.round(set.mix * 100) + "%");
+    if (set.mix) bits.push((set.mix < 0 ? "Reversed " : "") + ROOMS[set.room].label + " " + Math.round(Math.abs(set.mix) * 100) + "%");
+    if (set.speed && set.speed !== 1) bits.push(set.speed + "×");
 
     return f.name.replace(/\.[^.]+$/, "") + " (" + bits.join(", ") + ").wav";
   };
 
   const bake = async (f, set, progress) => {
-    const s = await openSound(src(f), audioCtx || new OAC(2, 1, 44100));
+    // decoded at the file's own rate (a compressed file's rate read from its header), not the context's:
+    // decodeAudioData resamples to the context it is given
+    const s = await openSound(src(f), null);
     if (!s) return null;
 
     const sr = s.sr;
-    const total = s.total;
+    const speed = set.speed > 0 ? set.speed : 1;
+    const total = speed === 1 ? s.total : Math.ceil(s.total / speed); // frames out
     const bytes = s.pcm && (s.pcm.bits >= 24 || s.pcm.float) ? 3 : 2;
     const SEG = 4 * CHUNK;
 
@@ -4079,7 +4965,25 @@
       return { k: [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0], z: [new Float64Array(4), new Float64Array(4)] };
     });
 
+    // the same headroom as the player: the EQ's highest peak is taken back off, so a boost never clips
+    let peak = 0;
+    for (let i = 0; eqs.length && i < 96; i++) {
+      const w = (2 * Math.PI * 20 * Math.pow(1000, i / 95)) / sr;
+      if (w >= Math.PI) break;
+      let db = 0;
+      eqs.forEach(({ k: [b0, b1, b2, a1, a2] }) => {
+        const nr = b0 + b1 * Math.cos(w) + b2 * Math.cos(2 * w);
+        const ni = -(b1 * Math.sin(w) + b2 * Math.sin(2 * w));
+        const dr = 1 + a1 * Math.cos(w) + a2 * Math.cos(2 * w);
+        const di = -(a1 * Math.sin(w) + a2 * Math.sin(2 * w));
+        db += 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+      });
+      peak = Math.max(peak, db);
+    }
+    const trimG = Math.pow(10, -peak / 20);
+
     const eq = (x, c) => {
+      if (eqs.length && trimG < 1) for (let i = 0; i < x.length; i++) x[i] *= trimG;
       eqs.forEach((q) => {
         const [b0, b1, b2, a1, a2] = q.k;
         const z = q.z[c];
@@ -4098,17 +5002,45 @@
       });
     };
 
-    // Key: its output runs LAT frames behind, so the first LAT are skipped and LAT of silence
-    // pushed through at the end
-    const LAT = 2048 - 256;
+    // Key: its output runs LAT frames behind (a whole frame, measured), so the first LAT are skipped
+    // and LAT of silence pushed through at the end
+    await pageKey(sr); // (loads DELAY too)
+    const LAT = DELAY.key;
     let kp = null;
     let skip = 0;
 
-    if (set.key) {
+    if (set.key && speed === 1) {
       const K = await pageKey(sr);
       kp = new K({ processorOptions: { ratio: Math.pow(2, set.key / 12), on: true } });
       skip = LAT;
     }
+
+    // the extractor, as the player has it (after the EQ, before Key): VLAT behind, skipped the same way
+    const VLAT = DELAY.vox;
+    let vp = null;
+    let vskip = 0;
+
+    if (set.vox) {
+      const V = await pageKey(sr, "pdc-vox");
+      vp = new V({ processorOptions: { amount: set.vox } });
+      vskip = VLAT;
+    }
+
+    const vox = (L, R) => {
+      if (!vp) return [L, R];
+
+      const oL = new Float32Array(L.length);
+      const oR = new Float32Array(L.length);
+
+      for (let i = 0; i < L.length; i += 128) {
+        const e = Math.min(L.length, i + 128);
+        vp.process([[L.subarray(i, e), R.subarray(i, e)]], [[oL.subarray(i, e), oR.subarray(i, e)]]);
+      }
+
+      const k = Math.min(vskip, oL.length);
+      vskip -= k;
+      return [oL.subarray(k), oR.subarray(k)];
+    };
 
     const key = (L, R) => {
       if (!kp) return [L, R];
@@ -4126,7 +5058,7 @@
     // Space: each stretch rendered after the room's length of what came before it
     const PRE = set.mix ? Math.ceil((ROOMS[set.room].rt * 1.1 + ROOMS[set.room].pre) * sr) + 128 : 0;
     const hist = [new Float32Array(PRE), new Float32Array(PRE)];
-    const ir = set.mix ? irData(set.room, sr) : null;
+    const ir = set.mix ? (set.mix < 0 ? reverseIR(irData(set.room, sr)) : irData(set.room, sr)) : null;
 
     const space = async (L, R) => {
       if (!set.mix || !L.length) return [L, R];
@@ -4154,8 +5086,8 @@
 
       bs.buffer = buf;
       conv.buffer = irb;
-      dry.gain.value = 1 - 0.35 * set.mix;
-      wet.gain.value = 0.85 * set.mix;
+      dry.gain.value = spaceGain(Math.abs(set.mix)).dry;
+      wet.gain.value = spaceGain(Math.abs(set.mix)).wet;
       bs.connect(dry);
       dry.connect(oc.destination);
       bs.connect(conv);
@@ -4172,6 +5104,25 @@
       return [r.getChannelData(0).slice(PRE), r.getChannelData(1).slice(PRE)];
     };
 
+    // the dither's noise from a seeded generator, so the same settings make the same file
+    let seed = 0x9e3779b9;
+    const rnd = () => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) / 4294967296;
+    };
+
+    // the last stage, as the player's (see safeCurve()): untouched up to KNEE, then bent smoothly to
+    // stay under 0.99, so an EQ boost's overshoot or a big room never hard-clips. Counted, and said.
+    let bent = 0;
+    const safe = (x) => {
+      const a = Math.abs(x);
+      if (a <= SAFE_KNEE) return x;
+      bent++;
+      return Math.sign(x) * safeBend(a);
+    };
+
     let parts = [];
     let done = new Blob([]); // folded into a Blob as it goes, which the browser may keep on disk
     let written = 0;
@@ -4184,10 +5135,13 @@
       let o = 0;
 
       const full = bytes === 2 ? 32767 : 8388607;
+      const tpdf = bytes === 2; // hi-fi (SPEC 58): 16-bit gets TPDF dither, so quiet tails fade into noise, not distortion
 
       for (let i = 0; i < 2 * n; i++) {
-        const x = (i & 1 ? R : L)[i >> 1];
-        const q = Math.round((x > 1 ? 1 : x < -1 ? -1 : x) * full);
+        const x = safe((i & 1 ? R : L)[i >> 1]);
+        const d = tpdf ? rnd() - rnd() : 0;
+        const v = x * full + d;
+        const q = Math.round(v > full ? full : v < -full - 1 ? -full - 1 : v);
 
         out[o++] = q & 255;
         out[o++] = (q >> 8) & 255;
@@ -4203,7 +5157,53 @@
       }
     };
 
-    for (let a = 0; a < total; a += SEG) {
+    // Speed (and Key with it): the deck pulls the file through at that pace, each chunk EQ'd as it
+    // is fed in. Its output runs LAT frames behind, so the first LAT are skipped and it runs on
+    // until the whole stretched length is out.
+    if (speed !== 1) {
+      const D = await pageKey(sr, "pdc-deck");
+      const dk = new D({ processorOptions: { chunk: CHUNK, total: s.total, sr } });
+      const msg = (m) => dk.port.onmessage({ data: m });
+      const last = Math.ceil(s.total / CHUNK) - 1;
+      let fed = -1;
+      let lead = DELAY.deck;
+
+      msg({ speed, key: set.key || 0, play: true });
+      // in the vocoder from the first frame (the player crossfades into it; a file just starts there)
+      Object.assign(dk, { g: 1, pv: true, w: 1, warm: 0 });
+
+      while (written < total) {
+        const need = Math.min(last, Math.floor((dk.pos + (SEG + 8) * speed) / CHUNK));
+
+        while (fed < need) {
+          const d = await s.get(++fed);
+          const L = d[0];
+          const R = d[1] || d[0].slice();
+
+          eq(L, 0);
+          eq(R, 1);
+          msg({ chunk: fed, data: [L, R] });
+        }
+
+        const lo = Math.floor(dk.pos / CHUNK) - 1;
+        msg({ drop: [...dk.chunks.keys()].filter((i) => i < lo) });
+
+        const oL = new Float32Array(SEG);
+        const oR = new Float32Array(SEG);
+        dk.process([], [[oL, oR]]);
+
+        const k = Math.min(lead, SEG);
+        lead -= k;
+
+        const [vL, vR] = vox(oL.subarray(k), oR.subarray(k));
+        const [sL, sR] = await space(vL, vR);
+        write(sL, sR);
+        progress(Math.min(1, written / total));
+        await new Promise((ok) => setTimeout(ok, 0));
+      }
+    }
+
+    for (let a = 0; speed === 1 && a < total; a += SEG) {
       const ch = [[], []];
       const end = Math.min(total, a + SEG);
 
@@ -4229,7 +5229,8 @@
       eq(L, 0);
       eq(R, 1);
 
-      const [kL, kR] = key(L, R);
+      const [xL, xR] = vox(L, R);
+      const [kL, kR] = key(xL, xR);
       const [sL, sR] = await space(kL, kR);
 
       write(sL, sR);
@@ -4237,11 +5238,16 @@
       await new Promise((ok) => setTimeout(ok, 0)); // let the page breathe between stretches
     }
 
-    if (kp) {
-      const [kL, kR] = key(new Float32Array(LAT), new Float32Array(LAT));
+    // what is still in the worklets: silence pushed through until the whole length is out
+    if (vp || kp) {
+      const z = (vp ? VLAT : 0) + (kp ? LAT : 0) + 128;
+      const [xL, xR] = vox(new Float32Array(z), new Float32Array(z));
+      const [kL, kR] = key(xL, xR);
       const [sL, sR] = await space(kL, kR);
       write(sL, sR);
     }
+
+    if (bent) console.info("[bake] the safety stage bent " + bent + " samples (" + ((100 * bent) / Math.max(1, 2 * written)).toFixed(3) + "%) that would have clipped");
 
     const h = new DataView(new ArrayBuffer(44));
     const str = (o, t) => [...t].forEach((c, i) => h.setUint8(o + i, c.charCodeAt(0)));
@@ -4267,11 +5273,10 @@
   let baking = false;
   let baked = null; // the last one, so tapping download again doesn't work it all out again
 
-  const bakeDownload = async (f) => {
-    const set = { key: prefs.key, eq: Object.assign({}, prefs.eq), mix: spaceOn() ? prefs.space.mix / 100 : 0, room: prefs.space.room };
+  const bakeDownload = async (f, from) => {
+    const set = { key: prefs.key, vox: prefs.vox || 0, eq: Object.assign({}, prefs.eq), mix: spaceOn() ? prefs.space.mix / 100 : 0, room: prefs.space.room, speed: prefs.speed };
     const id = f.n + JSON.stringify(set);
-    const btn = $("save");
-    const tell = (t) => activePlayer && activePlayer.note(t);
+    const btn = from || meta.querySelector(".mdl") || mkEl("button"); // the bar's Download, or Info's (spec §5)
 
     const give = (b) => {
       const a = document.createElement("a");
@@ -4310,12 +5315,13 @@
     }
   };
 
-  $("save").onclick = () => {
+  // Download lives in the Info panel (spec §5): with your sound baked in when it is changed
+  const download = (from) => {
     const f = items[cur];
     if (!f || f.pending) return;
 
-    if (kind(f) === "aud" && soundOn() && OAC) {
-      bakeDownload(f);
+    if (kind(f) === "aud" && (soundOn() || prefs.speed !== 1) && OAC) {
+      bakeDownload(f, from);
       return;
     }
 
@@ -4332,16 +5338,367 @@
     const s = document.createElement("span");
 
     b.textContent = f.name;
-    s.textContent = f.pending ? "Uploading…" : f.type + ", " + sz(f.size);
+    s.textContent = f.pending ? "Uploading…" : sz(f.size);
+    b.className = "mname";
+    s.className = "msize";
 
     meta.append(b, s);
+
+    // the owner, on Main: tap the name to rename it
+    if (G.main && !f.pending) {
+      b.classList.add("mrn");
+      b.title = "Rename";
+      b.setAttribute("role", "button");
+      b.tabIndex = 0;
+      b.onclick = () => renameItem(f);
+      b.onkeydown = (e) => e.key === "Enter" && renameItem(f);
+    }
+
+    // everyone: Download (spec §5)
+    if (!f.pending) {
+      const ops = mkEl("span", "mops");
+      const dl = mkBtn("lnk mdl", "Download", "Download");
+      dl.onclick = download;
+      ops.appendChild(dl);
+      meta.appendChild(ops);
+    }
+
     meta.hidden = !meta.hidden;
   };
+
+  const setNativeLang = (v) => {
+    if (!isLang(v)) return;
+    prefs.nativeLang = v;
+    const n = notationFor(v, prefs.keyNotation);
+    if (n !== prefs.keyNotation) {
+      // Ton. ⇄ Tông: same step, so the key itself stays where it is
+      if (activePlayer && activePlayer.setNotation) activePlayer.setNotation(n);
+      else prefs.keyNotation = n;
+    }
+    if (!SHARED) {
+      try {
+        localStorage.setItem(NATIVE_LANG, v);
+        localStorage.setItem(KEY_NOTATION, String(prefs.keyNotation));
+      } catch (e) {}
+    }
+    prefs.notationLast = false; // the chords follow the language again until a notation is picked (SPEC 40)
+    if (activePlayer && activePlayer.repaintKey) activePlayer.repaintKey();
+    if (activePlayer && activePlayer.paintChord) activePlayer.paintChord();
+    // Learn mode picks the new language up on its next frame (its paint loop watches prefs.nativeLang)
+  };
+
+  // The home bar's slides (homebar.js), in the order a swipe reaches them: Text size; Rename · Change
+  // Cover · Delete Cover (the owner, on Main); and Loop · A · B, Speed and Play · ±15s, which Recense
+  // has too. Language, Download, Retranscribe, Transpose, Share and the exports live in the transcript
+  // editor (SPEC 57); the comments stay below the thumbnail strip (SPEC 41). Each slide is rebuilt as the
+  // bar unfolds, so it always fits the item on screen.
+  const barSlides = (f) => {
+    const I = Homebar.ICONS;
+    const out = ["size"];
+    const owner = G.main && f && !f.pending;
+
+    if (owner) {
+      out.push({
+        id: "item",
+        label: "Rename and cover art",
+        items: [
+          { label: "Rename", text: "Rename", icon: I.rename, cls: "p-stack", act: () => renameItem(f) },
+          kind(f) === "aud" ? { label: "Change cover art", text: "Change Cover", icon: I.cover, cls: "p-stack", act: () => pickCover(f) } : null,
+          kind(f) === "aud" ? { label: "Delete cover art", text: "Delete Cover", icon: I.nocover, cls: "p-stack", act: () => deleteCover(f) } : null,
+        ],
+      });
+    }
+
+    return out.concat(["loop", "speed"]); // no Play ±15 trio (notes 2026-10-26): a tap on the picture plays and pauses
+  };
+
+  // ---------- the transcript editor's own (SPEC 57) ----------
+
+  const fileTitle = (f) => String(f.name || f.path || "Transcript").replace(/\.[^/.]+$/, "");
+  const langName = (code) => (NATIVE_LANGS.find((x) => x[0] === code) || [code, code])[1];
+  const trailOf = (l, lang = nativeLang()) => {
+    const tr = l.tr || {};
+    const ok = (x) => typeof x === "string" && x.trim() && x.trim() !== "…";
+    if (ok(tr[lang])) return tr[lang].trim();
+    if (lang === "en") return [tr.en, l.en].find(ok) || "";
+    return "";
+  };
+  const saveFile = (name, text, type) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  };
+  const clockOf = (x) => {
+    x = Math.max(0, Math.floor(x));
+    const h = Math.floor(x / 3600);
+    const m = Math.floor((x % 3600) / 60);
+    const s = String(x % 60).padStart(2, "0");
+    return h ? h + ":" + String(m).padStart(2, "0") + ":" + s : m + ":" + s;
+  };
+
+  // Export as MD: the same note Recense writes (front matter, then each line at its time with the trailing
+  // language under it as a quote), in the language chosen in the editor.
+  const exportMd = (f, lines) => {
+    const lang = nativeLang();
+    const title = fileTitle(f);
+    const shown = lines.filter((l) => (l.text || "").trim());
+    if (!shown.length) return tell("Nothing to export yet");
+    const d = shown[shown.length - 1].e || 0;
+    let md = "---\ntitle: \"" + title.replace(/"/g, "'") + "\"\nsource: \"" + location.origin + "/main?open=" + encodeURIComponent(f.path || f.name) + "\"\n";
+    md += "duration: " + clockOf(d) + "\nlanguage: " + lang + "\nexported: " + new Date().toISOString() + "\n---\n\n# " + title + "\n\n";
+    for (const l of shown) {
+      md += "**" + clockOf(l.s) + "** " + l.text.trim() + "\n";
+      const tr = trailOf(l, lang);
+      if (tr && tr !== l.text.trim()) md += "> " + tr + "\n";
+      md += "\n";
+    }
+    saveFile(title + ".md", md, "text/markdown");
+    tell("Exported " + title + ".md");
+  };
+
+  // Export as M4B: one audiobook file is the endpoint. Building it (AAC, chapters, the transcript inside)
+  // needs Recense's ffmpeg, so on the Mac the request goes to Recense (127.0.0.1:47123/export), which
+  // fetches this file from the bucket and saves the .m4b; anywhere else it says so.
+  const exportM4b = async (f) => {
+    tell("Asking Recense for the audiobook…");
+    try {
+      const r = await fetch("http://127.0.0.1:47123/export", {
+        method: "POST",
+        headers: { "content-type": "text/plain" }, // (a simple request: no preflight to a server that has none)
+        body: JSON.stringify({ as: "m4b", gallery: "files/" + f.path, title: fileTitle(f), lang: nativeLang() }),
+        signal: AbortSignal.timeout(4000),
+      });
+      const j = r.ok ? await r.json().catch(() => ({})) : {};
+      if (j.handled) return tell("Recense is making " + fileTitle(f) + ".m4b");
+      tell(j.reason || "Recense couldn’t export this one");
+    } catch (e) {
+      tell("Export as M4B runs in Recense on the Mac");
+    }
+  };
+
+  // The editor's tools for item f (SPEC 57), the same in the full editor and in the tools-only sheet. hooks:
+  // lines() (Export as MD; none: no transcript yet), relang() after a language change, clear(), redo().
+  const editorToolsFor = (f, hooks) => {
+    const I = Homebar.ICONS;
+    const w = txWrite(f);
+    const own = G.main && !f.pending;
+    return Homebar.tools({
+      lang: {
+        get: () => prefs.nativeLang,
+        set: (v) => {
+          setNativeLang(v);
+          if (hooks.relang) hooks.relang();
+        },
+      },
+      view: { get: () => prefs.view, set: (v) => setView(v) },
+      items: [
+        w && hooks.clear ? { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: hooks.clear } : null,
+        { id: "download", label: "Download", icon: I.download, act: (b) => download(b) },
+        own && window.galleryInvite ? { id: "share", label: "Share", icon: I.share, act: () => window.galleryInvite([f]) } : null,
+        own ? { id: "transpose", label: "Transpose: set the starting key", icon: I.transpose, act: () => setKeyOf(f) } : null,
+        G.main && w && hooks.redo ? { id: "retranscribe", label: "Retranscribe and retranslate", icon: I.retranscribe, act: hooks.redo } : null,
+        hooks.lines ? { id: "md", label: "Export as MD", icon: I.markdown, act: () => exportMd(f, hooks.lines()) } : null,
+        G.main && hooks.lines ? { id: "m4b", label: "Export as M4B", icon: I.book, act: () => exportM4b(f) } : null,
+      ],
+    });
+  };
+
+  // No lines to open the editor from (an instrumental's [Ambient Sounds], a transcript on its way): a tap
+  // on that label opens the editor's tools alone, so Download, Share, Transpose and Retranscribe stay a tap away.
+  const toolsSheet = (f, host, el, msg) => {
+    if (host.querySelector(".txall")) return;
+    const sheet = mkEl("div", "txall");
+    const bar = mkEl("div", "txbar txallbar");
+    const list = mkEl("div", "txlist");
+    const m = mkEl("div", "txmsg");
+    m.textContent = msg;
+    list.appendChild(m);
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    };
+    const close = () => {
+      sheet.remove();
+      document.removeEventListener("keydown", onKey, true);
+    };
+    const w = txWrite(f);
+    const redo = async () => {
+      close();
+      const r = await txSend(w.run, "POST", { retranscribe: true, lang: prefs.nativeLang });
+      if (!r || !r.ok) return tell("Couldn’t ask for a new transcript");
+      tell("Retranscribing and retranslating");
+      f.tx = null;
+      host.querySelectorAll(".txst, .txamb").forEach((x) => x.remove());
+      awaitTranscript(f, el, host, { run: await r.json().catch(() => ({ state: "queued" })) });
+    };
+    const done = mkEl("button", "lnk txbtn");
+    done.type = "button";
+    done.textContent = "Done";
+    done.onclick = (e) => {
+      e.stopPropagation();
+      close();
+    };
+    bar.append(editorToolsFor(f, { redo: w ? redo : null }).el, done);
+    sheet.onclick = (e) => e.stopPropagation();
+    sheet.append(bar, list);
+    host.appendChild(sheet);
+    document.addEventListener("keydown", onKey, true);
+  };
+
+  // Clear: the whole transcript goes (an instrumental heard as words). Each line is removed as a
+  // correction, so Changes still has every one of them and can put it back.
+  const clearTranscript = async (f, lines) => {
+    const w = txWrite(f);
+    const ids = lines.filter((l) => (l.text || "").trim()).map((l) => l.id);
+    if (!w || !ids.length) return false;
+    if (!confirm("Clear the whole transcript? Every line is removed. Changes keeps them, so they can be put back.")) return false;
+    await flushEdits(f);
+    for (let i = 0; i < ids.length; i += 100) {
+      const edits = ids.slice(i, i + 100).map((segId) => ({ segId, field: "text", to: "", updatedAt: Date.now() }));
+      let r = await txSend(w.put, "PUT", { version: f.txv || 0, edits });
+      if (r && r.status === 409) {
+        const c = await r.json().catch(() => null);
+        if (c) {
+          f.txv = c.version;
+          r = await txSend(w.put, "PUT", { version: c.version, edits });
+        }
+      }
+      if (!r || !r.ok) {
+        tell("Couldn’t clear it");
+        return false;
+      }
+      f.txv = (await r.json().catch(() => ({}))).version || f.txv;
+    }
+    tell("Cleared — Changes has every line if you want them back");
+    return true;
+  };
+
+  const retranscribe = async (f) => {
+    const r = await txSend(txUrl(f).run, "POST", { retranscribe: true, lang: prefs.nativeLang });
+    if (!r || !r.ok) return say("Couldn’t ask for a new transcript", true);
+    say("Retranscribing and retranslating; your corrections stay");
+    f.tx = null;
+    if (items[cur] === f) show(cur);
+  };
+
+  const renameItem = async (f) => {
+    const old = String(f.path || f.name).split("/").pop();
+    const name = prompt("Rename", old);
+    if (!name || name.trim() === old) return;
+
+    try {
+      const r = await fetch("/main/api/rename", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-gallery": "1" },
+        body: JSON.stringify({ path: f.path, name: name.trim() }),
+      });
+      if (!r.ok) throw new Error((await r.text()) || "Couldn’t rename it");
+      const j = await r.json();
+      const oldPath = f.path;
+
+      f.path = j.path;
+      f.name = j.name.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
+      f.src = j.src;
+      if (f.art) f.art = j.src + "?art=1";
+      f.tx = null;
+      if (!meta.hidden) {
+        meta.hidden = true;
+        $("info").onclick();
+      }
+      if (activePlayer && activePlayer.bar) activePlayer.bar.paint();
+      const t = tileOf(f);
+      if (t) t.setAttribute("aria-label", f.name);
+      // every same-origin page (the shell and its frames) retitles its now-playing pill
+      const wins = [];
+      for (let i = 0; i < window.top.frames.length; i++) wins.push(window.top.frames[i]);
+      wins.push(window.top); // last: the shell asks its frames what's playing
+      for (const w of wins) {
+        try {
+          if (w !== window && w.__galleryRetitle) w.__galleryRetitle(oldPath, j.path, f.name);
+        } catch (x) {}
+      }
+      if (window !== window.top && window.__galleryRetitle) window.__galleryRetitle(oldPath, j.path, f.name);
+      tell("Renamed to " + j.name);
+    } catch (e) {
+      tell(e.message || "Couldn’t rename it", true);
+    }
+  };
+
+  const pickCover = (f) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/jpeg,image/png";
+    inp.onchange = async () => {
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      tell("Saving the cover…");
+
+      try {
+        const r = await fetch("/main/api/cover?" + new URLSearchParams({ path: f.path }), {
+          method: "PUT",
+          headers: { "content-type": file.type || "application/octet-stream", "x-gallery": "1" },
+          body: file,
+        });
+        if (!r.ok) throw new Error((await r.text()) || "Couldn’t save the cover");
+        const j = await r.json();
+
+        f.art = j.art;
+        f.noart = false;
+        f.nocover = false;
+        const t = tileOf(f);
+        if (t) fillTile(t, f);
+        if (items[cur] === f) show(cur);
+        tell(j.embedded ? "Cover saved into the file" : "Cover saved (shown in Gallery; this file type keeps it beside the file)");
+      } catch (e) {
+        tell(e.message || "Couldn’t save the cover", true);
+      }
+    };
+    inp.click();
+  };
+
+  // Delete cover: the file shows the file tile from now on, here, on reload and in its share links
+  const deleteCover = async (f) => {
+    if (!confirm("Delete the cover of " + f.name + "?")) return;
+
+    try {
+      const r = await fetch("/main/api/cover?" + new URLSearchParams({ path: f.path }), {
+        method: "DELETE",
+        headers: { "x-gallery": "1" },
+      });
+      if (!r.ok) throw new Error((await r.text()) || "Couldn’t delete the cover");
+
+      f.art = null;
+      f.nocover = true;
+      const t = tileOf(f);
+      if (t) fillTile(t, f);
+      if (items[cur] === f) show(cur);
+      tell("Cover deleted");
+    } catch (e) {
+      tell(e.message || "Couldn’t delete the cover", true);
+    }
+  };
+
+  // Share from inside the viewer: a private link to just this item, with its own expiry, revocable
+  if (G.main) {
+    $("vshare").hidden = false;
+    $("vshare").onclick = () => {
+      const f = items[cur];
+      if (f && !f.pending && window.galleryInvite) window.galleryInvite([f]);
+    };
+  }
 
   addEventListener("popstate", hide);
 
   addEventListener("keydown", (e) => {
     if (lb.hidden) return;
+
+    if (e.target.closest && e.target.closest("textarea,input")) return; // typing a note
 
     const inField = e.target.closest && e.target.closest("button");
 
@@ -4372,6 +5729,7 @@
     "touchstart",
     (e) => {
       x0 = e.touches[0].clientX;
+      y0 = e.touches[0].clientY;
     },
     { passive: true }
   );
@@ -4380,9 +5738,21 @@
     "touchend",
     (e) => {
       if (x0 === null) return;
+      // inside the transcript editor a hard scroll is a scroll, never Back or the comments (SPEC 3)
+      if (e.target.closest(".txall")) return (x0 = null);
 
       const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
       x0 = null;
+
+      const onControls = e.target.closest(".p-hb, .p-eq, .p-eqwrap, .pdfv, .p-ctrl");
+
+      // a mostly vertical swipe: up opens the comments, down closes them; down with them closed goes Back
+      if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx) * 1.5 && !onControls) {
+        if (dy > 0 && !document.body.classList.contains("comments-open")) history.back();
+        else setOpen(dy < 0);
+        return;
+      }
 
       if (
         Math.abs(dx) > 50 &&
@@ -4426,7 +5796,9 @@
   };
 
   const rebuildGrid = () => {
+    const addBtn = document.getElementById("addtile");
     grid.replaceChildren(...items.map(buildTile));
+    if (addBtn) grid.appendChild(addBtn);
 
     if (thumbs) {
       thumbs = null;
@@ -4434,7 +5806,6 @@
       if (!lb.hidden) build();
     }
   };
-
   const merge = (d) => {
     if (d.exp) G.exp = d.exp;
 
@@ -4527,4 +5898,13 @@
   refreshInfo();
 
   if (!complete) timer = setInterval(poll, 2000);
+
+  // a room of one item opens straight onto it
+  if (typeof G.start === "number" && items[G.start]) openAt(G.start);
+  else {
+    // ?open=<n>: a window opened onto one item (a link onto one item)
+    const want = new URLSearchParams(location.search).get("open");
+    const at = want ? items.findIndex((x) => x.n === want || (G.main && x.path === want)) : -1;
+    if (at >= 0) openAt(at);
+  }
 })();

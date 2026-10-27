@@ -8,3 +8,13 @@ test-fail.png
 .claude/settings.local.json
 rclone.conf
 old-versions.zip
+
+.handoff/
+*-handoff.zip
+.claude/
+gallery/test/.shots/
+*.tmp.mjs
+*.bak
+.DS_Store
+.wrangler/
+node_modules/

@@ -1,0 +1,57 @@
+
+ ⛅️ wrangler 4.149.0 (update available 4.152.0)
+───────────────────────────────────────────────
+Successfully created tail, expires at 2026-10-23T08:21:04Z
+Connected to gallery, waiting for logs...
+GET https://gallery.improvdiplomat.workers.dev/main/ - Ok @ 10/22/2026, 7:21:20 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722080.257,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/api/invites - Ok @ 10/22/2026, 7:21:21 PM
+GET https://gallery.improvdiplomat.workers.dev/main?order=1 - Ok @ 10/22/2026, 7:21:20 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722080.993,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main?order=1 - Ok @ 10/22/2026, 7:21:41 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722101,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main?order=1 - Canceled @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.017,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main?p=Music - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.056,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/api/invites - Ok @ 10/22/2026, 7:21:51 PM
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Anatolia%20-%20Carole%20Marque%20Bouaret%20Briken%20Aliu%20%26%20Esra%20C%CC%A7im.flac?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.547,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Abercrombie%20Bruninghaus%20Gurtu%20Trio%20-%20Timeless%2C%20Live%201992.wav?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.542,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Battaglia.mp3?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.566,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Delta%20V%20-%20Il%20cielo%20che%20cambia%20color.mp3?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.562,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/E%CC%81tudes_d'ex_9_in_A_Flat_Major_Ricordanza_Boris_Gil.flac?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.563,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Grey%20Green%20-%20ba%CC%80a%CC%80n.mp3?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.564,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+GET https://gallery.improvdiplomat.workers.dev/main/f/Music/Liszt%20-%20Spanish%20Fantasy%20S.253.mp3?art=1 - Ok @ 10/22/2026, 7:21:51 PM
+  (log) DBG {"team":"chauphan.cloudflareaccess.com","hasAud":true,"hasJwt":true}
+  (log) DBG {"audMatch":true,"iss":"https://chauphan.cloudflareaccess.com","exp":1824257984,"now":1792722111.565,"email":"clphan@proton.me","alg":"RS256"}
+  (log) DBG claims true emailMatch true ownerSet true
+
+Stopping tail...
