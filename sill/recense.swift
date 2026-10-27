@@ -1402,7 +1402,7 @@ final class LineEditor: NSView, NSTextFieldDelegate {
                done: @escaping (Result) -> Void) {
         self.done = done
         rows.forEach { $0.removeFromSuperview() }; rows = []; rowOffsets = []; scrollAcc = 0
-        let reach = 4
+        let reach = 14   // as many as the window holds (layout hides the rest): the whole transcript, a turn away
         for (k, t) in above.suffix(reach).reversed().enumerated() { addRow(t, -(k + 1), size) }
         for (k, t) in below.prefix(reach).enumerated() { addRow(t, k + 1, size) }
         field.font = .systemFont(ofSize: size, weight: .semibold)
