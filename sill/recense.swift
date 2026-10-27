@@ -252,35 +252,50 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
 // Groq's free daily quotas run out a few hours into a long podcast, and the rolling window then frees only a little
 // at a time. Lines about to be heard that no model can take in time are translated on this Mac instead: free, no
 // limit, offline, a little plainer and without word alignment. They're marked drafts, and a model redoes them
-// once it has quota to spare. A session only exists inside a SwiftUI view's translationTask, so a 1-point view in
-// the subtitle window hosts it and the work runs there; the first use of a language may ask to download it.
+// once it has quota to spare. A session only exists inside a SwiftUI view's translationTask, so 1-point views host
+// them and the work runs there.
+// One session per language pair, each in a view of its own, kept while it has work and closed a minute after its last
+// job. One session used to be switched from pair to pair (fr>en, en>vi, ja>en… as the lines changed language), and it
+// sat in the subtitle window, which is hidden, shown and moved into Sill's page: each switch and each move had
+// Translation host a new remote view, their Mach ports were never all given back, and Recense grew slower until macOS
+// killed it (EXC_RESOURCE, 305,834 ports, after ~20 hours). The views now live in a window of their own that is never
+// hidden or moved. Only languages already downloaded are used: that window can't show the download sheet, and a
+// session waiting on it would hold its pair forever.
 @available(macOS 15.0, *)
 @MainActor final class OnDevice: ObservableObject {
     static let shared = OnDevice()
-    @Published var config: TranslationSession.Configuration?
-    var lang: String?                     // the pair the session translates: "<from>>" + "<to>" ("fr>en")
+    @Published var pairs: [String] = []   // the sessions open: "<from>>" + "<to>" ("fr>en")
     struct Job { let id: Int; let texts: [String]; let lang: String; let done: CheckedContinuation<[String]?, Never> }
     var jobs: [Job] = [], nextJob = 0
-    var failed: Set<String> = []          // pairs it can't do: unsupported, or the download was declined
+    var failed: Set<String> = []          // pairs it can't do: unsupported, not downloaded, or Translation gave up
+    var used: [String: Date] = [:]        // a pair's last job
+    private var window: NSPanel?
 
-    static func configuration(_ pair: String) -> TranslationSession.Configuration {
+    static func languages(_ pair: String) -> (Locale.Language, Locale.Language) {
         let p = pair.split(separator: ">").map(String.init)
-        return .init(source: .init(identifier: p[0]), target: .init(identifier: p.count > 1 ? p[1] : "en"))
+        return (.init(identifier: p[0]), .init(identifier: p.count > 1 ? p[1] : "en"))
     }
 
     func translate(_ texts: [String], from src: String, to target: String = "en") async -> [String]? {
         let lang = src + ">" + target
         guard !failed.contains(lang) else { return nil }
-        if await LanguageAvailability().status(from: .init(identifier: src), to: .init(identifier: target)) == .unsupported {
-            failed.insert(lang); log("on-device translation: \(src) to \(target) isn't supported"); return nil
+        if !pairs.contains(lang) {
+            let status = await LanguageAvailability().status(from: .init(identifier: src), to: .init(identifier: target))
+            guard status == .installed else {
+                failed.insert(lang)
+                log("on-device translation: \(src) to \(target) \(status == .unsupported ? "isn't supported" : "isn't downloaded (System Settings › General › Language & Region › Translation Languages)")")
+                return nil
+            }
         }
         nextJob += 1
         let id = nextJob
-        // A job nothing has picked up in 60 s (the window hidden, a download sheet unanswered) gives up.
+        // A job nothing has picked up in 60 s gives up.
         Task { try? await Task.sleep(for: .seconds(60)); self.finish(id, nil) }
         return await withCheckedContinuation { c in
             jobs.append(Job(id: id, texts: texts, lang: lang, done: c))
-            if self.lang != lang { self.lang = lang; config = OnDevice.configuration(lang) }
+            used[lang] = Date()
+            if !pairs.contains(lang) { pairs.append(lang) }
+            openWindow()
         }
     }
 
@@ -289,26 +304,40 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
         jobs.remove(at: k).done.resume(returning: out)
     }
 
-    /// The view's translation task: works through the jobs in its language until the language changes.
-    func serve(_ session: TranslationSession) async {
-        guard let lang else { return }
-        while !Task.isCancelled && self.lang == lang {
-            guard let job = jobs.first(where: { $0.lang == lang }) else {
-                if let other = jobs.first?.lang { self.lang = other; config = OnDevice.configuration(other); return }
+    /// One pair's translation task: its jobs, until a minute passes without one (then its view goes, and the session).
+    func serve(_ session: TranslationSession, pair: String) async {
+        while !Task.isCancelled {
+            guard let job = jobs.first(where: { $0.lang == pair }) else {
+                if Date().timeIntervalSince(used[pair] ?? .distantPast) > 60 { pairs.removeAll { $0 == pair }; return }
                 try? await Task.sleep(for: .milliseconds(150)); continue
             }
+            used[pair] = Date()
             do {
                 let rs = try await session.translations(from: job.texts.enumerated().map { .init(sourceText: $0.element, clientIdentifier: String($0.offset)) })
                 var out = job.texts.map { _ in "" }
                 for r in rs { if let i = Int(r.clientIdentifier ?? ""), i < out.count { out[i] = r.targetText } }
                 finish(job.id, out)
             } catch {
-                if Task.isCancelled { return }      // the language changed under it: the job waits for its own session
-                log("on-device translation (\(lang)): \(error.localizedDescription)")
-                failed.insert(lang)
-                for j in jobs where j.lang == lang { finish(j.id, nil) }
+                if Task.isCancelled { return }
+                log("on-device translation (\(pair)): \(error.localizedDescription)")
+                failed.insert(pair)
+                for j in jobs where j.lang == pair { finish(j.id, nil) }
+                pairs.removeAll { $0 == pair }; return
             }
         }
+    }
+
+    /// The sessions' window: 1 point, see-through and click-through, on every Space; ordered in once, never hidden.
+    private func openWindow() {
+        guard window == nil, let sc = NSScreen.screens.first else { return }
+        let w = NSPanel(contentRect: NSRect(x: sc.frame.minX, y: sc.frame.minY, width: 1, height: 1),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = .clear; w.hasShadow = false; w.ignoresMouseEvents = true
+        w.level = .statusBar; w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: OnDeviceHost())
+        w.orderFrontRegardless()
+        window = w
     }
 }
 
@@ -316,7 +345,17 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
 struct OnDeviceHost: View {
     @ObservedObject var m = OnDevice.shared
     var body: some View {
-        Color.clear.frame(width: 1, height: 1).translationTask(m.config) { session in await m.serve(session) }
+        ZStack { ForEach(m.pairs, id: \.self) { PairSession(pair: $0) } }.frame(width: 1, height: 1)
+    }
+}
+
+@available(macOS 15.0, *)
+struct PairSession: View {
+    let pair: String
+    var body: some View {
+        let (from, to) = OnDevice.languages(pair)
+        Color.clear.frame(width: 1, height: 1)
+            .translationTask(source: from, target: to) { session in await OnDevice.shared.serve(session, pair: pair) }
     }
 }
 
@@ -958,7 +997,7 @@ func dropFillers(_ lines: [Line]) -> [Line] {
 
 struct LoopState: Equatable { var track = false, ab = false; var a: Double?, b: Double? }
 
-enum Cmd { case playPause, play(Bool), skip(Double), seek(Double), speed(Double), loop(LoopState), scrub(Bool) }
+enum Cmd { case playPause, play(Bool), skip(Double), seek(Double), speed(Double), loop(LoopState), scrub(Bool), volume(Double) }
 
 /// Labels ignore the mouse so clicks and drags reach the subtitle area behind them.
 final class PassLabel: NSTextField { override func hitTest(_ p: NSPoint) -> NSView? { nil } }
@@ -1057,9 +1096,10 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         super.init(frame: .zero, configuration: cfg)
         cfg.userContentController.add(WeakScriptHandler(self), name: "recense")
         // Inside Sill both bars sit out at the edges, as Sill's own do: the stroke near the foot, the vertical bar
-        // at the right edge.
+        // at the right edge. In the strip (.strip) the stroke sits a little higher, so A and B's names under it
+        // fit, and the time ruler is compact: the open bar stays inside the zone below the lines (Overlay.barZone).
         cfg.userContentController.addUserScript(WKUserScript(source: """
-            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .p-ctrl{right:-10px;bottom:var(--foot,0px)}</style>')
+            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .p-ctrl{right:-10px;bottom:var(--foot,0px)} :root.strip{--cl:24px} .strip .p-hbseek{height:46px} .strip .p-skhint{display:none} .strip .p-skread{bottom:28px;font-size:15px;line-height:18px}</style>')
             """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         setValue(false, forKey: "drawsBackground")
         navigationDelegate = self
@@ -1069,8 +1109,10 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         } else {
             log("homebar: Resources/homebar is missing (build.sh copies it from Gallery)")
         }
+        watchSwipes()
     }
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let w = swipeWatch { NSEvent.removeMonitor(w) } }
 
     // ----- the pointer: only where the bar is -----
     override func hitTest(_ p: NSPoint) -> NSView? {
@@ -1083,6 +1125,56 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         return hits.contains { $0.contains(CGPoint(x: q.x, y: y)) } ? super.hitTest(p) : nil
     }
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
+    // While the line is being edited its field keeps the keyboard: a click on the editor's tools must not end the typing.
+    private(set) var editing = false
+    override var acceptsFirstResponder: Bool { !editing && super.acceptsFirstResponder }
+    func editor(_ on: Bool) { editing = on; call("editor", on) }
+
+    // ----- two fingers on the trackpad (SPEC 60) -----
+    // A swipe's fingers resting on the trackpad send no events, so the page can't tell them from lifted ones; the
+    // swipe's phases can. A swipe that starts over the bar is the bar's from the fingers coming down to the end of
+    // its glide, wherever AppKit would route its later events (the bar unfolds and folds under it): the page hears
+    // "down" before the swipe's first wheel and "up" once they lift, so a swipe-and-hold keeps the ruler up, and
+    // its place, until then. The glide after a lift (momentum) isn't the fingers: it never reaches the page, where
+    // it would start a second seek after the one the lift ended (or turn the subtitles' barrel underneath).
+    private var fingersDown = false
+    private var ownsSwipe = false
+    private var swipeWatch: Any?
+
+    private func watchSwipes() {
+        swipeWatch = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+            guard let self else { return e }
+            if e.phase.isEmpty && e.momentumPhase.isEmpty { return e }   // a mouse's wheel: no fingers to follow
+            if e.phase.contains(.mayBegin) || e.phase.contains(.began) { self.ownsSwipe = self.isUnder(e) }
+            guard self.ownsSwipe else { return e }
+            if e.momentumPhase.isEmpty { self.swipe(e) }
+            return nil
+        }
+    }
+
+    private func isUnder(_ e: NSEvent) -> Bool {
+        guard !isHidden, e.window === window, let root = window?.contentView else { return false }
+        guard let hit = root.hitTest(root.superview?.convert(e.locationInWindow, from: nil) ?? e.locationInWindow) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+
+    private func swipe(_ e: NSEvent) {
+        if e.phase.contains(.began) || e.phase.contains(.changed) { fingers(true) }
+        super.scrollWheel(with: e)
+        if e.phase.contains(.ended) || e.phase.contains(.cancelled) { fingers(false) }
+    }
+
+    private func fingers(_ down: Bool) {
+        guard down != fingersDown else { return }
+        fingersDown = down
+        run("Recense.fingers(\(down))")
+    }
+
+    // swipes that start over the bar come through watchSwipes; this is for any AppKit hands the bar itself
+    override func scrollWheel(with e: NSEvent) {
+        if !e.momentumPhase.isEmpty { return }
+        if e.phase.isEmpty { super.scrollWheel(with: e) } else { swipe(e) }
+    }
 
     // ----- the page -----
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
@@ -1106,6 +1198,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
             case "speed": onCmd?(.speed(num("v") ?? 1))
             case "scrub": onCmd?(.scrub(b["on"] as? Bool ?? false))
             case "loop": onCmd?(.loop(LoopState(track: b["track"] as? Bool ?? false, ab: b["ab"] as? Bool ?? false, a: num("a"), b: num("b"))))
+            case "volume": if let v = num("v") { onCmd?(.volume(v)) }
             default: break
             }
         default: onAction?(k, b)
@@ -1137,9 +1230,10 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         run("Recense.wake()")
     }
 
-    func report(time t: Double, duration d: Double, paused p: Bool, rate: Double, loop l: LoopState) {
+    func report(time t: Double, duration d: Double, paused p: Bool, rate: Double, loop l: LoopState, volume: Double? = nil) {
         call("report", ["time": t, "duration": d.isFinite ? d : 0, "paused": p, "rate": rate,
-                        "loop": ["track": l.track, "ab": l.ab, "a": l.a.map { $0 as Any } ?? NSNull(), "b": l.b.map { $0 as Any } ?? NSNull()]])
+                        "loop": ["track": l.track, "ab": l.ab, "a": l.a.map { $0 as Any } ?? NSNull(), "b": l.b.map { $0 as Any } ?? NSNull()],
+                        "volume": volume.map { $0 as Any } ?? NSNull()])
     }
     /// The language, text size, prominence and this media's bookmarks, as the page should show them.
     func state(_ s: [String: Any]) { call("state", s) }
@@ -1315,24 +1409,12 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     var minimized: Bool { hostedRoot == nil && (panel.isMiniaturized || !panel.isVisible) }
 
-    /// The strip is short; while the home bar is open (its barrel, the time ruler) it grows down to give them room,
-    /// its top staying at the top of the screen.
+    /// The strip keeps one shape: the lines above, and below them a zone of their own for the home bar, as tall as
+    /// the bar is open (its slides, or the time ruler, compacted to fit). The strip used to grow 60 points while the
+    /// bar was open: the page moved under the pointer, so hover, swipes and the hold that opens the ruler kept being
+    /// cut short, and the ruler was drawn over the lines.
+    static let stripHeight: CGFloat = 164, barZone: CGFloat = 78
     var inStrip = false
-    func stripRoom(_ on: Bool) {
-        guard inStrip else { return }
-        // Open (hovered, swiped, held): the strip stretches down so what hangs under the stroke (the time you
-        // landed on, the ruler's marks) isn't cut off. Nothing on it moves, so a hold or swipe keeps its place.
-        let extra: CGFloat = on ? 60 : 0
-        var f = panel.frame
-        let h = 120 + extra
-        guard f.height != h else { return }
-        f.origin.y = f.maxY - h; f.size.height = h
-        areaFoot.constant = -extra
-        // The bar's page reaches the window's foot (room for what hangs under the stroke); the stroke is lifted by
-        // as much inside it, so it stays put.
-        homeBar.evaluateJavaScript("document.documentElement.style.setProperty('--foot','\(Int(extra))px')")
-        panel.setFrame(f, display: true)
-    }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
 
@@ -1340,8 +1422,10 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// browser's address bar, as wide as Sill's card; dark enough to read the subtitles, light enough to see behind.
     func showStrip() {
         guard let sc = NSScreen.main else { return }
-        let w = timeSize.width, h: CGFloat = 120
+        let w = timeSize.width, h = Overlay.stripHeight
         inStrip = true
+        wordsFoot.constant = -Overlay.barZone
+        homeBar.run("document.documentElement.classList.add('strip')")
         panel.backgroundColor = NSColor(white: 0.04, alpha: 0.55)
         panel.styleMask.remove(.resizable); panel.isMovable = false      // locked: only the strip's Recense button moves it
         panel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: true)
@@ -1353,9 +1437,10 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
     var hostedRoot: NSView?
     private var panelWasVisible = false
-    // The subtitles and the bar keep their place on screen while the strip grows below them (stripRoom).
     lazy var areaFoot = area.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
     lazy var barFoot = homeBar.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
+    /// The lines' foot: clear of the stroke; in the strip, clear of the whole open bar (barZone).
+    lazy var wordsFoot = words.bottomAnchor.constraint(equalTo: area.bottomAnchor, constant: -(RecenseHomeBar.line + 10))
 
     func host(in container: NSView?, frame: NSRect = .zero) {
         if let c = container {
@@ -1423,7 +1508,6 @@ final class Overlay: NSObject, NSWindowDelegate {
         homeBar.onCmd = { [weak self] c in self?.onCmd?(c) }
         homeBar.say = { [weak self] s in self?.toast.say(s) }
         homeBar.onAction = { [weak self] k, b in self?.barAction(k, b) }
-        homeBar.onOpen = { [weak self] on in self?.stripRoom(on) }
         homeBar.isHidden = true
         toast.alphaValue = 0
 
@@ -1451,7 +1535,7 @@ final class Overlay: NSObject, NSWindowDelegate {
             editor.trailingAnchor.constraint(equalTo: area.trailingAnchor),
             editor.bottomAnchor.constraint(equalTo: words.bottomAnchor),
             words.topAnchor.constraint(equalTo: area.topAnchor),
-            words.bottomAnchor.constraint(equalTo: area.bottomAnchor, constant: -(RecenseHomeBar.line + 10)),   // clear of the stroke
+            wordsFoot,
             words.leadingAnchor.constraint(equalTo: area.leadingAnchor, constant: 28),
             words.trailingAnchor.constraint(equalTo: area.trailingAnchor, constant: -28),
             // the whole window, for the time ruler and the vertical bar at the right; it only takes the pointer
@@ -1461,13 +1545,10 @@ final class Overlay: NSObject, NSWindowDelegate {
             barFoot,
             homeBar.topAnchor.constraint(equalTo: area.topAnchor),
         ])
-        if #available(macOS 15.0, *) {
-            let host = NSHostingView(rootView: OnDeviceHost())
-            host.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
-            root.addSubview(host)
-        }
+        // (on-device translation has its own window: OnDevice)
         panel.onKey = { [weak self] e in self?.key(e) ?? false }
-        panel.orderFrontRegardless()
+        // Inside Sill the strip starts hidden: the strip's Recense icon brings it up, so the icon's first press shows
+        // it instead of hiding a panel already up at launch.
     }
 
     @objc func modeChanged() { setMode(Mode(rawValue: modeCtl.selectedSegment) ?? .bilingual) }
@@ -1494,6 +1575,9 @@ final class Overlay: NSObject, NSWindowDelegate {
         case "prominence":
             Reader.set(prominence: num("v"), a1: num("a1"), a2: num("a2"))
             fits = [:]; lastKey = ""
+        case "view":   // the editor's Follow · Learn (SPEC 57)
+            setMode(b["v"] as? String == "learn" ? .learning : .bilingual)
+            pushBar()
         default: onBarAction?(k, b)
         }
     }
@@ -1506,8 +1590,9 @@ final class Overlay: NSObject, NSWindowDelegate {
             "sizeMin": Reader.sizes.lowerBound, "sizeMax": Reader.sizes.upperBound,
             "prominence": Reader.prominence.map { $0.p as Any } ?? NSNull(),
             "bookmarks": marks.map { ["t": $0.t, "note": $0.note] },
+            "view": mode == .learning ? "learn" : "follow",
         ]
-        let sig = "\(NativeLang.current)|\(Reader.scale)|\(Reader.prominence?.p ?? -1)|" + marks.map { "\($0.t)\($0.note)" }.joined(separator: ",")
+        let sig = "\(NativeLang.current)|\(Reader.scale)|\(Reader.prominence?.p ?? -1)|\(mode.rawValue)|" + marks.map { "\($0.t)\($0.note)" }.joined(separator: ",")
         guard force || sig != barSent else { return }
         barSent = sig
         homeBar.state(s)
@@ -1530,8 +1615,10 @@ final class Overlay: NSObject, NSWindowDelegate {
         modeWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
     }
+    /// The EN · VI · FR and Follow · Learn switches no longer show on hover (SPEC 15, 57): both live in the transcript
+    /// editor's tools now. The controls stay, unseen, as the state the M key and the editor change.
     func showMode(_ on: Bool) {
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.25; modeCtl.animator().alphaValue = on ? 1 : 0; langCtl.animator().alphaValue = on ? 1 : 0 }
+        modeCtl.isHidden = true; langCtl.isHidden = true
     }
 
     func key(_ e: NSEvent) -> Bool {
@@ -1567,17 +1654,35 @@ final class Overlay: NSObject, NSWindowDelegate {
         if on { pushBar(force: true) }
     }
 
-    func update(time: Double, duration: Double, paused: Bool, rate: Double, loop: LoopState) {
+    /// The home bar hears the time 30 times a second, and at once when anything else changes: once per frame (120 Hz on
+    /// this display) it kept the main thread and the page's process busy for a ruler that can't show the difference.
+    private var barState: (duration: Double, paused: Bool, rate: Double, loop: LoopState, volume: Double?, at: Double)?
+    func update(time: Double, duration: Double, paused: Bool, rate: Double, loop: LoopState, volume: Double? = nil) {
         guard browserControls, panel.isVisible else { return }
-        homeBar.report(time: time, duration: duration, paused: paused, rate: rate, loop: loop)
+        let now = CACurrentMediaTime()
+        if let s = barState, s.duration == duration, s.paused == paused, s.rate == rate, s.loop == loop, s.volume == volume,
+           now - s.at < 1.0 / 30 {
+            return pushBar()
+        }
+        barState = (duration, paused, rate, loop, volume, now)
+        homeBar.report(time: time, duration: duration, paused: paused, rate: rate, loop: loop, volume: volume)
         pushBar()   // (only when something changed: the bookmarks of a new media, say)
     }
 
     // ----- correcting the line on screen -----
+    /// The editor (SPEC 57): the line's own field where the lines were, and the transcript's tools (language, Follow ·
+    /// Learn, Clear, Download, Share, Retranscribe, Export as MD and M4B, bookmarks) where the home bar was.
     func beginEdit(_ text: String, edited: Bool, done: @escaping (LineEditor.Result) -> Void) {
         words.isHidden = true
+        let barHidden = homeBar.isHidden
+        homeBar.isHidden = false
+        pushBar(force: true)
+        homeBar.editor(true)
         editor.begin(text, edited: edited, size: min(26, max(400, panel.frame.width) / 38)) { [weak self] r in
-            self?.words.isHidden = false; self?.lastKey = ""; self?.fit.key = ""
+            guard let self else { return }
+            self.homeBar.editor(false)
+            self.homeBar.isHidden = barHidden && !self.browserControls
+            self.words.isHidden = false; self.lastKey = ""; self.fit.key = ""
             done(r)
         }
     }
@@ -1679,59 +1784,55 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// the last of a line too. One line at a time (`learningLine`), on a barrel: the drum rolls on to the next line as
     /// it comes, the lines either side out of sight unless a scroll is turning it. One size for every line, set by the
     /// window; only a line too long for two rows is made smaller. Reduce Motion: no roll, the next line is just there.
+    /// Learning (SPEC 59, items 27 and 33): two lines per page, the original first and the chosen language trailing it
+    /// (each heard phrase turns into it in place). The lines take the two places in turn (`learningPlaces`): while the
+    /// light crosses the bottom line the top one stays; when it has crossed it, the next line fades in at the top, and so
+    /// on. Every line is drawn at one size, the transcript's (`uniformSize`), from its first line to its last.
     func renderLearning(_ lines: [Line], at t: Double, held: Bool) {
         if blankCanvas() { return }
         let room = words.bounds.width, tall = words.bounds.height
         guard room > 50, tall > 20 else { return }
-        let n = lines.count
-        drumCount = n
-        guard n > 0 else {
+        drumCount = 0; drum = -1                        // (the one-line barrel of §6 is retired: no drum to turn)
+        let shown = learningPlaces(lines, at: t, held: held)
+        guard !shown.isEmpty else {
             if lastKey != "none" { words.drum = nil; words.places = nil; words.blocks = []; lastKey = "none" }
             return
         }
-        // where the drum is headed: the line just picked, else the line of the moment; it eases there in a few frames
-        let now = CACurrentMediaTime(), dt = drumFrame > 0 ? min(0.1, now - drumFrame) : 0
-        drumFrame = now
-        if let h = drumHold, now > h.until || h.j >= n { drumHold = nil }
-        let aim = Double(drumHold?.j ?? learningLine(lines, at: t)), turning = drumTurning != nil, still = RecenseHomeBar.still
-        if !turning {
-            let off = aim - drum
-            if drum < 0 || still || abs(off) > 3 { drum = aim }                        // no long spins
-            else { drum = abs(off) < 0.002 ? aim : drum + off * (1 - exp(-dt / 0.09)) }
-        }
-        drum = min(max(drum, 0), Double(n - 1))
-        let spreadTo = turning || drumHold != nil ? 1.0 : 0.0
-        drumSpread = still ? spreadTo : drumSpread + (spreadTo - drumSpread) * (1 - exp(-dt / 0.12))
-        if abs(spreadTo - drumSpread) < 0.01 { drumSpread = spreadTo }
-
-        let c = Int(drum.rounded()), near = max(0, c - 2)...min(n - 1, c + 2)
-        let key = "learning/r\(Reader.stamp)/\(Int((t * 1000).rounded()))/\(Int((drum * 1000).rounded()))/\(Int(drumSpread * 100))/" +
-            near.map { "\(lines[$0].id):\(lines[$0].english?.count ?? -1)" }.joined(separator: ",") + "/\(Int(room))x\(Int(tall))"
+        let key = "places/r\(Reader.stamp)/\(Int((t * 1000).rounded()))/" +
+            shown.map { "\($0.line):\($0.place):\(Int($0.alpha * 100)):\(lines[$0.line].english?.count ?? -1)" }.joined(separator: ",") + "/\(Int(room))x\(Int(tall))"
         guard key != lastKey else { return }
         lastKey = key
-
-        // A line of two rows fills the drum's face.
-        var size = min(36, max(400, panel.frame.width) / 28) * Reader.scale
-        size *= min(1, tall / (2 * WordsView.lineHeight(.systemFont(ofSize: size, weight: .semibold)) + WordsView.blockGap))
-        drumPitch = 2 * WordsView.lineHeight(.systemFont(ofSize: size, weight: .semibold)) + WordsView.blockGap
-        if fits.count > 500 { fits.removeAll() }
-        var rolls: [WordsView.Roll] = []
-        for j in near {
-            let d = Double(j) - drum, a = max(0, 1 - abs(d) * (1 - 0.65 * drumSpread))
-            guard a >= 0.01, abs(d) * 30 < 90 else { continue }
-            let line = lines[j], fitKey = "\(line.id)/\(line.english?.count ?? -1)/\(Int(size * 10))/\(Int(room))/r\(Reader.stamp)"
-            var scale = fits[fitKey] ?? 1
-            var cells = phraseCells(line, at: t, size: size * scale)
-            if fits[fitKey] == nil {
-                while scale > 0.4, WordsView.rows(cells, width: room).count > 2 || cells.contains(where: { WordsView.width($0) > room }) {
-                    scale *= 0.92; cells = phraseCells(line, at: t, size: size * scale)
-                }
-                fits[fitKey] = scale
-            }
-            rolls.append(.init(cells: cells, alpha: CGFloat(a), turn: CGFloat(d * 30 * .pi / 180)))
+        let size = uniformSize(lines, room: room, tall: tall)
+        var places: [WordsView.Place?] = [nil, nil]
+        for s in shown where places[s.place] == nil || places[s.place]!.alpha < CGFloat(s.alpha) {
+            places[s.place] = .init(cells: phraseCells(lines[s.line], at: t, size: size), alpha: CGFloat(s.alpha))
         }
-        words.places = nil
-        words.drum = (rolls.sorted { abs($0.turn) > abs($1.turn) }, drumPitch)        // the far ones first
+        words.drum = nil
+        words.places = places
+    }
+
+    /// The transcript's one size (SPEC 59): the window's size times Text Size, made smaller only as far as the line that
+    /// needs the most room needs to fit in half the window (one place), never below 55%; every line then shares it, so no
+    /// line is bigger or smaller than another. Each line's need is measured once (per width, size and language).
+    var needs: [String: CGFloat] = [:]
+    func uniformSize(_ lines: [Line], room: CGFloat, tall: CGFloat) -> CGFloat {
+        let base = min(36, max(400, panel.frame.width) / 28) * Reader.scale
+        let placeH = max(20, tall / 2 - WordsView.blockGap / 2)
+        if needs.count > 4000 { needs.removeAll() }
+        var scale: CGFloat = 1
+        for line in lines {
+            let k = "\(line.id)/\(line.english?.count ?? -1)/\(Int(base * 10))/\(Int(room))/\(Int(placeH))/r\(Reader.stamp)"
+            let need: CGFloat
+            if let n = needs[k] { need = n } else {
+                let cells = phraseCells(line, at: -1, size: base)
+                let h = CGFloat(WordsView.rows(cells, width: room).count) * WordsView.rowHeight(cells)
+                let tooWide = cells.map(WordsView.width).max() ?? 0
+                need = min(1, h > 0 ? placeH / h : 1, tooWide > 0 ? room / tooWide : 1)
+                needs[k] = need
+            }
+            scale = min(scale, need)
+        }
+        return base * max(0.55, scale)
     }
 
     /// A scroll over the line in Learning (a wheel, two fingers on a trackpad) turns the drum row for row; when its
@@ -2143,6 +2244,40 @@ func readBy(_ line: Line) -> Double {
 }
 var readTimes: [String: Double] = [:]
 
+/// Learning's two places (SPEC 59), one over the other, which the lines take in turn. The light crosses the bottom
+/// line; when it has crossed it, that line stays and the next one fades in slowly at the top, where the line before it
+/// was (once that one has been read); the light crosses the top line; then the next fades in at the bottom; and so on. A
+/// line always arrives a moment before it is spoken. A long silence clears both; paused, the screen never clears.
+/// (Gallery's gallery.js learningPlaces is the same.)
+func learningPlaces(_ lines: [Line], at t: Double, held: Bool) -> [(line: Int, place: Int, alpha: Double)] {
+    let n = lines.count
+    guard n > 0 else { return [] }
+    let lead = 0.5, fadeOut = 0.15, fadeIn = 0.4
+    func opens(_ k: Int) -> Bool { k == 0 || lines[k].start - lines[k - 1].end >= 12 }
+    func place(_ j: Int) -> Int { var k = j; while !opens(k) { k -= 1 }; return (j - k) % 2 }
+    func clears(_ j: Int) -> Double { max(lines[j].end + 2.5, readBy(lines[j])) }
+    func from(_ j: Int) -> Double {
+        if opens(j) { return lines[j].start - 4 }
+        if opens(j - 1) { return min(lines[j - 1].end, lines[j].start - lead) }
+        let freed = readBy(lines[j - 2]), spoken = min(lines[j - 2].end, lines[j].start - fadeOut - fadeIn)
+        return max(min(max(lines[j - 1].end, freed), lines[j].start - lead), spoken)
+    }
+    func until(_ j: Int) -> Double {
+        if j + 1 == n || opens(j + 1) { return clears(j) }
+        if j + 2 == n || opens(j + 2) { return clears(j + 1) }
+        return from(j + 2)
+    }
+    var lo = 0, hi = n - 1, now = 0
+    while lo <= hi { let m = (lo + hi) / 2; if lines[m].start <= t { now = m; lo = m + 1 } else { hi = m - 1 } }
+    var shown: [(line: Int, place: Int, alpha: Double)] = []
+    for j in max(0, now - 2)...min(n - 1, now + 2) {
+        let a = min((t - from(j) - fadeOut) / fadeIn, (until(j) + fadeOut - t) / fadeOut)
+        if a > 0 { shown.append((j, place(j), min(1, a))) }
+    }
+    if shown.isEmpty, held, t >= lines[now].start, t <= clears(now) + 3 { return [(now, place(now), 1)] }
+    return shown
+}
+
 /// Learning, one line at a time (spec §6): the line in view at `t`. A line comes a moment before it's spoken, once the
 /// line before it has been read, but never after its own first word.
 func learningLine(_ lines: [Line], at t: Double) -> Int {
@@ -2521,6 +2656,25 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         wakeTranslation()
     }
 
+    /// Clear (SPEC 57): every line hidden at once, each as a correction (one save, one push), so an instrumental heard
+    /// as words goes blank and any line can still be brought back (Reset to Auto, or Gallery's Changes).
+    func clearAll() {
+        let all = shown.filter { !$0.words.isEmpty }
+        guard !all.isEmpty else { return }
+        let now = (Date().timeIntervalSince1970 * 1000).rounded()
+        for line in all {
+            let prior = line.id >= edited && line.id < edited + cutShort ? edits.edits.first { $0.id == line.id - edited } : nil
+            if let prior { drop(prior) }
+            let id = max(edits.last ?? 0, edits.edits.map(\.id).max() ?? 0) + 1
+            edits.last = id
+            edits.edits.append(Edit(id: id, a: prior?.a ?? line.start, b: prior?.b ?? line.end, from: prior?.from ?? lineKey(line), words: [],
+                                    lang: prior?.lang ?? languagesOf(line).first, terms: [], at: now))
+        }
+        edits.updatedAt = now
+        saveEdits()
+        log("clear: \(all.count) lines hidden")
+    }
+
     private func drop(_ e: Edit) {
         if let l = e.lang { Glossary.remove(e.terms, lang: l) }
         if let t = e.taught, var g = edits.glossary {
@@ -2540,8 +2694,33 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
     }
     var dry = false                    // a replay: nothing is written
+    /// Retranscribe: translated afresh (no line taken from the translations remembered from other pieces), with the
+    /// language it was asked in (Gallery's selected language, or the window's) done before the other one.
+    var retranslate = false, firstLang: String?
+    /// While the loops run, the transcript and its translations are written every 10 s at most: a save after every
+    /// batch rewrote megabytes on the main thread a few times a second (the subtitles hitched; macOS flagged the disk
+    /// writes). save() and stop() write what's due at once.
+    private var due: (transcript: Bool, langs: Set<String>, work: DispatchWorkItem?) = (false, [], nil)
+    func saveSoon(_ lang: String? = nil) {
+        if let lang { due.langs.insert(lang) } else { due.transcript = true }
+        guard due.work == nil else { return }
+        let w = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.due.work = nil
+                if self.due.transcript { self.save() } else { self.saveDueNative() }
+            }
+        }
+        due.work = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: w)
+    }
+    private func saveDueNative() {
+        let langs = due.langs; due.langs = []
+        for l in langs { saveNative(l) }
+    }
     func save() {
         guard !stopped && !dry else { return }
+        due.transcript = false; saveDueNative()
         let c = Cache(lines: lines, done: done, duration: duration, lyricsChecked9: lyricsChecked, lyrics: lyrics,
                       heard: heard, songPipeline: songPipeline, lyricOptions: lyricOptions, lyricsVerified: lyricsVerified,
                       language: language, publishedTitle: publishedTitle, redone: redone, offsite: offsite,
@@ -2573,10 +2752,16 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             return true
         }
         if let u = URL(string: url), u.isFileURL { return await local(u) }
-        if let f = await Store.restore(offsite.filter { !$0.contains("-vocals") }) { return attach(f) }
+        if let f = await Store.restore(offsite.filter { !$0.contains("-vocals") }) {
+            if attach(f) { return true }
+            // R2's copy doesn't decode: it was the end of the road (the episode failed with its transcript loaded). It's
+            // forgotten and the audio is fetched anew below, from the page or yt-dlp.
+            offsite.removeAll { $0 == f.lastPathComponent }; save()
+        }
         // The transcript's own audio is gone and this source's runs at another time: it would mistime every chunk.
         if abs(shift) >= 0.05 { return false }
         if await download() { return true }
+        if await fromGallery() { return true }
         if let page, await ytdlp(page) { return true }
         // An embedded player's own address may mean nothing to yt-dlp; the page it's embedded in often does.
         if let referer, referer != page, await ytdlp(referer) { return true }
@@ -2637,6 +2822,20 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         } catch { log("download failed: \(error.localizedDescription)"); return false }
     }
 
+    /// A file playing in Gallery ("gallery:files/<path>"): fetched from Gallery's bucket, as GalleryJob does (yt-dlp
+    /// on the Gallery page found no audio, so Recense had nothing to transcribe or follow).
+    func fromGallery() async -> Bool {
+        guard url.hasPrefix("gallery:files/"), Store.r2 else { return false }
+        let path = String(url.dropFirst("gallery:".count))
+        guard let (tmp, resp) = try? await URLSession.shared.download(for: Store.signed("GET", GalleryJob.objectPath(path))),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { log("gallery: couldn't download \(path)"); return false }
+        let ext = (path as NSString).pathExtension.lowercased()
+        let dest = cacheDir.appendingPathComponent(key + "." + (ext.isEmpty ? "mp3" : ext))
+        try? FileManager.default.removeItem(at: dest)
+        guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return false }
+        return await local(dest)               // a video's sound is pulled out of it there
+    }
+
     func receive(_ bytes: Data, type: String) -> Bool {
         let dest = cacheDir.appendingPathComponent(key + "." + audioExt(type, url))
         do { try bytes.write(to: dest) } catch { return false }
@@ -2680,7 +2879,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         return true
     }
 
-    func stop() { tasks.forEach { $0.cancel() }; tasks = []; save(); stopped = true }
+    func stop() { tasks.forEach { $0.cancel() }; tasks = []; due.work?.cancel(); due.work = nil; save(); stopped = true }
 
     // ---- sound between the words: [Ambient Sounds] ----
     // The loudness of the audio every quarter second (dBFS + 100, 0…100), worked out once from the file and kept
@@ -3597,6 +3796,10 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         var tries: [String: Int] = [:]
         while !Task.isCancelled && !stopped {
             let p = position(), lines = shown
+            // The window shows the listener's language where it has a line, else the English: with Groq's quota short,
+            // the English alone kept up and the subtitles turned English partway through. The lines about to be
+            // heard get the listener's language first.
+            if nativeBehind(p, lines), await nativeStep() { continue }
             let ahead = lines.firstIndex { $0.end >= p - 3 && $0.english == nil }
             // With nothing left untranslated, drafts are redone while a model has quota to spare.
             let redo = Models.heldUntil == nil && Models.pick() != nil ? lines.firstIndex { $0.draft == true } : nil
@@ -3615,10 +3818,10 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 idx.append(i); texts.append(lineKey(lines[i]))
             }
             // Lines translated before, in this piece or any other: no request at all.
-            let known = texts.compactMap { t in Library.recall(t).map { (t, $0) } }
+            let known = retranslate ? [] : texts.compactMap { t in Library.recall(t).map { (t, $0) } }
             if !known.isEmpty {
                 for (t, e) in known { give(t, e, draft: nil, open) }
-                save(); continue
+                saveSoon(); continue
             }
             let context = s > 0 ? lineKey(lines[s - 1]) : ""
             guard let model = Models.pick() else {
@@ -3630,7 +3833,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                         give(text, e, draft: true) { $0.english == nil }
                     }
                     onDevice = true
-                    save(); continue
+                    saveSoon(); continue
                 }
                 try? await Task.sleep(for: .seconds(min(1, Models.soonest()))); continue
             }
@@ -3653,7 +3856,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 }
                 onDevice = false
                 fails = 0
-                save()
+                saveSoon()
             } catch let r as RateLimited {
                 Models.cool(model, r.wait); continue        // another model takes the same batch right away
             } catch where "\(error.localizedDescription)".contains("JSON") {
@@ -3676,6 +3879,16 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     // Kept by segment with the words each was made from: a line remade or corrected since is translated again.
     var nativeTries: [String: Int] = [:]
 
+    /// A line of the next minute has no translation into the listener's language (not English) yet.
+    func nativeBehind(_ p: Double, _ lines: [Line]) -> Bool {
+        let lang = NativeLang.current
+        guard lang != "en", !dry else { return false }
+        let f = native[lang]
+        return lines.contains { l in
+            l.end >= p - 3 && l.start < p + 60 && !l.words.isEmpty && f?.lines[String(l.id)]?.src != lineKey(l)
+        }
+    }
+
     /// Every language translated over the whole transcript.
     var nativeDone: Bool { Keep.others.allSatisfy { native[$0]?.complete == true } }
 
@@ -3687,7 +3900,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// One batch of Vietnamese or French. false: nothing it can do now (all done, or no model free).
     func nativeStep() async -> Bool {
         guard !dry, !stopped else { return false }
-        var order = [NativeLang.current].filter { $0 != "en" }
+        var order = [firstLang ?? NativeLang.current].filter { $0 != "en" }
         for l in Keep.others where !order.contains(l) { order.append(l) }
         let p = position()
         let lines = shown.filter { !$0.words.isEmpty }
@@ -3712,7 +3925,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             }
             func store() {
                 f.complete = complete && !lines.contains { l in f.lines[String(l.id)].map { $0.src != lineKey(l) } ?? true }
-                native[lang] = f; saveNative(lang)
+                native[lang] = f; saveSoon(lang)
             }
             guard !send.isEmpty else { store(); return true }
             let texts = send.map { lines[$0].words.map(\.text) }
@@ -3763,6 +3976,15 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// A correction may leave a line to translate after the translation loop has finished.
     func wakeTranslation() {
         if !translating && !stopped { tasks.append(Task { await self.translateLoop() }) }
+    }
+}
+
+/// A retranscription retranslates too: the Vietnamese and French this Mac has are set aside with the transcript (a
+/// line whose words came out the same would otherwise keep its old translation).
+@MainActor func setAsideTranslations(_ key: String) {
+    for lang in Keep.others {
+        let f = Keep.trURL(key, lang), to = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(key).tr.\(lang).json")
+        try? FileManager.default.removeItem(at: to); try? FileManager.default.moveItem(at: f, to: to)
     }
 }
 
@@ -4005,11 +4227,19 @@ enum Fingerprint {
         for l in lines where l.draft != true { if let e = l.english { remember(lineKey(l), e) } }
     }
 
+    /// Written every two minutes at most (at once when forced: a new alias, quitting), encoded off the main thread.
+    /// library.json is megabytes of fingerprints and translations.json more than one: rewritten every 20 s while
+    /// translating, they stalled the subtitles each time and wrote ~200 KB/s (macOS flagged Recense's disk writes).
+    static let writer = DispatchQueue(label: "recense.library", qos: .utility)
     static func flush(force: Bool = false) {
-        guard dirty.index || dirty.memory, force || Date().timeIntervalSince(written) > 20 else { return }
-        if dirty.index, let d = try? JSONEncoder().encode(index) { try? d.write(to: indexURL, options: .atomic); dirty.index = false }
-        if dirty.memory, let d = try? JSONEncoder().encode(memory) { try? d.write(to: memoryURL, options: .atomic); dirty.memory = false }
-        written = Date()
+        guard dirty.index || dirty.memory, force || Date().timeIntervalSince(written) > 120 else { return }
+        let idx = dirty.index ? index : nil, mem = dirty.memory ? memory : nil, iu = indexURL, mu = memoryURL
+        dirty = (false, false); written = Date()
+        let write: @Sendable () -> Void = {
+            if let idx, let d = try? JSONEncoder().encode(idx) { try? d.write(to: iu, options: .atomic) }
+            if let mem, let d = try? JSONEncoder().encode(mem) { try? d.write(to: mu, options: .atomic) }
+        }
+        if force { writer.sync(execute: write) } else { writer.async(execute: write) }
     }
 
     /// keep/'s copies merged in (another Mac's, or this one's before its cache was cleared): union, this Mac wins.
@@ -4562,7 +4792,8 @@ final class Server {
                         let out = method == "OPTIONS" ? [:] : await self.handle(comps?.path ?? "/", q, body)
                         let json = (try? JSONSerialization.data(withJSONObject: out)) ?? Data("{}".utf8)
                         var resp = Data(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n" +
-                                         "Access-Control-Allow-Headers: *\r\nContent-Length: \(json.count)\r\nConnection: close\r\n\r\n").utf8)
+                                         "Access-Control-Allow-Headers: *\r\nAccess-Control-Allow-Private-Network: true\r\n" +
+                                         "Content-Length: \(json.count)\r\nConnection: close\r\n\r\n").utf8)
                         resp.append(json)
                         c.send(content: resp, completion: .contentProcessed { _ in c.cancel() })
                     }
@@ -4680,6 +4911,7 @@ struct NativeReport {
     var title: String? = nil
     let t: Double, playing: Bool, rate: Double, dur: Double, looping: Bool
     var at = 0.0           // when the player was at `t`: midway through the Apple Event round trip
+    var vol: Double? = nil // its own volume, 0…1 (0 when muted)
 }
 
 final class NativeSources {
@@ -4694,7 +4926,7 @@ final class NativeSources {
                 end repeat
                 set f to file of d
                 if f is missing value then return {}
-                return {POSIX path of f, current time of d, playing of d, rate of d, duration of d, looping of d, name of d}
+                return {POSIX path of f, current time of d, playing of d, rate of d, duration of d, looping of d, name of d, audio volume of d, muted of d}
             end tell
             """),
         ("com.apple.Music", "music", """
@@ -4706,7 +4938,7 @@ final class NativeSources {
                     return {}
                 end try
                 if f is missing value then return {}
-                return {POSIX path of f, player position, player state is playing, 1.0, duration of current track, song repeat is one, (artist of current track) & " - " & (name of current track)}
+                return {POSIX path of f, player position, player state is playing, 1.0, duration of current track, song repeat is one, (artist of current track) & " - " & (name of current track), (sound volume) / 100, mute}
             end tell
             """),
     ]
@@ -4722,7 +4954,7 @@ final class NativeSources {
         // A YouTube preview (search results, a channel page, the mini-player) plays another video than the page's.
         "const yt = m.closest('.html5-video-player'), v = yt && yt.getVideoData ? yt.getVideoData().video_id : ''; " +
         "return JSON.stringify({ src: m.currentSrc, page: v ? 'https://www.youtube.com/watch?v=' + v : location.href, title: document.title, t: m.currentTime, paused: m.paused || m.seeking || m.readyState < 3, " +
-        "rate: m.playbackRate, dur: m.duration, loop: m.loop }); })()"
+        "rate: m.playbackRate, dur: m.duration, loop: m.loop, vol: m.muted ? 0 : m.volume }); })()"
 
     let q = DispatchQueue(label: "native-sources")
     var scripts: [String: NSAppleScript] = [:]
@@ -4751,11 +4983,13 @@ final class NativeSources {
                 let t1 = Date().timeIntervalSince1970
                 if t1 - t0 > 1 { log("\(a.name) took \(String(format: "%.1f", t1 - t0)) s to answer") }
                 guard let d = res, d.numberOfItems >= 7, let path = d.atIndex(1)?.stringValue else { continue }
+                let vol = d.numberOfItems >= 9 ? (d.atIndex(9)?.booleanValue == true ? 0 : d.atIndex(8)?.doubleValue) : nil
                 out.append(NativeReport(app: a.name, key: URL(fileURLWithPath: path).absoluteString,
                                         target: d.atIndex(7)?.stringValue ?? "", title: d.atIndex(7)?.stringValue,
                                         t: d.atIndex(2)?.doubleValue ?? 0,
                                         playing: d.atIndex(3)?.booleanValue ?? false, rate: d.atIndex(4)?.doubleValue ?? 1,
-                                        dur: d.atIndex(5)?.doubleValue ?? 0, looping: d.atIndex(6)?.booleanValue ?? false, at: (t0 + t1) / 2))
+                                        dur: d.atIndex(5)?.doubleValue ?? 0, looping: d.atIndex(6)?.booleanValue ?? false, at: (t0 + t1) / 2,
+                                        vol: vol))
             }
             for b in browsers {
                 var found: [NativeReport] = []
@@ -4820,7 +5054,7 @@ final class NativeSources {
         let dur = j["dur"] as? Double ?? 0
         return NativeReport(app: b, key: src, target: target, page: j["page"] as? String, title: j["title"] as? String, t: j["t"] as? Double ?? 0,
                             playing: !(j["paused"] as? Bool ?? true), rate: j["rate"] as? Double ?? 1,
-                            dur: dur.isFinite ? dur : 0, looping: j["loop"] as? Bool ?? false)
+                            dur: dur.isFinite ? dur : 0, looping: j["loop"] as? Bool ?? false, vol: j["vol"] as? Double)
     }
 
     /// Carries out a window command (same shape the extension gets) in the player.
@@ -4839,6 +5073,7 @@ final class NativeSources {
             case "seek": body = "set current time of \(d) to \(num(c["t"] as? Double ?? 0))"
             case "rate": body = "if playing of \(d) then set rate of \(d) to \(num(c["r"] as? Double ?? 1))"
             case "loop": body = "set looping of \(d) to \(nativeLoop)"
+            case "volume": body = "set muted of \(d) to false\nset audio volume of \(d) to \(num(c["v"] as? Double ?? 1))"
             default: return
             }
             body = tell("com.apple.QuickTimePlayerX", body)
@@ -4848,6 +5083,7 @@ final class NativeSources {
             case "pause": body = "pause"
             case "seek": body = "set player position to \(num(c["t"] as? Double ?? 0))"
             case "loop": body = "set song repeat to \(nativeLoop ? "one" : "off")"
+            case "volume": body = "set mute to false\nset sound volume to \(Int(((c["v"] as? Double ?? 1) * 100).rounded()))"
             default: return       // Music has no speed control
             }
             body = tell("com.apple.Music", body)
@@ -4860,6 +5096,7 @@ final class NativeSources {
             case "seek": code = "\(m).currentTime = \(num(c["t"] as? Double ?? 0))"
             case "rate": code = "\(m).preservesPitch = true; \(m).playbackRate = \(num(c["r"] as? Double ?? 1))"
             case "loop": code = "\(m).loop = \(nativeLoop)"
+            case "volume": code = "\(m).muted = false; \(m).volume = \(num(c["v"] as? Double ?? 1))"
             default: return
             }
             body = tell(app, js(app, "if (\(m)) { \(code); } ''", in: target))
@@ -5018,11 +5255,26 @@ final class NativeSources {
                   l["state"] as? String != "failed", current != path else { continue }
             if cacheKey("gallery:files/" + path) != own { guard await contentKey(path) == own else { continue } }
             let now = Date().timeIntervalSince1970 * 1000, last = (l["beat"] as? Double) ?? (l["at"] as? Double) ?? 0
+            // Asked for while it plays here (Retranscribe is pressed with the file open in Gallery): never idle, so
+            // the request used to wait forever. The playing episode does the work and the lock follows it.
+            if let ep = Recense.delegate?.episode, ep.url == "gallery:files/" + path {
+                if l["redo"] as? Bool == true {
+                    log("gallery: asked for \(path) (retranscribe, playing here)")
+                    var n = l; n["redo"] = false; n["state"] = "running"; n["progress"] = 0
+                    n["beat"] = (now).rounded(); await setLock(own, n)
+                    Recense.delegate?.restartFresh(lang: l["lang"] as? String)
+                } else if ep.complete {
+                    ep.save(); _ = await Keep.pushTranscript(Library.resolve(ep.key)?.key ?? ep.key); await setLock(own, nil)
+                } else {
+                    await beat(own, state: "running", progress: ep.done.isEmpty ? 0 : Double(ep.done.filter { $0 }.count) / Double(ep.done.count))
+                }
+                continue
+            }
             if l["state"] as? String == "running" && now - last < 15 * 60_000 { continue }     // another Mac has it
             guard !running && idle() else { await beat(own, state: "queued"); continue }        // waits, kept alive
             log("gallery: asked for \(path)\(l["redo"] as? Bool == true ? " (retranscribe)" : "")")
             running = true
-            let ok = await transcribe(path, redo: l["redo"] as? Bool == true, asked: true, idle: idle)
+            let ok = await transcribe(path, redo: l["redo"] as? Bool == true, asked: true, idle: idle, lang: l["lang"] as? String)
             if ok == true { await setLock(own, nil) }                                          // an older viewer's lock by path
             running = false
             return                                                                              // one at a time
@@ -5032,8 +5284,8 @@ final class NativeSources {
     /// One file: fetched into the cache (a video's sound only), transcribed and translated, sent to keep/.
     /// nil = stopped part way (to be picked up again later); false = this file can't be done.
     /// `redo` (Retranscribe in Gallery): made again from scratch, its corrections kept and its glossary the prompt;
-    /// the transcript it had stays in keep/ until the new one is done.
-    static func transcribe(_ path: String, redo: Bool = false, asked: Bool? = nil, idle: (@MainActor () -> Bool)? = nil) async -> Bool? {
+    /// the transcript it had stays in keep/ until the new one is done; translated again, `lang` (Gallery's) first.
+    static func transcribe(_ path: String, redo: Bool = false, asked: Bool? = nil, idle: (@MainActor () -> Bool)? = nil, lang: String? = nil) async -> Bool? {
         let src = "gallery:files/" + path
         guard let key = await itemKey(path, listing: await Keep.listing()) else { log("gallery: couldn't read \(path)"); return nil }
         let ext = (path as NSString).pathExtension.lowercased(), video = videoExt.contains(ext)
@@ -5074,8 +5326,10 @@ final class NativeSources {
         let tkey = Library.resolve(key)?.key ?? key, json = cacheDir.appendingPathComponent(tkey + ".v2.json")
         let aside = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(tkey).json")
         let setAside = redo && (try? FileManager.default.moveItem(at: json, to: aside)) != nil
+        if redo { setAsideTranslations(tkey) }
 
         let ep = Episode(url: src, page: nil, title: name, music: !video) { 0 }
+        if redo { ep.retranslate = true; ep.firstLang = lang }
         func restore() {
             guard setAside else { return }
             try? FileManager.default.removeItem(at: json); try? FileManager.default.moveItem(at: aside, to: json)
@@ -5173,7 +5427,8 @@ final class NativeSources {
     var globalPaused = true     // the system's ⏯ state as last pressed here (macOS 15.4+ won't say what is playing)
     let bookmarksMenu = NSMenu()
 
-    struct Pos { var url = ""; var t = 0.0; var rate = 1.0; var paused = true; var dur = 0.0; var sent = 0.0; var received = Date.distantPast; var pausedAt = Date.distantPast; var source = "browser"; var path = "" }
+    struct Pos { var url = ""; var t = 0.0; var rate = 1.0; var paused = true; var dur = 0.0; var sent = 0.0; var received = Date.distantPast; var pausedAt = Date.distantPast; var source = "browser"; var path = ""
+        var vol: Double? = nil }       // the player's own volume, 0…1 (0 when muted); nil: it doesn't say (an older bridge)
     var pos = Pos()
     /// Track loop is a standing choice, like QuickTime's ⌥⌘L: it carries over to the next track, file, tab or
     /// player (and across launches) until it's turned off. A and B belong to one track and are cleared.
@@ -5211,8 +5466,10 @@ final class NativeSources {
     /// A paused page's timers may be throttled to a report every few seconds (a background tab): it keeps the window
     /// longer. A stream that just changed address (YouTube re-creates its blob: URL every few seconds) keeps it
     /// while /media confirms it's the same piece, instead of blanking the window for that round trip.
+    /// An episode whose audio couldn't be fetched still shows the transcript it has (cached, or from keep/): only one
+    /// with no lines at all leaves the window to "no transcribed speech".
     var browserActive: Bool {
-        guard let ep = episode, episodeState != "failed",
+        guard let ep = episode, episodeState != "failed" || !ep.lines.isEmpty,
               Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 2.5) else { return false }
         return ep.url == pos.url || (browserMode && Date().timeIntervalSince(addressChanged) < 3)
     }
@@ -5264,6 +5521,8 @@ final class NativeSources {
             case "retranscribe": self.retranscribe()
             case "export": self.export(audiobook: b["as"] as? String == "m4b")
             case "download": self.downloadPlayed()
+            case "clear": self.clearTranscript()
+            case "share": self.shareSource()
             default: break
             }
         }
@@ -5436,16 +5695,24 @@ final class NativeSources {
         a.addButton(withTitle: "Retranscribe"); a.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard a.runModal() == .alertFirstButtonReturn else { return }
+        restartFresh(lang: NativeLang.current)
+    }
+
+    /// The playing recording transcribed and translated again from nothing, its transcript set aside (back if that
+    /// fails); `lang` (the language Retranscribe was pressed in) is translated first.
+    func restartFresh(lang: String? = nil) {
+        guard let ep = episode else { return }
         let json = cacheDir.appendingPathComponent(ep.key + ".v2.json")
         let aside = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(ep.key).json")
         try? FileManager.default.removeItem(at: aside)
         let setAside = (try? FileManager.default.moveItem(at: json, to: aside)) != nil
+        setAsideTranslations(ep.key)
         let (url, page, referer, title, music) = (ep.url, ep.page, ep.referer, ep.title, ep.music)
         ep.stop(); episode = nil
         log("retranscribe: \(ep.key)\(setAside ? " (set aside: \(aside.path))" : "")")
         overlay.toast.say("Retranscribing")
         Task {
-            let state = await load(url, page: page, referer: referer, title: title, music: music, fresh: true)
+            let state = await load(url, page: page, referer: referer, title: title, music: music, fresh: true, lang: lang)
             if state == "failed", setAside, !FileManager.default.fileExists(atPath: json.path) {
                 try? FileManager.default.moveItem(at: aside, to: json)
                 log("retranscribe: couldn't start, the transcript is back")
@@ -5469,11 +5736,16 @@ final class NativeSources {
         default: return NSRunningApplication.runningApplications(withBundleIdentifier: pos.source).first?.localizedName ?? "player"
         }
     }
-    @objc func playPause() {
+    @objc func playPause() { globalPlayPause() }
+    /// The global ⏯ (Sill's strip button): the player Recense follows is played or paused directly, so the window
+    /// changes with it at once; with none, the system's ⏯ key. Sill used to press the system key itself, which macOS
+    /// may hand to another app than the one in the window. Returns whether it is paused now.
+    @discardableResult func globalPlayPause() -> Bool {
         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-        if has { let paused = expectPaused ?? pos.paused; setPlaying(paused); globalPaused = !paused; return }
+        if has { let paused = expectPaused ?? pos.paused; setPlaying(paused); globalPaused = !paused; kick(); return globalPaused }
         recensePressPlayPause()
         globalPaused.toggle()
+        return globalPaused
     }
 
     /// Plays or pauses the player last followed, whether or not the window is showing its subtitles.
@@ -5543,56 +5815,73 @@ final class NativeSources {
         }
     }
 
-    /// Chapters cut from the source go to Audiobook Builder (it has no scripting, but adds files it's asked to
-    /// open, one chapter each); the word-timed .vtt and the .md go next to where its .m4b should be saved.
+    /// Export as M4B (SPEC 57): one file is the endpoint. ffmpeg makes the audiobook in one pass: AAC, a chapter about
+    /// every ten minutes (named after its first words), and the transcript inside it as a subtitle track (each line, then
+    /// its trailing language), saved into the vault as <stamp>.m4b. No chapter files, no Audiobook Builder step and no
+    /// sidecar are left beside it (Export as MD is its own button).
     func exportAudiobook(_ stamp: String, _ title: String, _ lines: [Line], audio: URL, duration: Double, source: String, complete: Double) async {
         guard let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-        else { return fail("ffmpeg is needed to cut chapters (brew install ffmpeg).") }
+        else { return fail("ffmpeg is needed to make the audiobook (brew install ffmpeg).") }
         Store.busy.insert(audio.path); defer { Store.busy.remove(audio.path) }
         let work = cacheDir.appendingPathComponent("export/" + stamp)
         try? FileManager.default.removeItem(at: work)
         try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+        // ffmetadata: the book's tags and its chapters (=, ;, #, \ and line breaks escaped)
+        let esc = { (s: String) in s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "=", with: "\\=")
+            .replacingOccurrences(of: ";", with: "\\;").replacingOccurrences(of: "#", with: "\\#").replacingOccurrences(of: "\n", with: " ") }
         let starts = chapterStarts(lines, duration: duration)
-        overlay.setStatus("Exporting audiobook: cutting \(starts.count) chapters…"); statusUntil = Date().addingTimeInterval(600)
-        var files: [URL] = []
+        var meta = ";FFMETADATA1\ntitle=\(esc(title))\nalbum=\(esc(title))\nartist=Recense\ngenre=Audiobook\ncomment=\(esc(source))\n"
         for (i, a) in starts.enumerated() {
             let b = i + 1 < starts.count ? starts[i + 1] : duration
             let first = lines.first { $0.start >= a }.map { lineText($0).split(separator: " ").prefix(6).joined(separator: " ") } ?? ""
-            let name = String(format: "%02d", i + 1) + " " + safeName(first)
-            let out = work.appendingPathComponent(name + ".m4a")
-            let ok: Bool = await Task.detached {
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: ffmpeg)
-                p.arguments = ["-v", "error", "-y", "-ss", String(a), "-to", String(b), "-i", audio.path, "-vn", "-c:a", "aac", "-b:a", "128k",
-                               "-metadata", "title=\(name)", "-metadata", "album=\(stamp)", "-metadata", "comment=\(title)", "-metadata", "track=\(i + 1)/\(starts.count)", out.path]
-                p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-                do { try p.run() } catch { return false }
-                p.waitUntilExit()
-                return p.terminationStatus == 0
-            }.value
-            guard ok else { statusUntil = .distantPast; return fail("ffmpeg couldn't cut chapter \(i + 1).") }
-            files.append(out)
+            meta += "\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=\(Int(a * 1000))\nEND=\(Int(b * 1000))\ntitle=\(esc(String(format: "%02d", i + 1) + " " + first))\n"
         }
-        let vtt = exportDir.appendingPathComponent(stamp + ".vtt"), md = exportDir.appendingPathComponent(stamp + ".md")
+        let metaURL = work.appendingPathComponent("chapters.txt"), vtt = work.appendingPathComponent("transcript.vtt")
+        let part = work.appendingPathComponent(stamp + ".m4b"), out = exportDir.appendingPathComponent(stamp + ".m4b")
         do {
+            try meta.write(to: metaURL, atomically: true, encoding: .utf8)
             try transcriptVTT(lines).write(to: vtt, atomically: true, encoding: .utf8)
-            try transcriptMarkdown(title, lines, source: source, duration: duration, complete: complete)
-                .replacingOccurrences(of: "\n---\n\n# ", with: "\n---\n\n![[\(stamp).m4b]]\n[Read along](\(readAlongURL)) · open \(stamp).m4b and \(stamp).vtt\n\n# ")
-                .write(to: md, atomically: true, encoding: .utf8)
-        } catch { statusUntil = .distantPast; return fail(error.localizedDescription) }
+        } catch { return fail(error.localizedDescription) }
+        overlay.setStatus("Exporting audiobook…"); statusUntil = Date().addingTimeInterval(1800)
+        let ok: Bool = await Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: ffmpeg)
+            p.arguments = ["-v", "error", "-y", "-i", audio.path, "-f", "ffmetadata", "-i", metaURL.path, "-i", vtt.path,
+                           "-map", "0:a:0", "-map", "2:s:0", "-map_metadata", "1", "-map_chapters", "1",
+                           "-c:a", "aac", "-b:a", "128k", "-c:s", "mov_text", "-movflags", "+faststart", "-f", "ipod", part.path]
+            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+            do { try p.run() } catch { return false }
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        }.value
         overlay.setStatus(""); statusUntil = .distantPast
-        log("audiobook export: \(files.count) chapters → Audiobook Builder; \(vtt.path)")
-        let cfg = NSWorkspace.OpenConfiguration()
-        let abb = URL(fileURLWithPath: "/Applications/Audiobook Builder.app")
-        guard FileManager.default.fileExists(atPath: abb.path) else { return fail("Audiobook Builder isn't in /Applications. Chapters are in \(work.path).") }
-        _ = try? await NSWorkspace.shared.open(files, withApplicationAt: abb, configuration: cfg)
-        let n = NSAlert()
-        n.messageText = "Chapters are in Audiobook Builder"
-        n.informativeText = "Build it and save the .m4b into the Obsidian vault. Recense names it \(stamp).m4b, next to "
-            + "\(stamp).vtt and \(stamp).md, and deletes the chapter files once it's built."
-        n.addButton(withTitle: "OK"); n.addButton(withTitle: "Show Folder")
-        if n.runModal() == .alertSecondButtonReturn { NSWorkspace.shared.activateFileViewerSelecting([vtt]) }
-        watchForAudiobook(stamp, work: work, since: Date())
+        guard ok else { return fail("ffmpeg couldn't make the audiobook.") }
+        do {
+            try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: out)
+            try FileManager.default.moveItem(at: part, to: out)
+        } catch { return fail(error.localizedDescription) }
+        log("audiobook export: \(out.path) (\(starts.count) chapters, the transcript inside)")
+        overlay.toast.say("Exported \(stamp).m4b")
+        NSWorkspace.shared.activateFileViewerSelecting([out])
+    }
+
+    /// Gallery's Export as M4B (POST /export from the page, SPEC 57) for a file this window isn't playing: its transcript
+    /// from keep/ and its audio from Gallery's bucket, as GalleryJob gets them; then the same one-pass audiobook.
+    func exportGallery(_ path: String, title: String?) async {
+        let src = "gallery:files/" + path
+        guard Store.r2, let own = await GalleryJob.itemKey(path, listing: await Keep.listing())
+        else { return fail("Recense can't reach Gallery's transcript of \(path).") }
+        await Store.restoreTranscript(Library.resolve(own)?.key ?? own)
+        let ep = Episode(url: src, page: nil, title: title, music: GalleryJob.audioExt.contains((path as NSString).pathExtension.lowercased())) { 0 }
+        defer { ep.stop() }
+        let lines = ep.shown.filter { !$0.words.isEmpty }
+        guard !lines.isEmpty else { return fail("\(path) has no transcript yet.") }
+        if ep.file == nil { _ = await ep.fetch(audio: true) }
+        guard let audio = ep.file else { return fail("Couldn't fetch \(path) from Gallery.") }
+        let name = cleanTitle(title ?? ((path as NSString).lastPathComponent as NSString).deletingPathExtension)
+        await exportAudiobook(exportStamp(), name, lines, audio: audio, duration: ep.duration, source: src, complete: ep.progress)
     }
 
     /// Waits for Audiobook Builder's .m4b to show up in the vault and stop growing, gives it the export's name,
@@ -5690,7 +5979,8 @@ final class NativeSources {
     func now() -> Double { Date().timeIntervalSince1970 }
 
     func command(_ c: Cmd) {
-        guard browserMode else { return }
+        // (a player followed without a transcript takes the bar's commands too: its controls are up, see frame())
+        guard browserMode || (!pos.url.isEmpty && Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 2.5)) else { return }
         let dur = episode?.playDuration ?? episode?.duration ?? pos.dur
         switch c {
         case .playPause: setPlaying(expectPaused ?? pos.paused)
@@ -5708,6 +5998,11 @@ final class NativeSources {
         // on, and turning Track loop off turns A–B off. Clearing A/B leaves Track loop as it is. None of these seek.
         case .loop(let l): loop = l; sendLoop()
         case .scrub(let on): scrubbing = on; if loop.ab { sendLoop() }   // A–B stops jumping back while you seek
+        // the player's own volume (QuickTime's, Music's, the tab's): the window shows it and sets it, unmuting
+        case .volume(let v):
+            let x = min(1, max(0, v))
+            pos.vol = x
+            push(["op": "volume", "v": x])
         }
     }
     func sendLoop() {
@@ -5725,6 +6020,14 @@ final class NativeSources {
         switch path {
         // Sill's strip ⏯ asks here first: a player Recense follows is played or paused directly (handled); anything
         // else is left to Sill's system ⏯ key, and Recense only notes the new state for its menu row.
+        // Gallery's Export as M4B (SPEC 57): made here, where ffmpeg is; the file playing in this window, or any Gallery file.
+        case "/export":
+            guard j["as"] as? String == "m4b", let g = j["gallery"] as? String, g.hasPrefix("files/"), g.count > 6
+            else { return ["handled": false, "reason": "Recense only makes M4B audiobooks"] }
+            let path = String(g.dropFirst("files/".count))
+            if let ep = episode, ep.url == "gallery:files/" + path { export(audiobook: true) }
+            else { let title = j["title"] as? String; Task { await exportGallery(path, title: title) } }
+            return ["handled": true]
         case "/playpause":
             let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
             if has { let paused = expectPaused ?? pos.paused; setPlaying(paused); globalPaused = !paused }
@@ -5767,8 +6070,12 @@ final class NativeSources {
             if paused && (!pos.paused || pos.url != url) { pos.pausedAt = Date() }
             let sent = (j["sent"] as? Double).map { $0 / 1000 } ?? Date().timeIntervalSince1970
             if url != pos.url { addressChanged = Date() }
+            let flipped = paused != pos.paused || url != pos.url
             pos = Pos(url: url, t: j["t"] as? Double ?? 0, rate: j["rate"] as? Double ?? 1, paused: paused,
-                      dur: j["dur"] as? Double ?? pos.dur, sent: sent, received: Date(), pausedAt: pos.pausedAt)
+                      dur: j["dur"] as? Double ?? pos.dur, sent: sent, received: Date(), pausedAt: pos.pausedAt, vol: j["vol"] as? Double)
+            // Played or paused from outside (the keyboard's ⏯, the page's own button): the window follows now, not
+            // at the next once-a-second poll.
+            if flipped { kick() }
             follow(who, since: since)
             expectPaused = nil
             if let l = j["loop"] as? Bool, !loop.ab, l != loop.track {
@@ -5800,8 +6107,14 @@ final class NativeSources {
         }
     }
 
-    /// fresh: made again from nothing (Retranscribe), so the transcript in keep/ isn't fetched back.
-    func load(_ url: String, page: String? = nil, referer: String? = nil, title: String? = nil, music: Bool = false, fresh: Bool = false) async -> String {
+    /// fresh: made again from nothing (Retranscribe), so the transcript in keep/ isn't fetched back, and translated
+    /// again, `lang` first.
+    func load(_ url: String, page: String? = nil, referer: String? = nil, title: String? = nil, music: Bool = false, fresh: Bool = false, lang: String? = nil) async -> String {
+        // A file playing in Gallery is known by its content key, which only GalleryJob learned: before it had run
+        // (any time soon after launch) the file was keyed by its address and its transcript wasn't found.
+        if url.hasPrefix("gallery:files/"), ContentKey.known[url] == nil {
+            _ = await GalleryJob.itemKey(String(url.dropFirst("gallery:files/".count)), listing: await Keep.listing())
+        }
         let src = Episode.key(url, page: page), key = Library.resolve(src)?.key ?? src
         if let ep = episode, ep.source == src, ep.key == key, episodeState != "failed" {
             // The same media at a new address (a stream reloaded, or looped by the page): keep everything, A–B too.
@@ -5818,6 +6131,7 @@ final class NativeSources {
             Task { for s in [5, 70] { try? await Task.sleep(for: .seconds(s)); await Store.sweep(keep: self.episode?.key) } }
         }
         let ep = Episode(url: url, page: page, referer: referer, title: title, music: music) { [weak self] in (self?.mediaTime ?? 0) }
+        if fresh { ep.retranslate = true; ep.firstLang = lang }
         ep.onIdentified = { [weak self, weak ep] in
             guard let self, let ep, self.episode === ep else { return }
             Task { _ = await self.load(ep.url, page: ep.page, referer: ep.referer, title: ep.title, music: ep.music) }
@@ -5854,8 +6168,11 @@ final class NativeSources {
             if r.playing && r.rate > 0 { self.nativeRate = r.rate }
             let paused = !r.playing
             if paused && (!self.pos.paused || self.pos.url != url) { self.pos.pausedAt = Date() }
+            let flipped = paused != self.pos.paused || url != self.pos.url
             self.pos = Pos(url: url, t: r.t, rate: r.app == "quicktime" ? self.nativeRate : r.rate, paused: paused, dur: r.dur,
-                           sent: r.at > 0 ? r.at : self.now(), received: Date(), pausedAt: self.pos.pausedAt, source: r.app, path: r.target)
+                           sent: r.at > 0 ? r.at : self.now(), received: Date(), pausedAt: self.pos.pausedAt, source: r.app, path: r.target,
+                           vol: r.vol)
+            if flipped { self.kick() }                // (as for the browser: the window follows at once)
             self.follow(id(r), since: since[id(r)])
             self.expectPaused = nil
             // Toggled in the player (⌥⌘L, Repeat One, the page) → the window follows; a newly opened track,
@@ -5891,7 +6208,7 @@ final class NativeSources {
             let length = ep.playDuration ?? ep.duration
             if ep.url.hasPrefix("blob:"), pos.dur > 0, length > 0, abs(pos.dur - length) > 3 {
                 overlay.render(nil, at: 0)
-                overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop)
+                overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
                 if Date() > statusUntil { overlay.setStatus("Ad playing — subtitles resume with the video") }
                 return
             }
@@ -5918,10 +6235,11 @@ final class NativeSources {
             else if let last, held || !breakAhead { overlay.render(last, at: t); editable = last }
             else { overlay.render(nil, at: t) }
             overlay.update(time: mediaTime, duration: length > 0 ? length : pos.dur,
-                           paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop)
+                           paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
             // the title bar carries progress, so it never covers the subtitles
             if Date() < statusUntil { return }
             if episodeState == "loading" || episodeState == "need-bytes" { overlay.setStatus("Loading audio…") }
+            else if episodeState == "failed" { overlay.setStatus(ep.complete ? "" : "Audio unavailable — transcript so far") }
             else if ep.identifying { overlay.setStatus("Checking whether it was heard before…") }
             else if ep.separating { overlay.setStatus("Isolating vocals…") }
             else if let s = ep.limitStatus { overlay.setStatus(s) }
@@ -5937,7 +6255,7 @@ final class NativeSources {
         let reporting = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 2.5)
         if overlay.browserControls != reporting { overlay.setControls(reporting) }
         if reporting {
-            overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop)
+            overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
             if Date() > statusUntil { overlay.setStatus("Following \(sourceName) — no transcribed speech") }
         } else if Date() > statusUntil { overlay.setStatus("Play something") }
     }
@@ -5965,6 +6283,31 @@ final class NativeSources {
     func resetLine() {
         guard let ep = episode, let line = editable, Episode.isEdited(line) else { return }
         ep.reset(line); overlay.lastKey = ""; overlay.toast.say("Back to auto")
+    }
+
+    /// The editor's Clear (SPEC 57): the whole transcript goes, after a confirmation; every line can come back.
+    func clearTranscript() {
+        guard let ep = episode, !ep.shown.isEmpty else { return overlay.toast.say("Nothing to clear") }
+        if overlay.editor.editing { overlay.editor.finish(.cancel) }
+        let a = NSAlert()
+        a.messageText = "Clear the whole transcript?"
+        a.informativeText = "Every line is hidden, as a correction: Reset to Auto (or Gallery's Changes) brings any line back."
+        a.addButton(withTitle: "Clear"); a.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        ep.clearAll()
+        overlay.lastKey = ""
+        overlay.toast.say("Cleared")
+    }
+
+    /// The editor's Share: the page (or file) the transcript belongs to, through macOS's share sheet.
+    func shareSource() {
+        guard let ep = episode else { return overlay.toast.say("Nothing to share") }
+        let src = ep.page ?? ep.url
+        let item: Any = src.hasPrefix("file://") ? (URL(string: src) as Any) : src.hasPrefix("gallery:") ? cleanTitle(ep.title ?? src) : (URL(string: src) as Any? ?? src)
+        let picker = NSSharingServicePicker(items: [item])
+        let v = overlay.homeBar
+        picker.show(relativeTo: NSRect(x: v.bounds.midX - 1, y: 8, width: 2, height: 2), of: v, preferredEdge: .maxY)
     }
 
     func applicationWillTerminate(_ n: Notification) { episode?.save(); Library.flush(force: true) }
@@ -6180,6 +6523,7 @@ final class NativeSources {
         let d = AppDelegate()
         delegate = d
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
-        d.overlay.showStrip()                  // the window is always the strip inside Sill
+        // The window is always the strip inside Sill, and starts hidden: shown at launch (empty, see-through, over the
+        // menu bar) it went unnoticed, and the strip icon's first press hid it, so the icon seemed to do nothing.
     }
 }

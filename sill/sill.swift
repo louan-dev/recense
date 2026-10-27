@@ -3303,6 +3303,16 @@ func readBatteries() -> [BatteryReading] {
     return out
 }
 
+// The strip, left to right: the time ("22:39:28"), the date ("Mon, 26 Oct"), the batteries (SPEC 61). English names
+// whatever the locale; the hours follow the system's 12/24-hour setting, always two digits and no AM/PM.
+let stripTimeFormat: DateFormatter = {
+    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+    let h24 = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current).map { $0.contains("H") || $0.contains("k") } ?? true
+    f.dateFormat = h24 ? "HH:mm:ss" : "hh:mm:ss"
+    return f
+}()
+let stripDateFormat: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE, dd MMM"; return f }()
+
 final class BatteryRow: NSView {
     private var timer: Timer?
     override init(frame: NSRect) {
@@ -3635,7 +3645,10 @@ final class EdgeBar: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
     }
     override func scrollWheel(with e: NSEvent) {
-        guard let f = onScrollY, e.hasPreciseScrollingDeltas, abs(e.scrollingDeltaY) > abs(e.scrollingDeltaX) else { return }
+        // The fingers only: the glide after they lift kept lowering the volume (or brightness) on its own, a swipe
+        // down ran it to silence.
+        guard let f = onScrollY, e.hasPreciseScrollingDeltas, e.momentumPhase.isEmpty,
+              abs(e.scrollingDeltaY) > abs(e.scrollingDeltaX) else { return }
         f(e.isDirectionInvertedFromDevice ? -e.scrollingDeltaY : e.scrollingDeltaY)
     }
 
@@ -4042,11 +4055,36 @@ enum Volume {
         var v = Float32(0); var size = UInt32(MemoryLayout<Float32>.size)
         return AudioObjectGetPropertyData(device(), &address, 0, nil, &size, &v) == noErr ? v : nil
     }
+    static var muteAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute,
+                                                         mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+    /// At 0 the device is muted, and any rise unmutes it: muted at the bottom (or by the keyboard's mute key), the
+    /// output stayed silent however far the bar went back up. A change is sent at most 30 times a second (every
+    /// scroll event was one, the volume stepping in a crackle); the last one always goes.
+    static var target: Float?, sentAt = 0.0, pending: DispatchWorkItem?
     @discardableResult static func nudge(_ delta: Float) -> Float? {
-        guard let v = get() else { return nil }
-        var n = Float32(min(1, max(0, v + delta)))
-        AudioObjectSetPropertyData(device(), &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &n)
+        guard let v = target ?? get() else { return nil }
+        let n = min(1, max(0, v + delta))
+        target = n
+        let wait = sentAt + 1.0 / 30 - CACurrentMediaTime()
+        pending?.cancel()
+        let w = DispatchWorkItem { send() }
+        pending = w
+        if wait <= 0 { w.perform() } else { DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: w) }
         return n
+    }
+    private static func send() {
+        guard var n = target.map({ Float32($0) }) else { return }
+        let dev = device()
+        sentAt = CACurrentMediaTime(); pending = nil
+        AudioObjectSetPropertyData(dev, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &n)
+        var muted: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        if AudioObjectHasProperty(dev, &muteAddress), AudioObjectGetPropertyData(dev, &muteAddress, 0, nil, &size, &muted) == noErr,
+           (muted != 0) != (n == 0) {
+            var m: UInt32 = n == 0 ? 1 : 0
+            AudioObjectSetPropertyData(dev, &muteAddress, 0, nil, size, &m)
+        }
+        // what the system has now is the base for the next swipe (the keyboard may change it in between)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if pending == nil { target = nil } }
     }
 }
 
@@ -4778,6 +4816,8 @@ final class RestStrip: NSObject {
     let eventLine = NSTextField(labelWithString: "")
     let icon = NSImageView(image: NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)!)
     let countdown = NSTextField(labelWithString: "")
+    let time = NSTextField(labelWithString: "")
+    let date = NSTextField(labelWithString: "")
     let battery = NSTextField(labelWithString: "")
     let pause = GlassPauseButton()
     let sideQuest = GlassPauseButton()
@@ -4823,6 +4863,7 @@ final class RestStrip: NSObject {
         countdown.alignment = .right
         countdown.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
         icon.isHidden = true
+        for l in [time, date] { l.font = roundedFont(11, .semibold); l.textColor = NSColor(white: 1, alpha: 0.85) }
         battery.font = roundedFont(11, .semibold)
         battery.textColor = NSColor(srgbRed: 0.42, green: 0.92, blue: 0.52, alpha: 1)     // batteries in green
         pause.isBordered = false
@@ -4848,7 +4889,7 @@ final class RestStrip: NSObject {
         }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, battery, sideQuest, record, pause, recense].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -4863,7 +4904,12 @@ final class RestStrip: NSObject {
         setBand(open: on, animated: true)
     }
 
-    @objc func playPause() { pressPlayPause(); pause.showsPlay.toggle(); pause.bounce() }
+    /// Recense's player first, so its window follows; anything else gets the system's ⏯ key.
+    @objc func playPause() {
+        if let paused = MainActor.assumeIsolated({ Recense.delegate?.globalPlayPause() }) { pause.showsPlay = paused }
+        else { pressPlayPause(); pause.showsPlay.toggle() }
+        pause.bounce()
+    }
     /// New Side Quest, rebuilt: speak an entry, check the draft, it goes straight into Apple Calendar.
     lazy var voice: VoiceEntry = {
         let v = VoiceEntry(store: store)
@@ -4884,15 +4930,8 @@ final class RestStrip: NSObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
     @objc func openRecord() { record.bounce(); onRecord?() }
-    @objc func toggleRecense() {
-        recense.bounce()
-        MainActor.assumeIsolated {
-            let o = Recense.overlay
-            log("sill: recense icon (delegate \(Recense.delegate == nil ? "nil" : "ok"), overlay \(o == nil ? "nil" : "ok"), visible \(o?.panel.isVisible ?? false), hosted \(o?.hostedRoot != nil))")
-            o?.toggleStrip()
-            log("sill: after toggle visible \(o?.panel.isVisible ?? false) frame \(o?.panel.frame ?? .zero) screen \(NSScreen.main?.frame ?? .zero)")
-        }
-    }
+    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
+
 
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
@@ -4929,11 +4968,18 @@ final class RestStrip: NSObject {
     /// The resting pieces sit at the strip's two ends, like menu-bar items: the calendar mark left, time to go right.
     private func layoutStatic() {
         guard let b = window.contentView?.bounds else { return }
-        // Awake: batteries at the left end, one play/pause in the middle, the next thing at the right end.
+        // Awake: the time, the date and the batteries at the left end, one play/pause in the middle, the next thing at
+        // the right end. The time and date get the width of their widest text, so nothing shifts as the seconds tick.
         content.frame = b
         weather.frame = .zero
         icon.frame = .zero
-        battery.frame = NSRect(x: bandInset + 18, y: (b.height - 15) / 2, width: b.midX - 50 - bandInset - 18, height: 15)
+        let font = time.font ?? roundedFont(11, .semibold)
+        let wide = { (s: String) in ceil(NSAttributedString(string: s, attributes: [.font: font]).size().width) + 2 }
+        let y = (b.height - 15) / 2
+        time.frame = NSRect(x: bandInset + 18, y: y, width: wide("00:00:00"), height: 15)
+        date.frame = NSRect(x: time.frame.maxX + 10, y: y, width: wide("Wed, 00 May"), height: 15)
+        let bx = date.frame.maxX + 10
+        battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX - 50 - bx), height: 15)
         // The four icons follow the batteries, left to right: Side Quest, recorder, play / pause, Recense.
         let x0 = battery.frame.minX + ceil(battery.attributedStringValue.size().width) + 14
         for (i, v) in [sideQuest, record, pause, recense].enumerated() {
@@ -4997,6 +5043,8 @@ final class RestStrip: NSObject {
             return
         }
         weather.stringValue = ""
+        time.stringValue = stripTimeFormat.string(from: now)
+        date.stringValue = stripDateFormat.string(from: now)
         if now.timeIntervalSince(batteryAt) > 120 {
             batteryAt = now
             DispatchQueue.global(qos: .utility).async { [weak self] in
