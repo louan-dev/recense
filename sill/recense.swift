@@ -1055,7 +1055,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         // Inside Sill both bars sit out at the edges, as Sill's own do: the stroke near the foot, the vertical bar
         // at the right edge.
         cfg.userContentController.addUserScript(WKUserScript(source: """
-            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:\(Int(RecenseHomeBar.line))px} .p-ctrl{right:-10px}</style>')
+            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:\(Int(RecenseHomeBar.line))px} .p-ctrl{right:-10px;bottom:0}</style>')
             """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         setValue(false, forKey: "drawsBackground")
         navigationDelegate = self

@@ -182,4 +182,4 @@ Building for production...
 5363 |         bookmarksMenu.removeAllItems()
 [5/7] Write Objects.LinkFileList
 [6/7] Linking sill
-Build of product 'sill' complete! (69.99s)
+Build of product 'sill' complete! (65.11s)
