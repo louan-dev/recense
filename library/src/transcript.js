@@ -88,7 +88,8 @@ async function migrate(env, key, v2) {
 async function load(env, key) {
   const [asr, ...files] = await Promise.all([readJson(env, asrName(key)), ...LANGS.map((l) => readJson(env, trName(key, l)))]);
   const tr = Object.fromEntries(LANGS.map((l, i) => [l, files[i] && typeof files[i] === "object" && files[i].lines ? files[i] : null]));
-  if (asr && Array.isArray(asr.segments)) return { c: join(asr, tr.en), tr };
+  // (an empty asr.json that isn't complete is the stub a failed fetch once left: no transcript, notes 38)
+  if (asr && Array.isArray(asr.segments) && (asr.segments.length || asr.complete)) return { c: join(asr, tr.en), tr };
   const old = await readJson(env, oldTranscriptName(key));
   if (!old || !Array.isArray(old.lines)) return null;
   await migrate(env, key, old);
