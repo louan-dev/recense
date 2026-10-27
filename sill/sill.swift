@@ -6597,10 +6597,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         switch cmd {
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up, down one down.
         case "up":     guard settled() else { return }
-                       // The Recense card is dismissed first, before any layer opens.
-                       if MainActor.assumeIsolated({ Recense.delegate?.overlay.panel.isVisible == true }) {
-                           MainActor.assumeIsolated { Recense.delegate?.overlay.hideStrip() }; return
-                       }
+                       // Sill comes up and the Recense card steps aside at the same time.
+                       MainActor.assumeIsolated { if Recense.delegate?.overlay.panel.isVisible == true { Recense.delegate?.overlay.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
         case "down":   guard settled() else { return }
                        if panel.isVisible {
