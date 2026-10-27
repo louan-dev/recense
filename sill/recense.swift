@@ -5018,6 +5018,9 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     @discardableResult
     static func pushTranscript(_ key: String) async -> Bool {
         guard Store.r2, let c = Episode.Cache.read(key) else { return false }
+        // The stub a failed fetch leaves (no lines, not complete) is not a transcript: sent, it told Gallery and
+        // GalleryJob the file had one, and it was never transcribed (notes 38).
+        guard c.complete == true || !c.lines.isEmpty else { return false }
         let (a, en) = split(c)
         var ok = await send(asr(key)) { _ in encode(a) }
         if let en { ok = await send(tr(key, "en")) { t in var f = en; f.updatedAt = t; return encode(f) } && ok }
@@ -5766,9 +5769,15 @@ final class NativeSources {
         guard let fp = await contentKey(path, size: size) else { return nil }
         let has = { (k: String) in listing?[k].map { $0.contains("asr") || $0.contains("v2") } ?? false }
         var k = ContentKey.choose(fp, legacy: legacy)
-        if !has(fp) && has(legacy) { k = legacy }
+        if !has(fp) && has(legacy) && !stub(legacy) { k = legacy }
         ContentKey.known[src] = k
         return k
+    }
+
+    /// An empty transcript this Mac sent to keep/ before pushTranscript refused them (notes 38): counted as none.
+    static func stub(_ k: String) -> Bool {
+        guard let c = Episode.Cache.read(k) else { return false }
+        return c.complete != true && c.lines.isEmpty
     }
 
     /// Every audio/video file under files/, path (after files/) → bytes.
@@ -5807,7 +5816,7 @@ final class NativeSources {
         var todo: [(key: String, value: Int)] = []
         for (path, size) in files.sorted(by: { $0.key < $1.key }) where !skipped.contains("\(path)|\(size)") {
             guard let k = await itemKey(path, size: size, listing: listing) else { continue }
-            if !have.contains(k) && Library.resolve(k) == nil { todo.append((path, size)) }
+            if (!have.contains(k) || stub(k)) && Library.resolve(k) == nil { todo.append((path, size)) }
         }
         guard !todo.isEmpty else { return }
         log("gallery: \(todo.count) file(s) to transcribe")
