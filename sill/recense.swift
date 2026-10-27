@@ -2625,10 +2625,12 @@ enum ContentKey {
         else { return nil }
         return key(size: Int(size), head: head, tail: tail)
     }
-    /// The content key, unless only the address's older key has a transcript on this Mac.
-    static func choose(_ fp: String, legacy: String) -> String {
+    /// The content key, unless only the address's older key has a transcript on this Mac. The empty stub a failed fetch
+    /// leaves (no lines, not complete) is no transcript: it held a re-uploaded Gallery file on 0 lines (notes 38).
+    @MainActor static func choose(_ fp: String, legacy: String) -> String {
         let has = { (k: String) in FileManager.default.fileExists(atPath: cacheDir.appendingPathComponent(k + ".v2.json").path) }
-        return !has(fp) && has(legacy) ? legacy : fp
+        guard !has(fp), has(legacy), let c = Episode.Cache.read(legacy), c.complete == true || !c.lines.isEmpty else { return fp }
+        return legacy
     }
 }
 
@@ -5848,7 +5850,12 @@ final class NativeSources {
             let own = String(name.dropFirst("keep/locks/".count))
             guard own.count == 24, let l = await lock(own), let path = l["path"] as? String,
                   l["state"] as? String != "failed", current != path else { continue }
-            if cacheKey("gallery:files/" + path) != own { guard await contentKey(path) == own else { continue } }
+            if cacheKey("gallery:files/" + path) != own {
+                guard let cur = await contentKey(path) else { continue }
+                // The file was replaced since it was asked for: its request named the old content and was skipped every
+                // minute while Gallery showed it queued. Dropped; Gallery asks again under the new key (notes 38).
+                guard cur == own else { log("gallery: \(path) changed since it was asked for; request dropped"); await setLock(own, nil); continue }
+            }
             let now = Date().timeIntervalSince1970 * 1000, last = (l["beat"] as? Double) ?? (l["at"] as? Double) ?? 0
             // Asked for while it plays here (Retranscribe is pressed with the file open in Gallery): never idle, so
             // the request used to wait forever. The playing episode does the work and the lock follows it.
@@ -6218,13 +6225,13 @@ final class NativeSources {
         Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in sweep() }
         // Gallery's media, transcribed while nothing plays here (checked every 15 minutes)
         let gallery = { [weak self] in
-            _ = Task { await GalleryJob.run { self.map { $0.episode == nil || $0.episode?.complete == true } ?? false } }
+            _ = Task { await GalleryJob.run { self?.galleryIdle ?? false } }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 120) { gallery() }
         Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { _ in gallery() }
         // and what Gallery's viewers asked for (keep/locks/), every minute
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            _ = Task { await GalleryJob.serve { self.map { $0.episode == nil || $0.episode?.complete == true } ?? false } }
+            _ = Task { await GalleryJob.serve { self?.galleryIdle ?? false } }
         }
         let link = overlay.panel.contentView!.displayLink(target: self, selector: #selector(tick))
         link.add(to: .main, forMode: .common)
@@ -6238,6 +6245,13 @@ final class NativeSources {
 
     // Inside Sill the idle cost must stay near zero (SL1): players are polled at 20 Hz and the display link runs only
     // while something plays or the subtitles are on screen; otherwise one poll a second, enough to notice a player start.
+    /// Nothing being transcribed here, so GalleryJob may work: no episode, a finished one, or one that has no audio to
+    /// work on (its fetch failed: a YouTube stream yt-dlp couldn't get). That last one used to count as busy for as
+    /// long as it stayed the episode, and new Gallery files waited for hours (notes 38).
+    var galleryIdle: Bool {
+        guard let ep = episode else { return true }
+        return ep.complete || ep.stopped || (ep.file == nil && episodeState != "loading")
+    }
     var displayLink: CADisplayLink?
     var wasBusy: Bool?
     var wasWorking: Bool?
@@ -6340,13 +6354,15 @@ final class NativeSources {
     /// fails); `lang` (the language Retranscribe was pressed in) is translated first.
     func restartFresh(lang: String? = nil) {
         guard let ep = episode else { return }
+        // Stopped first: stop() writes what's due, and after the move it wrote the old transcript straight back, so
+        // Retranscribe on a file playing here loaded it again and did nothing (notes 38).
+        let (url, page, referer, title, music) = (ep.url, ep.page, ep.referer, ep.title, ep.music)
+        ep.stop(); episode = nil
         let json = cacheDir.appendingPathComponent(ep.key + ".v2.json")
         let aside = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(ep.key).json")
         try? FileManager.default.removeItem(at: aside)
         let setAside = (try? FileManager.default.moveItem(at: json, to: aside)) != nil
         setAsideTranslations(ep.key)
-        let (url, page, referer, title, music) = (ep.url, ep.page, ep.referer, ep.title, ep.music)
-        ep.stop(); episode = nil
         log("retranscribe: \(ep.key)\(setAside ? " (set aside: \(aside.path))" : "")")
         overlay.toast.say("Retranscribing")
         Task {
