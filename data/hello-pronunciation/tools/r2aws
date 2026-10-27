@@ -1,0 +1,7 @@
+#!/bin/zsh
+# aws cli against Recense's R2, loading creds from ~/.config/recense/config without echoing them
+while IFS='=' read -r k v; do
+  case "$k" in R2_ACCOUNT_ID) A=${v//[\"\']/};; R2_ACCESS_KEY_ID) export AWS_ACCESS_KEY_ID=${v//[\"\']/};; R2_SECRET_ACCESS_KEY) export AWS_SECRET_ACCESS_KEY=${v//[\"\']/};; esac
+done < ~/.config/recense/config
+export AWS_DEFAULT_REGION=auto AWS_PAGER=""
+exec aws --endpoint-url "https://$A.r2.cloudflarestorage.com" "$@"

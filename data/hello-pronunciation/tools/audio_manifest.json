@@ -1,0 +1,1773 @@
+{
+"48e3dd32f10b4ea68fd66b5dfc42af0b": {
+"bytes": 1123947,
+"duration_s": 134.613,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f9205ca4c5f84f4d83a504dd8e982914": {
+"bytes": 814208,
+"duration_s": 100.715,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c45aaf943a104aff86c87450ae73bb82": {
+"bytes": 75601,
+"duration_s": 8.896,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4643743850b247e9ab2ff73dab5b942f": {
+"bytes": 61857,
+"duration_s": 7.381,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"07a1a5e9ad1e402ebab8b8676760f91d": {
+"bytes": 67539,
+"duration_s": 7.637,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"518cc66075f245128901041cb93c7a2f": {
+"bytes": 93033,
+"duration_s": 10.709,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"90cd3b1015c14f8d943949e24c9bb2e9": {
+"bytes": 28690,
+"duration_s": 3.307,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"dd2d7f181368418798c5fad9269b7cd1": {
+"bytes": 37547,
+"duration_s": 4.288,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3e81de029fac4d939d1aa0e422592979": {
+"bytes": 37387,
+"duration_s": 4.203,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"be10d26246974f97acc595aea239e90e": {
+"bytes": 40034,
+"duration_s": 4.565,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"81facaa2945c4ac1a479972b22685679": {
+"bytes": 34840,
+"duration_s": 3.925,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1af68d69522e40fab0056921a011f3d5": {
+"bytes": 40826,
+"duration_s": 4.395,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ade5cc3de8bb4640988725c86591574e": {
+"bytes": 34609,
+"duration_s": 3.733,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"43f78a8488cd41349ff929caa494cc17": {
+"bytes": 39549,
+"duration_s": 4.245,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8e32f57b34f34e1b9f2e3ff3cad33b64": {
+"bytes": 46833,
+"duration_s": 5.269,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"74307f1ebec24f3e9590acb639fdee8d": {
+"bytes": 57727,
+"duration_s": 6.549,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b170df0b8b9c4261ad64b211d1568c2d": {
+"bytes": 30475,
+"duration_s": 3.52,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e8325a8e3ff54e169fc1dda5020618c8": {
+"bytes": 85799,
+"duration_s": 9.856,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1f0c29c559dd432b8313362d2a36b569": {
+"bytes": 23284,
+"duration_s": 2.517,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b986e5b6c81140e1b74da63095a156c2": {
+"bytes": 40206,
+"duration_s": 4.565,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"9ac27514c1954085a2185be52de0b044": {
+"bytes": 57894,
+"duration_s": 6.592,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c3200587a0c34493b437efd82428d9f1": {
+"bytes": 23065,
+"duration_s": 2.539,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"17e1ee0630af4f3e8710da7f89fdf66b": {
+"bytes": 13771,
+"duration_s": 1.472,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"809705c240b04942b64568e7ff1d4e31": {
+"bytes": 39364,
+"duration_s": 4.459,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1f01d672163e4d75bd02c4dbdac50d4e": {
+"bytes": 28241,
+"duration_s": 3.115,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4233c962da554d60a0cbce8eb2de650d": {
+"bytes": 25345,
+"duration_s": 2.709,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d9d6ce7e860b4d0db855eb60af99e233": {
+"bytes": 11644,
+"duration_s": 1.216,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"dffa39a36da144e18ab45d13a463e8ab": {
+"bytes": 11936,
+"duration_s": 1.152,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d2e678bd92a0408ab4f6120806aa2cbd": {
+"bytes": 141632,
+"duration_s": 16.853,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a44356c6084a40159c5aad3787f05d4c": {
+"bytes": 97413,
+"duration_s": 11.499,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"9caf0b24231447f1a210462d59ae9152": {
+"bytes": 29904,
+"duration_s": 3.136,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"7c45588675fd4101be2b13ffdae6d8f7": {
+"bytes": 99095,
+"duration_s": 11.648,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f8564a9c85d04122a881649523121766": {
+"bytes": 91469,
+"duration_s": 10.987,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d87428875f9643be882ea59f065ada6a": {
+"bytes": 96256,
+"duration_s": 11.328,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b9b966a44cae4f25a96deebb0d1b6084": {
+"bytes": 64900,
+"duration_s": 7.787,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4a70bd9626414734ac646daa49a51296": {
+"bytes": 40145,
+"duration_s": 4.544,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"27fca5fe18a5468bb8fd4667c72e2c4f": {
+"bytes": 107989,
+"duration_s": 12.608,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0f5eccf0e01c4a58b49e278d258e897c": {
+"bytes": 139478,
+"duration_s": 16.555,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1e70067530b74eaa8e6d18c3af9f19ba": {
+"bytes": 87984,
+"duration_s": 10.731,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"81d4deba691447e1ab20674820c2c1c4": {
+"bytes": 123124,
+"duration_s": 14.485,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1ec7e4c9c9ed45ababc744c0a76427e8": {
+"bytes": 141751,
+"duration_s": 16.576,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ec8d919afebd4d0bad2188dbe932458f": {
+"bytes": 56531,
+"duration_s": 6.507,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8633653d11bb4659974381021de0ca78": {
+"bytes": 119572,
+"duration_s": 13.909,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"9b27511df6c34ef5beb96bed54db4aba": {
+"bytes": 50651,
+"duration_s": 5.781,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"27de93068fe44c7db48e4fe8d177c6c0": {
+"bytes": 73698,
+"duration_s": 8.448,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"897bd66744d84b38a57c165482b7e2a7": {
+"bytes": 55783,
+"duration_s": 6.336,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"56187d9d91e9450bafd2cc0b94144057": {
+"bytes": 110789,
+"duration_s": 12.672,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8dcce5f077264b87a1402278bb55b47c": {
+"bytes": 97173,
+"duration_s": 11.307,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"adf0fd7bbd0b4576b2ae5c10700cf98b": {
+"bytes": 40375,
+"duration_s": 4.608,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4d9c804d2952458b8bcdfdf9725c1213": {
+"bytes": 65365,
+"duration_s": 7.445,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6604572b9afd42e6a06f668247f606c3": {
+"bytes": 56468,
+"duration_s": 6.379,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"7a65ff28e3784a9286718d98e6896918": {
+"bytes": 61294,
+"duration_s": 7.019,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f7a709b9fb65490486e888e4449e4139": {
+"bytes": 66713,
+"duration_s": 7.595,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"92e36b8164654237b88a47777150e44e": {
+"bytes": 64085,
+"duration_s": 7.403,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b50b2d6b4eff4034a795775058814524": {
+"bytes": 57937,
+"duration_s": 6.571,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3fc41ea3a9b94c759956c25087b834cc": {
+"bytes": 57799,
+"duration_s": 6.528,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"85ba56682e2b4e1c8d5ea2550c47ecf2": {
+"bytes": 64440,
+"duration_s": 7.339,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d10ae9d10f00407e9df11fc8932327e9": {
+"bytes": 56956,
+"duration_s": 6.443,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"aa1a2d0c58e743ac8f263725de4c00c4": {
+"bytes": 70167,
+"duration_s": 8.235,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0c5894860d4543fdb2c5bdded1c81c58": {
+"bytes": 71627,
+"duration_s": 8.341,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ddf7e8dca525485b89a4b6f0cf5c32db": {
+"bytes": 92598,
+"duration_s": 10.816,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2488af5c18674eb18f16ddc27b10f723": {
+"bytes": 93800,
+"duration_s": 11.371,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"33dfe493e92a464c985b14fd1d2b4a88": {
+"bytes": 115333,
+"duration_s": 13.44,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4e8ca60d312f4835afae202662bdf5cc": {
+"bytes": 87832,
+"duration_s": 10.261,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d9daab26e345456e81e4db233eb5f20f": {
+"bytes": 66757,
+"duration_s": 7.829,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6fbdc7dcf4b24509ba31859db47d6625": {
+"bytes": 48036,
+"duration_s": 5.525,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"160c63a771b546d48ff5f65ae9f9f807": {
+"bytes": 94920,
+"duration_s": 11.008,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6f0582e463764043acabf611fcd2e382": {
+"bytes": 94357,
+"duration_s": 10.987,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5e164339e921461abd099d47e9a7615e": {
+"bytes": 86219,
+"duration_s": 10.155,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a7f87d5c50b94c3586bb266664c1c17b": {
+"bytes": 74983,
+"duration_s": 8.832,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c5d607ca8b994655b688721f29836e61": {
+"bytes": 67068,
+"duration_s": 7.915,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8670e6c40921434c82c08fc3bf4d099f": {
+"bytes": 89705,
+"duration_s": 10.261,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d6eea4df2364402dbd56543e1117a6d0": {
+"bytes": 107152,
+"duration_s": 12.459,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8e01d329c1b547e6a967bdf5c6100d21": {
+"bytes": 74502,
+"duration_s": 8.704,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"42c57b69dd3544789704660af8f6b501": {
+"bytes": 51034,
+"duration_s": 5.888,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a1f0aacbed5a420ba0f44f36a87af712": {
+"bytes": 45620,
+"duration_s": 5.141,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b38101c7b7ab43479453d0b42227205c": {
+"bytes": 96474,
+"duration_s": 11.179,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"21dfc048a7264b46a9eabff926b79e95": {
+"bytes": 89924,
+"duration_s": 10.581,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"14a048e381874735ad87581eb08b061a": {
+"bytes": 89678,
+"duration_s": 10.048,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"34a9ab0a6ccf4f11a95a829f66f0449f": {
+"bytes": 94978,
+"duration_s": 11.179,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e01cec7315f240fb97ca5f47b15c6129": {
+"bytes": 58336,
+"duration_s": 6.741,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c2bea5cc7eb240469b028424510de5b6": {
+"bytes": 71139,
+"duration_s": 8.256,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5657626255ec49c1b592dfcf01a2f722": {
+"bytes": 63243,
+"duration_s": 7.403,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8c80135e949e4805aa2d7e9da5612e17": {
+"bytes": 49415,
+"duration_s": 5.653,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2d97bae6f6eb4d39a8ca8b78dfa6c526": {
+"bytes": 100857,
+"duration_s": 11.84,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a16e301fe8034fc4aa7dbe989ab7aa01": {
+"bytes": 82856,
+"duration_s": 9.685,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"beeadd4df3e7496ead1f3bc9744923b6": {
+"bytes": 54326,
+"duration_s": 6.272,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e494d1d3bf5d46999c4c87699bf865a5": {
+"bytes": 41012,
+"duration_s": 4.629,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3bea5e7a1704474f8d21c4291635e3af": {
+"bytes": 90925,
+"duration_s": 10.517,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3d846ed78a4f44cfa3f7db0182ea6929": {
+"bytes": 66834,
+"duration_s": 7.595,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3d5bf3016cff43f587cc73bc6b6fd0ec": {
+"bytes": 58978,
+"duration_s": 6.677,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"372aa4bd82b7412193682489317be127": {
+"bytes": 64219,
+"duration_s": 7.445,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"93b848f69e324024a0ee445c425140ca": {
+"bytes": 98808,
+"duration_s": 11.52,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b6d4f885552a4bba9f25638f76853865": {
+"bytes": 96253,
+"duration_s": 11.179,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"14657535338945c9a322dde136556604": {
+"bytes": 57493,
+"duration_s": 6.635,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2fc9216e3b3c477caf8cf0b63feefdc1": {
+"bytes": 73140,
+"duration_s": 8.491,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3941196af45542ef9acc71a9f2490af6": {
+"bytes": 53267,
+"duration_s": 6.101,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"240bb464573e494d996a865282f134f6": {
+"bytes": 96772,
+"duration_s": 11.349,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e2abb21497644091946ab2f2ced1cf67": {
+"bytes": 94114,
+"duration_s": 10.987,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d925decdb3744035a7ca5b1b60f93560": {
+"bytes": 60600,
+"duration_s": 7.061,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"df3d28e0da244421ab8482ef4ba3090a": {
+"bytes": 101901,
+"duration_s": 11.776,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3b3c666a10104c348eca2fb4e6e64f94": {
+"bytes": 111577,
+"duration_s": 12.885,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e7ad0891dea0463598ece11fb488448d": {
+"bytes": 101218,
+"duration_s": 11.712,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2184b35d7a5a44f68a350de1bd3ab960": {
+"bytes": 59089,
+"duration_s": 6.891,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"259d4dd225aa4bf9aa65f7c48e731417": {
+"bytes": 97976,
+"duration_s": 11.563,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1556bfa9096043468b12604c0523a751": {
+"bytes": 62481,
+"duration_s": 7.275,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"88eca1df74644b25a959c7d93d0adf27": {
+"bytes": 88989,
+"duration_s": 10.389,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"971872ad136a4bda956b1d699448ebd6": {
+"bytes": 103329,
+"duration_s": 12.053,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"60f28fa3fe7944c79aff4d490dca1528": {
+"bytes": 107875,
+"duration_s": 12.544,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"76e18c1a47884bb5834410600929aea3": {
+"bytes": 97066,
+"duration_s": 11.328,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d4585bbb90c7457d97b5c7efcfa5e61f": {
+"bytes": 67247,
+"duration_s": 7.915,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"27c99e14c6b04b5cb6d1146614d2e82f": {
+"bytes": 79276,
+"duration_s": 9.365,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e14da8f74ffc4c2eaf96f8fdee02f8fd": {
+"bytes": 35582,
+"duration_s": 4.011,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b73aacc99f8e48ba90fde13fac8cd82f": {
+"bytes": 52307,
+"duration_s": 5.973,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b7aab8f508ca43ffa228877c12a08ee2": {
+"bytes": 57095,
+"duration_s": 6.635,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0378d06f2c7b419ba42f3dc245654693": {
+"bytes": 89328,
+"duration_s": 10.389,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e7a2e72a6f764576a111d163806e182e": {
+"bytes": 84780,
+"duration_s": 9.792,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"08fb8563200d4ee7b5b8bb8e1ed47db9": {
+"bytes": 148165,
+"duration_s": 17.28,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a6505ad5275942679c3a572fee743933": {
+"bytes": 102723,
+"duration_s": 11.925,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"726908a180304cbfa9506f409add101a": {
+"bytes": 60109,
+"duration_s": 7.019,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5b2bf37ee72740c4aaee451f25a1e7ff": {
+"bytes": 102142,
+"duration_s": 12.032,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"15135d30b9914a6280f94f797dfa3a41": {
+"bytes": 94849,
+"duration_s": 11.093,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f727aa5403dd4d9e95c6e26e48096cd2": {
+"bytes": 53557,
+"duration_s": 6.187,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"dedfb096c29a4835b0b07260093b28b6": {
+"bytes": 118057,
+"duration_s": 13.824,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"cbdd4b1c7afc4985a4da188ef24c6d57": {
+"bytes": 101050,
+"duration_s": 11.605,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ec94cef9a9b24320869206744c9202c3": {
+"bytes": 39624,
+"duration_s": 4.48,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"076ab8fc6bf94fecab730f8733add669": {
+"bytes": 83855,
+"duration_s": 9.899,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"046f9383a18d4b38a8417ec80c9a80e5": {
+"bytes": 111680,
+"duration_s": 13.12,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2008c5116df24846a0490b26b1463264": {
+"bytes": 61902,
+"duration_s": 7.125,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0c174403e92142c589627c3395989921": {
+"bytes": 44292,
+"duration_s": 5.013,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"de9a7513f69f4a088437b1954eedf5ff": {
+"bytes": 51841,
+"duration_s": 5.952,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"016060e30df44d36956616c522c7f269": {
+"bytes": 223807,
+"duration_s": 26.133,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e169b13c3f54456e9f3f626c577dbced": {
+"bytes": 96137,
+"duration_s": 11.179,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4427e13b07994d0396e76d8c7bb1036f": {
+"bytes": 63776,
+"duration_s": 7.488,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c13d0ea77e254353b7047fcd1cd1791e": {
+"bytes": 110752,
+"duration_s": 13.035,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6c78bb75d8144c199dc8728462bd022a": {
+"bytes": 77897,
+"duration_s": 9.131,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"24a4196a900c429caad5665da75a83ae": {
+"bytes": 120338,
+"duration_s": 14.123,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5ff434ac2fae4337a92f734064a56074": {
+"bytes": 92929,
+"duration_s": 10.773,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"03e81f78328249c0a70c8830404ed589": {
+"bytes": 100121,
+"duration_s": 11.755,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"668330f5d3004fcb8efc9936aef2fa7c": {
+"bytes": 85586,
+"duration_s": 9.963,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ff04b8bacf9f451ebf2e864b2294b0dd": {
+"bytes": 160024,
+"duration_s": 18.475,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d5c3ef7d3ea543b0b05cfe08b9775bdf": {
+"bytes": 96720,
+"duration_s": 11.264,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"061c95b59a64479ba3f997bb19ebe225": {
+"bytes": 141714,
+"duration_s": 16.576,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"66cbaa07b54043feb04ddd30919d23e1": {
+"bytes": 102844,
+"duration_s": 11.925,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"eb84a9a813e2445194e41c09efef534e": {
+"bytes": 57181,
+"duration_s": 6.677,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4f099ecec66045199930d29f345d8dbc": {
+"bytes": 155663,
+"duration_s": 18.411,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e3a6ea18c6bc46928596230b196e1f9e": {
+"bytes": 54936,
+"duration_s": 6.272,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f2d13ba1aa1242eba9458220c95881ce": {
+"bytes": 154468,
+"duration_s": 18.197,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"997a405b463448f5ab647d84784dc686": {
+"bytes": 54484,
+"duration_s": 6.251,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"05ab9a0215ca452180f71fbae038dd26": {
+"bytes": 50479,
+"duration_s": 5.781,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f52f04dc7f424ae3ac3e6daceab7c292": {
+"bytes": 115863,
+"duration_s": 13.44,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f33b8e680c1f4db281f14597852a09ba": {
+"bytes": 61033,
+"duration_s": 7.019,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"75355488b9a94b3aa7c3c8dc98618bad": {
+"bytes": 72533,
+"duration_s": 8.256,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a221c1580b3f4fb097cb7f6b6cdde565": {
+"bytes": 42480,
+"duration_s": 4.864,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a4ed279cc117474e9730a9b6aea30024": {
+"bytes": 120363,
+"duration_s": 14.571,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"90c295aaba60473c99dc48fa9b71bd16": {
+"bytes": 45131,
+"duration_s": 5.44,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0ef27aee7d7744ae92da561fc87d2d79": {
+"bytes": 48649,
+"duration_s": 5.803,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f36f9b24d47f4912be4579e723649807": {
+"bytes": 48184,
+"duration_s": 5.696,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"fa4e297360b940c382d4aecd1ea79690": {
+"bytes": 49809,
+"duration_s": 5.76,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4d5ec6fabf4241f284943dc597c7e796": {
+"bytes": 80659,
+"duration_s": 9.408,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d757acff4c4849308c93edeb2f0e06c3": {
+"bytes": 122276,
+"duration_s": 14.336,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c658ed99bbfc4b27b38177a7c8cfa819": {
+"bytes": 175074,
+"duration_s": 20.16,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f8ff569b16444673b8dd500a82aba45e": {
+"bytes": 178329,
+"duration_s": 20.544,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"098edc2fe6644fa7b5277cf45f0c1bfd": {
+"bytes": 104156,
+"duration_s": 12.117,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e9f313a440df4e64aeaa429c7b927076": {
+"bytes": 209988,
+"duration_s": 25.195,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ee25df1a817f4f358222f006c2c9a792": {
+"bytes": 323265,
+"duration_s": 37.291,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c05d94b3c3004220bcee978b2a778963": {
+"bytes": 119855,
+"duration_s": 14.037,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"07c36c0a4c894970a2f69b0522dd9a1c": {
+"bytes": 366629,
+"duration_s": 42.496,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0aa46beab93441d8969d534587eb8a97": {
+"bytes": 41467,
+"duration_s": 4.779,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f62103b65d4a47768b1b00a8b42fbfe5": {
+"bytes": 44959,
+"duration_s": 5.184,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2ca96adc179642cc9d20778736e1dd2f": {
+"bytes": 47193,
+"duration_s": 5.355,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"90693708cfa4403b958e24cd5468a961": {
+"bytes": 50286,
+"duration_s": 5.76,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1905e3e148814b07a150504b70dd7599": {
+"bytes": 516789,
+"duration_s": 60.075,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ab2d29a23b4e4458a696d018cb553cbe": {
+"bytes": 55634,
+"duration_s": 6.315,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"43b9a7dfa8c3481c9058848c6b7f637e": {
+"bytes": 70563,
+"duration_s": 8.107,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"c3c19772e34f41589c983886a2a9eb31": {
+"bytes": 69836,
+"duration_s": 8.0,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f819f47bb3d74f568ae5683b8b396abb": {
+"bytes": 56987,
+"duration_s": 6.549,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ee1d43d3aefa4c3c834ae8a9c27c0c18": {
+"bytes": 71520,
+"duration_s": 8.299,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4505797b277b489e8a7039d5449b86a5": {
+"bytes": 56314,
+"duration_s": 6.4,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a1627b62a5c14d45b1b39f8f170617b5": {
+"bytes": 53923,
+"duration_s": 6.165,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"96ceb3ebe1d0485f920f96ec5e3c00ac": {
+"bytes": 64630,
+"duration_s": 7.403,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"7a0cdb1f7a3b41a1b8adaf7e337a5638": {
+"bytes": 47125,
+"duration_s": 5.419,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ca108d2348ee488fba7b47d48dbf0734": {
+"bytes": 62960,
+"duration_s": 7.317,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"9a26f298c1674d389eaa94a20c9ac3db": {
+"bytes": 79301,
+"duration_s": 9.152,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"070e5ace2c08433ebb8139c89d9e0782": {
+"bytes": 79560,
+"duration_s": 9.152,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e8a2adea9d1249fdaf8021ddcd52ca83": {
+"bytes": 55178,
+"duration_s": 6.272,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8f799924f63b4228890c4620acc47217": {
+"bytes": 107237,
+"duration_s": 12.309,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"bacd34f11fc54dbdb42a10afdcc62855": {
+"bytes": 73239,
+"duration_s": 8.448,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5d856e4191444019a068e9277a9189ea": {
+"bytes": 87717,
+"duration_s": 10.027,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a79db3e12cb64360a671365dd3c9b553": {
+"bytes": 100147,
+"duration_s": 11.563,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"03e25088648547e38a302b1209a7576f": {
+"bytes": 80118,
+"duration_s": 9.152,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ff97ce4c998a4e038dae2901d4dc5acd": {
+"bytes": 70118,
+"duration_s": 8.0,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"830792db3f9b4ed5bbfc6fbfc721871e": {
+"bytes": 89319,
+"duration_s": 10.197,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"7f14e70f600a4a86a1ea1b8e4933e78f": {
+"bytes": 83678,
+"duration_s": 9.536,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e6dcb076be634526ba3888a828385824": {
+"bytes": 122189,
+"duration_s": 14.037,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0ad19490009a4bdaa98379cffc90d3f8": {
+"bytes": 81807,
+"duration_s": 9.387,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"78d3ff61364a47c1bdfdd032a7222a22": {
+"bytes": 84416,
+"duration_s": 9.728,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"eaa3132ededf421dbaeb5c2093d47a35": {
+"bytes": 137592,
+"duration_s": 15.851,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5d735ed61ef645a89021e30f806ba315": {
+"bytes": 72674,
+"duration_s": 8.341,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"fa2ebba6dfa64fbb86aeaa914f3d5ee4": {
+"bytes": 54915,
+"duration_s": 6.293,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"68d127cb883540dc80a8b22fe84f1841": {
+"bytes": 102679,
+"duration_s": 11.776,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"3ac8ce7de014488797045a8789b21b85": {
+"bytes": 147473,
+"duration_s": 16.939,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"72275ff0adca4986bc42cff27db97ccd": {
+"bytes": 59566,
+"duration_s": 6.827,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"7e1fe97e642640478f8cbfb50dc4d141": {
+"bytes": 104930,
+"duration_s": 12.16,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"de5f04c7de5e4729a870bf36db1f1bb4": {
+"bytes": 54932,
+"duration_s": 6.293,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"72555476aa70437e9ff39e18cb86cefa": {
+"bytes": 73586,
+"duration_s": 8.491,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ff555403b3f0476e823bf229cbf5ce40": {
+"bytes": 89542,
+"duration_s": 10.24,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"0fa25390b1f64bd186290b4825ce0cef": {
+"bytes": 84110,
+"duration_s": 9.707,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1d940470e83a4135971319e73faf7c53": {
+"bytes": 67725,
+"duration_s": 7.744,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"9eadeb305b284fb78adb46ac08ef4d1c": {
+"bytes": 58111,
+"duration_s": 6.635,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"aa001580b94a4e39a84f666a97334cb2": {
+"bytes": 77212,
+"duration_s": 8.896,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"694dd0f8559d45c4b04a41546e5eb305": {
+"bytes": 71010,
+"duration_s": 8.043,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"96f3e72590da4535b55311d1ee3d65fe": {
+"bytes": 65929,
+"duration_s": 7.723,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f65ffa2f24034c13a7fff9ce23e458b2": {
+"bytes": 58019,
+"duration_s": 6.592,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"bd42bb08671a4ab5b954ed8520fbb11f": {
+"bytes": 197695,
+"duration_s": 23.04,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"fd2adb63d681456cbaa03004ed20c344": {
+"bytes": 71446,
+"duration_s": 8.128,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8e98676308e94a99862cd372990753cb": {
+"bytes": 77412,
+"duration_s": 8.811,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4b4caf3337964a69a468bf28f534b195": {
+"bytes": 74971,
+"duration_s": 8.555,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"07f5dc0382924a3492eb18b8e4e9a887": {
+"bytes": 198539,
+"duration_s": 23.275,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"d34a72bcbb3e4865827bf997745490f4": {
+"bytes": 62783,
+"duration_s": 7.104,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"478e5e61aacd47ac8ac93be779032851": {
+"bytes": 59588,
+"duration_s": 6.848,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"865fd37d2c1d429a95065a7c724b8fee": {
+"bytes": 135583,
+"duration_s": 15.659,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b3151815c142474db92474f7e39a6323": {
+"bytes": 60396,
+"duration_s": 6.933,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"931a41cb77fb4e949b94448b0f1599da": {
+"bytes": 65594,
+"duration_s": 7.467,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"38c937a54a804a18be723a7830883dcc": {
+"bytes": 83710,
+"duration_s": 9.621,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"88b60f27ac7546408dc93bc5967e0ccf": {
+"bytes": 112546,
+"duration_s": 13.013,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"a2d7ed5c8b82439f874311d1cdb6afd2": {
+"bytes": 92322,
+"duration_s": 10.581,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"cfc5997493b0466bae49188831d517a6": {
+"bytes": 81277,
+"duration_s": 9.429,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"ff8923b6a95a4b3a9bc4df52274a253e": {
+"bytes": 586041,
+"duration_s": 69.227,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"bdd18450957d42baa681e44e376b04b8": {
+"bytes": 2318062,
+"duration_s": 81.641,
+"codec": "aac",
+"sample_rate": 44100,
+"channels": 1
+},
+"d20eafbc84d44d52a0845b05f39ddaf1": {
+"bytes": 866007,
+"duration_s": 101.973,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"139229ff9a2e44abad4bff74eb7f99ea": {
+"bytes": 446980,
+"duration_s": 53.184,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8b1237992a6b434eb9aac6e50fc6791c": {
+"bytes": 1358114,
+"duration_s": 47.996,
+"codec": "aac",
+"sample_rate": 44100,
+"channels": 1
+},
+"66aa3f9c067241dab2d9c8b4f7e3258e": {
+"bytes": 275789,
+"duration_s": 32.512,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e9fab7394de14d87b2091ac9eb9a9524": {
+"bytes": 932708,
+"duration_s": 32.903,
+"codec": "aac",
+"sample_rate": 44100,
+"channels": 1
+},
+"c5e872c7e4aa4e32929b7bd04eec6198": {
+"bytes": 908828,
+"duration_s": 108.224,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"05142ac49bfb4e369f5b103e2c11aa12": {
+"bytes": 2600709,
+"duration_s": 91.881,
+"codec": "aac",
+"sample_rate": 44100,
+"channels": 1
+},
+"500a04183b2c48feae98cb7e4cb9664d": {
+"bytes": 841560,
+"duration_s": 100.309,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"df1d76c40a604dd5b45e736fd67193e8": {
+"bytes": 194724,
+"duration_s": 22.848,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f7c855aa998d4739b5b309f4337f60e9": {
+"bytes": 647507,
+"duration_s": 76.587,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"8c0aea0b2d59471880ba6506701c793b": {
+"bytes": 858703,
+"duration_s": 102.059,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"b648668785d24ef4bae2ff0f055dd49a": {
+"bytes": 791817,
+"duration_s": 94.123,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"17cd4167842a4df38ff3a1ded1acd3e0": {
+"bytes": 1822077,
+"duration_s": 216.747,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"1deefce516b646399b6e2d44bc8cfc7b": {
+"bytes": 522435,
+"duration_s": 62.08,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"e02f59a87c954a27baac74d4ba3d4107": {
+"bytes": 738657,
+"duration_s": 87.339,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6b3fb729daab48fc9c80e15ca76f6e58": {
+"bytes": 1283164,
+"duration_s": 152.789,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"6d7f16df29f4407d81a124e65d337df7": {
+"bytes": 3916459,
+"duration_s": 138.414,
+"codec": "aac",
+"sample_rate": 44100,
+"channels": 1
+},
+"e7e9157833854e53b4094e2abd80be06": {
+"bytes": 698640,
+"duration_s": 83.883,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"da193e9e78a54127bc943fd0c95d4cf1": {
+"bytes": 418252,
+"duration_s": 50.069,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"2c9035f27eb64a798f3f5c00efea52e4": {
+"bytes": 737903,
+"duration_s": 88.32,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"f476ab135498484887b7cf6c6fae8c60": {
+"bytes": 1576091,
+"duration_s": 188.331,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"5801a763697c472cb9f16a4206c34f3b": {
+"bytes": 701856,
+"duration_s": 84.203,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+},
+"4d1be9903045404fb140512275ddfc27": {
+"bytes": 390911,
+"duration_s": 46.869,
+"codec": "aac",
+"sample_rate": 48000,
+"channels": 1
+}
+}
