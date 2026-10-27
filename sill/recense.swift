@@ -1427,6 +1427,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         homeBar.isHidden = true
         toast.alphaValue = 0
 
+        panel.contentView = root               // first: areaFoot and barFoot anchor to the panel's content view
         for v in [area, editor, status, homeBar, modeCtl, langCtl, toast] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
         words.translatesAutoresizingMaskIntoConstraints = false; area.addSubview(words)
         NSLayoutConstraint.activate([
@@ -1460,7 +1461,6 @@ final class Overlay: NSObject, NSWindowDelegate {
             barFoot,
             homeBar.topAnchor.constraint(equalTo: area.topAnchor),
         ])
-        panel.contentView = root
         if #available(macOS 15.0, *) {
             let host = NSHostingView(rootView: OnDeviceHost())
             host.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
