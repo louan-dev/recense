@@ -1,12 +1,7 @@
-[0/3] Write swift-version--58304C5D6DBC2206.txt
-[1/2] Linking SwiftTermBuildInfoGenerator-tool
-[0/1] Planning build
 Building for production...
-[0/6] Write sources
-[1/6] Write swift-version--58304C5D6DBC2206.txt
-[2/5] Linking SwiftTermBuildInfoGenerator-tool
-[3/5] Generate SwiftTerm build information
-[5/6] Compiling sill main.swift
+[0/5] Write sources
+[1/5] Write swift-version--58304C5D6DBC2206.txt
+[3/4] Compiling sill main.swift
 /Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/main.swift:539:13: warning: initialization of immutable value 'size' was never used; consider replacing with assignment to '_' or removing it
  537 |         guard t != lastTime else { return }
  538 |         lastTime = t
@@ -173,13 +168,13 @@ Building for production...
 6705 |             let rep = NSBitmapImageRep(cgImage: cg)
 6706 |             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
 
-/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5268:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5266 |     func menuNeedsUpdate(_ m: NSMenu) {
-5267 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-5268 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
+/Users/chauphan/Developer/sill/.claude/worktrees/exciting-lumiere-9b0e58/sill/Sources/sill/recense.swift:5285:13: warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
+5283 |     func menuNeedsUpdate(_ m: NSMenu) {
+5284 |         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
+5285 |         let paused = has ? (expectPaused ?? pos.paused) : globalPaused
      |             `- warning: initialization of immutable value 'paused' was never used; consider replacing with assignment to '_' or removing it
-5269 |         exportItem.isEnabled = episode?.shown.isEmpty == false
-5270 |         bookmarksMenu.removeAllItems()
-[5/7] Write Objects.LinkFileList
-[6/7] Linking sill
-Build of product 'sill' complete! (67.42s)
+5286 |         exportItem.isEnabled = episode?.shown.isEmpty == false
+5287 |         bookmarksMenu.removeAllItems()
+[3/5] Write Objects.LinkFileList
+[4/5] Linking sill
+Build of product 'sill' complete! (97.53s)

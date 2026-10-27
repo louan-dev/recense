@@ -5241,13 +5241,30 @@ final class NativeSources {
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             _ = Task { await GalleryJob.serve { self.map { $0.episode == nil || $0.episode?.complete == true } ?? false } }
         }
-        overlay.panel.contentView!.displayLink(target: self, selector: #selector(tick)).add(to: .main, forMode: .common)
+        let link = overlay.panel.contentView!.displayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
         let slow = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { if self?.overlay.minimized == true { self?.frame() } }
         }
         RunLoop.main.add(slow, forMode: .common)
-        let poll = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.nativeTick() } }
-        RunLoop.main.add(poll, forMode: .common)
+        pollLoop()
+    }
+
+    // Inside Sill the idle cost must stay near zero (SL1): players are polled at 20 Hz and the display link runs only
+    // while something plays or the subtitles are on screen; otherwise one poll a second, enough to notice a player start.
+    var displayLink: CADisplayLink?
+    var wasBusy: Bool?
+    var busy: Bool {
+        (!pos.paused && Date().timeIntervalSince(pos.received) < 5) || (overlay.panel.isVisible && !overlay.minimized)
+    }
+    func pollLoop() {
+        nativeTick()
+        let on = busy
+        if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused), overlay: \(overlay.panel.isVisible && !overlay.minimized))") }
+        displayLink?.isPaused = !on
+        let t = Timer(timeInterval: on ? 0.05 : 1.0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.pollLoop() } }
+        RunLoop.main.add(t, forMode: .common)
     }
 
     @objc func tick(_ l: CADisplayLink) { frame() }
