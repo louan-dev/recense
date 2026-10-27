@@ -1072,6 +1072,9 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
     override func hitTest(_ p: NSPoint) -> NSView? {
         guard !isHidden, let s = superview else { return nil }
         let q = convert(p, from: s)
+        // While the bar is open, every two-finger swipe over it goes to the bar (its slides), even where the page's
+        // last report of its shape (every 250 ms) hasn't caught up; otherwise the swipe stutters into the subtitles.
+        if open, NSApp.currentEvent?.type == .scrollWheel, bounds.contains(q) { return super.hitTest(p) }
         let y = isFlipped ? q.y : bounds.height - q.y
         return hits.contains { $0.contains(CGPoint(x: q.x, y: y)) } ? super.hitTest(p) : nil
     }
@@ -1317,7 +1320,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let h: CGFloat = on ? 320 : 120
         guard f.height != h else { return }
         f.origin.y = f.maxY - h; f.size.height = h
-        panel.setFrame(f, display: true, animate: !RecenseHomeBar.still)
+        panel.setFrame(f, display: true)          // not animated: an animated window resize holds the main thread
     }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
