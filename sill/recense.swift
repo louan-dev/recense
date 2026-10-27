@@ -1537,6 +1537,11 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// cut short, and the ruler was drawn over the lines.
     static let stripHeight: CGFloat = 164, barZone: CGFloat = 78
     var inStrip = false
+    /// The strip starts over the menu bar (and a notch): its lines start below that, and the strip grows by as much (notes 47).
+    static func stripTop(_ sc: NSScreen) -> CGFloat {
+        max(26, sc.frame.maxY - sc.visibleFrame.maxY, sc.safeAreaInsets.top) + 4
+    }
+    static func stripHeight(_ sc: NSScreen) -> CGFloat { stripHeight + stripTop(sc) - 26 }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
 
@@ -1544,8 +1549,9 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// browser's address bar, as wide as Sill's card; dark enough to read the subtitles, light enough to see behind.
     func showStrip() {
         guard let sc = NSScreen.main else { return }
-        let w = timeSize.width, h = Overlay.stripHeight
+        let w = timeSize.width, h = Overlay.stripHeight(sc)
         inStrip = true
+        areaTop.constant = Overlay.stripTop(sc)
         wordsFoot.constant = -Overlay.barZone
         homeBar.run("document.documentElement.classList.add('strip')")
         panel.backgroundColor = NSColor(white: 0.04, alpha: 0.55)
@@ -1559,6 +1565,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
     var hostedRoot: NSView?
     private var panelWasVisible = false
+    lazy var areaTop = area.topAnchor.constraint(equalTo: panel.contentView!.topAnchor, constant: 26)
     lazy var areaFoot = area.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
     lazy var barFoot = homeBar.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
     /// The lines' foot: clear of the stroke; in the strip, clear of the whole open bar (barZone).
@@ -1661,7 +1668,7 @@ final class Overlay: NSObject, NSWindowDelegate {
             video.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             video.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             video.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            area.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
+            areaTop,
             area.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             area.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             areaFoot,
@@ -1829,9 +1836,9 @@ final class Overlay: NSObject, NSWindowDelegate {
             self.words.isHidden = false; self.lastKey = ""; self.fit.key = ""
             if !handled { done(r) }   // a move past the last line was already saved and resumed
             if self.hostedRoot == nil {
-                let sc = NSScreen.main?.frame
+                let sc = NSScreen.main
                 let back = self.inStrip && sc != nil
-                    ? NSRect(x: frame.minX, y: sc!.maxY - Overlay.stripHeight, width: frame.width, height: Overlay.stripHeight) : frame
+                    ? NSRect(x: frame.minX, y: sc!.frame.maxY - Overlay.stripHeight(sc!), width: frame.width, height: Overlay.stripHeight(sc!)) : frame
                 if self.panel.frame != back { self.panel.setFrame(back, display: true) }
             }
         }
