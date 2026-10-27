@@ -994,6 +994,7 @@ final class SubtitleArea: NSView {
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
     override func mouseDown(with e: NSEvent) { down = e }
     override func mouseDragged(with e: NSEvent) {
+        Recense.delegate?.kick()                  // dragging the subtitles: draw at full rate
         guard let d = down else { return }
         if hypot(e.locationInWindow.x - d.locationInWindow.x, e.locationInWindow.y - d.locationInWindow.y) > 3 {
             down = nil; window?.performDrag(with: d)
@@ -5086,9 +5087,10 @@ final class NativeSources {
     var loop = LoopState(track: UserDefaults.standard.bool(forKey: "loopTrack")) {
         didSet { if loop.track != oldValue.track { UserDefaults.standard.set(loop.track, forKey: "loopTrack") } }
     }
-    var scrubbing = false                     // the home bar's time ruler is out: A–B holds off
+    var scrubbing = false { didSet { kick() } }                    // the home bar's time ruler is out: A–B holds off
     var pendingCmds: [[String: Any]] = []    // delivered to the extension with its next position report
-    var cmdSeq = 0, lastPush = Date.distantPast   // reports from before the page ran command #cmdSeq are stale
+    var cmdSeq = 0 { didSet { kick() } }
+    var lastPush = Date.distantPast   // reports from before the page ran command #cmdSeq are stale
     var deliveredAt = 0.0                     // when queued commands last went to the page
     var expectPaused: Bool?                   // what the play button shows until the page confirms
     let native = NativeSources()
@@ -5255,15 +5257,23 @@ final class NativeSources {
     // while something plays or the subtitles are on screen; otherwise one poll a second, enough to notice a player start.
     var displayLink: CADisplayLink?
     var wasBusy: Bool?
+    var kickedAt = Date.distantPast, pollTimer: Timer?
     var busy: Bool {
-        (!pos.paused && Date().timeIntervalSince(pos.received) < 5) || (overlay.panel.isVisible && !overlay.minimized)
+        (!pos.paused && Date().timeIntervalSince(pos.received) < 5) || scrubbing || Date().timeIntervalSince(kickedAt) < 3
+    }
+    /// A command or a drag: back to 20 Hz at once, and for a few seconds after.
+    func kick() {
+        kickedAt = Date()
+        if let t = pollTimer, t.timeInterval > 0.5 { t.fire() }
     }
     func pollLoop() {
         nativeTick()
         let on = busy
-        if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused), overlay: \(overlay.panel.isVisible && !overlay.minimized))") }
+        if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused))") }
         displayLink?.isPaused = !on
+        pollTimer?.invalidate()
         let t = Timer(timeInterval: on ? 0.05 : 1.0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.pollLoop() } }
+        pollTimer = t
         RunLoop.main.add(t, forMode: .common)
     }
 
