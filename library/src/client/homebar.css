@@ -330,6 +330,11 @@
   opacity:.7
 }
 
+/* Loop off is white at once, even under the pointer or a tap's sticky hover (notes 45) */
+.p-slide button.p-hloop:not(.on){
+  color:#fff
+}
+
 .p-slide button:focus-visible{
   color:#7fbcff;
   text-decoration:underline;

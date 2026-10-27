@@ -1575,7 +1575,7 @@ globalThis.Homebar = (() => {
   //   untare(snapshot)           the undo: everything as it was before the tare
   //   list()  [{label, sub, act}]  optional: shown on hover as a vertical barrel
 
-  const VPX = 160; // one pixel of fingers is one pixel of ruler, as on the home bar
+  const VPX = 90; // the whole range in 90 px: a light swipe moves it, so it is not taken for a hold (notes 46)
   const HOLD_MS = 700; // press and hold this long to tare
   const HOLD_SHOW = 150; // the light starts filling after this, so a plain tap never flickers
   const UNDO_MS = 6000; // after a tare, a tap this soon undoes it
@@ -1723,7 +1723,7 @@ globalThis.Homebar = (() => {
         return;
       }
       if (!drag.moved) {
-        if (Math.abs(e.clientY - drag.y0) < 6) return;
+        if (Math.abs(e.clientY - drag.y0) < 3) return; // a light swipe is a drag before the hold can become a tare (notes 46)
         drag.moved = true;
         cancelHold(); // a drag is never a tare, however slowly it starts
         drag.y0 = e.clientY; // measured from here, so the slop that told a drag from a press moves nothing

@@ -1497,8 +1497,11 @@
     el.playbackRate = prefs.speed;
 
     const toggle = () => {
-      if (el.paused) el.play().catch(() => {});
-      else el.pause();
+      if (el.paused) {
+        // at the end, play starts the track over: some engines leave a finished element stuck there (notes 42)
+        if (el.ended || (el.duration && el.currentTime >= el.duration - 0.05)) el.currentTime = 0;
+        el.play().catch(() => {});
+      } else el.pause();
     };
 
     const sync = () => bar && bar.paint();
@@ -4275,10 +4278,12 @@
       // the floor is the unscaled size's, so a Text Size too big for two lines to fit is held back: past that point
       // it magnifies no further, and nothing is clipped (notes 2026-10-26: text above 100%)
       const floor = Math.min(base, base / prefs.txScale) * 0.55;
+      // larger text may wrap onto more rows, or it was shrunk straight back to the 100% size (notes 43)
+      const cap = Math.max(3, Math.round(3 * prefs.txScale));
       for (; size > floor; size *= 0.95) {
         const k = size / base;
         const need = (stacked ? rows(wo, k) + rows(wt, k) : Math.max(rows(wo, k), rows(wt, k), 1)) * size * TX_LH;
-        if (need <= placeH && (stacked ? rows(wo, k) <= 3 : rows(Math.max(wo, wt), k) <= 3)) break;
+        if (need <= placeH && (stacked ? rows(wo, k) <= cap : rows(Math.max(wo, wt), k) <= cap)) break;
       }
       fits.set(key, size);
       return size;
@@ -5477,23 +5482,24 @@
     // Learn mode picks the new language up on its next frame (its paint loop watches prefs.nativeLang)
   };
 
-  // The home bar's slides (homebar.js), in the order a swipe reaches them: Text size; Change Cover ·
-  // Delete Cover (the owner, on Main, audio); and Loop · A · B, Speed and Play · ±15s, which Recense
-  // has too. Rename (notes 41), Language, Download, Retranscribe, Transpose, Share and the exports live in
-  // the transcript editor (SPEC 57); the comments stay below the thumbnail strip (SPEC 41). Each slide is
-  // rebuilt as the bar unfolds, so it always fits the item on screen.
+  // The home bar's slides (homebar.js), in the order a swipe reaches them: Text size; Rename · Change
+  // Cover · Delete Cover (the owner, on Main); and Loop · A · B, Speed and Play · ±15s, which Recense
+  // has too. Language, Download, Retranscribe, Transpose, Share and the exports live in the transcript
+  // editor (SPEC 57); the comments stay below the thumbnail strip (SPEC 41). Each slide is rebuilt as the
+  // bar unfolds, so it always fits the item on screen.
   const barSlides = (f) => {
     const I = Homebar.ICONS;
     const out = ["size"];
     const owner = G.main && f && !f.pending;
 
-    if (owner && kind(f) === "aud") {
+    if (owner) {
       out.push({
         id: "item",
-        label: "Cover art",
+        label: "Rename and cover art",
         items: [
-          { label: "Change cover art", text: "Change Cover", icon: I.cover, cls: "p-stack", act: () => pickCover(f) },
-          { label: "Delete cover art", text: "Delete Cover", icon: I.nocover, cls: "p-stack", act: () => deleteCover(f) },
+          { label: "Rename", text: "Rename", icon: I.rename, cls: "p-stack", act: () => renameItem(f) },
+          kind(f) === "aud" ? { label: "Change cover art", text: "Change Cover", icon: I.cover, cls: "p-stack", act: () => pickCover(f) } : null,
+          kind(f) === "aud" ? { label: "Delete cover art", text: "Delete Cover", icon: I.nocover, cls: "p-stack", act: () => deleteCover(f) } : null,
         ],
       });
     }
@@ -5586,7 +5592,6 @@
       view: { get: () => prefs.view, set: (v) => setView(v) },
       items: [
         w && hooks.clear ? { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: hooks.clear } : null,
-        own ? { id: "rename", label: "Rename", icon: I.rename, act: () => renameItem(f) } : null,
         { id: "download", label: "Download", icon: I.download, act: (b) => download(b) },
         own && window.galleryInvite ? { id: "share", label: "Share", icon: I.share, act: () => window.galleryInvite([f]) } : null,
         own ? { id: "transpose", label: "Transpose: set the starting key", icon: I.transpose, act: () => setKeyOf(f) } : null,

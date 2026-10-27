@@ -603,15 +603,14 @@ await test("P2 home bar: one slide at a time, at most three things, each above i
   // (no comments slide: SPEC item 41 keeps "Add a comment…" below the thumbnail strip; no language or Download
   // slide: SPEC 57 moves them into the transcript editor)
   assert.deepEqual(seen, ["size", "item", "loop", "speed"]);
-  // Change Cover · Delete Cover above Loop, A, B (Rename moved into the transcript editor: notes 41)
+  // Rename · Change Cover · Delete Cover above Loop, A, B
   await barTo(pg, "item");
   await pg.waitForTimeout(600);
   const xs = async (q) => pg.$$eval(q, (a) => a.map((x) => Math.round(x.parentElement.getBoundingClientRect().x)));
   const item = await xs(slide(".p-third > button"));
   await barTo(pg, "loop");
   await pg.waitForTimeout(600);
-  const loopXs = await xs(slide(".p-third > button"));
-  assert.ok(item.length === 2 && item.every((x) => loopXs.includes(x)), "the owner's cover pair sits above Loop · A · B");
+  assert.deepEqual(await xs(slide(".p-third > button")), item, "the owner's trio sits above Loop · A · B");
 });
 
 await test("SPEC 69: playing sets the lock screen's title and state; pausing marks it paused", true, async (pg) => {
@@ -638,8 +637,8 @@ await test("SPEC 57 audio: Info and Share leave the bottom bar; the editor holds
   await openTools(pg);
   assert.deepEqual(await pg.$$eval(".txall .p-tlang .p-ti", (a) => a.map((x) => x.textContent)), ["Vietnamese", "English", "French"]);
   assert.deepEqual(await pg.$$eval(".txall .p-tview .p-ti", (a) => a.map((x) => x.textContent)), ["Follow", "Learn"]);
-  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["rename", "download", "share", "transpose", "retranscribe"]);
-  assert.ok(await pg.$$eval(".txall .p-ticon svg", (a) => a.length === 5), "icons only, each with its icon");
+  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["download", "share", "transpose", "retranscribe"]);
+  assert.ok(await pg.$$eval(".txall .p-ticon svg", (a) => a.length === 4), "icons only, each with its icon");
   const style = (q) => pg.$eval(q, (e) => { const c = getComputedStyle(e); return [c.color, c.backgroundColor, c.borderTopWidth]; });
   assert.deepEqual(await style('.txall .p-ticon[data-id="share"]'), ["rgb(255, 255, 255)", "rgba(0, 0, 0, 0)", "0px"]);
   await pg.hover('.txall .p-ticon[data-id="share"]');
@@ -666,7 +665,7 @@ await test("P2 vertical bar: dragging it sets the original's prominence (0: only
   const drag = async (dy) => {
     await pg.mouse.move(b.x, b.y);
     await pg.mouse.down();
-    await pg.mouse.move(b.x, b.y - 8, { steps: 2 });
+    await pg.mouse.move(b.x, b.y - 8, { steps: 1 });
     await pg.mouse.move(b.x, b.y - 8 - dy, { steps: 6 });
     await pg.mouse.up();
   };
@@ -679,11 +678,11 @@ await test("P2 vertical bar: dragging it sets the original's prominence (0: only
   assert.deepEqual(await vars(), [true, "0", "1"]);
   assert.equal(await pg.$eval(".tx.learn .txp:not([hidden]) .txs", (e) => getComputedStyle(e).display), "none");
   assert.equal(await pg.$eval(".tx.learn .txp:not([hidden]) .txe", (e) => getComputedStyle(e).visibility), "visible");
-  // 0 + 144px: 90%, only the original
-  await drag(144);
+  // 0 + 81px (VPX 90): 90%, only the original
+  await drag(81);
   assert.deepEqual(await vars(), [true, "1", "0"]);
   // past the detent: a blank canvas
-  await drag(30);
+  await drag(17);
   assert.deepEqual(await vars(), [true, "0", "0"]);
   assert.equal(await pg.$eval(".tx.learn", (e) => getComputedStyle(e).visibility), "hidden");
   // press and hold (SPEC 52): back to rest, white again
@@ -804,7 +803,7 @@ await test("Home bar: Delete Cover gives the root grid the file tile, Change Cov
   const openInfo = async () => {
     await pg.click(tile);
     await barTo(pg, "item");
-    assert.deepEqual(await pg.$$eval(slide("button"), (a) => a.map((x) => x.textContent)), ["Change Cover", "Delete Cover"]);
+    assert.deepEqual(await pg.$$eval(slide("button"), (a) => a.map((x) => x.textContent)), ["Rename", "Change Cover", "Delete Cover"]);
   };
 
   await pg.goto(base + "/main");
@@ -1083,7 +1082,7 @@ await test("SPEC 57: a tap on the lyrics opens the editor with its tools; Follow
   assert.deepEqual(await pg.$$eval(".p-slide", (a) => a.map((x) => x.dataset.slide)), ["size", "item", "loop", "speed"]);
   await pg.mouse.move(1, 1);
   await openTools(pg);
-  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["clear", "rename", "download", "share", "transpose", "retranscribe", "md", "m4b"]);
+  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["clear", "download", "share", "transpose", "retranscribe", "md", "m4b"]);
   // the chosen language trails each line in the editor
   await pg.click('.txall .p-tlang .p-ti:text("Vietnamese")');
   await pg.waitForFunction(() => [...document.querySelectorAll(".txall .txtrl")].map((x) => x.textContent).join("|") === "Trời đẹp|Đi thôi");
