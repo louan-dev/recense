@@ -4065,6 +4065,66 @@
   };
   const rgba = (c) => "rgba(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + "," + c[3].toFixed(3) + ")";
 
+  // ----- the voice under the light (notes 33) -----
+  //
+  // Recense measures each song's voice frame by frame on its vocal stem (keep/<key>/features.json: loudness, onset,
+  // pitch, clarity, voiced, every 10 ms). The light takes its shape from it, as in Recense's window: a held or belted
+  // note swells it, fuller and brighter; the pitch contour lifts or lowers it, vibrato makes it shiver; a breathy, soft
+  // or cracking moment leaves it thin and pale; a clear vowel flows (a feathered edge), an attack stays crisp.
+  let curVoice = null; // { f, shift, top, notes } for the item on stage, or null: the plain light
+
+  const voiceLoad = (f, url) => {
+    curVoice = null;
+    if (!url) return;
+    fetch(url + "&f=features", { headers: { "x-gallery": "1" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => {
+        if (!v || !Array.isArray(v.db) || v.source !== "vocals" || v.db.length < 20 || items[cur] !== f) return;
+        const loud = v.db.filter((_, i) => v.voiced[i] === 1).sort((a, b) => a - b);
+        curVoice = { f: v, shift: Number(v.shift) || 0, top: loud.length ? loud[Math.floor(loud.length * 0.95)] : v.floor + 20, notes: new Map(), item: f };
+      })
+      .catch(() => {});
+  };
+
+  const voiceAt = (b, t) => {
+    const V = curVoice;
+    if (!V) return null;
+    const f = V.f;
+    const n = f.db.length;
+    const fr = (x) => Math.max(0, Math.min(n - 1, Math.floor((x - V.shift) / (f.hop || 0.01))));
+    const k = fr(t);
+    const mean = (a, lo, hi, pitched) => {
+      let sum = 0;
+      let c = 0;
+      for (let i = Math.max(0, lo); i <= Math.min(n - 1, hi); i++) if (!pitched || a[i] > 0) (sum += a[i]), c++;
+      return c ? sum / c : null;
+    };
+    if (f.voiced[k] !== 1) return { swell: 0, lift: 0, shiver: 0, thin: 0.35, soft: 0 };
+    const e = Math.min(1.15, Math.max(0, ((mean(f.db, k - 3, k + 3) ?? f.floor) - f.floor) / Math.max(6, V.top - f.floor)));
+    const clear = (mean(f.clarity, k - 3, k + 3) || 0) / 100;
+    const note = f.pitch[k];
+    let held = 0; // how long the note has run on unbroken (up to 0.8 s)
+    while (held < 80 && k - held - 1 >= 0 && f.pitch[k - held - 1] > 0 && Math.abs(f.pitch[k - held - 1] - note) < 150) held++;
+    const v = {
+      swell: Math.min(1, e * (0.55 + 0.45 * clear) + (note > 0 ? (0.3 * held) / 80 : 0)),
+      lift: 0,
+      shiver: 0,
+      thin: Math.min(1, Math.max(0, 0.55 - clear) * 1.8 * Math.max(0, 1.1 - e)),
+      soft: 0,
+    };
+    if (note > 0 && k >= 3 && f.pitch[k - 3] > 0 && Math.abs(f.pitch[k - 3] - note) > 300) v.thin = Math.max(v.thin, 0.8); // a crack
+    if (note > 0) {
+      const key = b.s + "|" + b.e;
+      let mid = V.notes.get(key);
+      if (mid == null) V.notes.set(key, (mid = mean(f.pitch, fr(b.s), fr(Math.max(b.s, b.e)), true) ?? note));
+      v.lift = Math.max(-6, Math.min(6, ((note - mid) / 100) * 1.5));
+      const local = mean(f.pitch, k - 12, k + 12, true);
+      if (local != null && held >= 12) v.shiver = Math.max(-1, Math.min(1, (note - local) / 50));
+      v.soft = clear > 0.6 ? Math.min(1, held / 15) * (1 - Math.min(1, f.onset[k] / 60)) : 0;
+    }
+    return v;
+  };
+
   // Styles are only written when they change: a page that rewrites them every frame keeps style-watching
   // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
   const paintWord = (sp, b, t) => {
@@ -4076,20 +4136,32 @@
       if (sp._bg) {
         st.backgroundImage = st.textShadow = sp._bg = sp._sh = "";
       }
+      if (sp._y) st.top = sp._y = "";
       return;
     }
-    // the light stays full gold for the whole word and wipes across all of it, with a soft edge
+    // the light stays full gold for the whole word and wipes across all of it, with a soft edge; the voice shapes it
+    const v = voiceAt(b, t);
     const dur = Math.max(0.05, b.e - b.s);
     const f = Math.min(1, (t - b.s) / dur);
     const w = (f * 100).toFixed(1);
-    const edge = Math.min(100, f * 100 + 6).toFixed(1);
-    const lit = rgba(GOLD);
+    const edge = Math.min(100, f * 100 + 6 + (v ? 22 * v.soft : 0)).toFixed(1);
+    const lit = v ? rgba([GOLD[0], GOLD[1], GOLD[2], 1 - 0.5 * v.thin]) : rgba(GOLD);
     if (sp._c !== "transparent") st.color = sp._c = "transparent";
     const bg = "linear-gradient(" + (sp.dir === "rtl" ? "to left," : "to right,") + lit + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
     if (sp._bg !== bg) st.backgroundImage = sp._bg = bg;
-    const sh = "0 0 8px rgba(255,214,51,.45)";
+    let sh = "0 0 8px rgba(255,214,51,.45)";
+    if (v) {
+      const shine = Math.max(0.45, 0.85 * v.swell) * (1 - 0.75 * v.thin);
+      sh = "0 0 " + (8 + 14 * v.swell).toFixed(0) + "px rgba(255,214,51," + Math.min(0.85, 0.45 * shine + 0.3 * v.swell).toFixed(2) + ")";
+      if (v.swell > 0.15) sh += ",0 0 " + (0.6 * v.swell).toFixed(1) + "px rgba(255,214,51,.9)"; // fuller strokes
+    }
     if (sp._sh !== sh) st.textShadow = sp._sh = sh;
+    const fs = parseFloat(getComputedStyleCached(sp)) || 28;
+    const y = v ? (-((v.lift + 1.4 * v.shiver) * fs) / 28).toFixed(1) + "px" : "";
+    if (sp._y !== y) st.top = sp._y = y; // (relative: the line never reflows)
   };
+  // a word's font size, read once (its line rebuilds the spans when the size changes)
+  const getComputedStyleCached = (sp) => sp._fs || (sp._fs = getComputedStyle(sp).fontSize);
 
   const RTL_RE = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
 
@@ -4138,6 +4210,7 @@
     if (host.querySelector(".tx.learn")) return;
 
     let lines = t.lines;
+    voiceLoad(f, txUrl(f));
     if (f.txv === undefined || (t.version || 0) > f.txv) f.txv = t.version || 0;
     const w = txWrite(f);
     let editing = null; // the whole transcript is open

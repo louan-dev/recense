@@ -1819,6 +1819,7 @@ body.comments-open #next{display:none}
 .txc>.txs,.txc>.txe{white-space:normal;overflow-wrap:anywhere}
 .txc>.txs,.txc>.txe{grid-area:1/1;text-align:center}
 .txw,:root.prom .txe{-webkit-background-clip:text;background-clip:text}
+.txw{position:relative} /* the voice lifts a lit word (notes 33) without the line reflowing */
 .txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
 
 /* Learn and Follow: the lyrics are centred in the band between the top bar (with its day and time) and the two bars,

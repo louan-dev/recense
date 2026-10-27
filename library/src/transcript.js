@@ -227,7 +227,15 @@ export async function transcriptFor(env, path) {
   return out;
 }
 
-export async function transcriptResponse(env, path) {
+// ?f=features: the voice measured frame by frame (keep/<key>/features.json, Recense's Features: hop, floor, db, onset,
+// pitch, clarity, voiced), with the file's shift against the transcript, for the karaoke light to take its shape (notes 33)
+export async function transcriptResponse(env, path, want) {
+  if (want === "features") {
+    if (!env.KEEP) return jsonResponse({ none: true });
+    const r = await resolve(env, path);
+    const f = await readKeep(env, r.key + "/features.json");
+    return jsonResponse(f && Array.isArray(f.db) ? { ...f, shift: r.shift || 0 } : { none: true });
+  }
   const t = await transcriptFor(env, path);
   return jsonResponse(t);
 }

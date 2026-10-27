@@ -225,7 +225,7 @@ export async function participantRoute(req, env, ctx, url, path) {
       const name = cleanPath(url.searchParams.get("name") || "");
       if (!name || name.includes("/")) return new Response("Bad file name", { status: 400 });
       if (!allowed(name)) return new Response("Not allowed", { status: 403 });
-      return transcriptResponse(env, inFolder(name));
+      return transcriptResponse(env, inFolder(name), url.searchParams.get("f"));
     }
 
     // PUT /m/<token>/api/caption   same body as the owner's, path inside the folder

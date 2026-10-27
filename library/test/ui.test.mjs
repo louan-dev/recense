@@ -1294,6 +1294,29 @@ await test("Notes 25/26: over the speeds a light swipe turns the slide, never th
   assert.equal(await rate(), 2, "a tap on the last speed");
 });
 
+await test("Notes 33: the light takes the voice's shape from keep/<key>/features.json: a rising belted note lifts and swells it", true, async (pg) => {
+  const KEEP = await mf.getR2Bucket("KEEP");
+  await MAIN.put("files/Vc/a.wav", wavOf(6), { httpMetadata: { contentType: "audio/wav" } });
+  const k = await keepKey("Vc/a.wav");
+  const words = [{ text: "ooh", start: 1, end: 4 }];
+  await KEEP.put(`keep/${k}/asr.json`, JSON.stringify({ format: 1, complete: true, duration: 6, segments: [{ id: 0, start: 1, end: 4, text: "ooh", words }] }));
+  const n = 600; // 6 s at 10 ms: from 1 s a clear, loud note that climbs a fifth
+  const fr = (fn) => Array.from({ length: n }, (_, i) => fn(i));
+  await KEEP.put(`keep/${k}/features.json`, JSON.stringify({ source: "vocals", hop: 0.01, floor: -40,
+    db: fr((i) => (i >= 100 && i < 400 ? -6 : -60)), onset: fr((i) => (i === 100 ? 90 : 0)), clarity: fr((i) => (i >= 100 && i < 400 ? 95 : 0)),
+    pitch: fr((i) => (i >= 100 && i < 400 ? 6000 + Math.round(((i - 100) / 300) * 700) : 0)), voiced: fr((i) => (i >= 100 && i < 400 ? 1 : 0)) }));
+  await pg.goto(base + "/main?p=Vc");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".tx.learn .txp:not([hidden]) .txw");
+  const a = await pg.$("audio");
+  await a.evaluate((el) => { el.currentTime = 3.6; return el.play(); });
+  await pg.waitForTimeout(400);
+  const s = await pg.$eval(".txw", (w) => ({ top: w.style.top, sh: w.style.textShadow }));
+  await a.evaluate((el) => el.pause());
+  assert.ok(parseFloat(s.top) < -1, "the climb lifts the lit word: " + s.top);
+  assert.ok(/\b(1[5-9]|2\d)px/.test(s.sh), "a held, loud, clear note glows wider: " + s.sh);
+});
+
 await test("Notes 31: an instrumental with cover art shows [Ambient Sounds] on black, the cover only as the thumbnail", true, async (pg) => {
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
   const KEEP = await mf.getR2Bucket("KEEP");

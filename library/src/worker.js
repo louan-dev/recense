@@ -93,7 +93,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     }
     if (path === "/main/api/transcript" && read) {
       const rel = cleanPath(url.searchParams.get("path") || "");
-      return rel ? transcriptResponse(env, rel) : new Response("Bad file path", { status: 400 });
+      return rel ? transcriptResponse(env, rel, url.searchParams.get("f")) : new Response("Bad file path", { status: 400 });
     }
     if ((path === "/main/api/transcript" && method === "PUT") || (path === "/main/api/transcript/run" && method === "POST")) {
       const rel = cleanPath(url.searchParams.get("path") || "");

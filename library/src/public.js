@@ -299,7 +299,7 @@ export async function linkTranscript(env, url) {
   const { src, error } = await linkSource(env, url);
   if (error) return error;
   if (!src) return jsonResponse({ none: true });
-  return transcriptResponse(env, src);
+  return transcriptResponse(env, src, url.searchParams.get("f"));
 }
 
 export async function linkTranscriptChanges(env, url) {
