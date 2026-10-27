@@ -1880,7 +1880,8 @@ final class PreflightView: NSView {
         var where_: [String] = []
         if choice.mic { where_.append("~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/") }
         if choice.screen || choice.camera { where_.append("~/Movies/Sill Recordings/") }
-        path.stringValue = where_.isEmpty ? "Choose at least one source" : where_.joined(separator: "  ·  ")
+        path.stringValue = "Choose at least one source"      // where it saves isn't shown: the folder opens when it's saved
+        path.isHidden = !where_.isEmpty
         start.isEnabled = !where_.isEmpty
         start.alphaValue = where_.isEmpty ? 0.4 : 1
     }
@@ -1912,6 +1913,7 @@ final class RecorderView: NSView {
     var screenCapture: AnyObject?
     var mixed: AnyObject?                     // MixedAudioRecorder (mic + computer audio)
     var files: [URL] = []
+    var filesAtStart = 0                      // where this recording's files begin in `files`
     var lastFile: URL? { files.last }
     var sessionStart = Date()
     var pausedTotal: TimeInterval = 0
@@ -2091,6 +2093,7 @@ final class RecorderView: NSView {
 
     /// Starts every selected stream together.
     func begin(_ c: CaptureChoice) {
+        filesAtStart = files.count
         choice = c
         files = []
         sessionStart = Date(); pausedTotal = 0; pausedAt = nil
@@ -2183,6 +2186,8 @@ final class RecorderView: NSView {
         // The camera/audio file writers finish on their own shortly after stopFiles.
         group.enter(); DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { group.leave() }
         if let f = finished { group.notify(queue: .main, execute: f) }
+        let saved = Array(files.dropFirst(filesAtStart))
+        group.notify(queue: .main) { if !saved.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(saved) } }
         screenCapture = nil; mixed = nil
         runMeter(false)
         state = .ready; pausedAt = nil
@@ -2191,6 +2196,10 @@ final class RecorderView: NSView {
 }
 
 
+
+/// Battery colours in the strip: green, and yellow below 30 %.
+let batteryOK = NSColor(srgbRed: 0.42, green: 0.92, blue: 0.52, alpha: 1)
+let batteryLow = NSColor(srgbRed: 1.0, green: 0.84, blue: 0.2, alpha: 1)
 
 /// Recense's menu-bar mark (copied from Recense's `menuBarIcon()`): a rounded frame holding two lines of subtitle.
 func recenseIcon() -> NSImage {
@@ -4181,7 +4190,6 @@ final class EssentialsView: ClickView {
         recenseOpen.contentTintColor = .white
         recenseOpen.toolTip = "Recense"
         recenseOpen.target = self; recenseOpen.action = #selector(openRecense)
-        audioSheet.addSubview(recenseOpen)
         recenseSheet.wantsLayer = true
         recenseSheet.layer?.backgroundColor = recenseFill.cgColor
         recenseSheet.layer?.cornerRadius = 18
@@ -4193,12 +4201,8 @@ final class EssentialsView: ClickView {
         recenseClose.target = self; recenseClose.action = #selector(closeRecense)
         recenseSheet.addSubview(recenseClose)
         chrome.addSubview(recenseSheet)
-        leftBar.toolTip = "Audio: click to pin the recorder open · two fingers up / down for volume"
-        leftBar.onClick = { [weak self] in
-            guard let self = self else { return }
-            if !self.recenseSheet.isHidden { self.showRecense(false); return }
-            self.showAudio(self.audioSheet.isHidden)
-        }
+        // The recorder now opens from its icon in the strip; the left bar is kept for an LLM, coming later.
+        leftBar.toolTip = "Volume: two fingers up / down"
         leftBar.onScrollY = { [weak self] dy in
             if let v = Volume.nudge(Float(dy) * 0.004) { self?.leftBar.fill = CGFloat(v) }
         }
@@ -4288,7 +4292,7 @@ final class EssentialsView: ClickView {
         horizon.frame = NSRect(x: side + 10, y: calendar.frame.maxY - calendar.stripHeight - 74, width: w - 2 * side - 20, height: 66)
         // Out at the edges, as the R2 home bar sits at the foot: each line about 7 pt in from its side.
         leftBar.frame = NSRect(x: -3, y: top / 2 - 80, width: 20, height: 130)
-        rightBar.frame = NSRect(x: w - 17, y: top / 2 - 80, width: 20, height: 130)
+        rightBar.frame = NSRect(x: w - 14, y: top / 2 - 80, width: 20, height: 130)
         // The recorder pill sits in the bottom-left corner, clear of the horizon, its labels and the event titles.
         recorderTray.frame = NSRect(x: 30, y: 12, width: 220, height: 36)
         recorderTray.subviews.first { $0 is NSVisualEffectView }?.frame = recorderTray.bounds
@@ -4296,25 +4300,28 @@ final class EssentialsView: ClickView {
         vaultSheet.frame = NSRect(x: 28, y: 44, width: w - 56, height: top - 44 - 96)
         vault.frame = NSRect(x: 16, y: 6, width: vaultSheet.frame.width - 50, height: vaultSheet.frame.height - 10)
         vaultClose.frame = NSRect(x: vaultSheet.frame.width - 30, y: vaultSheet.frame.height - 30, width: 20, height: 20)
-        audioSheet.frame = vaultSheet.frame
-        let aw = audioSheet.frame.width, ah = audioSheet.frame.height
-        audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
-        recenseOpen.frame = NSRect(x: aw - 56, y: ah - 30, width: 20, height: 20)
+        layoutAudio()
         // The page fills the whole surface in Recense's colour; the viewer itself sits where the vault would.
         recenseSheet.frame = bounds
         let rv = vaultSheet.frame
         recenseClose.frame = NSRect(x: rv.maxX - 30, y: rv.maxY - 30, width: 20, height: 20)
-        recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
         r2.frame = NSRect(x: 40, y: 30, width: w - 80, height: top - 130)
         home.frame = NSRect(x: 0, y: 2, width: w, height: 44)
-        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(200, ah - 58))
         batteries.frame = .zero
         updateTrackingAreas()
     }
 
     // MARK: Edges
 
-    @objc func closeAudio() { showAudio(false) }
+    /// The recorder's menu: its own pop-up (opened from the strip's record icon), laid out in the sheet's own bounds.
+    func layoutAudio() {
+        let aw = audioSheet.bounds.width, ah = audioSheet.bounds.height
+        audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
+        recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
+        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(200, ah - 58))
+    }
+    var onAudioClosed: (() -> Void)?
+    @objc func closeAudio() { showAudio(false); onAudioClosed?() }
     var onRecense: (() -> Void)?
     @objc func openRecense() { showAudio(false); onRecense?() }
     @objc func closeRecense() { showRecense(false) }
@@ -4772,6 +4779,8 @@ final class RestStrip: NSObject {
     let sideQuest = GlassPauseButton()
     let space = GlassPauseButton()
     let spaceBack = GlassPauseButton()
+    let record = GlassPauseButton()            // the recorder's menu, second from the left
+    var onRecord: (() -> Void)?
     let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
     private var batteryText = ""
@@ -4822,6 +4831,9 @@ final class RestStrip: NSObject {
         space.symbol = "square.grid.3x2"; space.isBordered = false; space.title = ""
         space.toolTip = "Mission Control"
         space.target = self; space.action = #selector(missionControl)
+        record.symbol = "record.circle"; record.isBordered = false; record.title = ""
+        record.toolTip = "Recorder"
+        record.target = self; record.action = #selector(openRecord)
         recense.mark = recenseIcon(); recense.isBordered = false; recense.title = ""
         recense.toolTip = "Recense: open or close the subtitle card"
         recense.target = self; recense.action = #selector(toggleRecense)
@@ -4832,7 +4844,7 @@ final class RestStrip: NSObject {
         }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, battery, sideQuest, pause, recense].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, battery, sideQuest, record, pause, recense].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -4867,6 +4879,7 @@ final class RestStrip: NSObject {
         // Mission Control itself (the same as its keyboard shortcut or the Mission Control app).
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
+    @objc func openRecord() { record.bounce(); onRecord?() }
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.delegate?.overlay.toggleStrip() } }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
@@ -4909,7 +4922,8 @@ final class RestStrip: NSObject {
         icon.frame = .zero
         battery.frame = NSRect(x: bandInset + 18, y: (b.height - 15) / 2, width: b.midX - 50 - bandInset - 18, height: 15)
         pause.frame = NSRect(x: b.midX - 10, y: (b.height - 20) / 2, width: 20, height: 20)
-        sideQuest.frame = NSRect(x: b.midX - 40, y: (b.height - 20) / 2, width: 20, height: 20)
+        sideQuest.frame = NSRect(x: b.midX - 70, y: (b.height - 20) / 2, width: 20, height: 20)
+        record.frame = NSRect(x: b.midX - 40, y: (b.height - 20) / 2, width: 20, height: 20)
         // Desktops: back, new, forward.
         recense.frame = NSRect(x: b.midX + 20, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
@@ -4974,7 +4988,17 @@ final class RestStrip: NSObject {
             batteryAt = now
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let text = readBatteries().map { $0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%" }.joined(separator: "   ")
-                DispatchQueue.main.async { self?.batteryText = text; self?.battery.stringValue = text }
+                let low = readBatteries().map { ($0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%", $0.percent < 30) }
+                DispatchQueue.main.async {
+                    self?.batteryText = text
+                    let a = NSMutableAttributedString()
+                    for (i, (t, isLow)) in low.enumerated() {
+                        if i > 0 { a.append(NSAttributedString(string: "   ")) }
+                        a.append(NSAttributedString(string: t, attributes: [.foregroundColor: isLow ? batteryLow : batteryOK,
+                                                                            .font: self?.battery.font ?? roundedFont(11, .semibold)]))
+                    }
+                    self?.battery.attributedStringValue = a
+                }
             }
         }
         if let e = next {
@@ -6446,6 +6470,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.autoresizingMask = [.width, .height]
         timeView.onClick = { [weak self] in self?.present(.pad) }
         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
+        rest.onRecord = { [weak self] in self?.toggleRecorder() }
+        timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
         timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.delegate?.overlay.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
         timeView.onKeyboard = { [weak self] v in
@@ -6578,6 +6604,29 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @objc func prevPage() { step(-1) }
     @objc func nextPage() { step(1) }
     @objc func hidePanel() { hide() }
+
+    /// The recorder's menu, popped up from the strip's record icon in the same bounds as the Recense card: hanging
+    /// from the top of the screen, as wide as the card.
+    lazy var recordPanel: NSPanel = {
+        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
+        p.level = .statusBar; p.hidesOnDeactivate = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        return p
+    }()
+    func toggleRecorder() {
+        if recordPanel.isVisible { timeView.showAudio(false); recordPanel.orderOut(nil); return }
+        guard let sc = NSScreen.main else { return }
+        let w = timeSize.width, h: CGFloat = 260
+        recordPanel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: false)
+        if timeView.audioSheet.superview !== recordPanel.contentView {
+            timeView.audioSheet.removeFromSuperview()
+            recordPanel.contentView = timeView.audioSheet
+        }
+        timeView.layoutAudio()
+        timeView.showAudio(true)
+        recordPanel.orderFrontRegardless()
+    }
 
     func updateClock() {
         let now = Date()
