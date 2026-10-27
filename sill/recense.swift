@@ -6172,6 +6172,8 @@ final class NativeSources {
 // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
 @MainActor enum Recense {
     static var delegate: AppDelegate?
+    /// The card, once Recense has started (nil before: Sill can be summoned before Recense finishes launching).
+    static var overlay: Overlay? { delegate.flatMap { $0.overlay as Overlay? } }
     static func start() {
         guard delegate == nil else { return }
         let d = AppDelegate()

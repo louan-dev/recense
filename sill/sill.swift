@@ -4337,7 +4337,7 @@ final class EssentialsView: ClickView {
             if !audioSheet.isHidden { showAudio(false) }
             // Recense's own window, moved in whole while the page is open: the same subtitles, switches and home bar.
             let rv = vaultSheet.frame
-            Recense.delegate?.overlay.host(in: recenseSheet, frame: NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36))
+            Recense.overlay?.host(in: recenseSheet, frame: NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36))
             recenseSheet.isHidden = false
             recenseSheet.alphaValue = 0
             NSAnimationContext.runAnimationGroup { ctx in
@@ -4353,7 +4353,7 @@ final class EssentialsView: ClickView {
                 calendar.animator().alphaValue = 1
                 horizon.animator().alphaValue = 1
             }, completionHandler: { [weak self] in
-                if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true; Recense.delegate?.overlay.host(in: nil) }
+                if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true; Recense.overlay?.host(in: nil) }
             })
         }
     }
@@ -4884,7 +4884,7 @@ final class RestStrip: NSObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
     @objc func openRecord() { record.bounce(); onRecord?() }
-    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.delegate?.overlay.toggleStrip() } }
+    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -4925,11 +4925,11 @@ final class RestStrip: NSObject {
         weather.frame = .zero
         icon.frame = .zero
         battery.frame = NSRect(x: bandInset + 18, y: (b.height - 15) / 2, width: b.midX - 50 - bandInset - 18, height: 15)
-        pause.frame = NSRect(x: b.midX - 10, y: (b.height - 20) / 2, width: 20, height: 20)
-        sideQuest.frame = NSRect(x: b.midX - 70, y: (b.height - 20) / 2, width: 20, height: 20)
-        record.frame = NSRect(x: b.midX - 40, y: (b.height - 20) / 2, width: 20, height: 20)
-        // Desktops: back, new, forward.
-        recense.frame = NSRect(x: b.midX + 20, y: (b.height - 20) / 2, width: 20, height: 20)
+        // The four icons follow the batteries, left to right: Side Quest, recorder, play / pause, Recense.
+        let x0 = battery.frame.minX + ceil(battery.attributedStringValue.size().width) + 14
+        for (i, v) in [sideQuest, record, pause, recense].enumerated() {
+            v.frame = NSRect(x: x0 + CGFloat(i) * 30, y: (b.height - 20) / 2, width: 20, height: 20)
+        }
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
         space.frame = NSRect(x: b.midX + 42, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceNext.frame = NSRect(x: b.midX + 64, y: (b.height - 18) / 2, width: 18, height: 18)
@@ -5011,6 +5011,7 @@ final class RestStrip: NSObject {
                         a.append(NSAttributedString(string: t, attributes: [.foregroundColor: color, .font: font]))
                     }
                     self?.battery.attributedStringValue = a
+                    self?.layoutStatic()                      // the icons sit just after the batteries
                 }
             }
         }
@@ -6485,7 +6486,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
         rest.onRecord = { [weak self] in self?.toggleRecorder() }
         timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
-        timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.delegate?.overlay.showStrip() } }
+        timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
         timeView.onKeyboard = { [weak self] v in
             guard let self = self, self.panel.isVisible else { return }
@@ -6661,7 +6662,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up, down one down.
         case "up":     guard settled() else { return }
                        // Sill comes up and the Recense card steps aside at the same time.
-                       MainActor.assumeIsolated { if Recense.delegate?.overlay.panel.isVisible == true { Recense.delegate?.overlay.hideStrip() } }
+                       MainActor.assumeIsolated { if Recense.overlay?.panel.isVisible == true { Recense.overlay?.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
         case "down":   guard settled() else { return }
                        if panel.isVisible {
