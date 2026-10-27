@@ -4286,8 +4286,9 @@ final class EssentialsView: ClickView {
         let side: CGFloat = 40
         calendar.frame = NSRect(x: side, y: 16, width: w - 2 * side, height: max(0, top - 102 - 16))
         horizon.frame = NSRect(x: side + 10, y: calendar.frame.maxY - calendar.stripHeight - 74, width: w - 2 * side - 20, height: 66)
-        leftBar.frame = NSRect(x: 6, y: top / 2 - 80, width: 20, height: 130)
-        rightBar.frame = NSRect(x: w - 26, y: top / 2 - 80, width: 20, height: 130)
+        // Out at the edges, as the R2 home bar sits at the foot: each line about 7 pt in from its side.
+        leftBar.frame = NSRect(x: -3, y: top / 2 - 80, width: 20, height: 130)
+        rightBar.frame = NSRect(x: w - 17, y: top / 2 - 80, width: 20, height: 130)
         // The recorder pill sits in the bottom-left corner, clear of the horizon, its labels and the event titles.
         recorderTray.frame = NSRect(x: 30, y: 12, width: 220, height: 36)
         recorderTray.subviews.first { $0 is NSVisualEffectView }?.frame = recorderTray.bounds

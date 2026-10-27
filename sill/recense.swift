@@ -1035,7 +1035,7 @@ final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 
 final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDelegate {
     /// The control line: the stroke is centred this far above the window's foot (the page's --cl).
-    static let line: CGFloat = 24
+    static let line: CGFloat = 12                // inside Sill: near the foot, as Sill's own home bar sits
     static var still: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var onCmd: ((Cmd) -> Void)?
@@ -1044,6 +1044,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
     /// "retranscribe", "export" (as: "md" | "m4b").
     var onAction: ((String, [String: Any]) -> Void)?
     private(set) var open = false
+    var onOpen: ((Bool) -> Void)?
     private var hits: [CGRect] = []          // where the bar takes the pointer, in the page's coordinates
     private var ready = false, queued: [String] = []
 
@@ -1051,6 +1052,11 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         let cfg = WKWebViewConfiguration()
         super.init(frame: .zero, configuration: cfg)
         cfg.userContentController.add(WeakScriptHandler(self), name: "recense")
+        // Inside Sill both bars sit out at the edges, as Sill's own do: the stroke near the foot, the vertical bar
+        // at the right edge.
+        cfg.userContentController.addUserScript(WKUserScript(source: """
+            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:\(Int(RecenseHomeBar.line))px} .p-ctrl{right:4px}</style>')
+            """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         setValue(false, forKey: "drawsBackground")
         navigationDelegate = self
         if let dir = Bundle.main.resourceURL?.appendingPathComponent("homebar"),
@@ -1083,7 +1089,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
             hits = (b["r"] as? [[NSNumber]] ?? []).compactMap { r in
                 r.count == 4 ? CGRect(x: r[0].doubleValue, y: r[1].doubleValue, width: r[2].doubleValue, height: r[3].doubleValue) : nil
             }
-        case "open": open = b["on"] as? Bool ?? false
+        case "open": open = b["on"] as? Bool ?? false; onOpen?(open)
         case "say": if let t = b["t"] as? String { say?(t) }
         case "cmd":
             switch b["c"] as? String {
@@ -1302,6 +1308,17 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     var minimized: Bool { hostedRoot == nil && (panel.isMiniaturized || !panel.isVisible) }
 
+    /// The strip is short; while the home bar is open (its barrel, the time ruler) it grows down to give them room,
+    /// its top staying at the top of the screen.
+    var inStrip = false
+    func stripRoom(_ on: Bool) {
+        guard inStrip else { return }
+        var f = panel.frame
+        let h: CGFloat = on ? 320 : 120
+        guard f.height != h else { return }
+        f.origin.y = f.maxY - h; f.size.height = h
+        panel.setFrame(f, display: true, animate: !RecenseHomeBar.still)
+    }
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
 
@@ -1310,6 +1327,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     func showStrip() {
         guard let sc = NSScreen.main else { return }
         let w = timeSize.width, h: CGFloat = 120
+        inStrip = true
         panel.backgroundColor = NSColor(white: 0.04, alpha: 0.55)
         panel.styleMask.remove(.resizable); panel.isMovable = false      // locked: only the strip's Recense button moves it
         panel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: true)
@@ -1382,6 +1400,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         homeBar.onCmd = { [weak self] c in self?.onCmd?(c) }
         homeBar.say = { [weak self] s in self?.toast.say(s) }
         homeBar.onAction = { [weak self] k, b in self?.barAction(k, b) }
+        homeBar.onOpen = { [weak self] on in self?.stripRoom(on) }
         homeBar.isHidden = true
         toast.alphaValue = 0
 
