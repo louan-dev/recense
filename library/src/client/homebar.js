@@ -1706,9 +1706,10 @@ globalThis.Homebar = (() => {
     btn.addEventListener("touchend", endTouch);
     btn.addEventListener("touchcancel", endTouch);
 
-    // a mouse: press and drag up or down
+    // a mouse, or one finger on a phone: press and drag up or down. Two fingers on a 44 px bar were all a phone had,
+    // and they rarely both landed on it, so the bar never moved there (notes 40).
     btn.addEventListener("pointerdown", (e) => {
-      if (e.pointerType !== "mouse" || e.button) return;
+      if (!e.isPrimary || e.button) return;
       drag = { y0: e.clientY, p0: start(), moved: false, id: e.pointerId };
       try {
         btn.setPointerCapture(e.pointerId);
@@ -1716,8 +1717,8 @@ globalThis.Homebar = (() => {
     });
 
     btn.addEventListener("pointermove", (e) => {
-      if (!drag || e.pointerId !== drag.id) return;
-      if (e.buttons === 0) {
+      if (!drag || e.pointerId !== drag.id || touch) return; // two fingers have it
+      if (e.pointerType === "mouse" && e.buttons === 0) {
         drag = null;
         return;
       }

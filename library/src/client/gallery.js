@@ -5477,24 +5477,23 @@
     // Learn mode picks the new language up on its next frame (its paint loop watches prefs.nativeLang)
   };
 
-  // The home bar's slides (homebar.js), in the order a swipe reaches them: Text size; Rename · Change
-  // Cover · Delete Cover (the owner, on Main); and Loop · A · B, Speed and Play · ±15s, which Recense
-  // has too. Language, Download, Retranscribe, Transpose, Share and the exports live in the transcript
-  // editor (SPEC 57); the comments stay below the thumbnail strip (SPEC 41). Each slide is rebuilt as the
-  // bar unfolds, so it always fits the item on screen.
+  // The home bar's slides (homebar.js), in the order a swipe reaches them: Text size; Change Cover ·
+  // Delete Cover (the owner, on Main, audio); and Loop · A · B, Speed and Play · ±15s, which Recense
+  // has too. Rename (notes 41), Language, Download, Retranscribe, Transpose, Share and the exports live in
+  // the transcript editor (SPEC 57); the comments stay below the thumbnail strip (SPEC 41). Each slide is
+  // rebuilt as the bar unfolds, so it always fits the item on screen.
   const barSlides = (f) => {
     const I = Homebar.ICONS;
     const out = ["size"];
     const owner = G.main && f && !f.pending;
 
-    if (owner) {
+    if (owner && kind(f) === "aud") {
       out.push({
         id: "item",
-        label: "Rename and cover art",
+        label: "Cover art",
         items: [
-          { label: "Rename", text: "Rename", icon: I.rename, cls: "p-stack", act: () => renameItem(f) },
-          kind(f) === "aud" ? { label: "Change cover art", text: "Change Cover", icon: I.cover, cls: "p-stack", act: () => pickCover(f) } : null,
-          kind(f) === "aud" ? { label: "Delete cover art", text: "Delete Cover", icon: I.nocover, cls: "p-stack", act: () => deleteCover(f) } : null,
+          { label: "Change cover art", text: "Change Cover", icon: I.cover, cls: "p-stack", act: () => pickCover(f) },
+          { label: "Delete cover art", text: "Delete Cover", icon: I.nocover, cls: "p-stack", act: () => deleteCover(f) },
         ],
       });
     }
@@ -5587,6 +5586,7 @@
       view: { get: () => prefs.view, set: (v) => setView(v) },
       items: [
         w && hooks.clear ? { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: hooks.clear } : null,
+        own ? { id: "rename", label: "Rename", icon: I.rename, act: () => renameItem(f) } : null,
         { id: "download", label: "Download", icon: I.download, act: (b) => download(b) },
         own && window.galleryInvite ? { id: "share", label: "Share", icon: I.share, act: () => window.galleryInvite([f]) } : null,
         own ? { id: "transpose", label: "Transpose: set the starting key", icon: I.transpose, act: () => setKeyOf(f) } : null,
