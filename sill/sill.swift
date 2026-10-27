@@ -7383,4 +7383,11 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let appDelegate = App(initialCommand: initial)
 app.delegate = appDelegate
+// Recense (subtitles over any player, its extension's server, transcription) runs inside Sill now.
+NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
+    MainActor.assumeIsolated { Recense.start() }
+}
+NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { n in
+    MainActor.assumeIsolated { Recense.delegate?.applicationWillTerminate(n) }
+}
 app.run()
