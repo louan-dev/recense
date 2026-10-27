@@ -4983,13 +4983,15 @@ final class RestStrip: NSObject {
         let y = (b.height - 15) / 2
         time.frame = NSRect(x: bandInset + 18, y: y, width: wide("00:00:00"), height: 15)
         date.frame = NSRect(x: time.frame.maxX + 10, y: y, width: wide("Wed, 00 May"), height: 15)
-        let bx = date.frame.maxX + 10
-        battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX - 50 - bx), height: 15)
-        // The four icons follow the batteries, left to right: Side Quest, recorder, play / pause, Recense.
-        let x0 = battery.frame.minX + ceil(battery.attributedStringValue.size().width) + 14
+        // The four icons sit between the date and the batteries, left to right: Side Quest, recorder, play / pause,
+        // Recense (notes 37): fixed places, so however long the batteries' text runs, no icon reaches the event's name.
+        let x0 = date.frame.maxX + 12
         for (i, v) in [sideQuest, record, pause, recense].enumerated() {
             v.frame = NSRect(x: x0 + CGFloat(i) * 30, y: (b.height - 20) / 2, width: 20, height: 20)
         }
+        let bx = recense.frame.maxX + 12
+        battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX + 14 - bx), height: 15)   // up to the Spaces arrows
+        battery.lineBreakMode = .byTruncatingTail
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
         space.frame = NSRect(x: b.midX + 42, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceNext.frame = NSRect(x: b.midX + 64, y: (b.height - 18) / 2, width: 18, height: 18)
