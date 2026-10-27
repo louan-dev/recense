@@ -974,6 +974,18 @@ let musicTags: Set<String> = ["music", "musik", "musique", "música", "musica", 
 
 let hallucinations = ["sous-titres", "sous-titrage", "amara.org", "merci d'avoir regardé", "thanks for watching"]
 
+/// Whisper's silence hallucinations: a segment that is only one of these, in any case and with any punctuation, is
+/// dropped (owner, 2026-10-27, SPEC 24). The one list to extend; entries are compared through `hallucinationKey`.
+let silenceHallucinations: Set<String> = Set([
+    "Thank you.", "Thanks for watching!", "Um", "Thank you for watching.", "Subtitles by the Amara.org community",
+    "Visions, diaspora", "Visions diaspora", "[BLANK_AUDIO]", "[Music]", "[Applause]",
+].map(hallucinationKey))
+/// Lower case, letters, digits, brackets and underscores only, single spaces: "Visions, diaspora." → "visions diaspora".
+func hallucinationKey(_ s: String) -> String {
+    String(s.lowercased().map { $0.isLetter || $0.isNumber || "[]_".contains($0) ? $0 : " " })
+        .split(separator: " ").joined(separator: " ")
+}
+
 /// What Whisper writes when music has no words in it: stock phrases ("Thank you.", "I'm sorry.", "um"), a count
 /// ("1, 2, 3"), a lone word. Real singing has more singing round it; these, on a song heard without lyrics, don't.
 let fillerPhrases: Set<String> = [
@@ -1021,6 +1033,58 @@ final class HoverView: NSView {
     override func mouseEntered(with e: NSEvent) { onHover?(true) }
     override func mouseExited(with e: NSEvent) { onHover?(false) }
     override func mouseMoved(with e: NSEvent) { onMove?() }
+}
+
+/// SPEC 70: a Gallery video's picture, behind the subtitles, the whole window. Muted (what's heard is the page's own
+/// player) and kept on that player's clock: it plays, pauses, changes speed and seeks with it. A shade over it keeps
+/// the white lines readable. It never takes the pointer: clicks and scrolls go to the subtitles as before.
+final class VideoBackdrop: NSView {
+    let player = AVPlayer()
+    private let picture = AVPlayerLayer()
+    private let shade = CALayer()
+    private(set) var url: URL?
+    private var seeking = false
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        player.isMuted = true
+        player.automaticallyWaitsToMinimizeStalling = false
+        player.actionAtItemEnd = .pause
+        picture.player = player; picture.videoGravity = .resizeAspect
+        shade.backgroundColor = NSColor(white: 0, alpha: 0.4).cgColor
+        layer?.addSublayer(picture); layer?.addSublayer(shade)
+        isHidden = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ p: NSPoint) -> NSView? { nil }
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        picture.frame = bounds; shade.frame = bounds
+        CATransaction.commit()
+    }
+    /// The file to show (nil: none, the window as before).
+    func show(_ u: URL?) {
+        guard u != url else { return }
+        url = u; seeking = false
+        player.replaceCurrentItem(with: u.map { AVPlayerItem(url: $0) })
+        isHidden = u == nil
+    }
+    /// Called every frame with the followed player's time: a drift past a third of a second (any, while paused, so a
+    /// scrub shows its frame) is a seek; otherwise only the rate is matched.
+    func follow(_ t: Double, rate: Double, paused: Bool) {
+        guard url != nil, let item = player.currentItem, item.status == .readyToPlay else { return }
+        let dur = item.duration.seconds
+        let target = dur.isFinite && dur > 0 ? min(max(0, t), dur) : max(0, t)
+        let r: Float = paused ? 0 : Float(rate)
+        if player.rate != r { player.rate = r }
+        guard !seeking, abs(player.currentTime().seconds - target) > (paused ? 0.04 : 0.33) else { return }
+        seeking = true
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            DispatchQueue.main.async { self?.seeking = false }
+        }
+    }
 }
 
 /// Blank space: a click toggles play/pause, a drag moves the window; a double-click or a right-click is for the line.
@@ -1078,7 +1142,7 @@ final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 
 final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDelegate {
     /// The control line: the stroke is centred this far above the window's foot (the page's --cl).
-    static let line: CGFloat = 12                // inside Sill: near the foot, as Sill's own home bar sits
+    static let line: CGFloat = 10                // as Sill's R2 home bar: its stroke ~9.5 pt above the foot (SPEC 68)
     static var still: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var onCmd: ((Cmd) -> Void)?
@@ -1099,7 +1163,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         // at the right edge. In the strip (.strip) the stroke sits a little higher, so A and B's names under it
         // fit, and the time ruler is compact: the open bar stays inside the zone below the lines (Overlay.barZone).
         cfg.userContentController.addUserScript(WKUserScript(source: """
-            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .p-ctrl{right:-10px;bottom:var(--foot,0px)} :root.strip{--cl:24px} .strip .p-hbseek{height:46px} .strip .p-skhint{display:none} .strip .p-skread{bottom:28px;font-size:15px;line-height:18px}</style>')
+            document.head.insertAdjacentHTML('beforeend', '<style>:root{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .p-ctrl{right:-10px;bottom:var(--foot,0px)} :root.strip{--cl:calc(\(Int(RecenseHomeBar.line))px + var(--foot,0px))} .strip .p-hbseek{height:46px} .strip .p-skhint{display:none} .strip .p-skread{bottom:28px;font-size:15px;line-height:18px}</style>')
             """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         setValue(false, forKey: "drawsBackground")
         navigationDelegate = self
@@ -1125,6 +1189,13 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         return hits.contains { $0.contains(CGPoint(x: q.x, y: y)) } ? super.hitTest(p) : nil
     }
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
+    /// SPEC 19: once the window is clicked, space plays / pauses wherever the pointer is, the bar included: WebKit
+    /// would otherwise keep the space it was focused by. Typing in the bar's own fields still gets it.
+    override func keyDown(with e: NSEvent) {
+        if e.keyCode == 49, e.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty,
+           !(window?.firstResponder is NSText), let w = window as? RecenseKeyPanel, w.onKey?(e) == true { return }
+        super.keyDown(with: e)
+    }
     // While the line is being edited its field keeps the keyboard: a click on the editor's tools must not end the typing.
     private(set) var editing = false
     override var acceptsFirstResponder: Bool { !editing && super.acceptsFirstResponder }
@@ -1368,6 +1439,8 @@ final class Overlay: NSObject, NSWindowDelegate {
     let panel: RecenseKeyPanel
     let words = WordsView()
     let status = PassLabel(labelWithString: "")
+    let skipAd = NSButton(title: "Skip Ad", target: nil, action: nil)   // shown while the followed player plays an ad (SPEC 37)
+    var onSkipAd: (() -> Void)?
     let spoken = NSColor.white, current = NSColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)
     let upcoming = NSColor(white: 1, alpha: 0.42), ahead = NSColor(white: 1, alpha: 0.6)
     let meaning = NSColor(white: 1, alpha: 0.8)    // Learning: a heard phrase's English, a step quieter than the original
@@ -1387,10 +1460,13 @@ final class Overlay: NSObject, NSWindowDelegate {
     // the native language (Gallery spec §1), beside the mode switch and shown with it: one click, no menu
     let langCtl = NSSegmentedControl(labels: NativeLang.all.map { $0.code.uppercased() }, trackingMode: .selectOne, target: nil, action: nil)
     let area = SubtitleArea()
+    let video = VideoBackdrop()                // SPEC 70: a Gallery video's picture, behind everything
     var fit = (key: "", scale: CGFloat(1))     // font scale that makes the current line fit the window
     var fits: [String: CGFloat] = [:]          // Learning: the few lines too long for their place, and their scale
     var browserControls = false
     let homeBar = RecenseHomeBar()
+    /// Why the followed player can't take the sound tray's EQ, Key and Reverb (SPEC 54), or nil: the page's tray says so.
+    var soundNo: String? { didSet { if soundNo != oldValue { homeBar.call("sound", soundNo ?? NSNull()) } } }
     let toast = Toast()
     var modeWork: DispatchWorkItem?
     let editor = LineEditor()
@@ -1495,6 +1571,9 @@ final class Overlay: NSObject, NSWindowDelegate {
         status.font = .systemFont(ofSize: 11); status.textColor = NSColor(white: 1, alpha: 0.5)
         status.alignment = .center; status.lineBreakMode = .byTruncatingTail
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        skipAd.bezelStyle = .rounded; skipAd.controlSize = .small; skipAd.isHidden = true
+        skipAd.toolTip = "Skip the ad in the page's player: its own Skip button when it shows one, otherwise to the ad's end"
+        skipAd.target = self; skipAd.action = #selector(skipAdPressed)
         modeCtl.segmentStyle = .rounded; modeCtl.controlSize = .small
         modeCtl.selectedSegment = mode.rawValue
         modeCtl.toolTip = "Follow: the original language with its English under it.  Learn: one line at a time, on a barrel that rolls on to the next line as it comes; the original is what's coming, and each phrase turns into its English once it's been heard, so the meaning follows behind in English order. Scroll over the line to pick another and play from it.  (M)"
@@ -1512,12 +1591,14 @@ final class Overlay: NSObject, NSWindowDelegate {
         toast.alphaValue = 0
 
         panel.contentView = root               // first: areaFoot and barFoot anchor to the panel's content view
-        for v in [area, editor, status, homeBar, modeCtl, langCtl, toast] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
+        for v in [video, area, editor, status, skipAd, homeBar, modeCtl, langCtl, toast] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
         words.translatesAutoresizingMaskIntoConstraints = false; area.addSubview(words)
         NSLayoutConstraint.activate([
             status.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
             status.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             status.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -180),
+            skipAd.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 4),
+            skipAd.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             modeCtl.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
             modeCtl.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             langCtl.centerYAnchor.constraint(equalTo: modeCtl.centerYAnchor),
@@ -1526,6 +1607,10 @@ final class Overlay: NSObject, NSWindowDelegate {
             toast.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             toast.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             toast.heightAnchor.constraint(equalToConstant: 64),
+            video.topAnchor.constraint(equalTo: root.topAnchor),
+            video.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            video.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            video.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             area.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
             area.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             area.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -1647,6 +1732,9 @@ final class Overlay: NSObject, NSWindowDelegate {
     }
 
     /// The home bar shows while a player is followed; idle, it goes. The mode switch is always there.
+    @objc func skipAdPressed() { onSkipAd?() }
+    func setSkipAd(_ on: Bool) { if skipAd.isHidden == on { skipAd.isHidden = !on } }
+
     func setControls(_ on: Bool) {
         browserControls = on
         if !on { _ = homeBar.closeTools() }
@@ -1771,7 +1859,7 @@ final class Overlay: NSObject, NSWindowDelegate {
             }
             if fit.key == fitKey { break }
             let fits = blocks.joined().allSatisfy { WordsView.width($0) <= room }    // a word is never cut off at the sides
-            if (WordsView.height(blocks, width: room) <= box.height - 4 && fits) || scale < 0.4 { fit = (fitKey, scale); break }
+            if (WordsView.height(blocks, width: room) <= box.height - 4 && fits) || scale < 0.4 / max(1, Reader.scale) { fit = (fitKey, scale); break }   // (a Text Size past what fits is held back, notes 2026-10-26)
             scale *= 0.92
         }
         words.places = nil; words.drum = nil
@@ -1832,7 +1920,9 @@ final class Overlay: NSObject, NSWindowDelegate {
             }
             scale = min(scale, need)
         }
-        return base * max(0.55, scale)
+        // The floor is the unscaled size's: a Text Size too big for two lines to fit in the window magnifies no
+        // further than what fits, so the top line is never cut off (notes 2026-10-26: text above 100%).
+        return base * max(0.55 / max(1, Reader.scale), scale)
     }
 
     /// A scroll over the line in Learning (a wheel, two fingers on a trackpad) turns the drum row for row; when its
@@ -1873,6 +1963,18 @@ final class Overlay: NSObject, NSWindowDelegate {
             return src.map { .init(top: ink($0, at: t, font: NSFont.systemFont(ofSize: size, weight: .semibold))) }
         }
         let parts = phrases(line, en)
+        // SPEC 47, as in Gallery: prominence under 50%, the light follows the chosen language. Each phrase turns into
+        // it as the original starts to be pronounced, and the light wipes across it over the time the original is
+        // spoken; the original gets no wipe. 50% to 90%: the original's words, as at rest; past 90% the canvas is blank.
+        if let pr = Reader.prominence, pr.p < 0.5 {
+            return parts.map { p in
+                let first = src[p.src.lowerBound], last = src[p.src.upperBound - 1]
+                let span = Beat(text: en[p.en].map(\.w).joined(separator: " "), start: first.start, end: last.end)
+                return .init(words: src[p.src].map { dim(ink(Beat(text: $0.text, start: $0.start, end: $0.start), at: t, font: big), mx.a1) },
+                             turn: dim(ink(span, at: t, font: small, before: meaning, after: meaning), mx.a2),
+                             turned: CGFloat(min(1, max(0, (t - first.start + turnTime) / turnTime))))
+            }
+        }
         return parts.map { p in
             .init(words: src[p.src].map { dim(ink($0, at: t, font: big), mx.a1) },
                   turn: .init(text: en[p.en].map(\.w).joined(separator: " "), font: small, color: meaning.withAlphaComponent(meaning.alphaComponent * mx.a2)),
@@ -2827,13 +2929,49 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     func fromGallery() async -> Bool {
         guard url.hasPrefix("gallery:files/"), Store.r2 else { return false }
         let path = String(url.dropFirst("gallery:".count))
-        guard let (tmp, resp) = try? await URLSession.shared.download(for: Store.signed("GET", GalleryJob.objectPath(path))),
-              (resp as? HTTPURLResponse)?.statusCode == 200 else { log("gallery: couldn't download \(path)"); return false }
         let ext = (path as NSString).pathExtension.lowercased()
         let dest = cacheDir.appendingPathComponent(key + "." + (ext.isEmpty ? "mp3" : ext))
         try? FileManager.default.removeItem(at: dest)
+        // a video the window shows is downloaded once (galleryVideo): its sound is taken from that same copy
+        if let v = await galleryVideo(), (try? FileManager.default.linkItem(at: v, to: dest)) != nil { return await local(dest) }
+        guard let (tmp, resp) = try? await URLSession.shared.download(for: Store.signed("GET", GalleryJob.objectPath(path))),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { log("gallery: couldn't download \(path)"); return false }
         guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return false }
         return await local(dest)               // a video's sound is pulled out of it there
+    }
+
+    // ---- SPEC 70: a video in Gallery's Main is shown in the window, not only heard ----
+    /// Where a shown video is kept: only the piece playing has one there (Gallery keeps them all). A folder, so
+    /// Store.sweep (files only) never sends it to tmp/ or takes it while it plays.
+    static let videoDir = cacheDir.appendingPathComponent("video", isDirectory: true)
+    /// The video file the window shows, once downloaded (nil: no picture, audio or a site's player).
+    var video: URL?
+    private var videoTask: Task<URL?, Never>?
+    /// A Gallery video ("gallery:files/<path>.mov|mp4|m4v|webm|mkv"): the file itself, from Gallery's bucket as
+    /// fromGallery gets it, into videoDir. Asked for at load whether or not the transcript needs the audio, and only
+    /// once per piece (fromGallery waits on the same download).
+    func galleryVideo() async -> URL? {
+        if let t = videoTask { return await t.value }
+        guard url.hasPrefix("gallery:files/"), Store.r2 else { return nil }
+        let path = String(url.dropFirst("gallery:".count))
+        let ext = (path as NSString).pathExtension.lowercased()
+        guard GalleryJob.videoExt.contains(ext) else { return nil }
+        let dir = Episode.videoDir, dest = dir.appendingPathComponent(key + "." + ext)
+        let t = Task<URL?, Never> {
+            let fm = FileManager.default
+            if !fm.fileExists(atPath: dest.path) {
+                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                guard let (tmp, resp) = try? await URLSession.shared.download(for: Store.signed("GET", GalleryJob.objectPath(path))),
+                      (resp as? HTTPURLResponse)?.statusCode == 200 else { log("gallery: couldn't download the video \(path)"); return nil }
+                try? fm.removeItem(at: dest)
+                guard (try? fm.moveItem(at: tmp, to: dest)) != nil else { return nil }
+            }
+            return dest
+        }
+        videoTask = t
+        let u = await t.value
+        if !stopped { video = u }
+        return u
     }
 
     func receive(_ bytes: Data, type: String) -> Bool {
@@ -3700,6 +3838,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             if clean && firstPass && isSong && seg.lp < -1 { continue }
             let text = bySeg[k].map(\.text).joined(separator: " ").lowercased()
             if hallucinations.contains(where: { text.contains($0) }) { continue }
+            if silenceHallucinations.contains(hallucinationKey(text)) { continue }     // a standalone stock phrase
             if musicTags.contains(text.filter { $0.isLetter || $0 == " " }.trimmingCharacters(in: .whitespaces)) { continue }
             words += bySeg[k].filter { $0.start < duration }
         }
@@ -5428,7 +5567,8 @@ final class NativeSources {
     let bookmarksMenu = NSMenu()
 
     struct Pos { var url = ""; var t = 0.0; var rate = 1.0; var paused = true; var dur = 0.0; var sent = 0.0; var received = Date.distantPast; var pausedAt = Date.distantPast; var source = "browser"; var path = ""
-        var vol: Double? = nil }       // the player's own volume, 0…1 (0 when muted); nil: it doesn't say (an older bridge)
+        var vol: Double? = nil         // the player's own volume, 0…1 (0 when muted); nil: it doesn't say (an older bridge)
+        var ad = false }               // the bridge says an ad is playing (SPEC 17): shown as one, never transcribed
     var pos = Pos()
     /// Track loop is a standing choice, like QuickTime's ⌥⌘L: it carries over to the next track, file, tab or
     /// player (and across launches) until it's turned off. A and B belong to one track and are cleared.
@@ -5437,6 +5577,12 @@ final class NativeSources {
     }
     var scrubbing = false { didSet { kick() } }                    // the home bar's time ruler is out: A–B holds off
     var pendingCmds: [[String: Any]] = []    // delivered to the extension with its next position report
+    /// The sound tray's EQ, Key and Reverb (SPEC 54), made by the bridge in the followed page (content.js): as the tray last
+    /// set it, numbered so every page that reports another number is sent it again (a new tab, a reload, a restart).
+    var sound: [String: Any] = ["eq": ["low": 0, "mid": 0, "high": 0], "key": 0, "mix": 0, "room": "room"]
+    var soundV = 0
+    var fxNo: String?                         // the followed page can't take it: "cors", "gallery", "audio"
+    var fxKeySaid = false
     var cmdSeq = 0 { didSet { kick() } }
     var lastPush = Date.distantPast   // reports from before the page ran command #cmdSeq are stale
     var deliveredAt = 0.0                     // when queued commands last went to the page
@@ -5511,6 +5657,7 @@ final class NativeSources {
     func applicationDidFinishLaunching(_ n: Notification) {
         overlay = Overlay()
         overlay.onCmd = { [weak self] c in self?.command(c) }
+        overlay.onSkipAd = { [weak self] in self?.skipAd() }
         overlay.onBookmark = { [weak self] in self?.addBookmark() }
         overlay.bookmarks = { [weak self] in self.map { Bookmarks.all[$0.bookmarkKey] ?? [] } ?? [] }
         overlay.onBarAction = { [weak self] k, b in
@@ -5523,6 +5670,7 @@ final class NativeSources {
             case "download": self.downloadPlayed()
             case "clear": self.clearTranscript()
             case "share": self.shareSource()
+            case "fx": self.setSound(b)
             default: break
             }
         }
@@ -5609,6 +5757,7 @@ final class NativeSources {
     // while something plays or the subtitles are on screen; otherwise one poll a second, enough to notice a player start.
     var displayLink: CADisplayLink?
     var wasBusy: Bool?
+    var wasWorking: Bool?
     var kickedAt = Date.distantPast, pollTimer: Timer?
     var busy: Bool {
         (!pos.paused && Date().timeIntervalSince(pos.received) < 5) || scrubbing || Date().timeIntervalSince(kickedAt) < 3
@@ -5623,6 +5772,13 @@ final class NativeSources {
         let on = busy
         if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused))") }
         displayLink?.isPaused = !on
+        // SPEC 20: the mark is lit while Recense works (a player followed, a transcription running) and dimmed when idle.
+        let working = on || GalleryJob.current != nil
+        if working != wasWorking {
+            wasWorking = working
+            item?.button?.alphaValue = working ? 1 : 0.4
+            NotificationCenter.default.post(name: Recense.workingChanged, object: nil, userInfo: ["working": working])
+        }
         if !on { frame() }                        // paused: still draw what changed (a seek, a transcript loaded)
         pollTimer?.invalidate()
         let t = Timer(timeInterval: on ? 0.05 : 1.0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.pollLoop() } }
@@ -5977,6 +6133,13 @@ final class NativeSources {
         }
     }
     func now() -> Double { Date().timeIntervalSince1970 }
+    /// An ad the followed page is playing (SPEC 17 + 37): the window shows it as one, and Skip Ad has the bridge skip it.
+    var adPlaying: Bool { pos.ad && pos.source == "browser" && Date().timeIntervalSince(pos.received) < 2.5 }
+    func skipAd() {
+        guard adPlaying else { return }
+        push(["op": "skipAd"])
+        overlay.toast.say("Skipping ad…")
+    }
 
     func command(_ c: Cmd) {
         // (a player followed without a transcript takes the bar's commands too: its controls are up, see frame())
@@ -6005,6 +6168,45 @@ final class NativeSources {
             push(["op": "volume", "v": x])
         }
     }
+    // ----- the sound tray (SPEC 54): Recense plays nothing, so the followed page reshapes its own sound -----
+    func setSound(_ b: [String: Any]) {
+        let num = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0 }
+        let eq = b["eq"] as? [String: Any] ?? [:]
+        sound = ["eq": ["low": num(eq["low"]), "mid": num(eq["mid"]), "high": num(eq["high"])], "key": num(b["key"]),
+                 "mix": num(b["mix"]), "room": b["room"] as? String ?? "room"]
+        soundV += 1
+        fxKeySaid = false
+        pendingCmds.removeAll { $0["op"] as? String == "fx" }
+        if pos.source == "browser" { push(soundCmd()) }
+    }
+    func soundCmd() -> [String: Any] { sound.merging(["op": "fx", "v": soundV]) { a, _ in a } }
+    /// The commands for a page's report, with the sound when the page has another than the tray's.
+    func soundFor(_ j: [String: Any], _ cmds: [[String: Any]]) -> [[String: Any]] {
+        fxNo = j["fxNo"] as? String
+        if j["fxKey"] as? Bool == false, !fxKeySaid { fxKeySaid = true; overlay.toast.say("Key isn’t available on this page") }
+        guard let v = j["fxv"] as? Int, v != soundV, !cmds.contains(where: { $0["op"] as? String == "fx" }) else { return cmds }
+        return cmds + [soundCmd()]   // (an older bridge sends no fxv and ignores "fx")
+    }
+    /// Why the tray's sound can't reach the followed player, in the tray's words ("EQ: …"), or nil.
+    var soundBlock: String? {
+        guard browserMode else { return nil }
+        switch pos.source {
+        case "browser":
+            switch fxNo {
+            case "cors": return "this page's player plays a file from another site, which doesn't let its sound be reshaped"
+            case "gallery": return "Gallery shapes its own sound: use its tray"
+            case "audio": return "this page doesn't let its sound be reshaped"
+            default: return nil
+            }
+        case "quicktime": return "QuickTime plays its own sound; the tray reshapes players followed through Firefox"
+        case "music": return "Music plays its own sound; the tray reshapes players followed through Firefox"
+        default:   // Safari or Chrome, followed through AppleScript (no extension there to make the sound)
+            let app = pos.source.localizedCaseInsensitiveContains("safari") ? "Safari"
+                : pos.source.localizedCaseInsensitiveContains("chrom") ? "Chrome" : "This player"
+            return "\(app) is followed without the bridge; the tray reshapes players followed through Firefox"
+        }
+    }
+
     func sendLoop() {
         pendingCmds.removeAll { $0["op"] as? String == "loop" }
         var c: [String: Any] = ["op": "loop", "track": loop.track, "ab": loop.ab && !scrubbing]
@@ -6035,8 +6237,9 @@ final class NativeSources {
             return ["handled": has, "paused": has ? !(expectPaused ?? pos.paused) : globalPaused]
         case "/pos":
             guard let url = j["url"] as? String else { return ["state": "other"] }
+            let ad = j["ad"] as? Bool ?? false    // an ad (SPEC 17): followed for Skip Ad, never loaded or transcribed
             // The followed stream at a new address (the bridge sends its page): the same piece, so nothing blinks.
-            if let ep = episode, ep.url != url, let page = j["page"] as? String, ep.source == Episode.key(url, page: page) {
+            if !ad, let ep = episode, ep.url != url, let page = j["page"] as? String, ep.source == Episode.key(url, page: page) {
                 if pos.url == ep.url { pos.url = url }
                 ep.url = url; log("same media, new address: \(url.prefix(80))")
             }
@@ -6063,7 +6266,7 @@ final class NativeSources {
             if stale, episode?.url == url, pos.url == url {
                 pos.received = Date()
                 let cmds = pendingCmds; pendingCmds = []; if !cmds.isEmpty { deliveredAt = now() }
-                return ["state": episodeState, "cmds": cmds]
+                return ["state": episodeState, "cmds": soundFor(j, cmds)]
             }
             let paused = j["paused"] as? Bool ?? true
             let sameMedia = (pos.source == "browser" && pos.url == url) || pos.url.isEmpty   // first report: adopt
@@ -6072,7 +6275,7 @@ final class NativeSources {
             if url != pos.url { addressChanged = Date() }
             let flipped = paused != pos.paused || url != pos.url
             pos = Pos(url: url, t: j["t"] as? Double ?? 0, rate: j["rate"] as? Double ?? 1, paused: paused,
-                      dur: j["dur"] as? Double ?? pos.dur, sent: sent, received: Date(), pausedAt: pos.pausedAt, vol: j["vol"] as? Double)
+                      dur: j["dur"] as? Double ?? pos.dur, sent: sent, received: Date(), pausedAt: pos.pausedAt, vol: j["vol"] as? Double, ad: ad)
             // Played or paused from outside (the keyboard's ⏯, the page's own button): the window follows now, not
             // at the next once-a-second poll.
             if flipped { kick() }
@@ -6082,13 +6285,17 @@ final class NativeSources {
                 if sameMedia { loop.track = l }          // toggled in the page itself
                 else { sendLoop() }                      // new media: it picks up the standing loop
             }
+            if ad {      // the episode stays as it is: the video's subtitles come back when it does
+                let cmds = pendingCmds; pendingCmds = []; if !cmds.isEmpty { deliveredAt = now() }
+                return ["state": "ad", "cmds": soundFor(j, cmds)]
+            }
             guard episode?.url == url else { return ["need": "media"] }
             let cmds = pendingCmds; pendingCmds = []; if !cmds.isEmpty { deliveredAt = now() }
-            return ["state": episodeState, "cmds": cmds]
+            return ["state": episodeState, "cmds": soundFor(j, cmds)]
         case "/wait":
             return ["cmds": await wait(j["url"] as? String ?? "")]
         case "/media":
-            guard let url = j["url"] as? String else { return ["state": "other"] }
+            guard let url = j["url"] as? String, j["ad"] as? Bool != true else { return ["state": "other"] }
             // a tab that may not have the window doesn't get its media loaded over the followed one's
             let who = "browser|" + Episode.key(url, page: j["page"] as? String)
             if let page = j["page"] as? String { mediaPage[url] = page }
@@ -6139,6 +6346,15 @@ final class NativeSources {
         episode = ep; episodeState = "loading"
         loop.a = nil; loop.b = nil; loop.ab = false
         log("media: \(url.prefix(120))")
+        // SPEC 70: a Gallery video's picture, for the window; any other piece's video goes (Gallery has them all)
+        Task {
+            let v = await ep.galleryVideo()
+            guard self.episode === ep else { return }
+            let fm = FileManager.default
+            for u in (try? fm.contentsOfDirectory(at: Episode.videoDir, includingPropertiesForKeys: nil)) ?? [] where u.lastPathComponent != v?.lastPathComponent {
+                try? fm.removeItem(at: u)
+            }
+        }
         let t0 = Date()
         let ok = await ep.fetch()
         log("audio ready in \(String(format: "%.1f", Date().timeIntervalSince(t0))) s: \(ok)")
@@ -6201,8 +6417,24 @@ final class NativeSources {
 
     func frame() {
         if browserActive != browserMode { setBrowserMode(!browserMode) }
+        overlay.soundNo = soundBlock
         let idle = !browserMode || pos.paused
         if item.button?.appearsDisabled != idle { item.button?.appearsDisabled = idle }
+        // An ad in the followed player (the bridge says so): nothing is transcribed for it, and Skip Ad is offered.
+        let ad = adPlaying
+        overlay.setSkipAd(ad)
+        // SPEC 70: a Gallery video followed here shows its picture behind the lines, on the page player's clock
+        let clip = !ad && browserMode && !pos.url.isEmpty && pos.url == episode?.url ? episode?.video : nil
+        overlay.video.show(clip)
+        if clip != nil { overlay.video.follow(mediaTime, rate: pos.rate, paused: expectPaused ?? pos.paused) }
+        if ad {
+            editable = nil
+            overlay.render(nil, at: 0)
+            if !overlay.browserControls { overlay.setControls(true) }
+            overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
+            if Date() > statusUntil { overlay.setStatus("Ad playing — subtitles resume with the video") }
+            return
+        }
         if browserMode, let ep = episode {
             // A stream whose length isn't the transcribed audio's: an ad is playing in the page's player.
             let length = ep.playDuration ?? ep.duration
@@ -6515,6 +6747,9 @@ final class NativeSources {
 // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
 @MainActor enum Recense {
     static var delegate: AppDelegate?
+    /// Posted when Recense starts or stops working (userInfo["working"]: Bool), for Sill's strip button (SPEC 20).
+    static let workingChanged = Notification.Name("RecenseWorkingChanged")
+    static var working: Bool { delegate?.wasWorking ?? false }
     /// The card, once Recense has started (nil before: Sill can be summoned before Recense finishes launching).
     static var overlay: Overlay? { delegate.flatMap { $0.overlay as Overlay? } }
     static func start() {

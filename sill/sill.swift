@@ -4232,6 +4232,11 @@ final class EssentialsView: ClickView {
         recenseOpen.contentTintColor = .white
         recenseOpen.toolTip = "Recense"
         recenseOpen.target = self; recenseOpen.action = #selector(openRecense)
+        // SPEC 20: lit while Recense works, dimmed when idle.
+        recenseOpen.alphaValue = MainActor.assumeIsolated { Recense.working } ? 1 : 0.4
+        NotificationCenter.default.addObserver(forName: Recense.workingChanged, object: nil, queue: .main) { [weak self] n in
+            self?.recenseOpen.alphaValue = (n.userInfo?["working"] as? Bool ?? false) ? 1 : 0.4
+        }
         recenseSheet.wantsLayer = true
         recenseSheet.layer?.backgroundColor = recenseFill.cgColor
         recenseSheet.layer?.cornerRadius = 18
