@@ -1892,27 +1892,34 @@ final class Overlay: NSObject, NSWindowDelegate {
         lastKey = key
 
         let at = upcomingOnly ? -Double.infinity : t
-        // A long line shrinks to fit rather than being cut off; the scale is found once per line and window size.
+        // A long line shrinks to fit rather than being cut off. The largest size that fits is found once per line and
+        // window size, whatever Text Size is, and Text Size goes no further than it: so A⁺ only ever makes the words
+        // bigger, up to what fits, and A⁻ smaller (notes 36; notes 2026-10-26: text above 100% never cut off).
         let fitKey = "\(line.id)/\(english?.count ?? -1)/\(Int(box.width))x\(Int(box.height))/r\(Reader.stamp)"
-        var scale: CGFloat = fit.key == fitKey ? fit.scale : 1
         let room = box.width - 56
         var blocks: [[WordsView.Cell]] = []
         // Text Size and Balance (menu bar menu): each line its own size and opacity; the hidden side takes no room
-        let mx = Reader.mix, base = min(36, width / 28) * Reader.scale
+        let mx = Reader.mix, unit = min(36, width / 28), want = unit * Reader.scale
         let showL1 = mx.a1 > 0 || !translated, showL2 = mx.a2 > 0
-        while true {
-            let big = NSFont.systemFont(ofSize: base * mx.l1 * scale, weight: .semibold)
-            let small = NSFont.systemFont(ofSize: base * mx.l2 * scale, weight: .regular)
+        func build(_ base: CGFloat) -> Bool {
+            let big = NSFont.systemFont(ofSize: base * mx.l1, weight: .semibold)
+            let small = NSFont.systemFont(ofSize: base * mx.l2, weight: .regular)
             blocks = showL1 ? [sourceBeats(line).map { .init(top: dim(ink($0, at: at, font: big), translated ? mx.a1 : 1)) }] : []
             if let english, translated {
                 if showL2 { blocks.append(englishBeats(line, english).map { .init(top: dim(ink($0, at: at, font: small), mx.a2)) }) }
             } else if english == nil, showL2 {
                 blocks.append([.init(top: .init(text: "translating…", font: small, color: upcoming))])
             }
-            if fit.key == fitKey { break }
             let fits = blocks.joined().allSatisfy { WordsView.width($0) <= room }    // a word is never cut off at the sides
-            if (WordsView.height(blocks, width: room) <= box.height - 4 && fits) || scale < 0.4 / max(1, Reader.scale) { fit = (fitKey, scale); break }   // (a Text Size past what fits is held back, notes 2026-10-26)
-            scale *= 0.92
+            return WordsView.height(blocks, width: room) <= box.height - 4 && fits
+        }
+        if fit.key == fitKey {
+            _ = build(min(want, fit.scale))
+        } else {
+            var cap = unit * 1.6                                                     // Text Size's top (homebar sizeMax)
+            while !build(cap) && cap > unit * 0.4 { cap *= 0.92 }
+            fit = (fitKey, cap)
+            if want < cap { _ = build(want) }
         }
         words.places = nil; words.drum = nil
         words.blocks = blocks
@@ -1945,7 +1952,9 @@ final class Overlay: NSObject, NSWindowDelegate {
         let size = uniformSize(lines, room: room, tall: tall)
         var places: [WordsView.Place?] = [nil, nil]
         for s in shown where places[s.place] == nil || places[s.place]!.alpha < CGFloat(s.alpha) {
-            places[s.place] = .init(cells: phraseCells(lines[s.line], at: t, size: size), alpha: CGFloat(s.alpha))
+            var p = place(lines[s.line], at: t, size: size)
+            p.alpha = CGFloat(s.alpha)
+            places[s.place] = p
         }
         words.drum = nil
         words.places = places
@@ -1955,26 +1964,38 @@ final class Overlay: NSObject, NSWindowDelegate {
     /// needs the most room needs to fit in half the window (one place), never below 55%; every line then shares it, so no
     /// line is bigger or smaller than another. Each line's need is measured once (per width, size and language).
     var needs: [String: CGFloat] = [:]
+    var caps: [String: CGFloat] = [:]
     func uniformSize(_ lines: [Line], room: CGFloat, tall: CGFloat) -> CGFloat {
-        let base = min(36, max(400, panel.frame.width) / 28) * Reader.scale
+        let unit = min(36, max(400, panel.frame.width) / 28), base = unit * Reader.scale
         let placeH = max(20, tall / 2 - WordsView.blockGap / 2)
         if needs.count > 4000 { needs.removeAll() }
-        var scale: CGFloat = 1
-        for line in lines {
-            let k = "\(line.id)/\(line.english?.count ?? -1)/\(Int(base * 10))/\(Int(room))/\(Int(placeH))/r\(Reader.stamp)"
-            let need: CGFloat
-            if let n = needs[k] { need = n } else {
-                let cells = phraseCells(line, at: -1, size: base)
-                let h = CGFloat(WordsView.rows(cells, width: room).count) * WordsView.rowHeight(cells)
-                let tooWide = cells.map(WordsView.width).max() ?? 0
-                need = min(1, h > 0 ? placeH / h : 1, tooWide > 0 ? room / tooWide : 1)
-                needs[k] = need
-            }
-            scale = min(scale, need)
+        if caps.count > 200 { caps.removeAll() }
+        // how much a line would have to shrink to fit one place at `size` (1: it fits)
+        func need(_ line: Line, _ size: CGFloat) -> CGFloat {
+            let k = "\(line.id)/\(line.english?.count ?? -1)/\(Int(size * 10))/\(Int(room))/\(Int(placeH))/\(NativeLang.current)/\(Reader.mix.l1)/\(Reader.mix.l2)/\(Reader.prominence == nil)"
+            if let n = needs[k] { return n }
+            let pl = place(line, at: -1, size: size), cells = pl.cells + pl.under
+            let h = WordsView.height(pl, width: room)
+            let tooWide = cells.map(WordsView.width).max() ?? 0
+            let n = min(1, h > 0 ? placeH / h : 1, tooWide > 0 ? room / tooWide : 1)
+            needs[k] = n
+            return n
         }
-        // The floor is the unscaled size's: a Text Size too big for two lines to fit in the window magnifies no
-        // further than what fits, so the top line is never cut off (notes 2026-10-26: text above 100%).
-        return base * max(0.55 / max(1, Reader.scale), scale)
+        // The largest size at which every line fits one place, whatever Text Size is (never below 55%): Text Size
+        // magnifies up to it and no further, so A⁺ never makes the words smaller (notes 36) and the top line is never
+        // cut off (notes 2026-10-26). Every line then shares the one size (SPEC 59).
+        let ck = "\(lines.count)/\(lines.first?.id ?? -1)/\(lines.last?.id ?? -1)/\(lines.reduce(0) { $0 + ($1.english?.count ?? 0) })/\(Int(unit * 10))/\(Int(room))/\(Int(placeH))/\(NativeLang.current)/\(Reader.mix.l1)/\(Reader.mix.l2)/\(Reader.prominence == nil)"
+        let cap: CGFloat
+        if let c = caps[ck] { cap = c } else {
+            let fits = { (size: CGFloat) in lines.allSatisfy { need($0, size) >= 1 } }
+            var lo = unit * 0.55, hi = unit * 1.6
+            if fits(hi) { lo = hi } else if fits(lo) {
+                for _ in 0..<7 { let mid = (lo + hi) / 2; if fits(mid) { lo = mid } else { hi = mid } }
+            }
+            cap = lo
+            caps[ck] = cap
+        }
+        return min(base, cap)
     }
 
     /// A scroll over the line in Learning (a wheel, two fingers on a trackpad) turns the drum row for row; when its
@@ -2002,6 +2023,32 @@ final class Overlay: NSObject, NSWindowDelegate {
         drumHold = (j, CACurrentMediaTime() + 0.7)
         lastKey = ""
         onPick?(j)
+    }
+
+    /// A line in one of Learning's places. At rest its phrases turn into the trailing language in place; with the vertical
+    /// bar's prominence set it is Gallery's (notes 34): the original on top at its opacity, the trailing language whole
+    /// under it at its own, nothing turning. Under 50% the light crosses the trailing language's phrases while the
+    /// original is pronounced (SPEC 47); from 50% it crosses the original's words.
+    func place(_ line: Line, at t: Double, size: CGFloat) -> WordsView.Place {
+        guard let pr = Reader.prominence, let en = line.english, !en.isEmpty, en.map(\.w) != ["…"] else {
+            return .init(cells: phraseCells(line, at: t, size: size), alpha: 1)
+        }
+        let big = NSFont.systemFont(ofSize: size, weight: .semibold), small = NSFont.systemFont(ofSize: size, weight: .regular)
+        let src = sourceBeats(line), trailLit = pr.p < 0.5
+        let top: [WordsView.Cell] = pr.a1 > 0 ? src.map { b in
+            .init(top: dim(ink(trailLit ? Beat(text: b.text, start: b.start, end: b.start) : b, at: t, font: big), pr.a1))
+        } : []
+        var under: [WordsView.Cell] = []
+        if pr.a2 > 0 {
+            for p in phrases(line, en) {
+                let first = src[p.src.lowerBound], last = src[p.src.upperBound - 1]
+                let span = Beat(text: en[p.en].map(\.w).joined(separator: " "), start: first.start, end: last.end)
+                under.append(.init(top: trailLit ? dim(ink(span, at: t, font: small, before: meaning, after: meaning), pr.a2)
+                                                 : .init(text: span.text, font: small, color: meaning.withAlphaComponent(meaning.alphaComponent * pr.a2))))
+            }
+        }
+        if top.isEmpty { return .init(cells: under, alpha: 1) }
+        return .init(cells: top, alpha: 1, under: under)
     }
 
     /// A line in Learning: its phrases, each turning into its English as the light leaves its last word. Its English
@@ -2044,6 +2091,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         k.color = k.color.withAlphaComponent(k.color.alphaComponent * a)
         k.lit = k.lit.map { $0.withAlphaComponent($0.alphaComponent * a) }
         k.glow *= a
+        k.voice?.swell *= a
         return k
     }
 
@@ -2057,7 +2105,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let dur = max(0.05, b.end - b.start)
         let env = exp(-(t - b.start) / max(0.06, min(0.3, dur * 0.5)))
         return .init(text: b.text, font: font, color: before ?? ahead, lit: mix(pale, current, env),
-                     wipe: CGFloat(Cadence.progress(b, t)), glow: CGFloat(env))
+                     wipe: CGFloat(Cadence.progress(b, t)), glow: CGFloat(env), voice: Cadence.voice(b, t))
     }
 }
 
@@ -2068,6 +2116,8 @@ final class WordsView: NSView {
     struct Ink {
         var text: String, font: NSFont, color: NSColor
         var lit: NSColor? = nil, wipe: CGFloat = 0, glow: CGFloat = 0, kern: CGFloat = 0
+        /// How the voice sounds under the light right now (notes 33); nil: the plain light.
+        var voice: Cadence.Voice? = nil
     }
     /// A run of words drawn together, and what it turns into (`turned` of the way): its slot is wide enough for
     /// either, so nothing moves, before, during or after. Learning's phrases are runs; everything else is a word to a cell.
@@ -2078,7 +2128,17 @@ final class WordsView: NSView {
     }
     struct Row { var cells: [(cell: Cell, w: CGFloat)] = []; var width: CGFloat = 0 }
     /// A line in one of Learning's two places, and how far it has faded in.
-    struct Place { var cells: [Cell]; var alpha: CGFloat }
+    struct Place {
+        var cells: [Cell]; var alpha: CGFloat
+        /// the trailing language on its own row(s) under the original (the vertical bar's prominence set, notes 34)
+        var under: [Cell] = []
+    }
+    /// How tall a place is: its rows, and the trailing language's under them.
+    static func height(_ p: Place, width: CGFloat) -> CGFloat {
+        let top = CGFloat(rows(p.cells, width: width).count) * rowHeight(p.cells)
+        guard !p.under.isEmpty else { return top }
+        return top + blockGap / 2 + CGFloat(rows(p.under, width: width).count) * rowHeight(p.under)
+    }
     /// A line on Learning's drum: how far round it is from the front (radians, + below) and how far it has faded in.
     struct Roll { var cells: [Cell]; var alpha: CGFloat; var turn: CGFloat }
 
@@ -2149,8 +2209,14 @@ final class WordsView: NSView {
             for (i, p) in places.enumerated() {
                 guard let p, p.alpha > 0, !p.cells.isEmpty else { continue }
                 let rows = Self.rows(p.cells, width: bounds.width), gap = Self.gap(p.cells), h = Self.rowHeight(p.cells)
-                var y = i == 0 ? bounds.height / 2 - Self.blockGap / 2 - CGFloat(rows.count) * h : bounds.height / 2 + Self.blockGap / 2
-                Self.faded(p.alpha) { for r in rows { draw(r, at: y, gap: gap, h: h); y += h } }
+                var y = i == 0 ? bounds.height / 2 - Self.blockGap / 2 - Self.height(p, width: bounds.width) : bounds.height / 2 + Self.blockGap / 2
+                Self.faded(p.alpha) {
+                    for r in rows { draw(r, at: y, gap: gap, h: h); y += h }
+                    guard !p.under.isEmpty else { return }
+                    y += Self.blockGap / 2
+                    let uh = Self.rowHeight(p.under), ug = Self.gap(p.under)
+                    for r in Self.rows(p.under, width: bounds.width) { draw(r, at: y, gap: ug, h: uh); y += uh }
+                }
             }
             return
         }
@@ -2233,22 +2299,35 @@ final class WordsView: NSView {
         // crosses the word the way it's read.
         let w = Self.width(k), pad: CGFloat = 20, h = Self.lineHeight(k.font) + 2 * pad, rtl = Self.rtl(k.text)
         let edge = rtl ? p.x + w * (1 - min(1, k.wipe)) : p.x + w * min(1, k.wipe)
-        let unlit = rtl ? NSRect(x: p.x - pad, y: p.y - pad, width: edge - p.x + pad, height: h) : NSRect(x: edge, y: p.y - pad, width: w + pad, height: h)
+        // The voice shapes the light (notes 33): a vowel's edge flows (feathered), a consonant's is crisp; a held or
+        // belted note swells it, fuller and brighter; the pitch contour lifts or bends it, vibrato makes it shiver;
+        // a breathy, soft or cracking moment leaves it thin and pale.
+        let v = k.voice ?? .init(), scale = k.font.pointSize / 28
+        let feather = k.wipe < 1 ? (2 + 16 * v.soft) * scale : 0
+        let unlitFrom = rtl ? edge + feather : edge - feather
+        let unlit = rtl ? NSRect(x: p.x - pad, y: p.y - pad, width: unlitFrom - p.x + pad, height: h) : NSRect(x: unlitFrom, y: p.y - pad, width: p.x + w + pad - unlitFrom, height: h)
         let litBox = rtl ? NSRect(x: edge, y: p.y - pad, width: p.x + w - edge + pad, height: h) : NSRect(x: p.x - pad, y: p.y - pad, width: edge - p.x + pad, height: h)
         NSGraphicsContext.saveGraphicsState()
         unlit.clip()
         plain.draw(at: p)
         NSGraphicsContext.restoreGraphicsState()
-        NSGraphicsContext.saveGraphicsState()
-        litBox.clip()
-        var a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: lit]
-        if k.glow > 0.01 {
-            let g = NSShadow(); g.shadowColor = Self.glowColor.withAlphaComponent(0.55 * k.glow)
-            g.shadowBlurRadius = 4 + 8 * k.glow; g.shadowOffset = .zero
+        let lift = (v.lift + 1.4 * v.shiver) * scale
+        let litAt = NSPoint(x: p.x, y: p.y - lift)
+        var a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: lit.withAlphaComponent(lit.alphaComponent * (1 - 0.5 * v.thin)), .kern: k.kern]
+        if v.swell > 0.02 { a[.strokeWidth] = -3.2 * v.swell; a[.strokeColor] = lit }   // fuller strokes
+        let shine = max(k.glow, 0.85 * v.swell) * (1 - 0.75 * v.thin)
+        if shine > 0.01 {
+            let g = NSShadow(); g.shadowColor = Self.glowColor.withAlphaComponent(min(0.85, 0.55 * shine + 0.25 * v.swell))
+            g.shadowBlurRadius = (4 + 8 * k.glow + 12 * v.swell) * scale; g.shadowOffset = .zero
             a[.shadow] = g
         }
-        NSAttributedString(string: k.text, attributes: a).draw(at: p)
-        NSGraphicsContext.restoreGraphicsState()
+        let box = litBox.offsetBy(dx: 0, dy: -lift).union(litBox)
+        Self.sweep(box, from: rtl ? edge + feather : edge - feather, to: edge, keepLeft: !rtl, whole: feather < 0.5) {
+            NSGraphicsContext.saveGraphicsState()
+            box.clip()
+            NSAttributedString(string: k.text, attributes: a).draw(at: litAt)
+            NSGraphicsContext.restoreGraphicsState()
+        }
     }
 }
 
@@ -4393,8 +4472,56 @@ final class Features: Codable {
 /// slower through a held note, still through a breath.
 enum Cadence {
     /// The measured voice of what's playing (set every frame on the main thread); nil: the light runs by the clock.
-    nonisolated(unsafe) static var track: Features? { didSet { if track !== oldValue { curves = [:] } } }
+    nonisolated(unsafe) static var track: Features? { didSet { if track !== oldValue { curves = [:]; notes = [:]; top = nil } } }
     nonisolated(unsafe) static var curves: [String: [Float]] = [:]
+    nonisolated(unsafe) static var notes: [String: Double] = [:]   // a word's middle note (MIDI × 100)
+    nonisolated(unsafe) static var top: Double? = nil              // the voice's loud end (95th percentile, dB)
+
+    /// The voice under the light at `t` (notes 33), all 0 at rest:
+    ///   swell  0…1  loud and clear, more so the longer a note is held: a belt is full and bright
+    ///   lift   pt   the note against the word's middle one (a semitone is 1.5 pt, ±6): the contour bends the light
+    ///   shiver −1…1 the note against its last quarter second (±50 cents): vibrato, a gentle oscillation
+    ///   thin   0…1  voice with little tone and little body, or a sudden break in the pitch: breathy, soft, cracking
+    ///   soft   0…1  a clear vowel flowing (a feathered edge); an attack, a consonant, keeps the edge crisp
+    struct Voice { var swell: CGFloat = 0, lift: CGFloat = 0, shiver: CGFloat = 0, thin: CGFloat = 0, soft: CGFloat = 0 }
+
+    static func voice(_ b: Beat, _ t: Double) -> Voice? {
+        guard let f = track, f.source == "vocals", f.count > 20, t >= b.start else { return nil }
+        let k = f.frame(t)
+        func mean(_ a: [Int], _ r: ClosedRange<Int>, pitched: Bool = false) -> Double? {
+            var sum = 0, n = 0
+            for i in max(0, r.lowerBound)...min(f.count - 1, r.upperBound) where !pitched || a[i] > 0 { sum += a[i]; n += 1 }
+            return n == 0 ? nil : Double(sum) / Double(n)
+        }
+        if top == nil {
+            let v = (0..<f.count).filter(f.isVoiced).map { f.db[$0] }.sorted()
+            top = v.isEmpty ? f.floor + 20 : Double(v[v.count * 95 / 100])
+        }
+        var out = Voice()
+        guard f.isVoiced(k) else { out.thin = 0.35; return out }
+        let e = min(1.15, max(0, ((mean(f.db, k - 3...k + 3) ?? f.floor) - f.floor) / max(6, top! - f.floor)))
+        let clear = (mean(f.clarity, k - 3...k + 3) ?? 0) / 100
+        let note = f.pitch[k]
+        // held: how long the note has run on unbroken (up to 0.8 s)
+        var held = 0
+        while held < 80, k - held - 1 >= 0, f.pitch[k - held - 1] > 0, abs(f.pitch[k - held - 1] - note) < 150 { held += 1 }
+        out.swell = CGFloat(min(1, e * (0.55 + 0.45 * clear) + (note > 0 ? 0.3 * Double(held) / 80 : 0)))
+        out.thin = CGFloat(min(1, max(0, 0.55 - clear) * 1.8 * max(0, 1.1 - e)))
+        if note > 0, k >= 3, f.pitch[k - 3] > 0, abs(f.pitch[k - 3] - note) > 300 { out.thin = max(out.thin, 0.8) }   // a crack
+        if note > 0 {
+            let key = "\(b.start)|\(b.end)"
+            let mid: Double
+            if let m = notes[key] { mid = m } else {
+                mid = mean(f.pitch, f.frame(b.start)...f.frame(max(b.start, b.end)), pitched: true) ?? Double(note)
+                if notes.count > 4000 { notes = [:] }
+                notes[key] = mid
+            }
+            out.lift = CGFloat(max(-6, min(6, (Double(note) - mid) / 100 * 1.5)))
+            if let local = mean(f.pitch, k - 12...k + 12, pitched: true), held >= 12 { out.shiver = CGFloat(max(-1, min(1, (Double(note) - local) / 50))) }
+            out.soft = CGFloat(clear > 0.6 ? min(1, Double(held) / 15) * (1 - min(1, Double(f.onset[k]) / 60)) : 0)
+        }
+        return out
+    }
 
     /// The lines with their words timed to the voice.
     static func fit(_ lines: [Line], _ f: Features) -> [Line] {
