@@ -1629,6 +1629,10 @@
     };
 
     const nowClaim = () => {
+      // a playback session, not ambient sound: it goes on with the browser left or the phone locked (notes 27)
+      try {
+        if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+      } catch (x) {}
       if (!ms) return;
       nowEl = el;
 
@@ -1895,6 +1899,14 @@
           // iPhone: keep Web Audio audible with the ringer switch on silent
           if (navigator.audioSession) navigator.audioSession.type = "playback";
           audioCtx = new AC();
+          // Out of the browser or locked (notes 27): iOS interrupts Web Audio; whatever is still playing
+          // asks for it back, now and when the page is seen again, so the sound carries on in the background.
+          const c = audioCtx;
+          const back = () => {
+            if (audioCtx === c && c.state !== "running" && c.state !== "closed" && ((nowEl && !nowEl.paused) || [...ctxEls].some((e) => !e.paused))) c.resume().catch(() => {});
+          };
+          c.onstatechange = back;
+          document.addEventListener("visibilitychange", back);
         }
 
         // Firefox: an element taken into a context that isn't running goes silent, and on some Macs
@@ -3401,7 +3413,7 @@
     });
 
     // the keyboard reaches it too: focusing Delete shows it
-    rm.addEventListener("focus", () => swSet(row, true));
+    rm.querySelectorAll("button").forEach((b) => b.addEventListener("focus", () => swSet(row, true)));
   };
 
   // the trackpad: one listener on the thread, for whichever comment the pointer is over
@@ -3467,9 +3479,14 @@
       if (can && mine(c) && c.id) {
         const ed = { disabled: false }; // tapping the text edits it; a deliberate tap only, never a scroll or swipe
         const rm = mkBtn("cdel", "Delete comment", "Delete");
+        const edb = mkBtn("cedb", "Edit comment", "Edit"); // left of Delete, revealed with it (notes 29)
+        const acts = mkEl("div", "cacts");
+        acts.append(edb, rm);
         p.classList.add("cmine");
         p.title = "Tap to edit";
-        swipeToDelete(row, rm);
+        swipeToDelete(row, acts);
+        edb.addEventListener("focus", () => swSet(row, true));
+        edb.onclick = () => !ed.disabled && ed.onclick(); // only the words change: the comment keeps its time
         let tap = null;
         p.addEventListener("pointerdown", (e) => {
           tap = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, t: e.timeStamp, st: thread.scrollTop } : null;
@@ -3495,12 +3512,12 @@
 
         rm.onclick = async () => {
           if (!confirm("Delete this comment?")) return;
-          ed.disabled = rm.disabled = true;
+          ed.disabled = rm.disabled = edb.disabled = true;
           try {
             await send(f, { op: "del", cid: c.id });
             paintComment();
           } catch (e) {
-            ed.disabled = rm.disabled = false;
+            ed.disabled = rm.disabled = edb.disabled = false;
             tell(e.message || "Couldn’t delete the comment", true);
           }
         };

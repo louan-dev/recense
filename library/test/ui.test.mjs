@@ -987,7 +987,7 @@ await test("§7 comments: a leftward swipe on the right side (touch) or a trackp
   await pg.waitForFunction(() => document.querySelectorAll("#thread .crow.sw").length === 2);
   await pg.evaluate(() => document.activeElement && document.activeElement.blur());
   await pg.waitForTimeout(600); // the thread's smooth scroll to the field settles
-  assert.equal(await pg.$$eval("#thread .crow button:not(.cdel)", (a) => a.length), 0, "no Edit button, no Delete until a swipe");
+  assert.equal(await pg.$$eval("#thread .crow button:not(.cdel):not(.cedb)", (a) => a.length), 0, "no other buttons; Edit and Delete only with a swipe");
   assert.equal(await pg.$$eval("#thread .ctext.cmine", (a) => a.length), 2, "your comments edit on tap");
   const box = (i) => pg.$$eval("#thread .crow.sw", (a, i) => { const r = a[i].getBoundingClientRect(); return { l: r.left, w: r.width, y: r.top + r.height / 2 }; }, i);
   const delRight = (i) => pg.$$eval("#thread .crow.sw", (a, i) => { const r = a[i].getBoundingClientRect(); const d = a[i].querySelector(".cdel").getBoundingClientRect(); return Math.round(r.right - d.right); }, i);
@@ -1023,6 +1023,20 @@ await test("§7 comments: a leftward swipe on the right side (touch) or a trackp
   await swipe(b.l + b.w * 0.9, b.l + b.w * 0.9 - 150, b.y);
   await pg.waitForFunction(() => document.querySelectorAll("#thread .crow.sw")[1].classList.contains("open"));
   await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  // notes 29: Edit sits just left of Delete; it changes the words, never the time it was posted
+  assert.ok(await pg.$eval("#thread .crow.open", (r) => r.querySelector(".cedb").getBoundingClientRect().right <= r.querySelector(".cdel").getBoundingClientRect().left + 1));
+  const when = await pg.$eval("#thread .crow.open .cmeta", (e) => e.textContent);
+  await pg.click("#thread .crow.open .cedb");
+  await pg.fill("#thread .cedit", "two, edited");
+  await pg.keyboard.press("Enter");
+  await pg.waitForFunction(() => [...document.querySelectorAll("#thread .ctext")].some((e) => e.textContent === "two, edited"));
+  const meta = await pg.$$eval("#thread .cmeta", (a) => a[1].textContent);
+  assert.ok(meta.startsWith(when.replace(/ · Edited$/, "")), "same time: " + when + " / " + meta);
+  const row = await box(1);
+  await pg.mouse.move(row.l + row.w * 0.5, row.y);
+  await pg.mouse.wheel(60, 0);
+  await pg.waitForSelector("#thread .crow.sw.open");
+  await pg.waitForTimeout(300);
   await pg.click("#thread .crow.open .cdel");
   await pg.waitForFunction(() => document.querySelectorAll("#thread .crow").length === 1);
   assert.equal(await pg.textContent("#thread .ctext"), "one");
@@ -1278,6 +1292,26 @@ await test("Notes 25/26: over the speeds a light swipe turns the slide, never th
   await pg.mouse.click(two.x, two.y);
   await pg.waitForFunction(() => document.querySelector("audio") && 0, null, { timeout: 1 }).catch(() => {});
   assert.equal(await rate(), 2, "a tap on the last speed");
+});
+
+await test("Notes 31: an instrumental with cover art shows [Ambient Sounds] on black, the cover only as the thumbnail", true, async (pg) => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  const KEEP = await mf.getR2Bucket("KEEP");
+  await MAIN.put("files/Am/a.wav", wavOf(4), { httpMetadata: { contentType: "audio/wav" } });
+  await MAIN.put("art/Am/a.wav", png, { httpMetadata: { contentType: "image/png" }, customMetadata: { custom: "1" } });
+  const k = await keepKey("Am/a.wav");
+  await KEEP.put(`keep/${k}/asr.json`, JSON.stringify({ format: 1, complete: true, duration: 4, segments: [] }));
+  await pg.goto(base + "/main?p=Am");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".aw .txamb:not([hidden])");
+  assert.ok(await pg.$eval(".aw", (e) => e.classList.contains("lyrics")), "black");
+  assert.ok(!(await pg.isVisible(".aw img")), "no cover behind it");
+  assert.equal(await pg.$eval(".aw", (e) => getComputedStyle(e).backgroundColor), "rgb(0, 0, 0)");
+  // and again after going away and coming back (the track parked while another item was open)
+  await pg.keyboard.press("Escape");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".aw .txamb:not([hidden])");
+  assert.ok(!(await pg.isVisible(".aw img")), "no cover behind it, the second time");
 });
 
 await browser.close();

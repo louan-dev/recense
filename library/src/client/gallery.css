@@ -1900,8 +1900,10 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 #thread .crow.sw .cslide{position:relative;z-index:1;padding:8px 20px 8px 16px;background:#000;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
 #thread .crow.sw.drag .cslide{transition:none}
 #thread .crow.sw.open .cslide{transform:translateX(calc(-1 * var(--cdw,88px)))}
-#thread .crow.sw .cdel{position:absolute;top:0;right:0;bottom:0;width:var(--cdw,88px);display:flex;align-items:center;justify-content:center;padding:0;border:0;background:none;color:var(--blue);font:inherit;font-size:17px;cursor:pointer;-webkit-tap-highlight-color:transparent}
-#thread .crow.sw .cdel:disabled{opacity:.4}
+#thread .crow.sw{--cdw:168px}
+#thread .crow.sw .cacts{position:absolute;top:0;right:0;bottom:0;width:var(--cdw);display:flex}
+#thread .crow.sw .cedb,#thread .crow.sw .cdel{flex:1;display:flex;align-items:center;justify-content:center;padding:0;border:0;background:none;color:var(--blue);font:inherit;font-size:17px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#thread .crow.sw .cdel:disabled,#thread .crow.sw .cedb:disabled{opacity:.4}
 
 /* text documents (Markdown, Word, plain text) on a page like a PDF's */
 .pdfp.txtdoc{height:auto;overflow:visible;box-sizing:border-box;padding:clamp(20px,6%,56px);color:#1d1d1f;font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;user-select:text;-webkit-user-select:text;word-wrap:break-word}
