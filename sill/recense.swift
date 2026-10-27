@@ -5162,7 +5162,7 @@ final class NativeSources {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    var overlay: Overlay!, item: NSStatusItem!
+    var overlay: Overlay!, menu: NSMenu!
     var statusUntil = Date.distantPast
     var sigint: DispatchSourceSignal?, sigterm: DispatchSourceSignal?
     var server: Server?
@@ -5276,10 +5276,8 @@ final class NativeSources {
         overlay.onReset = { [weak self] in self?.resetLine() }
         overlay.lineState = { [weak self] in (self?.editable != nil, self?.editable.map(Episode.isEdited) ?? false) }
         overlay.setControls(false)
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = menuBarIcon()
-        item.button?.toolTip = "Recense"
-        let m = NSMenu()
+        // No status item of its own: Sill shows this menu as "Recense" in its menu bar.
+        let m = NSMenu(title: "Recense")
         let hide = m.addItem(withTitle: "CC Off", action: #selector(toggleOverlay), keyEquivalent: "m")
         hide.target = self
         overlay.onToggle = { hide.title = self.overlay.minimized ? "CC On" : "CC Off" }
@@ -5307,7 +5305,7 @@ final class NativeSources {
         m.addItem(withTitle: "Bookmarks", action: nil, keyEquivalent: "").submenu = bookmarksMenu
         // Inside Sill: no Open at Login, Restart or Quit (they would act on Sill), and Sill owns the signals.
         m.autoenablesItems = false; m.delegate = self
-        item.menu = m
+        menu = m
 
         guard !cfg.apiKey.isEmpty else {
             return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
@@ -5884,8 +5882,6 @@ final class NativeSources {
 
     func frame() {
         if browserActive != browserMode { setBrowserMode(!browserMode) }
-        let idle = !browserMode || pos.paused
-        if item.button?.appearsDisabled != idle { item.button?.appearsDisabled = idle }
         if browserMode, let ep = episode {
             // A stream whose length isn't the transcribed audio's: an ad is playing in the page's player.
             let length = ep.playDuration ?? ep.duration
@@ -6181,5 +6177,7 @@ final class NativeSources {
         delegate = d
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
         d.overlay.showStrip()                  // the window is always the strip inside Sill
+        let mi = NSMenuItem(title: "Recense", action: nil, keyEquivalent: ""); mi.submenu = d.menu
+        NSApp.mainMenu?.addItem(mi)
     }
 }
