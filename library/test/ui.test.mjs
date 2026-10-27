@@ -1196,5 +1196,89 @@ await test("SPEC P3 12: Download bakes in EQ, Key and Speed: 1.5× with Key +2 c
   assert.ok(Math.abs(zc - 112.2) < 2, "100 Hz up two semitones, whatever the speed: " + zc);
 });
 
+await test("Notes 28: the karaoke light keeps the media's time at every speed, 0.5× to 2×", true, async (pg) => {
+  const KEEP = await mf.getR2Bucket("KEEP");
+  await MAIN.put("files/Ks/a.wav", wavOf(20), { httpMetadata: { contentType: "audio/wav" } });
+  const k = await keepKey("Ks/a.wav");
+  const words = Array.from({ length: 20 }, (_, i) => ({ text: "w" + i, start: i, end: i + 0.9 }));
+  const segments = [0, 1, 2, 3, 4].map((s) => ({ id: s, start: s * 4, end: s * 4 + 3.9, text: words.slice(s * 4, s * 4 + 4).map((w) => w.text).join(" "), words: words.slice(s * 4, s * 4 + 4) }));
+  await KEEP.put(`keep/${k}/asr.json`, JSON.stringify({ format: 1, complete: true, duration: 20, segments }));
+  await pg.goto(base + "/main?p=Ks");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".tx.learn .txp:not([hidden]) .txw");
+  for (const rate of [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]) {
+    const bad = await (await pg.$("audio")).evaluate(async (el, rate) => {
+      el.currentTime = 1.05;
+      el.playbackRate = rate;
+      await el.play();
+      const miss = [];
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 90));
+        const t = el.currentTime;
+        const lit = [...document.querySelectorAll(".txw")].filter((w) => (w.style.backgroundImage || "").includes("gradient")).map((w) => Number(w.textContent.slice(1)));
+        const want = Math.floor(t);
+        if (t - want > 0.12 && t - want < 0.8 && !lit.includes(want)) miss.push(t.toFixed(2) + ":" + lit.join(","));
+      }
+      el.pause();
+      return miss;
+    }, rate);
+    assert.ok(bad.length <= 1, rate + "× lit the wrong word: " + bad.join(" "));
+  }
+});
+
+await test("Notes 35: on a MacBook, two fingers swiped along the bar then held keep the ruler's place while it plays; moving the pointer lands there", true, async (pg) => {
+  await MAIN.put("files/Hd/a.wav", wavOf(30), { httpMetadata: { contentType: "audio/wav" } });
+  await pg.goto(base + "/main?p=Hd");
+  await pg.click('.tile[data-n="00000"]');
+  const a = await pg.waitForSelector("audio", { state: "attached" });
+  await a.evaluate((el) => el.play());
+  const at = await pg.$eval(".p-hline", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await pg.mouse.move(at.x, at.y);
+  for (let i = 0; i < 6; i++) await pg.mouse.wheel(30, 0), await pg.waitForTimeout(16); // swiped, then stopped short: held
+  await pg.waitForSelector(".p-hb.seeking");
+  await pg.waitForTimeout(900);
+  assert.ok(await pg.$(".p-hb.seeking"), "the ruler stays up while the fingers rest");
+  assert.ok(!(await a.evaluate((el) => el.paused)), "the media plays on");
+  await pg.mouse.move(at.x + 40, at.y - 60); // a hand on the trackpad again: let go
+  await pg.waitForFunction(() => !document.querySelector(".p-hb.seeking"));
+  // a flick that dies away in a momentum tail was let go: no hold
+  await pg.mouse.move(at.x, at.y);
+  for (const d of [40, 30, 20, 12, 7, 4, 2, 1, 1]) await pg.mouse.wheel(d, 0), await pg.waitForTimeout(16);
+  await pg.waitForTimeout(500);
+  assert.equal(await pg.$(".p-hb.seeking"), null, "a momentum tail ends the swipe by itself");
+});
+
+await test("Notes 25/26: over the speeds a light swipe turns the slide, never the speed or the time; only a tap sets the speed", true, async (pg) => {
+  await MAIN.put("files/Sp/a.wav", wavOf(30), { httpMetadata: { contentType: "audio/wav" } });
+  await pg.goto(base + "/main?p=Sp");
+  await pg.click('.tile[data-n="00000"]');
+  await barTo(pg, "speed");
+  const rate = () => pg.$eval("audio", (a) => a.playbackRate);
+  const at = await pg.$eval('.p-slide[data-pos="cur"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width * 0.8, y: r.top + r.height / 2 }; });
+  // a mouse drag across the speeds (a finger's swipe): the speed stays
+  await pg.mouse.move(at.x, at.y);
+  await pg.mouse.down();
+  await pg.mouse.move(at.x - 80, at.y, { steps: 6 });
+  await pg.mouse.up();
+  assert.equal(await rate(), 1, "a swipe over the speeds doesn't set one");
+  await pg.waitForTimeout(300);
+  // a light two-finger swipe (a few small steps) turns the slide; no Time Seeking starts
+  if ((await pg.$eval(".p-hb", (e) => e.dataset.mode)) !== "speed") await barTo(pg, "speed");
+  await pg.mouse.move(at.x, at.y);
+  const t0 = await pg.$eval("audio", (a) => a.currentTime);
+  for (const d of [6, 6, 6]) await pg.mouse.wheel(d, 0), await pg.waitForTimeout(16);
+  await pg.waitForTimeout(300);
+  assert.notEqual(await pg.$eval(".p-hb", (e) => e.dataset.mode), "speed", "the slide turned");
+  assert.equal(await pg.$(".p-hb.seeking"), null, "no Time Seeking");
+  assert.equal(await pg.$eval("audio", (a) => a.currentTime), t0);
+  assert.equal(await rate(), 1);
+  // a tap on 2× sets it
+  await barTo(pg, "speed");
+  const two = await pg.$eval('.p-slide[data-pos="cur"] [role="slider"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.right - 3, y: r.top + r.height / 2 }; });
+  await pg.mouse.click(two.x, two.y);
+  await pg.waitForFunction(() => document.querySelector("audio") && 0, null, { timeout: 1 }).catch(() => {});
+  assert.equal(await rate(), 2, "a tap on the last speed");
+});
+
 await browser.close();
 await mf.dispose();

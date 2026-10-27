@@ -616,8 +616,7 @@ globalThis.Homebar = (() => {
       paintSpeed();
     };
 
-    let sDrag = false;
-    let sPid = -1;
+    const sDrag = false; // (speed is a tap now: never dragged)
 
     const fracOf = (node, e) => {
       const r = node.getBoundingClientRect();
@@ -626,55 +625,25 @@ globalThis.Homebar = (() => {
 
     const speedFrom = (e) => setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.floor(fracOf(sTrack, e) * SPEEDS.length))]);
 
-    // Dragging along the speed ruler. Capture keeps every move and the release coming here; should a
-    // browser drop it mid-drag, the window picks up the rest, only for this finger and never twice.
-    const endSpeedDrag = (e) => {
-      if (!sDrag || (e && e.pointerId !== sPid)) return;
-      sDrag = false;
-      sPid = -1;
-      window.removeEventListener("pointermove", sWinMove);
-      window.removeEventListener("pointerup", endSpeedDrag);
-      window.removeEventListener("pointercancel", endSpeedDrag);
-      bump();
-    };
-
-    const sWinMove = (e) => {
-      if (!sDrag || e.pointerId !== sPid || sTrack.contains(e.target)) return;
-      speedFrom(e);
-      bump();
-    };
-
+    // Only a tap on a speed sets it (notes 25): a swipe over the speeds is the slides' swipe, never a change of
+    // speed, so nothing happens on the way down or while moving; the tap's release picks the speed under it.
+    let sTap = null;
     sTrack.onpointerdown = (e) => {
-      sDrag = true;
-      sPid = e.pointerId;
-      try {
-        sTrack.setPointerCapture(e.pointerId);
-      } catch (x) {}
-      window.addEventListener("pointermove", sWinMove);
-      window.addEventListener("pointerup", endSpeedDrag);
-      window.addEventListener("pointercancel", endSpeedDrag);
+      sTap = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now() };
+    };
+    sTrack.onpointermove = (e) => {
+      if (sTap && e.pointerId === sTap.id && Math.hypot(e.clientX - sTap.x, e.clientY - sTap.y) > 8) sTap = null;
+    };
+    sTrack.onpointerup = (e) => {
+      const t = sTap;
+      sTap = null;
+      if (!t || e.pointerId !== t.id || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 8 || performance.now() - t.at > 700) return;
       speedFrom(e);
       bump();
       wake();
     };
-
-    sTrack.onpointermove = (e) => {
-      if (!sDrag || e.pointerId !== sPid) return;
-      // a mouse that moves with no button down: the release was missed, so the drag is over
-      if (e.pointerType === "mouse" && e.buttons === 0) return endSpeedDrag(e);
-      speedFrom(e);
-      bump();
-    };
-
-    sTrack.onpointerup = sTrack.onpointercancel = endSpeedDrag;
+    sTrack.onpointercancel = () => (sTap = null);
     sTrack.onclick = (e) => e.stopPropagation();
-
-    sTrack.onlostpointercapture = (e) => {
-      if (!sDrag || e.pointerId !== sPid) return;
-      try {
-        sTrack.setPointerCapture(e.pointerId);
-      } catch (x) {}
-    };
 
     sTrack.onkeydown = (e) => {
       const i = SPEEDS.indexOf(speed);
@@ -1256,19 +1225,42 @@ globalThis.Homebar = (() => {
     // plays on, and letting go lands there (SPEC 60).
     let fingersOn = false;
     let fingersUpAt = -1e9; // when the host last said they lifted
+    let hostFingers = false; // the host has said so at least once; otherwise the page guesses (below)
 
     const endWheel = () => {
       if (!ws) return;
       const w = ws;
       ws = null;
       clearTimeout(w.t);
+      if (w.release) w.release();
       if (w.seeking) finishSeek();
+    };
+
+    // A page alone (Gallery in a browser, notes 35) can't see fingers resting, so it guesses: a swipe that
+    // dies away in a momentum tail (each step no bigger than the last, down to a pixel or two) was let go;
+    // one that stops short is held. A held swipe ends at the next sign of a hand: the pointer moving, a
+    // click, a key, or two minutes. A new swipe simply carries on from where it stopped.
+    const tailed = (d) => d.length >= 5 && d.slice(-5).every((v, i, a) => !i || v <= a[i - 1] + 0.5) && d[d.length - 1] <= 2;
+    const holdUntilHand = (w) => {
+      if (w.release) return;
+      const end = () => ws === w && endWheel();
+      const move = (e) => Math.hypot(e.clientX - w.px, e.clientY - w.py) > 3 && end(); // (where the swipe was)
+      addEventListener("pointermove", move, true);
+      addEventListener("pointerdown", end, true);
+      addEventListener("keydown", end, true);
+      w.release = () => {
+        removeEventListener("pointermove", move, true);
+        removeEventListener("pointerdown", end, true);
+        removeEventListener("keydown", end, true);
+      };
     };
 
     // the swipe stopped: over, unless its fingers are still down; then it is held
     const restWheel = () => {
       if (!ws) return;
-      if (!fingersOn || !ws.seeking || !sk || performance.now() - ws.since > 120000) return endWheel();
+      if (!ws.seeking || !sk || performance.now() - ws.since > 120000) return endWheel();
+      if (hostFingers ? !fingersOn : tailed(ws.d)) return endWheel();
+      if (!hostFingers) holdUntilHand(ws);
       ws.t = setTimeout(restWheel, 180);
     };
 
@@ -1276,6 +1268,7 @@ globalThis.Homebar = (() => {
       "wheel",
       (e) => {
         if (e.ctrlKey || g) return; // a pinch arrives as ctrl+wheel; a press is already in charge
+        if (wroll && !ws) return e.preventDefault(); // the rest of a swipe that rolled the slides (notes 26)
         // just after the host said the fingers lifted, what still arrives is that swipe's tail, not a new one
         if (!ws && !fingersOn && performance.now() - fingersUpAt < 300) return e.preventDefault();
         const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
@@ -1306,8 +1299,18 @@ globalThis.Homebar = (() => {
         if (!ws) {
           const d = host.duration();
           if (!isFinite(d) || d <= 0) return;
-          ws = { sum: 0, up: 0, x0: 0, seeking: false, t: 0, since: performance.now() };
+          ws = { sum: 0, up: 0, x0: 0, seeking: false, t: 0, since: performance.now(), d: [] };
         }
+        if (ws.release) {
+          // a held swipe moving again: the fingers never left
+          ws.release();
+          ws.release = null;
+          ws.since = performance.now();
+        }
+        ws.px = e.clientX;
+        ws.py = e.clientY;
+        ws.d.push(Math.hypot(dx, dy));
+        if (ws.d.length > 8) ws.d.shift();
 
         e.preventDefault(); // (also stops the browser turning a two-finger swipe into Back / Forward)
         if (sideways) ws.sum += fingerX;
@@ -1369,16 +1372,18 @@ globalThis.Homebar = (() => {
     barrel.addEventListener(
       "wheel",
       (e) => {
-        if (!hbOpen || mode === "seek" || order.length < 2 || e.ctrlKey) return;
+        if (!hbOpen || mode === "seek" || ws || order.length < 2 || e.ctrlKey) return;
         const dx = e.deltaX * (e.deltaMode === 1 ? 16 : 1);
-        if (Math.abs(dx) <= Math.abs(e.deltaY) * 1.2) return;
+        // A swipe that began over the slides is the slides' to the end (notes 26): its sideways steps roll them,
+        // however the fingers wander, and none of it ever reaches the stroke's Time Seeking.
+        if (!wroll && Math.abs(dx) <= Math.abs(e.deltaY) * 1.2) return;
         e.preventDefault();
-        e.stopPropagation(); // not Time Seeking: that is the stroke's
+        e.stopPropagation();
         const inverted = e.webkitDirectionInvertedFromDevice !== false;
         const fingerX = inverted ? -dx : dx;
         if (!wroll) wroll = { sum: 0, t: 0, used: false };
         wroll.sum += fingerX;
-        if (!wroll.used && Math.abs(wroll.sum) >= 40) {
+        if (!wroll.used && Math.abs(wroll.sum) >= 16) { // a light swipe is enough
           wroll.used = true; // one slide per swipe
           const dir = wroll.sum < 0 ? 1 : -1;
           roll(cur + dir, dir);
@@ -1514,6 +1519,7 @@ globalThis.Homebar = (() => {
       },
       // the trackpad's fingers came down or lifted (a host that can tell: Recense); lifting ends a held swipe
       fingers: (on) => {
+        hostFingers = true;
         fingersOn = !!on;
         if (fingersOn) return;
         fingersUpAt = performance.now();
@@ -1548,9 +1554,6 @@ globalThis.Homebar = (() => {
         window.removeEventListener("pointermove", winMove);
         window.removeEventListener("pointerup", winEnd);
         window.removeEventListener("pointercancel", winEnd);
-        window.removeEventListener("pointermove", sWinMove);
-        window.removeEventListener("pointerup", endSpeedDrag);
-        window.removeEventListener("pointercancel", endSpeedDrag);
       },
     };
   };
