@@ -34,6 +34,8 @@
     <string>Sill records your camera when you turn on Camera in its recorder.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
 	<string>Sill turns what you say into a draft Calendar event, recognized on this Mac.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+    <string>Recense reshapes the sound of the player it follows (its EQ, Key and Space) by taking that app's audio.</string>
 	<key>NSMicrophoneUsageDescription</key>
     <string>Sill records voice notes when you press its record button.</string>
     <key>NSAppleEventsUsageDescription</key>

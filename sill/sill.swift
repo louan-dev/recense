@@ -40,6 +40,7 @@ import ScreenCaptureKit
 import LocalAuthentication
 import CoreAudio
 import AudioToolbox
+import WebKit
 import Speech
 
 // MARK: - Settings (edit these)
@@ -1879,7 +1880,8 @@ final class PreflightView: NSView {
         var where_: [String] = []
         if choice.mic { where_.append("~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/") }
         if choice.screen || choice.camera { where_.append("~/Movies/Sill Recordings/") }
-        path.stringValue = where_.isEmpty ? "Choose at least one source" : where_.joined(separator: "  ·  ")
+        path.stringValue = "Choose at least one source"      // where it saves isn't shown: the folder opens when it's saved
+        path.isHidden = !where_.isEmpty
         start.isEnabled = !where_.isEmpty
         start.alphaValue = where_.isEmpty ? 0.4 : 1
     }
@@ -1911,6 +1913,7 @@ final class RecorderView: NSView {
     var screenCapture: AnyObject?
     var mixed: AnyObject?                     // MixedAudioRecorder (mic + computer audio)
     var files: [URL] = []
+    var filesAtStart = 0                      // where this recording's files begin in `files`
     var lastFile: URL? { files.last }
     var sessionStart = Date()
     var pausedTotal: TimeInterval = 0
@@ -2090,6 +2093,7 @@ final class RecorderView: NSView {
 
     /// Starts every selected stream together.
     func begin(_ c: CaptureChoice) {
+        filesAtStart = files.count
         choice = c
         files = []
         sessionStart = Date(); pausedTotal = 0; pausedAt = nil
@@ -2182,6 +2186,8 @@ final class RecorderView: NSView {
         // The camera/audio file writers finish on their own shortly after stopFiles.
         group.enter(); DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { group.leave() }
         if let f = finished { group.notify(queue: .main, execute: f) }
+        let saved = Array(files.dropFirst(filesAtStart))
+        group.notify(queue: .main) { if !saved.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(saved) } }
         screenCapture = nil; mixed = nil
         runMeter(false)
         state = .ready; pausedAt = nil
@@ -2190,6 +2196,29 @@ final class RecorderView: NSView {
 }
 
 
+
+/// Battery colours in the strip: green, and yellow below 30 %.
+let batteryOK = NSColor(srgbRed: 0.42, green: 0.92, blue: 0.52, alpha: 1)
+let batteryLow = NSColor(srgbRed: 1.0, green: 0.84, blue: 0.2, alpha: 1)
+
+/// Recense's menu-bar mark (copied from Recense's `menuBarIcon()`): a rounded frame holding two lines of subtitle.
+func recenseIcon() -> NSImage {
+    let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+        let frame = NSBezierPath(roundedRect: NSRect(x: 1.5, y: 3.5, width: 15, height: 11), xRadius: 3.25, yRadius: 3.25)
+        frame.lineWidth = 1.3
+        NSColor.black.setStroke(); frame.stroke()
+        for (y, w, a) in [(8.6, 8.0, 1.0), (6.2, 4.5, 0.45)] as [(CGFloat, CGFloat, CGFloat)] {
+            let l = NSBezierPath()
+            l.move(to: NSPoint(x: 9 - w / 2, y: y)); l.line(to: NSPoint(x: 9 + w / 2, y: y))
+            l.lineWidth = 1.3; l.lineCapStyle = .round
+            NSColor.black.withAlphaComponent(a).setStroke(); l.stroke()
+        }
+        return true
+    }
+    img.isTemplate = true
+    img.accessibilityDescription = "Recense"
+    return img
+}
 
 // MARK: - Bitwarden
 //
@@ -3274,6 +3303,16 @@ func readBatteries() -> [BatteryReading] {
     return out
 }
 
+// The strip, left to right: the time ("22:39:28"), the date ("Mon, 26 Oct"), the batteries (SPEC 61). English names
+// whatever the locale; the hours follow the system's 12/24-hour setting, always two digits and no AM/PM.
+let stripTimeFormat: DateFormatter = {
+    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+    let h24 = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current).map { $0.contains("H") || $0.contains("k") } ?? true
+    f.dateFormat = h24 ? "HH:mm:ss" : "hh:mm:ss"
+    return f
+}()
+let stripDateFormat: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE, dd MMM"; return f }()
+
 final class BatteryRow: NSView {
     private var timer: Timer?
     override init(frame: NSRect) {
@@ -3606,7 +3645,10 @@ final class EdgeBar: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
     }
     override func scrollWheel(with e: NSEvent) {
-        guard let f = onScrollY, e.hasPreciseScrollingDeltas, abs(e.scrollingDeltaY) > abs(e.scrollingDeltaX) else { return }
+        // The fingers only: the glide after they lift kept lowering the volume (or brightness) on its own, a swipe
+        // down ran it to silence.
+        guard let f = onScrollY, e.hasPreciseScrollingDeltas, e.momentumPhase.isEmpty,
+              abs(e.scrollingDeltaY) > abs(e.scrollingDeltaX) else { return }
         f(e.isDirectionInvertedFromDevice ? -e.scrollingDeltaY : e.scrollingDeltaY)
     }
 
@@ -3908,6 +3950,7 @@ final class GlassPauseButton: NSButton {
     private var hover = false
     var showsPlay = false { didSet { needsDisplay = true } }
     var symbol: String?                 // a round glass button with an SF Symbol instead of play/pause
+    var mark: NSImage?                  // or with a template image (drawn white), such as Recense's mark
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
@@ -3923,27 +3966,39 @@ final class GlassPauseButton: NSButton {
         l.add(a, forKey: "bounce")
     }
     override func draw(_ dirty: NSRect) {
+        // Just the icon, no circle: its own shape is its border. It lights up (full white, a soft glow) under the pointer.
         let d = min(bounds.width, bounds.height) - 1
         let c = NSRect(x: (bounds.width - d) / 2, y: (bounds.height - d) / 2, width: d, height: d)
-        NSColor.white.withAlphaComponent(hover ? 0.26 : 0.16).setFill()
-        NSBezierPath(ovalIn: c).fill()
-        NSColor.white.withAlphaComponent(0.3).setStroke()
-        let rim = NSBezierPath(ovalIn: c.insetBy(dx: 0.5, dy: 0.5)); rim.lineWidth = 0.8; rim.stroke()
+        let tone = NSColor.white.withAlphaComponent(hover ? 1 : 0.72)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        if hover {
+            let glow = NSShadow(); glow.shadowColor = NSColor.white.withAlphaComponent(0.85); glow.shadowBlurRadius = 6
+            glow.shadowOffset = .zero; glow.set()
+        }
+        if let m = mark {
+            let s = d * 0.95, r = NSRect(x: c.midX - s / 2, y: c.midY - s / 2, width: s, height: s)
+            let tinted = NSImage(size: r.size, flipped: false) { b in
+                m.draw(in: b); tone.set(); b.fill(using: .sourceAtop); return true
+            }
+            tinted.draw(in: r)
+            return
+        }
         if let sym = symbol, let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: d * 0.42, weight: .semibold).applying(.init(paletteColors: [.white]))) {
+            .withSymbolConfiguration(.init(pointSize: d * 0.72, weight: .semibold).applying(.init(paletteColors: [tone]))) {
             img.draw(in: NSRect(x: c.midX - img.size.width / 2, y: c.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
             return
         }
-        NSColor.white.setFill()
+        tone.setFill()
         if showsPlay {
             let t = NSBezierPath()
-            let s = d * 0.36
+            let s = d * 0.66
             t.move(to: NSPoint(x: c.midX - s * 0.38, y: c.midY - s / 2))
             t.line(to: NSPoint(x: c.midX - s * 0.38, y: c.midY + s / 2))
             t.line(to: NSPoint(x: c.midX + s * 0.55, y: c.midY))
             t.close(); t.fill()
         } else {
-            let bw = d * 0.13, bh = d * 0.42, gap = d * 0.11
+            let bw = d * 0.2, bh = d * 0.66, gap = d * 0.16
             for x in [c.midX - gap / 2 - bw, c.midX + gap / 2] {
                 NSBezierPath(roundedRect: NSRect(x: x, y: c.midY - bh / 2, width: bw, height: bh), xRadius: bw / 2, yRadius: bw / 2).fill()
             }
@@ -4000,11 +4055,36 @@ enum Volume {
         var v = Float32(0); var size = UInt32(MemoryLayout<Float32>.size)
         return AudioObjectGetPropertyData(device(), &address, 0, nil, &size, &v) == noErr ? v : nil
     }
+    static var muteAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute,
+                                                         mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+    /// At 0 the device is muted, and any rise unmutes it: muted at the bottom (or by the keyboard's mute key), the
+    /// output stayed silent however far the bar went back up. A change is sent at most 30 times a second (every
+    /// scroll event was one, the volume stepping in a crackle); the last one always goes.
+    static var target: Float?, sentAt = 0.0, pending: DispatchWorkItem?
     @discardableResult static func nudge(_ delta: Float) -> Float? {
-        guard let v = get() else { return nil }
-        var n = Float32(min(1, max(0, v + delta)))
-        AudioObjectSetPropertyData(device(), &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &n)
+        guard let v = target ?? get() else { return nil }
+        let n = min(1, max(0, v + delta))
+        target = n
+        let wait = sentAt + 1.0 / 30 - CACurrentMediaTime()
+        pending?.cancel()
+        let w = DispatchWorkItem { send() }
+        pending = w
+        if wait <= 0 { w.perform() } else { DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: w) }
         return n
+    }
+    private static func send() {
+        guard var n = target.map({ Float32($0) }) else { return }
+        let dev = device()
+        sentAt = CACurrentMediaTime(); pending = nil
+        AudioObjectSetPropertyData(dev, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &n)
+        var muted: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        if AudioObjectHasProperty(dev, &muteAddress), AudioObjectGetPropertyData(dev, &muteAddress, 0, nil, &size, &muted) == noErr,
+           (muted != 0) != (n == 0) {
+            var m: UInt32 = n == 0 ? 1 : 0
+            AudioObjectSetPropertyData(dev, &muteAddress, 0, nil, size, &m)
+        }
+        // what the system has now is the base for the next swipe (the keyboard may change it in between)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if pending == nil { target = nil } }
     }
 }
 
@@ -4068,6 +4148,11 @@ final class EssentialsView: ClickView {
     let vaultClose = NSButton()
     let audioSheet = NSVisualEffectView()
     let audioClose = NSButton()
+    let recenseOpen = NSButton()
+    let recenseSheet = NSView()                 // Recense's viewer, embedded; opened from the audio menu
+    let recenseClose = NSButton()
+    /// Recense's window fill (Overlay: white 0.04), so the page and Sill's fill are one colour.
+    let recenseFill = NSColor(white: 0.04, alpha: 1)
     let r2 = R2Tray(frame: .zero)
     private var foldWork: [Int: DispatchWorkItem] = [:]
     var onKeyboard: ((NSView?) -> Void)?
@@ -4142,11 +4227,29 @@ final class EssentialsView: ClickView {
         audioClose.target = self; audioClose.action = #selector(closeAudio)
         audioSheet.addSubview(audioClose)
         chrome.addSubview(recorderTray)
-        leftBar.toolTip = "Audio: click to pin the recorder open · two fingers up / down for volume"
-        leftBar.onClick = { [weak self] in
-            guard let self = self else { return }
-            self.showAudio(self.audioSheet.isHidden)
+        recenseOpen.isBordered = false
+        recenseOpen.image = recenseIcon()
+        recenseOpen.contentTintColor = .white
+        recenseOpen.toolTip = "Recense"
+        recenseOpen.target = self; recenseOpen.action = #selector(openRecense)
+        // SPEC 20: lit while Recense works, dimmed when idle.
+        recenseOpen.alphaValue = MainActor.assumeIsolated { Recense.working } ? 1 : 0.4
+        NotificationCenter.default.addObserver(forName: Recense.workingChanged, object: nil, queue: .main) { [weak self] n in
+            self?.recenseOpen.alphaValue = (n.userInfo?["working"] as? Bool ?? false) ? 1 : 0.4
         }
+        recenseSheet.wantsLayer = true
+        recenseSheet.layer?.backgroundColor = recenseFill.cgColor
+        recenseSheet.layer?.cornerRadius = 18
+        recenseSheet.layer?.masksToBounds = true
+        recenseSheet.isHidden = true
+        recenseClose.isBordered = false
+        recenseClose.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        recenseClose.contentTintColor = .white
+        recenseClose.target = self; recenseClose.action = #selector(closeRecense)
+        recenseSheet.addSubview(recenseClose)
+        chrome.addSubview(recenseSheet)
+        // The recorder now opens from its icon in the strip; the left bar is kept for an LLM, coming later.
+        leftBar.toolTip = "Volume: two fingers up / down"
         leftBar.onScrollY = { [weak self] dy in
             if let v = Volume.nudge(Float(dy) * 0.004) { self?.leftBar.fill = CGFloat(v) }
         }
@@ -4234,8 +4337,9 @@ final class EssentialsView: ClickView {
         let side: CGFloat = 40
         calendar.frame = NSRect(x: side, y: 16, width: w - 2 * side, height: max(0, top - 102 - 16))
         horizon.frame = NSRect(x: side + 10, y: calendar.frame.maxY - calendar.stripHeight - 74, width: w - 2 * side - 20, height: 66)
-        leftBar.frame = NSRect(x: 6, y: top / 2 - 80, width: 20, height: 130)
-        rightBar.frame = NSRect(x: w - 26, y: top / 2 - 80, width: 20, height: 130)
+        // Out at the edges, as the R2 home bar sits at the foot: each line about 7 pt in from its side.
+        leftBar.frame = NSRect(x: -3, y: top / 2 - 80, width: 20, height: 130)
+        rightBar.frame = NSRect(x: w - 14, y: top / 2 - 80, width: 20, height: 130)
         // The recorder pill sits in the bottom-left corner, clear of the horizon, its labels and the event titles.
         recorderTray.frame = NSRect(x: 30, y: 12, width: 220, height: 36)
         recorderTray.subviews.first { $0 is NSVisualEffectView }?.frame = recorderTray.bounds
@@ -4243,20 +4347,59 @@ final class EssentialsView: ClickView {
         vaultSheet.frame = NSRect(x: 28, y: 44, width: w - 56, height: top - 44 - 96)
         vault.frame = NSRect(x: 16, y: 6, width: vaultSheet.frame.width - 50, height: vaultSheet.frame.height - 10)
         vaultClose.frame = NSRect(x: vaultSheet.frame.width - 30, y: vaultSheet.frame.height - 30, width: 20, height: 20)
-        audioSheet.frame = vaultSheet.frame
-        let aw = audioSheet.frame.width, ah = audioSheet.frame.height
-        audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
-        recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
+        layoutAudio()
+        // The page fills the whole surface in Recense's colour; the viewer itself sits where the vault would.
+        recenseSheet.frame = bounds
+        let rv = vaultSheet.frame
+        recenseClose.frame = NSRect(x: rv.maxX - 30, y: rv.maxY - 30, width: 20, height: 20)
         r2.frame = NSRect(x: 40, y: 30, width: w - 80, height: top - 130)
         home.frame = NSRect(x: 0, y: 2, width: w, height: 44)
-        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(200, ah - 58))
         batteries.frame = .zero
         updateTrackingAreas()
     }
 
     // MARK: Edges
 
-    @objc func closeAudio() { showAudio(false) }
+    /// The recorder's menu: its own pop-up (opened from the strip's record icon), laid out in the sheet's own bounds.
+    func layoutAudio() {
+        let aw = audioSheet.bounds.width, ah = audioSheet.bounds.height
+        audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
+        recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
+        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(200, ah - 58))
+    }
+    var onAudioClosed: (() -> Void)?
+    @objc func closeAudio() { showAudio(false); onAudioClosed?() }
+    var onRecense: (() -> Void)?
+    @objc func openRecense() { showAudio(false); onRecense?() }
+    @objc func closeRecense() { showRecense(false) }
+
+    /// Recense as its own page, opened from the left bar's menu the way the right bar opens the vault.
+    func showRecense(_ on: Bool) {
+        leftBar.active = on || recorder.state == .recording || recorder.state == .paused
+        if on {
+            if !audioSheet.isHidden { showAudio(false) }
+            // Recense's own window, moved in whole while the page is open: the same subtitles, switches and home bar.
+            let rv = vaultSheet.frame
+            Recense.overlay?.host(in: recenseSheet, frame: NSRect(x: rv.minX, y: rv.minY, width: rv.width, height: rv.height - 36))
+            recenseSheet.isHidden = false
+            recenseSheet.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                recenseSheet.animator().alphaValue = 1
+                calendar.animator().alphaValue = 0.15
+                horizon.animator().alphaValue = 0.15
+            }
+        } else {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.22
+                recenseSheet.animator().alphaValue = 0
+                calendar.animator().alphaValue = 1
+                horizon.animator().alphaValue = 1
+            }, completionHandler: { [weak self] in
+                if self?.recenseSheet.alphaValue ?? 1 < 0.01 { self?.recenseSheet.isHidden = true; Recense.overlay?.host(in: nil) }
+            })
+        }
+    }
 
     /// The audio menu, mirroring the vault: fades in over a dimmed calendar; ✕ or the left bar closes it.
     func showAudio(_ on: Bool) {
@@ -4678,11 +4821,16 @@ final class RestStrip: NSObject {
     let eventLine = NSTextField(labelWithString: "")
     let icon = NSImageView(image: NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)!)
     let countdown = NSTextField(labelWithString: "")
+    let time = NSTextField(labelWithString: "")
+    let date = NSTextField(labelWithString: "")
     let battery = NSTextField(labelWithString: "")
     let pause = GlassPauseButton()
     let sideQuest = GlassPauseButton()
     let space = GlassPauseButton()
     let spaceBack = GlassPauseButton()
+    let record = GlassPauseButton()            // the recorder's menu, second from the left
+    var onRecord: (() -> Void)?
+    let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
     private var batteryText = ""
     private var batteryAt = Date.distantPast
@@ -4720,6 +4868,7 @@ final class RestStrip: NSObject {
         countdown.alignment = .right
         countdown.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
         icon.isHidden = true
+        for l in [time, date] { l.font = roundedFont(11, .semibold); l.textColor = NSColor(white: 1, alpha: 0.85) }
         battery.font = roundedFont(11, .semibold)
         battery.textColor = NSColor(srgbRed: 0.42, green: 0.92, blue: 0.52, alpha: 1)     // batteries in green
         pause.isBordered = false
@@ -4732,6 +4881,12 @@ final class RestStrip: NSObject {
         space.symbol = "square.grid.3x2"; space.isBordered = false; space.title = ""
         space.toolTip = "Mission Control"
         space.target = self; space.action = #selector(missionControl)
+        record.symbol = "mic.fill"; record.isBordered = false; record.title = ""
+        record.toolTip = "Recorder"
+        record.target = self; record.action = #selector(openRecord)
+        recense.mark = recenseIcon(); recense.isBordered = false; recense.title = ""
+        recense.toolTip = "Recense: open or close the subtitle card"
+        recense.target = self; recense.action = #selector(toggleRecense)
         for (b, sym, tip, sel) in [(spaceBack, "chevron.left", "Previous desktop", #selector(prevSpace)),
                                    (spaceNext, "chevron.right", "Next desktop", #selector(nextSpace))] {
             b.symbol = sym; b.isBordered = false; b.title = ""; b.toolTip = tip
@@ -4739,7 +4894,7 @@ final class RestStrip: NSObject {
         }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, battery, sideQuest, pause, spaceBack, space, spaceNext].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -4754,7 +4909,12 @@ final class RestStrip: NSObject {
         setBand(open: on, animated: true)
     }
 
-    @objc func playPause() { pressPlayPause(); pause.showsPlay.toggle(); pause.bounce() }
+    /// Recense's player first, so its window follows; anything else gets the system's ⏯ key.
+    @objc func playPause() {
+        if let paused = MainActor.assumeIsolated({ Recense.delegate?.globalPlayPause() }) { pause.showsPlay = paused }
+        else { pressPlayPause(); pause.showsPlay.toggle() }
+        pause.bounce()
+    }
     /// New Side Quest, rebuilt: speak an entry, check the draft, it goes straight into Apple Calendar.
     lazy var voice: VoiceEntry = {
         let v = VoiceEntry(store: store)
@@ -4774,6 +4934,10 @@ final class RestStrip: NSObject {
         // Mission Control itself (the same as its keyboard shortcut or the Mission Control app).
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
+    @objc func openRecord() { record.bounce(); onRecord?() }
+    @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
+
+
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -4809,14 +4973,25 @@ final class RestStrip: NSObject {
     /// The resting pieces sit at the strip's two ends, like menu-bar items: the calendar mark left, time to go right.
     private func layoutStatic() {
         guard let b = window.contentView?.bounds else { return }
-        // Awake: batteries at the left end, one play/pause in the middle, the next thing at the right end.
+        // Awake: the time, the date and the batteries at the left end, one play/pause in the middle, the next thing at
+        // the right end. The time and date get the width of their widest text, so nothing shifts as the seconds tick.
         content.frame = b
         weather.frame = .zero
         icon.frame = .zero
-        battery.frame = NSRect(x: bandInset + 18, y: (b.height - 15) / 2, width: b.midX - 50 - bandInset - 18, height: 15)
-        pause.frame = NSRect(x: b.midX - 10, y: (b.height - 20) / 2, width: 20, height: 20)
-        sideQuest.frame = NSRect(x: b.midX - 40, y: (b.height - 20) / 2, width: 20, height: 20)
-        // Desktops: back, new, forward.
+        let font = time.font ?? roundedFont(11, .semibold)
+        let wide = { (s: String) in ceil(NSAttributedString(string: s, attributes: [.font: font]).size().width) + 2 }
+        let y = (b.height - 15) / 2
+        time.frame = NSRect(x: bandInset + 18, y: y, width: wide("00:00:00"), height: 15)
+        date.frame = NSRect(x: time.frame.maxX + 10, y: y, width: wide("Wed, 00 May"), height: 15)
+        // The four icons sit between the date and the batteries, left to right: Side Quest, recorder, play / pause,
+        // Recense (notes 37): fixed places, so however long the batteries' text runs, no icon reaches the event's name.
+        let x0 = date.frame.maxX + 12
+        for (i, v) in [sideQuest, record, pause, recense].enumerated() {
+            v.frame = NSRect(x: x0 + CGFloat(i) * 30, y: (b.height - 20) / 2, width: 20, height: 20)
+        }
+        let bx = recense.frame.maxX + 12
+        battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX + 14 - bx), height: 15)   // up to the Spaces arrows
+        battery.lineBreakMode = .byTruncatingTail
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
         space.frame = NSRect(x: b.midX + 42, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceNext.frame = NSRect(x: b.midX + 64, y: (b.height - 18) / 2, width: 18, height: 18)
@@ -4839,7 +5014,7 @@ final class RestStrip: NSObject {
         if open && band.frame.width == 0 { band.frame = NSRect(x: b.midX, y: 0, width: 0, height: b.height) }
         // Step the width ourselves (rather than a layer animation) so the contoured ends are redrawn at every size.
         bandTimer?.invalidate()
-        let from = band.frame, start = Date(), duration: TimeInterval = open ? 0.38 : 0.26
+        let from = band.frame, start = Date(), duration: TimeInterval = open ? 0.2 : 0.2
         bandTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
             let p = min(1, Date().timeIntervalSince(start) / duration)
@@ -4858,8 +5033,8 @@ final class RestStrip: NSObject {
         f.setValue(0, forKey: kCIInputRadiusKey)
         l.filters = [f]
         let a = CABasicAnimation(keyPath: "filters.blur.inputRadius")
-        a.fromValue = open ? 7 : 0; a.toValue = open ? 0 : 7
-        a.duration = open ? 0.42 : 0.2
+        a.fromValue = open ? 4 : 0; a.toValue = open ? 0 : 4
+        a.duration = open ? 0.2 : 0.15
         a.timingFunction = CAMediaTimingFunction(name: .easeOut)
         l.add(a, forKey: "focus")
     }
@@ -4875,11 +5050,33 @@ final class RestStrip: NSObject {
             return
         }
         weather.stringValue = ""
+        time.stringValue = stripTimeFormat.string(from: now)
+        date.stringValue = stripDateFormat.string(from: now)
         if now.timeIntervalSince(batteryAt) > 120 {
             batteryAt = now
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let text = readBatteries().map { $0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%" }.joined(separator: "   ")
-                DispatchQueue.main.async { self?.batteryText = text; self?.battery.stringValue = text }
+                let all = readBatteries()
+                let text = all.map { $0.name == "Mac" ? "\($0.percent)%" : "\($0.name) \($0.percent)%" }.joined(separator: "   ")
+                DispatchQueue.main.async {
+                    self?.batteryText = text
+                    let font = self?.battery.font ?? roundedFont(11, .semibold)
+                    let a = NSMutableAttributedString()
+                    for (i, b) in all.enumerated() {
+                        let color = b.percent < 30 ? batteryLow : batteryOK
+                        if i > 0 { a.append(NSAttributedString(string: "   ")) }
+                        // Charging and the level at once: a bolt in front of the percentage, in its colour.
+                        if b.charging, let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Charging")?
+                            .withSymbolConfiguration(.init(pointSize: font.pointSize - 1, weight: .semibold).applying(.init(paletteColors: [color]))) {
+                            let att = NSTextAttachment(); att.image = bolt
+                            att.bounds = NSRect(x: 0, y: -1, width: bolt.size.width, height: bolt.size.height)
+                            a.append(NSAttributedString(attachment: att)); a.append(NSAttributedString(string: "\u{2009}"))
+                        }
+                        let t = b.name == "Mac" ? "\(b.percent)%" : "\(b.name) \(b.percent)%"
+                        a.append(NSAttributedString(string: t, attributes: [.foregroundColor: color, .font: font]))
+                    }
+                    self?.battery.attributedStringValue = a
+                    self?.layoutStatic()                      // the icons sit just after the batteries
+                }
             }
         }
         if let e = next {
@@ -5690,7 +5887,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
     private let heard = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(labelWithString: "")
     private let title = NSTextField(), when = NSTextField(labelWithString: ""), notes = NSTextField(), place = NSTextField()
-    private let save = NSButton(), smarter = NSButton(), cancel = NSButton()
+    private let save = NSButton(), smarter = NSButton(), cancel = NSButton(), close = NSButton()
     private let recognizer = SFSpeechRecognizer()
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -5732,7 +5929,11 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         }
         smarter.toolTip = "Re-read the sentence with Claude (sends it to the cloud)"
         save.keyEquivalent = "\r"; cancel.keyEquivalent = "\u{1b}"
-        [heard, status, title, when, notes, place, save, smarter, cancel].forEach(root.addSubview)
+        close.isBordered = false; close.title = ""; close.toolTip = "Close"
+        close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        close.contentTintColor = NSColor.white.withAlphaComponent(0.6)
+        close.target = self; close.action = #selector(closeTapped)
+        [heard, status, title, when, notes, place, save, smarter, cancel, close].forEach(root.addSubview)
     }
 
     // MARK: Listening
@@ -5809,6 +6010,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         let a = anchor()
         let w: CGFloat = 520, h: CGFloat = listening ? 96 : 236
         window.setFrame(NSRect(x: a.midX - w / 2, y: a.minY - h - 8, width: w, height: h), display: true)
+        close.frame = NSRect(x: w - 30, y: h - 30, width: 18, height: 18)      // top right, in every state
         window.orderFrontRegardless()
     }
 
@@ -5823,7 +6025,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         let w = window.frame.width, h = window.frame.height
         heard.stringValue = "“\(transcript)”"
         heard.font = roundedFont(11, .medium)
-        heard.frame = NSRect(x: 18, y: h - 34, width: w - 36, height: 16)
+        heard.frame = NSRect(x: 18, y: h - 34, width: w - 56, height: 16)
         status.frame = .zero
         title.frame = NSRect(x: 16, y: h - 70, width: w - 32, height: 26)
         when.frame = NSRect(x: 18, y: h - 96, width: w - 36, height: 18)
@@ -5853,7 +6055,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
 
     private func layoutMessage() {
         let w = window.frame.width, h = window.frame.height
-        heard.frame = NSRect(x: 18, y: h - 56, width: w - 36, height: 40)
+        heard.frame = NSRect(x: 18, y: h - 56, width: w - 56, height: 40)
         heard.font = roundedFont(13, .medium)
         status.frame = NSRect(x: 18, y: 14, width: w - 36, height: 14)
     }
@@ -5871,6 +6073,15 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
     }
 
     @objc func cancelTapped() { window.orderOut(nil) }
+    /// × : stop listening without making a draft, and close.
+    @objc func closeTapped() {
+        if listening {
+            listening = false; onListening?(false); silence?.cancel()
+            engine.stop(); engine.inputNode.removeTap(onBus: 0)
+            request?.endAudio(); task?.cancel()
+        }
+        window.orderOut(nil)
+    }
 
     @objc func smarterTapped() {
         let text = transcript
@@ -6240,6 +6451,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
 
         writeState("hidden")
+        Recense.start()            // last, once Sill's own strip, hover and gestures are set up (start() runs once)
         run(initialCommand)
     }
 
@@ -6350,6 +6562,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.frame = effect.bounds
         timeView.autoresizingMask = [.width, .height]
         timeView.onClick = { [weak self] in self?.present(.pad) }
+        // Recense opens as its own strip hanging from the top of the screen; Sill's card steps aside.
+        rest.onRecord = { [weak self] in self?.toggleRecorder() }
+        timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
+        timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
         timeView.onKeyboard = { [weak self] v in
             guard let self = self, self.panel.isVisible else { return }
@@ -6482,6 +6698,29 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @objc func nextPage() { step(1) }
     @objc func hidePanel() { hide() }
 
+    /// The recorder's menu, popped up from the strip's record icon in the same bounds as the Recense card: hanging
+    /// from the top of the screen, as wide as the card.
+    lazy var recordPanel: NSPanel = {
+        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
+        p.level = .statusBar; p.hidesOnDeactivate = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        return p
+    }()
+    func toggleRecorder() {
+        if recordPanel.isVisible { timeView.showAudio(false); recordPanel.orderOut(nil); return }
+        guard let sc = NSScreen.main else { return }
+        let w = timeSize.width, h: CGFloat = 260
+        recordPanel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: false)
+        if timeView.audioSheet.superview !== recordPanel.contentView {
+            timeView.audioSheet.removeFromSuperview()
+            recordPanel.contentView = timeView.audioSheet
+        }
+        timeView.layoutAudio()
+        timeView.showAudio(true)
+        recordPanel.orderFrontRegardless()
+    }
+
     func updateClock() {
         let now = Date()
         let t = clockFormat.string(from: now)
@@ -6501,6 +6740,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         switch cmd {
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up, down one down.
         case "up":     guard settled() else { return }
+                       // Sill comes up and the Recense card steps aside at the same time.
+                       MainActor.assumeIsolated { if Recense.overlay?.panel.isVisible == true { Recense.overlay?.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
         case "down":   guard settled() else { return }
                        if panel.isVisible {
@@ -7211,4 +7452,11 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let appDelegate = App(initialCommand: initial)
 app.delegate = appDelegate
+// Recense (subtitles over any player, its extension's server, transcription) runs inside Sill now.
+NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
+    MainActor.assumeIsolated { Recense.start() }
+}
+NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { n in
+    MainActor.assumeIsolated { Recense.delegate?.applicationWillTerminate(n) }
+}
 app.run()

@@ -21,6 +21,16 @@ mkdir -p "$app/Contents/MacOS"
 cp Info.plist "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources" && cp AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 printf "APPL????" > "$app/Contents/PkgInfo"
+# Recense's home bar: its host page (sill/homebar) plus Gallery's homebar.js/css (one implementation, copied),
+# and for the sound tray (SPEC 54) Gallery's keylabel.js (the Key's names) and room.js (the reverb's rooms).
+GALLERY_CLIENT=${GALLERY_CLIENT:-$HOME/Developer/gallery/gallery/src/client}
+if [[ -f homebar/index.html && -f $GALLERY_CLIENT/homebar.js && -f $GALLERY_CLIENT/homebar.css ]]; then
+  mkdir -p "$app/Contents/Resources/homebar"
+  cp homebar/index.html "$GALLERY_CLIENT/homebar.js" "$GALLERY_CLIENT/homebar.css" \
+     "$GALLERY_CLIENT/keylabel.js" "$GALLERY_CLIENT/room.js" "$app/Contents/Resources/homebar/"
+else
+  echo "warning: Recense home bar not bundled (needs sill/homebar/index.html and $GALLERY_CLIENT)"
+fi
 
 if [[ "$1" == "universal" ]]; then
   swiftc -O -target arm64-apple-macos14 sill.swift -o .sill-arm64

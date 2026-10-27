@@ -1,0 +1,402 @@
+<!doctype html>
+<!-- Recense's host for Gallery's home bar (SPEC P2). homebar.js and homebar.css are Gallery's own
+     (../gallery/gallery/src/client), copied in by build.sh with keylabel.js and room.js (the sound tray's Key names
+     and rooms, SPEC 54): the bar is one implementation, never a copy to edit here. This page only places it in the window and passes messages to and from main.swift. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<link rel="stylesheet" href="homebar.css">
+<style>
+  /* the page is see-through: the subtitles are drawn under it, and it only takes the pointer where the bar is */
+  :root{
+    --blue:#0a84ff;
+    --bb0:0px;   /* nothing sits under the bar in Recense's window */
+    --cl:24px;   /* the control line (HomeBar.line) */
+    --tb:0px;    /* no top or bottom bar here: the sound tray's sliders take the window's height (homebar.css) */
+    --bb:0px
+  }
+  html,body{
+    margin:0;
+    height:100%;
+    overflow:hidden;
+    background:transparent;
+    color:#fff;
+    font:13px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-font-smoothing:antialiased
+  }
+  body{position:relative}
+  button{font:inherit;background:none;border:0;padding:0;margin:0;color:inherit;cursor:default}
+
+  /* the vertical bar at the right edge, crossing the same control line as the stroke (as Gallery's .p-ctrl),
+     scaled to the window: its ruler and list are never taller than the window allows */
+  .p-ctrl{
+    position:absolute;
+    right:12px;
+    bottom:calc(var(--bb0) + var(--cl) - 32px);
+    --sph:min(180px,calc(100vh - 56px))
+  }
+
+  /* the sound tray (Homebar.tray): its sliders as long as the window allows, so the open tray stays inside it */
+  .p-eq{--eqt:clamp(36px,calc(100vh - 104px),116px)}
+
+  /* while playing, both bars fade after a moment, as Gallery's chrome does; any movement brings them back */
+  .p-hb,.p-ctrl{transition:opacity .3s}
+  body.rest .p-hb:not([data-open="true"]),
+  body.rest .p-ctrl:not(:has(.p-eqwrap.open)){opacity:0}
+
+  /* the transcript editor's tools (SPEC 57): while a line is being edited they take the home bar's zone,
+     under the line's field; the bars step aside until the editing ends */
+  #ed{position:absolute;left:8px;right:8px;bottom:6px;display:none;justify-content:center}
+  body.editing #ed{display:flex}
+  body.editing .p-hb,body.editing .p-ctrl{visibility:hidden}
+  #ed .p-tools{gap:2px;font-size:13px}
+  #ed .p-tword{padding:3px 7px}
+  #ed .p-ticon{width:34px;height:30px}
+  #ed .p-ticon svg{width:18px;height:18px}
+  #ed .p-bms{display:none;flex-wrap:nowrap;gap:4px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+  #ed.bms .p-trow{display:none}
+  #ed.bms .p-bms{display:flex}
+  .p-bm2{white-space:nowrap;padding:5px 8px}
+  .p-bm2 .t{opacity:.6;margin-left:6px;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="p-ctrl"><div id="vw"></div></div>
+<div id="ed"></div>
+<script src="keylabel.js"></script>
+<script src="room.js"></script>
+<script src="homebar.js"></script>
+<script>
+(() => {
+  "use strict";
+  const post = (m) => {
+    try {
+      webkit.messageHandlers.recense.postMessage(m);
+    } catch (e) {}
+  };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  // the player as main.swift last reported it; time runs on between reports
+  const st = { time: 0, at: performance.now(), duration: 0, paused: true, rate: 1, lang: "en", view: "follow", size: 1, sizeMin: 0.7, sizeMax: 1.6, prominence: null, bookmarks: [], volume: null };
+  const now = () => (st.paused ? st.time : st.time + ((performance.now() - st.at) / 1000) * st.rate);
+  let lastLoop = ""; // the loop state Recense has, so the bar never echoes it back
+  let live = false; // nothing is sent until the first report (the bar's own first paint is not a command)
+
+  let restT = 0;
+  const wake = () => {
+    document.body.classList.remove("rest");
+    clearTimeout(restT);
+    if (!st.paused && !(bar && (bar.open || bar.busy)) && !(tray && (tray.isOpen() || tray.busy()))) restT = setTimeout(() => document.body.classList.add("rest"), 2500);
+  };
+
+  let bar = null;
+  let tray = null;
+  const I = Homebar.ICONS;
+
+  bar = Homebar.horizontal({
+    time: now,
+    duration: () => st.duration,
+    paused: () => st.paused,
+    seek: (t) => {
+      st.time = t;
+      st.at = performance.now();
+      post({ k: "cmd", c: "seek", t });
+    },
+    toggle: () => post({ k: "cmd", c: "playPause" }),
+    skip: (d) => post({ k: "cmd", c: "skip", d }),
+    setRate: (v) => {
+      if (live) post({ k: "cmd", c: "speed", v });
+      return v;
+    },
+    setLoop: (l) => {
+      const j = JSON.stringify({ track: l.track, ab: l.ab, a: l.a, b: l.b });
+      if (!live || j === lastLoop) return;
+      lastLoop = j;
+      post({ k: "cmd", c: "loop", track: l.track, ab: l.ab, a: l.a, b: l.b });
+    },
+    scrub: (on) => post({ k: "cmd", c: "scrub", on }),
+    say: (t) => post({ k: "say", t }),
+    wake,
+    onOpen: (on) => {
+      if (on && tray && tray.isOpen()) tray.hide(); // one tray at a time
+      post({ k: "open", on: on || !!(tray && tray.isOpen()) });
+      hits();
+    },
+    lang: {
+      get: () => st.lang,
+      set: (v) => {
+        st.lang = v;
+        post({ k: "lang", v });
+      },
+    },
+    size: {
+      get: () => st.size,
+      set: (v) => {
+        st.size = Math.round(clamp(v, st.sizeMin, st.sizeMax) * 20) / 20;
+        post({ k: "size", v: st.size });
+      },
+      get min() {
+        return st.sizeMin;
+      },
+      get max() {
+        return st.sizeMax;
+      },
+      step: 0.1,
+    },
+    onSize: () => vbar.paint(),
+    // the playing source's own volume (QuickTime's, Music's, the tab's): shown as it changes there, set from here
+    volume: {
+      get: () => st.volume,
+      set: (v) => {
+        st.volume = Math.round(clamp(v, 0, 1) * 100) / 100;
+        post({ k: "cmd", c: "volume", v: st.volume });
+      },
+      min: 0,
+      max: 1,
+      step: 0.1,
+    },
+    // a firm press on the stroke: bookmark this moment (no hover slide: the bookmarks live in the editor, SPEC 53)
+    firmPress: () => post({ k: "bookmark" }),
+    // slide 1 text size · 2 Loop · A · B · 3 the speed ruler. No volume slide (notes 2026-10-26 #16): the source player, keys or Touch Bar set it. Language, Follow · Learn, Clear, Download,
+    // Share, Retranscribe, the exports and the bookmarks are the transcript editor's (SPEC 57): click the words.
+    slides: () => ["size", "loop", "speed"],
+  });
+  document.body.appendChild(bar.el);
+
+  // The vertical bar: Gallery's own (SPEC 54): the original's prominence (two fingers or a drag), a tap opens and closes
+  // the sound tray (Gallery's EQ Low · Mid · High, Key in C/Đô, Reverb), press and hold puts the text size, the prominence
+  // and the sound back, a tap right after undoes that. The sound is made in the followed page itself, by the Firefox
+  // bridge (extension/content.js): Recense plays nothing. main.swift says when the player can't take it (Recense.sound).
+  const setProm = (p) => {
+    st.prominence = p;
+    const m = Homebar.prominence(p);
+    post({ k: "prominence", v: p, a1: m ? m.orig : null, a2: m ? m.trail : null });
+  };
+  const setSize = (v) => {
+    st.size = v;
+    post({ k: "size", v });
+    bar.paintSize();
+  };
+  // the tray's settings (Gallery's prefs.eq / key / space); the notation is kept in this page, as Gallery keeps it
+  const KEY_NOTATION = "recense.keyNotation";
+  const sound = { eq: { low: 0, mid: 0, high: 0 }, key: 0, vox: 0, keyNotation: 0, space: { mix: 0, on: false, room: "room" }, get nativeLang() { return st.lang; } };
+  try {
+    const n = parseInt(localStorage.getItem(KEY_NOTATION), 10);
+    if (Number.isInteger(n) && n >= 0 && n < GalleryKey.STATES) sound.keyNotation = n;
+  } catch (e) {}
+  let soundNo = null; // why the followed player can't take the sound (main.swift), or null
+  const plain = () => !sound.eq.low && !sound.eq.mid && !sound.eq.high && !sound.key && !sound.vox && !(sound.space.on && sound.space.mix);
+  const sendSound = () => {
+    if (soundNo) return false;
+    post({ k: "fx", eq: { ...sound.eq }, key: sound.key, mix: sound.space.on ? sound.space.mix : 0, room: sound.space.room, vox: sound.vox || 0 });
+    return true;
+  };
+  const vbar = Homebar.vertical({
+    prominence: { get: () => st.prominence, set: setProm },
+    shaped: () => Math.abs(st.size - 1) > 1e-6 || st.prominence != null || !plain(),
+    tap: () => (tray.isOpen() ? tray.hide() : tray.show(5000)),
+    tare: () => {
+      const snap = { size: st.size, prominence: st.prominence, eq: { ...sound.eq }, key: sound.key, vox: sound.vox, space: { ...sound.space } };
+      if (Math.abs(st.size - 1) > 1e-6) setSize(1);
+      if (st.prominence != null) setProm(null);
+      if (!plain()) tray.reset();
+      vbar.paint();
+      tray.bump();
+      return snap;
+    },
+    untare: (s) => {
+      if (s.size !== st.size) setSize(s.size);
+      if (s.prominence !== st.prominence) setProm(s.prominence);
+      tray.restore(s);
+      vbar.paint();
+      tray.bump();
+    },
+    say: (t) => post({ k: "say", t }),
+    wake,
+  });
+  tray = Homebar.tray({
+    state: sound,
+    vbar,
+    rooms: GalleryRoom.ROOMS,
+    // the chord detector (SPEC 40): Recense's own chain listens (notes 32); asking keeps it running
+    chroma: () => {
+      post({ k: "chroma?" });
+      return st.chroma;
+    },
+    chords: (t) => post({ k: "chord", t: t || null }),
+    keyName: () => st.key || "",
+    notation: (n) => {
+      try {
+        localStorage.setItem(KEY_NOTATION, String(n));
+      } catch (e) {}
+    },
+    sound: {
+      band: sendSound,
+      key: sendSound,
+      space: sendSound,
+      vox: (a) => ((sound.vox = a), sendSound()), // the extractor, in Recense's own chain (notes 32)
+      live: () => true,
+      why: (what) => soundNo && what + ": " + soundNo,
+    },
+    onOpen: (on) => {
+      bar.el.classList.toggle("away", on);
+      post({ k: "open", on: on || bar.open }); // (Escape folds it, as it folds the home bar)
+      hits();
+    },
+    onShow: () => {
+      if (bar.open) bar.close();
+    },
+    say: (t) => post({ k: "say", t }),
+    wake,
+  });
+  document.getElementById("vw").replaceWith(tray.el);
+  vbar.paint();
+
+  // ----- the transcript editor's tools (SPEC 57), shown while a line is edited; the same component as Gallery's -----
+  const ed = document.getElementById("ed");
+  const tools = Homebar.tools({
+    lang: { get: () => st.lang, set: (v) => { st.lang = v; post({ k: "lang", v }); } },
+    view: { get: () => st.view, set: (v) => { st.view = v; post({ k: "view", v }); } },
+    items: [
+      { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: () => post({ k: "clear" }) },
+      { id: "download", label: "Download the played audio", icon: I.download, act: () => post({ k: "download" }) },
+      { id: "share", label: "Share", icon: I.share, act: () => post({ k: "share" }) },
+      { id: "retranscribe", label: "Retranscribe and retranslate", icon: I.retranscribe, act: () => post({ k: "retranscribe", lang: st.lang }) },
+      { id: "md", label: "Export as MD", icon: I.markdown, act: () => post({ k: "export", as: "md" }) },
+      { id: "m4b", label: "Export as M4B", icon: I.book, act: () => post({ k: "export", as: "m4b" }) },
+      { id: "bookmarks", label: "Bookmarks", icon: I.bookmark, act: () => { ed.classList.toggle("bms"); paintMarks(); hits(); } },
+    ],
+  });
+  // the bookmarks, in place of the tools' row: + this moment, then each one (a click goes there), ‹ back
+  const marks = document.createElement("div");
+  marks.className = "p-bms";
+  tools.el.appendChild(marks);
+  const paintMarks = () => {
+    const chip = (label, html, fn) => {
+      const b = Homebar.mkBtn("p-ti p-bm2", label, html);
+      b.onclick = (e) => { e.stopPropagation(); fn(); };
+      return b;
+    };
+    marks.replaceChildren(
+      chip("Back to the tools", "‹", () => { ed.classList.remove("bms"); hits(); }),
+      chip("Bookmark this moment", I.bookmark + " +", () => post({ k: "bookmark" })),
+      ...st.bookmarks.map((b) => {
+        const c = chip("Go to " + (b.note || "Bookmark") + " " + Homebar.dur(b.t), '<span class="n"></span><span class="t"></span>', () => post({ k: "jump", t: b.t }));
+        c.querySelector(".n").textContent = b.note || "Bookmark";
+        c.querySelector(".t").textContent = Homebar.dur(b.t);
+        return c;
+      })
+    );
+  };
+  ed.appendChild(tools.el);
+
+  // ----- where the page takes the pointer: posted to main.swift, which passes everything else through -----
+  let sentHits = "";
+  const hits = () => {
+    const r = [];
+    const add = (el, grow = [0, 0, 0, 0]) => {
+      if (!el) return;
+      const b = el.getBoundingClientRect();
+      if (!b.width || !b.height) return;
+      r.push([b.left - grow[3], b.top - grow[0], b.width + grow[1] + grow[3], b.height + grow[0] + grow[2]].map((x) => Math.round(x)));
+    };
+    if (document.body.classList.contains("editing")) {
+      add(tools.el);
+      const j = JSON.stringify(r);
+      if (j !== sentHits) {
+        sentHits = j;
+        post({ k: "hits", r });
+      }
+      return;
+    }
+    add(bar.el.querySelector(".p-hbbox"));
+    if (bar.open) {
+      add(bar.el.querySelector(".p-hbbarrel"));
+      add(bar.el.querySelector(".p-hbseek"));
+      add(bar.el.querySelector(".p-hbval"));
+    }
+    add(vbar.btn, [100, 16, 8, 30]); // the stroke's own hit area (.p-eqbtn::before)
+    if (tray.isOpen()) {
+      add(tray.el.querySelector(".p-eqin"));
+      add(tray.el.querySelector(".kpop:not([hidden])"));
+    }
+    const j = JSON.stringify(r);
+    if (j !== sentHits) {
+      sentHits = j;
+      post({ k: "hits", r });
+    }
+  };
+  setInterval(hits, 250);
+  addEventListener("resize", hits);
+  addEventListener("pointermove", () => {
+    wake();
+    hits();
+  });
+
+  // ----- what main.swift says -----
+  window.Recense = {
+    chroma: (c) => (st.chroma = Array.isArray(c) && c.length === 12 ? c : null),
+    report: (r) => {
+      const was = st.paused;
+      st.time = r.time;
+      st.at = performance.now();
+      st.duration = r.duration;
+      st.paused = r.paused;
+      st.rate = r.rate;
+      lastLoop = JSON.stringify({ track: !!r.loop.track, ab: !!r.loop.ab, a: r.loop.a, b: r.loop.b });
+      live = true;
+      bar.report({ rate: r.rate, loop: r.loop });
+      const vol = typeof r.volume === "number" ? r.volume : null;
+      if (vol !== st.volume) {
+        st.volume = vol;
+        bar.paintVolume();
+      }
+      if (was !== st.paused) wake();
+    },
+    state: (s) => {
+      Object.assign(st, s);
+      bar.paint();
+      bar.paintSize();
+      vbar.paint();
+      tray.paintKey();
+      tools.paint();
+      if (ed.classList.contains("bms")) paintMarks();
+    },
+    key: (k) => {
+      if (k === "a") bar.captureA();
+      else if (k === "b") bar.captureB();
+      else if (k === "l") bar.pressLoop();
+      else if (k === "<") bar.speedStep(-1);
+      else if (k === ">") bar.speedStep(1);
+      wake();
+    },
+    close: () => {
+      bar.close();
+      if (tray.isOpen()) tray.hide();
+    },
+    // why the followed player can't take the sound (QuickTime, Music, a page whose file another site serves), or null
+    sound: (why) => {
+      soundNo = why || null;
+    },
+    wake,
+    // a line is being edited (true) or no longer (false): the tools take the bar's zone meanwhile
+    editor: (on) => {
+      document.body.classList.toggle("editing", !!on);
+      if (!on) ed.classList.remove("bms");
+      tools.paint();
+      paintMarks();
+      hits();
+    },
+    // a trackpad swipe's fingers came down or lifted: a swipe-and-hold keeps the time ruler up meanwhile
+    fingers: (on) => bar.fingers(on),
+  };
+
+  hits();
+  post({ k: "ready" });
+})();
+</script>
+</body>
+</html>
