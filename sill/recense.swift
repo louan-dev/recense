@@ -2035,7 +2035,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     }
 
     /// A word against media time, so the motion scales with playback speed on its own: it brightens just before
-    /// it's spoken, a light wipes across it over exactly the time it's spoken, its onset flashes gold and settles
+    /// it's spoken, a light wipes across it over exactly the time it's spoken (as the voice spends itself, Cadence), its onset flashes gold and settles
     /// (so the rhythm reads as pulses), then it eases into `after` over `fade` seconds.
     /// A word at `a` of its opacity (Balance's quieter side).
     func dim(_ k: WordsView.Ink, _ a: CGFloat) -> WordsView.Ink {
@@ -2057,7 +2057,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let dur = max(0.05, b.end - b.start)
         let env = exp(-(t - b.start) / max(0.06, min(0.3, dur * 0.5)))
         return .init(text: b.text, font: font, color: before ?? ahead, lit: mix(pale, current, env),
-                     wipe: CGFloat((t - b.start) / dur), glow: CGFloat(env))
+                     wipe: CGFloat(Cadence.progress(b, t)), glow: CGFloat(env))
     }
 }
 
@@ -2659,10 +2659,14 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     var onIdentified: (() -> Void)?    // its recording turned out to have a transcript already: load that instead
     var file: URL?
     var duration = 0.0
-    var lines: [Line] = [] { didSet { _shown = nil; _display = nil } }   // as the pipeline made them
-    var edits = Edits() { didSet { _shown = nil; _display = nil } }       // the listener's corrections, over them
+    var lines: [Line] = [] { didSet { _shown = nil; _display = nil; _sung = nil } }   // as the pipeline made them
+    var edits = Edits() { didSet { _shown = nil; _display = nil; _sung = nil } }       // the listener's corrections, over them
     /// Its translations beyond the English (vi, fr), by segment (<key>.tr.<lang>.json, keep/<key>/tr/<lang>.json).
-    var native: [String: TrFile] = [:] { didSet { _display = nil } }
+    var native: [String: TrFile] = [:] { didSet { _display = nil; _sung = nil } }
+    /// A song's voice, measured on its stem (<key>.features.json, keep/<key>/features.json): what the light follows.
+    var features: Features? { didSet { _sung = nil } }
+    private var _sung: [Line]?
+    private var _sungLang = ""
     private var _shown: [Line]?
     private var _display: [Line]?
     private var _displayLang = ""       // the native language _display was made in
@@ -2681,6 +2685,15 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let d = applyEdits(lines, edits, lang: lang) { pre, post in Keep.words(f, pre.id, [lineKey(pre), lineKey(post)]) }
         _display = d; _displayLang = lang
         return d
+    }
+    /// What the window draws: `display` with its words timed to the voice (Cadence) once the song's is measured.
+    /// Corrections are still made to `display`'s lines (same ids), so an edit's stretch is the line as transcribed.
+    var sung: [Line] {
+        guard let f = features else { return display }
+        let lang = NativeLang.current
+        if let s = _sung, _sungLang == lang { return s }
+        let s = Cadence.fit(display, f); _sung = s; _sungLang = lang
+        return s
     }
     var done: [Bool] = []
     var failures = 0
@@ -2723,6 +2736,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let shift = self.shift
         self.position = { position() - shift }
         loadAmbience()
+        features = Features.read(key)
         if let c = Cache.read(key) {
             lines = c.lines; done = c.done; duration = c.duration
             lyricsChecked = c.lyricsChecked9 ?? false; lyrics = c.lyrics ?? []; heard = c.heard ?? []
@@ -3167,7 +3181,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             // Finished before (a replay whose audio is still here): nothing to separate or transcribe again.
             // (a spoken transcript with a stretch Whisper skipped gets that stretch asked for again, once).
             if complete && !done.isEmpty && !done.contains(false) {
-                if isSong { save(); return }
+                if isSong { save(); await measureVoice(); return }
                 guard let src = file, let h = await skipped(src) else { save(); return }
                 await fill(h, src: src); try? await Task.sleep(for: .seconds(3.1)); continue
             }
@@ -3183,7 +3197,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 }
                 guard isSong, !done.isEmpty else { complete = !done.isEmpty; save(); return }
                 if !lyricsVerified { await verifyLyrics(); continue }
-                guard !instrumental, let w = suspects().first else { complete = true; save(); return }
+                guard !instrumental, let w = suspects().first else { complete = true; save(); await measureVoice(); return }
                 await redo(w, src: src)
                 try? await Task.sleep(for: .seconds(3.1))
                 continue
@@ -3302,6 +3316,28 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     var vocals: URL?                   // a song's voice alone (Demucs): what Whisper hears instead of the mix
     var vocalsTried = false
     var separating = false
+
+    /// A song's voice measured (Features) for the light to follow: keep/'s copy when there is one, else measured on its
+    /// vocal stem — this Mac's, R2's while it lasts, or separated again from the audio here. Never from the mix: its
+    /// loudness is the band's.
+    func measureVoice() async {
+        guard features == nil, isSong, !instrumental, !stopped, !dry else { return }
+        if let (d, _) = await Keep.get(Keep.features(key)), let f = try? JSONDecoder().decode(Features.self, from: d) {
+            try? d.write(to: Features.url(key)); features = f; return
+        }
+        if vocals == nil, let f = await Store.restore(offsite.filter { $0.contains("-vocals") }) { vocals = f }
+        if vocals == nil, file != nil, !vocalsTried { vocalsTried = true; await separateVocals() }
+        guard let stem = vocals, !stopped else { return }
+        let length = duration + 1, t0 = Date()
+        let f: Features? = await Task.detached(priority: .utility) {
+            guard let s = try? decodeChunk(stem, from: 0, to: length), !s.isEmpty else { return nil }
+            return Features.measure(s, source: "vocals")
+        }.value
+        guard let f, !stopped else { return }
+        f.write(key); features = f
+        log(String(format: "measured the voice of %@ in %.1f s", key, Date().timeIntervalSince(t0)))
+        await Keep.pushFeatures(key)
+    }
 
     /// Strips the instruments so Whisper hears only the singing (≈45 s for a 4-minute song on the GPU).
     func separateVocals() async {
@@ -4246,6 +4282,209 @@ func refine(_ words: [Word], db: [Float], offset: Double, gate: Bool) -> [Word] 
     return out
 }
 
+// ---------- the voice's shape: what the light follows inside a word ----------
+/// A song's voice measured frame by frame (100 a second) on its vocal stem, cached as <key>.features.json and kept in
+/// keep/<key>/features.json. The karaoke light reads it (Cadence); anything that draws the voice (energy, pitch,
+/// vibrato, sustain) can read the same file. One value per frame in each array, all the same length:
+///   db       loudness, dB × 10 (0 = full scale)
+///   onset    how sharply the sound changes (positive spectral flux), 0–100 against the song's strongest (its 99th percentile)
+///   pitch    f0 as a MIDI note × 100 (6900 = A4, 440 Hz), 0 where nothing is pitched
+///   clarity  how periodic the frame is, 0–100 (YIN: 100 × (1 − aperiodicity))
+///   voiced   1 where the voice sounds (`floor` dB or more on the stem), else 0: consonants too, so not the same as pitch > 0
+final class Features: Codable {
+    var format = 1
+    var source: String            // "vocals": the Demucs stem (the light follows only that: a mix's loudness is the band's)
+    var hop = 0.01                // seconds a frame
+    var floor: Double             // dB from which a frame is voice
+    var db: [Int], onset: [Int], pitch: [Int], clarity: [Int], voiced: [Int]
+
+    init(source: String, floor: Double, db: [Int], onset: [Int], pitch: [Int], clarity: [Int], voiced: [Int]) {
+        self.source = source; self.floor = floor; self.db = db; self.onset = onset; self.pitch = pitch; self.clarity = clarity; self.voiced = voiced
+    }
+
+    static func url(_ key: String) -> URL { cacheDir.appendingPathComponent(key + ".features.json") }
+    static func read(_ key: String) -> Features? { (try? Data(contentsOf: url(key))).flatMap { try? JSONDecoder().decode(Features.self, from: $0) } }
+    func write(_ key: String) { if let d = try? JSONEncoder().encode(self) { try? d.write(to: Features.url(key)) } }
+
+    var count: Int { db.count }
+    func frame(_ t: Double) -> Int { max(0, min(count - 1, Int((t / hop).rounded(.down)))) }
+    func time(_ k: Int) -> Double { Double(k) * hop }
+    func isVoiced(_ k: Int) -> Bool { k >= 0 && k < count && voiced[k] == 1 }
+    func sustained(_ k: Int) -> Bool { isVoiced(k) && (k..<(k + 8)).filter(isVoiced).count >= 5 }   // a voice, not a click
+
+    /// 16 kHz mono audio measured. Pitch by YIN (70–1000 Hz, 32 ms window), onsets by spectral flux (512-point FFT).
+    static func measure(_ s: [Float], source: String) -> Features {
+        let dbs = frameDB(s), n = dbs.count
+        let sorted = dbs.sorted()
+        let quiet = sorted.isEmpty ? -100 : Double(sorted[sorted.count / 10]), loud = sorted.isEmpty ? 0 : Double(sorted[sorted.count * 95 / 100])
+        // the loudness gate refine() uses on a stem (on a mix, the one it uses there)
+        let floor = source == "vocals" ? max(quiet + 12, loud - 30) : quiet + max(10, 0.35 * (loud - quiet))
+
+        // onsets: rise of log magnitude summed over 0–5 kHz, frame to frame
+        let N = 512, half = N / 2, log2n = vDSP_Length(9), bins = 160
+        let fft = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+        defer { vDSP_destroy_fftsetup(fft) }
+        var window = [Float](repeating: 0, count: N); vDSP_hann_window(&window, vDSP_Length(N), Int32(vDSP_HANN_NORM))
+        var re = [Float](repeating: 0, count: half), im = [Float](repeating: 0, count: half), mags = [Float](repeating: 0, count: half)
+        var buf = [Float](repeating: 0, count: N), prev = [Float](repeating: 0, count: bins)
+        var flux = [Float](repeating: 0, count: n)
+        for k in 0..<n {
+            let c = k * 160 + 80
+            for j in 0..<N { let i = c - half + j; buf[j] = i >= 0 && i < s.count ? s[i] * window[j] : 0 }
+            re.withUnsafeMutableBufferPointer { r in im.withUnsafeMutableBufferPointer { m in
+                var split = DSPSplitComplex(realp: r.baseAddress!, imagp: m.baseAddress!)
+                buf.withUnsafeBufferPointer { b in
+                    b.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) { vDSP_ctoz($0, 2, &split, 1, vDSP_Length(half)) }
+                }
+                vDSP_fft_zrip(fft, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+                vDSP_zvmags(&split, 1, &mags, 1, vDSP_Length(half))
+            } }
+            var f: Float = 0
+            for b in 1..<bins {
+                let l = log1p(1000 * sqrt(mags[b]))
+                if k > 0 { f += max(0, l - prev[b]) }
+                prev[b] = l
+            }
+            flux[k] = f
+        }
+        let top = flux.sorted()[min(n - 1, max(0, n * 99 / 100))]
+
+        // pitch: YIN on frames with voice in them
+        let W = 512, tmin = 16, tmax = 228, need = W + tmax
+        var seg = [Float](repeating: 0, count: need), sq = [Double](repeating: 0, count: need + 1)
+        var r = [Float](repeating: 0, count: tmax + 1), cmnd = [Double](repeating: 1, count: tmax + 1)
+        var pitch = [Int](repeating: 0, count: n), clarity = [Int](repeating: 0, count: n)
+        for k in 0..<n where Double(dbs[k]) >= floor - 6 {
+            let a = k * 160 + 80 - need / 2
+            for j in 0..<need { let i = a + j; seg[j] = i >= 0 && i < s.count ? s[i] : 0 }
+            for j in 0..<need { sq[j + 1] = sq[j] + Double(seg[j] * seg[j]) }
+            seg.withUnsafeBufferPointer { p in vDSP_conv(p.baseAddress!, 1, p.baseAddress!, 1, &r, 1, vDSP_Length(tmax + 1), vDSP_Length(W)) }
+            let e0 = sq[W]
+            guard e0 > 1e-6 else { continue }
+            var run = 0.0
+            for t in 1...tmax {
+                let d = max(0, e0 + (sq[t + W] - sq[t]) - 2 * Double(r[t]))
+                run += d
+                cmnd[t] = run > 0 ? d * Double(t) / run : 1
+            }
+            var best = tmin
+            if let first = (tmin...tmax).first(where: { cmnd[$0] < 0.15 }) {
+                best = first
+                while best < tmax && cmnd[best + 1] < cmnd[best] { best += 1 }
+            } else { best = (tmin...tmax).min { cmnd[$0] < cmnd[$1] }! }
+            let ap = cmnd[best]
+            clarity[k] = Int((100 * max(0, 1 - ap)).rounded())
+            guard ap < 0.35, best > tmin, best < tmax else { continue }
+            let y0 = cmnd[best - 1], y1 = cmnd[best], y2 = cmnd[best + 1], den = y0 - 2 * y1 + y2
+            let tau = Double(best) + (abs(den) > 1e-9 ? 0.5 * (y0 - y2) / den : 0)
+            pitch[k] = Int((100 * (69 + 12 * log2(16000 / tau / 440))).rounded())
+        }
+        return Features(source: source, floor: (floor * 10).rounded() / 10,
+                        db: dbs.map { Int(($0 * 10).rounded()) },
+                        onset: flux.map { top > 0 ? Int(min(100, 100 * $0 / top).rounded()) : 0 },
+                        pitch: pitch, clarity: clarity, voiced: dbs.map { Double($0) >= floor ? 1 : 0 })
+    }
+}
+
+/// Word times from Whisper and the lyrics say roughly where words start and nothing of how they're sung: the light
+/// wiped each word at an even pace, finished a held note early and sat on it until the next word. With the song's
+/// Features, a word starts on its onset, lasts as long as the voice holds it (into the next word when it runs on,
+/// to the breath when it stops), and the light inside it moves as the voice spends itself (loudness over the floor):
+/// slower through a held note, still through a breath.
+enum Cadence {
+    /// The measured voice of what's playing (set every frame on the main thread); nil: the light runs by the clock.
+    nonisolated(unsafe) static var track: Features? { didSet { if track !== oldValue { curves = [:] } } }
+    nonisolated(unsafe) static var curves: [String: [Float]] = [:]
+
+    /// The lines with their words timed to the voice.
+    static func fit(_ lines: [Line], _ f: Features) -> [Line] {
+        guard f.source == "vocals", f.count > 20 else { return lines }
+        let flat = lines.flatMap(\.words), n = flat.count
+        guard n > 0 else { return lines }
+        // an onset counts when it stands out among the voice's own (its 60th percentile, at least a tenth of the strongest)
+        let peaks = (1..<(f.count - 1)).filter { f.isVoiced($0) && f.onset[$0] > 0 && f.onset[$0] >= f.onset[$0 - 1] && f.onset[$0] >= f.onset[$0 + 1] }
+            .map { f.onset[$0] }.sorted()
+        let strong = max(10, peaks.isEmpty ? 10 : peaks[peaks.count * 6 / 10])
+        // the next word sung after each, in its line or the next
+        var next = [Double](repeating: .infinity, count: n)
+        for i in stride(from: n - 2, through: 0, by: -1) { next[i] = flat[i + 1].start > flat[i].start ? flat[i + 1].start : next[i + 1] }
+        var s = flat.map(\.start), e = flat.map(\.end), legato = [Bool](repeating: false, count: n)
+        for i in 0..<n {
+            let w = flat[i], after = min(next[i], w.start + 8), lower = i > 0 ? s[i - 1] + 0.03 : 0
+            // the onset nearest Whisper's start, as strong as can be: within 120 ms, or from silence up to 350 ms late (a late entry)
+            let reach = f.isVoiced(f.frame(w.start)) ? 0.12 : 0.35
+            let lo = f.frame(max(lower, w.start - 0.12)), hi = f.frame(min(after - 0.08, w.start + reach))
+            if lo <= hi {
+                let score = { (k: Int) in Double(f.onset[k]) * (1 - abs(f.time(k) - w.start) / 0.4) }
+                if let k = (lo...hi).filter({ k in f.onset[k] >= strong && f.sustained(k) && (k == 0 || f.onset[k] >= f.onset[k - 1])
+                                                && (k + 1 >= f.count || f.onset[k] >= f.onset[k + 1]) }).max(by: { score($0) < score($1) }) {
+                    s[i] = f.time(k)
+                }
+            }
+            s[i] = max(s[i], lower)
+            // held while the voice holds it: any voice up to Whisper's end (consonants too), then one note running on
+            // unbroken (pitched in most of any 100 ms: vibrato, a melisma's steps; a stray pitched frame on a consonant
+            // doesn't count), not a new syllable after a consonant (an ad-lib, a backing line) — into the next word
+            // when it runs on into it, else to where it stops
+            let stop = f.frame(after), own = f.frame(min(w.end, after))
+            let note = { (k: Int) in f.isVoiced(k) && f.pitch[k] > 0 }
+            var k = f.frame(s[i]), last = -1, quiet = 0, broke = false
+            while k < stop {
+                if k < own {
+                    if f.isVoiced(k) { last = k; quiet = 0 } else { quiet += 1; if quiet >= 15 { broke = true; break } }
+                } else if note(k) { last = k }
+                else if (max(own, k - 9)...k).filter(note).count <= 3 && k - own >= 6 { broke = true; break }
+                k += 1
+            }
+            if last < 0 { e[i] = min(w.end, after) }                                   // no voice under it: as it was
+            else if !broke && after < .infinity { e[i] = after; legato[i] = after == next[i] }
+            else { e[i] = f.time(last + 1) }
+            e[i] = min(max(e[i], s[i] + 0.05), s[i] + 8)
+        }
+        // a word ends where the next starts, once those have moved
+        for i in 0..<n where next[i] < .infinity {
+            guard let j = (i + 1..<n).first(where: { flat[$0].start > flat[i].start }) else { continue }
+            e[i] = legato[i] ? max(s[i] + 0.05, s[j]) : min(e[i], max(s[i] + 0.05, s[j]))
+        }
+        var i = 0
+        return lines.map { l in
+            Line(id: l.id, words: l.words.map { w in defer { i += 1 }; return Word(text: w.text, start: s[i], end: e[i], lang: w.lang) },
+                 english: l.english, draft: l.draft)
+        }
+    }
+
+    /// How much of the voice in a word has been spent at each frame from its start (0…1, one more value than frames).
+    static func curve(_ f: Features, _ start: Double, _ end: Double) -> [Float]? {
+        let a = f.frame(start), b = min(f.count, max(a + 1, Int((end / f.hop).rounded())))
+        guard b - a >= 3 else { return nil }
+        let fl = Float(f.floor)
+        let w = (a..<b).map { k in f.voiced[k] == 1 ? min(30, max(1, Float(f.db[k]) / 10 - fl + 1)) : 0 }
+        let mean = w.reduce(0, +) / Float(w.count)
+        guard mean > 0 else { return nil }
+        var acc: [Float] = [0], sum: Float = 0
+        for x in w { sum += max(x, 0.03 * mean); acc.append(sum) }        // a breath inside a word all but holds the light
+        return acc.map { $0 / sum }
+    }
+
+    /// How far through a word the light is at t (0…1): by the voice spent, or the clock where nothing was measured.
+    static func progress(_ b: Beat, _ t: Double) -> Double {
+        let clock = (t - b.start) / max(0.05, b.end - b.start)
+        guard let f = track else { return clock }
+        let key = "\(b.start)|\(b.end)"
+        let c: [Float]
+        if let m = curves[key] { c = m }
+        else {
+            guard let m = curve(f, b.start, b.end) else { return clock }
+            if curves.count > 4000 { curves = [:] }
+            curves[key] = m; c = m
+        }
+        let x = (t - f.time(f.frame(b.start))) / f.hop, i = Int(x.rounded(.down))
+        guard i >= 0 else { return 0 }
+        guard i + 1 < c.count else { return 1 }
+        return Double(c[i] + (c[i + 1] - c[i]) * Float(x - Double(i)))
+    }
+}
+
 // ---------- content identity: the same recording, whatever the source ----------
 // A transcript is keyed by address, so the same song from YouTube, a downloaded mp3 or Music was transcribed and
 // translated again from scratch — a day's quota spent on something already done. Each piece's audio gets a
@@ -4550,6 +4789,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     static func asr(_ key: String) -> String { "\(key)/asr.json" }
     static func tr(_ key: String, _ lang: String) -> String { "\(key)/tr/\(lang).json" }
     static func corrections(_ key: String) -> String { "\(key)/corrections.json" }
+    static func features(_ key: String) -> String { "\(key)/features.json" }
     static func trURL(_ key: String, _ lang: String) -> URL { cacheDir.appendingPathComponent("\(key).tr.\(lang).json") }
 
     static func encode<T: Encodable>(_ v: T) -> Data? {
@@ -4645,6 +4885,13 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
         return ok
     }
 
+    /// A song's measured voice (Features) to keep/<key>/features.json, when it changed.
+    @discardableResult
+    static func pushFeatures(_ key: String) async -> Bool {
+        guard Store.r2, let d = try? Data(contentsOf: Features.url(key)) else { return false }
+        return await send(features(key)) { _ in d }
+    }
+
     /// A translation (vi, fr) to keep/<key>/tr/<lang>.json once it covers the whole transcript; never before, so
     /// Gallery never shows half of one. Sent when it changed.
     @discardableResult
@@ -4705,7 +4952,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     nonisolated static func parts(_ names: some Sequence<String>) -> [String: Set<String>] {
         var out: [String: Set<String>] = [:]
         for n in names {
-            if let m = n.firstMatch(of: #/^keep/([0-9a-f]{24})/(asr|corrections)\.json$/#) { out[String(m.1), default: []].insert(String(m.2)) }
+            if let m = n.firstMatch(of: #/^keep/([0-9a-f]{24})/(asr|corrections|features)\.json$/#) { out[String(m.1), default: []].insert(String(m.2)) }
             else if let m = n.firstMatch(of: #/^keep/([0-9a-f]{24})/tr/([a-z]{2,3})\.json$/#) { out[String(m.1), default: []].insert("tr/" + m.2) }
             else if let m = n.firstMatch(of: #/^keep/([0-9a-f]{24})\.(v2|edits)\.json$/#) { out[String(m.1), default: []].insert(String(m.2)) }
         }
@@ -4900,6 +5147,7 @@ enum Store {
                     // corrections are written in keep/ by Gallery too: merged with keep/'s copy, never sent over it blind
                     if name.hasSuffix(".edits.json") { await CorrectionSync.push(key) }
                     else if name.hasSuffix(".v2.json") { if await Keep.pushTranscript(key) { mirrored[name] = m } }
+                    else if name.hasSuffix(".features.json") { if await Keep.pushFeatures(key) { mirrored[name] = m } }
                     else if let lang = name.firstMatch(of: #/\.tr\.([a-z]{2,3})\.json$/#)?.1 {
                         // a translation goes once it covers the whole transcript (until then it is kept here)
                         if await Keep.pushTranslation(key, String(lang)) { mirrored[name] = m }
@@ -4943,23 +5191,40 @@ enum Store {
 
 // ---------- tiny localhost HTTP server for the browser extension ----------
 final class Server {
-    let listener: NWListener
+    var listener: NWListener
+    let port: UInt16
     let handle: (String, [String: String], Data) async -> [String: Any]
     final class Conn { var buf = Data() }
 
-    init(port: UInt16, handle: @escaping (String, [String: String], Data) async -> [String: Any]) throws {
+    static func listener(_ port: UInt16) throws -> NWListener {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         params.allowLocalEndpointReuse = true
-        listener = try NWListener(using: params)
+        return try NWListener(using: params)
+    }
+
+    init(port: UInt16, handle: @escaping (String, [String: String], Data) async -> [String: Any]) throws {
+        self.port = port
+        listener = try Server.listener(port)
         self.handle = handle
     }
 
+    /// The port is Sill's alone. When it's taken (the Sill being replaced still letting go of it, or a standalone
+    /// Recense.app left running), a new listener tries again every 3 s until it gets it, instead of the extension's
+    /// position reports going nowhere until the next launch.
     func start() {
         listener.newConnectionHandler = { [weak self] c in
             c.start(queue: .main); self?.receive(c, Conn())
         }
-        listener.stateUpdateHandler = { log("server: \($0)") }
+        listener.stateUpdateHandler = { [weak self] st in
+            log("server: \(st)")
+            guard case .failed = st, let self else { return }
+            self.listener.cancel()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, let l = try? Server.listener(self.port) else { return }
+                self.listener = l; self.start()
+            }
+        }
         listener.start(queue: .main)
     }
 
@@ -5399,7 +5664,7 @@ final class NativeSources {
         running = true; defer { running = false }
         guard let files = await media(), !files.isEmpty, let listing = await Keep.listing() else { return }
         let have = Set(listing.filter { $0.value.contains("asr") || $0.value.contains("v2") }.keys)
-        defer { Task { await translateMissing(files, listing, idle: idle) } }
+        defer { Task { await translateMissing(files, listing, idle: idle); await measureMissing(listing, idle: idle) } }
         var todo: [(key: String, value: Int)] = []
         for (path, size) in files.sorted(by: { $0.key < $1.key }) where !skipped.contains("\(path)|\(size)") {
             guard let k = await itemKey(path, size: size, listing: listing) else { continue }
@@ -5583,6 +5848,30 @@ final class NativeSources {
     static var translated = Set<String>()     // items whose translations were tried since launch
 
     /// Files transcribed before Vietnamese and French were made: their translations, one item at a time while idle.
+    /// Songs in keep/ whose voice was never measured (Features), measured while nothing plays from their vocal stem,
+    /// while R2's tmp/ still has it (a song played again is measured as it plays). Each is tried once a run.
+    static var measured = Set<String>()
+    static func measureMissing(_ listing: [String: Set<String>], idle: @escaping @MainActor () -> Bool) async {
+        guard !running, idle(), let tmp = await Store.list("tmp/") else { return }
+        running = true; defer { running = false }
+        for (key, parts) in listing.sorted(by: { $0.key < $1.key })
+        where (parts.contains("asr") || parts.contains("v2")) && !parts.contains("features") && !measured.contains(key) {
+            guard idle() else { return }
+            measured.insert(key)
+            let name = key + "-vocals.wav", local = cacheDir.appendingPathComponent(name)
+            let here = FileManager.default.fileExists(atPath: local.path)
+            guard here || tmp["tmp/" + name] != nil, let stem = here ? local : await Store.restore([name]) else { continue }
+            let f: Features? = await Task.detached(priority: .utility) {
+                guard let s = try? decodeChunk(stem, from: 0, to: 3600), !s.isEmpty else { return nil }
+                return Features.measure(s, source: "vocals")
+            }.value
+            if !here { try? FileManager.default.removeItem(at: stem) }      // R2 still has it
+            guard let f else { continue }
+            f.write(key)
+            if await Keep.pushFeatures(key) { log("gallery: measured the voice of \(key)") }
+        }
+    }
+
     static func translateMissing(_ files: [String: Int], _ listing: [String: Set<String>], idle: @escaping @MainActor () -> Bool) async {
         guard !running else { return }
         running = true; defer { running = false }
@@ -6524,10 +6813,12 @@ final class NativeSources {
             let t = smoothTime() + cfg.syncOffset * pos.rate - ep.shift
             // The line being spoken, held after it ends until the next one shows (unlit, 4 s ahead), so the window
             // never blinks empty between lines; only a real break (12 s or more) clears it. Paused, it never clears.
-            let held = expectPaused ?? pos.paused, lines = ep.display   // the trailing line in the native language
+            Cadence.track = ep.features
+            let held = expectPaused ?? pos.paused, lines = ep.sung   // the trailing line in the native language, timed to the voice
             let last = lines.last { $0.start - 0.15 <= t }, next = lines.first { $0.start - 0.15 > t }
             let breakAhead = (next?.start ?? .infinity) - (last?.end ?? -.infinity) >= 12
             editable = nil
+            defer { if let e = editable { editable = ep.display.first { $0.id == e.id } ?? e } }   // corrected as transcribed
             // between the words: [Ambient Sounds] while there is sound, from the end of a line to the next one's start
             let speaking = last.map { t <= $0.end + 0.3 } ?? false
             let ambient = !speaking && t >= 0 && ep.sounding(t) && (ep.instrumental || ep.complete || next != nil)
