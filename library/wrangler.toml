@@ -38,6 +38,8 @@ bucket_name = "recense-tmp"
 #   npx wrangler r2 bucket create gallery-tmp
 #   npx wrangler r2 bucket lifecycle add gallery-tmp expire-tmp-1d tmp/ --expire-days 1 --force
 #   npx wrangler r2 bucket lifecycle add gallery-tmp abort-mpu-1d --abort-multipart-days 1 --force
+# Everything else in the bucket (Downloads moved by the Mac's agent, whatever is dropped in ~/.gallery/tmp) goes after two weeks:
+#   npx wrangler r2 bucket lifecycle add gallery-tmp expire-all-14d --expire-days 14 --force
 [[r2_buckets]]
 binding = "TMP"
 bucket_name = "gallery-tmp"
