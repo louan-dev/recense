@@ -1,4 +1,4 @@
-// Gallery Files (iOS/iPadOS): adds the "Chauphan" location to the Files app and says whether it's working.
+// Gallery (iOS/iPadOS): adds the "Chauphan" location to the Files app and says whether it's working.
 // The device's Access token comes inside the app (ios/Secrets/token.json, written by ios/build.sh from the Mac's
 // Keychain, never in git) and is moved into the shared Keychain group on first launch, where the extension reads it.
 import SwiftUI
@@ -14,7 +14,7 @@ struct GalleryFilesApp: App {
         WindowGroup {
             VStack(spacing: 16) {
                 Image(systemName: "folder.badge.gearshape").font(.system(size: 48))
-                Text("Gallery Files").font(.title2.bold())
+                Text("Gallery").font(.title2.bold())
                 Text(status).multilineTextAlignment(.center).foregroundStyle(.secondary)
                 Text("Open the Files app › Browse › Chauphan.").font(.footnote).foregroundStyle(.secondary)
             }

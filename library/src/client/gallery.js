@@ -20,6 +20,8 @@
   let complete = !!G.complete;
 
   const src = (f) => f.src || "/f/" + G.id + "/" + f.n;
+  // where the owner's API lives: Main's, or the archive's (G.mainApi), which answers reads only and refuses every write
+  const MAIN_API = G.mainApi || "/main/api";
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 
   const mkEl = (t, c) => {
@@ -3283,7 +3285,7 @@
   }
   const ownerName = String(G.owner || "").split(" ")[0] || "Owner";
   const me = G.invite ? G.invite.name : G.owner;
-  const API = G.api || "/main/api";
+  const API = G.api || MAIN_API;
   let owner = false;
   let draft = "";
 
@@ -3706,7 +3708,7 @@
 
   const txUrl = (f) =>
     G.main
-      ? "/main/api/transcript?" + new URLSearchParams({ path: f.path })
+      ? MAIN_API + "/transcript?" + new URLSearchParams({ path: f.path })
       : G.invite
       ? API + "/transcript?" + new URLSearchParams({ name: String(f.path || f.name).split("/").pop() })
       : /^\d{3}$/.test(f.n || "")
@@ -3735,7 +3737,7 @@
   const txWrite = (f) => {
     const q = G.main ? { path: f.path } : !G.invite && /^\d{3}$/.test(f.n || "") ? { id: G.id, n: f.n } : null;
     if (!q) return null;
-    const base = G.main ? "/main/api/transcript" : "/api/transcript";
+    const base = G.main ? MAIN_API + "/transcript" : "/api/transcript";
     const qs = "?" + new URLSearchParams(q);
     return { put: base + qs, run: base + "/run" + qs, changes: base + "/changes" + qs };
   };
@@ -4736,9 +4738,10 @@
     label();
   };
 
-  if (G.main) showOwner();
-  else
-    fetch("/main/api/whoami", { redirect: "manual", cache: "no-store" })
+  // a read-only library (the archive) never gets the owner's controls
+  if (G.main && !G.readOnly) showOwner();
+  else if (!G.readOnly)
+    fetch(MAIN_API + "/whoami", { redirect: "manual", cache: "no-store" })
       .then((r) => r.ok && showOwner())
       .catch(() => {});
 
@@ -4761,14 +4764,14 @@
     try {
       if (G.main) {
         for (const f of list) {
-          const r = await fetch("/main/api/file?" + new URLSearchParams({ key: f.path }), { method: "DELETE" });
+          const r = await fetch(MAIN_API + "/file?" + new URLSearchParams({ key: f.path }), { method: "DELETE" });
           if (!r.ok) throw new Error((await r.text()) || "Delete failed");
           done++;
         }
       } else {
         const q = new URLSearchParams({ id: G.id });
         list.forEach((f) => q.append("item", f.path || f.n));
-        const r = await fetch("/main/api/link?" + q, { method: "DELETE" });
+        const r = await fetch(MAIN_API + "/link?" + q, { method: "DELETE" });
         if (!r.ok) throw new Error((await r.text()) || "Delete failed");
         done = list.length;
       }
@@ -4826,7 +4829,7 @@
         // an invited person adds new files only, into their one folder (the server picks the folder)
         const to = G.invite
           ? API + "/file?" + new URLSearchParams({ name: file.name, mtime })
-          : "/main/api/file?" + new URLSearchParams({ key: keyOf(file), mtime });
+          : MAIN_API + "/file?" + new URLSearchParams({ key: keyOf(file), mtime });
         const r = await fetch(to, {
           method: "PUT",
           headers: { "content-type": file.type || "application/octet-stream", "x-gallery": "1" },
@@ -4886,7 +4889,7 @@
   };
 
   const saveKey = async (path, key, src) => {
-    const r = await fetch("/main/api/key", {
+    const r = await fetch(MAIN_API + "/key", {
       method: "PUT",
       headers: { "content-type": "application/json", "x-gallery": "1" },
       body: JSON.stringify({ path, key, src }),
@@ -5688,7 +5691,7 @@
     if (!name || name.trim() === old) return;
 
     try {
-      const r = await fetch("/main/api/rename", {
+      const r = await fetch(MAIN_API + "/rename", {
         method: "POST",
         headers: { "content-type": "application/json", "x-gallery": "1" },
         body: JSON.stringify({ path: f.path, name: name.trim() }),
@@ -5735,7 +5738,7 @@
       tell("Saving the cover…");
 
       try {
-        const r = await fetch("/main/api/cover?" + new URLSearchParams({ path: f.path }), {
+        const r = await fetch(MAIN_API + "/cover?" + new URLSearchParams({ path: f.path }), {
           method: "PUT",
           headers: { "content-type": file.type || "application/octet-stream", "x-gallery": "1" },
           body: file,
@@ -5762,7 +5765,7 @@
     if (!confirm("Delete the cover of " + f.name + "?")) return;
 
     try {
-      const r = await fetch("/main/api/cover?" + new URLSearchParams({ path: f.path }), {
+      const r = await fetch(MAIN_API + "/cover?" + new URLSearchParams({ path: f.path }), {
         method: "DELETE",
         headers: { "x-gallery": "1" },
       });

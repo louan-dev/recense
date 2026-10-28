@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds "Gallery Files.app" (host app + File Provider extension) and installs it in /Applications.
+# Builds Gallery (as "Gallery Files.app": /Applications/Gallery.app is the Touch ID mount app) (host app + File Provider extension) and installs it in /Applications.
 #   zsh build.sh
 # Signed with this Mac's Apple Development certificate (free Personal Team, team 48RZ72DNP3). The App Group is
 # team-prefixed, so macOS needs no provisioning profile. Each build goes to a fresh folder under apple/build/;
@@ -21,6 +21,8 @@ swiftc -O -target $target -module-name GalleryFiles \
   "$src/FileProviderCore/Core.swift" "$src/HostApp/macOS/main.swift" \
   -framework AppKit -framework FileProvider -o "$app/Contents/MacOS/GalleryFiles"
 cp "$here/Ext-Info.plist" "$ext/Contents/Info.plist"
+# the cloud alone, on transparency: Finder's sidebar draws it as a template, so an opaque square turns into a black block
+mkdir -p "$ext/Contents/Resources" && cp "$here/GalleryProvider.icns" "$ext/Contents/Resources/"
 cp "$here/App-Info.plist" "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources" && cp "$here/GalleryFiles.icns" "$app/Contents/Resources/"
 

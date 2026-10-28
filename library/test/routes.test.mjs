@@ -1243,6 +1243,49 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.ok(!hrefs(rootList).some((h) => h.includes(".catalog")));
 });
 
+await test("main/archive: Main's page and player over gallery-archive/chauphan, read-only", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  await AR.put("chauphan/Shelf/Sub/x.txt", "x");
+  await AR.put("chauphan/Shelf/b.m4a", "0123456789", { customMetadata: { mtime: "1700000000" } });
+  await AR.put("chauphan/Shelf/a.m4a", "AAAA");
+  await AR.put("chauphan/Shelf/.DS_Store", "ds");
+  await AR.put(".catalog/archive/secret.json", "{}");
+  // owner only
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/archive")).status, 404);
+  assert.equal((await call("/main/archive", { as: "stranger" })).status, 403); // the wrong-account page, as on /main
+  // a folder: the same page, with its items in order, its subfolders, and the read-only switches
+  const page = await (await call("/main/archive?p=Shelf", { as: "owner" })).text();
+  const G = JSON.parse(page.match(/const G=(\{.*?\});\n/s)[1]);
+  assert.equal(G.readOnly, true);
+  assert.equal(G.mainApi, "/main/archive/api");
+  assert.equal(G.api, "/main/archive/api");
+  assert.deepEqual(G.items.map((f) => [f.n, f.path, f.src]), [
+    ["00000", "Shelf/a.m4a", "/main/archive/f/Shelf/a.m4a"],
+    ["00001", "Shelf/b.m4a", "/main/archive/f/Shelf/b.m4a"],
+  ]);
+  assert.equal(G.items[1].taken, 1700000000000);
+  assert.ok(page.includes('href="/main/archive?p=Shelf%2FSub"'));
+  assert.ok(!page.includes(".DS_Store"));
+  assert.equal((await call("/main/archive?p=Nope", { as: "owner" })).status, 404);
+  assert.equal((await call("/main/archive?p=..%2F.catalog", { as: "owner" })).status, 404);
+  // files, with Range; nothing outside chauphan/ or in a dot folder
+  const part = await call("/main/archive/f/Shelf/b.m4a", { as: "owner", headers: { range: "bytes=2-4" } });
+  assert.equal(part.status, 206);
+  assert.equal(await part.text(), "234");
+  assert.equal((await call("/main/archive/f/..%2F.catalog%2Farchive%2Fsecret.json", { as: "owner" })).status, 404);
+  assert.equal((await call("/main/archive/f/Shelf/.DS_Store", { as: "owner" })).status, 404);
+  // the page's API: whoami answers, reads are 404, every write is 403, and nothing is written anywhere
+  const before = (await AR.list()).objects.length;
+  assert.equal((await call("/main/archive/api/whoami", { as: "owner" })).status, 200);
+  assert.equal((await call("/main/archive/api/transcript?path=Shelf%2Fa.m4a", { as: "owner" })).status, 404);
+  for (const [p, m] of [["file?key=Shelf%2Fa.m4a", "DELETE"], ["file?order=1&dir=Shelf", "PUT"], ["rename", "POST"], ["cover?path=Shelf%2Fa.m4a", "PUT"], ["key", "PUT"]]) {
+    assert.equal((await call("/main/archive/api/" + p, { as: "owner", method: m, body: m === "DELETE" ? undefined : "[]", headers: { origin: ORIGIN } })).status, 403, p);
+  }
+  assert.equal((await call("/main/archive/f/Shelf/a.m4a", { as: "owner", method: "PUT", body: "z" })).status, 403);
+  assert.equal((await AR.list()).objects.length, before);
+  assert.equal(await (await AR.get("chauphan/Shelf/a.m4a")).text(), "AAAA");
+});
+
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {
   const TMP = await mf.getR2Bucket("TMP");
   await MAIN.put("files/Tmp/song.mp3", "SONG", { httpMetadata: { contentType: "audio/mpeg" } });
