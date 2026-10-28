@@ -4,8 +4,8 @@
 //   /main, /main/f/…                        the owner's library, from the MAIN bucket
 //   /main/api/…                             every write: uploads, links, deletes, invites
 //   /m/<token>/…                            an invited person's view of one Main folder (invite.js)
-//   /main/dav/…, /main/dav-tmp/…, /main/nc/…, /main/nc-tmp/…, /dav/notability/…
-//                                          WebDAV: Main and tmp (Access; nc = chunked uploads), Notability's backup (Basic) (dav.js)
+//   /main/dav/…, /main/dav-tmp/…, /main/dav-archive/…, /main/nc/…, /main/nc-tmp/…, /main/nc-archive/…, /dav/notability/…
+//                                          WebDAV: Main, tmp and the archive (Access; nc = chunked uploads), Notability's backup (Basic) (dav.js)
 //   /t/<id>/<name>                          a temporary download from the self-deleting TMP bucket (tmp.js)
 //
 // Everything under /main sits behind Cloudflare Access, and the Worker checks the owner itself

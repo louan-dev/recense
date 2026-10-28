@@ -47,7 +47,7 @@ const mf = new Miniflare({
     ...textModules.map((f) => ({ type: "Text", path: BUILD + f })),
   ],
   compatibilityDate: "2026-08-01",
-  r2Buckets: { PUBLIC: "gallery-public-test", MAIN: "gallery-main-test", KEEP: "recense-keep-test", TMP: "gallery-tmp-test" },
+  r2Buckets: { PUBLIC: "gallery-public-test", MAIN: "gallery-main-test", KEEP: "recense-keep-test", TMP: "gallery-tmp-test", ARCHIVE: "gallery-archive-test" },
   bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: CLIENT + ", phone-id.access", NOTABILITY_DAV_HASH: NOTE_HASH },
   outboundService: (req) =>
     new URL(req.url).pathname === "/cdn-cgi/access/certs"
@@ -1097,6 +1097,61 @@ await test("main/nc: rclone's chunked uploads (nextcloud vendor) are joined into
   assert.equal((await tup(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/nc-tmp/dav/files/owner/t.txt" } })).status, 201);
   assert.equal(await (await TMP.get("t.txt")).text(), "hi");
   assert.equal((await TMP.list({ prefix: ".uploads/" })).objects.length, 0);
+});
+
+await test("main/dav-archive: Access only; read-write with its own trash, nothing reaches Main or tmp", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const TMP = await mf.getR2Bucket("TMP");
+  const ma = (path, init = {}) => call("/main/dav-archive/" + path, { as: "mac", ...init });
+  const dest = (p) => ({ destination: ORIGIN + "/main/dav-archive/" + p });
+  const trashed = async (p) => (await AR.list({ prefix: ".trash/" })).objects.filter((o) => o.key.includes("/" + p + "@"));
+  await AR.put("chauphan/Movies/a.mp4", "A", { customMetadata: { mtime: "1700000000" } });
+  // nobody else
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-archive/", { method: "PROPFIND" })).status, 404);
+  assert.equal((await call("/main/dav-archive/", { as: "stranger", method: "PROPFIND" })).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-archive/chauphan/Movies/a.mp4", { headers: { authorization: basic("note-pass") } })).status, 404);
+  // lists the ARCHIVE bucket; the trash is never listed or reachable
+  const xml = await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text();
+  assert.deepEqual(hrefs(xml).sort(), ["/main/dav-archive/chauphan/Movies/", "/main/dav-archive/chauphan/Movies/a.mp4"]);
+  assert.equal(await (await ma("chauphan/Movies/a.mp4")).text(), "A");
+  // overwrite: the old copy goes to .trash/, a stale base is refused
+  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "PUT", body: "A2" })).status, 204);
+  assert.equal(await (await AR.get("chauphan/Movies/a.mp4")).text(), "A2");
+  const old = await trashed("chauphan/Movies/a.mp4");
+  assert.equal(old.length, 1);
+  assert.equal(await (await AR.get(old[0].key)).text(), "A");
+  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "PUT", body: "A3", headers: { "if-match": '"stale"' } })).status, 412);
+  const root = await (await ma("", { method: "PROPFIND", headers: { depth: "1" } })).text();
+  assert.ok(!hrefs(root).some((h) => h.includes(".trash")));
+  assert.notEqual((await ma(".trash/")).status, 200);
+  assert.notEqual((await ma(encodeURI(old[0].key))).status, 200);
+  assert.notEqual((await ma(".trash/x", { method: "PUT", body: "x" })).status, 201);
+  // move, copy over a file (old one to the trash), delete to the trash; folders and the root are refused
+  assert.equal((await ma("chauphan/Old", { method: "MKCOL" })).status, 201);
+  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "COPY", headers: dest("chauphan/Old/b.mp4") })).status, 201);
+  assert.equal((await ma("chauphan/Old/b.mp4", { method: "PUT", body: "B" })).status, 204);
+  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "COPY", headers: dest("chauphan/Old/b.mp4") })).status, 204);
+  assert.equal((await trashed("chauphan/Old/b.mp4")).length, 2);
+  assert.equal((await ma("chauphan/Old/b.mp4", { method: "MOVE", headers: dest("chauphan/Old/c.mp4") })).status, 201);
+  assert.equal(await AR.head("chauphan/Old/b.mp4"), null);
+  assert.equal((await ma("chauphan/Old/c.mp4", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav/Old/c.mp4" } })).status, 400);
+  assert.equal((await ma("chauphan/Old/c.mp4", { method: "DELETE" })).status, 204);
+  assert.equal(await AR.head("chauphan/Old/c.mp4"), null);
+  assert.equal(await (await AR.get((await trashed("chauphan/Old/c.mp4"))[0].key)).text(), "A2");
+  assert.equal((await ma("chauphan/Old/", { method: "DELETE" })).status, 403);
+  assert.equal((await ma("", { method: "DELETE" })).status, 403);
+  assert.equal((await ma("chauphan/Old", { method: "MOVE", headers: dest("chauphan/New") })).status, 403);
+  // chunked uploads land in the archive and keep the old file
+  const up = (path, init = {}) => call("/main/nc-archive/dav/uploads/owner/rclone-chunked-upload-aa/" + path, { as: "mac", ...init });
+  await up("", { method: "MKCOL" });
+  await up("000000000000000-000000000000002", { method: "PUT", body: "BIG" });
+  assert.equal((await up(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/nc-archive/dav/files/owner/chauphan/Movies/a.mp4" } })).status, 204);
+  assert.equal(await (await AR.get("chauphan/Movies/a.mp4")).text(), "BIG");
+  assert.equal((await trashed("chauphan/Movies/a.mp4")).length, 2);
+  assert.equal((await AR.list({ prefix: ".uploads/" })).objects.length, 0);
+  // nothing written to Main or tmp
+  assert.equal((await MAIN.list({ prefix: "files/chauphan/" })).objects.length, 0);
+  assert.equal((await TMP.list({ prefix: "chauphan/" })).objects.length, 0);
 });
 
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {

@@ -43,3 +43,9 @@ bucket_name = "recense-tmp"
 [[r2_buckets]]
 binding = "TMP"
 bucket_name = "gallery-tmp"
+
+# Phase 2: the archive (folders moved off the Mac, under chauphan/), mounted at /main/dav-archive/ (dav.js).
+# Its trash is .trash/ in the same bucket. The bucket exists (created 2026-10-28).
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "gallery-archive"

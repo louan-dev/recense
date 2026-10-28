@@ -5,7 +5,10 @@
 //                      the old file in trash/<day>/<path>@<time>; DELETE moves a file to the trash.
 //   /main/dav-tmp/…    the gallery-tmp bucket, behind Access too. Throwaway by design (it expires), so
 //                      DELETE and overwrites are for good: no trash, no versions.
-//   /main/nc/…, /main/nc-tmp/…  the same two, Nextcloud-shaped (…/dav/files/owner/, …/dav/uploads/owner/) for rclone's
+//   /main/dav-archive/…  the gallery-archive bucket (chauphan/… and later computers), behind Access. Read-write
+//                      like Main: an overwrite keeps the old file in .trash/<day>/<path>@<time> in the same
+//                      bucket, and DELETE moves a file there.
+//   /main/nc/…, /main/nc-tmp/…, /main/nc-archive/…  the same three, Nextcloud-shaped (…/dav/files/owner/, …/dav/uploads/owner/) for rclone's
 //                      nextcloud vendor: a file bigger than one request (Cloudflare caps a body at 100 MB) arrives
 //                      in chunks under .uploads/<dir>/ and is joined into place by MOVE …/.file.
 //   /dav/notability/…  Notability's Auto-Backup (notability-backup/), outside Access: HTTP Basic
@@ -34,8 +37,10 @@ const JOINED_MAX = 5 * 1024 ** 3; // one R2 put
 
 export const MAIN_DAV = { base: "/main/dav/", prefix: "files/", main: true, rw: true };
 export const TMP_DAV = { base: "/main/dav-tmp/", prefix: "", bucket: "TMP", rw: true, ephemeral: true };
+export const ARCHIVE_DAV = { base: "/main/dav-archive/", prefix: "", bucket: "ARCHIVE", rw: true, trash: ".trash/" };
 export const MAIN_NC = { ...MAIN_DAV, base: "/main/nc/dav/files/owner/", uploads: "/main/nc/dav/uploads/owner/" };
 export const TMP_NC = { ...TMP_DAV, base: "/main/nc-tmp/dav/files/owner/", uploads: "/main/nc-tmp/dav/uploads/owner/" };
+export const ARCHIVE_NC = { ...ARCHIVE_DAV, base: "/main/nc-archive/dav/files/owner/", uploads: "/main/nc-archive/dav/uploads/owner/" };
 export const NOTABILITY_DAV = { base: "/dav/notability/", prefix: "notability-backup/", versions: "notability-versions/" };
 
 const RW = "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY";
@@ -48,14 +53,18 @@ const under = (path, base) => path + "/" === base || path.startsWith(base);
 
 // the owner's mount (behind Access) serving this path, or null
 export function ownerMount(path) {
-  return [MAIN_DAV, TMP_DAV, MAIN_NC, TMP_NC].find((m) => under(path, m.base) || (m.uploads && under(path, m.uploads))) || null;
+  return [MAIN_DAV, TMP_DAV, ARCHIVE_DAV, MAIN_NC, TMP_NC, ARCHIVE_NC].find((m) => under(path, m.base) || (m.uploads && under(path, m.uploads))) || null;
 }
 
 // the path inside the mount, or null; "" is the mount's root
 export function davPath(mount, pathname) {
   if (pathname + "/" === mount.base) return "";
   if (!pathname.startsWith(mount.base)) return null;
-  return cleanPath(pathname.slice(mount.base.length), true);
+  const rel = cleanPath(pathname.slice(mount.base.length), true);
+  // a mount on a bucket's root shares it with its staging and trash: never reachable through the mount
+  const top = rel === null ? "" : rel.split("/")[0] + "/";
+  if (!mount.prefix && (top === STAGE || top === mount.trash)) return null;
+  return rel;
 }
 
 export async function dav(req, env, url, mount) {
@@ -77,7 +86,7 @@ export async function dav(req, env, url, mount) {
     case "MKCOL":
       return mkcol(req, env, mount, rel);
     case "DELETE":
-      return mount.main ? del(env, rel) : mount.rw ? drop(env, mount, rel) : text(405, "", { allow });
+      return mount.main ? del(env, rel) : mount.trash ? bin(env, mount, rel) : mount.rw ? drop(env, mount, rel) : text(405, "", { allow });
     case "MOVE":
     case "COPY":
       return mount.rw ? moveOrCopy(req, env, url, mount, rel, req.method === "MOVE") : text(405, "", { allow });
@@ -230,11 +239,13 @@ async function put(req, env, mount, rel) {
   const refused = preconditions(req, head);
   if (refused) return refused;
 
-  // nothing is lost: the file as it was goes to the trash (Main) or to the versions (append-only); tmp just replaces it
+  // nothing is lost: the file as it was goes to the trash (Main, archive) or to the versions (append-only); tmp just replaces it
   if (head && !mount.ephemeral) {
     const kept = mount.main
       ? await keepInTrash(env, rel)
-      : await copyKey(b, key, mount.versions + rel + "@" + new Date().toISOString().replace(/[:.]/g, "-"));
+      : mount.trash
+        ? await toTrash(b, mount, rel)
+        : await copyKey(b, key, mount.versions + rel + "@" + new Date().toISOString().replace(/[:.]/g, "-"));
     if (!kept) return text(412, "Changed");
   }
 
@@ -308,6 +319,24 @@ async function del(env, rel) {
   return (await folderExists(env, rel)) ? text(403, "Folders are deleted on the Mac") : text(404, "Not found");
 }
 
+// a copy of the file as it is, in the mount's own trash: <trash><day>/<path>@<time>
+function toTrash(b, mount, rel) {
+  const now = new Date().toISOString();
+  return copyKey(b, mount.prefix + rel, mount.trash + now.slice(0, 10) + "/" + rel + "@" + now.replace(/[:.]/g, "-"));
+}
+
+// archive: a file goes to the trash; folders are refused, as on Main
+async function bin(env, mount, rel) {
+  if (!rel) return text(403, "Not the root");
+  const b = r2(env, mount);
+  if (await b.head(mount.prefix + rel)) {
+    if (!(await toTrash(b, mount, rel))) return text(412, "Changed");
+    await b.delete(mount.prefix + rel);
+    return new Response(null, { status: 204 });
+  }
+  return (await exists(env, mount, rel)) ? text(403, "Folders are deleted on the Mac") : text(404, "Not found");
+}
+
 // tmp: a file goes for good; a folder only once nothing but folder markers is left in it
 async function drop(env, mount, rel) {
   if (!rel) return text(403, "Not the root");
@@ -355,6 +384,7 @@ async function moveOrCopy(req, env, url, mount, rel, move) {
   const there = await b.head(mount.prefix + to);
   if (there) {
     if ((req.headers.get("overwrite") || "T").trim().toUpperCase() === "F") return text(412, "Already there");
+    if (mount.trash && !(await toTrash(b, mount, to))) return text(412, "Changed");
     if (!mount.main) await b.delete(mount.prefix + to);
     else if (!(await trashFile(env, to))) return text(412, "Changed");
   }
@@ -442,6 +472,7 @@ async function join(req, env, url, mount, b, stage) {
   if (there) {
     if ((req.headers.get("overwrite") || "T").trim().toUpperCase() === "F") return text(412, "Already there");
     if (mount.main && !(await keepInTrash(env, rel))) return text(412, "Changed");
+    if (mount.trash && !(await toTrash(b, mount, rel))) return text(412, "Changed");
   }
 
   const mt = Number(req.headers.get("x-oc-mtime"));
