@@ -1518,6 +1518,8 @@ final class Overlay: NSObject, NSWindowDelegate {
     let editor = LineEditor()
     var onEdit: ((_ clicked: Bool) -> Void)?             // correct the line on screen (a double-click has played or paused first)
     var onReset: (() -> Void)?                           // the line on screen back to what the pipeline made
+    var onRetranscribe: (() -> Void)?                    // Recense.app's menu commands, now that Recense lives in Sill
+    var onExport: (() -> Void)?
     var lineState: (() -> (editable: Bool, edited: Bool))?
     // Learning's barrel (spec §6): one line in view; the lines either side ride a drum out of sight and roll in as the
     // line changes, and show while a scroll turns it to pick a line.
@@ -1850,10 +1852,15 @@ final class Overlay: NSObject, NSWindowDelegate {
         ed.keyEquivalentModifierMask = []; ed.target = self; ed.isEnabled = st.editable
         let rs = m.addItem(withTitle: "Reset Line to Auto", action: #selector(resetFromMenu), keyEquivalent: "")
         rs.target = self; rs.isEnabled = st.editable && st.edited
+        m.addItem(.separator())
+        m.addItem(withTitle: "Retranscribe…", action: #selector(retranscribeFromMenu), keyEquivalent: "").target = self
+        m.addItem(withTitle: "Export Transcript…", action: #selector(exportFromMenu), keyEquivalent: "").target = self
         NSMenu.popUpContextMenu(m, with: e, for: area)
     }
     @objc func editFromMenu() { onEdit?(false) }
     @objc func resetFromMenu() { onReset?() }
+    @objc func retranscribeFromMenu() { onRetranscribe?() }
+    @objc func exportFromMenu() { onExport?() }
     func windowDidResignKey(_ n: Notification) { if editor.editing { editor.finish(.save(editor.field.stringValue)) } }
 
     // close hides instead of quitting; bring it back from the CC menu
@@ -6188,6 +6195,8 @@ final class NativeSources {
             self.command(.seek(ep.shown[j].start - 0.05 - cfg.syncOffset * self.pos.rate + ep.shift))
         }
         overlay.onReset = { [weak self] in self?.resetLine() }
+        overlay.onRetranscribe = { [weak self] in self?.retranscribe() }
+        overlay.onExport = { [weak self] in self?.exportTranscript() }
         overlay.lineState = { [weak self] in (self?.editable != nil, self?.editable.map(Episode.isEdited) ?? false) }
         overlay.setControls(false)
         // No status item of its own: Sill shows this menu as "Recense" in its menu bar.
