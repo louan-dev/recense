@@ -3,6 +3,10 @@ import homebarCss from "../client/homebar.css";
 import homebar from "../client/homebar.js";
 import js from "../client/gallery.js";
 import keylabel from "../client/keylabel.js";
+import prosody from "../client/prosody.js";
+import prosogram from "../client/prosogram.js";
+import prosogramMain from "../client/prosogram-main.js";
+import prosogramMount from "../client/prosogram-mount.js";
 import room from "../client/room.js";
 import { OWNER, VERSION, esc, page } from "../common.js";
 
@@ -218,6 +222,22 @@ ${homebar}
 <script>
 ${js}
 </script>
+<!-- The live prosogram. prosody.js, prosogram.js and prosogram-mount.js know no app-specific routes and load on every
+     page, so share links get it too. Only prosogram-main.js names an owner route, so it alone is gated: a participant's
+     page must not contain that string (routes.test.mjs "invites" asserts it). Loaded after the player so the stage
+     exists; prosogram-mount.js is the one file to change when gallery.js grows a real hook. -->
+<script>
+${prosody}
+</script>
+<script>
+${prosogram}
+</script>
+<script>
+${prosogramMount}
+</script>
+${live.main ? `<script>
+${prosogramMain}
+</script>` : ""}
 
 <script>
 // The "…" menu and the Invite sheet. Only the owner sees the menu; the server refuses
