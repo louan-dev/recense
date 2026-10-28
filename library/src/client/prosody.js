@@ -279,7 +279,14 @@
     const { at, progress, words } = api, F = data.features, hop = data.hop, n = data.frames
     const lang = data.lang || 'vi', kind = data.kind || 'song'
     for (const w of words) if (w.text !== w.text.normalize('NFC')) w.text = w.text.normalize('NFC')
-    const measure = api.measure || defaultMeasure()
+    // The host MUST say what glyph metrics it draws with. These fractions become each syllable's u0/un/u1, which
+    // invert() turns into t0/t1 — the windows every pitch and loudness number is measured over. A hidden default meant
+    // a canvas host and a headless one silently measured different windows for the same audio, so there is no default:
+    // pass Prosody.canvasMeasure(font) when drawing on canvas, Prosody.evenMeasure() when there are no metrics, or the
+    // host's own function (Recense passes its native text widths).
+    const measure = api.measure
+    if (typeof measure !== 'function')
+      throw new Error('Prosody.analyze: `measure` is required (Prosody.canvasMeasure(font) | Prosody.evenMeasure() | your own); syllable windows must never come from a hidden default')
     const fr = k => Math.max(0, Math.min(n - 1, Math.round(k / hop)))
     const pitched = k => F.voiced[k] === 1 && F.pitch[k] > 0
     // inverse of the light's progress: the time it reaches u, per word
@@ -607,22 +614,36 @@
     return res
   }
 
-  function defaultMeasure() {
+  /** Character-boundary fractions of a word's drawn width, from a canvas font. A host that draws with canvas passes
+   *  this to analyze() deliberately: `measure: Prosody.canvasMeasure(theFontItDrawsWith)`. Returns null where there is
+   *  no canvas, so the caller finds out instead of silently getting something else. */
+  function canvasMeasure(font) {
     let ctx = null
     try {
       const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(8, 8) : document.createElement('canvas')
-      ctx = cv.getContext('2d'); ctx.font = '500 100px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif'
+      ctx = cv.getContext('2d')
+      ctx.font = font || '500 100px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif'
     } catch { ctx = null }
+    if (!ctx) return null
     return text => {
       const ch = [...text], out = new Float32Array(ch.length + 1)
-      if (!ctx) { for (let i = 0; i <= ch.length; i++) out[i] = i / Math.max(1, ch.length); return out }
       const full = Math.max(1e-6, ctx.measureText(text).width)
       for (let i = 0; i <= ch.length; i++) out[i] = ctx.measureText(ch.slice(0, i).join('')).width / full
       return out
     }
   }
 
-  const api = { analyze, viSyllable, frSyllables, frLink, frInner, frVowelStart, core, bare, VI_TONE, FR_EVENT }
+  /** Even character spacing: no font involved, identical on every host. For a host that has no glyph metrics, and the
+   *  honest choice for a headless run — but it must be asked for, never fallen back into. */
+  function evenMeasure() {
+    return text => {
+      const n = [...text].length, out = new Float32Array(n + 1)
+      for (let i = 0; i <= n; i++) out[i] = i / Math.max(1, n)
+      return out
+    }
+  }
+
+  const api = { analyze, canvasMeasure, evenMeasure, viSyllable, frSyllables, frLink, frInner, frVowelStart, core, bare, VI_TONE, FR_EVENT }
   if (typeof window !== 'undefined') window.Prosody = api
   if (typeof module !== 'undefined') module.exports = api
 })()

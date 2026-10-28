@@ -36,6 +36,7 @@
 
   const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
   const MIN_W = 320;
+  const SIZE = 17;                   // the font size this panel draws at; the SAME size is measured for timing
 
   const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 
@@ -265,7 +266,7 @@
 
   // ---- the clock: the media element is the source of truth -------------------------------------------------------
   function run(media, panel, plugin, pro, lines, words, at, progress, lang) {
-    let raf = 0, last = 0, size = 17, laid = null, w = 0, dpr = 1;
+    let raf = 0, last = 0, size = SIZE, laid = null, w = 0, dpr = 1;
     const ctx = panel.ctx;
 
     const relayout = () => {
@@ -366,7 +367,9 @@
 
     let pro;
     try {
-      pro = Prosody.analyze(data, { at, progress, words });
+      // say what glyph metrics this host draws with - Prosody has no default, on purpose
+      const measure = Prosody.canvasMeasure(FONT(SIZE)) || Prosody.evenMeasure();
+      pro = Prosody.analyze(data, { at, progress, words, measure });
     } catch (e) {
       console.warn("prosogram: Prosody.analyze failed, not mounting", e);
       return;
