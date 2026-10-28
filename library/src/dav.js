@@ -62,9 +62,8 @@ export function davPath(mount, pathname) {
   if (pathname + "/" === mount.base) return "";
   if (!pathname.startsWith(mount.base)) return null;
   const rel = cleanPath(pathname.slice(mount.base.length), true);
-  // a mount on a bucket's root shares it with its staging and trash: never reachable through the mount
-  const top = rel === null ? "" : rel.split("/")[0] + "/";
-  if (!mount.prefix && (top === STAGE || top === mount.trash)) return null;
+  // a mount on a bucket's root shares it with the bucket's own dot folders (.uploads, .trash, .catalog): never reachable
+  if (!mount.prefix && rel && rel.startsWith(".") && !finderFile(mount, rel)) return null;
   return rel;
 }
 

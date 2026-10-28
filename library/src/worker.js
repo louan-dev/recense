@@ -6,6 +6,7 @@
 //   /m/<token>/…                            an invited person's view of one Main folder (invite.js)
 //   /main/dav/…, /main/dav-tmp/…, /main/dav-archive/…, /main/nc/…, /main/nc-tmp/…, /main/nc-archive/…, /dav/notability/…
 //                                          WebDAV: Main, tmp and the archive (Access; nc = chunked uploads), Notability's backup (Basic) (dav.js)
+//   /main/api/fp/<root>/…                   the File Provider's feed: items, changes, content (fp.js)
 //   /t/<id>/<name>                          a temporary download from the self-deleting TMP bucket (tmp.js)
 //
 // Everything under /main sits behind Cloudflare Access, and the Worker checks the owner itself
@@ -21,6 +22,7 @@ import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, 
 import { inviteApi, participantRoute } from "./invite.js";
 import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, rateSweep } from "./transcript.js";
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
+import { fp } from "./fp.js";
 
 export default {
   async fetch(req, env, ctx) {
@@ -74,6 +76,9 @@ async function mainRoute(req, env, ctx, url, path, method) {
   // WebDAV clients send no Origin; their writes (PUT, MKCOL, MOVE…) can't be sent cross-site without a CORS preflight, which gets no CORS answer
   const davMount = ownerMount(path);
   if (davMount) return dav(req, env, url, davMount);
+
+  // the File Provider's read-only feed: a native client sends no Origin (fp.js)
+  if (path.startsWith("/main/api/fp/")) return fp(req, env, url, path);
 
   if (path.startsWith("/main/api/")) {
     if (path === "/main/api/whoami" && read) return jsonResponse({ ok: true });

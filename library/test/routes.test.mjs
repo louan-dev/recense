@@ -1169,6 +1169,80 @@ await test("main/dav-archive: Access only; read-write with its own trash, nothin
   assert.equal((await TMP.list({ prefix: "chauphan/" })).objects.length, 0);
 });
 
+await test("fp: the File Provider's read-only feed over gallery-archive (ids, items, content, changes)", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
+  const j = async (p) => (await api(p)).json();
+  const VM = "chauphan/Voice Memos/2024";
+  await AR.put(VM + "/a.m4a", "ABCDEF", { customMetadata: { mtime: "1700000000" } });
+  await AR.put(VM + "/b.m4a", "B1");
+  await AR.put(VM + "/c.m4a", "C1");
+  // owner and the Mac only; read-only
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/fp/archive/items")).status, 404);
+  assert.equal((await call("/main/api/fp/archive/items", { as: "stranger" })).status, 404);
+  assert.equal((await api("items", { method: "PUT", body: "x" })).status, 405);
+  assert.equal((await api("nope")).status, 404);
+  assert.equal((await call("/main/api/fp/main/items", { as: "mac" })).status, 404);
+  // the root: folders only from what's stored, never the bucket's own dot folders
+  const top = await j("items");
+  assert.equal(top.parent, "root");
+  assert.ok(top.items.some((i) => i.name === "chauphan" && i.dir && /^d[0-9a-f]{24}$/.test(i.id)));
+  assert.ok(!top.items.some((i) => i.name.startsWith(".")));
+  assert.equal((await api("items?path=.trash")).status, 400);
+  assert.equal((await api("items?path=chauphan/nowhere")).status, 404);
+  // a folder: files with stable ids, size, etag, mtime; Finder files left out
+  await AR.put(VM + "/._a.m4a", "x");
+  const vm = await j("items?path=" + encodeURIComponent(VM));
+  const a = vm.items.find((i) => i.name === "a.m4a");
+  assert.deepEqual(vm.items.map((i) => i.name).sort(), ["a.m4a", "b.m4a", "c.m4a"]);
+  assert.match(a.id, /^h[0-9a-f]{24}$/);
+  assert.equal(a.size, 6);
+  assert.equal(a.mtime, 1700000000);
+  assert.equal(vm.parent, top.items.length && (await j("items?path=chauphan%2FVoice%20Memos")).items.find((i) => i.name === "2024").id);
+  assert.equal((await j("items?path=" + encodeURIComponent(VM))).items.find((i) => i.name === "a.m4a").id, a.id);
+  // content, with Range
+  const part = await api("content?path=" + encodeURIComponent(VM + "/a.m4a"), { headers: { range: "bytes=1-2" } });
+  assert.equal(part.status, 206);
+  assert.equal(await part.text(), "BC");
+  assert.equal((await api("content?path=.catalog%2Farchive%2Fsnapshot.json")).status, 400);
+  assert.equal((await api("content?path=" + encodeURIComponent(VM + "/zz.m4a"))).status, 404);
+  // changes: the first pass is the baseline (no events)
+  const base = await j("changes");
+  assert.equal(base.events.length, 0);
+  assert.deepEqual(await j("changes?since=" + base.seq), { seq: base.seq, events: [], more: false });
+  // writes around the Worker: a new file, an edit, a delete, a rename that kept its id
+  await AR.put(VM + "/d.m4a", "D1");
+  await AR.put(VM + "/b.m4a", "B2");
+  await AR.delete(VM + "/c.m4a");
+  await AR.put("chauphan/Voice Memos/2025/a renamed.m4a", "ABCDEF", { customMetadata: { fid: a.id } });
+  await AR.delete(VM + "/a.m4a");
+  // within a minute nothing is re-listed; an older snapshot is
+  assert.equal((await j("changes?since=" + base.seq)).events.length, 0);
+  const snap = await (await AR.get(".catalog/archive/snapshot.json")).json();
+  await AR.put(".catalog/archive/snapshot.json", JSON.stringify({ ...snap, at: 0 }));
+  const c = await j("changes?since=" + base.seq);
+  assert.equal(c.seq, base.seq + 1);
+  const by = (op, path) => c.events.find((e) => e.op === op && e.path === path);
+  assert.ok(by("create", VM + "/d.m4a"));
+  assert.ok(by("modify", VM + "/b.m4a"));
+  assert.ok(by("delete", VM + "/c.m4a"));
+  const mv = by("move", "chauphan/Voice Memos/2025/a renamed.m4a");
+  assert.equal(mv.id, a.id);
+  assert.equal(mv.from, VM + "/a.m4a");
+  assert.ok(by("create", "chauphan/Voice Memos/2025") && by("create", "chauphan/Voice Memos/2025").dir);
+  assert.equal(c.events.filter((e) => e.path.includes("/.")).length, 0);
+  // the new folder's item shows the moved file under the same id
+  assert.equal((await j("items?path=chauphan%2FVoice%20Memos%2F2025")).items[0].id, a.id);
+  // an anchor older than the log kept: 410, enumerate again
+  await AR.delete(".catalog/archive/log/" + String(c.seq).padStart(12, "0") + ".json");
+  assert.equal((await api("changes?since=" + base.seq)).status, 410);
+  assert.equal((await api("changes?since=x")).status, 400);
+  // the catalog is never reachable through the mount
+  assert.notEqual((await call("/main/dav-archive/.catalog/archive/snapshot.json", { as: "mac" })).status, 200);
+  const rootList = await (await call("/main/dav-archive/", { as: "mac", method: "PROPFIND", headers: { depth: "1" } })).text();
+  assert.ok(!hrefs(rootList).some((h) => h.includes(".catalog")));
+});
+
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {
   const TMP = await mf.getR2Bucket("TMP");
   await MAIN.put("files/Tmp/song.mp3", "SONG", { httpMetadata: { contentType: "audio/mpeg" } });
