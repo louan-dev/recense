@@ -22,7 +22,5 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Gallery checks which Finder windows are open so it can lock itself when you close the last Gallery window.</string>
 </dict>
 </plist>
