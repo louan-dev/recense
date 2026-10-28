@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Gallery Files for iPhone/iPad and installs it on a connected device.
+# Builds Gallery for iPhone/iPad and installs it on a connected device.
 #   zsh build.sh [device name or id]     (default: the first available iPhone or iPad)
 # Free Personal Team: Xcode registers the device and makes a 7-day profile; after 7 days run this again.
 # The device's Access token goes into the app from the Keychain (gallery-access-<device> if it exists, else
@@ -28,4 +28,4 @@ xcodebuild -project "$here/GalleryFiles.xcodeproj" -scheme GalleryFiles -configu
 app="$out/Debug-iphoneos/Gallery Files.app"
 [[ -d $app ]] || { echo "Build failed (see above)"; exit 1; }
 xcrun devicectl device install app --device "$dev" "$app"
-echo "Installed on $dev. Open Gallery Files once, then Files › Browse › Chauphan."
+echo "Installed on $dev. Open Gallery once; the Chauphan location is in Files › Browse."
