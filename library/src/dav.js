@@ -5,6 +5,9 @@
 //                      the old file in trash/<day>/<path>@<time>; DELETE moves a file to the trash.
 //   /main/dav-tmp/…    the gallery-tmp bucket, behind Access too. Throwaway by design (it expires), so
 //                      DELETE and overwrites are for good: no trash, no versions.
+//   /main/nc/…, /main/nc-tmp/…  the same two, Nextcloud-shaped (…/dav/files/owner/, …/dav/uploads/owner/) for rclone's
+//                      nextcloud vendor: a file bigger than one request (Cloudflare caps a body at 100 MB) arrives
+//                      in chunks under .uploads/<dir>/ and is joined into place by MOVE …/.file.
 //   /dav/notability/…  Notability's Auto-Backup (notability-backup/), outside Access: HTTP Basic
 //                      with its own password, stored only as NOTABILITY_DAV_HASH (sha-256 hex).
 //                      Append-only: an overwrite keeps the old copy under notability-versions/,
@@ -23,9 +26,16 @@ const LIST_MAX = 5000;
 const FAILS_MAX = 10; // wrong passwords per address per 15 minutes
 const FAIL_WINDOW = 15 * 60000;
 const CHUNKED_MAX = 32 * 1024 * 1024;
+const STAGE = ".uploads/"; // chunks wait here (hidden: dot names are never listed or writable through a mount)
+const UPLOAD_DIR = /^[A-Za-z0-9_-]{1,100}$/;
+const CHUNK = /^(\d{15})-(\d{15})$/; // rclone names a chunk by its first and last byte
+const CHUNK_MAX = 100 * 1000 * 1000;
+const JOINED_MAX = 5 * 1024 ** 3; // one R2 put
 
 export const MAIN_DAV = { base: "/main/dav/", prefix: "files/", main: true, rw: true };
 export const TMP_DAV = { base: "/main/dav-tmp/", prefix: "", bucket: "TMP", rw: true, ephemeral: true };
+export const MAIN_NC = { ...MAIN_DAV, base: "/main/nc/dav/files/owner/", uploads: "/main/nc/dav/uploads/owner/" };
+export const TMP_NC = { ...TMP_DAV, base: "/main/nc-tmp/dav/files/owner/", uploads: "/main/nc-tmp/dav/uploads/owner/" };
 export const NOTABILITY_DAV = { base: "/dav/notability/", prefix: "notability-backup/", versions: "notability-versions/" };
 
 const RW = "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY";
@@ -33,6 +43,13 @@ const APPEND = "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL";
 
 const r2 = (env, mount) => env[mount.bucket || "MAIN"];
 const text = (status, body = "", headers = {}) => new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", ...headers } });
+
+const under = (path, base) => path + "/" === base || path.startsWith(base);
+
+// the owner's mount (behind Access) serving this path, or null
+export function ownerMount(path) {
+  return [MAIN_DAV, TMP_DAV, MAIN_NC, TMP_NC].find((m) => under(path, m.base) || (m.uploads && under(path, m.uploads))) || null;
+}
 
 // the path inside the mount, or null; "" is the mount's root
 export function davPath(mount, pathname) {
@@ -42,6 +59,7 @@ export function davPath(mount, pathname) {
 }
 
 export async function dav(req, env, url, mount) {
+  if (mount.uploads && under(url.pathname, mount.uploads)) return chunked(req, env, url, mount);
   const rel = davPath(mount, url.pathname);
   if (rel === null) return text(400, "Bad path");
   const allow = mount.rw ? RW : APPEND;
@@ -63,6 +81,9 @@ export async function dav(req, env, url, mount) {
     case "MOVE":
     case "COPY":
       return mount.rw ? moveOrCopy(req, env, url, mount, rel, req.method === "MOVE") : text(405, "", { allow });
+    case "PATCH":
+      // rclone's nextcloud vendor asks the server to recompute a hash after an upload; there is none to recompute
+      return mount.rw && req.headers.has("x-recalculate-hash") ? new Response(null, { status: 204 }) : text(405, "", { allow });
     default:
       return text(405, "", { allow });
   }
@@ -347,6 +368,110 @@ async function moveOrCopy(req, env, url, mount, rel, move) {
     await b.delete(mount.prefix + rel);
   }
   return new Response(null, { status: there ? 204 : 201 });
+}
+
+// ---------- chunked uploads (rclone's nextcloud vendor) ----------
+
+// DELETE <dir> (leftovers), MKCOL <dir>, PUT <dir>/<first>-<last> for each chunk, MOVE <dir>/.file with the Destination
+async function chunked(req, env, url, mount) {
+  const rest = url.pathname.slice(mount.uploads.length).split("/").filter(Boolean);
+  const [dir, part] = rest;
+  if (!dir || rest.length > 2 || !UPLOAD_DIR.test(dir)) return text(400, "Bad path");
+  const b = r2(env, mount);
+  const stage = STAGE + dir + "/";
+
+  switch (req.method) {
+    case "MKCOL":
+      return part ? text(405, "", { allow: "MKCOL, DELETE" }) : new Response(null, { status: 201 });
+    case "DELETE":
+      if (part) return text(405, "", { allow: "MKCOL, DELETE" });
+      await dropStage(b, stage);
+      return new Response(null, { status: 204 });
+    case "PUT": {
+      const m = CHUNK.exec(part || "");
+      const size = m ? Number(m[2]) - Number(m[1]) + 1 : 0;
+      if (!m || size < 1 || size > CHUNK_MAX) return text(400, "Bad chunk");
+      const cl = req.headers.get("content-length");
+      const body = cl === null ? await readAll(req.body, CHUNK_MAX) : req.body;
+      if ((cl === null ? body && body.length : Number(cl)) !== size) return text(400, "Chunk size doesn't match its name");
+      await b.put(stage + part, body);
+      return new Response(null, { status: 201 });
+    }
+    case "MOVE":
+      return part === ".file" ? join(req, env, url, mount, b, stage) : text(400, "Bad path");
+    default:
+      return text(405, "", { allow: "MKCOL, PUT, MOVE, DELETE" });
+  }
+}
+
+async function dropStage(b, stage) {
+  let cursor;
+  do {
+    const r = await b.list({ prefix: stage, cursor });
+    if (r.objects.length) await b.delete(r.objects.map((o) => o.key));
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
+// the chunks, in order from byte 0 with no gap or overlap, streamed into one object; the old file is kept like a PUT keeps it
+async function join(req, env, url, mount, b, stage) {
+  const rel = destination(req, url, mount);
+  if (!rel) return text(400, "Bad destination");
+  if (!(await exists(env, mount, parentOf(rel)))) return text(409, "No such folder");
+  if (await exists(env, mount, rel)) return text(405, "A folder is there");
+
+  const parts = [];
+  let cursor;
+  do {
+    const r = await b.list({ prefix: stage, cursor });
+    parts.push(...r.objects);
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+  parts.sort((x, y) => (x.key < y.key ? -1 : 1)); // zero-padded offsets sort as numbers
+  let total = 0;
+  for (const p of parts) {
+    const m = CHUNK.exec(p.key.slice(stage.length));
+    if (!m || Number(m[1]) !== total || p.size !== Number(m[2]) - total + 1) return text(400, "Chunks missing or overlapping");
+    total += p.size;
+  }
+  if (!total) return text(400, "No chunks");
+  if (total > JOINED_MAX) return text(413, "Over 5 GiB");
+
+  const key = mount.prefix + rel;
+  const there = await b.head(key);
+  if (there) {
+    if ((req.headers.get("overwrite") || "T").trim().toUpperCase() === "F") return text(412, "Already there");
+    if (mount.main && !(await keepInTrash(env, rel))) return text(412, "Changed");
+  }
+
+  const mt = Number(req.headers.get("x-oc-mtime"));
+  const meta = { mtime: String(mt > 0 && Number.isFinite(mt) ? Math.floor(mt) : Math.floor(Date.now() / 1000)) };
+  if (there && there.customMetadata && there.customMetadata.was) meta.was = there.customMetadata.was;
+
+  const { readable, writable } = new FixedLengthStream(total);
+  const pump = (async () => {
+    try {
+      for (const p of parts) await (await b.get(p.key)).body.pipeTo(writable, { preventClose: true });
+      await writable.close();
+    } catch (e) {
+      await writable.abort(e).catch(() => {});
+      throw e;
+    }
+  })();
+  const done = await b
+    .put(key, readable, {
+      httpMetadata: { contentType: typeOf(rel.split("/").pop(), {}) },
+      customMetadata: meta,
+      onlyIf: there ? { etagMatches: there.etag } : { etagDoesNotMatch: "*" },
+    })
+    .catch(() => null);
+  const pumped = await pump.then(() => true, () => false);
+  if (!done || !pumped) return text(412, "Changed");
+  if (mount.main) await env.MAIN.delete("art/" + rel).catch(() => {});
+  await dropStage(b, stage);
+  const h = { etag: done.httpEtag };
+  if (mt > 0) h["x-oc-mtime"] = "accepted";
+  return new Response(null, { status: there ? 204 : 201, headers: h });
 }
 
 // ---------- Notability's password ----------

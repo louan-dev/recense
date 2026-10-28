@@ -1043,6 +1043,62 @@ await test("main/dav-tmp: Access only, every device token listed; tmp is read-wr
   assert.equal(await (await TMP.get("Dl/a.pdf")).text(), "A");
 });
 
+await test("main/nc: rclone's chunked uploads (nextcloud vendor) are joined into one file at MOVE", async () => {
+  const FILES = "/main/nc/dav/files/owner/";
+  const UP = "/main/nc/dav/uploads/owner/rclone-chunked-upload-0123abcd/";
+  const up = (path, init = {}) => call(UP + path, { as: "mac", ...init });
+  const range = (a, b) => String(a).padStart(15, "0") + "-" + String(b).padStart(15, "0");
+  await MAIN.put("files/Nc/old.bin", "OLD");
+  // the Nextcloud-shaped Main mount is the same library as /main/dav/
+  assert.equal((await call(FILES + "Nc/old.bin", { as: "mac" })).status, 200);
+  assert.equal((await mf.dispatchFetch(ORIGIN + UP, { method: "MKCOL" })).status, 404);
+  assert.equal((await call(UP, { as: "stranger", method: "MKCOL" })).status, 404);
+  // rclone: DELETE (leftovers), MKCOL, PUT chunks named by byte range, MOVE .file to the destination
+  assert.equal((await up("", { method: "DELETE" })).status, 204);
+  assert.equal((await up("", { method: "MKCOL" })).status, 201);
+  assert.equal((await up(range(0, 3), { method: "PUT", body: "abcd" })).status, 201);
+  assert.equal((await up(range(4, 7), { method: "PUT", body: "efg" })).status, 400); // length doesn't match the name
+  assert.equal((await up(range(4, 7), { method: "PUT", body: "efgh" })).status, 201);
+  assert.equal((await up(range(8, 9), { method: "PUT", body: "ij" })).status, 201);
+  assert.equal((await up("../x", { method: "PUT", body: "x" })).status, 400);
+  const dest = (p) => ({ destination: ORIGIN + FILES + p });
+  assert.equal((await up(".file", { method: "MOVE", headers: dest("Nope/new.bin") })).status, 409);
+  assert.equal((await up(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav-tmp/new.bin" } })).status, 400);
+  const m = await up(".file", { method: "MOVE", headers: { ...dest("Nc/new.bin"), "x-oc-mtime": "1710000000" } });
+  assert.equal(m.status, 201);
+  const made = await MAIN.get("files/Nc/new.bin");
+  assert.equal(await made.text(), "abcdefghij");
+  assert.equal(made.customMetadata.mtime, "1710000000");
+  assert.equal((await MAIN.list({ prefix: ".uploads/" })).objects.length, 0);
+  // a gap between chunks: nothing is written
+  await up("", { method: "MKCOL" });
+  await up(range(0, 1), { method: "PUT", body: "ab" });
+  await up(range(4, 5), { method: "PUT", body: "ef" });
+  assert.equal((await up(".file", { method: "MOVE", headers: dest("Nc/gap.bin") })).status, 400);
+  assert.equal(await MAIN.head("files/Nc/gap.bin"), null);
+  assert.equal((await up("", { method: "DELETE" })).status, 204);
+  assert.equal((await MAIN.list({ prefix: ".uploads/" })).objects.length, 0);
+  // over an existing file: the old one goes to the trash (Overwrite F refuses)
+  await up("", { method: "MKCOL" });
+  await up(range(0, 2), { method: "PUT", body: "NEW" });
+  assert.equal((await up(".file", { method: "MOVE", headers: { ...dest("Nc/old.bin"), overwrite: "F" } })).status, 412);
+  assert.equal((await up(".file", { method: "MOVE", headers: dest("Nc/old.bin") })).status, 204);
+  assert.equal(await (await MAIN.get("files/Nc/old.bin")).text(), "NEW");
+  const old = (await MAIN.list({ prefix: "trash/" })).objects.filter((o) => o.key.includes("/Nc/old.bin@"));
+  assert.equal(old.length, 1);
+  assert.equal(await (await MAIN.get(old[0].key)).text(), "OLD");
+  // rclone's Nextcloud hash refresh is a no-op
+  assert.equal((await call(FILES + "Nc/new.bin", { as: "mac", method: "PATCH", headers: { "x-recalculate-hash": "sha1" } })).status, 204);
+  // tmp has the same, into the TMP bucket
+  const TMP = await mf.getR2Bucket("TMP");
+  const tup = (path, init = {}) => call("/main/nc-tmp/dav/uploads/owner/rclone-chunked-upload-ff/" + path, { as: "mac", ...init });
+  await tup("", { method: "MKCOL" });
+  await tup(range(0, 1), { method: "PUT", body: "hi" });
+  assert.equal((await tup(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/nc-tmp/dav/files/owner/t.txt" } })).status, 201);
+  assert.equal(await (await TMP.get("t.txt")).text(), "hi");
+  assert.equal((await TMP.list({ prefix: ".uploads/" })).objects.length, 0);
+});
+
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {
   const TMP = await mf.getR2Bucket("TMP");
   await MAIN.put("files/Tmp/song.mp3", "SONG", { httpMetadata: { contentType: "audio/mpeg" } });
