@@ -1141,6 +1141,21 @@ await test("main/dav-archive: Access only; read-write with its own trash, nothin
   assert.equal((await ma("chauphan/Old/", { method: "DELETE" })).status, 403);
   assert.equal((await ma("", { method: "DELETE" })).status, 403);
   assert.equal((await ma("chauphan/Old", { method: "MOVE", headers: dest("chauphan/New") })).status, 403);
+  // Finder's own files: stored by name, never listed, never trashed; other dot names still refused
+  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PUT", body: "xattr" })).status, 201);
+  assert.equal((await ma("chauphan/Movies/.DS_Store", { method: "PUT", body: "ds" })).status, 201);
+  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PUT", body: "xattr2" })).status, 204);
+  assert.equal((await trashed("chauphan/Movies/._a.mp4")).length, 0);
+  assert.equal(await (await ma("chauphan/Movies/._a.mp4")).text(), "xattr2");
+  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PROPFIND", headers: { depth: "0" } })).status, 207);
+  const listed = hrefs(await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text());
+  assert.ok(!listed.some((h) => h.includes("/.")));
+  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "MOVE", headers: dest("chauphan/Movies/._b.mp4") })).status, 201);
+  assert.equal((await ma("chauphan/Movies/._b.mp4", { method: "DELETE" })).status, 204);
+  assert.equal(await AR.head("chauphan/Movies/._b.mp4"), null);
+  assert.equal((await trashed("chauphan/Movies/._b.mp4")).length, 0);
+  assert.equal((await ma("chauphan/Movies/.hidden", { method: "PUT", body: "h" })).status, 403);
+  assert.equal((await call("/main/dav/Dm/._x", { as: "mac", method: "PUT", body: "x" })).status, 403);
   // chunked uploads land in the archive and keep the old file
   const up = (path, init = {}) => call("/main/nc-archive/dav/uploads/owner/rclone-chunked-upload-aa/" + path, { as: "mac", ...init });
   await up("", { method: "MKCOL" });

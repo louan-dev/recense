@@ -7,7 +7,8 @@
 //                      DELETE and overwrites are for good: no trash, no versions.
 //   /main/dav-archive/…  the gallery-archive bucket (chauphan/… and later computers), behind Access. Read-write
 //                      like Main: an overwrite keeps the old file in .trash/<day>/<path>@<time> in the same
-//                      bucket, and DELETE moves a file there.
+//                      bucket, and DELETE moves a file there. Finder's own files (._* and .DS_Store: NFS has no
+//                      extended attributes) are stored as they come, never listed, never trashed.
 //   /main/nc/…, /main/nc-tmp/…, /main/nc-archive/…  the same three, Nextcloud-shaped (…/dav/files/owner/, …/dav/uploads/owner/) for rclone's
 //                      nextcloud vendor: a file bigger than one request (Cloudflare caps a body at 100 MB) arrives
 //                      in chunks under .uploads/<dir>/ and is joined into place by MOVE …/.file.
@@ -37,7 +38,7 @@ const JOINED_MAX = 5 * 1024 ** 3; // one R2 put
 
 export const MAIN_DAV = { base: "/main/dav/", prefix: "files/", main: true, rw: true };
 export const TMP_DAV = { base: "/main/dav-tmp/", prefix: "", bucket: "TMP", rw: true, ephemeral: true };
-export const ARCHIVE_DAV = { base: "/main/dav-archive/", prefix: "", bucket: "ARCHIVE", rw: true, trash: ".trash/" };
+export const ARCHIVE_DAV = { base: "/main/dav-archive/", prefix: "", bucket: "ARCHIVE", rw: true, trash: ".trash/", finder: true };
 export const MAIN_NC = { ...MAIN_DAV, base: "/main/nc/dav/files/owner/", uploads: "/main/nc/dav/uploads/owner/" };
 export const TMP_NC = { ...TMP_DAV, base: "/main/nc-tmp/dav/files/owner/", uploads: "/main/nc-tmp/dav/uploads/owner/" };
 export const ARCHIVE_NC = { ...ARCHIVE_DAV, base: "/main/nc-archive/dav/files/owner/", uploads: "/main/nc-archive/dav/uploads/owner/" };
@@ -179,7 +180,7 @@ async function propfind(req, env, mount, rel) {
 
 async function get(req, env, url, mount, rel) {
   const name = rel.split("/").pop();
-  if (!rel || hidden(name)) return text(rel ? 404 : 405, rel ? "Not found" : "A folder");
+  if (!rel || (hidden(name) && !finderFile(mount, rel))) return text(rel ? 404 : 405, rel ? "Not found" : "A folder");
   let obj;
   try {
     const b = r2(env, mount);
@@ -206,6 +207,9 @@ async function get(req, env, url, mount, rel) {
 
 const parentOf = (rel) => rel.split("/").slice(0, -1).join("/");
 const nameOk = (rel) => segmentName(rel.split("/").pop()) === rel.split("/").pop();
+const FINDER = /^(\._.+|\.DS_Store)$/;
+// a mount that takes Finder's own files: they're written and read by name only, and go for good
+const finderFile = (mount, rel) => !!(mount.finder && rel && FINDER.test(rel.split("/").pop()));
 
 // If-Match / If-None-Match against what is there now (RFC 7232); null when the write may go ahead
 function preconditions(req, head) {
@@ -218,7 +222,8 @@ function preconditions(req, head) {
 }
 
 async function put(req, env, mount, rel) {
-  if (!rel || !nameOk(rel)) return text(rel ? 403 : 405, "That name can’t be used");
+  const finder = finderFile(mount, rel);
+  if (!rel || !(nameOk(rel) || finder)) return text(rel ? 403 : 405, "That name can’t be used");
   if (!(await exists(env, mount, parentOf(rel)))) return text(409, "No such folder");
   if (await exists(env, mount, rel)) return text(405, "A folder is there");
 
@@ -240,7 +245,7 @@ async function put(req, env, mount, rel) {
   if (refused) return refused;
 
   // nothing is lost: the file as it was goes to the trash (Main, archive) or to the versions (append-only); tmp just replaces it
-  if (head && !mount.ephemeral) {
+  if (head && !mount.ephemeral && !finder) {
     const kept = mount.main
       ? await keepInTrash(env, rel)
       : mount.trash
@@ -330,7 +335,7 @@ async function bin(env, mount, rel) {
   if (!rel) return text(403, "Not the root");
   const b = r2(env, mount);
   if (await b.head(mount.prefix + rel)) {
-    if (!(await toTrash(b, mount, rel))) return text(412, "Changed");
+    if (!finderFile(mount, rel) && !(await toTrash(b, mount, rel))) return text(412, "Changed");
     await b.delete(mount.prefix + rel);
     return new Response(null, { status: 204 });
   }
@@ -364,7 +369,7 @@ function destination(req, url, mount) {
   }
   if (u.origin !== url.origin) return null;
   const rel = davPath(mount, u.pathname);
-  return rel && nameOk(rel) ? rel : null;
+  return rel && (nameOk(rel) || finderFile(mount, rel)) ? rel : null;
 }
 
 async function moveOrCopy(req, env, url, mount, rel, move) {
@@ -384,7 +389,7 @@ async function moveOrCopy(req, env, url, mount, rel, move) {
   const there = await b.head(mount.prefix + to);
   if (there) {
     if ((req.headers.get("overwrite") || "T").trim().toUpperCase() === "F") return text(412, "Already there");
-    if (mount.trash && !(await toTrash(b, mount, to))) return text(412, "Changed");
+    if (mount.trash && !finderFile(mount, to) && !(await toTrash(b, mount, to))) return text(412, "Changed");
     if (!mount.main) await b.delete(mount.prefix + to);
     else if (!(await trashFile(env, to))) return text(412, "Changed");
   }
