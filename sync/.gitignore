@@ -16,3 +16,6 @@ AUDIT.md
 *.log
 # holds pasted secrets (R2 keys, Arq password) until the owner removes them
 decisions/20261022 ARQ-CHECKLIST.md
+bin/cal-export
+.handoff/
+*-handoff.zip

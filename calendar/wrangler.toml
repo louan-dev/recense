@@ -1,0 +1,15 @@
+name = "sync"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Protocol-first layout: caldav/… now, webdav/… and carddav/… later (docs/specs/sync.md §6).
+[[r2_buckets]]
+binding = "STORE"
+bucket_name = "sync"
+
+[vars]
+CALDAV_USER = "chau"
+CALDAV_DEFAULT_NAME = "Calendar"
+
+# Secret (wrangler secret put): CALDAV_PASS_HASH = sha256 hex of the app password. Set by bin/caldav-passwd.sh.

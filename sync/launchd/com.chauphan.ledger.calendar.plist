@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chauphan.ledger.calendar</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/chauphan/Developer/sync/bin/cal-job.sh</string></array>
+  <!-- EventKit has no file to watch: export every 30 minutes, plus at login -->
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>LowPriorityIO</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/ledger-calendar.log</string>
+  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/ledger-calendar.log</string>
+</dict>
+</plist>
