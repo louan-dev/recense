@@ -4,13 +4,23 @@ import Foundation
 import CryptoKit
 
 public enum Gallery {
+    // macOS: a team-prefixed App Group, no profile needed. iOS: a free team gets App Groups with no group in them,
+    // so the app and the extension share only a Keychain group (the profile grants 48RZ72DNP3.*)
     public static let appGroup = "48RZ72DNP3.gallery"
+    public static let keychainGroup = "48RZ72DNP3.com.chauphan.galleryfiles"
     public static let base = URL(string: "https://gallery.improvdiplomat.workers.dev/main/api/fp/archive/")!
     // the domain shows this folder of the archive bucket as its root
     public static let rootPath = "chauphan"
 
+    // where the extension keeps its item store (macOS: shared with the host app; iOS: the extension's own)
     public static var container: URL {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)!
+        #if os(macOS)
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)!
+        #else
+        let u = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u
+        #endif
     }
     // this device's Access service token, put here by the host app (the extension can't read the login keychain)
     public static var tokenFile: URL { container.appendingPathComponent("token.json") }
@@ -63,7 +73,7 @@ public final class Feed {
         c.timeoutIntervalForRequest = 30
         c.waitsForConnectivity = false
         session = URLSession(configuration: c)
-        if let d = try? Data(contentsOf: Gallery.tokenFile),
+        if let d = Token.read(),
            let t = try? JSONDecoder().decode([String: String].self, from: d),
            let id = t["id"], let secret = t["secret"] {
             token = (id, secret)
@@ -177,4 +187,32 @@ public final class Store {
         lock.unlock()
         try? d?.write(to: file, options: .atomic)
     }
+}
+
+// this device's Access service token. macOS: a file in the App Group (0600), put there by the host app.
+// iOS: a Keychain item in the shared group, put there by the host app.
+public enum Token {
+    static let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "gallery-access",
+                                       kSecAttrAccount as String: "token", kSecAttrAccessGroup as String: Gallery.keychainGroup]
+
+    public static func read() -> Data? {
+        #if os(macOS)
+        return try? Data(contentsOf: Gallery.tokenFile)
+        #else
+        var q = query
+        q[kSecReturnData as String] = true
+        var out: CFTypeRef?
+        return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
+        #endif
+    }
+
+    #if os(iOS)
+    public static func write(_ d: Data) -> Bool {
+        SecItemDelete(query as CFDictionary)
+        var q = query
+        q[kSecValueData as String] = d
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
+    }
+    #endif
 }
