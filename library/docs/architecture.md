@@ -160,3 +160,24 @@ Files under "On My iPhone".
 The `/main/archive` web shelf reads the same bucket and must keep working. It isn't built yet (Phase 2 was paused
 at the mount, commit ec9ce9e), and nothing here changes how objects are stored, so building it later stays
 compatible.
+
+## 10 · The app's own interface (SETTLED 2026-10-28, owner chose "native browser + web player")
+The app is a Files-like browser **and** the Files location, at the same time:
+- **Browser:** native SwiftUI, shaped like Files: a sidebar with the roots, a grid or list, search, and sort by name,
+  date or size. It reads the same feed as the extension (`/main/api/fp/<root>/items`). Kept files are marked.
+- **Player:** Gallery's own page and player (`src/client/gallery.js`: same geometry, controls, gestures, Media
+  Session, audio worklets, and the rules in `src/page/ui/README.md` §3–4), shown in a `WKWebView`. There's one player
+  for web and app, so the rules can't drift.
+- **How the web view signs in:** the page loads from a custom scheme (`gallery://`). A `WKURLSchemeHandler` forwards
+  every request (page, scripts, `/main/f/…` media with Range) to the Worker with the device's Access service token.
+  WebKit never holds the token, and no cookie or login page is involved.
+- **What the Worker needs: the `/main/archive` shelf.** The existing `/main` folder page and file route, served from a
+  second *library* (bucket `gallery-archive`, prefix `chauphan/`) instead of Main. It's one code path with a
+  `library` parameter (`listFolder`, `mainFolder`, `mainFile`). The archive is read-only at first:
+  - no folder-order, comment, key or cover writes;
+  - the page tells the client (`G.readOnly`), and the Worker refuses those APIs for archive paths, so a hidden button
+    is never the only guard (CLAUDE.md: "a hidden control is not access control").
+- **Offline:** the player plays from the app's keep store (§6) when there's no connection. The scheme handler
+  answers `/main/f/…` from the keep store first.
+- **Blocked on:** `src/client/gallery.js` (needs the `G.readOnly` switch) has another session's uncommitted edits.
+  Owner's call: wait for that session, or let this one edit it.
