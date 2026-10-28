@@ -22,6 +22,7 @@ swiftc -O -target $target -module-name GalleryFiles \
   -framework AppKit -framework FileProvider -o "$app/Contents/MacOS/GalleryFiles"
 cp "$here/Ext-Info.plist" "$ext/Contents/Info.plist"
 cp "$here/App-Info.plist" "$app/Contents/Info.plist"
+mkdir -p "$app/Contents/Resources" && cp "$here/GalleryFiles.icns" "$app/Contents/Resources/"
 
 codesign --force --sign "$sign" --entitlements "$here/Ext.entitlements" --timestamp=none "$ext"
 codesign --force --sign "$sign" --entitlements "$here/App.entitlements" --timestamp=none "$app"

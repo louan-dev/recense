@@ -11,6 +11,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>CFBundleIconFile</key><string>GalleryFiles</string>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>
