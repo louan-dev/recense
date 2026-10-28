@@ -1,6 +1,5 @@
-// Draws Gallery Files' icon at 1024×1024: a quiet off-white field with three stacked sheets, the front one a soft
-// blue: a gallery of files, nothing more. iOS and macOS round the corners themselves on iOS; on macOS the squircle
-// and its shadow are drawn here, as macOS expects.
+// Draws Gallery Files' icon at 1024×1024: a white field and one cloud filled with a colour wheel, photos in the
+// cloud. iOS rounds the corners itself; on macOS the squircle and its shadow are drawn here, as macOS expects.
 //   swift icon.swift ios <out.png>      full-bleed square (iOS masks it)
 //   swift icon.swift mac <out.png>      macOS shape: rounded rect inset on a transparent canvas
 import AppKit
@@ -29,41 +28,58 @@ if mac {
     cg.restoreGState()
     cg.addPath(rounded(field, 185)); cg.clip()
 }
-cg.drawLinearGradient(gradient(color(252, 252, 253), color(232, 233, 237)), start: CGPoint(x: 0, y: field.maxY), end: CGPoint(x: 0, y: field.minY), options: [])
+cg.drawLinearGradient(gradient(color(255, 255, 255), color(240, 241, 245)), start: CGPoint(x: 0, y: field.maxY), end: CGPoint(x: 0, y: field.minY), options: [])
 
-// three sheets, back to front, each a little lower and to the right; geometry in the 1024 square, scaled into the field
+// one cloud (iCloud) holding the Photos colour wheel: a conic sweep of its petal colours, nothing else.
+// Geometry in the 1024 square, scaled into the field.
 let k = field.width / S
-func place(_ r: CGRect) -> CGRect { CGRect(x: field.minX + r.minX * k, y: field.minY + r.minY * k, width: r.width * k, height: r.height * k) }
-let w: CGFloat = 470, h: CGFloat = 560, step: CGFloat = 62, radius: CGFloat = 64 * k
-let front = CGRect(x: (S - w) / 2 + step, y: (S - h) / 2 - step, width: w, height: h)
+func place(_ p: CGPoint) -> CGPoint { CGPoint(x: field.minX + p.x * k, y: field.minY + p.y * k) }
+let lift: CGFloat = 0
+// side puffs share their x-centre and radius with the base's round ends, so each side is one smooth edge
+let cloud: [(CGPoint, CGFloat)] = [  // centre, radius (y up)
+    (CGPoint(x: 362, y: 478), 112),
+    (CGPoint(x: 522, y: 566), 166),
+    (CGPoint(x: 662, y: 478), 112),
+    (CGPoint(x: 362, y: 404), 112),
+    (CGPoint(x: 662, y: 404), 112),
+]
+let base = CGRect(x: 362, y: 292, width: 300, height: 224)
 
-func sheet(_ r: CGRect, _ top: CGColor, _ bottom: CGColor, shadow: CGFloat) {
-    let p = rounded(place(r), radius)
-    cg.saveGState()
-    cg.setShadow(offset: CGSize(width: 0, height: -14 * k), blur: 34 * k, color: color(20, 24, 40, shadow))
-    cg.addPath(p); cg.setFillColor(bottom); cg.fillPath()
-    cg.restoreGState()
-    cg.saveGState()
-    cg.addPath(p); cg.clip()
-    let pr = place(r)
-    cg.drawLinearGradient(gradient(top, bottom), start: CGPoint(x: 0, y: pr.maxY), end: CGPoint(x: 0, y: pr.minY), options: [])
-    cg.restoreGState()
-    // a hairline edge, so white sheets read on the white field
-    cg.addPath(p); cg.setStrokeColor(color(0, 0, 0, 0.06)); cg.setLineWidth(2 * k); cg.strokePath()
+// the cloud as a mask: each part filled on its own, so overlaps simply add up
+let mask = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+mask.setFillColor(gray: 1, alpha: 1)
+for (c, r) in cloud {
+    let pc = place(c)
+    mask.fillEllipse(in: CGRect(x: pc.x - r * k, y: pc.y - r * k, width: 2 * r * k, height: 2 * r * k))
 }
-sheet(front.offsetBy(dx: -2 * step, dy: 2 * step), color(255, 255, 255), color(244, 245, 248), shadow: 0.10)
-sheet(front.offsetBy(dx: -step, dy: step), color(255, 255, 255), color(240, 241, 245), shadow: 0.12)
-sheet(front, color(94, 160, 255), color(10, 104, 230), shadow: 0.22)
+let b = CGRect(origin: place(base.origin), size: CGSize(width: base.width * k, height: base.height * k))
+mask.fill(b)
+let waist = CGRect(origin: place(CGPoint(x: 250, y: 404)), size: CGSize(width: 524 * k, height: 74 * k))  // straight sides between the puffs
+mask.fill(waist)
 
-// on the front sheet, a sun rising on a horizon: a picture, said as quietly as possible
-let f = place(front)
-let horizon = f.minY + 150 * k, sun: CGFloat = 78 * k
-cg.setFillColor(color(255, 255, 255, 0.92))
-cg.move(to: CGPoint(x: f.midX + sun, y: horizon))
-cg.addArc(center: CGPoint(x: f.midX, y: horizon), radius: sun, startAngle: 0, endAngle: .pi, clockwise: false)
-cg.closePath(); cg.fillPath()
-cg.setStrokeColor(color(255, 255, 255, 0.92)); cg.setLineWidth(16 * k); cg.setLineCap(.round)
-cg.move(to: CGPoint(x: f.minX + 92 * k, y: horizon)); cg.addLine(to: CGPoint(x: f.maxX - 92 * k, y: horizon)); cg.strokePath()
+// a soft shadow under the cloud, then the colour wheel inside it
+cg.saveGState()
+cg.setShadow(offset: CGSize(width: 0, height: -10 * k), blur: 30 * k, color: color(30, 30, 60, 0.18))
+cg.beginTransparencyLayer(auxiliaryInfo: nil)
+cg.clip(to: CGRect(x: 0, y: 0, width: 1024, height: 1024), mask: mask.makeImage()!)
+let wheel: [CGColor] = [color(255, 159, 10), color(255, 214, 10), color(52, 199, 89), color(48, 176, 199),
+                        color(10, 132, 255), color(94, 92, 230), color(191, 90, 242), color(255, 55, 95), color(255, 159, 10)]
+// a conic sweep, as 720 thin wedges, each colour blended from its two neighbours on the wheel
+let hub = place(CGPoint(x: 512, y: 480)), steps = 720, reach = 1024 * k
+for i in 0..<steps {
+    let t = CGFloat(i) / CGFloat(steps), at = t * CGFloat(wheel.count - 1)
+    let j = min(Int(at), wheel.count - 2), f = at - CGFloat(j)
+    let c0 = wheel[j].components!, c1 = wheel[j + 1].components!
+    cg.setFillColor(CGColor(colorSpace: space, components: (0..<4).map { c0[$0] + (c1[$0] - c0[$0]) * f })!)
+    let a0 = .pi / 2 - t * 2 * .pi, a1 = a0 - 2 * .pi / CGFloat(steps) - 0.012  // a little overlap: no seams
+    cg.move(to: hub)
+    cg.addArc(center: hub, radius: reach, startAngle: a0, endAngle: a1, clockwise: true)
+    cg.closePath(); cg.fillPath()
+}
+// a faint white light from the top, the way Apple's glyphs catch it
+cg.drawLinearGradient(gradient(color(255, 255, 255, 0.22), color(255, 255, 255, 0)), start: place(CGPoint(x: 0, y: 780)), end: place(CGPoint(x: 0, y: 420)), options: [])
+cg.endTransparencyLayer()
+cg.restoreGState()
 
 NSGraphicsContext.current = nil
 if !mac {  // iOS wants no alpha
