@@ -3,9 +3,13 @@
 //   swift icon.swift ios <out.png>      full-bleed square (iOS masks it)
 //   swift icon.swift mac <out.png>      macOS shape: rounded rect inset on a transparent canvas
 import AppKit
+import ImageIO
 
 let args = CommandLine.arguments
-let mac = args.count > 1 && args[1] == "mac"
+// ios: full-bleed, opaque. mac: squircle on transparency. dark / tinted: iOS 18's Home Screen styles, the cloud
+// alone on transparency (the system lays its own dark backdrop or tint behind it; tinted is grey, the system colours it)
+let mode = args.count > 1 ? args[1] : "ios"
+let mac = mode == "mac", bare = mode == "dark" || mode == "tinted"
 let out = URL(fileURLWithPath: args.count > 2 ? args[2] : "icon.png")
 let S: CGFloat = 1024
 
@@ -28,7 +32,7 @@ if mac {
     cg.restoreGState()
     cg.addPath(rounded(field, 185)); cg.clip()
 }
-cg.drawLinearGradient(gradient(color(255, 255, 255), color(240, 241, 245)), start: CGPoint(x: 0, y: field.maxY), end: CGPoint(x: 0, y: field.minY), options: [])
+if !bare { cg.drawLinearGradient(gradient(color(255, 255, 255), color(240, 241, 245)), start: CGPoint(x: 0, y: field.maxY), end: CGPoint(x: 0, y: field.minY), options: []) }
 
 // one cloud (iCloud) holding the Photos colour wheel: a conic sweep of its petal colours, nothing else.
 // Geometry in the 1024 square, scaled into the field.
@@ -62,7 +66,8 @@ cg.saveGState()
 cg.setShadow(offset: CGSize(width: 0, height: -10 * k), blur: 30 * k, color: color(30, 30, 60, 0.18))
 cg.beginTransparencyLayer(auxiliaryInfo: nil)
 cg.clip(to: CGRect(x: 0, y: 0, width: 1024, height: 1024), mask: mask.makeImage()!)
-let wheel: [CGColor] = [color(255, 159, 10), color(255, 214, 10), color(52, 199, 89), color(48, 176, 199),
+let tinted = mode == "tinted"
+let wheel: [CGColor] = tinted ? [color(255, 255, 255), color(222, 222, 222), color(255, 255, 255)] : [color(255, 159, 10), color(255, 214, 10), color(52, 199, 89), color(48, 176, 199),
                         color(10, 132, 255), color(94, 92, 230), color(191, 90, 242), color(255, 55, 95), color(255, 159, 10)]
 // a conic sweep, as 720 thin wedges, each colour blended from its two neighbours on the wheel
 let hub = place(CGPoint(x: 512, y: 480)), steps = 720, reach = 1024 * k
@@ -82,13 +87,14 @@ cg.endTransparencyLayer()
 cg.restoreGState()
 
 NSGraphicsContext.current = nil
-if !mac {  // iOS wants no alpha
-    let flat = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024, bitsPerSample: 8, samplesPerPixel: 3,
-                                hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: flat)
-    NSImage(cgImage: rep.cgImage!, size: NSSize(width: 1024, height: 1024)).draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
-    NSGraphicsContext.current = nil
-    try! flat.representation(using: .png, properties: [:])!.write(to: out)
+let image = rep.cgImage!
+let dest = CGImageDestinationCreateWithURL(out as CFURL, "public.png" as CFString, 1, nil)!
+if mode == "ios" {  // iOS wants no alpha: draw onto an opaque canvas
+    let flat = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    flat.draw(image, in: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+    CGImageDestinationAddImage(dest, flat.makeImage()!, nil)
 } else {
-    try! rep.representation(using: .png, properties: [:])!.write(to: out)
+    CGImageDestinationAddImage(dest, image, nil)
 }
+CGImageDestinationFinalize(dest)
