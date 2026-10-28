@@ -138,4 +138,6 @@ If something is impossible, name the wall (Apple rule, Cloudflare limit, disk) a
 | tmp mount + 14-day expiry | DONE | `/main/dav-tmp/`; lifecycle `expire-all-14d` |
 | Gallery.app (Touch ID, wipe on lock, encrypted keys) | DONE | edfead3; owner-tested |
 | Step 0 disk list | DONE, waiting for the owner's pick | PROGRESS §7 2026-10-27 21:35 (5.3 GB free; candidates ~18–23 GB) |
-| Chauphan mount, folder moves, engine, Mac adapter, iOS web app, folder rename, File Provider verdict | NOT STARTED | — |
+| Chauphan mount (always on, launchd, 2 GB cache) | DONE | gallery ec9ce9e deployed (version 87728872); sync 443b184; live: hash-identical read, trash on overwrite, recovers from `kill -9`. Finder `._*` fix 08b03de committed, NOT deployed |
+| **File Provider (now the top priority, 2026-10-28)** | design SETTLED, slice 1 PARTIAL | `gallery/docs/architecture.md`; gallery 036f213 read-only feed (routes 44 pass), NOT deployed; iOS slice needs the iPhone plugged in |
+| Folder moves (skipped by owner 2026-10-28), engine, Mac adapter, iOS web app, folder rename | NOT STARTED | the File Provider plan now sets the order |
