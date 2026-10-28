@@ -1,32 +1,43 @@
 // Prosogram adapter for Gallery's /main player.
 //
-// It satisfies the host contract at the top of prosogram.js without touching gallery.js: the playback clock comes from
-// the media element itself, the data from the same endpoints the player uses, and the figure is drawn on this module's
-// own canvas in its own container beside the player. Everything app-specific lives here, so when the C0/D1 session
-// lands a real hook in gallery.js this file switches to it and nothing else changes.
+// The notation is drawn **between a line and its translation**, inside the player's own bilingual view, not in a panel
+// of its own. Each "thought" is a `.txc` cell holding `.txs` (the original language) over `.txe` (the translation);
+// a lane canvas is appended inside `.txs`, after the words, so it lands between the two and — because
+// `:root.prom .tx .txc>.txs` carries `opacity:var(--po)` — it **fades with the original language on the crossfade**
+// with no JavaScript wiring at all. Two thoughts per frame, scaling and wrapping are the player's; this follows them.
+//
+// Word positions come from the real `.txw` spans' rects, so the figure sits under the glyphs that are actually drawn,
+// at whatever size the window gives them. That is also why prosody.js is handed these measurements rather than a
+// canvas default: syllable windows must match the text on screen (prosody.js refuses a hidden default).
 //
 // Time bases (the thing that silently breaks if you get it wrong):
 //   · transcript word times are ALREADY shifted into this file's time by the Worker (corrections.js `present`),
-//     so they compare directly against media.currentTime.
+//     so they compare directly against the media element's currentTime.
 //   · features frames are in the TRANSCRIPT's time, and the response carries `shift` unapplied.
 //     So frame index = (fileTime - shift) / HOP.
 //
-// Known limit, worth stating: on a line a human rewrote (`fixed`), the Worker sends the corrected `text` but the
-// ORIGINAL `words` array (corrections.js `present`). Prosody therefore analyses the pre-correction words on those
-// lines. Unfixed lines — the great majority — are exact.
+// Known limit: on a line a human rewrote (`fixed`), the Worker sends the corrected `text` but the ORIGINAL `words`
+// array (corrections.js `present`), so those lines are analysed pre-correction. Unfixed lines are exact.
 (() => {
   "use strict";
 
   // ---- the only DOM coupling to Gallery, kept in one place ------------------------------------------------------
-  const ANCHOR = ".p-ctrl";          // the player's control block; the panel is inserted as its sibling
   const STAGE = "#stage";            // the viewer's stage
   const MBOX = ".mbox";              // the media's wrapper; it carries an OPEN shadow root
   const MEDIA = "video, audio";
-  const PANEL = "p-proso";
+  const CELL = ".txc";               // one thought: the original over its translation
+  const SRC = ".txs";                // the original language inside a cell (carries --po)
+  const WORD = ".txw";               // one word
+  const LANE = "pg-lane";            // the canvas this module appends inside .txs
+
+  const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
+  const LANE_H = 1.15;               // lane height, in multiples of the line's font size
+  const BASE = 0.3;                  // where the figure's baseline sits inside the lane, same units
+
+  const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 
   // The media element usually lives inside .mbox's shadow root, so document.querySelector cannot reach it — this
-  // mirrors the player's own stageMedia() (gallery.js:56), including its no-attachShadow fallback. Getting this wrong
-  // is silent: the panel simply never appears.
+  // mirrors the player's own stageMedia() (gallery.js:56), including its no-attachShadow fallback.
   function findMedia() {
     const stage = document.querySelector(STAGE) || document;
     const box = stage.querySelector ? stage.querySelector(MBOX) : null;
@@ -34,18 +45,9 @@
     return root.querySelector(MEDIA) || document.querySelector(MEDIA);
   }
 
-  const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
-  const MIN_W = 320;
-  const SIZE = 17;                   // the font size this panel draws at; the SAME size is measured for timing
-
-  const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
-
-  // ---- which item is on stage, read off the media element ---------------------------------------------------------
-  // This core knows no owner-only routes: a participant's page must not contain them
-  // (routes.test.mjs "invites" asserts the rendered HTML carries no owner file route — not even quoted in a comment,
-  // which is why this one describes it instead of spelling it). So route knowledge lives in strategies.
-  // A strategy takes the media element's pathname and returns { key, url } or null; the first match wins.
-  // The share-link strategy ships here because its routes are public and safe on every page. The owner's strategy is
+  // ---- which item is on stage -------------------------------------------------------------------------------------
+  // This core knows no owner-only routes: a participant's page must not contain them (routes.test.mjs "invites"
+  // asserts the rendered HTML carries no owner file route). Route knowledge lives in strategies; the owner's is
   // registered by prosogram-main.js, which the page inlines only for the owner.
   const STRATEGIES = [];
 
@@ -53,7 +55,6 @@
   const decodeSegments = (s) =>
     s.split("/").map((x) => { try { return decodeURIComponent(x); } catch { return x; } }).join("/");
 
-  // Share links: "/f/<id>/<name>" (gallery.js:22) → the public transcript route.
   STRATEGIES.push((p) => {
     const m = p.match(/^\/f\/([^/]+)\/(.+)$/);
     if (!m) return null;
@@ -76,10 +77,7 @@
 
   // ---- data, behind cached getters -------------------------------------------------------------------------------
   const cache = { key: null, transcript: null, features: null };
-
-  const reset = (key) => {
-    if (cache.key !== key) { cache.key = key; cache.transcript = null; cache.features = null; }
-  };
+  const reset = (key) => { if (cache.key !== key) { cache.key = key; cache.transcript = null; cache.features = null; } };
 
   async function getTranscript(ident) {
     reset(ident.key);
@@ -116,7 +114,6 @@
     return out;
   }
 
-  /** Which language Prosody should use: the transcript's own, else generic. */
   const langOf = (t) => {
     const l = Array.isArray(t.langs) ? t.langs[0] : t.lang;
     return typeof l === "string" && l.length >= 2 ? l.slice(0, 2).toLowerCase() : "";
@@ -124,11 +121,11 @@
 
   // ---- signals ----------------------------------------------------------------------------------------------------
   // The prototype ships nine precomputed curves in its data.json (E A S P V Vp F C B, derive.py). features.json has
-  // none of them — only db, onset, pitch, clarity, voiced, floor. Two are recoverable from those, and are computed here
-  // to derive.py's own definitions; the other seven have no source and the sampler returns **null** for them, so a
-  // consumer can hide what it cannot draw instead of being handed a flat zero.
+  // none of them — only db, onset, pitch, clarity, voiced, floor. Two are recoverable and are computed to derive.py's
+  // own definitions; the other seven have no source and the sampler returns null, so a consumer hides what it cannot
+  // draw instead of being handed a flat zero.
   //   E (derive.py:28)  loudness over the floor, against the voice's own 95th percentile
-  //   B (derive.py:116) belt — loud, clear and high in the song's own range, smoothed with a 150 ms one-pole
+  //   B (derive.py:116) belt — loud, clear and high in the song's own range, 150 ms one-pole
   const pctOf = (arr, q) => {
     if (!arr.length) return 0;
     const s = Float64Array.from(arr).sort();
@@ -136,7 +133,6 @@
   };
   const smoothstep = (x) => { const v = clamp(x); return v * v * (3 - 2 * v); };
 
-  /** A one-pole smoother over a frame array, time constant in ms (derive.py `onepole`). */
   function onepole(a, ms) {
     const k = Math.exp(-(HOP * 1000) / ms), out = new Float32Array(a.length);
     let y = 0;
@@ -151,7 +147,6 @@
     const pitch = Array.isArray(f.pitch) ? f.pitch : null;
     const voiced = Array.isArray(f.voiced) ? f.voiced : null;
 
-    // E: against the voice's own 95th percentile, not its maximum (one loud frame must not flatten the rest).
     const loud = [];
     for (let i = 0; i < n; i++) if (!voiced || voiced[i] === 1) loud.push(db[i] / 10);
     const top = Math.max(floor + 1, pctOf(loud, 0.95));
@@ -159,7 +154,6 @@
     const E = new Float32Array(n);
     for (let i = 0; i < n; i++) E[i] = clamp((db[i] / 10 - floor) / span);
 
-    // B: belt. Needs pitch and clarity; without either there is no signal and the sampler says so.
     let B = null;
     if (clar && pitch) {
       const note = (k) => (!voiced || voiced[k] === 1) && pitch[k] > 0;
@@ -175,15 +169,14 @@
       }
     }
 
-    const have = { E: true, B: !!B };
     const sampler = (sig, t) => {
       const src = sig === "E" ? E : sig === "B" ? B : null;
-      if (!src) return null;                              // no source: null, never a flat zero
+      if (!src) return null;
       const k = Math.round((t - shift) / HOP);
       if (k < 0 || k >= n) return null;
       return src[k];
     };
-    sampler.have = have;
+    sampler.have = { E: true, B: !!B };
     return sampler;
   }
 
@@ -208,101 +201,106 @@
     };
   }
 
-  // ---- the panel: its own container, its own canvas, its own text layout -----------------------------------------
-  function makePanel(anchor) {
-    const host = document.createElement("div");
-    host.className = PANEL;
-    host.style.cssText = "position:relative;width:100%;overflow:hidden";
-    const cv = document.createElement("canvas");
-    cv.style.cssText = "display:block;width:100%";
-    host.appendChild(cv);
-    anchor.parentNode.insertBefore(host, anchor);
-    return { host, cv, ctx: cv.getContext("2d") };
-  }
-
-  const FONT = (px) => '500 ' + px + 'px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif';
+  // ---- the lane: one canvas per thought, inside .txs so it rides --po ---------------------------------------------
   const COLORS = { ahead: "rgb(150,148,140)", pale: "rgb(228,224,214)" };
 
-  // The layout prosogram.js expects, matching the prototype harness exactly (harness.js:100, 126, 128):
-  //   f.page = [{ line: { words }, index, slot, alpha, cells, byFlat, lineHeight, size, font }]
-  //   cells  = [{ w, x, width, row, y, top }]   row = the wrapped visual row inside that block
-  // One block per transcript line; blocks stack down the canvas. prosogram.js draws the glyphs itself from
-  // `ln.font` and `c.x/c.y`, so nothing here paints text — this only supplies geometry.
-  function layout(ctx, lines, allWords, width, size, plugin) {
-    const lineHeight = size * (plugin.lineGap || 2.65);
-    const slotGap = size * (plugin.slotGap || 0.9);
-    ctx.font = FONT(size);
-    const page = [];
-    let top = 0;
-    lines.forEach((l, li) => {
-      const ws = allWords.filter((w) => w.line === l.id);
-      if (!ws.length) return;
-      const rows = [];
-      let row = [], x = 0;
-      for (const w of ws) {
-        const wide = ctx.measureText(w.text).width;
-        const adv = ctx.measureText(w.text + " ").width;
-        if (row.length && x + adv > width - size) { rows.push(row); row = []; x = 0; }
-        row.push({ w, x, width: wide });
-        x += adv;
-      }
-      if (row.length) rows.push(row);
-      const cells = [];
-      rows.forEach((r, ri) => r.forEach((c) => cells.push({
-        w: c.w, x: c.x, width: c.width, row: ri,
-        y: top + ri * lineHeight + size * 1.05,
-        top: top + ri * lineHeight,
-      })));
-      const byFlat = new Map();
-      for (const c of cells) byFlat.set(c.w.flat, c);
-      page.push({
-        line: { words: ws }, index: li, slot: li, alpha: 1,
-        cells, byFlat, lineHeight, size, font: FONT(size),
-      });
-      top += rows.length * lineHeight + slotGap;
-    });
-    return { page, height: Math.max(lineHeight, top + size) };
+  function laneIn(src) {
+    let cv = src.querySelector("canvas." + LANE);
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.className = LANE;
+      // display:block puts it on its own line under the words but still inside .txs, so it sits between the original
+      // and the translation and inherits the original's opacity.
+      cv.style.cssText = "display:block;width:100%;pointer-events:none";
+      cv.setAttribute("aria-hidden", "true");
+      src.appendChild(cv);
+    }
+    return cv;
   }
 
-  // ---- the clock: the media element is the source of truth -------------------------------------------------------
-  function run(media, panel, plugin, pro, lines, words, at, progress, lang) {
-    let raf = 0, last = 0, size = SIZE, laid = null, w = 0, dpr = 1;
-    const ctx = panel.ctx;
-
-    const relayout = () => {
-      w = Math.max(MIN_W, panel.host.clientWidth || MIN_W);
-      dpr = Math.min(3, window.devicePixelRatio || 1);
-      laid = layout(ctx, lines, words, w, size, plugin);
-      panel.cv.width = Math.round(w * dpr);
-      panel.cv.height = Math.round(laid.height * dpr);
-      panel.cv.style.height = laid.height + "px";
+  /** Walks the flattened words in order, matching them to the spans as they appear. */
+  function walker(words) {
+    let i = 0;
+    return (text) => {
+      const want = (text || "").trim();
+      for (let j = i; j < Math.min(words.length, i + 8); j++) {
+        if (words[j].text.trim() === want) { i = j + 1; return words[j]; }
+      }
+      return null;
     };
+  }
 
-    const frame = (now) => {
-      raf = 0;
-      if (!laid || w !== Math.max(MIN_W, panel.host.clientWidth || MIN_W)) relayout();
-      const t = media.currentTime;
-      const dt = last ? Math.max(0, (now - last) / 1000) : 0;
-      last = now;
+  /** The block prosogram.js wants, built from where the words really are on screen. */
+  function blockFor(src, next, size) {
+    const spans = [...src.querySelectorAll(WORD)];
+    if (!spans.length) return null;
+    const base = src.getBoundingClientRect();
+    const cells = [], rowsY = [];
+    for (const sp of spans) {
+      const w = next(sp.textContent || "");
+      if (!w) continue;
+      const r = sp.getBoundingClientRect();
+      if (!r.width) continue;
+      let row = rowsY.findIndex((y) => Math.abs(y - r.top) < r.height * 0.6);
+      if (row < 0) { rowsY.push(r.top); row = rowsY.length - 1; }
+      cells.push({ w, x: r.left - base.left, width: r.width, row, y: 0, top: 0 });
+    }
+    if (!cells.length) return null;
+    const laneH = size * LANE_H;
+    for (const c of cells) { c.top = c.row * laneH; c.y = c.top + size * BASE; }
+    const byFlat = new Map();
+    for (const c of cells) byFlat.set(c.w.flat, c);
+    return {
+      block: {
+        line: { words: cells.map((c) => c.w) }, index: 0, slot: 0, alpha: 1,
+        cells, byFlat, lineHeight: laneH, size, font: getComputedStyle(src).font || size + "px sans-serif",
+      },
+      rows: rowsY.length,
+      laneH,
+    };
+  }
+
+  // ---- drawing ----------------------------------------------------------------------------------------------------
+  function run(media, plugin, pro, words, at, progress) {
+    let raf = 0;
+
+    const paintOne = (src, t) => {
+      const size = parseFloat(getComputedStyle(src).fontSize) || 17;
+      const built = blockFor(src, walker(words), size);
+      const cv = laneIn(src);
+      if (!built) { cv.width = 0; cv.height = 0; return; }
+      const w = Math.max(1, Math.round(src.getBoundingClientRect().width));
+      const h = Math.max(1, Math.round(built.rows * built.laneH));
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+        cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      }
+      cv.style.height = h + "px";
+      const ctx = cv.getContext("2d");
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, laid.height);
-      try {
-        plugin.draw(ctx, {
-          t, dt, W: w, H: laid.height, dpr,
-          pro, words, page: laid.page, lines: null,
-          at, progress,
-          // which signals exist here, so a consumer hides what it cannot draw rather than drawing a flat zero
-          signals: at.have || { E: true },
-          expr: 1, colors: COLORS, playing: !media.paused, hop: HOP, lang,
-        });
-      } catch (e) {
-        ctx.restore();
-        stop();
-        console.warn("prosogram: draw failed, panel stopped", e);
-        return;
-      }
+      ctx.clearRect(0, 0, w, h);
+      plugin.draw(ctx, {
+        t, dt: 0, W: w, H: h, dpr,
+        pro, words, page: [built.block], lines: null,
+        at, progress,
+        signals: at.have || { E: true },
+        glyphs: false,                 // Gallery draws the words as DOM text; only the figure belongs here
+        expr: 1, colors: COLORS, playing: !media.paused, hop: HOP,
+      });
       ctx.restore();
+    };
+
+    const frame = () => {
+      raf = 0;
+      const t = media.currentTime;
+      for (const cell of document.querySelectorAll(CELL)) {
+        const src = cell.querySelector(SRC);
+        if (!src) continue;
+        const r = src.getBoundingClientRect();
+        if (!r.width || r.bottom < -200 || r.top > innerHeight + 200) continue;   // off-screen: skip
+        try { paintOne(src, t); } catch (e) { stop(); console.warn("prosogram: draw failed, lanes stopped", e); return; }
+      }
       if (!media.paused) tick();
     };
 
@@ -310,43 +308,39 @@
     const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
 
     for (const ev of ["play", "playing", "seeked", "ratechange", "timeupdate"]) media.addEventListener(ev, tick);
-    media.addEventListener("pause", () => { tick(); });        // one last frame so the marker lands where it stopped
-    window.addEventListener("resize", () => { laid = null; tick(); });
-
-    relayout();
+    media.addEventListener("pause", tick);
+    window.addEventListener("resize", tick);
     tick();
     return { stop };
   }
 
   // ---- mount -----------------------------------------------------------------------------------------------------
-  let live = null;        // { stop, host, key } for the item currently drawn
-  let busy = false;
+  let live = null, busy = false;
 
   function teardown() {
     if (!live) return;
     live.stop();
-    live.host.remove();
+    for (const cv of document.querySelectorAll("canvas." + LANE)) cv.remove();
     live = null;
   }
 
   async function tryMount() {
     if (busy) return;
-    const anchor = document.querySelector(ANCHOR);
     const media = findMedia();
-    if (!anchor || !media || !anchor.parentNode) return teardown();
+    if (!media) return teardown();
     if (!globalThis.Prosody || !globalThis.Prosogram) return;
-
+    if (!document.querySelector(CELL + " " + SRC + " " + WORD)) return;   // the lyrics are not up yet
     const ident = identify(media);
     if (!ident) return teardown();
-    if (live && live.key === ident.key) return;             // same item, already drawn
+    if (live && live.key === ident.key) return;
     busy = true;
-    try { await mountFor(anchor, media, ident); } finally { busy = false; }
+    try { await mountFor(media, ident); } finally { busy = false; }
   }
 
-  async function mountFor(anchor, media, ident) {
+  async function mountFor(media, ident) {
     const [t, f] = await Promise.all([getTranscript(ident), getFeatures(ident)]);
-    if (cache.key !== ident.key) return;                    // the item changed while we were fetching
-    if (!t || !f) return teardown();                        // no transcript or no measured voice: draw nothing
+    if (cache.key !== ident.key) return;
+    if (!t || !f) return teardown();
     teardown();
 
     const words = flatWords(t.lines);
@@ -355,20 +349,21 @@
     const shift = typeof f.shift === "number" ? f.shift : 0;
     const at = signalFor(f, shift);
     const progress = progressFor(f, shift);
-    const lang = langOf(t);
 
     const data = {
       features: { db: f.db, onset: f.onset, pitch: f.pitch, clarity: f.clarity, voiced: f.voiced, floor: f.floor },
       hop: HOP,
       frames: f.db.length,
-      lang,
+      lang: langOf(t),
       kind: f.source === "vocals" ? "song" : "speech",
     };
 
     let pro;
     try {
-      // say what glyph metrics this host draws with - Prosody has no default, on purpose
-      const measure = Prosody.canvasMeasure(FONT(SIZE)) || Prosody.evenMeasure();
+      // the glyph metrics this host draws with: the player's own text, measured where it is drawn
+      const el = document.querySelector(CELL + " " + SRC);
+      const font = el ? getComputedStyle(el).font : "";
+      const measure = (font && Prosody.canvasMeasure(font)) || Prosody.evenMeasure();
       pro = Prosody.analyze(data, { at, progress, words, measure });
     } catch (e) {
       console.warn("prosogram: Prosody.analyze failed, not mounting", e);
@@ -379,14 +374,12 @@
     Prosogram.mount({ start: (p) => { plugin = p; } });
     if (!plugin || typeof plugin.draw !== "function") return;
 
-    const panel = makePanel(anchor);
-    const handle = run(media, panel, plugin, pro, t.lines, words, at, progress, lang);
-    live = { stop: handle.stop, host: panel.host, key: ident.key };
+    const handle = run(media, plugin, pro, words, at, progress);
+    live = { stop: handle.stop, key: ident.key };
   }
 
   const again = () => { tryMount().catch(() => {}); };
 
-  // The player swaps items on the same element, so the source is watched as well as the DOM.
   const watchMedia = () => {
     const media = findMedia();
     if (!media || media.__prosoWatched) return;
@@ -402,9 +395,8 @@
     again();
   };
 
-  // How a page teaches this core about its own routes, without the core naming any.
   globalThis.ProsogramHost = {
-    /** Register a strategy: (pathname, decodeSegments) => { key, url } | null. Later wins over earlier. */
+    /** Register a route strategy: (pathname, decodeSegments) => { key, url } | null. Later wins over earlier. */
     use(strategy) {
       if (typeof strategy !== "function") return;
       STRATEGIES.unshift(strategy);

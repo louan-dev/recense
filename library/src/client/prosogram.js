@@ -270,6 +270,8 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels) {
 //                        prototype also carries A, S, P, V, Vp, F and C.
 //   f.signals            { E: true, B: false, … } which signals this host actually has, so a consumer can hide what
 //                        it cannot draw without probing at() first
+//   f.glyphs             false when the host draws the words itself (Gallery's DOM spans, Recense's native Ink):
+//                        only the figure is drawn, never the text
 //   f.progress(w, t)     0…1 of how far the light has crossed word w at time t
 //   f.expr               expression amount, 0…1.5 (how far the figure is drawn from the lane centre)
 //   f.colors             palette; this module uses `ahead` and `pale` only
@@ -365,9 +367,11 @@ const plugin = {
         if (hit(y)) { y += fs * 1.05; if (hit(y) || y > l.floor) continue }
         placed.push({ x: l.x, y, hw }); ctx.globalAlpha = l.a; ctx.fillStyle = l.color || GREY; ctx.font = `${l.color ? 'italic ' : ''}${fs}px "Times New Roman", Times, serif`; ctx.fillText(l.text.replace(/[\[\]]/g, l.color ? '' : '$&'), l.x, y)
       }
-      // text on top: plain's dim-ahead / white-after, the sung word wiped pale up to the light
+      // text on top: plain's dim-ahead / white-after, the sung word wiped pale up to the light.
+      // A host that already draws the words itself (Gallery's DOM spans, Recense's native Ink) passes
+      // `glyphs: false` and keeps only the figure, so the two never double up.
       ctx.globalAlpha = a0; ctx.font = ln.font; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
-      for (const c of cells) {
+      for (const c of (f.glyphs === false ? [] : cells)) {
         const w = c.w
         if (t >= w.e) { const k = cl((t - w.e) / 0.2); ctx.fillStyle = `rgb(255,${Math.round(lerp(243, 255, k))},${Math.round(lerp(194, 255, k))})`; ctx.fillText(w.text, c.x, c.y); continue }
         if (t < w.s) { ctx.fillStyle = `rgba(255,255,255,${lerp(0.42, 0.6, cl(1 - (w.s - t) / 0.2)).toFixed(3)})`; ctx.fillText(w.text, c.x, c.y); continue }
