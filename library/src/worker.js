@@ -4,7 +4,7 @@
 //   /main, /main/f/…                        the owner's library, from the MAIN bucket
 //   /main/api/…                             every write: uploads, links, deletes, invites
 //   /m/<token>/…                            an invited person's view of one Main folder (invite.js)
-//   /main/dav/…, /dav/notability/…          WebDAV: the Main library (Access), Notability's backup (Basic) (dav.js)
+//   /main/dav/…, /main/dav-tmp/…, /dav/notability/…   WebDAV: Main and tmp (Access), Notability's backup (Basic) (dav.js)
 //   /t/<id>/<name>                          a temporary download from the self-deleting TMP bucket (tmp.js)
 //
 // Everything under /main sits behind Cloudflare Access, and the Worker checks the owner itself
@@ -12,7 +12,7 @@
 
 import { page, notice, jsonResponse, esc, OWNER, cleanPath } from "./common.js";
 import { isOwner, sameSite, signedInAs } from "./access.js";
-import { dav, notabilityAuth, MAIN_DAV, NOTABILITY_DAV } from "./dav.js";
+import { dav, notabilityAuth, MAIN_DAV, TMP_DAV, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
 import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, upload, gallery, galleryApi, file, folderFile } from "./public.js";
@@ -72,6 +72,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
 
   // WebDAV clients send no Origin; their writes (PUT, MKCOL, MOVE…) can't be sent cross-site without a CORS preflight, which gets no CORS answer
   if (path === "/main/dav" || path.startsWith("/main/dav/")) return dav(req, env, url, MAIN_DAV);
+  if (path === "/main/dav-tmp" || path.startsWith("/main/dav-tmp/")) return dav(req, env, url, TMP_DAV);
 
   if (path.startsWith("/main/api/")) {
     if (path === "/main/api/whoami" && read) return jsonResponse({ ok: true });

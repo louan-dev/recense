@@ -3,6 +3,8 @@
 //   /main/dav/…        the Main library (files/), behind Access like the rest of /main: rclone's
 //                      webdav backend with the Mac's service token. Read-write. An overwrite keeps
 //                      the old file in trash/<day>/<path>@<time>; DELETE moves a file to the trash.
+//   /main/dav-tmp/…    the gallery-tmp bucket, behind Access too. Throwaway by design (it expires), so
+//                      DELETE and overwrites are for good: no trash, no versions.
 //   /dav/notability/…  Notability's Auto-Backup (notability-backup/), outside Access: HTTP Basic
 //                      with its own password, stored only as NOTABILITY_DAV_HASH (sha-256 hex).
 //                      Append-only: an overwrite keeps the old copy under notability-versions/,
@@ -22,12 +24,14 @@ const FAILS_MAX = 10; // wrong passwords per address per 15 minutes
 const FAIL_WINDOW = 15 * 60000;
 const CHUNKED_MAX = 32 * 1024 * 1024;
 
-export const MAIN_DAV = { base: "/main/dav/", prefix: "files/", main: true };
+export const MAIN_DAV = { base: "/main/dav/", prefix: "files/", main: true, rw: true };
+export const TMP_DAV = { base: "/main/dav-tmp/", prefix: "", bucket: "TMP", rw: true, ephemeral: true };
 export const NOTABILITY_DAV = { base: "/dav/notability/", prefix: "notability-backup/", versions: "notability-versions/" };
 
 const RW = "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY";
 const APPEND = "OPTIONS, PROPFIND, GET, HEAD, PUT, MKCOL";
 
+const r2 = (env, mount) => env[mount.bucket || "MAIN"];
 const text = (status, body = "", headers = {}) => new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", ...headers } });
 
 // the path inside the mount, or null; "" is the mount's root
@@ -40,7 +44,7 @@ export function davPath(mount, pathname) {
 export async function dav(req, env, url, mount) {
   const rel = davPath(mount, url.pathname);
   if (rel === null) return text(400, "Bad path");
-  const allow = mount.main ? RW : APPEND;
+  const allow = mount.rw ? RW : APPEND;
 
   switch (req.method) {
     case "OPTIONS":
@@ -55,10 +59,10 @@ export async function dav(req, env, url, mount) {
     case "MKCOL":
       return mkcol(req, env, mount, rel);
     case "DELETE":
-      return mount.main ? del(env, rel) : text(405, "", { allow });
+      return mount.main ? del(env, rel) : mount.rw ? drop(env, mount, rel) : text(405, "", { allow });
     case "MOVE":
     case "COPY":
-      return mount.main ? moveOrCopy(req, env, url, mount, rel, req.method === "MOVE") : text(405, "", { allow });
+      return mount.rw ? moveOrCopy(req, env, url, mount, rel, req.method === "MOVE") : text(405, "", { allow });
     default:
       return text(405, "", { allow });
   }
@@ -66,12 +70,18 @@ export async function dav(req, env, url, mount) {
 
 // ---------- reading ----------
 
-const exists = (env, mount, rel) => folderExists(env, rel, mount.prefix);
+const exists = (env, mount, rel) => (mount.bucket ? folderIn(r2(env, mount), mount.prefix, rel) : folderExists(env, rel, mount.prefix));
+
+async function folderIn(bucket, prefix, rel) {
+  if (!rel) return true;
+  const r = await bucket.list({ prefix: prefix + rel + "/", limit: 1 });
+  return r.objects.length > 0;
+}
 
 // what is at rel: { file: head } | { dir: true } | null
 async function stat(env, mount, rel) {
   if (!rel) return { dir: true };
-  const head = await env.MAIN.head(mount.prefix + rel);
+  const head = await r2(env, mount).head(mount.prefix + rel);
   if (head) return { file: head };
   return (await exists(env, mount, rel)) ? { dir: true } : null;
 }
@@ -117,7 +127,7 @@ async function propfind(req, env, mount, rel) {
     let cursor;
     let n = 0;
     do {
-      const r = await env.MAIN.list({ prefix, delimiter: "/", include: ["httpMetadata", "customMetadata"], cursor });
+      const r = await r2(env, mount).list({ prefix, delimiter: "/", include: ["httpMetadata", "customMetadata"], cursor });
       for (const p of r.delimitedPrefixes || []) {
         const name = p.slice(prefix.length).replace(/\/$/, "");
         if (!hidden(name)) out.push(entry(mount, (rel ? rel + "/" : "") + name, null));
@@ -142,7 +152,8 @@ async function get(req, env, url, mount, rel) {
   if (!rel || hidden(name)) return text(rel ? 404 : 405, rel ? "Not found" : "A folder");
   let obj;
   try {
-    obj = req.method === "HEAD" ? await env.MAIN.head(mount.prefix + rel) : await env.MAIN.get(mount.prefix + rel, { range: req.headers });
+    const b = r2(env, mount);
+    obj = req.method === "HEAD" ? await b.head(mount.prefix + rel) : await b.get(mount.prefix + rel, { range: req.headers });
   } catch (e) {
     return text(416, "Bad range");
   }
@@ -192,16 +203,17 @@ async function put(req, env, mount, rel) {
   }
   if (!Number.isSafeInteger(length) || length < 0) return text(400, "Bad Content-Length");
 
+  const b = r2(env, mount);
   const key = mount.prefix + rel;
-  const head = await env.MAIN.head(key);
+  const head = await b.head(key);
   const refused = preconditions(req, head);
   if (refused) return refused;
 
-  // nothing is lost: the file as it was goes to the trash (Main) or to the versions (append-only)
-  if (head) {
+  // nothing is lost: the file as it was goes to the trash (Main) or to the versions (append-only); tmp just replaces it
+  if (head && !mount.ephemeral) {
     const kept = mount.main
       ? await keepInTrash(env, rel)
-      : await copyKey(env, key, mount.versions + rel + "@" + new Date().toISOString().replace(/[:.]/g, "-"));
+      : await copyKey(b, key, mount.versions + rel + "@" + new Date().toISOString().replace(/[:.]/g, "-"));
     if (!kept) return text(412, "Changed");
   }
 
@@ -211,7 +223,7 @@ async function put(req, env, mount, rel) {
   const meta = { mtime: String(mt > 0 && Number.isFinite(mt) ? Math.floor(mt) : Math.floor(Date.now() / 1000)) };
   if (head && head.customMetadata && head.customMetadata.was) meta.was = head.customMetadata.was;
 
-  const done = await env.MAIN.put(key, length ? body : "", {
+  const done = await b.put(key, length ? body : "", {
     httpMetadata: { contentType },
     customMetadata: meta,
     onlyIf: head ? { etagMatches: head.etag } : { etagDoesNotMatch: "*" },
@@ -248,12 +260,12 @@ async function readAll(stream, max) {
   return out;
 }
 
-async function copyKey(env, from, to) {
-  const obj = await env.MAIN.get(from);
+async function copyKey(bucket, from, to) {
+  const obj = await bucket.get(from);
   if (!obj) return null;
   const { readable, writable } = new FixedLengthStream(obj.size);
   const copied = obj.body.pipeTo(writable);
-  const put = await env.MAIN.put(to, readable, { httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata, onlyIf: { etagDoesNotMatch: "*" } });
+  const put = await bucket.put(to, readable, { httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata, onlyIf: { etagDoesNotMatch: "*" } });
   if (put) await copied;
   else copied.catch(() => {});
   return put;
@@ -265,7 +277,7 @@ async function mkcol(req, env, mount, rel) {
   if (!nameOk(rel)) return text(403, "That name can’t be used");
   if (!(await exists(env, mount, parentOf(rel)))) return text(409, "No such folder");
   if (await stat(env, mount, rel)) return text(405, "Already there");
-  await makeFolder(env, mount.prefix, rel);
+  await makeFolder(env, mount.prefix, rel, r2(env, mount));
   return new Response(null, { status: 201 });
 }
 
@@ -273,6 +285,21 @@ async function del(env, rel) {
   if (!rel) return text(403, "Not the root");
   if (await env.MAIN.head("files/" + rel)) return (await trashFile(env, rel)) ? new Response(null, { status: 204 }) : text(404, "Not found");
   return (await folderExists(env, rel)) ? text(403, "Folders are deleted on the Mac") : text(404, "Not found");
+}
+
+// tmp: a file goes for good; a folder only once nothing but folder markers is left in it
+async function drop(env, mount, rel) {
+  if (!rel) return text(403, "Not the root");
+  const b = r2(env, mount);
+  if (await b.head(mount.prefix + rel)) {
+    await b.delete(mount.prefix + rel);
+    return new Response(null, { status: 204 });
+  }
+  const inside = (await b.list({ prefix: mount.prefix + rel + "/", limit: 100 })).objects.map((o) => o.key);
+  if (!inside.length) return text(404, "Not found");
+  if (!inside.every((k) => k.split("/").pop().startsWith(MARK))) return text(409, "Not empty");
+  await b.delete(inside);
+  return new Response(null, { status: 204 });
 }
 
 // Destination: an absolute URL (or a path) on this host, inside the same mount
@@ -302,18 +329,22 @@ async function moveOrCopy(req, env, url, mount, rel, move) {
   if (!(await exists(env, mount, parentOf(to)))) return text(409, "No such folder");
   if (await exists(env, mount, to)) return text(412, "A folder is there");
 
-  // Overwrite: T (the default) sends what is there to the trash first; F refuses
-  const there = await env.MAIN.head(mount.prefix + to);
+  // Overwrite: T (the default) sends what is there to the trash first (tmp: deletes it); F refuses
+  const b = r2(env, mount);
+  const there = await b.head(mount.prefix + to);
   if (there) {
     if ((req.headers.get("overwrite") || "T").trim().toUpperCase() === "F") return text(412, "Already there");
-    if (!(await trashFile(env, to))) return text(412, "Changed");
+    if (!mount.main) await b.delete(mount.prefix + to);
+    else if (!(await trashFile(env, to))) return text(412, "Changed");
   }
 
-  if (move) {
+  if (move && mount.main) {
     const why = await moveFile(env, rel, to);
     if (why) return text(why === "not found" ? 404 : 412, why);
-  } else if (!(await copyKey(env, mount.prefix + rel, mount.prefix + to))) {
+  } else if (!(await copyKey(b, mount.prefix + rel, mount.prefix + to))) {
     return text(412, "Already there");
+  } else if (move) {
+    await b.delete(mount.prefix + rel);
   }
   return new Response(null, { status: there ? 204 : 201 });
 }

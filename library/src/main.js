@@ -872,9 +872,9 @@ export async function mainNewFolder(req, env) {
 }
 
 // the empty .folder-<id> marker that makes <prefix><rel>/ a folder
-export async function makeFolder(env, prefix, rel) {
+export async function makeFolder(env, prefix, rel, bucket = env.MAIN) {
   const id = [...crypto.getRandomValues(new Uint8Array(8))].map((x) => x.toString(16).padStart(2, "0")).join("");
-  await env.MAIN.put(prefix + rel + "/" + MARK + id, "", {
+  await bucket.put(prefix + rel + "/" + MARK + id, "", {
     customMetadata: { mtime: String(Math.floor(Date.now() / 1000)) },
     onlyIf: { etagDoesNotMatch: "*" },
   });

@@ -48,7 +48,7 @@ const mf = new Miniflare({
   ],
   compatibilityDate: "2026-08-01",
   r2Buckets: { PUBLIC: "gallery-public-test", MAIN: "gallery-main-test", KEEP: "recense-keep-test", TMP: "gallery-tmp-test" },
-  bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: CLIENT, NOTABILITY_DAV_HASH: NOTE_HASH },
+  bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: CLIENT + ", phone-id.access", NOTABILITY_DAV_HASH: NOTE_HASH },
   outboundService: (req) =>
     new URL(req.url).pathname === "/cdn-cgi/access/certs"
       ? Response.json({ keys: [jwk] })
@@ -1006,6 +1006,41 @@ await test("main/dav: MOVE and COPY files with their comments; DELETE to the tra
   assert.equal((await md("Dm/In/b.mp3", { method: "PROPPATCH" })).status, 405);
   assert.equal((await md("Dm/In/b.mp3", { method: "POST" })).status, 405);
   assert.equal(await (await MAIN.get("files/Dm/In/b.mp3")).text(), "A");
+});
+
+await test("main/dav-tmp: Access only, every device token listed; tmp is read-write and deletes for good", async () => {
+  const TMP = await mf.getR2Bucket("TMP");
+  const mt = (path, init = {}) => call("/main/dav-tmp/" + path, { as: "mac", ...init });
+  await TMP.put("Dl/a.pdf", "A", { customMetadata: { mtime: "1700000000" } });
+  // nobody else: no token, a stranger, the Notability password, a device token that isn't listed
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-tmp/", { method: "PROPFIND" })).status, 404);
+  assert.equal((await call("/main/dav-tmp/", { as: "stranger", method: "PROPFIND" })).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-tmp/Dl/a.pdf", { headers: { authorization: basic("note-pass") } })).status, 404);
+  const asDevice = async (name) => mf.dispatchFetch(ORIGIN + "/main/dav-tmp/Dl/a.pdf", { headers: { "cf-access-jwt-assertion": await jwt({ common_name: name }) } });
+  assert.equal((await asDevice("phone-id.access")).status, 200);
+  assert.equal((await asDevice("lost-laptop.access")).status, 404);
+  // reads and lists the TMP bucket, not Main
+  const xml = await (await mt("Dl/", { method: "PROPFIND", headers: { depth: "1" } })).text();
+  assert.deepEqual(hrefs(xml).sort(), ["/main/dav-tmp/Dl/", "/main/dav-tmp/Dl/a.pdf"]);
+  assert.notEqual((await mt("%2e%2e/files/Dv/a.txt")).status, 200);
+  // writes: new file, overwrite with no trash, folders, move and delete for good
+  assert.equal((await mt("Dl/b.txt", { method: "PUT", body: "b", headers: { "x-oc-mtime": "1710000000" } })).status, 201);
+  assert.equal((await TMP.head("Dl/b.txt")).customMetadata.mtime, "1710000000");
+  assert.equal((await mt("Dl/b.txt", { method: "PUT", body: "bb" })).status, 204);
+  assert.equal(await (await TMP.get("Dl/b.txt")).text(), "bb");
+  assert.equal((await MAIN.list({ prefix: "trash/" })).objects.filter((o) => o.key.includes("/Dl/b.txt@")).length, 0);
+  assert.equal((await mt("Dl/Sub", { method: "MKCOL" })).status, 201);
+  assert.equal((await mt("Dl/b.txt", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav-tmp/Dl/Sub/c.txt" } })).status, 201);
+  assert.equal(await TMP.head("Dl/b.txt"), null);
+  assert.equal(await (await TMP.get("Dl/Sub/c.txt")).text(), "bb");
+  assert.equal((await mt("Dl/Sub/c.txt", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav/Dl/c.txt" } })).status, 400);
+  assert.equal((await mt("Dl/Sub/", { method: "DELETE" })).status, 409);
+  assert.equal((await mt("Dl/Sub/c.txt", { method: "DELETE" })).status, 204);
+  assert.equal(await TMP.head("Dl/Sub/c.txt"), null);
+  assert.equal((await mt("Dl/Sub/", { method: "DELETE" })).status, 204);
+  assert.equal((await TMP.list({ prefix: "Dl/Sub/" })).objects.length, 0);
+  assert.equal((await mt("", { method: "DELETE" })).status, 403);
+  assert.equal(await (await TMP.get("Dl/a.pdf")).text(), "A");
 });
 
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {

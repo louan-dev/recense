@@ -98,7 +98,8 @@ export async function isOwner(req, env) {
   // any email it let through counts, since the token's audience is checked and Access only issues
   // one to emails the policy includes.
   const emails = String(env.OWNER_EMAIL || "").toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
-  const client = String(env.SERVICE_CLIENT_ID || "").trim();
+  // one Access service token per device, comma-separated: a lost device is cut off by revoking just its token
+  const clients = String(env.SERVICE_CLIENT_ID || "").split(",").map((c) => c.trim()).filter(Boolean);
 
   let claims = null;
 
@@ -111,7 +112,7 @@ export async function isOwner(req, env) {
   if (!claims) return false;
   if (claims.email && !emails.length) return true;
   if (emails.includes(String(claims.email || "").trim().toLowerCase())) return true;
-  if (client && !claims.email && String(claims.common_name || "") === client) return true;
+  if (!claims.email && clients.includes(String(claims.common_name || ""))) return true;
 
   return false;
 }
