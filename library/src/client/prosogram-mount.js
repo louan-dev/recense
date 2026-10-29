@@ -218,12 +218,20 @@
     return cv;
   }
 
-  /** Walks the flattened words in order, matching them to the spans as they appear. */
+  /** Walks the flattened words in order, matching them to the spans as they appear.
+   *  ONE walker per frame, shared by every cell in document order: the thoughts on screen are consecutive slices of
+   *  the same word list, so it must keep advancing. A walker per cell restarts at word 0 and only ever matches the
+   *  first thought — every later lane then comes out empty. */
   function walker(words) {
     let i = 0;
     return (text) => {
       const want = (text || "").trim();
-      for (let j = i; j < Math.min(words.length, i + 8); j++) {
+      if (!want) return null;
+      for (let j = i; j < words.length; j++) {
+        if (words[j].text.trim() === want) { i = j + 1; return words[j]; }
+      }
+      // not ahead of us (a repeat, or the view jumped back): look from the start before giving up
+      for (let j = 0; j < i; j++) {
         if (words[j].text.trim() === want) { i = j + 1; return words[j]; }
       }
       return null;
@@ -264,9 +272,9 @@
   function run(media, plugin, pro, words, at, progress) {
     let raf = 0;
 
-    const paintOne = (src, t) => {
+    const paintOne = (src, t, next) => {
       const size = parseFloat(getComputedStyle(src).fontSize) || 17;
-      const built = blockFor(src, walker(words), size);
+      const built = blockFor(src, next, size);
       const cv = laneIn(src);
       if (!built) { cv.width = 0; cv.height = 0; return; }
       const w = Math.max(1, Math.round(src.getBoundingClientRect().width));
@@ -294,12 +302,13 @@
     const frame = () => {
       raf = 0;
       const t = media.currentTime;
+      const next = walker(words);            // one walker for the whole frame, advancing across the thoughts
       for (const cell of document.querySelectorAll(CELL)) {
         const src = cell.querySelector(SRC);
         if (!src) continue;
         const r = src.getBoundingClientRect();
         if (!r.width || r.bottom < -200 || r.top > innerHeight + 200) continue;   // off-screen: skip
-        try { paintOne(src, t); } catch (e) { stop(); console.warn("prosogram: draw failed, lanes stopped", e); return; }
+        try { paintOne(src, t, next); } catch (e) { stop(); console.warn("prosogram: draw failed, lanes stopped", e); return; }
       }
       if (!media.paused) tick();
     };
