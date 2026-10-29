@@ -33,7 +33,8 @@ function visible(key) {
   const parts = key.split("/");
   return !parts[0].startsWith(".") && !JUNK.test(parts[parts.length - 1]);
 }
-const mtimeOf = (o) => Number(o.customMetadata && o.customMetadata.mtime) || Math.floor(o.uploaded.getTime() / 1000);
+// whole seconds: rclone writes a fractional mtime ("1788075805.8020115")
+const mtimeOf = (o) => Math.floor(Number(o.customMetadata && o.customMetadata.mtime) || o.uploaded.getTime() / 1000);
 const parentOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 
 export async function fp(req, env, url, path) {

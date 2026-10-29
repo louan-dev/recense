@@ -57,6 +57,15 @@ public struct Event: Codable {
     public var size: Int64?
     public var etag: String?
     public var mtime: Int?
+
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        op = try c.decode(String.self, forKey: .op); id = try c.decode(String.self, forKey: .id)
+        path = try c.decode(String.self, forKey: .path); dir = try c.decode(Bool.self, forKey: .dir)
+        etag = try c.decodeIfPresent(String.self, forKey: .etag)
+        size = (try? c.decodeIfPresent(Double.self, forKey: .size)).flatMap { $0.map { Int64($0) } }
+        mtime = (try? c.decodeIfPresent(Double.self, forKey: .mtime)).flatMap { $0.map { Int($0) } }
+    }
     public var record: Record { Record(id: id, path: path, dir: dir, size: size, etag: etag, mtime: mtime) }
 }
 
@@ -117,7 +126,18 @@ public final class Feed {
     }
 
     public struct Page: Decodable {
-        public struct Item: Decodable { let id: String; let name: String; let dir: Bool; let size: Int64?; let etag: String?; let mtime: Int? }
+        public struct Item: Decodable {
+            let id: String; let name: String; let dir: Bool; let size: Int64?; let etag: String?; let mtime: Int?
+            // a fractional mtime (rclone's) must not fail a whole folder
+            public init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: K.self)
+                id = try c.decode(String.self, forKey: .id); name = try c.decode(String.self, forKey: .name)
+                dir = try c.decode(Bool.self, forKey: .dir); etag = try c.decodeIfPresent(String.self, forKey: .etag)
+                size = (try? c.decodeIfPresent(Double.self, forKey: .size)).flatMap { $0.map { Int64($0) } }
+                mtime = (try? c.decodeIfPresent(Double.self, forKey: .mtime)).flatMap { $0.map { Int($0) } }
+            }
+            enum K: String, CodingKey { case id, name, dir, size, etag, mtime }
+        }
         let items: [Item]
         public let cursor: String?
     }

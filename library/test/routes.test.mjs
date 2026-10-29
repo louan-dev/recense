@@ -1174,7 +1174,7 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
   const j = async (p) => (await api(p)).json();
   const VM = "chauphan/Voice Memos/2024";
-  await AR.put(VM + "/a.m4a", "ABCDEF", { customMetadata: { mtime: "1700000000" } });
+  await AR.put(VM + "/a.m4a", "ABCDEF", { customMetadata: { mtime: "1700000000.8020115" } }); // rclone's fractional mtime
   await AR.put(VM + "/b.m4a", "B1");
   await AR.put(VM + "/c.m4a", "C1");
   // owner and the Mac only; read-only
