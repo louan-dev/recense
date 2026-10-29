@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chauphan.disks-mount</string>
+  <!-- through Disks Helper.app (tools/disks-helper): its Full Disk Access lets the script read the network mount -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
+    <string>__HOME__/Developer/sync/bin/disks-mount.zsh</string>
+  </array>
+  <!-- always on: the Photos, Messages and Mail disks are up at login and come back if rclone exits -->
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <!-- time to detach the disks cleanly before launchd kills the script -->
+  <key>ExitTimeOut</key><integer>60</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/disks-mount.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/disks-mount.log</string>
+</dict>
+</plist>
