@@ -99,6 +99,9 @@ struct FolderView: View {
     @State private var sort = Sort.name
     @AppStorage("asList") private var asList = false
     @State private var playing: Record?
+    @State private var linking: (done: Int, total: Int)?
+    @State private var shared: SharedLink?
+    @State private var failed: String?
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
 
@@ -149,6 +152,17 @@ struct FolderView: View {
             }
         }
         .task { folder.load() }
+        .overlay(alignment: .bottom) {
+            if let l = linking {
+                Label(l.total > 1 ? "Making the link… \(l.done) of \(l.total)" : "Making the link…", systemImage: "link")
+                    .font(.footnote).padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(.thinMaterial, in: Capsule()).padding(.bottom, 24)
+            }
+        }
+        .sheet(item: $shared) { ActivityView(items: [$0.url]).presentationDetents([.medium, .large]) }
+        .alert("Couldn’t make the link", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(failed ?? "") }
         .navigationDestination(for: String.self) { FolderView(path: $0) }
         .fullScreenCover(item: $playing) { r in
             PlayerView(folder: parentPath(r.inArchive), open: r.inArchive)
@@ -164,8 +178,37 @@ struct FolderView: View {
     }
 
     @ViewBuilder private func open(_ r: Record, @ViewBuilder _ label: () -> some View) -> some View {
-        if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
-        else { Button { playing = r } label: { label() }.buttonStyle(.plain) }
+        Group {
+            if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
+            else { Button { playing = r } label: { label() }.buttonStyle(.plain) }
+        }
+        .contextMenu {
+            Menu {
+                ForEach([(1, "1 Day"), (7, "7 Days"), (30, "30 Days")], id: \.0) { days, name in
+                    Button(name) { share(r, days: days) }
+                }
+            } label: { Label(r.dir ? "Share Folder Link" : "Share Link", systemImage: "square.and.arrow.up") }
+        }
+    }
+
+    // a Gallery link, as the web makes one: a file, or every file directly in a folder
+    private func share(_ r: Record, days: Int) {
+        guard linking == nil else { return }
+        linking = (0, 1)
+        Task {
+            do {
+                let paths = r.dir ? try await Folder.files(in: r.path) : [r.inArchive]
+                guard !paths.isEmpty else { throw FeedError.notFound }
+                let url = try await Share.link(paths, days: days) { done, total in
+                    Task { @MainActor in linking = (done, total) }
+                }
+                linking = nil
+                shared = SharedLink(url: url)
+            } catch {
+                linking = nil
+                failed = (error as? FeedError) == .notFound ? "There are no files in this folder." : "Check the connection and try again."
+            }
+        }
     }
 
     private func tile(_ r: Record) -> some View {
@@ -200,3 +243,29 @@ struct FolderView: View {
 }
 
 extension Record: Identifiable {}
+
+struct SharedLink: Identifiable { let url: URL; var id: URL { url } }
+
+// the iOS share sheet (Messages, Mail, AirDrop, Copy)
+struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
+    func updateUIViewController(_ c: UIActivityViewController, context: Context) {}
+}
+
+extension Folder {
+    // the files directly in a folder, as paths inside chauphan/, every page of them
+    static func files(in path: String) async throws -> [String] {
+        let feed = Feed()
+        var out: [String] = []
+        var cursor: String? = nil
+        repeat {
+            let (records, next): ([Record], String?) = try await withCheckedThrowingContinuation { k in
+                feed.items(path, cursor: cursor) { k.resume(with: $0) }
+            }
+            out += records.filter { !$0.dir }.map(\.inArchive)
+            cursor = next
+        } while cursor != nil
+        return out
+    }
+}

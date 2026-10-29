@@ -460,6 +460,30 @@ await test("share link from Main: owner only, copies just the picked files, visi
   assert.ok(await MAIN.head("files/Pick/b.jpg"));
 });
 
+await test("share link from the archive (from=archive): same link and page, copied from gallery-archive, the Mac app may make it", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  await AR.put("chauphan/Memos/m.m4a", "MEMO", { httpMetadata: { contentType: "audio/mp4" }, customMetadata: { mtime: "1700000000.5" } });
+  await AR.put(".catalog/archive/x.json", "{}");
+  const mk = (paths, as = "mac", from = "archive") => call(`/main/api/link?action=fromMain&days=1&from=${from}`, { as, method: "POST", body: JSON.stringify({ paths }) });
+  assert.equal((await mk(["Memos/m.m4a"], "stranger")).status, 404);
+  assert.equal((await mk(["Memos/m.m4a"], "mac", "elsewhere")).status, 400);
+  assert.equal((await mk(["../.catalog/archive/x.json"])).status, 400);
+  assert.equal((await mk(["Memos/none.m4a"])).status, 404);
+  const r = await mk(["Memos/m.m4a"]);
+  assert.equal(r.status, 200, await r.clone().text());
+  const j = await r.json();
+  let g = await (await call("/api/gallery?id=" + j.id)).json();
+  assert.ok(g.items[0].pending);
+  assert.equal(g.items[0].taken, 1700000000500);
+  assert.equal((await call(`/main/api/link?action=copy&id=${j.id}&i=0`, { as: "mac", method: "POST" })).status, 200);
+  g = await (await call("/api/gallery?id=" + j.id)).json();
+  assert.ok(!g.items[0].pending);
+  assert.equal(await (await call("/f/" + j.id + "/000")).text(), "MEMO");
+  // the archive is untouched, and nothing of Main's was looked for
+  assert.equal(await (await AR.get("chauphan/Memos/m.m4a")).text(), "MEMO");
+  assert.equal(await MAIN.head("files/Memos/m.m4a"), null);
+});
+
 await test("transcripts: Main path, alias via library.json, invite name, link item; pending when none", async () => {
   const KEEP = await mf.getR2Bucket("KEEP");
   const k = async (p) => Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("gallery:files/" + p))).toString("hex").slice(0, 24);

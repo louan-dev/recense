@@ -17,6 +17,8 @@ const LINKS = "links/";
 const STALL_MS = 15 * 60 * 1000;
 
 // Daily: every upload-link object past its expiry goes.
+const ARCHIVE_ROOT = "chauphan/"; // where the archive keeps what the app and /main/archive show
+
 export async function cleanup(env) {
   const now = Date.now();
   let cursor;
@@ -140,7 +142,8 @@ export async function linkApi(req, env, url) {
   return new Response("Bad request", { status: 400 });
 }
 
-// POST /main/api/link?action=fromMain&days=7   body: { paths: ["Folder/a.jpg", …] } (files in Main)
+// POST /main/api/link?action=fromMain&days=7[&from=archive]   body: { paths: ["Folder/a.jpg", …] } (files in Main, or
+//   in the archive's chauphan/ with from=archive: the same link, the same page; archive files carry no keys or covers)
 //   -> { ok, id, exp, count, url }   the link exists at once; its items show as pending until copied
 // POST /main/api/link?action=copy&id=ID&i=N      copies item N from Main into the link (one file per call,
 //   so a big video never has to fit in one request's time)
@@ -157,20 +160,22 @@ async function fromMainLink(req, env, q) {
   if (!paths.length || paths.length > 1000) return new Response("Bad file count", { status: 400 });
 
   const days = Math.min(365, Math.max(1, parseInt(q.get("days") || "", 10) || 7));
+  const archive = q.get("from") === "archive";
+  if (q.get("from") && !archive) return new Response("Bad source", { status: 400 });
   const items = [];
   const keysByDir = new Map(); // each file's original key rides along into the link (Key slider labels)
 
   for (const p of paths) {
     const rel = cleanPath(String(p || ""));
-    if (!rel) return new Response("Bad file path", { status: 400 });
+    if (!rel || (archive && rel.split("/").some((x) => x.startsWith(".")))) return new Response("Bad file path", { status: 400 });
 
-    const h = await env.MAIN.head("files/" + rel);
+    const h = archive ? await env.ARCHIVE.head(ARCHIVE_ROOT + rel) : await env.MAIN.head("files/" + rel);
     if (!h) return new Response("Not found: " + rel, { status: 404 });
 
     const mtime = Number((h.customMetadata || {}).mtime);
     const dir = rel.split("/").slice(0, -1).join("/");
-    if (!keysByDir.has(dir)) keysByDir.set(dir, await mainKeys(env, dir));
-    const k = keyFields(keysByDir.get(dir)[rel.split("/").pop()]).key;
+    if (!archive && !keysByDir.has(dir)) keysByDir.set(dir, await mainKeys(env, dir));
+    const k = archive ? null : keyFields(keysByDir.get(dir)[rel.split("/").pop()]).key;
 
     items.push({
       i: items.length,
@@ -179,6 +184,7 @@ async function fromMainLink(req, env, q) {
       type: (h.httpMetadata && h.httpMetadata.contentType) || "application/octet-stream",
       name: rel.split("/").pop().slice(0, 120),
       src: rel,
+      ...(archive ? { lib: "archive" } : {}),
       ...(k ? { key: k } : {}),
     });
   }
@@ -205,7 +211,8 @@ async function copyFromMain(env, q) {
   const key = LINKS + id + "/" + String(i).padStart(3, "0");
   if (await env.PUBLIC.head(key)) return jsonResponse({ ok: true });
 
-  const obj = await env.MAIN.get("files/" + it.src);
+  const archive = it.lib === "archive";
+  const obj = archive ? await env.ARCHIVE.get(ARCHIVE_ROOT + it.src) : await env.MAIN.get("files/" + it.src);
   if (!obj) return new Response("Not found", { status: 404 });
 
   const { readable, writable } = new FixedLengthStream(obj.size);
@@ -222,7 +229,8 @@ async function copyFromMain(env, q) {
   });
   await copied;
 
-  // a cover the owner chose or deleted in Main comes along (art/ is outside files/)
+  // a cover the owner chose or deleted in Main comes along (art/ is outside files/); the archive has none
+  if (archive) return jsonResponse({ ok: true });
   const ah = await env.MAIN.head("art/" + it.src);
   const am = (ah && ah.customMetadata) || {};
   if (am.deleted === "1") {

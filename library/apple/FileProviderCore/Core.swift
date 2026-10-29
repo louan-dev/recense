@@ -69,7 +69,7 @@ public struct Event: Codable {
     public var record: Record { Record(id: id, path: path, dir: dir, size: size, etag: etag, mtime: mtime) }
 }
 
-public enum FeedError: Error {
+public enum FeedError: Error, Equatable {
     case offline, notSignedIn, expired, notFound, server(Int)
 }
 
@@ -235,4 +235,39 @@ public enum Token {
         return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
     }
     #endif
+}
+
+// Gallery's share links, made the way the web makes them (POST /main/api/link?action=fromMain, then one copy per
+// file), from the archive (from=archive). The link is https://<host>/s/<id>: the same page and player for whoever opens it.
+public enum Share {
+    struct Made: Decodable { let id: String; let count: Int; let url: String }
+
+    static func call(_ query: String, _ body: Data?) async throws -> Data {
+        guard let d = Token.read(), let t = try? JSONDecoder().decode([String: String].self, from: d),
+              let id = t["id"], let secret = t["secret"] else { throw FeedError.notSignedIn }
+        var r = URLRequest(url: URL(string: "https://\(Gallery.base.host!)/main/api/link?\(query)")!)
+        r.httpMethod = "POST"
+        r.httpBody = body
+        r.timeoutInterval = 600  // one copy can be a big video
+        r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+        r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+        r.setValue("1", forHTTPHeaderField: "x-gallery")  // the Worker's same-site check for clients with no Origin
+        r.setValue("application/json", forHTTPHeaderField: "content-type")
+        let (data, response) = try await URLSession.shared.data(for: r)
+        guard let h = response as? HTTPURLResponse, h.url?.host == Gallery.base.host else { throw FeedError.notSignedIn }
+        guard (200...299).contains(h.statusCode) else { throw FeedError.server(h.statusCode) }
+        return data
+    }
+
+    // paths are inside chauphan/; progress(done, total) after each file is in the link
+    public static func link(_ paths: [String], days: Int, progress: @escaping (Int, Int) -> Void) async throws -> URL {
+        let body = try JSONEncoder().encode(["paths": paths])
+        let made = try JSONDecoder().decode(Made.self, from: try await call("action=fromMain&from=archive&days=\(days)", body))
+        progress(0, made.count)
+        for i in 0..<made.count {
+            _ = try await call("action=copy&id=\(made.id)&i=\(i)", nil)
+            progress(i + 1, made.count)
+        }
+        return URL(string: "https://\(Gallery.base.host!)\(made.url)")!
+    }
 }
