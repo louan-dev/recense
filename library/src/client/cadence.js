@@ -61,13 +61,196 @@
     return { hop, n, onset, pitch, frame, time, isVoiced, sustained, entries, saturated, rise };
   }
 
+  // A word's syllables, as where each ends in its letters (code points). Han, kana, Hangul and Ethiopic: a letter each.
+  // Latin, Cyrillic and Greek: one per run of vowels, split where two vowels are sung apart (va-ri-a-tions; not the
+  // -tion of "nation"), the consonants between two going to the second (or one to each, from two on, but pl, br… together). English
+  // drops a silent final e, -es or -ed (love, loves, liked; not the, lit-tle, wan-ted). Other scripts: the word whole (the melody gives it all its notes).
+  const VOWEL = /[aeiouyæœøåıəаеёиоуыэюяіїєαεηιουω]/;
+  function syllables(word, lang) {
+    const cs = Array.from(word);
+    if (!cs.length) return [];
+    if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Ethiopic}]/u.test(word)) {
+      const out = [];
+      cs.forEach((c, k) => { if (/\p{L}/u.test(c)) out.push(k + 1); else if (out.length) out[out.length - 1] = k + 1; });
+      return out.length ? out : [cs.length];
+    }
+    const base = cs.map((c) => c.normalize("NFD")[0].toLowerCase());
+    const isV = base.map((c) => VOWEL.test(c));
+    const nuclei = [];
+    for (let k = 0; k < cs.length; k++) {
+      if (!isV[k]) continue;
+      const last = nuclei[nuclei.length - 1];
+      // i before a vowel is its own syllable (ri-a), except as a glide after t, s, c, g, x (na-tion, spe-cial, re-gion)
+      const hiatus = last && last.b === k && base[k - 1] === "i" && k >= 2 && !/[tscgx]/.test(base[k - 2]) && last.b - last.a === 1;
+      if (last && last.b === k && !hiatus) last.b = k + 1;
+      else nuclei.push({ a: k, b: k + 1 });
+    }
+    if (!nuclei.length) return [cs.length];
+    const en = !lang || /^en/.test(lang);
+    const lastN = nuclei[nuclei.length - 1];
+    const tail = base.slice(lastN.b).join("").replace(/[^\p{L}]/gu, "");
+    const before = base.slice(0, lastN.a).join("");
+    if (en && nuclei.length > 1 && lastN.b - lastN.a === 1 && base[lastN.a] === "e"
+        && (tail === "" && !/[^aeiouy]l$/.test(before) || tail === "s" && !/(s|z|x|ch|sh|c|g)$/.test(before) || tail === "d" && !/[td]$/.test(before))) nuclei.pop();
+    const out = [];
+    for (let j = 0; j + 1 < nuclei.length; j++) {
+      const a = nuclei[j].b, gap = nuclei[j + 1].a - a;
+      // two consonants go one to each, unless they start a syllable together (pa-la-bras, a-pple's pl, ma-tri-a)
+      const onset = gap === 2 && /[bcdfgkpt]/.test(base[a]) && /[lr]/.test(base[a + 1]);
+      out.push(a + (gap >= 2 && !onset ? 1 : 0));
+    }
+    out.push(cs.length);
+    return out;
+  }
+
+  // The sung notes in a vocal stem's pitch track (MIDI × 100 every 10 ms): runs that keep within 0.7 semitone of their
+  // own middle, through a slip of a frame or two, 40 ms or longer. `odd`: 11 semitones or more from the singer's
+  // middle (an octave slip, or the accompaniment bleeding in), cheap to leave unsung.
+  function notesOf(f) {
+    const p = f.pitch, n = f.n, out = [];
+    const mid = (v) => v.slice().sort((a, b) => a - b)[v.length >> 1];
+    let cur = null;
+    const close = () => { if (cur && cur.b - cur.a >= 4) out.push(cur); cur = null; };
+    for (let k = 0; k < n; k++) {
+      const v = f.isVoiced(k) && p[k] > 0 ? p[k] : 0;
+      if (!v) { if (cur && k - cur.b >= 3) close(); continue; }
+      if (cur && Math.abs(v - cur.m) <= 70) {
+        cur.b = k + 1;
+        cur.v.push(v);
+        if (cur.v.length % 4 === 0) cur.m = mid(cur.v);
+        continue;
+      }
+      if (cur && k - cur.b <= 1 && [1, 2].some((d) => k + d < n && p[k + d] > 0 && Math.abs(p[k + d] - cur.m) <= 70)) continue;
+      close();
+      cur = { a: k, b: k + 1, m: v, v: [v] };
+    }
+    close();
+    if (!out.length) return [];
+    // one note still when a glitch broke it (the same pitch on within 20 ms, or past a blip of 50 ms or less tracked
+    // at another pitch); a longer break at the same pitch is a consonant, a new syllable on a repeated note
+    for (let k = out.length - 1; k > 0; k--) {
+      const a = out[k - 1], b = out[k];
+      if (b.a - a.b <= 2 && Math.abs(mid(b.v) - mid(a.v)) <= 50) { a.b = b.b; a.v = a.v.concat(b.v); out.splice(k, 1); }
+      else if (k + 1 < out.length && b.b - b.a <= 5 && out[k + 1].a - a.b <= 10 && Math.abs(mid(out[k + 1].v) - mid(a.v)) <= 50) {
+        a.b = out[k + 1].b; a.v = a.v.concat(out[k + 1].v); out.splice(k, 2);
+      }
+    }
+    const byLen = out.map((x) => [x.m, x.b - x.a]).sort((a, b) => a[0] - b[0]);
+    let half = byLen.reduce((a, x) => a + x[1], 0) / 2, reg = byLen[0][0];
+    for (const [m, d] of byLen) { reg = m; if ((half -= d) <= 0) break; }
+    return out.map((x) => ({ s: f.time(x.a), e: f.time(x.b), m: mid(x.v), odd: Math.abs(mid(x.v) - reg) >= 1100 }));
+  }
+
+  // Lyric to melody: each line of a song (ids 2 000 000 and up), its syllables in order, laid on the notes sung from
+  // just before its first word to the next line's (or 1.5 s past its last), by the cheapest of all the ways to do it (dynamic programming):
+  //   a syllable starts on a note:  how far from where the recognizer put it, in 0.35 s (≤ 3; half within a word)
+  //   a note left unsung:           its length in 0.1 s (a fifth of that when odd)
+  //     + 0.8 straight on from the note before (no consonant between: the same vowel moving on)
+  //   a note run on by a syllable:  straight on 0.2 at the same pitch, 0.6 to another (a held word falling to its next
+  //                                 note); after a gap under 0.1 s 1.5, longer 2.5 (a consonant starts a syllable)
+  //   a syllable on no note:        2.5 (sung unvoiced; it takes the time between its neighbours)
+  // A word then starts on its first syllable's note, unless that's more than 1.2 s from where it was, and ends with
+  // its last syllable's. Lines with fewer notes than a third of their syllables (spoken, rapped) are left as they are.
+  // → per word, its syllables [{ c, s, e }] (c: where it ends in the word's letters), or null.
+  function melody(lines, f, flat, s, e) {
+    const res = new Array(flat.length).fill(null);
+    if (!Array.isArray(f.pitch) || f.pitch.length < f.n) return res;
+    const notes = notesOf(f);
+    if (!notes.length) return res;
+    let at = 0, taken = 0;
+    for (const l of lines) {
+      const from = at, c = (l.words || []).length;
+      at += c;
+      if (!c || !(Number(l.id) >= 2000000)) continue;
+      const lo = Math.max(s[from] - 0.35, taken), hi = Math.min(at < flat.length ? s[at] - 0.03 : Infinity, e[at - 1] + 1.5);
+      const W = notes.filter((x) => x.s >= lo && x.s < hi);
+      const Y = [];
+      for (let i = from; i < at; i++) {
+        const cut = syllables(flat[i].t, flat[i].lang), K = cut.length || 1;
+        for (let k = 0; k < K; k++) Y.push({ i, c: cut[k] || Array.from(flat[i].t).length, exp: s[i] + ((e[i] - s[i]) * k) / K, wt: k ? 0.5 : 1 });
+      }
+      const N = W.length, S = Y.length;
+      if (!N || N < S / 3) continue;
+      // the unpitched gap before each note, past odd blips: a consonant (a new syllable) when 30 ms or more
+      const gb = new Float64Array(N), pm = new Float64Array(N);
+      let le = -Infinity, lm = 0;
+      for (let k = 0; k < N; k++) { gb[k] = W[k].s - le; pm[k] = lm; if (!W[k].odd) { le = W[k].e; lm = W[k].m; } }
+      const P = new Float64Array(N + 1), M = new Float64Array(N);
+      for (let k = 0; k < N; k++) P[k + 1] = P[k] + ((W[k].e - W[k].s) / 0.1) * (W[k].odd ? 0.2 : 1);
+      for (let k = 1; k < N; k++) {
+        const g = gb[k], same = Math.abs(W[k].m - pm[k]) <= 50;
+        M[k] = M[k - 1] + (W[k].odd ? 0.2 : g <= 0.03 ? (same ? 0.2 : 0.6) : g < 0.1 ? 1.5 : 2.5);
+      }
+      const start = (y, a) => y.wt * Math.min(3, Math.abs(W[a].s - y.exp) / 0.35) + (W[a].odd ? 1 : 0) + (gb[a] <= 0.03 ? 0.8 : 0);
+      // D[y][j]: the cheapest with syllable y the last laid, j notes behind it; how: -1 on no note, else its first note a
+      const D = [], how = [], back = [];
+      let prev = new Float64Array(N + 1).fill(Infinity);
+      prev[0] = 0;
+      for (let y = 0; y < S; y++) {
+        const cur = new Float64Array(N + 1).fill(Infinity), h = new Int32Array(N + 1).fill(-2), bq = new Int32Array(N);
+        let mq = Infinity, q = -1, ma = Infinity, a0 = -1;
+        for (let a = 0; a < N; a++) {
+          if (prev[a] - P[a] < mq) { mq = prev[a] - P[a]; q = a; }
+          bq[a] = q;
+          const best = P[a] + mq + start(Y[y], a) - M[a];
+          if (best < ma) { ma = best; a0 = a; }
+          const v = M[a] + ma;
+          if (v < cur[a + 1]) { cur[a + 1] = v; h[a + 1] = a0; }
+        }
+        for (let j = 0; j <= N; j++) if (prev[j] + 2.5 < cur[j]) { cur[j] = prev[j] + 2.5; h[j] = -1; }
+        D.push(cur); how.push(h); back.push(bq);
+        prev = cur;
+      }
+      let j = 0, bestEnd = Infinity;
+      for (let k = 0; k <= N; k++) { const v = prev[k] + (P[N] - P[k]); if (v < bestEnd) { bestEnd = v; j = k; } }
+      if (!(bestEnd < Infinity)) continue;
+      const got = new Array(S).fill(null);
+      for (let y = S - 1; y >= 0; y--) {
+        const a = how[y][j];
+        if (a === -2) break;
+        if (a === -1) continue;
+        got[y] = { s: W[a].s, e: W[j - 1].e };
+        j = back[y][a];
+      }
+      // each word from its syllables; one on no note takes the time between its neighbours in the word
+      for (let i = from; i < at; i++) {
+        const ys = Y.map((y, k) => (y.i === i ? k : -1)).filter((k) => k >= 0);
+        const sung = ys.filter((k) => got[k]);
+        if (!sung.length) continue;
+        const ns = got[sung[0]].s;
+        if (Math.abs(ns - s[i]) > 1.2) continue;
+        const ne = Math.max(ns + 0.05, got[sung[sung.length - 1]].e);
+        const out = ys.map((k) => ({ c: Y[k].c, s: got[k] ? got[k].s : NaN, e: got[k] ? got[k].e : NaN }));
+        for (let k = 0; k < out.length; k++) {
+          if (!Number.isNaN(out[k].s)) continue;
+          const before = k ? out[k - 1].e : ns, after = out.slice(k + 1).find((x) => !Number.isNaN(x.s));
+          out[k].s = before;
+          out[k].e = after ? after.s : Math.max(before, ne);
+        }
+        s[i] = ns;
+        e[i] = ne;
+        res[i] = out;
+        taken = Math.max(taken, ne);
+      }
+    }
+    // in order still, and none running into the next
+    for (let i = 1; i < flat.length; i++) if (s[i] < s[i - 1]) s[i] = s[i - 1];
+    for (let i = 0; i + 1 < flat.length; i++) {
+      if (s[i + 1] > s[i] && e[i] > s[i + 1]) e[i] = Math.max(s[i] + 0.05, s[i + 1]);
+      if (res[i]) for (const y of res[i]) { y.e = Math.min(y.e, e[i]); y.s = Math.min(y.s, y.e); }
+    }
+    return res;
+  }
+
   function fit(lines, F, shift = 0) {
     if (!F || F.source !== "vocals" || !Array.isArray(F.db) || F.db.length <= 20 || !Array.isArray(lines)) return lines;
     const f = voiceOf(F);
     const flat = [];
     // back in the transcript's time, to the millisecond the Worker keeps (so a frame is the frame Recense sees)
     const back = (x) => Math.round((x - shift) * 1000) / 1000;
-    for (const l of lines) for (const w of l.words || []) flat.push({ start: back(w.s), end: back(w.e) });
+    // (a line with an English translation isn't English: no English spelling rules for its syllables)
+    const langOf = (l, w) => w.lang || l.lang || ((l.enw && l.enw.length) || (l.english && l.english.length) ? "und" : undefined);
+    for (const l of lines) for (const w of l.words || []) flat.push({ start: back(w.s), end: back(w.e), t: String(w.t || ""), lang: langOf(l, w) });
     const n = flat.length;
     if (!n) return lines;
 
@@ -165,11 +348,21 @@
       if (j >= n) continue;
       e[i] = legato[i] ? Math.max(s[i] + 0.05, s[j]) : Math.min(e[i], Math.max(s[i] + 0.05, s[j]));
     }
+    // then a song's syllables on the notes they're sung on (melody): a word starts with its first syllable's note and
+    // is held for as long as its last syllable's is
+    const syl = melody(lines, f, flat, s, e);
     const r3 = (x) => Math.round((x + shift) * 1000) / 1000;
     let i = 0;
     return lines.map((l) => {
       const { _learn, ...rest } = l;               // (the page's per-line cache, worked out from the old times)
-      const words = (l.words || []).map((w) => ({ ...w, s: r3(s[i]), e: r3(e[i++]) }));
+      const words = (l.words || []).map((w) => {
+        const { syl: _, ...o } = w;
+        o.s = r3(s[i]);
+        o.e = r3(e[i]);
+        if (syl[i]) o.syl = syl[i].map((y) => ({ c: y.c, s: r3(y.s), e: r3(y.e) }));
+        i++;
+        return o;
+      });
       return words.length ? { ...rest, words, s: words[0].s, e: words[words.length - 1].e } : rest;
     });
   }
@@ -223,7 +416,7 @@
     return { off, why: dense ? "dense" : "sparse", dense, lyric: fromLyrics, song, rate: Math.round(rate * 10) / 10 };
   }
 
-  const api = { fit, confidence };
+  const api = { fit, confidence, syllables };
   if (typeof globalThis !== "undefined") globalThis.Cadence = api;
   if (typeof module !== "undefined") module.exports = api;
 })();

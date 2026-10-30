@@ -4030,7 +4030,7 @@
       const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
       // a short pause before the next word is bridged, so the light never drops out between words
       const e = next - w.e < 0.6 ? next : w.e;
-      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h };
+      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl };
     });
 
   // the original words an English word translates; one claiming most of a long line is a misread alignment
@@ -4225,11 +4225,26 @@
 
   // Styles are only written when they change: a page that rewrites them every frame keeps style-watching
   // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
+  // How much of a word is lit at t. A sung word timed syllable by syllable (Cadence's melody: { c, s, e }, c where it
+  // ends in the letters) lights each syllable as its note comes in, quickly (0.3 s at most), and holds it lit to the
+  // note's end, so var-i-a-tions steps with the singer and a held "on" stays lit as long as it's sung. Else evenly.
+  const fillOf = (b, t, sp) => {
+    const n = b.syl && b.syl.length ? Array.from(b.t || sp.textContent || "").length : 0;
+    if (!n) return t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s));
+    let c0 = 0;
+    for (const y of b.syl) {
+      if (t < y.s) return c0 / n;
+      if (t < y.e) return Math.min(1, (c0 + (y.c - c0) * Math.min(1, (t - y.s) / Math.max(0.05, Math.min(y.e - y.s, 0.3)))) / n);
+      c0 = y.c;
+    }
+    return 1;
+  };
+
   const paintWord = (sp, b, t) => {
     const st = sp.style;
     // a made liaison's letters (prosogram-mount.js sets sp._lz): turquoise as the light reaches them, like the tie
     if (sp._lz && t >= b.s && sp.dir !== "rtl") {
-      const f = t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s)), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = rgba(t >= b.e ? mix([64, 224, 208, 1], SPOKEN, (t - b.e) / 0.45) : [64, 224, 208, 1]);   // eases to white as the gold does
+      const f = fillOf(b, t, sp), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = rgba(t >= b.e ? mix([64, 224, 208, 1], SPOKEN, (t - b.e) / 0.45) : [64, 224, 208, 1]);   // eases to white as the gold does
       const stops = [];
       let at = 0;
       for (const [u0, u1] of sp._lz) {
@@ -4258,8 +4273,7 @@
     // the light stays full gold for the whole word and wipes across all of it at the voice's speed, with a steady
     // soft edge and a steady glow: the frame-to-frame voice measures no longer change its opacity, edge or glow,
     // which made it flicker (item 20). The ribbon under the line carries the voice's stress and pitch instead.
-    const dur = Math.max(0.05, b.e - b.s);
-    const f = Math.min(1, (t - b.s) / dur);
+    const f = fillOf(b, t, sp);
     const w = (f * 100).toFixed(1);
     const edge = Math.min(100, f * 100 + 6).toFixed(1);
     if (sp._c !== "transparent") st.color = sp._c = "transparent";
