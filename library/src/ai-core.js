@@ -79,21 +79,56 @@ export function pick(matches, scope, k = 8, perFile = 4) {
 
 const fmtTime = (t) => { const s = Math.max(0, Math.floor(t)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
-/** What the chat model is asked. The owner's documents are the authority; general knowledge fills in only where they
- *  are silent, and is labelled as such. */
+// ---------- what a document is worth as evidence ----------
+// "reference": published material (a textbook, the MPEP, a statute, an article): trusted like general knowledge, cited.
+// "personal":  the owner's own writing or recordings (reflections, journals, venting, drafts, letters, notes): what the owner
+//              thought or felt, possibly subjective or wrong; never evidence for a fact. The default when unsure.
+// "name":      a file's name and folder only.
+export const AUTH = ["reference", "personal"];
+
+/** The question put to the model once per document, from its name and opening text. */
+export function classifyMessages(path, sample) {
+  return [
+    { role: "system", content: [
+      "Classify a document from a personal library. Reply with JSON only: {\"auth\":\"reference\"} or {\"auth\":\"personal\"}.",
+      "reference = published material written for others: a textbook, a manual such as the MPEP, a statute or regulation, a court decision,",
+      "a published article, paper or book chapter, official documentation. Signs: publisher, ISBN, DOI, copyright notice, edition, numbered sections,",
+      "formal impersonal prose.",
+      "personal = the owner's own writing or speech: reflections, journal or diary entries, venting, opinions, class reflections, drafts, notes,",
+      "cover letters, CVs, messages, transcripts of the owner talking. Signs: first person, feelings, dates of the owner's life, informal tone.",
+      "If unsure, answer personal.",
+    ].join("\n") },
+    { role: "user", content: `File: ${path}\n\nOpening text:\n${String(sample || "").slice(0, 3000)}` },
+  ];
+}
+
+/** The model's reply to classifyMessages, as "reference" or "personal" (anything unclear is personal). */
+export function parseAuth(reply) {
+  const s = String(reply || "");
+  const m = /"auth"\s*:\s*"(reference|personal)"/i.exec(s) || /\b(reference|personal)\b/i.exec(s);
+  return m && m[1].toLowerCase() === "reference" ? "reference" : "personal";
+}
+
+const LABEL = { reference: "published reference", personal: "owner's personal writing", name: "file name only", transcript: "owner's recording" };
+
+/** What the chat model is asked. Published references are trusted alongside general knowledge; the owner's personal
+ *  writing tells what the owner thought or felt, never what is true. */
 export function buildMessages(question, hits, history = []) {
   const sources = hits.map((h, i) =>
-    `[${i + 1}] ${h.root === "archive" ? "Archive" : "Main"} / ${h.path}${h.t != null ? " at " + fmtTime(h.t) : ""}\n${h.text}`).join("\n\n");
+    `[${i + 1}] (${LABEL[h.auth] || LABEL.personal}) ${h.root === "archive" ? "Archive" : "Main"} / ${h.path}${h.t != null ? " at " + fmtTime(h.t) : ""}\n${h.text}`).join("\n\n");
   const system = [
-    "You are the assistant in the owner's private gallery of documents and recordings (textbooks, the MPEP, notes, transcripts).",
-    "Rules, in order of priority:",
-    "1. The numbered sources below are the owner's own documents and are the authority. When they address the question, answer from them,",
-    "   quote or closely paraphrase the wording that matters, and cite inline like [1] or [2][3]. If a source conflicts with your general",
-    "   knowledge, the source wins; you may note the difference.",
-    "2. Where the sources are silent, you may answer from general knowledge, but say so plainly (start that part with \"General knowledge:\")",
-    "   and never present it as coming from the owner's files.",
-    "3. Never invent citations, section numbers, file names, quotes or facts. If you are not sure, say what you don't know.",
-    "4. For legal or regulatory material (e.g. MPEP sections, rules, statutes), cite the section number exactly as it appears in the source.",
+    "You are the assistant in the owner's private gallery of documents and recordings.",
+    "Each numbered source below is labelled with what it is worth as evidence:",
+    "- (published reference): published material such as a textbook, the MPEP, a statute or an article. Treat it as reliable knowledge,",
+    "  on par with or above your general knowledge. Quote or closely paraphrase the wording that matters and cite it like [1].",
+    "  For legal or regulatory material, cite section numbers exactly as they appear in the source.",
+    "- (owner's personal writing) and (owner's recording): reflections, journals, venting, drafts, notes, the owner talking. These show what",
+    "  the owner thought, felt or planned, and may be subjective or factually wrong. Use them to answer questions about the owner's own",
+    "  views, experiences or work, citing them like [2]. Never treat them as evidence that something is true; for facts, rely on published",
+    "  references and general knowledge, and you may gently point out where the owner's notes disagree with the facts.",
+    "- (file name only): the file exists; its content wasn't read.",
+    "Where no source covers a factual question, answer from general knowledge and start that part with \"General knowledge:\".",
+    "Never invent citations, section numbers, file names, quotes or facts. If you are not sure, say what you don't know.",
     "Answer in the language of the question. Be concise unless asked for detail.",
     "",
     "Sources:",

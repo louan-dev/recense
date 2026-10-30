@@ -4,6 +4,10 @@
 //   POST /main/api/ai/search  { q, scope } → { hits }
 //   GET  /main/api/ai/status  → how much is indexed
 //   POST /main/api/ai/index   → one indexing step; call until { done: true } (the nightly cron also steps)
+//   GET  /main/api/ai/authority            → the owner's corrections of what a file or folder is worth as evidence
+//   PUT  /main/api/ai/authority { root, path, auth: "reference"|"personal"|null } → set or clear one (a folder covers what's in it)
+// Each document is classified once when indexed (published reference vs the owner's personal writing, ai-core.js); the
+// owner's corrections (ai/authority.json in MAIN) win over that at question time, so fixing one needs no re-indexing.
 //
 // Runs on Workers AI (env.AI) with a Vectorize index (env.VECTORS, 1024 dims, cosine, metadata index on "root").
 // The owner's documents are the authority; the model may add general knowledge only where they are silent (ai-core.js).
@@ -11,11 +15,12 @@
 // once (ai/text/<id>.txt in MAIN) and then embedded a slice at a time; ai/index.json in MAIN remembers where it got to.
 import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
-import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId } from "./ai-core.js";
+import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH } from "./ai-core.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
 const EMBED = "@cf/baai/bge-m3";              // changing it means re-indexing everything (different vectors)
 const STATE = "ai/index.json";
+const AUTHORITY = "ai/authority.json";
 const TEXT = "ai/text/";
 const ROOTS = { main: { bucket: "MAIN", prefix: "files/" }, archive: { bucket: "ARCHIVE", prefix: "chauphan/" } };
 const MAX_DOC = 40 * 1024 * 1024;              // larger documents are indexed by name only
@@ -27,6 +32,8 @@ const notReady = () => jsonResponse({ ok: false, error: "The assistant isn't set
 
 export async function aiRoute(req, env, ctx, url, path, method) {
   if (path === "/main/api/ai/status" && method === "GET") return status(env);
+  if (path === "/main/api/ai/authority" && method === "GET") return jsonResponse({ ok: true, rules: await readAuthority(env) });
+  if (path === "/main/api/ai/authority" && method === "PUT") return setAuthority(req, env);
   if (!ready(env)) return notReady();
   if (path === "/main/api/ai/index" && method === "POST") return jsonResponse(await indexStep(env));
   if (method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -46,7 +53,37 @@ function cleanScope(s) {
   return { root, path };
 }
 
-const publicHit = (h) => ({ root: h.root, path: h.path, kind: h.kind, t: h.t ?? null, text: h.text, score: h.score });
+const publicHit = (h) => ({ root: h.root, path: h.path, kind: h.kind, auth: h.auth, t: h.t ?? null, text: h.text, score: h.score });
+
+// ---------- the owner's corrections of authority ----------
+
+async function readAuthority(env) {
+  const o = await env.MAIN.get(AUTHORITY);
+  const r = o ? await o.json().catch(() => null) : null;
+  return r && typeof r === "object" && !Array.isArray(r) ? r : {};
+}
+
+async function setAuthority(req, env) {
+  let b; try { b = await req.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
+  const root = ["main", "archive"].includes(b?.root) ? b.root : null;
+  const path = String(b?.path ?? "").replace(/^\/+|\/+$/g, "").slice(0, 1024);
+  if (!root || (b.auth !== null && !AUTH.includes(b.auth))) return new Response("Bad rule", { status: 400 });
+  const rules = await readAuthority(env), key = root + ":" + path;
+  if (b.auth === null) delete rules[key]; else rules[key] = b.auth;
+  await env.MAIN.put(AUTHORITY, JSON.stringify(rules), { httpMetadata: { contentType: "application/json" } });
+  return jsonResponse({ ok: true, rules });
+}
+
+/** The owner's rule for a passage, if any: the longest matching file or folder (or the whole root, path ""). */
+export function ruleFor(rules, root, path) {
+  let best = null, len = -1;
+  for (const [k, v] of Object.entries(rules)) {
+    const i = k.indexOf(":"), r = k.slice(0, i), p = k.slice(i + 1);
+    if (r !== root || !(p === "" || path === p || path.startsWith(p + "/"))) continue;
+    if (p.length > len) { best = v; len = p.length; }
+  }
+  return best;
+}
 
 async function embed(env, texts) {
   const r = await env.AI.run(env.AI_EMBED_MODEL || EMBED, { text: texts });
@@ -59,7 +96,13 @@ async function retrieve(env, q, scope) {
   const opts = { topK: 20, returnMetadata: "all" };
   if (scope.root !== "all") opts.filter = { root: scope.root };
   const res = await env.VECTORS.query(v, opts);
-  const matches = (res?.matches || []).filter((m) => m.metadata).map((m) => ({ ...m.metadata, score: Math.round(m.score * 1000) / 1000 }));
+  const rules = await readAuthority(env);
+  const matches = (res?.matches || []).filter((m) => m.metadata).map((m) => {
+    const h = { ...m.metadata, score: Math.round(m.score * 1000) / 1000 };
+    const r = h.auth !== "name" && ruleFor(rules, h.root, h.path);
+    if (r) h.auth = r === "personal" && h.kind === "transcript" ? "transcript" : r;
+    return h;
+  });
   return pick(matches, scope, 8, 4);
 }
 
@@ -71,7 +114,7 @@ function ask(env, ctx, q, scope, history) {
   ctx.waitUntil((async () => {
     try {
       const hits = await retrieve(env, q, scope);
-      await send({ sources: hits.map((h, i) => ({ n: i + 1, root: h.root, path: h.path, kind: h.kind, t: h.t ?? null })) });
+      await send({ sources: hits.map((h, i) => ({ n: i + 1, root: h.root, path: h.path, kind: h.kind, auth: h.auth, t: h.t ?? null })) });
       const stream = await env.AI.run(env.AI_CHAT_MODEL || CHAT, {
         messages: buildMessages(q, hits, history), stream: true, max_tokens: 2000, temperature: 0.2,
       });
@@ -196,7 +239,7 @@ export async function indexStep(env) {
       const vecs = await embed(env, slice.map((p) => p.text)); calls++;
       const rows = await Promise.all(slice.map(async (p, i) => ({
         id: await vectorId(f.root, f.rel, st.pos + i), values: vecs[i],
-        metadata: { root: f.root, path: f.rel, kind: p.kind, text: p.text.slice(0, 1500), ...(p.t != null ? { t: p.t } : {}) },
+        metadata: { root: f.root, path: f.rel, kind: p.kind, auth: p.auth, text: p.text.slice(0, 1500), ...(p.t != null ? { t: p.t } : {}) },
       })));
       await env.VECTORS.upsert(rows); calls++;
       st.pos += slice.length;
@@ -211,7 +254,7 @@ export async function indexStep(env) {
 
 /** A file's passages: its name always; a document's text (Workers AI toMarkdown); a Main recording's transcript. */
 async function sourceText(env, f) {
-  const passages = [{ text: nameText(f.root, f.rel), kind: "name" }];
+  const passages = [{ text: nameText(f.root, f.rel), kind: "name", auth: "name" }];
   const kind = kindOf(f.rel);
   let calls = 0;
   try {
@@ -222,12 +265,27 @@ async function sourceText(env, f) {
         const [r] = await env.AI.toMarkdown([{ name, blob: new Blob([await o.arrayBuffer()], { type: o.httpMetadata?.contentType || "application/octet-stream" }) }]);
         calls++;
         const md = r && r.format !== "error" ? String(r.data || "") : "";
-        for (const c of chunkText(md)) passages.push({ text: c, kind: "doc" });
+        const chunks = chunkText(md);
+        const auth = chunks.length ? await classify(env, f.rel, md) : "personal";
+        if (chunks.length) calls++;
+        for (const c of chunks) passages.push({ text: c, kind: "doc", auth });
       }
     } else if (kind === "media" && f.root === "main") {
       const t = await transcriptFor(env, f.rel);
-      for (const c of chunkTranscript(t && t.lines)) passages.push({ text: c.text, t: c.t, kind: "transcript" });
+      const chunks = chunkTranscript(t && t.lines);
+      const auth = chunks.length && (await classify(env, f.rel, chunks.map((c) => c.text).join("\n"))) === "reference" ? "reference" : "transcript";
+      if (chunks.length) calls++;
+      for (const c of chunks) passages.push({ text: c.text, t: c.t, kind: "transcript", auth });
     }
   } catch { /* unreadable: keep the name, so it's still findable */ }
   return { passages, calls };
+}
+
+/** Published reference or the owner's personal writing, decided by the chat model from the name and opening text.
+ *  Anything that fails or is unclear counts as personal: nothing is trusted as fact unless it looks published. */
+async function classify(env, path, text) {
+  try {
+    const r = await env.AI.run(env.AI_CHAT_MODEL || CHAT, { messages: classifyMessages(path, String(text).slice(0, 3000)), max_tokens: 800, temperature: 0 });
+    return parseAuth(typeof r?.response === "string" ? r.response : r?.choices?.[0]?.message?.content);
+  } catch { return "personal"; }
 }
