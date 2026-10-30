@@ -222,8 +222,10 @@
       cv = document.createElement("canvas");
       cv.className = LANE;
       // display:block puts it on its own line under the words but still inside .txs, so it sits between the original
-      // and the translation and inherits the original's opacity.
-      cv.style.cssText = "display:block;width:100%;pointer-events:none";
+      // and the translation and inherits the original's opacity. width:0 + min-width:100%: it fills the thought but
+      // never sizes it (width:100% let the bitmap's w × dpr feed back into the shrink-to-fit cell, doubling it each
+      // frame until every thought was a column of its own and the score drawn tiny).
+      cv.style.cssText = "display:block;width:0;min-width:100%;pointer-events:none";
       cv.setAttribute("aria-hidden", "true");
       src.appendChild(cv);
     }
