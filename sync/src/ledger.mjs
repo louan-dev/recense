@@ -62,11 +62,15 @@ const DENY = [
   /\/Library\/Mail(\/|$)/,
   /\/Library\/Group Containers\/group\.com\.apple\.notes/i,
 ];
-// Noise that would churn the journal without meaning.
-const IGNORE = [
-  /(^|\/)\.DS_Store$/, /(^|\/)\._/, /(^|\/)\.Trash/, /(^|\/)\.localized$/, /(^|\/)Thumbs\.db$/i,
-  /(^|\/)desktop\.ini$/i, /(^|\/)~\$/, /(^|\/)\.obsidian\/workspace(-mobile)?\.json$/, /(^|\/)\.obsidian\/cache$/,
+// What is never content, for every Sync log (event-log.md §6; the same two lists are in gallery/src/fp.js).
+// JUNK: the OS's own litter. CHURN: one device's app state, stored but never logged or synced to another device.
+// Every other file is content, dotfiles included (.obsidian/ is part of a vault).
+export const JUNK_PATHS = [
+  /(^|\/)\.DS_Store$/, /(^|\/)\._/, /(^|\/)\.Trash/, /(^|\/)\.localized$/, /(^|\/)Thumbs\.db$/i, /(^|\/)desktop\.ini$/i,
+  /(^|\/)~\$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
 ];
+export const CHURN_PATHS = [/(^|\/)\.obsidian\/workspace(-mobile)?\.json$/, /(^|\/)\.obsidian\/cache$/];
+const IGNORE = [...JUNK_PATHS, ...CHURN_PATHS];
 const PROTECTED = []; // roots we have promised never to write inside
 
 // ------------------------------------------------------------------ small helpers
@@ -213,11 +217,12 @@ async function* walk(root, rel = '', counts) {
 async function stage(src, dir) {
   await fsp.mkdir(dir, { recursive: true });
   const tmp = path.join(dir, `stage-${crypto.randomBytes(8).toString('hex')}`);
-  const h = crypto.createHash('sha256'); let size = 0;
+  const h = crypto.createHash('sha256'); const m5 = crypto.createHash('md5'); let size = 0;
   const inp = fs.createReadStream(src); // flags 'r': read-only
-  inp.on('data', (c) => { h.update(c); size += c.length; });
+  inp.on('data', (c) => { h.update(c); m5.update(c); size += c.length; });
   await pipeline(inp, fs.createWriteStream(tmp, { flags: 'wx' }));
-  return { tmp, hash: h.digest('hex'), size };
+  // md5 too: the one content hash the catalog can read without the bytes (R2's etag), so the two logs compare
+  return { tmp, hash: h.digest('hex'), md5: m5.digest('hex'), size };
 }
 
 // ------------------------------------------------------------------ state (local only, outside the source)
@@ -276,8 +281,8 @@ export async function run(o) {
     const ok = objKey(r.hash);
     if (!known.has(ok)) { await sink.putFile(r.tmp, ok); known.set(ok, r.size); counts.uploaded++; counts.bytes += r.size; }
     await fsp.rm(r.tmp, { force: true });
-    next[key] = { size: r.size, mtimeMs: st.mtimeMs, hash: r.hash }; live.add(key);
-    if (!prev || prev.hash !== r.hash) events.push({ op: prev?.hash ? 'modify' : 'create', id: idOf(key), path: key, dir: false, hash: r.hash, size: r.size, mtime: Math.floor(st.mtimeMs / 1000), mtimeMs: Math.round(st.mtimeMs), prev: prev?.hash ?? null });
+    next[key] = { size: r.size, mtimeMs: st.mtimeMs, hash: r.hash, md5: r.md5 }; live.add(key);
+    if (!prev || prev.hash !== r.hash) events.push({ op: prev?.hash ? 'modify' : 'create', id: idOf(key), path: key, dir: false, hash: r.hash, md5: r.md5, size: r.size, mtime: Math.floor(st.mtimeMs / 1000), mtimeMs: Math.round(st.mtimeMs), prev: prev?.hash ?? null });
   }
 
   // P1: a source that suddenly lacks most of what we knew is a broken mount, not a mass deletion.
@@ -346,8 +351,11 @@ export async function readJournal(sink) {
   return segs;
 }
 
+// history/ holds the batches older than 30 days (moved out of log/, never deleted), so the whole chain stays verifiable
 async function readCatalog(sink) {
-  const names = [...(await sink.list('log')).keys()].filter((k) => /\/\d{12}\.json$/.test(k)).sort();
+  const seqOf = (k) => k.slice(k.lastIndexOf('/') + 1);
+  const names = [...(await sink.list('history')).keys(), ...(await sink.list('log')).keys()]
+    .filter((k) => /\/\d{12}\.json$/.test(k)).sort((a, b) => (seqOf(a) < seqOf(b) ? -1 : seqOf(a) > seqOf(b) ? 1 : 0));
   const segs = [];
   for (const n of names) {
     const b = JSON.parse(await sink.getText(n));
@@ -362,7 +370,7 @@ export function fold(segs, atMs = Infinity) {
   const tree = new Map();
   for (const s of segs) for (const e of s.events) {
     if (Date.parse(e.ts ?? s.header.ts) > atMs || e.dir) continue;
-    const meta = { hash: e.hash, size: e.size, mtimeMs: e.mtimeMs ?? (e.mtime != null ? e.mtime * 1000 : undefined), etag: e.etag };
+    const meta = { hash: e.hash, md5: e.md5, size: e.size, mtimeMs: e.mtimeMs ?? (e.mtime != null ? e.mtime * 1000 : undefined), etag: e.etag };
     if (e.op === 'put' || e.op === 'create' || e.op === 'modify') tree.set(e.path, meta);
     else if (e.op === 'move') { tree.delete(e.from); tree.set(e.path, meta); }
     else if (e.op === 'tombstone' || e.op === 'delete') tree.delete(e.path);
@@ -701,6 +709,8 @@ async function selftest() {
   assert(r.counts.uploaded === 5, 'identical content stored once (6 files, 5 objects), .DS_Store ignored');
   assert(r.events.filter((e) => e.op === 'create').length === 6 && r.events.some((e) => e.op === 'conflict'), 'six create events and one conflict event recorded');
   assert(r.events.every((e) => e.op === 'skip' || (/^h[0-9a-f]{24}$/.test(e.id) && e.dir === false)), 'every event names its item the way the catalog does (id, dir)');
+  assert(r.events.filter((e) => e.op === 'create').every((e) => /^[0-9a-f]{32}$/.test(e.md5) && e.md5 === crypto.createHash('md5').update(fs.readFileSync(path.join(src, e.path))).digest('hex')),
+    'every create carries the md5 the catalog reads from R2 etags');
   assert((await snapshot()) === before, 'source tree byte-for-byte and mtime unchanged (never written)');
 
   tick(); r = await go();
@@ -741,6 +751,13 @@ async function selftest() {
   assert(!massDelete(10, 12) && massDelete(11, 12) && !massDelete(15, 200) && massDelete(21, 200) && massDelete(101, 1e7) && !massDelete(100, 1e7),
     'one delete guard (event-log.md §5): >100, or >10 and >10% of what was known');
 
+  // one junk rule (event-log.md §6): the same vector is in gallery test/routes.test.mjs
+  const cls = (p) => (JUNK_PATHS.some((x) => x.test(p)) ? 'junk' : CHURN_PATHS.some((x) => x.test(p)) ? 'churn' : 'content');
+  const JV = [['.DS_Store', 'junk'], ['a/._x.m4a', 'junk'], ['.Trashes/501/x', 'junk'], ['Thumbs.db', 'junk'], ['a/~$Report.docx', 'junk'],
+    ['a/Icon\r', 'junk'], ['.Spotlight-V100/Store', 'junk'], ['.obsidian/workspace.json', 'churn'], ['v/.obsidian/cache', 'churn'],
+    ['.obsidian/app.json', 'content'], ['.gitignore', 'content'], ['a/.env.example', 'content'], ['Report.docx', 'content'], ['Icon.png', 'content']];
+  assert(JV.every(([p, c]) => cls(p) === c), 'junk, churn and content are told apart the way the catalog does (shared vector)');
+
   // v1 journals (put/tombstone) still fold, beside v2 events and the catalog's move
   const v1 = [{ header: { ts: '2026-10-01T00:00:00Z' }, events: [
     { v: 1, op: 'put', path: 'x', hash: 'hx', size: 1, mtimeMs: 1000, ts: '2026-10-01T00:00:00Z' },
@@ -769,7 +786,10 @@ async function selftest() {
   assert(cv.ok && cv.unchained === 1 && fold(await readJournal(cat)).has('a.m4a') && !fold(await readJournal(cat)).has('old.m4a'), 'a catalog verifies: legacy batch counted, chain continues, fold reads it');
   const t3 = JSON.stringify(b3); await cat.putText('log/000000000003.json', t3.replace('old.m4a', 'other.m4a'));
   assert(!(await verify(cat, { log: quiet })).ok, 'a tampered catalog batch is found');
-  await cat.putText('log/000000000003.json', t3); await fsp.rm(path.join(catDir, 'log', '000000000002.json'));
+  await cat.putText('log/000000000003.json', t3);
+  await cat.putText('history/000000000002.json', JSON.stringify(b2)); await fsp.rm(path.join(catDir, 'log', '000000000002.json'));
+  assert((await verify(cat, { log: quiet })).ok, 'a batch moved to history/ (older than 30 days) is still part of the verified chain');
+  await fsp.rm(path.join(catDir, 'history', '000000000002.json'));
   cv = await verify(cat, { log: quiet });
   assert(!cv.ok && cv.problems.some((p) => /missing/.test(p)), 'a missing catalog batch is found');
 
