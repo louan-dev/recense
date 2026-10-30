@@ -15,7 +15,7 @@ const OWN = (env) => `caldav/users/${userOf(env)}/`;
 const MIRROR = "ledger/calendar/";
 const MIRROR_CACHE = "ai/cal-mirror.json";
 const INVITES = "ai/invites/";
-const MIRROR_BUDGET = 150;                 // backup objects read per call; the rest next time (and in the nightly step)
+const MIRROR_BUDGET = 400;                 // backup objects read per call; the rest next time (warmCalendar finishes it)
 const DAY = 86400000;
 
 // ---------- time zones ----------
@@ -48,6 +48,21 @@ export function showLocal(ms, tz, allDay = false) {
   return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric", ...(allDay ? {} : { hour: "numeric", minute: "2-digit" }) }).format(new Date(ms));
 }
 export const today = (tz, now = Date.now()) => { const p = parts(now, tz); return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`; };
+
+/** The date facts a model gets wrong if left to work them out: today with its weekday, and this and next week (Mon–Sun). */
+export function dateFacts(tz, now = Date.now()) {
+  const p = parts(now, tz), back = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[p.wd];
+  const day = (n) => { const d = new Date(Date.UTC(p.y, p.m - 1, p.d + n)); return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]} ${d.toISOString().slice(0, 10)}`; };
+  return `today is ${day(0)} (local time ${String(p.h).padStart(2, "0")}:${String(p.mi).padStart(2, "0")}); tomorrow is ${day(1)}; ` +
+    `this week is ${day(-back)} to ${day(6 - back)}; next week is ${day(7 - back)} to ${day(13 - back)}`;
+}
+
+/** Reads the iCloud backup until the parsed-event cache is complete (or `rounds` runs out). */
+export async function warmCalendar(env, rounds = 6) {
+  const tz = tzOf(env);
+  for (let i = 0; i < rounds; i++) if (!(await mirrorEvents(env, tz)).partial) return true;
+  return false;
+}
 
 // ---------- iCalendar ----------
 

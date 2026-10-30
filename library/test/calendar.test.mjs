@@ -1,7 +1,7 @@
 // The assistant's calendar (src/calendar.js) and its tool loop (src/ai.js), against in-memory R2 and a scripted model.
 //   node test/calendar.test.mjs
 import assert from "node:assert/strict";
-import { zoned, localMs, parseEvents, occurrences, buildEvent, editEvent, listEvents, createEvent, updateEvent, addInvitee, inviteIcs, showLocal } from "../src/calendar.js";
+import { zoned, localMs, parseEvents, occurrences, buildEvent, editEvent, listEvents, createEvent, updateEvent, addInvitee, inviteIcs, showLocal, dateFacts, warmCalendar } from "../src/calendar.js";
 import { wantsCalendar } from "../src/ai-core.js";
 import { aiRoute } from "../src/ai.js";
 
@@ -42,6 +42,11 @@ await test("local times convert across the end of daylight saving (Nov 1, 2026)"
   assert.equal(iso(zoned(2026, 11, 2, 17, 0, 0, TZ)), "2026-11-03T01:00:00.000Z");    // PST, -8
   assert.equal(iso(localMs("2026-10-30", "17:00", TZ)), "2026-10-31T00:00:00.000Z");
   assert.throws(() => localMs("10/30/2026", null, TZ)); assert.throws(() => localMs("2026-10-30", "5pm", TZ));
+});
+
+await test("date facts: weekday, this week and next (Mon–Sun), right on a Sunday and across midnight UTC", () => {
+  assert.equal(dateFacts(TZ, Date.UTC(2026, 9, 30, 3, 40)), "today is Thu 2026-10-29 (local time 20:40); tomorrow is Fri 2026-10-30; this week is Mon 2026-10-26 to Sun 2026-11-01; next week is Mon 2026-11-02 to Sun 2026-11-08");
+  assert.match(dateFacts(TZ, Date.UTC(2026, 10, 1, 20)), /^today is Sun 2026-11-01 .*this week is Mon 2026-10-26 to Sun 2026-11-01/);
 });
 
 // ---------- parsing ----------
@@ -111,6 +116,14 @@ await test("list_events merges the own calendar and the iCloud backup, marks wha
   assert.ok(env.MAIN.m.has("ai/cal-mirror.json"), "parsed backup events are cached");
   await assert.rejects(listEvents(env, "2026-01-01", "2027-12-31"));
 });
+await test("warming reads the whole backup, then nothing more", async () => {
+  const e3 = { MAIN: bucket(), OWNER_TZ: TZ }, files = {};
+  for (let i = 0; i < 900; i++) { const h = "h" + String(i).padStart(4, "0"); files[`Cal/${i}.ics`] = { hash: h }; await e3.MAIN.put(`ledger/calendar/objects/${h.slice(0, 2)}/${h}`, APPLE.replace("ABC-1", "U" + i)); }
+  await e3.MAIN.put("ledger/calendar/views/tree.json", JSON.stringify({ files }));
+  assert.equal(await warmCalendar(e3, 1), false, "400 per round: not done after one");
+  assert.equal(await warmCalendar(e3, 6), true);
+  assert.equal(Object.keys(JSON.parse(e3.MAIN.m.get("ai/cal-mirror.json").text).byHash).length, 900);
+});
 await test("update_event moves it and keeps the old version in Sync's trash", async () => {
   const u = await updateEvent(env, { uid: created.uid, date: "2026-10-31", start_time: "10:00" });
   assert.match(u.when, /Sat, Oct 31, 2026, 10:00 AM/);
@@ -174,7 +187,7 @@ await test("the assistant lists, creates and shares through tools, and asks for 
   assert.deepEqual(rows.filter((x) => x.tool).map((x) => `${x.tool}:${x.ok}`), ["create_event:true", "add_invitee:false"]);
   assert.equal(rows.filter((x) => x.t).map((x) => x.t).join(""), "What's Mom's email address?");
   assert.ok(rows.at(-1).done);
-  assert.match(calls[0].messages[0].content, /Calendar: it is now/); assert.equal(calls[0].tools.length, 4);
+  assert.match(calls[0].messages[0].content, /Calendar \(time zone America\/Los_Angeles\): today is \w{3} \d{4}-\d{2}-\d{2}.*this week is Mon/); assert.equal(calls[0].tools.length, 4);
   assert.equal(calls[1].messages.at(-2).tool_calls[0].function.name, "create_event", "the tool call is kept in the conversation");
   const all = await listEvents(env, "2026-11-02", "2026-11-02");
   assert.ok(all.events.some((x) => x.title === "Dinner" && /5:00 PM/.test(x.when)));

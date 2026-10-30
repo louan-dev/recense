@@ -225,8 +225,10 @@ export const CALENDAR_TOOLS = [
 export function calendarGuide(nowText, tz) {
   return [
     "",
-    `Calendar: it is now ${nowText} (${tz}). Use the calendar tools for anything about the owner's schedule; never guess what is on it.`,
-    "- Resolve relative dates (\"Friday\", \"this week\" = today through Sunday) to YYYY-MM-DD in that time zone before calling a tool.",
+    `Calendar (time zone ${tz}): ${nowText}. Use these dates exactly; don't work out weekdays yourself.`,
+    "Use the calendar tools for anything about the owner's schedule; never guess what is on it.",
+    "- Resolve relative dates (\"Friday\", \"this week\", \"next Tuesday\") to YYYY-MM-DD from the dates above before calling a tool.",
+    "- If list_events notes that the iCloud calendars are still being read, say some events may be missing.",
     "- Only events with editable: true (the owner's own calendar) can be changed or shared; iCloud events are read-only here, so say so.",
     "- Only say an event was created, changed or shared when the tool returned ok: true, and repeat its title and time from the result.",
     "- When the owner asks to share an event with someone, use add_invitee. If you don't know their email (check what you remember about",

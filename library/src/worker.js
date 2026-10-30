@@ -28,7 +28,7 @@ import { fp } from "./fp.js";
 import { archive } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexStep } from "./ai.js";
-import { inviteIcs, listEvents, today, TZ_DEFAULT } from "./calendar.js";
+import { inviteIcs, warmCalendar } from "./calendar.js";
 
 export default {
   async fetch(req, env, ctx) {
@@ -75,7 +75,7 @@ export default {
     async scheduled(event, env, ctx) {
     ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env),
       env.AI && env.VECTORS ? indexStep(env).catch(() => {}) : null,
-      listEvents(env, today(env.OWNER_TZ || TZ_DEFAULT), today(env.OWNER_TZ || TZ_DEFAULT)).catch(() => {})]));   // keeps the iCloud event cache warm
+      warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },
 };
 

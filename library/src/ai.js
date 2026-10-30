@@ -24,7 +24,7 @@ import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
 import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH,
   planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide } from "./ai-core.js";
-import { listEvents, createEvent, updateEvent, addInvitee, showLocal, TZ_DEFAULT } from "./calendar.js";
+import { listEvents, createEvent, updateEvent, addInvitee, dateFacts, TZ_DEFAULT } from "./calendar.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
 const FAST = "@cf/openai/gpt-oss-20b";      // env.AI_FAST_MODEL: planning searches and noting memories
@@ -188,7 +188,7 @@ function ask(env, ctx, q, scope, history, origin) {
       const messages = buildMessages(q, hits, history, memories);
       if (calendar) {
         const tz = env.OWNER_TZ || TZ_DEFAULT;
-        messages[0].content += calendarGuide(showLocal(Date.now(), tz), tz);
+        messages[0].content += calendarGuide(dateFacts(tz), tz);
         answer = await withTools(env, messages, origin, send);
         if (answer) await send({ t: answer });
       } else {
