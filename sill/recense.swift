@@ -2136,6 +2136,8 @@ final class Overlay: NSObject, NSWindowDelegate {
         // the ribbon is preloaded as a ghost; the light fills it as far as the voice has gone, and across a gap from the
         // moment the word ends to the moment the next one starts, so a link fills exactly as it is sounded
         k.figure = m.line; k.tie = m.tie; k.joins = m.line.joins; k.start = b.start; k.end = b.end
+        k.liaisonTail = m.tie != nil
+        k.liaisonHead = Prosody.live?.marks.values.contains { $0.tie?.next == m.line.flat } ?? false
         k.drawn = t >= b.end ? 1 : t < b.start ? 0 : max(0.001, CGFloat(Cadence.progress(b, t)))
         k.tied = t < b.end ? 0 : m.next > b.end + 0.01 ? CGFloat(min(1, (t - b.end) / (m.next - b.end))) : 1
         return k
@@ -2168,6 +2170,9 @@ final class WordsView: NSView {
         /// its tie to the next word, and how far across the gap the voice has carried it. nil: no notation.
         var figure: Prosody.WordLine? = nil, drawn: CGFloat = 0, tie: Prosody.Link? = nil, tied: CGFloat = 0, joins = false
         var start: Double? = nil, end: Double? = nil      // when it is sung (for the chords placed along it)
+        /// a made liaison leaves this word on its last letter / lands on this word's first: those letters turn turquoise
+        /// as the light reaches them, like the tie under them
+        var liaisonTail = false, liaisonHead = false
     }
     /// A run of words drawn together, and what it turns into (`turned` of the way): its slot is wide enough for
     /// either, so nothing moves, before, during or after. Learning's phrases are runs; everything else is a word to a cell.
@@ -2298,11 +2303,14 @@ final class WordsView: NSView {
             }
         }
         img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.35, respectFlipped: true, hints: nil)
+        pic.ties.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.35, respectFlipped: true, hints: nil)
         guard light > -.infinity else { return }
         let head = light == .infinity ? rect.maxX : light
         g.saveGState()
         g.clip(to: CGRect(x: rect.minX, y: rect.minY, width: max(0, head - rect.minX), height: rect.height))
         img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        // the liaison ties fill in turquoise behind the light, never touched by its gold head
+        pic.ties.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         g.restoreGState()
         guard light != .infinity else { return }
         let gold = CGRect(x: head - 1.6 * s, y: rect.minY, width: 1.6 * s, height: rect.height)
@@ -2451,6 +2459,26 @@ final class WordsView: NSView {
     }
 
     func draw(_ k: Ink, at p: NSPoint, alpha: CGFloat) {
+        drawBody(k, at: p, alpha: alpha)
+        guard k.liaisonTail || k.liaisonHead, k.drawn > 0, !Self.rtl(k.text), k.text.count > 1 else { return }
+        // the liaison's letters, turquoise up to the light (gold stays the light everywhere else)
+        let w = Self.width(k), ch = Array(k.text), reach = p.x + w * min(1, k.drawn), pad: CGFloat = 20
+        func at(_ i: Int) -> CGFloat { p.x + (String(ch.prefix(i)) as NSString).size(withAttributes: [.font: k.font, .kern: k.kern]).width }
+        var spans: [(CGFloat, CGFloat)] = []
+        if k.liaisonHead { spans.append((p.x - pad, at(1))) }
+        if k.liaisonTail { var i = ch.count - 1; while i > 0, !ch[i].isLetter { i -= 1 }; spans.append((at(i), at(i + 1))) }
+        let a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: Self.liaison.withAlphaComponent(k.color.alphaComponent > 0.3 || k.lit != nil ? 1 : 0.6), .kern: k.kern]
+        NSGraphicsContext.saveGraphicsState(); defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current?.cgContext.setAlpha(alpha)
+        for (x0, x1) in spans where min(x1, reach) > x0 {
+            NSGraphicsContext.saveGraphicsState()
+            NSRect(x: x0, y: p.y - pad, width: min(x1, reach) - x0, height: Self.lineHeight(k.font) + 2 * pad).clip()
+            NSAttributedString(string: k.text, attributes: a).draw(at: p)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    private func drawBody(_ k: Ink, at p: NSPoint, alpha: CGFloat) {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current?.cgContext.setAlpha(alpha)

@@ -127,7 +127,7 @@ enum Prosody {
                   colors: { ahead: 'rgb(150,148,140)', pale: 'rgb(228,224,214)' }, at: () => null, signals: { E: true } });
                 return cv.toDataURL('image/png');
               };
-              return [one('prosody'), one('symbols')];
+              return [one('prosody'), one('symbols'), one('ties')];
             };
             </script>
             """
@@ -189,12 +189,12 @@ enum Prosody {
 
     // ---------- the score: Gallery's notation, drawn by prosogram.js for one row ----------
     /// One row's notation pictures, by its layout; asked for once, drawn in the engine page, then only composited.
-    nonisolated(unsafe) private static var scores: [String: (NSImage, NSImage)] = [:]
+    nonisolated(unsafe) private static var scores: [String: (NSImage, NSImage, NSImage)] = [:]
     nonisolated(unsafe) private static var asked: [String: Date] = [:]
     /// The picture of a row's notation (cells: each word's flat index, x from the picture's left, width), or nil while
     /// it is being drawn; `ready` runs once it is, so the view redraws.
     @MainActor
-    static func score(size: CGFloat, width: CGFloat, cells: [(flat: Int, x: CGFloat, w: CGFloat)], ready: @escaping () -> Void) -> (prosody: NSImage, symbols: NSImage)? {
+    static func score(size: CGFloat, width: CGFloat, cells: [(flat: Int, x: CGFloat, w: CGFloat)], ready: @escaping () -> Void) -> (prosody: NSImage, symbols: NSImage, ties: NSImage)? {
         guard let l = live, let eng = engine else { return nil }
         let id = "\(l.key)|\(Int(size))|\(Int(width))|" + cells.map { "\($0.flat):\(Int($0.x)):\(Int($0.w))" }.joined(separator: ",")
         if let img = scores[id] { return img }
@@ -208,9 +208,9 @@ enum Prosody {
                       let img = NSImage(data: png) else { return nil }
                 img.size = NSSize(width: width, height: size * 1.9); return img
             }
-            guard imgs.count == 2 else { return }
+            guard imgs.count == 3 else { return }
             if scores.count > 300 { scores.removeAll() }
-            scores[id] = (imgs[0], imgs[1]); asked[id] = nil
+            scores[id] = (imgs[0], imgs[1], imgs[2]); asked[id] = nil
             ready()
         }
         return nil
