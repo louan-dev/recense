@@ -11,6 +11,8 @@ import SwiftUI
 import WebKit
 import Translation
 import Accelerate
+import SoundAnalysis
+import Vision
 
 // Recense v2
 // Follows whatever QuickTime, Music, Safari/Chromium (Apple Events) or Firefox (bridge extension) is playing,
@@ -2312,6 +2314,21 @@ final class WordsView: NSView {
         // the liaison ties fill in turquoise behind the light, never touched by its gold head
         pic.ties.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         g.restoreGState()
+        // a word's ties ease from turquoise into white once it is sung, as the gold does (0.45 s, as the letters)
+        for (i, (k, p)) in figs.enumerated() {
+            // from when the voice has sung through the tie (the next word's end), as Gallery's prosogram.js
+            guard let en = (i + 1 < figs.count ? figs[i + 1].0.end : nil) ?? k.end else { continue }
+            let settle = CGFloat(max(0, min(1, (Prosody.now - en) / 0.45)))
+            guard settle > 0 else { continue }
+            let x1 = i + 1 < figs.count ? figs[i + 1].1.x + Self.width(figs[i + 1].0) * 0.5 : rect.maxX
+            g.saveGState()
+            g.clip(to: CGRect(x: p.x, y: rect.minY, width: max(0, x1 - p.x), height: rect.height))
+            g.beginTransparencyLayer(auxiliaryInfo: nil)
+            pic.ties.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            g.setBlendMode(.sourceIn); g.setFillColor(NSColor.white.withAlphaComponent(settle).cgColor); g.fill(rect)
+            g.endTransparencyLayer()
+            g.restoreGState()
+        }
         guard light != .infinity else { return }
         let gold = CGRect(x: head - 1.6 * s, y: rect.minY, width: 1.6 * s, height: rect.height)
         g.saveGState(); g.clip(to: gold)
@@ -2467,7 +2484,11 @@ final class WordsView: NSView {
         var spans: [(CGFloat, CGFloat)] = []
         if k.liaisonHead { spans.append((p.x - pad, at(1))) }
         if k.liaisonTail { var i = ch.count - 1; while i > 0, !ch[i].isLetter { i -= 1 }; spans.append((at(i), at(i + 1))) }
-        let a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: Self.liaison.withAlphaComponent(k.color.alphaComponent > 0.3 || k.lit != nil ? 1 : 0.6), .kern: k.kern]
+        // once the word is sung, the turquoise eases into the word's own colour the way the gold does (0.45 s)
+        let settle = k.end.map { CGFloat(max(0, min(1, (Prosody.now - $0) / 0.45))) } ?? 0
+        guard settle < 1 else { return }
+        let tq = Self.liaison.blended(withFraction: settle, of: k.color.withAlphaComponent(1)) ?? Self.liaison
+        let a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: tq.withAlphaComponent(k.color.alphaComponent > 0.3 || k.lit != nil ? 1 : 0.6), .kern: k.kern]
         NSGraphicsContext.saveGraphicsState(); defer { NSGraphicsContext.restoreGraphicsState() }
         NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         for (x0, x1) in spans where min(x1, reach) > x0 {
@@ -3391,6 +3412,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         file = f
         duration = Double(af.length) / af.processingFormat.sampleRate
         loadAmbience(f)
+        loadVoices(f)
         let n = Int((duration / chunkLen).rounded(.up))
         if done.count != n && !(complete && key != source) { done = Array(repeating: false, count: n); lines = []; heard = []; complete = false }
         if tasks.isEmpty && !stopped { tasks = [Task { await self.transcribeLoop() }, Task { await self.translateLoop() }] }
@@ -3438,6 +3460,82 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     }
 
     var progress: Double { done.isEmpty ? 0 : Double(done.filter { $0 }.count) / Double(done.count) }
+
+    // ---- is a line or [Ambient Sounds] right to show here ----
+    // [Ambient Sounds] says "no words here", so it needs a reason to say it: Apple's sound classifier (SoundAnalysis)
+    // hears each half second once, from the file, and keeps beside the transcript (<key>.voices, 1 = a voice: speech,
+    // singing, a choir…) where a voice is. Where it hears one and no line is up (words left untranscribed, a voice under
+    // the music), the window holds its line or stays empty instead of claiming there are none.
+    var voices: [UInt8]?
+    nonisolated static let voicesStep = 0.5
+    var voicesURL: URL { cacheDir.appendingPathComponent(key + ".voices") }
+
+    func loadVoices(_ f: URL) {
+        if voices != nil { return }
+        if let d = try? Data(contentsOf: voicesURL), !d.isEmpty { voices = [UInt8](d); return }
+        let out = voicesURL
+        Task.detached(priority: .utility) {
+            guard let az = try? SNAudioFileAnalyzer(url: f), let rq = try? SNClassifySoundRequest(classifierIdentifier: .version1) else { return }
+            rq.windowDuration = CMTime(seconds: 1, preferredTimescale: 1000)
+            rq.overlapFactor = 0.5
+            let ob = VoiceObserver()
+            guard (try? az.add(rq, withObserver: ob)) != nil else { return }
+            _ = await az.analyze()
+            let env = ob.env
+            guard !env.isEmpty else { return }
+            try? Data(env).write(to: out)
+            await MainActor.run { [weak self] in self?.voices = env }
+        }
+    }
+
+    /// A voice at t, give or take half a second; nil: not heard yet.
+    func voiced(_ t: Double) -> Bool? {
+        guard let v = voices, !v.isEmpty else { return nil }
+        let i = Int(t / Episode.voicesStep), lo = max(0, i - 1), hi = min(v.count - 1, i + 1)
+        guard lo <= hi else { return false }
+        return v[lo...hi].contains(1)
+    }
+
+    /// A line whose words the picture already shows (a screen recording of a transcript, burned-in captions): it stays
+    /// heard, editable and exported, but nothing is laid over the words already there. Vision reads the frame in the
+    /// line's middle once per line; until it has, the line shows.
+    var inPicture: [Int: Bool] = [:]
+    lazy var pictureURL: URL? = {
+        guard let u = URL(string: url), u.isFileURL else { return nil }
+        return ["mov", "mp4", "m4v", "mkv", "webm", "avi"].contains(u.pathExtension.lowercased()) ? u : nil
+    }()
+
+    func shownInPicture(_ l: Line) -> Bool {
+        if let b = inPicture[l.id] { return b }
+        guard let u = pictureURL, l.words.count >= 2 else { inPicture[l.id] = false; return false }
+        inPicture[l.id] = false                                   // asked once; the answer replaces it
+        let at = (l.start + l.end) / 2 + shift, id = l.id
+        let want = Set(l.words.map { Episode.bare($0.text) }.filter { $0.count > 1 })
+        guard want.count >= 2 else { return false }
+        Task.detached(priority: .utility) {
+            let g = AVAssetImageGenerator(asset: AVURLAsset(url: u))
+            g.appliesPreferredTrackTransform = true
+            g.requestedTimeToleranceBefore = CMTime(seconds: 0.3, preferredTimescale: 600)
+            g.requestedTimeToleranceAfter = CMTime(seconds: 0.3, preferredTimescale: 600)
+            guard let cg = try? await g.image(at: CMTime(seconds: at, preferredTimescale: 600)).image else { return }
+            let rq = VNRecognizeTextRequest()
+            rq.recognitionLevel = .accurate; rq.usesLanguageCorrection = false
+            try? VNImageRequestHandler(cgImage: cg).perform([rq])
+            let seen = Set((rq.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .flatMap { $0.split(whereSeparator: { $0.isWhitespace }) }.map { Episode.bare(String($0)) })
+            // most of the line's words on screen at the moment it's said: the picture already says it
+            let shown = Double(want.intersection(seen).count) / Double(want.count) >= 0.6
+            await MainActor.run { [weak self] in
+                self?.inPicture[id] = shown
+                if shown { log("line \(id) already in the picture: no overlay over it") }
+            }
+        }
+        return false
+    }
+
+    nonisolated static func bare(_ w: String) -> String {
+        w.lowercased().folding(options: [.diacriticInsensitive], locale: nil).filter { $0.isLetter || $0.isNumber }
+    }
 
     /// Lyrics found, played in Music, a music-video title, or "Artist - Title" at song length.
     var isSong: Bool {
@@ -7508,16 +7606,18 @@ final class NativeSources {
             defer { if let e = editable { editable = ep.display.first { $0.id == e.id } ?? e } }   // corrected as transcribed
             // between the words: [Ambient Sounds] while there is sound, from the end of a line to the next one's start
             let speaking = last.map { t <= $0.end + 0.3 } ?? false
-            let ambient = !speaking && t >= 0 && ep.sounding(t) && (ep.instrumental || ep.complete || next != nil)
+            // (only where no voice is heard: a voice with no line up isn't ambient, it's words not shown)
+            let ambient = !speaking && t >= 0 && ep.sounding(t) && (ep.instrumental || ep.voiced(t) == false) && (ep.instrumental || ep.complete || next != nil)
             if ep.instrumental { if ambient { overlay.renderAmbient() } else { overlay.render(nil, at: t) } }
             else if ambient && overlay.mode != .learning { overlay.renderAmbient(); editable = nil }
             else if overlay.mode == .learning {
                 overlay.renderLearning(lines, at: t, held: held)
                 editable = overlay.drumLine.flatMap { lines.indices.contains($0) ? lines[$0] : nil } ?? last ?? next   // the line in view
             }
-            else if let last, t <= last.end + 2.5 { overlay.render(last, at: t); editable = last }
-            else if let next, next.start - t < 4 || (held && last == nil) { overlay.render(next, at: t, upcomingOnly: true); editable = next }
-            else if let last, held || !breakAhead { overlay.render(last, at: t); editable = last }
+            // a line the picture already shows (a recording of a transcript, burned-in captions) gets nothing over it
+            else if let last, t <= last.end + 2.5 { overlay.render(ep.shownInPicture(last) ? nil : last, at: t); editable = last }
+            else if let next, next.start - t < 4 || (held && last == nil) { overlay.render(ep.shownInPicture(next) ? nil : next, at: t, upcomingOnly: true); editable = next }
+            else if let last, held || !breakAhead { overlay.render(ep.shownInPicture(last) ? nil : last, at: t); editable = last }
             else { overlay.render(nil, at: t) }
             overlay.update(time: mediaTime, duration: length > 0 ? length : pos.dur,
                            paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
@@ -7841,5 +7941,18 @@ final class NativeSources {
         // menu bar) it went unnoticed, and the strip icon's first press hid it, so the icon seemed to do nothing.
         let mi = NSMenuItem(title: "Recense", action: nil, keyEquivalent: ""); mi.submenu = d.menu
         NSApp.mainMenu?.addItem(mi)
+    }
+}
+
+/// Apple's sound classifier, half a second at a time: 1 where it hears a voice (speech, singing, a choir, rap…).
+final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
+    var env: [UInt8] = []
+    static let voices = ["speech", "speaking", "singing", "singer", "choir", "rapping", "chant", "whisper", "conversation", "narration", "yell", "shout", "babble"]
+    func request(_ request: SNRequest, didProduce result: SNResult) {
+        guard let r = result as? SNClassificationResult else { return }
+        let v = r.classifications.contains { c in c.confidence >= 0.3 && VoiceObserver.voices.contains { c.identifier.contains($0) } }
+        let i = Int(r.timeRange.start.seconds / Episode.voicesStep + 0.5)
+        if env.count <= i { env += [UInt8](repeating: 0, count: i + 1 - env.count) }
+        if v { env[i] = 1 }
     }
 }
