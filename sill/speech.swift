@@ -365,6 +365,7 @@ import Speech
         return [
             "text": ws.map(\.text).joined(separator: " "),
             "language": lang,
+            "sure": quality(h),            // how surely it heard: low when the language isn't one it knows
             "engine": h.module.rawValue + (h.lm ? "+lm" : ""),
             "segments": h.phrases.map { p -> [String: Any] in
                 let d = p.words.reduce(0) { $0 + max(0.05, $1.end - $1.start) }

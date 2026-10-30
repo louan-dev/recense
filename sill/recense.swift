@@ -477,18 +477,17 @@ enum Reader {
     struct Mix { var l1: CGFloat = 1, l2: CGFloat = 1, a1: CGFloat = 1, a2: CGFloat = 1 }
     /// The vertical bar (homebar.js): the original language's prominence, 0…1, and the two opacities the page worked
     /// out for it (a1 the original, a2 the trailing language); nil at rest, where Balance decides. Both 0: blank.
+    /// Never kept across launches or tracks: Learn is the default view (a stray swipe left 0.43 stored, and the
+    /// translation sat lit under the notation from then on).
     nonisolated(unsafe) private(set) static var prominence: (p: Double, a1: CGFloat, a2: CGFloat)? = {
-        guard let d = UserDefaults.standard.dictionary(forKey: "prominence"), let p = d["p"] as? Double,
-              let a1 = d["a1"] as? Double, let a2 = d["a2"] as? Double else { return nil }
-        return (p, CGFloat(a1), CGFloat(a2))
+        UserDefaults.standard.removeObject(forKey: "prominence")
+        return nil
     }()
     static func set(prominence p: Double?, a1: Double?, a2: Double?) {
         if let p, let a1, let a2 {
             prominence = (p, CGFloat(min(max(a1, 0), 1)), CGFloat(min(max(a2, 0), 1)))
-            UserDefaults.standard.set(["p": p, "a1": a1, "a2": a2], forKey: "prominence")
         } else {
             prominence = nil
-            UserDefaults.standard.removeObject(forKey: "prominence")
         }
         stamp += 1
     }
@@ -3537,12 +3536,15 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         w.lowercased().folding(options: [.diacriticInsensitive], locale: nil).filter { $0.isLetter || $0.isNumber }
     }
 
-    /// Lyrics found, played in Music, a music-video title, or "Artist - Title" at song length.
+    /// Kept in Gallery's Music folder: music whatever its title says (Battaglia.mp3, an 18-minute sutra), never a lecture.
+    var inMusicFolder: Bool { url.hasPrefix("gallery:files/Music/") }
+
+    /// Lyrics found, played in Music, kept in Music, a music-video title, or "Artist - Title" at song length.
     var isSong: Bool {
         let t = cleanTitle(title ?? "")
         // Once transcribed as a song (its voice alone, against lyrics), it stays one: ruling out the wrong lyrics
         // mustn't skip the second pass, or leave the words heard so far out of the lines.
-        return !lyrics.isEmpty || music || songPipeline == 4 || (looksLikeMusic(title ?? "") && duration < 900)
+        return !lyrics.isEmpty || music || inMusicFolder || songPipeline == 4 || (looksLikeMusic(title ?? "") && duration < 900)
             || (duration > 60 && duration < 480 && t.range(of: #"^[^-–—|]{2,40} [-–—] [^-–—|]{2,80}$"#, options: .regularExpression) != nil)
     }
 
@@ -3664,8 +3666,23 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             else { missed.append(String(format: "%.2f–%.2f [%@]", lo, hi, language ?? "auto")); throw err("not captured") }
             return t
         }
-        // This Mac's own ears first: no quota, no connection. Groq only for a language they can't hear.
-        if OnDeviceASR.enabled, let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) {
+        // This Mac's own ears first: no quota, no connection. Groq only for a language they can't hear. With no language
+        // pinned, the ears only know English, French and Vietnamese, and write Amharic (any other) as their own words,
+        // unsurely: an unsure hearing, or a language Whisper already found that they can't hear, goes to Whisper, which
+        // tells the language itself; if Whisper can't be reached, the Mac's hearing stands.
+        let ask = language == nil && !cfg.apiKey.isEmpty
+        var foreign = false
+        if ask, let l = spokenLanguage { foreign = !(await OnDeviceASR.hears(l)) }
+        if OnDeviceASR.enabled, !foreign, let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) {
+            if ask, let sure = t["sure"] as? Double, sure < 0.45, !(t["text"] as? String ?? "").isEmpty {
+                log(String(format: "speech: heard unsurely (%.2f) as %@, asking Whisper which language it is", sure, t["language"] as? String ?? "?"))
+                if let w = try? await transcribe(wav(samples, sr: 16000), prompt: prompt, language: nil) {
+                    if let l = (w["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
+                    engine = nil; pace = 3.1
+                    return w
+                }
+                log("speech: Whisper unreachable, keeping this Mac's hearing")
+            }
             if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
             engine = t["engine"] as? String; pace = 0.05
             if ProcessInfo.processInfo.environment["RECENSE_RAW"] != nil {
@@ -4853,6 +4870,25 @@ final class Features: Codable {
     func time(_ k: Int) -> Double { Double(k) * hop }
     func isVoiced(_ k: Int) -> Bool { k >= 0 && k < count && voiced[k] == 1 }
     func sustained(_ k: Int) -> Bool { isVoiced(k) && (k..<(k + 8)).filter(isVoiced).count >= 5 }   // a voice, not a click
+    /// Voiced in 95 % or more of the frames within a second either side (cadence.js `saturated`).
+    func saturated(_ k: Int) -> Bool {
+        let lo = max(0, k - 100), hi = min(count, k + 100)
+        return hi > lo && Double((lo..<hi).filter { voiced[$0] == 1 }.count) >= Double(hi - lo) * 0.95
+    }
+    /// In [a, b]: the frame where the loudness rises most, its next 150 ms over its last (dB × 10), by 4 dB or more
+    /// (cadence.js `rise`; the first of equals).
+    func rise(_ a: Int, _ b: Int) -> Int? {
+        var best: Int? = nil, br = 40.0
+        let lo = max(15, a), hi = min(count - 15, b)
+        guard lo <= hi else { return nil }
+        for k in lo...hi {
+            var before = 0, after = 0
+            for j in 1...15 { before += db[k - j]; after += db[k + j - 1] }
+            let r = Double(after - before) / 15
+            if r > br { br = r; best = k }
+        }
+        return best
+    }
 
     /// Frames where the voice comes back after a silence (a breath, a pause, a stop consonant's closure) and goes on:
     /// the frame, and how long it was quiet before (seconds), in [a, b).
@@ -5082,6 +5118,13 @@ enum Cadence {
             if entry == nil, f.isVoiced(hk), let c = f.entries(max(lower + 0.12, w.start - 0.4), w.start).last,
                c.gap >= (opens[i] ? 0.05 : 0.1) {
                 entry = f.time(c.k)
+            }
+            //  · a line opening inside a voice that never falls silent (a stem the orchestra bleeds into: Variations at
+            //    1:13, voiced in every frame for seconds): the loudness says where the singer comes in, where it rises
+            //    most (4 dB or more), from just before the heard start to 0.6 s after; the words after it follow it on
+            if entry == nil, opens[i], f.saturated(hk),
+               let k = f.rise(f.frame(max(lower, w.start - 0.12)), f.frame(min(w.end - 0.05, w.start + 0.6))) {
+                entry = f.time(k)
             }
             if let entry { s[i] = entry }
             // else the onset nearest the recognizer's start, as strong as can be: within 120 ms, or from silence up to
@@ -6576,7 +6619,8 @@ final class NativeSources {
                 await Store.restoreTranscript(key)
                 let ep = Episode(url: "gallery:files/" + path, page: nil, title: nil, music: false) { 0 }
                 // (a song: an hour-long lecture also carries songPipeline 4, and would hold the GPU for an hour)
-                if ep.complete, ep.isSong, !ep.instrumental, ep.duration > 0, ep.duration < 900, await ep.fetch(audio: true) {
+                // (Music-folder pieces run longer: a sutra, a suite; up to 40 minutes)
+                if ep.complete, ep.isSong, !ep.instrumental, ep.duration > 0, ep.duration < (ep.inMusicFolder ? 2400 : 900), await ep.fetch(audio: true) {
                     await ep.measureVoice()                // separates, measures, sends features.json to keep/
                     if ep.features != nil { log("gallery: separated and measured the voice of \(path)") }
                 }
@@ -6766,7 +6810,7 @@ final class NativeSources {
         let cc = m.addItem(withTitle: "CC Off", action: #selector(toggleCC), keyEquivalent: "m")
         cc.target = self
         ccItem = cc
-        let ly = m.addItem(withTitle: "Hide Lyrics for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
+        let ly = m.addItem(withTitle: "Hide Captions for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
         ly.target = self
         lyricsItem = ly
         // Text Size and Balance: two compact rows, applied as they move
@@ -7520,6 +7564,7 @@ final class NativeSources {
         }
         episode = ep; episodeState = "loading"
         loop.a = nil; loop.b = nil; loop.ab = false
+        if Reader.prominence != nil { Reader.set(prominence: nil, a1: nil, a2: nil) } // each track opens in Learn
         log("media: \(url.prefix(120))")
         // SPEC 70: a Gallery video's picture, for the window; any other piece's video goes (Gallery has them all)
         Task {
@@ -7625,13 +7670,13 @@ final class NativeSources {
             let t = smoothTime() + (cfg.syncOffset - soundEngine.latency) * pos.rate - ep.shift
             // a dense track (a choir): its words start Off, with Show in the Recense menu (item 22)
             let quiet = !ep.instrumental && lyricsOff(ep)
-            lyricsItem?.title = quiet ? "Show Lyrics for This Track" : "Hide Lyrics for This Track"
+            lyricsItem?.title = quiet ? "Show Captions for This Track" : "Hide Captions for This Track"
             if quiet {
                 editable = nil
                 overlay.render(nil, at: t)
                 overlay.update(time: mediaTime, duration: length > 0 ? length : pos.dur,
                                paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
-                if Date() > statusUntil { overlay.setStatus("Lyrics off: many voices — Recense ▸ Show Lyrics for This Track") }
+                if Date() > statusUntil { overlay.setStatus("Captions off · dense texture — Recense ▸ Show Captions for This Track") }
                 return
             }
             // The line being spoken, held after it ends until the next one shows (unlit, 4 s ahead), so the window
