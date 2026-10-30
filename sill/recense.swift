@@ -390,9 +390,12 @@ struct Word: Codable {
     var lang: String? = nil   // the language Whisper heard it in (ISO 639-1), when the word is written in that language's script
     var c: Double? = nil      // how sure the recognizer was of it (0–1; on-device ears)
     var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
-    /// The same word, timed again (what it was heard as goes with it).
+    var syl: [Syl]? = nil     // a sung word's syllables on the notes they're sung on (Cadence.melody)
+    /// The same word, timed again (what it was heard as goes with it; its syllables don't: they were the old times').
     func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard) }
 }
+/// A syllable of a sung word: where it ends in the word's letters (code points), and when its note is sung.
+struct Syl: Codable { let c: Int; let s: Double; let e: Double }
 struct EnWord: Codable { let w: String; let s: [Int] }
 struct Line: Codable {
     let id: Int
@@ -2561,12 +2564,12 @@ func mix(_ a: NSColor, _ b: NSColor, _ f: Double) -> NSColor {
 }
 
 /// A word and the stretch of media time in which it's spoken.
-struct Beat { let text: String; let start: Double; let end: Double }
+struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil }
 
 func sourceBeats(_ line: Line) -> [Beat] {
     line.words.enumerated().map { i, w in
         let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)))
+        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl)
     }
 }
 
@@ -5186,7 +5189,20 @@ enum Cadence {
     }
 
     /// How far through a word the light is at t (0…1): by the voice spent, or the clock where nothing was measured.
+    /// A sung word timed syllable by syllable lights each syllable as its note comes in, quickly (0.3 s at most), and
+    /// holds it lit to the note's end, so var-i-a-tions steps with the singer and a held "on" stays lit as long as it's
+    /// sung (gallery.js `fillOf`).
     static func progress(_ b: Beat, _ t: Double) -> Double {
+        if let syl = b.syl, !syl.isEmpty, !b.text.isEmpty {
+            let n = Double(b.text.unicodeScalars.count)
+            var c0 = 0.0
+            for y in syl {
+                if t < y.s { return c0 / n }
+                if t < y.e { return min(1, (c0 + (Double(y.c) - c0) * min(1, (t - y.s) / max(0.05, min(y.e - y.s, 0.3)))) / n) }
+                c0 = Double(y.c)
+            }
+            return 1
+        }
         let clock = (t - b.start) / max(0.05, b.end - b.start)
         guard let f = track else { return clock }
         let key = "\(b.start)|\(b.end)"
