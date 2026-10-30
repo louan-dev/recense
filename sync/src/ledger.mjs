@@ -67,7 +67,7 @@ const DENY = [
 // Every other file is content, dotfiles included (.obsidian/ is part of a vault).
 export const JUNK_PATHS = [
   /(^|\/)\.DS_Store$/, /(^|\/)\._/, /(^|\/)\.Trash/, /(^|\/)\.localized$/, /(^|\/)Thumbs\.db$/i, /(^|\/)desktop\.ini$/i,
-  /(^|\/)~\$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
+  /(^|\/)~\$/, /(^|\/)\.~lock\.[^/]*#$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
 ];
 export const CHURN_PATHS = [/(^|\/)\.obsidian\/workspace(-mobile)?\.json$/, /(^|\/)\.obsidian\/cache$/];
 const IGNORE = [...JUNK_PATHS, ...CHURN_PATHS];
@@ -753,7 +753,7 @@ async function selftest() {
 
   // one junk rule (event-log.md §6): the same vector is in gallery test/routes.test.mjs
   const cls = (p) => (JUNK_PATHS.some((x) => x.test(p)) ? 'junk' : CHURN_PATHS.some((x) => x.test(p)) ? 'churn' : 'content');
-  const JV = [['.DS_Store', 'junk'], ['a/._x.m4a', 'junk'], ['.Trashes/501/x', 'junk'], ['Thumbs.db', 'junk'], ['a/~$Report.docx', 'junk'],
+  const JV = [['.DS_Store', 'junk'], ['a/._x.m4a', 'junk'], ['.Trashes/501/x', 'junk'], ['Thumbs.db', 'junk'], ['a/~$Report.docx', 'junk'], ['a/.~lock.Report.odt#', 'junk'], ['a/.~lock', 'content'],
     ['a/Icon\r', 'junk'], ['.Spotlight-V100/Store', 'junk'], ['.obsidian/workspace.json', 'churn'], ['v/.obsidian/cache', 'churn'],
     ['.obsidian/app.json', 'content'], ['.gitignore', 'content'], ['a/.env.example', 'content'], ['Report.docx', 'content'], ['Icon.png', 'content']];
   assert(JV.every(([p, c]) => cls(p) === c), 'junk, churn and content are told apart the way the catalog does (shared vector)');
