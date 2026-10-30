@@ -34,7 +34,7 @@ const AUTHORITY = "ai/authority.json";
 const MEMORY = "ai/memory.json";
 const TEXT = "ai/text/";
 const ROOTS = { main: { bucket: "MAIN", prefix: "files/" }, archive: { bucket: "ARCHIVE", prefix: "chauphan/" } };
-const MAX_DOC = 40 * 1024 * 1024;              // larger documents are indexed by name only
+const MAX_DOC = 24 * 1024 * 1024;              // larger documents are indexed by name only (a step has 128 MB of memory)
 const SLICE = 96;                              // passages embedded per call
 const STEP_CALLS = 24;                         // AI / Vectorize calls one step may make
 
@@ -284,111 +284,178 @@ export function thinkStripper() {
 }
 
 // ---------- indexing ----------
+// Runs in Cloudflare: a one-minute cron calls indexStep(), which does a small, bounded piece of work and remembers where
+// it got to in ai/index.json (MAIN). A step never lists everything or reads a whole book:
+//   · listing goes one R2 page (≤1000 files) at a time, with the cursor kept in the state;
+//   · a document or Main recording is "extracted" once (toMarkdown / transcript, classified, cut into passages) and its
+//     passages are stored in slices of SLICE_FILE (ai/text/<id>/<n>.json), then embedded a few batches per step;
+//   · everything else (photos, archive recordings, too-large files) is indexed by name, NAMES at a time;
+//   · after a full pass, files not seen in it are removed from the index, and the next pass starts 30 minutes later.
+const SLICE_FILE = 960;                        // passages per stored slice (ten embedding batches)
+const NAMES = 96;                              // name-only files embedded per batch
+const BUDGET = 36;                             // subrequests (R2, AI, Vectorize) one step may spend
+const REST = 30 * 60 * 1000;                   // pause between full passes
+const hostOf = (root) => ROOTS[root];
 
 async function readState(env) {
   const o = await env.MAIN.get(STATE);
   const s = o ? await o.json().catch(() => null) : null;
-  return s && s.v === 1 ? s : { v: 1, files: {}, updated: null };
+  return s && s.v === 2 ? s : { v: 2, gen: 1, root: "main", cursor: null, listed: false, todo: [], names: [], active: null, sweep: null, files: {}, passEnded: null, updated: null };
 }
 const writeState = (env, s) => env.MAIN.put(STATE, JSON.stringify({ ...s, updated: new Date().toISOString() }), { httpMetadata: { contentType: "application/json" } });
-
-async function listAll(env) {
-  const out = [];
-  for (const [root, { bucket, prefix }] of Object.entries(ROOTS)) {
-    const b = env[bucket]; if (!b) continue;
-    let cursor;
-    do {
-      const r = await b.list({ prefix, cursor });
-      for (const o of r.objects) {
-        const rel = o.key.slice(prefix.length);
-        if (!rel || rel.endsWith("/") || rel.split("/").some((s) => s.startsWith("."))) continue;   // folders, hidden, trash
-        out.push({ root, rel, etag: o.etag, size: o.size });
-      }
-      cursor = r.truncated ? r.cursor : undefined;
-    } while (cursor);
-  }
-  return out;
-}
+const baseId = async (root, rel) => (await vectorId(root, rel, 0)).replace(/-0$/, "");
+const wantsText = (root, rel, size) => (kindOf(rel) === "doc" && size <= MAX_DOC) || (kindOf(rel) === "media" && root === "main");
 
 async function status(env) {
-  const s = await readState(env);
-  const files = Object.values(s.files);
+  const s = await readState(env), files = Object.values(s.files);
   return jsonResponse({
     ok: true, ready: ready(env), chat: env.AI_CHAT_MODEL || CHAT, embed: env.AI_EMBED_MODEL || EMBED,
-    files: files.length, complete: files.filter((f) => f.done).length, passages: files.reduce((a, f) => a + (f.pos || 0), 0), updated: s.updated,
+    files: files.length, passages: files.reduce((a, f) => a + (f[1] || 0), 0),
+    pending: s.todo.length + s.names.length + (s.active ? 1 : 0), listing: s.listed ? "done" : s.root, pass: s.gen,
+    passEnded: s.passEnded, updated: s.updated,
   });
 }
 
-/** One step: forget removed files, then (re)index changed ones a slice at a time, within STEP_CALLS calls. */
+/** One bounded step of indexing. Returns { ok, done } where done means a full pass has finished with nothing pending. */
 export async function indexStep(env) {
-  const s = await readState(env), now = await listAll(env);
-  const seen = new Set(now.map((f) => f.root + ":" + f.rel));
-  let calls = 0;
+  const s = await readState(env);
+  if (s.passEnded && !s.active && !s.todo.length && !s.names.length && !s.sweep && Date.now() - Date.parse(s.passEnded) < REST) {
+    return { ok: true, done: true, files: Object.keys(s.files).length };
+  }
+  if (s.passEnded && s.listed && !s.sweep && !s.active && !s.todo.length && !s.names.length) {   // rest is over: a new pass
+    s.gen++; s.root = "main"; s.cursor = null; s.listed = false; s.passEnded = null;
+  }
+  let calls = 1, extracted = false;
+  while (calls < BUDGET) {
+    if (s.active) { calls += await embedActive(env, s, BUDGET - calls); if (s.active) break; continue; }
+    if (s.names.length >= NAMES || (s.listed && s.names.length)) { calls += await embedNames(env, s); continue; }
+    if (s.todo.length && !extracted) { calls += await extract(env, s, s.todo.shift()); extracted = true; continue; }
+    if (s.todo.length) break;                                       // one extraction per step: it is the heavy part
+    if (!s.listed) { calls += await listPage(env, s); continue; }
+    if (!s.sweep) s.sweep = Object.entries(s.files).filter(([, f]) => f[2] < s.gen).map(([k]) => k);
+    if (s.sweep.length) { calls += await sweepSome(env, s, BUDGET - calls); continue; }
+    s.sweep = null; s.passEnded = new Date().toISOString();
+    break;
+  }
+  await writeState(env, s);
+  const done = !!s.passEnded && !s.active && !s.todo.length && !s.names.length;
+  return { ok: true, done, files: Object.keys(s.files).length, pending: s.todo.length + s.names.length + (s.active ? 1 : 0), listing: s.listed ? "done" : s.root };
+}
 
-  for (const key of Object.keys(s.files)) {                       // removed or moved: their vectors go
-    if (seen.has(key)) continue;
-    const f = s.files[key];
-    const ids = await Promise.all(Array.from({ length: f.pos || 0 }, (_, n) => vectorId(f.root, f.rel, n)));
-    for (let i = 0; i < ids.length && calls < STEP_CALLS; i += 1000) { await env.VECTORS.deleteByIds(ids.slice(i, i + 1000)); calls++; }
-    await env.MAIN.delete(TEXT + f.id + ".txt");
+/** Lists the next page of the current root; new or changed files go to the queues, unchanged ones are marked seen. */
+async function listPage(env, s) {
+  const { bucket, prefix } = hostOf(s.root), b = env[bucket];
+  const r = b ? await b.list({ prefix, cursor: s.cursor || undefined, limit: 1000 }) : { objects: [], truncated: false };
+  for (const o of r.objects) {
+    const rel = o.key.slice(prefix.length);
+    if (!rel || rel.endsWith("/") || rel.split("/").some((x) => x.startsWith("."))) continue;   // folders, hidden, trash
+    const key = s.root + ":" + rel, f = s.files[key];
+    if (f && f[0] === o.etag) { f[2] = s.gen; continue; }
+    if (wantsText(s.root, rel, o.size)) s.todo.push([key, o.etag]); else s.names.push([key, o.etag]);
+  }
+  if (r.truncated) s.cursor = r.cursor;
+  else { s.cursor = null; const roots = Object.keys(ROOTS), i = roots.indexOf(s.root); if (i + 1 < roots.length) s.root = roots[i + 1]; else s.listed = true; }
+  return 1;
+}
+
+/** Name-only files, a batch at a time: one passage each. */
+async function embedNames(env, s) {
+  const batch = s.names.splice(0, NAMES);
+  const rows = [];
+  for (const [key, etag] of batch) {
+    const i = key.indexOf(":"), root = key.slice(0, i), rel = key.slice(i + 1);
+    rows.push({ key, etag, root, rel, text: nameText(root, rel) });
+  }
+  const vecs = await embed(env, rows.map((r) => r.text));
+  await env.VECTORS.upsert(await Promise.all(rows.map(async (r, n) => ({
+    id: (await baseId(r.root, r.rel)) + "-0", values: vecs[n], metadata: { root: r.root, path: r.rel, kind: "name", auth: "name", text: r.text },
+  }))));
+  for (const r of rows) s.files[r.key] = [r.etag, 1, s.gen, 0];
+  return 2;
+}
+
+/** A document or recording: read once, classified, cut into passages, stored in slices; embedding follows. */
+async function extract(env, s, [key, etag]) {
+  const i = key.indexOf(":"), root = key.slice(0, i), rel = key.slice(i + 1), id = await baseId(root, rel);
+  const { passages, calls } = await sourceText(env, root, rel);
+  let n = 0, puts = 0;
+  for (let k = 0; k < passages.length; k += SLICE_FILE, n++) {
+    await env.MAIN.put(`${TEXT}${id}/${n}.json`, JSON.stringify(passages.slice(k, k + SLICE_FILE))); puts++;
+  }
+  const old = s.files[key];
+  s.active = { key, etag, id, slices: n, slice: 0, at: 0, total: passages.length, had: old ? old[1] : 0 };
+  return calls + puts;
+}
+
+/** Embeds the active file's passages, a batch of SLICE at a time, within the step's budget. */
+async function embedActive(env, s, budget) {
+  const a = s.active, i = a.key.indexOf(":"), root = a.key.slice(0, i), rel = a.key.slice(i + 1);
+  let used = 0;
+  if (a.slice >= a.slices) return finishActive(env, s);
+  const o = await env.MAIN.get(`${TEXT}${a.id}/${a.slice}.json`); used++;
+  const passages = o ? await o.json() : [];
+  while (a.at < passages.length && used + 2 <= budget) {
+    const batch = passages.slice(a.at, a.at + SLICE), base = a.slice * SLICE_FILE + a.at;
+    const vecs = await embed(env, batch.map((p) => p.text));
+    await env.VECTORS.upsert(batch.map((p, k) => ({
+      id: `${a.id}-${base + k}`, values: vecs[k],
+      metadata: { root, path: rel, kind: p.kind, auth: p.auth, text: p.text.slice(0, 1500), ...(p.t != null ? { t: p.t } : {}) },
+    })));
+    used += 2; a.at += batch.length;
+  }
+  if (a.at >= passages.length) { a.slice++; a.at = 0; }
+  if (a.slice >= a.slices) used += await finishActive(env, s);
+  return used;
+}
+
+/** The active file is done: record it, and drop vectors left over from a longer earlier version. */
+async function finishActive(env, s) {
+  const a = s.active;
+  let used = 0;
+  if (a.had > a.total) {
+    const ids = Array.from({ length: Math.min(a.had - a.total, 5000) }, (_, k) => `${a.id}-${a.total + k}`);
+    for (let k = 0; k < ids.length; k += 1000) { await env.VECTORS.deleteByIds(ids.slice(k, k + 1000)); used++; }
+  }
+  s.files[a.key] = [a.etag, a.total, s.gen, a.slices];
+  s.active = null;
+  return used;
+}
+
+/** Files gone since the last pass: their vectors and stored text go. */
+async function sweepSome(env, s, budget) {
+  let used = 0;
+  while (s.sweep.length && used + 2 <= budget) {
+    const key = s.sweep.shift(), f = s.files[key];
+    if (!f) continue;
+    const i = key.indexOf(":"), id = await baseId(key.slice(0, i), key.slice(i + 1));
+    const ids = Array.from({ length: Math.min(f[1], 5000) }, (_, k) => `${id}-${k}`);
+    for (let k = 0; k < ids.length; k += 1000) { await env.VECTORS.deleteByIds(ids.slice(k, k + 1000)); used++; }
+    for (let n = 0; n < (f[3] || 0); n++) { await env.MAIN.delete(`${TEXT}${id}/${n}.json`); used++; }
     delete s.files[key];
   }
-
-  for (const f of now) {
-    if (calls >= STEP_CALLS) break;
-    const key = f.root + ":" + f.rel;
-    let st = s.files[key];
-    if (st && st.etag === f.etag && st.done) continue;
-    if (!st || st.etag !== f.etag) {                              // new or changed: start over (old vectors are overwritten by id)
-      const id = (await vectorId(f.root, f.rel, 0)).slice(0, 32);
-      st = s.files[key] = { root: f.root, rel: f.rel, etag: f.etag, id, pos: 0, total: null, done: false };
-      const text = await sourceText(env, f);
-      calls += text.calls;
-      await env.MAIN.put(TEXT + id + ".txt", JSON.stringify(text.passages));
-    }
-    const o = await env.MAIN.get(TEXT + st.id + ".txt");
-    const passages = o ? await o.json() : [];
-    st.total = passages.length;
-    while (st.pos < passages.length && calls + 2 <= STEP_CALLS) {
-      const slice = passages.slice(st.pos, st.pos + SLICE);
-      const vecs = await embed(env, slice.map((p) => p.text)); calls++;
-      const rows = await Promise.all(slice.map(async (p, i) => ({
-        id: await vectorId(f.root, f.rel, st.pos + i), values: vecs[i],
-        metadata: { root: f.root, path: f.rel, kind: p.kind, auth: p.auth, text: p.text.slice(0, 1500), ...(p.t != null ? { t: p.t } : {}) },
-      })));
-      await env.VECTORS.upsert(rows); calls++;
-      st.pos += slice.length;
-    }
-    if (st.pos >= passages.length) st.done = true;
-  }
-
-  await writeState(env, s);
-  const left = now.filter((f) => { const st = s.files[f.root + ":" + f.rel]; return !st || !st.done || st.etag !== f.etag; }).length;
-  return { ok: true, done: left === 0, left, files: now.length };
+  return used;
 }
 
 /** A file's passages: its name always; a document's text (Workers AI toMarkdown); a Main recording's transcript. */
-async function sourceText(env, f) {
-  const passages = [{ text: nameText(f.root, f.rel), kind: "name", auth: "name" }];
-  const kind = kindOf(f.rel);
+async function sourceText(env, root, rel) {
+  const passages = [{ text: nameText(root, rel), kind: "name", auth: "name" }];
+  const kind = kindOf(rel), { bucket, prefix } = hostOf(root);
   let calls = 0;
   try {
-    if (kind === "doc" && f.size <= MAX_DOC) {
-      const o = await env[ROOTS[f.root].bucket].get(ROOTS[f.root].prefix + f.rel);
+    if (kind === "doc") {
+      const o = await env[bucket].get(prefix + rel); calls++;
       if (o) {
-        const name = f.rel.split("/").pop();
-        const [r] = await env.AI.toMarkdown([{ name, blob: new Blob([await o.arrayBuffer()], { type: o.httpMetadata?.contentType || "application/octet-stream" }) }]);
-        calls++;
+        const [r] = await env.AI.toMarkdown([{ name: rel.split("/").pop(), blob: await o.blob() }]); calls++;
         const md = r && r.format !== "error" ? String(r.data || "") : "";
         const chunks = chunkText(md);
-        const auth = chunks.length ? await classify(env, f.rel, md) : "personal";
+        const auth = chunks.length ? await classify(env, rel, md) : "personal";
         if (chunks.length) calls++;
         for (const c of chunks) passages.push({ text: c, kind: "doc", auth });
       }
-    } else if (kind === "media" && f.root === "main") {
-      const t = await transcriptFor(env, f.rel);
+    } else if (kind === "media" && root === "main") {
+      const t = await transcriptFor(env, rel); calls += 3;
       const chunks = chunkTranscript(t && t.lines);
-      const auth = chunks.length && (await classify(env, f.rel, chunks.map((c) => c.text).join("\n"))) === "reference" ? "reference" : "transcript";
+      const auth = chunks.length && (await classify(env, rel, chunks.map((c) => c.text).join("\n"))) === "reference" ? "reference" : "transcript";
       if (chunks.length) calls++;
       for (const c of chunks) passages.push({ text: c.text, t: c.t, kind: "transcript", auth });
     }
@@ -400,7 +467,7 @@ async function sourceText(env, f) {
  *  Anything that fails or is unclear counts as personal: nothing is trusted as fact unless it looks published. */
 async function classify(env, path, text) {
   try {
-    const r = await env.AI.run(env.AI_CHAT_MODEL || CHAT, { messages: classifyMessages(path, String(text).slice(0, 3000)), max_tokens: 800, temperature: 0 });
+    const r = await env.AI.run(env.AI_FAST_MODEL || FAST, { messages: classifyMessages(path, String(text).slice(0, 3000)), max_tokens: 800, temperature: 0 });
     return parseAuth(typeof r?.response === "string" ? r.response : r?.choices?.[0]?.message?.content);
   } catch { return "personal"; }
 }

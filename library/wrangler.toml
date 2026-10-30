@@ -20,7 +20,8 @@ binding = "MAIN"
 bucket_name = "gallery-main"
 
 [triggers]
-crons = ["0 3 * * *"]
+# 03:00: the nightly sweeps; every minute: one step of the assistant's indexing (src/ai.js), nothing else
+crons = ["0 3 * * *", "* * * * *"]
 
 [vars]
 ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"

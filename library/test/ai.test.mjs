@@ -15,7 +15,7 @@ function bucket() {
     async put(key, body, opts = {}) { const text = typeof body === "string" ? body : new TextDecoder().decode(body); m.set(key, { text, etag: "e" + (Math.random() * 1e9 | 0), meta: opts.httpMetadata || {} }); },
     async get(key) {
       const o = m.get(key); if (!o) return null;
-      return { json: async () => JSON.parse(o.text), arrayBuffer: async () => new TextEncoder().encode(o.text).buffer, httpMetadata: o.meta };
+      return { json: async () => JSON.parse(o.text), arrayBuffer: async () => new TextEncoder().encode(o.text).buffer, blob: async () => new Blob([o.text]), httpMetadata: o.meta };
     },
     async delete(key) { m.delete(key); },
     async list({ prefix = "", cursor } = {}) {
@@ -190,7 +190,7 @@ await test("indexing in steps finishes, skips hidden files, and reports progress
   assert.deepEqual([...authOf("Journal/broken.txt")], ["personal"], "unclear counts as personal");
   assert.ok([...env.VECTORS.m.values()].filter((v) => v.metadata.kind === "name").every((v) => v.metadata.auth === "name"));
   const s = await (await get("/main/api/ai/status")).json();
-  assert.equal(s.complete, 6); assert.equal(s.chat, "@cf/test/chat");
+  assert.equal(s.files, 6); assert.equal(s.pending, 0); assert.equal(s.chat, "@cf/test/chat");
   const again = await (await post("/main/api/ai/index", {})).json();
   assert.ok(again.done);
 });
@@ -255,9 +255,28 @@ await test("the owner's correction wins at question time, without re-indexing", 
   await put({ root: "main", path: "Journal", auth: null });
   assert.deepEqual((await (await get("/main/api/ai/authority")).json()).rules, {});
 });
+const restOver = async () => { const st = JSON.parse(env.MAIN.m.get("ai/index.json").text); st.passEnded = new Date(Date.now() - 31 * 60e3).toISOString(); await env.MAIN.put("ai/index.json", JSON.stringify(st)); };
+const untilDone = async () => { let r, n = 0; do { r = await (await post("/main/api/ai/index", {})).json(); n++; } while (!r.done && n < 200); return { r, n }; };
+await test("between passes it rests; a big book is embedded across steps, each within its budget", async () => {
+  const idle = await (await post("/main/api/ai/index", {})).json();
+  assert.ok(idle.done, "nothing to do during the rest");
+  const huge = Array.from({ length: 1500 }, (_, i) => `Section ${3000 + i}. Paragraph about patent practice topic ${i} with enough words to make a passage of its own here.`).join("\n\n".repeat(1)).repeat(9);
+  await env.MAIN.put("files/Books/Huge.txt", huge);
+  await restOver();
+  const before = { ai: ai.calls };
+  const { r, n } = await untilDone();
+  assert.ok(r.done); assert.ok(n >= 2, "took more than one step");
+  assert.ok((ai.calls - before.ai) / n < 40, "AI calls per step stay small");
+  const ids = [...env.VECTORS.m.values()].filter((v) => v.metadata.path === "Books/Huge.txt");
+  const slices = [...env.MAIN.m.keys()].filter((k) => k.startsWith("ai/text/") && k.endsWith(".json"));
+  const st = JSON.parse(env.MAIN.m.get("ai/index.json").text).files["main:Books/Huge.txt"];
+  assert.equal(ids.length, st[1], "every passage has its vector"); assert.ok(st[1] > 960, "more than one slice"); assert.ok(st[3] >= 2);
+  assert.ok(slices.length >= 2);
+});
 await test("a removed file's passages leave the index", async () => {
   await env.MAIN.delete("files/Books/MPEP.pdf");
-  await post("/main/api/ai/index", {});
+  await restOver();
+  await untilDone();
   assert.ok(![...env.VECTORS.m.values()].some((v) => v.metadata.path === "Books/MPEP.pdf"));
   assert.ok(![...env.MAIN.m.keys()].some((k) => k.startsWith("ai/text/") && env.MAIN.m.get(k).text.includes("2106 Patent Subject Matter")));
 });
