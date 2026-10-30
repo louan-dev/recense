@@ -7,15 +7,16 @@ import Speech
 
 // ---------- Recense's ears: on this Mac ----------
 // Apple's SpeechAnalyzer (the macOS 26 generation) hears what Recense plays in place of Groq's Whisper: offline, with
-// no quota to run out of, every word timed. Two modules:
+// no quota to run out of, every word timed. Every language it has on this Mac (asked of the system, ~46), and for the
+// rest the open ears (openears.swift: Meta's Omnilingual ASR, 1,600+ languages, also on this Mac) and the canon
+// (canon.swift: recited texts in languages no model hears, written as the text has them). No Groq. Two modules:
 //   SpeechTranscriber      English and French: the long-form model (on a 2-minute English recording it wrote 98 % of
 //                          Whisper's words, word times within 0.09 s of Whisper's at the median, ~30× real time)
 //   DictationTranscriber   Vietnamese (SpeechTranscriber has none), and the only module that takes a custom language
 //                          model: the words this listener taught it (CustomLM)
 // A request is answered the way Whisper answers one, so the pipeline after it (chunks, the second pass, songs,
-// keep/, Gallery) is unchanged. Whisper picked the language itself; here each language the listener uses is tried
-// and the one heard most surely wins, and where two win by turns (a French lesson explained in English) both are
-// kept, phrase by phrase. Groq stays for a language this Mac can't hear (Persian), if a key is set.
+// keep/, Gallery) is unchanged. Whisper picked the language itself; here the open ears name it (Apple's must be
+// told), and where two win by turns (a French lesson explained in English) both are kept, phrase by phrase.
 // Platform reach: macOS only; the engine needs macOS 26+ at run time and a 26+ SDK to compile (compiler(>=6.2));
 // built without one, Groq is the only engine and the Lexicon still learns.
 
@@ -48,8 +49,15 @@ import Speech
                                 "lexicon": ["version": Lexicon.version, "lessons": Lexicon.book.langs.mapValues(\.count)] as [String: Any]]
         #if compiler(>=6.2)
         if #available(macOS 26, *), enabled {
+            // every language this Mac's ears have, asked of the system: Apple's two modules, then the open ears
+            let speech = await SpeechTranscriber.supportedLocales.map { $0.identifier(.bcp47) }.sorted()
+            let dictation = await DictationTranscriber.supportedLocales.map { $0.identifier(.bcp47) }.sorted()
+            let apple = Set((speech + dictation).map { String($0.split(separator: "-")[0]) }).sorted()
+            r["apple"] = ["languages": apple.count, "codes": apple, "speechTranscriber": speech, "dictationTranscriber": dictation] as [String: Any]
+            r["open"] = OpenEars.report()
+            r["canon"] = Canon.report()
             var hears: [String: String] = [:]
-            for l in NativeLang.all.map(\.code) { if let (m, loc) = await Ears.module(l) { hears[l] = m.rawValue + " " + loc.identifier } }
+            for l in apple { if let (m, loc) = await Ears.module(l) { hears[l] = m.rawValue + " " + loc.identifier } }
             r["hears"] = hears
             r["customLM"] = CustomLM.built
             r["permission"] = ["not asked", "denied", "restricted", "allowed"][min(3, SFSpeechRecognizer.authorizationStatus().rawValue)]
@@ -71,7 +79,10 @@ import Speech
     /// Whether this Mac hears a language itself (asked before Groq's key is required for it).
     static func hears(_ lang: String) async -> Bool {
         #if compiler(>=6.2)
-        if #available(macOS 26, *), enabled { return await Ears.module(lang) != nil }
+        if #available(macOS 26, *), enabled {
+            if OpenEars.installed || Canon.languages.contains(lang) { return true }
+            return await Ears.module(lang) != nil
+        }
         #endif
         return false
     }
@@ -80,10 +91,10 @@ import Speech
 #if compiler(>=6.2)
 @available(macOS 26, *)
 @MainActor enum Ears {
-    enum Module: String { case speech = "apple.speechtranscriber", dictation = "apple.dictationtranscriber" }
+    enum Module: String { case speech = "apple.speechtranscriber", dictation = "apple.dictationtranscriber", open = "meta.omnilingual" }
     struct W { var text: String; var start: Double; var end: Double; var c: Double; var lang: String; var heard: String? = nil }
     struct Phrase { var start: Double; var end: Double; var text: String; var alts: [String]; var words: [W] }
-    struct Hearing { var lang: String; var module: Module; var phrases: [Phrase]; var lm = false
+    struct Hearing { var lang: String; var module: Module; var phrases: [Phrase]; var lm = false; var canon: String? = nil
         var words: [W] { phrases.flatMap(\.words) }
     }
 
@@ -102,11 +113,27 @@ import Speech
 
     /// The locale's model on this Mac, downloaded once (the one moment this needs a connection) and reserved.
     static var ready: Set<String> = []
+    static var used: [String: Date] = [:]          // when each locale was last asked for (the one used longest ago goes first)
     static func prepare(_ m: Module, _ l: Locale) async -> Bool {
         let id = m.rawValue + "|" + l.identifier
+        used[l.identifier(.bcp47)] = Date()
         if ready.contains(id) { return true }
         let probe: any SpeechModule = m == .speech ? SpeechTranscriber(locale: l, preset: .transcription) : DictationTranscriber(locale: l, preset: .longDictation)
         let have = m == .speech ? await SpeechTranscriber.installedLocales : await DictationTranscriber.installedLocales
+        // the system lets an app hold at most a few locales (5 here): every language unlocked means letting go of the
+        // one used longest ago (its model stays on the Mac; reserving it again later is instant)
+        let held = await AssetInventory.reservedLocales
+        if held.count >= AssetInventory.maximumReservedLocales, !held.contains(where: { $0.identifier(.bcp47) == l.identifier(.bcp47) }) {
+            let own = Set(NativeLang.all.map(\.code))        // the listener's own languages go last
+            let old = held.min { a, b in
+                let oa = own.contains(a.language.languageCode?.identifier ?? ""), ob = own.contains(b.language.languageCode?.identifier ?? "")
+                return oa != ob ? !oa : (used[a.identifier(.bcp47)] ?? .distantPast) < (used[b.identifier(.bcp47)] ?? .distantPast)
+            }
+            if let old, await AssetInventory.release(reservedLocale: old) {
+                ready = ready.filter { !$0.hasSuffix("|" + old.identifier) }
+                log("speech: let go of the \(old.identifier) model to make room for \(l.identifier)")
+            }
+        }
         if !have.contains(where: { $0.identifier(.bcp47) == l.identifier(.bcp47) }) {
             do {
                 if let r = try await AssetInventory.assetInstallationRequest(supporting: [probe]) {
@@ -135,6 +162,8 @@ import Speech
                                       attributeOptions: [.audioTimeRange, .transcriptionConfidence])
             module = t
             collect = Task { var out: [Phrase] = []; for try await r in t.results { out.append(phrase(r.range, r.text, r.alternatives, lang)) }; return out }
+        case .open:
+            return try await heardOpen(samples, lang)
         case .dictation:
             var hints = Set<DictationTranscriber.ContentHint>()
             if lm, let c = CustomLM.configuration(lang) { hints.insert(.customizedLanguage(modelConfiguration: c)); custom = true }
@@ -222,7 +251,7 @@ import Speech
             r.processString(text)
             agree = r.languageHypotheses(withMaximum: among.count)[NLLanguage(h.lang)] ?? 0
         }
-        return sure * (0.25 + 0.75 * agree)
+        return sure * (0.25 + 0.75 * agree) * (inOwnScript(h) ? 1 : 0.3)
     }
     static func quality(_ h: Hearing) -> Double {
         let ws = h.words, d = ws.reduce(0) { $0 + max(0.05, $1.end - $1.start) }
@@ -273,47 +302,168 @@ import Speech
         return Double(total) / 100
     }
 
+    /// One request. Apple's ears hear every language they have (all ~46 on this Mac, asked of the system, none picked
+    /// by hand); the open ears (openears.swift) hear the rest and tell which language a recording is in; a recitation
+    /// of a text in the canon is written as that text (canon.swift).
+    ///   language pinned        Apple's ears if they have it, else the open ears
+    ///   language heard last    Apple's again, kept when heard surely; else, as for a new recording:
+    ///   new recording          the open ears hear it and name the language; Apple's hear it when they have it (the
+    ///                          language heard last beside it, phrase by phrase, for a lesson in two languages), else
+    ///                          the open ears' hearing stands. Without the open ears: each language the listener uses,
+    ///                          tried, the surest kept (as before).
     static func transcribe(_ samples: [Float], language: String?, languages: [String], prefer: String?) async throws -> [String: Any]? {
-        var cands: [(String, Module, Locale)] = []
-        for l in language.map({ [$0] }) ?? ([prefer].compactMap { $0 } + languages) where !cands.contains(where: { $0.0 == l }) {
-            if let (m, loc) = await module(l), await prepare(m, loc) { cands.append((l, m, loc)) }
-        }
-        guard !cands.isEmpty else { return nil }
-        let among = cands.map(\.0)
         var h: Hearing
-        if cands.count == 1 {
-            h = try await hear(samples, cands[0].0, module: cands[0].1, cands[0].2)
+        if let language {
+            if let (m, loc) = await module(language), await prepare(m, loc) { h = try await hear(samples, language, module: m, loc) }
+            else if OpenEars.installed { h = try await heardOpen(samples, language) }
+            else { return nil }
+        } else if let p = prefer, let (m, loc) = await module(p), await prepare(m, loc),
+                  let first = try? await hear(samples, p, module: m, loc),
+                  quality(first) >= 0.75, score(first, among: [p]) > 0, unheard(first, samples) < 1.5, !reads(first, otherThan: p) {
+            h = first
+        } else if OpenEars.installed, let open = try? await heardOpen(samples, nil, like: prefer) {
+            h = open
+            if let c = anchored(open) {
+                h = c
+            } else if open.lang != "und", let (m, loc) = await module(open.lang), await prepare(m, loc) {
+                var cands: [(String, Module, Locale)] = [(open.lang, m, loc)]
+                // one spoken language, two written ones: Hindustani heard as Urdu may be Hindi, and the other way round
+                let sibling = ["ur": "hi", "hi": "ur"][open.lang]
+                for l in [sibling, prefer].compactMap({ $0 }) where !cands.contains(where: { $0.0 == l }) {
+                    if let (pm, pl) = await module(l), await prepare(pm, pl) { cands.append((l, pm, pl)) }
+                }
+                h = try await best(samples, cands, prefer: prefer)
+                // Apple's answer in another script than its language's (Urdu written in Latin letters) isn't the
+                // original: the open ears' hearing, in the language's own letters, stands instead
+                if !inOwnScript(h), inOwnScript(open) { h = open }
+                // what Apple's ears left unheard the open ears may have heard (a verse in a language they lack)
+                else if unheard(h, samples) >= 1.5 { h = merge(h, open, among: [h.lang, open.lang]) }
+            }
+            log("speech: heard as \(h.lang) by \(h.module.rawValue) (open ears named \(open.lang))")
         } else {
-            // The language it was heard in last, when it's still heard surely and nothing voiced was left without
-            // words; else each candidate on the stretch, the best kept, and the runner-up beside it phrase by phrase
-            // where it heard nearly as much, or heard what the best left unheard.
-            // A model that hears nothing in its language says so by failing ("RecogFailed"): that's a score of 0.
-            var failure: Error?
-            func attempt(_ c: (String, Module, Locale)) async -> Hearing {
-                do { return try await hear(samples, c.0, module: c.1, c.2) }
-                catch { failure = failure ?? error; return Hearing(lang: c.0, module: c.1, phrases: []) }
+            var cands: [(String, Module, Locale)] = []
+            for l in [prefer].compactMap({ $0 }) + languages where !cands.contains(where: { $0.0 == l }) {
+                if let (m, loc) = await module(l), await prepare(m, loc) { cands.append((l, m, loc)) }
             }
-            let first = await attempt(cands[0])
-            if prefer == cands[0].0 && quality(first) >= 0.75 && score(first, among: among) > 0 && unheard(first, samples) < 1.5 {
-                h = first
-            } else {
-                var tried = [(first, score(first, among: among))]
-                for c in cands.dropFirst() {
-                    let x = await attempt(c)
-                    tried.append((x, score(x, among: among)))
-                }
-                tried.sort { $0.1 > $1.1 }
-                log("speech: heard as " + tried.map { String(format: "%@ %.1f (sure %.2f)", $0.0.lang, $0.1, quality($0.0)) }.joined(separator: ", ")
-                    + String(format: "; %.1f s of voice left unheard by the first", unheard(tried[0].0, samples)))
-                if tried[0].1 == 0, let failure { throw failure }
-                h = tried[0].0
-                if tried.count > 1, tried[1].1 > 0, tried[1].1 >= 0.7 * tried[0].1 || unheard(tried[0].0, samples) >= 1.5 {
-                    h = merge(tried[0].0, tried[1].0, among: among)
-                }
-            }
+            guard !cands.isEmpty else { return nil }
+            h = try await best(samples, cands, prefer: prefer)
         }
         if h.module == .speech { h = await secondOpinion(h, samples) }
+        if h.module != .open, Canon.hearAs.contains(h.lang), let c = anchored(h) { h = c }
         return reply(h)
+    }
+
+    /// Whether a hearing is written in its language's own script (Urdu in Arabic letters, not Latin).
+    static func inOwnScript(_ h: Hearing) -> Bool {
+        let text = h.words.map(\.text).joined(separator: " ")
+        guard let want = scriptOf(language: h.lang), let got = scriptOf(text: text) else { return true }
+        return want == got
+    }
+
+    /// Whether a hearing reads as another language than the one it was heard in (Amharic heard by the English model
+    /// writes English words, surely enough, but they don't read as English).
+    static func reads(_ h: Hearing, otherThan lang: String) -> Bool {
+        let text = h.words.map(\.text).joined(separator: " ")
+        guard h.words.count >= 6, let (l, p) = dominantLanguage(text), p >= 0.8 else { return false }
+        return l != lang && scriptOf(language: l) == scriptOf(language: lang) && spellingTells(lang)
+    }
+
+    /// Each candidate on the stretch, the surest kept, and the runner-up beside it phrase by phrase where it heard
+    /// nearly as much, or heard what the surest left unheard. A model that hears nothing in its language says so by
+    /// failing ("RecogFailed"): that's a score of 0.
+    static func best(_ samples: [Float], _ cands: [(String, Module, Locale)], prefer: String?) async throws -> Hearing {
+        if cands.count == 1 { return try await hear(samples, cands[0].0, module: cands[0].1, cands[0].2) }
+        let among = cands.map(\.0)
+        var failure: Error?
+        func attempt(_ c: (String, Module, Locale)) async -> Hearing {
+            do { return try await hear(samples, c.0, module: c.1, c.2) }
+            catch { failure = failure ?? error; return Hearing(lang: c.0, module: c.1, phrases: []) }
+        }
+        var tried: [(Hearing, Double)] = []
+        for c in cands { let x = await attempt(c); tried.append((x, score(x, among: among))) }
+        tried.sort { $0.1 > $1.1 }
+        log("speech: heard as " + tried.map { String(format: "%@ %.1f (sure %.2f)", $0.0.lang, $0.1, quality($0.0)) }.joined(separator: ", ")
+            + String(format: "; %.1f s of voice left unheard by the first", unheard(tried[0].0, samples)))
+        if tried[0].1 == 0, let failure { throw failure }
+        var h = tried[0].0
+        if tried.count > 1, tried[1].1 > 0, tried[1].1 >= 0.7 * tried[0].1 || unheard(tried[0].0, samples) >= 1.5 {
+            h = merge(tried[0].0, tried[1].0, among: among)
+        }
+        return h
+    }
+
+    /// The open ears' hearing, in `lang` when it's known, else in the language its words read as ("und": unknown);
+    /// `like`: the language the recording was heard in last, whose script it's heard in.
+    /// Words of a script written without spaces (Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan) come as one
+    /// run per breath; they're cut into words here, each timed by its first letter.
+    static func heardOpen(_ samples: [Float], _ lang: String?, like: String? = nil) async throws -> Hearing {
+        // A language known (pinned, or heard in the last stretch) keeps the model to its script. Not the Indic ones: the
+        // model writes Sanskrit in Gujarati letters as readily as in Devanagari, and they're the same sounds letter for
+        // letter, so they're written over into Devanagari below instead.
+        let hint = (lang ?? like).flatMap { scriptOf(language: $0) }.flatMap { indic.keys.contains($0) || $0 == "Deva" || $0 == "CJK" ? nil : $0 }
+        var ws = try await OpenEars.hear(samples, script: hint)
+        let text = ws.map(\.text).joined(separator: " ")
+        let id = lang.map { ($0, 1.0) } ?? Tongue.identify(text)
+        let code = id?.0 ?? "und"
+        if ["sa", "hi", "mr", "ne", "pi"].contains(code) {
+            for i in ws.indices {
+                if let sc = scriptOf(text: ws[i].text), let name = indic[sc],
+                   let d = ws[i].text.applyingTransform(StringTransform("\(name)-Devanagari"), reverse: false) { ws[i].text = d; ws[i].t = [] }
+            }
+        }
+        var out: [W] = []
+        for w in ws {
+            guard ["CJK", "Thai", "Laoo", "Khmr", "Mymr", "Tibt"].contains(scriptOf(text: w.text) ?? ""), w.text.count > 1, !w.t.isEmpty else {
+                out.append(W(text: w.text, start: w.start, end: w.end, c: w.c, lang: code)); continue
+            }
+            let tok = NLTokenizer(unit: .word)
+            tok.string = w.text
+            if code != "und" { tok.setLanguage(NLLanguage(code)) }
+            var parts: [(String, Double)] = []
+            tok.enumerateTokens(in: w.text.startIndex..<w.text.endIndex) { r, _ in
+                let k = w.text.unicodeScalars.distance(from: w.text.unicodeScalars.startIndex, to: r.lowerBound)
+                parts.append((String(w.text[r]), w.t[min(k, w.t.count - 1)]))
+                return true
+            }
+            if parts.isEmpty { parts = [(w.text, w.start)] }
+            for (i, p) in parts.enumerated() {
+                let end = i + 1 < parts.count ? parts[i + 1].1 : w.end
+                out.append(W(text: p.0, start: p.1, end: max(end, p.1 + 0.05), c: w.c, lang: code))
+            }
+        }
+        guard let a = out.first, let b = out.last else { return Hearing(lang: code, module: .open, phrases: []) }
+        if let id { log(String(format: "speech: open ears read %@ (%.2f)", id.0, id.1)) }
+        return Hearing(lang: code, module: .open, phrases: tidy([Phrase(start: a.start, end: b.end, text: text, alts: [], words: out)]))
+    }
+
+    static let indic = ["Gujr": "Gujarati", "Beng": "Bengali", "Guru": "Gurmukhi", "Orya": "Oriya", "Telu": "Telugu", "Knda": "Kannada",
+                        "Mlym": "Malayalam", "Taml": "Tamil"]
+
+    /// A hearing with the passage it recites (if it recites one from the canon) written as the text has it, its words
+    /// timed by the voice, a phrase per line of the text; the rest as heard.
+    static func anchored(_ h: Hearing) -> Hearing? {
+        let ws = h.words
+        guard let m = Canon.match(ws.map { ($0.text, $0.start, $0.end) }) else { return nil }
+        var canon: [Phrase] = [], cur: [W] = []
+        for (k, i) in (m.from..<m.to).enumerated() {
+            if let l = cur.last, m.text.line[i] != m.text.line[i - 1] {
+                canon.append(Phrase(start: cur[0].start, end: l.end, text: cur.map(\.text).joined(separator: " "), alts: [], words: cur)); cur = []
+            }
+            cur.append(W(text: m.text.words[i], start: m.times[k].0, end: m.times[k].1, c: max(0.8, m.identity), lang: m.text.lang))
+        }
+        if let l = cur.last { canon.append(Phrase(start: cur[0].start, end: l.end, text: cur.map(\.text).joined(separator: " "), alts: [], words: cur)) }
+        let a = ws[m.heardFrom].start, b = ws[m.heardTo - 1].end
+        var out = h
+        out.phrases = h.phrases.compactMap { p -> Phrase? in
+            let keep = p.words.filter { $0.end <= a || $0.start >= b }
+            guard let f = keep.first, let l = keep.last else { return nil }
+            return keep.count == p.words.count ? p : Phrase(start: f.start, end: l.end, text: keep.map(\.text).joined(separator: " "), alts: [], words: keep)
+        } + canon
+        out.phrases.sort { $0.start < $1.start }
+        let canonTime = canon.reduce(0) { $0 + $1.end - $1.start }, all = out.phrases.reduce(0) { $0 + $1.end - $1.start }
+        if canonTime >= all / 2 { out.lang = m.text.lang }
+        out.canon = m.text.title
+        return out
     }
 
     /// Where SpeechTranscriber was unsure, or wrote a mistake a correction taught (whatever its confidence: a misheard
@@ -365,8 +515,9 @@ import Speech
         return [
             "text": ws.map(\.text).joined(separator: " "),
             "language": lang,
-            "sure": quality(h),            // how surely it heard: low when the language isn't one it knows
-            "engine": h.module.rawValue + (h.lm ? "+lm" : ""),
+            "sure": h.canon != nil ? 0.95 : quality(h),     // how surely it heard: low when the language isn't one it knows
+            "engine": h.module.rawValue + (h.lm ? "+lm" : "") + (h.canon != nil ? "+canon" : ""),
+            "canon": h.canon.map { $0 as Any } ?? NSNull(),
             "segments": h.phrases.map { p -> [String: Any] in
                 let d = p.words.reduce(0) { $0 + max(0.05, $1.end - $1.start) }
                 let c = d > 0 ? p.words.reduce(0) { $0 + max(0.05, $1.end - $1.start) * $1.c } / d : 1

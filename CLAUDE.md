@@ -14,8 +14,9 @@ does not exist, no Recense process runs, and Sill holds 47123.
 - **Recense is a surface inside Sill, not a dependency.** Live transcription, karaoke light, transcript edits, looping,
   speed, EQ/Key/Space, rename, download, transcript and M4B export, retranscribe, retranslate, vocal and instrumental
   extraction, share — all of it runs in Sill, in its own window, with Gallery's Worker unreachable and no second process.
-  Transcription runs on this Mac (Apple SpeechAnalyzer, `sill/speech.swift`, since 2026-10-29; Groq only for languages
-  it can't hear) and caches locally; `keep/<key>/` is a mirror for sharing with Gallery, merged on read, never required.
+  Transcription runs on this Mac, never Groq (since 2026-10-30): Apple SpeechAnalyzer for every language the system
+  has (`sill/speech.swift`), the open ears for the rest (`sill/openears.swift` + `ears/omni.py`, Omnilingual ASR), the canon
+  for recited texts (`sill/canon.swift`, `canon/*.json`); it caches locally; `keep/<key>/` is a mirror for sharing with Gallery, merged on read, never required.
 - **Gallery is two things to Sill:** shared client code (`homebar.js`, `homebar.css`, `keylabel.js`, `room.js`, and later
   `prosody.js`/`prosogram.js`) copied into the bundle by `build.sh`; and an optional cloud side (Worker + R2) for sync.
   `gallery:files/<path>` is one source among local files and followed players, gated on `Store.r2`. Do not merge the

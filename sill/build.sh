@@ -21,6 +21,12 @@ mkdir -p "$app/Contents/MacOS"
 cp Info.plist "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources" && cp AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 printf "APPL????" > "$app/Contents/PkgInfo"
+# Recense's open ears (ears/omni.py: the Omnilingual helper, run by ~/.local/share/recense/omni's Python) and the canon
+# (canon/*.json: recited texts in languages no model hears; speech.swift, canon.swift).
+rm -rf "$app/Contents/Resources/ears" "$app/Contents/Resources/canon"
+mkdir -p "$app/Contents/Resources/ears" "$app/Contents/Resources/canon"
+cp ears/omni.py "$app/Contents/Resources/ears/"
+cp canon/*.json "$app/Contents/Resources/canon/"
 # Recense's home bar: its host page (sill/homebar) plus the shared web modules from Gallery's client, which is their
 # one canonical home (docs/architecture.md § Track W). Each knows nothing about its host; Gallery's Worker serves them
 # and this copies them into the bundle. homebar.js/css = the bar itself; keylabel.js (the Key's names) and room.js (the

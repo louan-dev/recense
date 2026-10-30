@@ -870,6 +870,7 @@ struct Override: Codable, Equatable {
 func languageCode(_ name: String) -> String? {
     let n = name.lowercased().trimmingCharacters(in: .whitespaces)
     if n.count == 2 { return n }
+    if n.count == 3, n != "und", n.allSatisfy({ $0.isASCII && $0.isLetter }) { return n }    // no two-letter code: Kabyle, Cantonese
     if let c = languageCodes[n] { return c }
     let aliases = ["castilian": "es", "valencian": "ca", "flemish": "nl", "moldavian": "ro", "moldovan": "ro", "sinhalese": "si",
                    "haitian creole": "ht", "letzeburgesch": "lb", "pushto": "ps", "panjabi": "pa", "burmese": "my", "mandarin": "zh"]
@@ -897,7 +898,7 @@ func scriptOf(text: String) -> String? {
         let v = u.value
         let s: String
         switch v {
-        case 0x41...0x24F, 0x1E00...0x1EFF: s = "Latn"
+        case 0x41...0x2AF, 0x1E00...0x1EFF, 0x2C60...0x2C7F, 0xA720...0xA7FF: s = "Latn"     // with ɛ ɔ ɲ ɣ (Bambara, Kabyle)
         case 0x370...0x3FF, 0x1F00...0x1FFF: s = "Grek"
         case 0x400...0x52F: s = "Cyrl"
         case 0x530...0x58F: s = "Armn"
@@ -913,7 +914,18 @@ func scriptOf(text: String) -> String? {
         case 0xD00...0xD7F: s = "Mlym"
         case 0xE00...0xE7F: s = "Thai"
         case 0x10A0...0x10FF: s = "Geor"
-        case 0x1200...0x137F: s = "Ethi"
+        case 0x1200...0x139F, 0x2D80...0x2DDF, 0xAB00...0xAB2F: s = "Ethi"
+        case 0x700...0x74F: s = "Syrc"
+        case 0x780...0x7BF: s = "Thaa"
+        case 0xB00...0xB7F: s = "Orya"
+        case 0xD80...0xDFF: s = "Sinh"
+        case 0xE80...0xEFF: s = "Laoo"
+        case 0xF00...0xFFF: s = "Tibt"
+        case 0x1000...0x109F: s = "Mymr"
+        case 0x1780...0x17FF: s = "Khmr"
+        case 0x1800...0x18AF: s = "Mong"
+        case 0x2C80...0x2CFF: s = "Copt"
+        case 0x2D30...0x2D7F: s = "Tfng"
         case 0x1100...0x11FF, 0x3040...0x30FF, 0x3400...0x9FFF, 0xAC00...0xD7AF: s = "CJK"
         default: continue
         }
@@ -3666,22 +3678,12 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             else { missed.append(String(format: "%.2f–%.2f [%@]", lo, hi, language ?? "auto")); throw err("not captured") }
             return t
         }
-        // This Mac's own ears first: no quota, no connection. Groq only for a language they can't hear. With no language
-        // pinned, the ears only know English, French and Vietnamese, and write Amharic (any other) as their own words,
-        // unsurely: an unsure hearing, or a language Whisper already found that they can't hear, goes to Whisper, which
-        // tells the language itself; if Whisper can't be reached, the Mac's hearing stands.
-        let ask = language == nil && !cfg.apiKey.isEmpty
-        var foreign = false
-        if ask, let l = spokenLanguage { foreign = !(await OnDeviceASR.hears(l)) }
-        if OnDeviceASR.enabled, !foreign, let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) {
-            if ask, let sure = t["sure"] as? Double, sure < 0.45, !(t["text"] as? String ?? "").isEmpty {
-                log(String(format: "speech: heard unsurely (%.2f) as %@, asking Whisper which language it is", sure, t["language"] as? String ?? "?"))
-                if let w = try? await transcribe(wav(samples, sr: 16000), prompt: prompt, language: nil) {
-                    if let l = (w["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
-                    engine = nil; pace = 3.1
-                    return w
-                }
-                log("speech: Whisper unreachable, keeping this Mac's hearing")
+        // This Mac's own ears, always: no quota, no connection. Apple's for every language they have, the open ears
+        // (Omnilingual, on this Mac) for every other and to tell which language it is, the canon for recited texts
+        // (speech.swift). Groq only when Sill was built or set without them (TRANSCRIBER=groq), never as a fallback.
+        if OnDeviceASR.enabled {
+            guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) else {
+                throw err("this Mac can't hear \(language.map(languageName) ?? "this language") yet: the open ears aren't installed (~/.local/share/recense/omni)")
             }
             if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
             engine = t["engine"] as? String; pace = 0.05
@@ -6842,7 +6844,7 @@ final class NativeSources {
         guard !cfg.apiKey.isEmpty || OnDeviceASR.enabled else {
             return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
         }
-        if OnDeviceASR.enabled { log("speech: transcribing on this Mac (SpeechAnalyzer)\(cfg.apiKey.isEmpty ? ", no Groq key" : ", Groq only for languages it can't hear")") }
+        if OnDeviceASR.enabled { log("speech: transcribing on this Mac (SpeechAnalyzer\(OpenEars.installed ? " + open ears" : ""), no Groq)") }
         OnDeviceASR.startup()
         do {
             let s = try Server(port: 47123) { [weak self] p, q, b in await self?.handle(p, q, b) ?? [:] }
