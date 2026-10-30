@@ -1,0 +1,40 @@
+/* The assistant's sidebar (client/assistant.js). Controls follow ui/README.md §1.1: --ctl blue text, no glass, no red;
+   the active scope shows by a flat #1c1c1e fill. Right column on wide screens, full screen on a phone. */
+#aip{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);z-index:60;display:flex;flex-direction:column;background:#000;
+  border-left:1px solid #2a2a2c;color:#fff;font:17px/22px -apple-system,BlinkMacSystemFont,sans-serif;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0}
+#aip[hidden]{display:none}
+@media (max-width:700px){#aip{width:100vw;border-left:0}}
+@media (min-width:1100px){body.aiopen main{margin-right:420px}}
+#aip .aihead{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #2a2a2c}
+#aip .aihead b{font:700 20px/24px -apple-system,BlinkMacSystemFont,sans-serif;flex:1}
+#aip .aiseg{display:flex;gap:4px;padding:10px 16px 6px}
+#aip .aiseg button{font:17px -apple-system,BlinkMacSystemFont,sans-serif;color:#0a84ff;background:none;border:0;border-radius:999px;padding:6px 12px;cursor:pointer}
+#aip .aiseg button.on{background:#1c1c1e}
+#aistat{margin:4px 16px 0;font-size:13px;line-height:18px;color:#939297}
+#aim{flex:1;overflow-y:auto;padding:12px 16px 8px;display:flex;flex-direction:column;gap:14px}
+.aimsg{max-width:100%;word-wrap:break-word}
+.aiuser{align-self:flex-end;background:#1c1c1e;border-radius:18px;padding:8px 14px;max-width:85%;white-space:pre-wrap}
+.aibot p{margin:0 0 8px}.aibot ul{margin:0 0 8px;padding-left:20px}
+.aibot code{font:15px ui-monospace,SFMono-Regular,Menlo,monospace;background:#1c1c1e;border-radius:6px;padding:1px 5px}
+.aibot table{border-collapse:collapse;margin:4px 0 10px;font-size:15px;line-height:20px;width:100%}
+.aibot th,.aibot td{border-bottom:1px solid #2a2a2c;padding:6px 6px 6px 0;text-align:left;vertical-align:top}
+.aibot th{color:#939297;font-weight:600}
+.aibot a{color:#0a84ff;text-decoration:none}
+.aiwait{color:#939297}
+.aicite{font-size:13px;vertical-align:super;line-height:0}
+.aisrc{list-style:none;margin:6px 0 0;padding:8px 0 0;border-top:1px solid #2a2a2c;font-size:13px;line-height:18px;color:#939297}
+.aisrc li{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:baseline;padding:3px 0;border-radius:6px;transition:background .3s}
+.aisrc li.aiflash{background:#1c1c1e}
+.aisrc .aip{color:#fff;overflow-wrap:anywhere;flex:1 1 60%}
+.aisrc .aia{color:#7c797f}
+.aisrc .aiopen{font-size:13px}
+#aimem{border-top:1px solid #2a2a2c;max-height:40vh;overflow-y:auto;padding:8px 16px}
+#aimem[hidden]{display:none}
+.aimemrow{display:flex;gap:12px;align-items:baseline;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2a2c;font-size:15px;line-height:20px}
+#aif{display:flex;gap:10px;align-items:flex-end;padding:10px 16px 12px;border-top:1px solid #2a2a2c}
+#aiq{flex:1;resize:none;min-height:40px;max-height:160px;background:#1c1c1e;color:#fff;border:0;border-radius:20px;padding:9px 14px;
+  font:17px/22px -apple-system,BlinkMacSystemFont,sans-serif;outline:none}
+#aiq::placeholder{color:#7c797f}
+#aisend:disabled,#aiq:disabled{opacity:.4}
+#aip .aifoot{display:flex;gap:16px;padding:0 16px 10px}

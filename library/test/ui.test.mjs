@@ -1350,5 +1350,52 @@ await test("Notes 31: an instrumental with cover art shows [Ambient Sounds] on b
   assert.ok(!(await pg.isVisible(".aw img")), "no cover behind it, the second time");
 });
 
+await test("assistant sidebar: owner opens it, asks in this folder or everywhere, sees sources, forgets a memory", true, async (pg) => {
+  const asked = [];
+  let memories = [{ id: "m1", text: "Prefers mornings for deep work.", at: "t" }];
+  await pg.route("**/main/api/ai/status", (r) => r.fulfill({ json: { ok: true, ready: true, files: 10, pending: 5, listing: "main" } }));
+  await pg.route("**/main/api/ai/memory**", async (r) => {
+    if (r.request().method() === "DELETE") { memories = []; return r.fulfill({ json: { ok: true, memories } }); }
+    return r.fulfill({ json: { ok: true, memories } });
+  });
+  await pg.route("**/main/api/ai/ask", async (r) => {
+    asked.push(JSON.parse(r.request().postData()));
+    const rows = [
+      { sources: [{ n: 1, root: "main", path: "Am/Book.pdf", kind: "doc", auth: "reference", t: null }, { n: 2, root: "main", path: "Am/song.mp3", kind: "transcript", auth: "transcript", t: 75 }] },
+      { t: "Section 2106 covers it [1]. You said so too [2].\n\n| Day | Event |\n|---|---|\n| Mon | **Fair** |" },
+      { done: true },
+    ];
+    await r.fulfill({ status: 200, headers: { "content-type": "application/x-ndjson" }, body: rows.map((x) => JSON.stringify(x)).join("\n") + "\n" });
+  });
+  await pg.goto(base + "/main?p=Am");
+  await pg.click("#aibtn");
+  await pg.waitForSelector("#aip:not([hidden])");
+  assert.ok(await pg.$eval("#aihere", (e) => e.classList.contains("on")), "this folder by default");
+  await pg.waitForSelector("#aistat:not([hidden])");
+  assert.match(await pg.textContent("#aistat"), /Reading your files: 10 indexed, 5 waiting/);
+  await pg.fill("#aiq", "What does 2106 say?");
+  await pg.keyboard.press("Enter");
+  await pg.waitForSelector(".aibot table");
+  assert.deepEqual(asked[0].scope, { root: "main", path: "Am" });
+  assert.equal(await pg.textContent(".aibot td b"), "Fair");
+  assert.equal(await pg.locator(".aibot .aicite").count(), 2);
+  const src = await pg.locator(".aisrc li").allTextContents();
+  assert.match(src[0], /\[1\] Main \/ Am\/Book\.pdf published/); assert.match(src[1], /song\.mp3 · 1:15 recording/);
+  assert.equal(await pg.getAttribute(".aisrc li .aiopen", "href"), "/main/?p=Am");
+  await pg.click("#aiall");
+  await pg.fill("#aiq", "and everywhere?");
+  await pg.click("#aisend");
+  await pg.waitForFunction(() => document.querySelectorAll(".aibot table").length === 2);
+  assert.deepEqual(asked[1].scope, { root: "all" });
+  assert.equal(asked[1].history.length, 2, "the earlier exchange goes along");
+  assert.ok(!("sources" in asked[1].history[1]), "only role and content are sent back");
+  await pg.click("#aimems");
+  await pg.waitForSelector(".aimemrow");
+  await pg.click(".aimemrow .lnk");
+  await pg.waitForFunction(() => !document.querySelector(".aimemrow"));
+  await pg.click("#aidone");
+  assert.ok(await pg.$eval("#aip", (e) => e.hidden));
+});
+
 await browser.close();
 await mf.dispose();

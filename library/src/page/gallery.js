@@ -1,3 +1,5 @@
+import assistant from "../client/assistant.js";
+import assistantCss from "../client/assistant.css";
 import css from "../client/gallery.css";
 import homebarCss from "../client/homebar.css";
 import homebar from "../client/homebar.js";
@@ -38,7 +40,7 @@ export function galleryPage(live, nav = "", crumbs = "") {
 <meta name="robots" content="noindex">
 <title>${esc(live.title || "Shared by " + OWNER)}</title>
 <style>${homebarCss}
-${css}</style>
+${css}${live.main ? "\n" + assistantCss : ""}</style>
 </head>
 
 <body>
@@ -50,6 +52,7 @@ ${css}</style>
 <div class="bar">
   <button id="selall" class="lnk" hidden>Select All</button>
   <div class="barr"> <!-- Changed from span to div -->
+    ${live.main ? '<button id="aibtn" class="lnk" type="button" aria-controls="aip" aria-expanded="false">Ask</button>' : ""}
     <button class="mbtn" id="mbtn" type="button" aria-label="More" aria-haspopup="menu" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
     </button>
@@ -209,6 +212,15 @@ const G=${data};
   </div>
 </div>
 <div class="mtoast" id="mtoast" role="status"></div>
+${live.main ? `<aside id="aip" aria-label="Assistant" hidden>
+  <div class="aihead"><b>Assistant</b><button class="lnk" id="ainew" type="button">New</button><button class="lnk" id="aidone" type="button">Done</button></div>
+  <div class="aiseg" role="group" aria-label="Search in"><button id="aihere" type="button">This folder</button><button id="aiall" type="button">All</button></div>
+  <p id="aistat" hidden></p>
+  <div id="aim" aria-live="polite"></div>
+  <div id="aimem" hidden></div>
+  <form id="aif"><textarea id="aiq" rows="1" aria-label="Ask the assistant"></textarea><button class="lnk" id="aisend" type="submit">Ask</button></form>
+  <div class="aifoot"><button class="lnk" id="aimems" type="button">Memories</button></div>
+</aside>` : ""}
 
 <script>
 ${keylabel}
@@ -237,6 +249,9 @@ ${prosogramMount}
 </script>
 ${live.main ? `<script>
 ${prosogramMain}
+</script>
+<script>
+${assistant}
 </script>` : ""}
 
 <script>
