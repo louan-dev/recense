@@ -1419,6 +1419,20 @@ await test("assistant sidebar: owner opens it, asks in this folder or everywhere
   await pg.goto(base + "/main?p=Am&ask=1");
   await pg.waitForSelector("#aip:not([hidden])");
   assert.ok(await pg.$eval("#aihere", (e) => e.classList.contains("on")));
+  // any location from any page (item 27): on Main, ask about the Archive
+  await pg.click("#aiarch");
+  await pg.fill("#aiq", "and in the archive?");
+  await pg.click("#aisend");
+  for (let i = 0; i < 50 && asked.length < 3; i++) await pg.waitForTimeout(100);
+  assert.deepEqual(asked[asked.length - 1].scope, { root: "archive", path: "" });
+  // at Main's root the last location chosen comes back; ?in= picks one
+  await pg.goto(base + "/main?ask=1");
+  await pg.waitForSelector("#aip:not([hidden])");
+  assert.ok(await pg.$eval("#aihere", (e) => e.hidden), "no This folder at a root");
+  assert.ok(await pg.$eval("#aiarch", (e) => e.classList.contains("on")), "the Archive, chosen last");
+  await pg.goto(base + "/main?ask=1&in=main");
+  await pg.waitForSelector("#aip:not([hidden])");
+  assert.ok(await pg.$eval("#aimain", (e) => e.classList.contains("on")));
 });
 
 await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's files, Delete expires the link; Like in the viewer feeds Activity", true, async (pg) => {

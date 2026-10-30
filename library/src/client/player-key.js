@@ -926,7 +926,9 @@
 
       this.tick = 0;
       // @ts-ignore -- port is provided by AudioWorkletProcessor at runtime.
-      this.port.postMessage({ at: this.pos / this.sr, miss: this.miss, playing: this.g > 0 });
+      // (ctx: the context time this block's end will be played at, so the page can match it to what the speakers play)
+      // @ts-ignore -- currentTime and sampleRate are AudioWorkletGlobalScope's
+      this.port.postMessage({ at: this.pos / this.sr, ctx: currentTime + 128 / sampleRate, miss: this.miss, playing: this.g > 0 });
       this.miss = -1;
     }
   }

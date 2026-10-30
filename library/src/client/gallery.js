@@ -2267,6 +2267,7 @@
       // where the deck is, and when we heard so: the transcript runs on this, the sound you hear
       d.at = m.at;
       d.atWall = performance.now();
+      d.ctx = typeof m.ctx === "number" ? m.ctx : null;
       d.playing = !!m.playing;
 
       // kept within a beat of the picture; at speed a drift grows faster, so it is caught sooner
@@ -2292,6 +2293,18 @@
       const d = deck;
 
       if (d && d.live && typeof d.at === "number" && !el.paused && !el.seeking) {
+        // Where the speakers are, from the context itself (getOutputTimestamp: the context time being played now): the
+        // device's output latency in it whether or not outputLatency is reported, which iOS Safari never does (the
+        // light ran ahead of the voice on the iPhone, Sororité, item 27). The app's route latency covers what it misses.
+        const ts = d.ctx != null && audioCtx.getOutputTimestamp ? audioCtx.getOutputTimestamp() : null;
+        if (ts && ts.contextTime > 0 && ts.performanceTime > 0) {
+          const outNow = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+          const known = Math.max(0, audioCtx.currentTime - outNow);
+          const more = Math.max(0, (+globalThis.galleryOutputLatency || 0) - known);
+          const ran = d.playing ? Math.max(-0.5, Math.min(outNow - d.ctx, 0.5)) : 0;
+          const t = d.at + (ran - more - DELAY.deck / audioCtx.sampleRate - (nodes ? nodes.dryLag || 0 : 0)) * r;
+          if (Math.abs(t - el.currentTime) < 1.5) return Math.max(0, t);
+        }
         const ran = d.playing ? (performance.now() - d.atWall) / 1000 : 0;
         const t = d.at + (Math.min(ran, 0.5) - out - DELAY.deck / audioCtx.sampleRate - (nodes ? nodes.dryLag || 0 : 0)) * r;
         if (Math.abs(t - el.currentTime) < 1.5) return Math.max(0, t);

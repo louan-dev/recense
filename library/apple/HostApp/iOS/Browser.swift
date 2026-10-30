@@ -70,6 +70,7 @@ extension Record {
 struct Browser: View {
     static let assistant = "\u{0}assistant"  // a sidebar tag no folder path can be
     static let shared = "\u{0}shared"
+    static let main = "\u{0}main"
     @StateObject private var top = Folder(Gallery.rootPath)
     @State private var picked: String? = Gallery.rootPath
 
@@ -77,6 +78,7 @@ struct Browser: View {
         NavigationSplitView {
             List(selection: $picked) {
                 Section("Locations") {
+                    Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
                     Label("Chauphan", systemImage: "icloud").tag(Gallery.rootPath)
                     Label("Shared", systemImage: "person.2").tag(Browser.shared)
                     Label("Assistant", systemImage: "sparkles").tag(Browser.assistant)
@@ -91,7 +93,9 @@ struct Browser: View {
             .task { top.load() }
         } detail: {
             NavigationStack {
-                if picked == Browser.assistant {
+                if picked == Browser.main {
+                    MainView()
+                } else if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
                         .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
                 } else if picked == Browser.shared {
@@ -101,6 +105,29 @@ struct Browser: View {
                 } else if let picked { FolderView(path: picked).id(picked) }
             }
         }
+    }
+}
+
+// Main (the owner's gallery, gallery-main), as the site shows it, with its Assistant: This folder is Main, with All
+struct MainView: View {
+    @State private var asking = false
+    var body: some View {
+        PlayerView(url: galleryURL("/main")).ignoresSafeArea(edges: .bottom)
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { asking = true } label: { Label("Assistant", systemImage: "sparkles") }
+                        .keyboardShortcut("k")
+                }
+            }
+            .sheet(isPresented: $asking) {
+                NavigationStack {
+                    PlayerView(url: galleryURL("/main", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
+                        .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { asking = false } } }
+                }
+                .presentationDetents([.medium, .large])
+            }
     }
 }
 

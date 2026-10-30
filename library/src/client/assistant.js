@@ -26,15 +26,28 @@
   $("#aidone").addEventListener("click", close);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden) close(); });
 
-  // ---------- scope: what is open, or everything ----------
-  const here = $("#aihere"), all = $("#aiall");
-  const where = dir ? dir.split("/").pop() : root === "archive" ? "Archive" : "Main";
-  here.textContent = "This folder";
-  here.title = (root === "archive" ? "Archive" : "Main") + (dir ? " / " + dir : "");
-  const setScope = (s) => { scope = s; here.classList.toggle("on", s === "here"); all.classList.toggle("on", s === "all"); here.setAttribute("aria-pressed", s === "here"); all.setAttribute("aria-pressed", s === "all"); };
-  here.addEventListener("click", () => setScope("here")); all.addEventListener("click", () => setScope("all"));
-  setScope("here");
-  box.placeholder = `Ask about ${where}, your calendar, or anything…`;
+  // ---------- scope: this folder, Main, Archive, or everything ----------
+  // Any location from any page, in the browser and the apps: on /main ask about the Archive, on /main/archive about Main.
+  // "This folder" only inside a folder (at a root it is that root's own button). The last choice of a location is kept;
+  // ?ask=1&in=main|archive|all opens on one.
+  const segs = { here: $("#aihere"), main: $("#aimain"), archive: $("#aiarch"), all: $("#aiall") };
+  const NAME = { main: "Main", archive: "Archive", all: "everything" };
+  segs.here.hidden = !dir;
+  segs.here.title = (root === "archive" ? "Archive" : "Main") + (dir ? " / " + dir : "");
+  const scopeOf = () => (scope === "here" ? { root, path: dir } : scope === "all" ? { root: "all" } : { root: scope, path: "" });
+  const setScope = (s, remember) => {
+    if (!segs[s] || (s === "here" && !dir)) s = dir ? "here" : root;
+    scope = s;
+    for (const [k, b] of Object.entries(segs)) { b.classList.toggle("on", k === s); b.setAttribute("aria-pressed", String(k === s)); }
+    const about = s === "here" ? dir.split("/").pop() : NAME[s];
+    box.placeholder = `Ask about ${about}, your calendar, or anything…`;
+    if (remember && s !== "here") try { localStorage.setItem("ai.scope", s); } catch { /* private mode */ }
+  };
+  for (const [k, b] of Object.entries(segs)) b.addEventListener("click", () => setScope(k, true));
+  let start = new URLSearchParams(location.search).get("in");
+  if (!segs[start]) { try { start = localStorage.getItem("ai.scope"); } catch { start = null; } }
+  // inside a folder, the folder first; at a root, the location chosen last (else that root)
+  setScope(dir ? "here" : start || root);
 
   // ---------- rendering ----------
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -111,7 +124,7 @@
     try {
       const r = await fetch("/main/api/ai/ask", {
         method: "POST", headers: { ...H, "content-type": "application/json" },
-        body: JSON.stringify({ q, scope: scope === "all" ? { root: "all" } : { root, path: dir }, history: history.slice(-6).map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({ q, scope: scopeOf(), history: history.slice(-6).map(({ role, content }) => ({ role, content })) }),
       });
       if (!r.ok || !r.body) throw new Error(r.status === 503 ? "The assistant isn't set up yet." : "The assistant didn't answer (" + r.status + ").");
       const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
