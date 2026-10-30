@@ -1,6 +1,6 @@
 # OVERFLOW.md · A6 overflow lane (smallest version) · 2026-10-13
 
-Status: rule PARTIAL (planner built and tested); Remotely Save PROPOSED (owner GUI); Notability WebDAV BLOCKED on A5 (by plan).
+Status: rule PARTIAL (planner built and tested); Remotely Save PROPOSED (owner GUI); Notability WebDAV PARTIAL (built and tested in gallery/src/dav.js 2026-10-24, not deployed).
 
 ## 1. Rule (implemented, read-only)
 `node src/ledger.mjs overflow --source <vault> --sink <sink> --max-mb 25 --total <plan> [--alert 80 --target 60]`

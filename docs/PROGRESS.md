@@ -14,6 +14,7 @@ Nothing below has run on the owner's Mac. The only execution was `src/ledger.mjs
 ## 1a. Long-term goal: Gallery, the nervous system for my files (owner, 2026-10-27)
 Files usable **with no connection** on Mac, iPhone and iPad, in each device's native place. Edits flow both ways when a connection appears; nothing of mine runs 24/7; the Mac's disk is freed by moving bulk folders into R2 behind an always-on mount. R2 is the storage. The Worker is the **sync engine** (catalog with an event log, cursors and stable ids; rules; sync plans), `/main` is the one interface, and thin adapters per device obey it (Mac NFS + launchd + `~/Gallery`; iOS Home Screen web app + Shortcuts; File Provider later).
 **Read `docs/specs/gallery-nervous-system.md` first:** outcome, invariants, decisions, order, rules, status. The engine design goes in `~/Developer/gallery/gallery/docs/engine.md` (once written).
+*Ownership (PROPOSED 2026-10-29, §8 decision 8):* the engine is Sync's job, built today inside the Gallery Worker; which project owns what is in `docs/specs/organism.md`.
 
 ## 2. Rules
 1. Inspect once (tree, READMEs, configs, `git status`, tests). Keep a compact plan; don't re-read unchanged files or re-plan.
@@ -133,7 +134,56 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 | N1026 | SPEC 52–61 (notes 2026-10-26) | PARTIAL | 2026-10-26 23:10: 52, 53, 55, 56, 57, 59, 60, 61 built (+ 3, 4, 15, 25); 54 partial (no tray in Recense); 58 left for an ultracode run. Gallery `npm test` 12 + 39 + 14 + 34 pass; Sill compiled and installed 23:10, not relaunched; Gallery not deployed. Spec scored 82.5% implemented (CHANGELOG) |
 | N1027 | SPEC 71–84 (notes 23–36) | DONE (tests/builds; device checks open) | 2026-10-27 06:50: all built. Gallery deployed (4ccf0ab0), `npm test` 109 ok / 0 fail; Sill built from `claude/exciting-lumiere-9b0e58` and relaunched. R2 lifecycle applied. Not checked on iPhone/iPad: 27 (background), 23 (fit) |
 | C1–C3 | D1, Rooms, co-editing | PROPOSED | invites live in R2 `invites/` until D1 |
+| IMG | Obsidian images → R2 (S3 Image Sync plugin) | PARTIAL | 2026-10-29: Gallery `/i/<key>` route (`src/images.js`, binding `NOTES_IMAGES` → bucket `notes-images`), `test/images.test.mjs` 5 ok, full `npm test` passes; not committed, not deployed. Owner: create bucket, yes to deploy, scoped token, plugin settings per `docs/runbooks/obsidian-images.md` |
 | — | Chrome `/main` 404, setup scripts, Sill CPU, audio/EQ, layout, Draftpad, Phi, Nook, cleanup | PROPOSED | BACKLOG |
+
+### 2026-10-29 19:35 PDT · One event-log format: ledger.mjs + the catalog (fp.js) unified · DONE (code + tests; catalog NOT deployed)
+- **Contradictions found:**
+  1. The guide called "a hash-chained record of every byte" Sync's moat, but only the ledger was chained. The engine's
+     catalog (the log devices sync from) had no chain, though the nervous-system spec named the ledger as its model.
+  2. Two vocabularies: put/tombstone vs create/modify/move/delete.
+  3. Three delete guards: the ledger refused above max(10, 20%); the spec says 10% or 100; the reconciler had none, so
+     an emptied R2 folder would have been removed from every device.
+  4. Plan decision 2 ("iCloud stays the live lane") vs the owner's replace-iCloud goal.
+  5. The guide's single-writer rule ignored the direct writers that exist (the ledger jobs into `gallery-main/ledger/`,
+     the Downloads agent, the archive moves).
+- **Resolved:** `docs/specs/event-log.md` (§8 decision 9). `ledger.mjs`: writes v2 (create/modify/delete with `id`,
+  `dir` and `mtime`), still reads v1; one `massDelete`; recognizes the engine's conflict names; `verify` and `fold` read
+  a catalog. `fp.js`: chained batches (`v`, `prev`, per-event `chain`, `snapshot.chain`); the delete guard holds a pass
+  in `held.json` until the owner POSTs `/main/api/fp/<root>/confirm`. `FileProviderExtension.swift`: applies only the
+  four tree ops. The guide (§2, §5, §7, §8), `gallery/docs/architecture.md` §3/§5, nervous-system invariant 1 and
+  decision 2 annotated.
+- **Bug fixed (live in the deployed feed):** `changes?since=N` answered 410 whenever batch N existed (`startAfter`
+  without `.json`), so the Files extension re-enumerated on every incremental check.
+- **Validation:** `npm test` (sync) all passed, ledger selftest 42 ok (was 34). Live journals verified read-only with
+  the new code: obsidian 27 seg / 261, icloud-drive 2 / 65, calendar 6 / 1,078, 0 problems, counts unchanged. Gallery
+  `build:test` + `routes.test.mjs` 47 passed (1 new). The Worker's `reconcile` run in a scratch harness → its log is
+  verified by `ledger.mjs` (0 problems), and tampering is caught. iOS extension compiles (`xcodebuild`, no signing).
+  Not run: `ui.test.mjs` (another session's WIP), the macOS app build.
+- **Next:** owner's yes to deploy the fp.js change (from a `git archive` of the commit, per the standing rule). The
+  next ledger launchd run writes v2: check `verify` once after it.
+
+### 2026-10-29 · IMG · Obsidian images → R2 (S3 Image Sync plugin) · PARTIAL
+- "S3 image sync" = community plugin `images-uploader` 1.0.10 (installed + enabled since 10-15, never configured). It uploads through Obsidian's `requestUrl` (no CORS rule needed); links = `<public URL>/<key>`; image folder required (empty falls back to the author's default).
+- Choices: own bucket `notes-images` (Remotely Save syncs `notes`, so images there would come back into the vault); public links through the Gallery Worker `/i/<key>`, not r2.dev, only content-addressed keys served, SVG sandboxed; auto-scan off (no polling); delete policy "Ask each time".
+- Changed (gallery, uncommitted, other session's uncommitted files untouched): `src/images.js` (new), `src/worker.js` (+3 lines), `wrangler.toml` (+binding), `package.json` (test), `test/images.test.mjs` (new). Validated: images 5 ok; keylabel 13, routes 47, dav-rclone 3, transcript 14, ui 33 pass.
+- Caveat: uploaded images need a connection (goal §1a); keep offline-critical images local.
+- Next: owner creates bucket + token, says yes to deploy (from a commit), fills plugin settings; then `curl -I` a real key.
+
+### 2026-10-29 18:56 PDT · Boundaries: Sync, Gallery, Sill (long-term backend guide) · PROPOSED
+- **Decision (owner to confirm):** keep three projects; move the sync engine's ownership from Gallery to Sync; Recense is a
+  capability shared through modules and `keep/<key>/`; on iOS, build the follow-you player inside Gallery. §8 decision 8.
+- **Guide written:** `docs/specs/organism.md`: each project's one job and asset (§1–2), the five folding options judged
+  (§3), placement rules + a feature table (§4), contracts (§5), iOS playback outside the app (§6), the two-Worker
+  serverless design with single-writer ownership, Queue-fed change log and second-vendor replicator (§7), migration
+  steps that keep every device URL (§8).
+- **Evidence used:** engine code lives in the Gallery Worker (`fp.js` 162, `dav.js` 560, `tmp.js`, `archive.js`); the Sync
+  Worker serves only CalDAV (`worker/src/caldav.js`); `sync/bin/resign-ios.zsh` re-signs Gallery's iOS app;
+  `apple/HostApp/iOS/` has no `AVAudioSession`/Now Playing/PiP code; Recense writes `keep/` and Gallery's
+  `corrections.js` writes corrections into it.
+- **Validation:** docs only. No code moved, nothing built or deployed.
+- **Next:** owner answers §10 of the guide; then step 1 (engine boundary inside the Gallery Worker), after the C0/D1
+  session commits its work in the Gallery repo.
 
 ### 2026-10-28 03:40 PDT · Sill/Recense consolidation: one app, dead tree emptied, docs corrected · PARTIAL
 - **Root cause of "Recense.app keeps opening", found and recorded.** Three causes: (1) `sill/recense/build.sh` *rebuilds*
@@ -319,15 +369,20 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 - Validated: `npm test` keylabel 12, routes 39 (5 new: Basic auth + lockout, Auto-Backup sequence + versions + 405s, traversal on both mounts incl. %2f/NUL/Destination, main PUT/versioning/conditionals/chunked, MOVE/COPY/DELETE), transcript 14, UI 28. Not tried with real Notability, rclone or Finder. Not deployed, not committed.
 - Deployed 450905eb (2026-10-24, owner's go; working tree as is, uncommitted): `/` 200, `/main` and `/main/dav/` (GET, PROPFIND) 302 to Access, unknown `/s/` 404, `/dav/notability/` 404 because **`NOTABILITY_DAV_HASH` is not on the `gallery` Worker** (`wrangler secret list` shows only ACCESS_AUD, SERVICE_CLIENT_ID). Signed-in `/main/dav/` and the dashboard buttons not tried live. 2026-10-25: owner set the secret on `gallery`; live `/dav/notability/` now 401 with `WWW-Authenticate: Basic realm="Notability backup"` (no auth and a wrong password both 401). Correct password and Notability's own backup not tried.
 - Owner, to switch it on: `wrangler secret put NOTABILITY_DAV_HASH` with `printf %s '<password>' | shasum -a 256`, deploy, then Notability › Auto-Backup › WebDAV `https://<host>/dav/notability/`, PDF + Note. Next: try that, then decide on folder MOVE (Finder renames) and LOCK for a read-write Finder mount.
+- 2026-10-29 15:01 PDT · Google Drive + ~/Sync off the Mac · PARTIAL. rclone check vs gallery-archive/chauphan/{Sync,Google Drive}: Sync 15/15 match (Nichole m4a only in R2). Drive: `Live/2026-09-22 21-01-49.mov` was truncated in R2 (573 MB of 2.36 GB) → re-uploaded, verified with `check --download`; 3 .gmap pointers uploaded; .gdoc → .docx exports already in R2; 7 online-only files size-match R2 (local unreadable, Drive app gone); `School/Untitled document (1)/(2).gdoc` unreadable, live only in the Google account. Moved to ~/.Trash: ~/Sync, ~/Google Drive link, DriveFS (6.8 GB), drivefs containers/prefs, com.sync.desktop.plist, Chrome-app Google Drive.app. Left: ~/Library/CloudStorage/GoogleDrive-clphan7@gmail.com (mv denied, File Provider-held). Kept Google updater agents (Chrome).
+- 2026-10-29 15:01 PDT · Gallery Files sidebar name → "Gallery" · DONE (System Events shows "Gallery"). apple/macos: CFBundleName "Gallery Files" (must match the bundle file name), en.lproj/InfoPlist.strings → "Gallery", LSHasLocalizedDisplayName; rebuilt + installed, Finder relaunched.
+- 2026-10-29 15:59 PDT · Offsite disks (Photos, Messages, Mail stores in R2) · PARTIAL. APFS sparse bundles in gallery-archive/.disks/ via the direct S3 remote; login item com.chauphan.disks-mount runs through ~/Applications/Disks Helper.app (zsh run by launchd is refused the network mount). Verified: test image survives an empty-cache remount (md5 + SQLite integrity), cache evicts to its cap, upload ~3.9 MB/s. Messages + Mail stores copied (verified) and linked from ~/Library (originals kept as *.local-2026-10-29); Photos library copied (89,732 files), the switch is the owner's GUI step. Runbook docs/runbooks/offsite-disks.md; details .handoff/HANDOFF.md. Next: owner GUI steps, then Gallery-app exports (ask the owner what to show).
 
 ## 8. Decisions made (defaults; change only if the owner objects)
 1. "rw" = R2. "5 GB" = the iCloud quota (superseded: the plan is iCloud+ 200 GB, see §1).
-2. iCloud stays the live lane once unclogged; ledger mirrors it; R2 takes overflow (A6).
+2. iCloud stays the live lane once unclogged; ledger mirrors it; R2 takes overflow (A6). *Superseded in part by the owner's goal of 2026-10-27 ("everything serves G1, replace iCloud", §7) and §1a: iCloud stays live only until each source's cutover. The ledger keeps recording whatever Apple still holds, and at cutover a source's history moves to the catalog (`docs/specs/event-log.md` §1).*
 3. Add D1 to Gallery (concurrent two-way writes, revocation checks, queries; Sync/Switchboard specs already use D1).
 4. Phi: reuse whatever is installed on the SanDisk. Owner says "3.2", the Oct 9 directive says 3.5; inspect the files.
 5. Battery colors: green ≥40, yellow 30–39, red ≤29 (red at 29 is mandatory; the old spec's yellow overlapped red). One constant each.
 6. Scheduler starts in shadow mode for 2 weeks (addendum §7); owner can switch to live.
 7. Recommended private repo: `sync/` (src/ledger.mjs + specs): unique, tiny, unversioned, and the root of both other projects. Do not push anywhere until the owner names the repo.
+8. **Three projects, no folding; the sync engine belongs to Sync (PROPOSED 2026-10-29, owner to confirm).** Full guide: `docs/specs/organism.md`. Sync = custody (catalog, change feed, write protocol, devices, standards, backups, health); Gallery = library, player and Rooms on every device; Sill = presence on the Mac (process tap on any app, strip, Nook, Draftpad). Recense is a capability (modules + the `keep/<key>/` contract), not a fourth product. Rejected: Gallery into Sync, all into Sync, Sill into Gallery, Sync into Gallery (reasons in §3 of the guide). The engine code in the Gallery Worker (`fp.js`, `dav.js`, `tmp.js`, `archive.js`) moves first behind a boundary (`gallery/src/engine/`), then into the Sync Worker behind a service binding, with every device URL unchanged. iOS "player that follows you" = Gallery's own playback leaving the app (background audio, Now Playing, PiP with lines, Live Activity) on a native sound engine driven by the web home bar; Sill does not fold into Gallery. Placement rule for new work: the guide's §4. Supersedes, as to ownership only, `docs/specs/gallery-nervous-system.md` "1 + 2 = the sync engine, in the Worker" and §1's "Gallery (… API, glue)".
+9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
 
@@ -625,3 +680,12 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 - 2026-10-28 05:18 PDT · Gallery Phase 1 · Voice Memos → gallery-archive · PARTIAL. 298/303 copied and verified (4.05 GB, by year), manifests in .handoff. 5 files over 300 MiB are blocked on a gallery-archive-scoped R2 token. Disk at 6 GiB free because another session staged 18G of SanDisk data.
 - 2026-10-28 06:26 PDT · Gallery Phase 1 · large Voice Memos, Photos Library, lost_and_found · PARTIAL. Owner added the gallery-archive rclone remote. Large memos: 1 OK, 1 FAIL (retry), rest in progress. Photos Library has no local originals (Optimize Storage); owner chose to archive it anyway as one tar in gallery-main/files/Photos/ (in progress, verified by re-download MD5). DriveFS lost_and_found = 3 identical copies of a file already in My Drive (safe to delete). Owner is moving Google Drive, ~/Sync/Nichole and the SanDisk Records with their own rclone moves. 16 stray objects under gallery-archive/chauphan/Sync from a stopped copy.
 - 2026-10-28 07:14 PDT · Gallery · Chauphan mount + File Provider slice 1 · PARTIAL. Owner yes → deployed gallery ec9ce9e (version 87728872): /main/dav-archive/ and /main/nc-archive/ on gallery-archive, trash in .trash/. launchd com.chauphan.archive-mount (sync 443b184) mounts chauphan/ at ~/.chauphan, shown as ~/Cloud/Chauphan and ~/Cloud/Gallery. Live: MD5 read match, overwrite trashed, recovers after kill -9. 08b03de (accept Finder ._* files; without it rclone retries 403s forever) committed, NOT deployed. Owner's priority change: File Provider. Design in gallery/docs/architecture.md; slice 1 read-only feed gallery 036f213 (items/changes/content, reconciler, stable ids), routes 44 pass, NOT deployed. All 303 Voice Memos copied (021639 retry OK; PLI_Supplement* are unplayable at the source). Next: owner yes to deploy 08b03de+036f213; iPhone plugged in with Developer Mode on for signing test (a), then the iOS read-only Voice Memos slice.
+- 2026-10-28 07:32 PDT · Gallery Phase 1 · DONE for this session's items. Voice Memos 303/303 verified (8.25 GB). Photos Library tar in gallery-main/files/Photos/ (8.92 GB) verified by re-download MD5. Next: Phase 2, the /main/archive shelf.
+- 2026-10-28 17:20 PDT · Gallery prosogram lanes (notes screenshots 12:58/15:53) · PARTIAL. gallery 9b79885: one word walker per frame (was one per cell, restarting at word 0 with an 8-word window, so past the first thought every lane was blank). 3-line Playwright probe (gallery test/proso2.tmp.mjs, gitignored): third thought 0 px before, painted after. npm test: 4 UI fails (Notes 35, 25/26, 33, 31) in tests that don't touch the prosogram; not caused by this change. NOT deployed. The 12:58 left-hand list was the earlier panel version, already replaced by c673650. Next: owner's yes to deploy; Sill Recense translation highlight overlaps the text (15:46 screenshot, 'Soro-sorə, stop').
+- 2026-10-28 17:35 PDT · Gallery prosogram lanes · DONE (deployed). Owner yes. Version f7568904 from a clean export of 9b79885 with src/fp.js pinned to live (another session's 736b9cd fp.js change NOT deployed). Only diff vs live 23a54cc: prosogram-mount.js. Next: owner checks lanes on a later line in /main.
+- 2026-10-29 15:01 PDT · Drive/Sync offload + Gallery sidebar name · PARTIAL/DONE · see §7 entries of 2026-10-29 15:01. Next: owner removes the leftover GoogleDrive CloudStorage folder; empties Trash after a look.
+- 2026-10-29 15:25 PDT · ~/Shared + My Drive/Live offsite · PARTIAL. ~/Shared verified in R2 (PLIv1 211/211 in gallery-main/files/PLIv1 after uploading 38 missing files, 828 MB; Documents → gallery-archive/chauphan/Shared/Documents; mp4 = gallery-archive/chauphan/SanDisk/Live, check --download) → moved to ~/.Trash. My Drive/Live 5/5 in R2 (3 content-verified, 2 online-only placeholders size+mtime match). My Drive can't be moved: the Drive File Provider domain (com.google.drivefs.fpext) is still registered without its app; mv times out. Next: reboot, else reinstall Google Drive → Disconnect account → quit → delete app.
+- 2026-10-29 15:59 PDT · Offsite disks · PARTIAL. Added bin/disks-mount.zsh, launchd/com.chauphan.disks-mount.plist, tools/disks-helper, docs/runbooks/offsite-disks.md (validation in §7). Next: owner GUI steps; Gallery exports.
+- 2026-10-29 16:46 PDT · Offsite disks · PARTIAL (working). 32b989c: one rclone mount per disk + watchdog (a shared mount's NFS server dropped its connection under load; reads hung until forced off); Messages Disk mounted at ~/Library/Messages (its database service won't follow a symlink), verified chat.db opened there; Mail via symlink verified. Owner: Full Disk Access for Disks Helper, then the GUI steps in docs/runbooks/offsite-disks.md. Next: Gallery exports (ask what to show).
+- 2026-10-29 18:56 PDT · Boundaries guide (Sync · Gallery · Sill) · PROPOSED. docs/specs/organism.md + §8 decision 8 + §7 entry + §1a ownership note. Docs only, nothing moved or deployed. Next: owner's yes/no on the guide's §10, then step 1 (engine boundary in the Gallery Worker).
+- 2026-10-29 19:35 PDT · Event-log unification (ledger.mjs v2 + chained catalog + one delete guard + one verifier) · DONE (code/tests), catalog NOT deployed. docs/specs/event-log.md; §8 decision 9; §7 entry. Also fixed the feed's false 410 on every incremental check. Next: deploy yes; verify a ledger sink after its first v2 run.

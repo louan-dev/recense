@@ -76,6 +76,19 @@ const objKey = (h) => `objects/${h.slice(0, 2)}/${h}`;
 const nfc = (s) => s.normalize('NFC');
 const iso = (ms) => new Date(ms).toISOString();
 
+// One event-log format for every Sync log: this journal and the engine's catalog (gallery/src/fp.js).
+// docs/specs/event-log.md. v1 journals wrote put/tombstone; v2 writes create/modify/delete. Readers take both, forever.
+const LOG_V = 2;
+export const GENESIS = sha256('genesis'); // the chain's first link, in both logs
+// One delete guard for every Sync log (event-log.md §5): more than 100, or more than 10 that are also more than 10%
+// of what was known, waits for the owner. The same numbers are in gallery/src/fp.js.
+export const GUARD = { files: 100, floor: 10, pct: 10 };
+export const massDelete = (n, known) => n > GUARD.files || (n > GUARD.floor && n * 100 > known * GUARD.pct);
+// An item's id when nothing stored one: the catalog's rule (fp.js fileId), so both logs name items alike.
+const idOf = (p) => 'h' + sha256(p).slice(0, 24);
+// Conflict copies, by name: iCloud's "Report 2.docx", and the engine's "Report (conflict, iPhone, 2026-10-29 1830).docx".
+const CONFLICT_NAMES = [/^(.*) (\d+)(\.[^.]+)?$/, /^(.*) \(conflict, [^,()]+, \d{4}-\d{2}-\d{2} \d{4}\)(\.[^.]+)?$/];
+
 function assertWritable(p) { // P2: the one gate every local write passes through
   const r = path.resolve(p);
   if (/Mobile Documents/.test(r) || DENY.some((rx) => rx.test(r))) throw new Error(`refusing to write inside an iCloud/app store: ${r}`);
@@ -264,31 +277,31 @@ export async function run(o) {
     if (!known.has(ok)) { await sink.putFile(r.tmp, ok); known.set(ok, r.size); counts.uploaded++; counts.bytes += r.size; }
     await fsp.rm(r.tmp, { force: true });
     next[key] = { size: r.size, mtimeMs: st.mtimeMs, hash: r.hash }; live.add(key);
-    if (!prev || prev.hash !== r.hash) events.push({ op: 'put', path: key, hash: r.hash, size: r.size, mtimeMs: Math.round(st.mtimeMs), prev: prev?.hash ?? null });
+    if (!prev || prev.hash !== r.hash) events.push({ op: prev?.hash ? 'modify' : 'create', id: idOf(key), path: key, dir: false, hash: r.hash, size: r.size, mtime: Math.floor(st.mtimeMs / 1000), mtimeMs: Math.round(st.mtimeMs), prev: prev?.hash ?? null });
   }
 
   // P1: a source that suddenly lacks most of what we knew is a broken mount, not a mass deletion.
   const vanished = Object.keys(state.files).filter((k) => !seen.has(k));
   const knownCount = Object.keys(state.files).length;
-  if (!o.allowMassDelete && knownCount >= 10 && vanished.length > Math.max(10, knownCount * 0.2)) {
+  if (!o.allowMassDelete && massDelete(vanished.length, knownCount)) {
     throw new Error(`refusing: ${vanished.length} of ${knownCount} known files vanished at once (empty mount?). Re-run with --allow-mass-delete if this is real.`);
   }
   for (const k of vanished) { // P3: deletion is an event, never an erasure
     const p = state.files[k];
-    if (p.hash) { events.push({ op: 'tombstone', path: k, prev: p.hash }); counts.tombstones++; }
+    if (p.hash) { events.push({ op: 'delete', id: idOf(k), path: k, dir: false, prev: p.hash }); counts.tombstones++; }
   }
 
-  // P7: iCloud's conflict copies ("Report 2.docx" beside "Report.docx") recorded as data. Heuristic by name.
+  // P7: conflict copies (iCloud's "Report 2.docx", the engine's "Report (conflict, …).docx") recorded as data. By name.
   if (o.apply) {
     for (const k of Object.keys(next)) {
       const dir = k.includes('/') ? k.slice(0, k.lastIndexOf('/') + 1) : ''; const base = k.slice(dir.length);
-      const m = /^(.*) (\d+)(\.[^.]+)?$/.exec(base); if (!m) continue;
-      const orig = dir + m[1] + (m[3] || '');
+      const m = CONFLICT_NAMES.map((re) => re.exec(base)).find(Boolean); if (!m) continue;
+      const orig = dir + m[1] + (m[m.length - 1] || '');
       if (!next[orig]?.hash || !next[k]?.hash || next[orig].hash === next[k].hash) continue;
       const id = `${k}|${next[k].hash}|${next[orig].hash}`;
       if (state.conflicts[id]) continue;
       state.conflicts[id] = 1; counts.conflicts++;
-      events.push({ op: 'conflict', path: k, of: orig, hash: next[k].hash, ofHash: next[orig].hash, heuristic: true });
+      events.push({ op: 'conflict', id: idOf(k), path: k, dir: false, of: orig, hash: next[k].hash, ofHash: next[orig].hash, heuristic: true });
     }
   }
 
@@ -299,10 +312,10 @@ export async function run(o) {
   let chain = state.chain, seq = state.seq;
   if (events.length) {
     const ts = iso(now());
-    const header = { v: V, type: 'segment', ts, origin: o.origin || os.hostname(), prevChain: chain };
+    const header = { v: LOG_V, type: 'segment', ts, origin: o.origin || os.hostname(), prevChain: chain };
     const lines = [JSON.stringify(header)];
     for (const e of events) { // P6
-      const ev = { v: V, seq: ++seq, ts, ...e, origin: header.origin };
+      const ev = { v: LOG_V, seq: ++seq, ts, ...e, origin: header.origin };
       chain = sha256(`${chain}\n${JSON.stringify(ev)}`);
       lines.push(JSON.stringify({ ...ev, chain }));
     }
@@ -319,8 +332,12 @@ export async function run(o) {
 
 // ------------------------------------------------------------------ journal reading, folding, verifying
 
+// A sink holds one of two logs: this journal (journal/*.jsonl, one segment per run, a header line then the events), or
+// the engine's catalog (a <bucket>/.catalog/<root>/ prefix: log/<seq:12>.json, one batch each, written by fp.js).
+// Both come back as segments: { name, header: { prevChain, ts }, events }.
 export async function readJournal(sink) {
   const names = [...(await sink.list('journal')).keys()].filter((k) => k.endsWith('.jsonl')).sort();
+  if (!names.length) return readCatalog(sink);
   const segs = [];
   for (const n of names) {
     const rows = (await sink.getText(n)).split('\n').filter(Boolean).map((l) => JSON.parse(l));
@@ -329,28 +346,62 @@ export async function readJournal(sink) {
   return segs;
 }
 
-export function fold(segs, atMs = Infinity) { // the current tree, or the tree as it was at a moment
+async function readCatalog(sink) {
+  const names = [...(await sink.list('log')).keys()].filter((k) => /\/\d{12}\.json$/.test(k)).sort();
+  const segs = [];
+  for (const n of names) {
+    const b = JSON.parse(await sink.getText(n));
+    segs.push({ name: n, catalog: true, seq: b.seq, header: { v: b.v, prevChain: b.prev, ts: iso(b.at) }, events: b.events });
+  }
+  return segs;
+}
+
+// The current tree, or the tree as it was at a moment. Files only: a folder is wherever its files are.
+// v1: put, tombstone. v2 and the catalog: create, modify, move, delete. conflict and skip change nothing.
+export function fold(segs, atMs = Infinity) {
   const tree = new Map();
   for (const s of segs) for (const e of s.events) {
-    if (Date.parse(e.ts) > atMs) continue;
-    if (e.op === 'put') tree.set(e.path, { hash: e.hash, size: e.size, mtimeMs: e.mtimeMs });
-    else if (e.op === 'tombstone') tree.delete(e.path);
+    if (Date.parse(e.ts ?? s.header.ts) > atMs || e.dir) continue;
+    const meta = { hash: e.hash, size: e.size, mtimeMs: e.mtimeMs ?? (e.mtime != null ? e.mtime * 1000 : undefined), etag: e.etag };
+    if (e.op === 'put' || e.op === 'create' || e.op === 'modify') tree.set(e.path, meta);
+    else if (e.op === 'move') { tree.delete(e.from); tree.set(e.path, meta); }
+    else if (e.op === 'tombstone' || e.op === 'delete') tree.delete(e.path);
   }
   return tree;
 }
 
 export async function verify(sink, { deep = false, log = console.log } = {}) {
   const segs = await readJournal(sink); const problems = []; const starts = new Map();
+  const catalog = segs.some((s) => s.catalog);
+  let unchained = 0, head = null, lastSeq = null;
   for (const s of segs) {
-    let c = s.header.prevChain; starts.set(c, (starts.get(c) || 0) + 1);
-    for (const e of s.events) {
+    let c = s.header.prevChain;
+    if (s.catalog) { // one writer, create-only seqs: no forks, no gaps, each batch starts where the last one ended
+      if (lastSeq !== null && s.seq !== lastSeq + 1) problems.push(`batch missing before ${s.name}`);
+      lastSeq = s.seq;
+      if (c === undefined) { // written before the catalog was chained (fp.js before event-log.md)
+        if (head !== null) problems.push(`unchained batch ${s.name} after the chain began`);
+        unchained++; continue;
+      }
+      // the first chained batch starts at GENESIS, unless compaction already removed the batches before it
+      if (head === null ? c !== GENESIS && (unchained > 0 || s.seq === 1) : c !== head) problems.push(`chain does not continue into ${s.name}`);
+    }
+    starts.set(c, (starts.get(c) || 0) + 1);
+    for (const [i, e] of s.events.entries()) {
       const { chain, ...rest } = e;
-      if (sha256(`${c}\n${JSON.stringify(rest)}`) !== chain) { problems.push(`chain broken in ${s.name} at seq ${e.seq}`); break; }
+      if (sha256(`${c}\n${JSON.stringify(rest)}`) !== chain) { problems.push(`chain broken in ${s.name} at ${e.seq ?? `event ${i}`}`); break; }
       c = chain;
     }
+    head = c;
   }
-  const forks = [...starts.values()].filter((n) => n > 1).length; // a crash between journal and state can fork; harmless, reported
-  const tree = fold(segs); const objs = await sink.list('objects'); const seenH = new Set();
+  const forks = catalog ? 0 : [...starts.values()].filter((n) => n > 1).length; // a crash between journal and state can fork; harmless, reported
+  const tree = fold(segs);
+  if (catalog) { // the catalog's bytes are the bucket's own objects, not content-addressed copies: the chain is what's checked
+    log(`verify: catalog, ${segs.length} batch(es) (${unchained} from before chaining), ${tree.size} file(s) changed in the log, ${problems.length} problem(s)`);
+    for (const p of problems) log(`  ! ${p}`);
+    return { ok: problems.length === 0, problems, forks, head, unchained };
+  }
+  const objs = await sink.list('objects'); const seenH = new Set();
   for (const [p, m] of tree) {
     const k = objKey(m.hash);
     if (!objs.has(k)) problems.push(`missing object for ${p}`);
@@ -648,7 +699,8 @@ async function selftest() {
 
   tick(); let r = await go();
   assert(r.counts.uploaded === 5, 'identical content stored once (6 files, 5 objects), .DS_Store ignored');
-  assert(r.events.filter((e) => e.op === 'put').length === 6 && r.events.some((e) => e.op === 'conflict'), 'six put events and one conflict event recorded');
+  assert(r.events.filter((e) => e.op === 'create').length === 6 && r.events.some((e) => e.op === 'conflict'), 'six create events and one conflict event recorded');
+  assert(r.events.every((e) => e.op === 'skip' || (/^h[0-9a-f]{24}$/.test(e.id) && e.dir === false)), 'every event names its item the way the catalog does (id, dir)');
   assert((await snapshot()) === before, 'source tree byte-for-byte and mtime unchanged (never written)');
 
   tick(); r = await go();
@@ -656,7 +708,7 @@ async function selftest() {
 
   tick(); const t1 = clock; tick();
   await put('a.txt', 'alpha-2'); await fsp.rm(path.join(src, 'b/c.txt')); tick(); r = await go();
-  assert(r.events.some((e) => e.op === 'put' && e.path === 'a.txt' && e.prev) && r.events.some((e) => e.op === 'tombstone' && e.path === 'b/c.txt'), 'edit records prev hash; delete records a tombstone');
+  assert(r.events.some((e) => e.op === 'modify' && e.path === 'a.txt' && e.prev) && r.events.some((e) => e.op === 'delete' && e.path === 'b/c.txt' && e.prev), 'edit is a modify with the prev hash; delete is a delete event (a tombstone)');
   const objs = await sink.list('objects');
   assert(objs.size === 6, 'old object kept after edit and delete (append-only)');
 
@@ -686,6 +738,40 @@ async function selftest() {
   for (let i = 0; i < 12; i++) await fsp.rm(path.join(big, `f${i}.txt`));
   threw = false; try { await run({ source: big, sink: sink2, state: st2, apply: true, quietSecs: 0, now: () => clock, log: quiet }); } catch (e) { threw = /refusing/.test(e.message); }
   assert(threw, 'a source that suddenly loses every file is refused, not tombstoned');
+  assert(!massDelete(10, 12) && massDelete(11, 12) && !massDelete(15, 200) && massDelete(21, 200) && massDelete(101, 1e7) && !massDelete(100, 1e7),
+    'one delete guard (event-log.md §5): >100, or >10 and >10% of what was known');
+
+  // v1 journals (put/tombstone) still fold, beside v2 events and the catalog's move
+  const v1 = [{ header: { ts: '2026-10-01T00:00:00Z' }, events: [
+    { v: 1, op: 'put', path: 'x', hash: 'hx', size: 1, mtimeMs: 1000, ts: '2026-10-01T00:00:00Z' },
+    { v: 1, op: 'put', path: 'y', hash: 'hy', size: 1, ts: '2026-10-01T00:00:00Z' },
+    { v: 1, op: 'tombstone', path: 'y', ts: '2026-10-02T00:00:00Z' }] },
+  { header: { ts: '2026-10-03T00:00:00Z' }, events: [{ v: 2, op: 'move', id: 'f1', path: 'z', from: 'x', dir: false, size: 1, mtime: 2 }] }];
+  const fv = fold(v1);
+  assert(fv.size === 1 && fv.get('z').mtimeMs === 2000 && fold(v1, Date.parse('2026-10-01T12:00:00Z')).has('y'), 'v1 put/tombstone and v2/catalog move fold into one tree');
+
+  // the engine's conflict copies are recognized like iCloud's
+  const cf = path.join(tmp, 'cf'); await fsp.mkdir(cf);
+  for (const [n, t] of [['Song.m4a', 'mine'], ['Song (conflict, iPhone, 2026-10-29 1830).m4a', 'theirs']]) { const f = path.join(cf, n); await fsp.writeFile(f, t); await fsp.utimes(f, old, old); }
+  r = await run({ source: cf, sink: new LocalDirSink(path.join(tmp, 'cfsink')), state: path.join(tmp, 'cfstate.json'), apply: true, quietSecs: 0, now: () => clock, log: quiet });
+  assert(r.events.some((e) => e.op === 'conflict' && e.of === 'Song.m4a'), "the engine's conflict copy (name (conflict, device, date).ext) is a conflict event");
+
+  // the engine's catalog (gallery fp.js) is verified by the same code: the shared test vector, then a gap and a tamper
+  const vec = { op: 'create', id: 'h000000000000000000000000', path: 'a.m4a', dir: false, size: 1, etag: '"e"', mtime: 1 };
+  assert(sha256(`${GENESIS}\n${JSON.stringify(vec)}`) === 'e704650f481588363d585a229270dc0033dc38cd814054bfb4d0e71bde83c894',
+    'chain rule matches the vector in gallery test/routes.test.mjs (same bytes in, same link out)');
+  const catDir = path.join(tmp, 'catalog'); const cat = new LocalDirSink(catDir);
+  const batch = (seq, prev, events) => { let c = prev; const evs = events.map((e) => { c = sha256(`${c}\n${JSON.stringify(e)}`); return { ...e, chain: c }; }); return [{ v: 2, seq, at: clock, prev, events: evs }, c]; };
+  await cat.putText('log/000000000001.json', JSON.stringify({ seq: 1, at: clock, events: [{ op: 'create', id: 'h1', path: 'old.m4a', dir: false }] })); // before chaining
+  const [b2, c2] = batch(2, GENESIS, [vec]); await cat.putText('log/000000000002.json', JSON.stringify(b2));
+  const [b3] = batch(3, c2, [{ op: 'delete', id: 'h1', path: 'old.m4a', dir: false }]); await cat.putText('log/000000000003.json', JSON.stringify(b3));
+  let cv = await verify(cat, { log: quiet });
+  assert(cv.ok && cv.unchained === 1 && fold(await readJournal(cat)).has('a.m4a') && !fold(await readJournal(cat)).has('old.m4a'), 'a catalog verifies: legacy batch counted, chain continues, fold reads it');
+  const t3 = JSON.stringify(b3); await cat.putText('log/000000000003.json', t3.replace('old.m4a', 'other.m4a'));
+  assert(!(await verify(cat, { log: quiet })).ok, 'a tampered catalog batch is found');
+  await cat.putText('log/000000000003.json', t3); await fsp.rm(path.join(catDir, 'log', '000000000002.json'));
+  cv = await verify(cat, { log: quiet });
+  assert(!cv.ok && cv.problems.some((p) => /missing/.test(p)), 'a missing catalog batch is found');
 
   threw = false; try { checkSource(await (async () => { const d = path.join(tmp, 'Library', 'Messages'); await fsp.mkdir(d, { recursive: true }); return d; })()); } catch { threw = true; }
   assert(threw, 'a live app store (Messages) is refused as a source');

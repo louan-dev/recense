@@ -27,6 +27,7 @@ It's four things:
 
 ## Engine invariants (build and test these; they're what makes it solid)
 1. **Event log per root.** Every change (create, modify, delete, move) is an event with a monotonic cursor. Devices resume from their own cursor. Deletes are recorded, so an offline device can tell "deleted" from "never had it".
+   *(2026-10-29: the format, chain and delete guard are shared with the ledger: `event-log.md`.)*
 2. **Stable ids.** Every file has an id that survives rename and move; paths are just labels. That means no re-upload on rename, and it's what a File Provider needs.
 3. **Based-on version.** Every write carries the version it was based on. A stale base is refused (412) and becomes a kept-both copy. Never a silent overwrite.
 4. **Idempotent and resumable.** A retried upload, plan or move after a crash or dropped connection never duplicates or loses anything.
