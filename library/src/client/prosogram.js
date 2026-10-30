@@ -244,7 +244,7 @@ function context(pro, cells, k, idx) {
   return nb
 }
 
-function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels) {
+function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach) {
   const head = p * g.Wd, k = a0 * lerp(0.95, 0.72, settle)
   ctx.save(); ctx.translate(c.x, cy)
   if (live) { ctx.save(); ctx.beginPath(); ctx.rect(-s, -2 * s, head + s, 4 * s); ctx.clip() }
@@ -263,6 +263,7 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels) {
   ctx.fillStyle = INK; ctx.fill(g.dots)
   { const m = ctx.getTransform(); TOP.push(() => {             // every tie last, whole, after every line is down
     ctx.save(); ctx.setTransform(m)
+    if (reach < Infinity) { ctx.beginPath(); ctx.rect(-s, -2 * s, reach + s, 4 * s); ctx.clip() }   // a tie grows with the voice
     ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(g.erase)   // no line above a slur
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = LIAISON; ctx.fillStyle = LIAISON
     ctx.lineWidth = Math.max(2, s * 0.055); ctx.lineCap = 'round'
@@ -353,7 +354,15 @@ const plugin = {
         const nb = context(pro, cells, k, idx), key = nb.key + '|' + s + '|' + eb
         let g = cache.get(key)
         if (!g) { g = build(f, pro.word[w.flat], c, s, eb, nb); cache.set(key, g); if (cache.size > 900) { let d = 300; for (const kk of cache.keys()) { cache.delete(kk); if (--d <= 0) break } } }
-        drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels)
+        // how far the light has gone, from this word's left: ties are revealed only up to it, never ahead of the voice
+        const nc = k + 1 < idx.length ? cells[idx[k + 1]] : null, nw = nc && nc.w
+        let reach = Infinity
+        if (live) reach = c.width * p
+        else if (nc && nc.row === c.row && t < nw.e) {
+          const gap = nc.x - c.x
+          reach = t < nw.s ? c.width + (gap - c.width) * (nw.s > w.e + 0.01 ? cl((t - w.e) / (nw.s - w.e)) : 1) : gap + nc.width * f.progress(nw, t)
+        }
+        drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels, reach)
       }
       for (const d of TOP.splice(0)) d()
       const lightRow = new Map()
