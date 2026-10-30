@@ -30,12 +30,15 @@ enum Prosody {
         var h: [Float]
         var w: [Float]
         var cut: [Float]
+        /// the tie to the next word (French liaison / enchaînement / elision), nil where there is none
+        var link: Link? = nil
     }
+    struct Link: Codable { var next: Int; var sound: String; var kind: String; var made: Bool }
 
     /// Everything the drawing needs, cached as one object.
     struct Result: Codable {
         /// schema version: bump when the shape changes, so a stale cache is recomputed rather than misread
-        var v: Int = 1
+        var v: Int = 2
         /// which transcript this was computed from — a correction changes it and forces a recompute
         var transcript: String
         var lang: String
@@ -56,7 +59,7 @@ enum Prosody {
     static func cached(_ key: String, transcript stamp: String) -> Result? {
         guard let d = try? Data(contentsOf: url(key)),
               let r = try? JSONDecoder().decode(Result.self, from: d),
-              r.v == 1, r.transcript == stamp else { return nil }
+              r.v == 2, r.transcript == stamp else { return nil }
         return r
     }
 
@@ -123,6 +126,57 @@ enum Prosody {
         }
     }
 
+    // ---------- what the window draws ----------
+
+    /// One word's notation as the overlay draws it: its line, and its tie to the next word with when that word starts.
+    struct Mark { var line: WordLine; var tie: Link?; var end: Double; var next: Double }
+    /// The playing recording's notation, by word (text + start in ms): read by the overlay every frame, no JS involved.
+    nonisolated(unsafe) static var live: (key: String, stamp: String, marks: [String: Mark])? = nil
+    nonisolated(unsafe) private static var busy: String? = nil
+    static func markKey(_ text: String, _ start: Double) -> String { "\(text)@\(Int((start * 1000).rounded()))" }
+    static func mark(_ text: String, _ start: Double) -> Mark? { live?.marks[markKey(text, start)] }
+
+    /// Make sure `live` holds the notation of these lines (computed once, cached on disk); a no-op while it's current.
+    @MainActor
+    static func ensure(key: String, lines: [Line], features f: Features?, lang: String, song: Bool) {
+        guard let f else { if live?.key != key { live = nil }; return }
+        let words = lines.flatMap { sourceBeats($0) }.map { (text: $0.text, start: $0.start, end: $0.end) }
+        guard !words.isEmpty else { return }
+        let st = stamp(words)
+        if let l = live, l.key == key, l.stamp == st { return }
+        if live?.key != key { live = nil }
+        guard busy != key + st else { return }
+        busy = key + st
+        let font = NSFont.systemFont(ofSize: 28, weight: .semibold)
+        let input = Input(words: words, lang: lang, kind: song ? "song" : "speech", hop: f.hop, frames: f.count,
+                          db: f.db, onset: f.onset, pitch: f.pitch, clarity: f.clarity, voiced: f.voiced, floor: f.floor,
+                          measure: { text in
+                              let ch = Array(text), total = max(1, (text as NSString).size(withAttributes: [.font: font]).width)
+                              return (0...ch.count).map { i in Float((String(ch.prefix(i)) as NSString).size(withAttributes: [.font: font]).width / total) }
+                          })
+        Task { @MainActor in
+            defer { if busy == key + st { busy = nil } }
+            guard let r = await compute(key: key, input) else { return }
+            var marks: [String: Mark] = [:]
+            for wl in r.words where words.indices.contains(wl.flat) {
+                let w = words[wl.flat], nx = wl.link.flatMap { words.indices.contains($0.next) ? words[$0.next].start : nil }
+                marks[markKey(w.text, w.start)] = Mark(line: wl, tie: wl.link, end: w.end, next: nx ?? w.end)
+            }
+            live = (key, st, marks)
+            log("prosody: \(marks.count) words drawn, \(marks.values.filter { $0.tie != nil }.count) ties (\(lang))")
+        }
+    }
+
+    /// The words' own language when the recording doesn't say (a cached transcript): fr and vi get their notation.
+    @MainActor private static var langs: [String: String] = [:]
+    @MainActor static func language(_ lines: [Line]) -> String {
+        let text = lines.prefix(40).flatMap(\.words).map(\.text).joined(separator: " ")
+        let k = String(text.prefix(200))
+        if let l = langs[k] { return l }
+        let l = dominantLanguage(text)?.code ?? ""
+        langs[k] = l; return l
+    }
+
     // ---------- computing ----------
 
     struct Input {
@@ -143,7 +197,7 @@ enum Prosody {
     @MainActor
     static func compute(key: String, _ input: Input) async -> Result? {
         let stamp = stamp(input.words)
-        if let hit = cached(key, transcript: stamp) { return hit }
+        if let hit = cached(key, transcript: stamp), hit.lang == input.lang, hit.kind == input.kind { return hit }
 
         if engine == nil { engine = Engine() }
         guard let eng = engine else { return nil }
@@ -203,7 +257,9 @@ enum Prosody {
                        u: Array.from(p.u).slice(0, p.n),
                        h: Array.from(p.h).slice(0, p.n),
                        w: Array.from(p.w).slice(0, p.n),
-                       cut: Array.from(p.cut).slice(0, p.n) });
+                       cut: Array.from(p.cut).slice(0, p.n),
+                       link: x.link && x.link.next != null ? { next: x.link.next, sound: String(x.link.sound || ''),
+                             kind: String(x.link.kind || ''), made: (x.link.realized || 0) >= 0.7 } : null });
           }
           return JSON.stringify({ semitone: pro.semitone, reference: pro.reference, span: pro.span, words: out });
         })()
