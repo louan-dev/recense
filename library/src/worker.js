@@ -27,7 +27,7 @@ import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
 import { archive } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
-import { aiRoute, indexStep } from "./ai.js";
+import { aiRoute, indexRun } from "./ai.js";
 import { inviteIcs, warmCalendar } from "./calendar.js";
 
 export default {
@@ -73,8 +73,8 @@ export default {
   },
 
     async scheduled(event, env, ctx) {
-    // every minute: one bounded step of the assistant's indexing (ai.js), nothing else
-    if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexStep(env).catch(() => {})); return; }
+    // every minute: up to ~45 s of the assistant's indexing steps (ai.js), nothing else
+    if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env).catch(() => {})); return; }
     ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env),
       warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },

@@ -342,6 +342,17 @@ export async function indexStep(env) {
   return { ok: true, done, files: Object.keys(s.files).length, pending: s.todo.length + s.names.length + (s.active ? 1 : 0), listing: s.listed ? "done" : s.root };
 }
 
+/** The one-minute cron's work: steps until the pass is done, about 45 s have passed (so runs never overlap), or the
+ *  run's subrequest allowance (1,000) is nearly spent. */
+export async function indexRun(env, wallMs = 45000, maxSteps = 24) {
+  const t0 = Date.now();
+  for (let i = 0; i < maxSteps && Date.now() - t0 < wallMs; i++) {
+    const r = await indexStep(env);
+    if (r.done) return r;
+  }
+  return { ok: true, done: false };
+}
+
 /** Lists the next page of the current root; new or changed files go to the queues, unchanged ones are marked seen. */
 async function listPage(env, s) {
   const { bucket, prefix } = hostOf(s.root), b = env[bucket];

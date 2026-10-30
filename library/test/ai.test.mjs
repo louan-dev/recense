@@ -2,7 +2,7 @@
 //   node test/ai.test.mjs
 import assert from "node:assert/strict";
 import { chunkText, chunkTranscript, nameText, inScope, pick, buildMessages, vectorId, kindOf, parseAuth, classifyMessages, parseQueries, applyMemory, MEMORY_MAX } from "../src/ai-core.js";
-import { aiRoute, indexStep, thinkStripper, ruleFor } from "../src/ai.js";
+import { aiRoute, indexStep, indexRun, thinkStripper, ruleFor } from "../src/ai.js";
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log("ok", name); };
@@ -279,6 +279,14 @@ await test("a removed file's passages leave the index", async () => {
   await untilDone();
   assert.ok(![...env.VECTORS.m.values()].some((v) => v.metadata.path === "Books/MPEP.pdf"));
   assert.ok(![...env.MAIN.m.keys()].some((k) => k.startsWith("ai/text/") && env.MAIN.m.get(k).text.includes("2106 Patent Subject Matter")));
+});
+await test("the cron's run does many steps but stops when the pass is done", async () => {
+  await env.MAIN.put("files/Books/Another.txt", "Section 4000. Another published section about practice. ".repeat(50));
+  await restOver();
+  const r = await indexRun(env, 60000, 50);
+  assert.ok(r.done);
+  assert.ok([...env.VECTORS.m.values()].some((v) => v.metadata.path === "Books/Another.txt" && v.metadata.kind === "doc"));
+  assert.ok((await indexRun(env, 60000, 50)).done, "resting: returns at once");
 });
 await test("bad requests are refused", async () => {
   assert.equal((await post("/main/api/ai/ask", { q: "  " })).status, 400);
