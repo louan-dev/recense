@@ -43,6 +43,13 @@ final class SoundEngine {
         set(.on)
     }
 
+    /// Seconds between the app's own sound and what this chain plays to the speakers (0 when off): the light
+    /// subtracts it, so the words stay on the sound heard through EQ, Key and Space (item 22).
+    var latency: Double {
+        if #available(macOS 14.2, *), let t = impl as? SoundTap, t.alive { return t.latency }
+        return 0
+    }
+
     /// The chord detector's 12-bin chroma of what the chain plays (nil: not running), as keylabel.js chromaOfSpectrum.
     var chroma: [Double]? {
         if #available(macOS 14.2, *) { return (impl as? SoundTap)?.chroma() }
@@ -66,6 +73,8 @@ private final class Ring {
     private var stamp = Date().timeIntervalSinceReferenceDate
     let ch: Int
     /// When the tap last delivered frames (read off the IO thread under the lock).
+    /// Frames written and not yet played: part of the delay between the app's sound and what is heard.
+    var waiting: Int { os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }; return count / max(1, ch) }
     var lastWrite: TimeInterval { os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }; return stamp }
     init(frames: Int, ch: Int) { self.ch = ch; buf = [Float](repeating: 0, count: frames * ch) }
     func write(_ p: UnsafePointer<Float>, _ n: Int) {
@@ -205,6 +214,14 @@ private final class SoundTap {
 
     private var chromaLock = os_unfair_lock()
     private var lastChroma: [Double]?
+    var latency: Double {
+        let sr = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        var l = engine.outputNode.presentationLatency
+        for u in [eq, pitch, reverb, limiter] as [AVAudioUnit] where !u.auAudioUnit.shouldBypassEffect { l += u.auAudioUnit.latency }
+        if let ring, sr > 0 { l += Double(ring.waiting) / sr }
+        if let vox, vox.amount != 0, sr > 0 { l += Double(VoxCut.LAT) / sr }
+        return max(0, min(1, l))
+    }
     func chroma() -> [Double]? { os_unfair_lock_lock(&chromaLock); defer { os_unfair_lock_unlock(&chromaLock) }; return lastChroma }
 
     /// 12 pitch classes from a Hann-windowed spectrum (55 Hz – 2 kHz, each bin's magnitude to its nearest note, A = 9).

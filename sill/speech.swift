@@ -163,7 +163,7 @@ import Speech
 
     /// A model hearing speech in a language it doesn't know may write one word of its own over all of it ("Bonjour",
     /// timed over a whole English sentence): a word longer than 1.5 s keeps only its last 0.6 s (the rule Recense
-    /// already had for Whisper's sung words), and phrases are cut where the words pause, so what was really heard can
+    /// already had for Whisper's sung words), and phrases are cut where the voice really stops (a long pause, or a pause after a thought), so what was really heard can
     /// be told from what was skipped, stretch by stretch.
     nonisolated static func tidy(_ phrases: [Phrase]) -> [Phrase] {
         var out: [Phrase] = []
@@ -176,7 +176,12 @@ import Speech
                 cur = []
             }
             for w in ws {
-                if let last = cur.last, w.start - last.end > 0.8 { flush(false) }
+                // a cut where the voice really stops: 2.5 s of nothing, or a pause after the thought ends. A slow song
+                // pauses 0.8 s between its words; cutting there made every word its own line (notes 20261029 item 21)
+                if let last = cur.last {
+                    let gap = w.start - last.end, ends = last.text.range(of: "[.!?…;:,]$", options: .regularExpression) != nil
+                    if gap > 2.5 || (gap > 0.8 && (ends || cur.count >= 12)) { flush(false) }
+                }
                 cur.append(w)
             }
             flush(out.last.map { $0.start < p.start } ?? true && cur.count == ws.count)

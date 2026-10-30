@@ -2346,7 +2346,7 @@ final class WordsView: NSView {
         unlit.clip()
         plain.draw(at: p)
         NSGraphicsContext.restoreGraphicsState()
-        let lift = (v.lift + 1.4 * v.shiver) * scale
+        let lift: CGFloat = 0   // the light never moves with the pitch or vibrato (the owner found it shaking)
         let litAt = NSPoint(x: p.x, y: p.y - lift)
         var a: [NSAttributedString.Key: Any] = [.font: k.font, .foregroundColor: lit.withAlphaComponent(lit.alphaComponent * (1 - 0.5 * v.thin)), .kern: k.kern]
         if v.swell > 0.02 { a[.strokeWidth] = -3.2 * v.swell; a[.strokeColor] = lit }   // fuller strokes
@@ -2869,6 +2869,17 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             }
             // Words an older build showed for an instrumental ("Thank you.", "um"): never sung.
             if isSong && lyricsVerified && lyrics.isEmpty { lines = dropFillers(lines) }
+            // Lined up again once with this build's rules (item 22: the unheard opening words, a split word, "Reuss"),
+            // for songs finished before them; keepIds keeps the line ids, so corrections stay on their lines.
+            let realigned = "recense.realigned22"
+            var once = Set(UserDefaults.standard.stringArray(forKey: realigned) ?? [])
+            if complete, isSong, !lyrics.isEmpty, !heard.isEmpty, !dry, !once.contains(key) {
+                let before = lines.count
+                lines = alignLyrics()
+                once.insert(key); UserDefaults.standard.set(Array(once), forKey: realigned)
+                save()
+                log("lined up \(key) again with the lyrics: \(before) → \(lines.count) lines")
+            }
             nextId = (lines.map(\.id).filter { $0 < 2_000_000 }.max() ?? nextId) + 1
             Library.absorb(lines)
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: cacheDir.appendingPathComponent(key + ".v2.json").path)
@@ -3740,7 +3751,11 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             if a == b { return 2 }
             if min(a.count, b.count) <= 2 { return 0 }                  // "il" isn't "it", "e" isn't "a"
             if a.hasPrefix(b) || b.hasPrefix(a) { return 1.5 }
-            return Episode.edits(a, b) <= max(1, min(a.count, b.count) / 3) ? 1.5 : 0
+            if Episode.edits(a, b) <= max(1, min(a.count, b.count) / 3) { return 1.5 }
+            // A sung word misheard by its onset keeps its rhyme ("Ous" for "Reuss", a doubled letter sung as one): a
+            // weaker match, enough to place the line where it was sung instead of dropping its first word.
+            let x = Episode.squeeze(a), y = Episode.squeeze(b)
+            return min(x.count, y.count) >= 3 && x.suffix(2) == y.suffix(2) && Episode.edits(x, y) <= max(x.count, y.count) / 2 ? 1 : 0
         }
         // Scores: match +2 (near +1.5), misheard word -0.6, heard word not in the lyrics -1,
         // lyric word not heard -0.7, jump to a line start -1.5.
@@ -3813,11 +3828,38 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let old = translations()
         guard let al = align(lyrics) else { return heardLines(old) }
         if heard.count >= 20, Double(al.good) < 0.35 * Double(heard.count) { return heardLines(old) }   // not this song's lyrics
+        var lineStart: [Int] = [], at = 0
+        for l in lyrics { lineStart.append(at); at += l.split(separator: " ").count }
         var sung: [[Word]] = []
+        let matched = Set(al.occ.flatMap(\.hw))
         for o in al.occ {
             var t: [Int: Word] = [:]
-            for (x, h) in zip(o.idx, o.hw) { t[x] = heard[h] }
-            let lo = o.idx.first!, hi = o.idx.last!
+            for (x, h) in zip(o.idx, o.hw) {
+                t[x] = heard[h]
+                // A lyric word heard as two ("Soro-soro," as "Soro," "soro,"), matched by its second half: it starts
+                // with the first, which nothing else took (a line shown a word late otherwise).
+                if h > 0, !matched.contains(h - 1), heard[h - 1].start >= heard[h].start - 2 {
+                    let key = Episode.norm(al.words[x]).joined(), two = Episode.norm(heard[h - 1].text + " " + heard[h].text).joined()
+                    if key.count >= 4, Episode.norm(heard[h].text).joined().count < key.count, Episode.edits(two, key) <= key.count / 4 {
+                        t[x] = heard[h].timed(heard[h - 1].start, heard[h].end)
+                    }
+                }
+            }
+            var lo = o.idx.first!
+            let hi = o.idx.last!
+            // The line's opening words, unheard (the first word of a sung phrase is the one a recognizer most often
+            // misses): sung just before its first heard word, never before the line before it ended. The light then
+            // starts the line where it starts instead of a word into it (Cadence.fit puts them on the voice).
+            let ls = lineStart[o.line]
+            if lo > ls, let first = t[lo] {
+                let k = Double(lo - ls), prevEnd = sung.last?.last?.end ?? 0
+                let span = min(first.start - prevEnd - 0.05, 0.35 * k + 0.3)
+                if span >= 0.12 * k {
+                    let st = first.start - span
+                    for x in ls..<lo { t[x] = Word(text: al.words[x], start: st + span * Double(x - ls) / k, end: st + span * Double(x - ls + 1) / k) }
+                    lo = ls
+                }
+            }
             var words: [Word] = []
             for x in lo...hi {
                 let floor = words.last.map { $0.start + 0.02 } ?? 0
@@ -3855,9 +3897,33 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
         sung.sort { $0[0].start < $1[0].start }
         let langs = songLanguages()
+        let ids = Episode.keepIds(sung, lines)
         return sung.enumerated().map { k, words in
             let text = words.map(\.text)
-            return Line(id: 2_000_000 + k, words: words, english: needsTranslation(text, among: langs) ? old[text.joined(separator: " ")] : [])
+            return Line(id: ids[k], words: words, english: needsTranslation(text, among: langs) ? old[text.joined(separator: " ")] : [])
+        }
+    }
+
+    /// Ids for lyric lines aligned again: a line that was there before (the same words, within 3 s) keeps its id, so a
+    /// correction made on it (Gallery's overrides find their line by id) never lands on another line when the song is
+    /// aligned again (a line found that wasn't, a better match); a new line takes 2 000 000 + its place, else the next
+    /// number no line has had.
+    nonisolated static func keepIds(_ sung: [[Word]], _ before: [Line]) -> [Int] {
+        let prev = before.filter { $0.id >= 2_000_000 && $0.id < 3_000_000 }
+        var ids = [Int?](repeating: nil, count: sung.count), used = Set<Int>()
+        for (k, words) in sung.enumerated() {
+            let text = words.map(\.text).joined(separator: " "), s = words[0].start
+            if let m = prev.filter({ lineKey($0) == text && !used.contains($0.id) && abs($0.start - s) < 3 })
+                .min(by: { abs($0.start - s) < abs($1.start - s) }) { ids[k] = m.id; used.insert(m.id) }
+        }
+        let had = Set(prev.map(\.id))
+        var next = 2_000_000 + max(sung.count, (had.max() ?? 1_999_999) - 1_999_999)
+        return sung.indices.map { k in
+            if let id = ids[k] { return id }
+            let own = 2_000_000 + k
+            if !had.contains(own) && !used.contains(own) { used.insert(own); return own }
+            while had.contains(next) || used.contains(next) { next += 1 }
+            used.insert(next); return next
         }
     }
 
@@ -3907,6 +3973,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     /// A song heard all the way through with no lyrics matching it and nothing sung once the filler is gone.
     var instrumental: Bool { isSong && lyricsVerified && lyrics.isEmpty && lines.isEmpty && !done.isEmpty && !done.contains(false) }
+
+    /// A word with its doubled letters sung as one ("reuss" → "reus").
+    nonisolated static func squeeze(_ s: String) -> String {
+        var out = ""
+        for c in s where c != out.last { out.append(c) }
+        return out
+    }
 
     nonisolated static func edits(_ a: String, _ b: String) -> Int {
         let a = Array(a), b = Array(b)
@@ -4520,6 +4593,20 @@ final class Features: Codable {
     func isVoiced(_ k: Int) -> Bool { k >= 0 && k < count && voiced[k] == 1 }
     func sustained(_ k: Int) -> Bool { isVoiced(k) && (k..<(k + 8)).filter(isVoiced).count >= 5 }   // a voice, not a click
 
+    /// Frames where the voice comes back after a silence (a breath, a pause, a stop consonant's closure) and goes on:
+    /// the frame, and how long it was quiet before (seconds), in [a, b).
+    func entries(_ a: Double, _ b: Double) -> [(k: Int, gap: Double)] {
+        var out: [(k: Int, gap: Double)] = []
+        let lo = max(1, frame(a)), hi = min(count, Int((b / hop).rounded(.up)))
+        guard lo < hi else { return out }
+        for k in lo..<hi where voiced[k] == 1 && voiced[k - 1] == 0 && sustained(k) {
+            var g = 0
+            while k - g - 1 >= 0 && voiced[k - g - 1] == 0 && g < 200 { g += 1 }
+            out.append((k, Double(g) * hop))
+        }
+        return out
+    }
+
     /// 16 kHz mono audio measured. Pitch by YIN (70–1000 Hz, 32 ms window), onsets by spectral flux (512-point FFT).
     static func measure(_ s: [Float], source: String) -> Features {
         let dbs = frameDB(s), n = dbs.count
@@ -4600,6 +4687,43 @@ final class Features: Codable {
 /// to the breath when it stops), and the light inside it moves as the voice spends itself (loudness over the floor):
 /// slower through a held note, still through a breath.
 enum Cadence {
+    /// Can a song's words be trusted enough to show them? (item 22; the same rule as Gallery's cadence.js
+    /// `confidence`.) Not where many voices sing at once (a choir) or few words were heard surely, unless the song's
+    /// own lyrics were found and its lines are theirs. Speech is never turned off.
+    ///   dense  a single voice holds its notes: pitch rarely jumps > 1.5 semitones frame to frame (≤ 5 %) and runs
+    ///          on (median ≥ 8 frames); a choir hops between voices (Whitacre: 7.3 %, 4 frames).
+    ///          Dense: jumps ≥ 6 % with runs ≤ 6 frames, or jumps ≥ 9 %. Unknown without the voice.
+    ///   rate   words heard a minute: under 15 with no voice measured. `duration` 0: over what's heard so far.
+    static func confidence(_ lines: [Line], _ f: Features?, duration: Double) -> (off: Bool, dense: Bool?) {
+        let ls = lines.filter { !$0.words.isEmpty }
+        var speech = 0, lyric = 0, heard = 0, words = 0, last = 0.0
+        for l in ls {
+            if l.id < 2_000_000 { speech += 1 } else if l.id < 3_000_000 { lyric += 1 } else if l.id < 4_000_000 { heard += 1 }
+            words += l.words.count; last = max(last, l.words.last?.end ?? 0)
+        }
+        let song = lyric + heard > speech, fromLyrics = lyric > 0 && lyric >= heard
+        let d = duration > 0 ? duration : last, rate = d > 0 ? Double(words) / d * 60 : 0
+        var dense: Bool? = nil
+        if let f, f.source == "vocals" {
+            let p = f.pitch, v = f.voiced, n = min(p.count, v.count)
+            func on(_ k: Int) -> Bool { v[k] == 1 && p[k] > 0 }
+            var pitched = 0, pairs = 0, jumps = 0, run = 0, runs: [Int] = []
+            for k in 0..<n {
+                if on(k) {
+                    pitched += 1; run += 1
+                    if k + 1 < n && on(k + 1) { pairs += 1; if abs(p[k + 1] - p[k]) > 150 { jumps += 1 } }
+                } else if run > 0 { runs.append(run); run = 0 }
+            }
+            if run > 0 { runs.append(run) }
+            if pitched >= 500 && pairs > 0 {
+                runs.sort()
+                let j = Double(jumps) / Double(pairs), r = runs[runs.count / 2]
+                dense = (j >= 0.06 && r <= 6) || j >= 0.09
+            }
+        }
+        return (song && !fromLyrics && (dense.map { $0 } ?? (rate < 15)), dense)
+    }
+
     /// The measured voice of what's playing (set every frame on the main thread); nil: the light runs by the clock.
     nonisolated(unsafe) static var track: Features? { didSet { if track !== oldValue { curves = [:]; notes = [:]; top = nil } } }
     nonisolated(unsafe) static var curves: [String: [Float]] = [:]
@@ -4652,10 +4776,13 @@ enum Cadence {
         return out
     }
 
-    /// The lines with their words timed to the voice.
+    /// The lines with their words timed to the voice. Gallery runs the same rules (gallery/src/client/cadence.js),
+    /// so the web player and the iOS app light the same word at the same moment as Sill: change one, change the other.
     static func fit(_ lines: [Line], _ f: Features) -> [Line] {
         guard f.source == "vocals", f.count > 20 else { return lines }
-        let flat = lines.flatMap(\.words), n = flat.count
+        // decided on times to the millisecond, as Gallery keeps them (its cadence.js runs these same rules)
+        let ms = { (x: Double) in (x * 1000).rounded() / 1000 }
+        let flat = lines.flatMap(\.words).map { $0.timed(ms($0.start), ms($0.end)) }, n = flat.count
         guard n > 0 else { return lines }
         // an onset counts when it stands out among the voice's own (its 60th percentile, at least a tenth of the strongest)
         let peaks = (1..<(f.count - 1)).filter { f.isVoiced($0) && f.onset[$0] > 0 && f.onset[$0] >= f.onset[$0 - 1] && f.onset[$0] >= f.onset[$0 + 1] }
@@ -4665,12 +4792,42 @@ enum Cadence {
         var next = [Double](repeating: .infinity, count: n)
         for i in stride(from: n - 2, through: 0, by: -1) { next[i] = flat[i + 1].start > flat[i].start ? flat[i + 1].start : next[i + 1] }
         var s = flat.map(\.start), e = flat.map(\.end), legato = [Bool](repeating: false, count: n)
+        // a line's first word, or one after a pause in what was heard
+        var opens = [Bool](repeating: false, count: n), at = 0
+        for l in lines { if !l.words.isEmpty { opens[at] = true }; at += l.words.count }
+        for i in 1..<max(1, n) where flat[i - 1].end < flat[i].start - 0.15 { opens[i] = true }
         for i in 0..<n {
             let w = flat[i], after = min(next[i], w.start + 8), lower = i > 0 ? s[i - 1] + 0.03 : 0
-            // the onset nearest Whisper's start, as strong as can be: within 120 ms, or from silence up to 350 ms late (a late entry)
+            // Where its voice comes in, when the recognizer's start is plainly off (item 22: the light lagged the song):
+            //  · run into the word before it (heard starting before that one ended), over a silence of 200 ms or more:
+            //    it starts where the voice comes back after that silence, if it then sings on for 0.25 s ("Soro-soro"
+            //    heard from 31.9 s in Sororité, over the end of the line before; sung from 32.9 s)
+            //  · opening a line or following a pause (or after a breath of 100 ms or more), heard inside a voice that
+            //    came in less than 0.4 s before: it starts where that voice came in. A recognizer times a sung word by
+            //    its vowel, late (Whisper by 0.1 s at the median, the on-device ears by 0.2 s), and a light that trails
+            //    the voice shows far sooner than one that leads it.
+            // Never later than heard otherwise: a long word may be a held note of its own ("Reuss" over 1.3 s at 105 s),
+            // and a leap inside one is as likely its own next syllable as the end of the note before it.
+            var entry: Double? = nil
+            let end = min(w.end, after), hk = f.frame(w.start)
+            if i > 0, w.start < flat[i - 1].end + 0.05 {
+                var quiet = 0
+                for k in hk..<max(hk, f.frame(end - 0.25)) {
+                    if !f.isVoiced(k) { quiet += 1; continue }
+                    if quiet >= 20, f.sustained(k), (k..<min(f.count, k + 25)).filter(f.isVoiced).count >= 20 { entry = f.time(k); break }
+                    quiet = 0
+                }
+            }
+            if entry == nil, f.isVoiced(hk), let c = f.entries(max(lower + 0.12, w.start - 0.4), w.start).last,
+               c.gap >= (opens[i] ? 0.05 : 0.1) {
+                entry = f.time(c.k)
+            }
+            if let entry { s[i] = entry }
+            // else the onset nearest the recognizer's start, as strong as can be: within 120 ms, or from silence up to
+            // 350 ms late (a late entry)
             let reach = f.isVoiced(f.frame(w.start)) ? 0.12 : 0.35
             let lo = f.frame(max(lower, w.start - 0.12)), hi = f.frame(min(after - 0.08, w.start + reach))
-            if lo <= hi {
+            if entry == nil, lo <= hi {
                 let score = { (k: Int) in Double(f.onset[k]) * (1 - abs(f.time(k) - w.start) / 0.4) }
                 if let k = (lo...hi).filter({ k in f.onset[k] >= strong && f.sustained(k) && (k == 0 || f.onset[k] >= f.onset[k - 1])
                                                 && (k + 1 >= f.count || f.onset[k] >= f.onset[k + 1]) }).max(by: { score($0) < score($1) }) {
@@ -6311,6 +6468,9 @@ final class NativeSources {
         let cc = m.addItem(withTitle: "CC Off", action: #selector(toggleCC), keyEquivalent: "m")
         cc.target = self
         ccItem = cc
+        let ly = m.addItem(withTitle: "Hide Lyrics for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
+        ly.target = self
+        lyricsItem = ly
         // Text Size and Balance: two compact rows, applied as they move
         let redraw = { [weak self] in self?.overlay.lastKey = ""; self?.overlay.fits = [:] }
         var sizeRow: ReaderRow!
@@ -6526,6 +6686,26 @@ final class NativeSources {
     @objc func playPause() { globalPlayPause() }
     /// The menu's CC On/Off (SPEC 32): ⏯ for the followed tab's player; the title says what pressing it does next.
     weak var ccItem: NSMenuItem?
+    weak var lyricsItem: NSMenuItem?
+    /// The listener's choice for a track the rule turned off (or on): key → shown. (item 22)
+    var lyricsChoice: [String: Bool] {
+        get { UserDefaults.standard.dictionary(forKey: "recense.lyricsShown") as? [String: Bool] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "recense.lyricsShown") }
+    }
+    var lyricsGate: (key: String, lines: Int, voice: Bool, off: Bool)?
+    /// Dense, complex tracks (a choir): their words start Off; the Recense menu shows them for this track.
+    func lyricsOff(_ ep: Episode) -> Bool {
+        if let c = lyricsChoice[ep.key] { return !c }
+        if let g = lyricsGate, g.key == ep.key, g.lines == ep.lines.count, g.voice == (ep.features != nil) { return g.off }
+        let off = Cadence.confidence(ep.lines, ep.features, duration: ep.complete ? ep.duration : 0).off
+        lyricsGate = (ep.key, ep.lines.count, ep.features != nil, off)
+        return off
+    }
+    @objc func toggleLyrics() {
+        guard let ep = episode else { return }
+        var c = lyricsChoice; c[ep.key] = lyricsOff(ep); lyricsChoice = c
+        overlay.lastKey = ""
+    }
     @objc func toggleCC() { ccTitle(paused: globalPlayPause()) }
     func ccTitle(paused: Bool) { let t = paused ? "CC On" : "CC Off"; if ccItem?.title != t { ccItem?.title = t } }
     /// The global ⏯ (Sill's strip button): the player Recense follows is played or paused directly, so the window
@@ -7140,7 +7320,19 @@ final class NativeSources {
             }
             // The offset is heard time (media runs at `rate`); `shift` maps this source's clock onto a transcript
             // made from another source of the same recording.
-            let t = smoothTime() + cfg.syncOffset * pos.rate - ep.shift
+            // ... less what Sill's own sound chain (EQ, Key, Space, the extractor) holds back, at the player's speed
+            let t = smoothTime() + (cfg.syncOffset - soundEngine.latency) * pos.rate - ep.shift
+            // a dense track (a choir): its words start Off, with Show in the Recense menu (item 22)
+            let quiet = !ep.instrumental && lyricsOff(ep)
+            lyricsItem?.title = quiet ? "Show Lyrics for This Track" : "Hide Lyrics for This Track"
+            if quiet {
+                editable = nil
+                overlay.render(nil, at: t)
+                overlay.update(time: mediaTime, duration: length > 0 ? length : pos.dur,
+                               paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
+                if Date() > statusUntil { overlay.setStatus("Lyrics off: many voices — Recense ▸ Show Lyrics for This Track") }
+                return
+            }
             // The line being spoken, held after it ends until the next one shows (unlit, 4 s ahead), so the window
             // never blinks empty between lines; only a real break (12 s or more) clears it. Paused, it never clears.
             Cadence.track = ep.features
