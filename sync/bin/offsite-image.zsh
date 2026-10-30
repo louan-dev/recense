@@ -46,6 +46,9 @@ fi
 links=() n=0
 for f in $files; do
   [[ -f $f ]] || { log "skip (not a file) $f"; continue; }
+  # macOS privacy (TCC) lets the file be seen but not read when Shortcuts has no access to its folder (Documents,
+  # Desktop, Downloads): say what to allow instead of curl's "error encountered when reading a file"
+  head -c 1 "$f" >/dev/null 2>&1 || fail "${f:t}: macOS blocked reading ${f:h:t}. Allow it: System Settings › Privacy & Security › Files & Folders › Shortcuts (or Full Disk Access › Shortcuts), then run Move Offsite again"
   name=${f:t}
   ext=${${name:e}:l}; [[ $from_clip == 1 ]] && ext=png
   resp=$(curl -sS --fail-with-body -X PUT --data-binary @"$f" \
