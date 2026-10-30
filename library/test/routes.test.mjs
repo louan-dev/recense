@@ -1207,7 +1207,8 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.equal((await call("/main/api/fp/archive/items", { as: "stranger" })).status, 404);
   assert.equal((await api("items", { method: "PUT", body: "x" })).status, 405);
   assert.equal((await api("nope")).status, 404);
-  assert.equal((await call("/main/api/fp/main/items", { as: "mac" })).status, 404);
+  assert.equal((await call("/main/api/fp/main/items", { as: "mac" })).status, 200); // Main is a root now (files/ only)
+  assert.equal((await call("/main/api/fp/nope/items", { as: "mac" })).status, 404);
   // the root: folders only from what's stored, never the bucket's own dot folders
   const top = await j("items");
   assert.equal(top.parent, "root");

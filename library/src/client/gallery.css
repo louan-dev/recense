@@ -1820,6 +1820,8 @@ body.comments-open #next{display:none}
 .txc>.txs,.txc>.txe{grid-area:1/1;text-align:center}
 .txw,:root.prom .txe{-webkit-background-clip:text;background-clip:text}
 .txw{position:relative} /* the voice lifts a lit word (notes 33) without the line reflowing */
+/* a word Recense's lexicon wrote from what a correction taught it (its title says what was heard): a faint blue dotted underline */
+.txw.txl{text-decoration:underline dotted rgba(10,132,255,.55);text-decoration-thickness:1.5px;text-underline-offset:.22em}
 .txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
 
 /* Learn and Follow: the lyrics are centred in the band between the top bar (with its day and time) and the two bars,

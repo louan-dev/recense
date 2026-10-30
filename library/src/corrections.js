@@ -52,7 +52,8 @@ export function baseLines(c) {
     if (!words.length) continue;
     out.push({
       id: l.id != null ? String(l.id) : "t" + Math.round(Number(words[0].start) * 1000),
-      words: words.map((w) => ({ t: w.text, s: Number(w.start), e: Number(w.end) })),
+      // h: what the recognizer heard where Recense's lexicon (what corrections taught it) wrote this word instead
+      words: words.map((w) => (typeof w.heard === "string" ? { t: w.text, s: Number(w.start), e: Number(w.end), h: w.heard } : { t: w.text, s: Number(w.start), e: Number(w.end) })),
       english: l.english,
     });
   }
@@ -287,7 +288,7 @@ export function present(lines, shift = 0) {
         e: r(endOf(l)),
         text: l.fixed ? l.text : joinWords(l.words.map((w) => w.t)),
         en: en && en.length ? joinWords(en.map((w) => w.w)) : "",
-        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e) })),
+        words: l.words.map((w) => (w.h ? { t: w.t, s: r(w.s), e: r(w.e), h: w.h } : { t: w.t, s: r(w.s), e: r(w.e) })),
         // Learn mode: the English words, each with the original words (by index) it translates; null = not translated yet
         enw: en ? en.map((w) => ({ w: w.w, s: Array.isArray(w.s) ? w.s.filter(Number.isInteger) : [] })) : null,
       };

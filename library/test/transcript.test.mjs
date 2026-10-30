@@ -36,6 +36,13 @@ const texts = (lines) => lines.map((l) => (l.fixed ? l.text : l.words.map((w) =>
 
 // ---------- corrections.js ----------
 
+await test("a word Recense's lexicon wrote keeps what the recognizer heard (h) through the glossary to the page", () => {
+  const asr = { lines: [{ id: 1, words: [{ text: "i", start: 0, end: 0.2 }, { text: "met", start: 0.3, end: 0.5 }, { text: "Kefaya", start: 0.6, end: 1, heard: "Cafe" }] }] };
+  const out = C.present(C.correctedLines(asr, { glossary: { i: "I" } }));
+  assert.equal(out[0].text, "I met Kefaya");
+  assert.deepEqual(out[0].words.map((w) => w.h || null), [null, null, "Cafe"]);
+});
+
 await test("apply: by segId, else ≥50 % time overlap; Recense's own edits first; glossary only where nobody corrected", () => {
   const asr = { lines: [line(1, 0, "bonjour tout le monde"), line(2, 3, "je suis a pari"), line(3, 6, "PARI pari Parisien")] };
   let doc = { overrides: [{ segId: "1", start: 0, end: 1.9, field: "text", to: "Bonjour à tous", src: "main", updatedAt: 1 }], glossary: { pari: "Paris" } };

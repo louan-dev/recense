@@ -25,10 +25,28 @@
 //
 //   POST /main/api/fp/<root>/confirm                     the owner lets the held pass through (409: nothing held)
 
-import { JUNK, cleanPath, jsonResponse, serveObject } from "./common.js";
+import { cleanPath, jsonResponse, serveObject } from "./common.js";
 import { sameSite, signedInAs } from "./access.js";
 
-export const FP_ROOTS = { archive: { bucket: "ARCHIVE", catalog: ".catalog/archive/" } };
+// a root: its bucket, the prefix its files live under ("" = the whole bucket), and where its catalog is kept.
+// Paths and ids in the feed are relative to the prefix, so Main's "files/Music/x.mp3" is "Music/x.mp3".
+export const FP_ROOTS = {
+  archive: { bucket: "ARCHIVE", prefix: "", catalog: ".catalog/archive/" },
+  main: { bucket: "MAIN", prefix: "files/", catalog: ".catalog/main/" },
+};
+// What is never content (sync/docs/specs/event-log.md §6; the same two lists as sync's ledger.mjs). JUNK_PATHS: the
+// OS's own litter. CHURN_PATHS: one device's app state. Neither is listed, logged or synced; every other file is,
+// dotfiles included (a vault's .obsidian/, a project's .gitignore).
+export const JUNK_PATHS = [
+  /(^|\/)\.DS_Store$/, /(^|\/)\._/, /(^|\/)\.Trash/, /(^|\/)\.localized$/, /(^|\/)Thumbs\.db$/i, /(^|\/)desktop\.ini$/i,
+  /(^|\/)~\$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
+];
+export const CHURN_PATHS = [/(^|\/)\.obsidian\/workspace(-mobile)?\.json$/, /(^|\/)\.obsidian\/cache$/];
+const MARK = ".folder-"; // Gallery's empty-folder marker (main.js): the folder is the item, not its marker
+// Batches older than this leave log/ for history/: kept for good (the chain stays verifiable), but a device whose
+// anchor is older than log/ gets 410 and enumerates again instead of replaying months.
+const KEEP_MS = 30 * 24 * 3600 * 1000;
+const COMPACT_MAX = 20; // batches moved per pass
 export const GENESIS = "aeebad4a796fcc2e15dc4c6061b45ed9b373f26adfc798ca7d2d8cc58182718e"; // sha-256("genesis")
 const GUARD = { files: 100, floor: 10, pct: 10 };
 export const massDelete = (n, known) => n > GUARD.files || (n > GUARD.floor && n * 100 > known * GUARD.pct);
@@ -50,10 +68,25 @@ const readJson = async (b, key) => {
 };
 const bad = (status, msg) => new Response(msg, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 
-// nothing of the bucket's own (dot folders at its root: .catalog, .trash, .uploads) and no Finder or Windows files
-function visible(key) {
-  const parts = key.split("/");
-  return !parts[0].startsWith(".") && !JUNK.test(parts[parts.length - 1]);
+// rel: a path inside the root. Never the bucket's own dot folders (.catalog, .trash, .uploads) on a whole-bucket root,
+// never a folder marker, junk or churn.
+export function visible(rel, root) {
+  if (!root.prefix && rel.split("/")[0].startsWith(".")) return false;
+  if (rel.split("/").pop().startsWith(MARK)) return false;
+  return !JUNK_PATHS.some((x) => x.test(rel)) && !CHURN_PATHS.some((x) => x.test(rel));
+}
+// the content's md5 when R2 knows it without reading the bytes: a single-part upload's etag, or the md5 rclone stores
+// for a multipart one (customMetadata.md5chksum, base64). The ledger records the same md5, so the two logs compare.
+function md5Of(o) {
+  if (/^[0-9a-f]{32}$/.test(o.etag || "")) return o.etag;
+  const b64 = o.customMetadata && o.customMetadata.md5chksum;
+  if (!b64) return undefined;
+  try {
+    const s = atob(b64);
+    return s.length === 16 ? [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("") : undefined;
+  } catch {
+    return undefined;
+  }
 }
 // whole seconds: rclone writes a fractional mtime ("1788075805.8020115")
 const mtimeOf = (o) => Math.floor(Number(o.customMetadata && o.customMetadata.mtime) || o.uploaded.getTime() / 1000);
@@ -66,38 +99,39 @@ export async function fp(req, env, url, path) {
   const b = env[root.bucket];
   if (m[2] === "confirm") return confirm(req, env, url, b, root);
   if (req.method !== "GET" && req.method !== "HEAD") return bad(405, "Read-only for now");
-  if (m[2] === "items") return items(b, url);
+  if (m[2] === "items") return items(b, root, url);
   if (m[2] === "changes") return changes(b, root, url);
-  return content(req, b, url);
+  return content(req, b, root, url);
 }
 
-async function items(b, url) {
+async function items(b, root, url) {
   const raw = url.searchParams.get("path") || "";
   const rel = raw ? cleanPath(raw) : "";
-  if (rel === null || (rel && !visible(rel + "/x"))) return bad(400, "Bad path");
-  const prefix = rel ? rel + "/" : "";
+  if (rel === null || (rel && !visible(rel, root))) return bad(400, "Bad path");
+  const prefix = root.prefix + (rel ? rel + "/" : "");
   const parent = rel ? await folderId(rel) : "root";
   const r = await b.list({ prefix, delimiter: "/", include: ["customMetadata"], cursor: url.searchParams.get("cursor") || undefined, limit: PAGE });
   const out = [];
   for (const p of r.delimitedPrefixes) {
-    const name = p.slice(prefix.length, -1);
-    if (visible(p + "x")) out.push({ id: await folderId(p.slice(0, -1)), parent, name, dir: true });
+    const path = p.slice(root.prefix.length, -1);
+    if (visible(path, root)) out.push({ id: await folderId(path), parent, name: p.slice(prefix.length, -1), dir: true });
   }
   for (const o of r.objects) {
-    const name = o.key.slice(prefix.length);
-    if (!visible(o.key) || name.startsWith(".folder-")) continue;
-    out.push({ id: await fileId(o.key, o.customMetadata), parent, name, dir: false, size: o.size, etag: o.httpEtag, mtime: mtimeOf(o) });
+    const path = o.key.slice(root.prefix.length);
+    if (!visible(path, root)) continue;
+    out.push({ id: await fileId(path, o.customMetadata), parent, name: o.key.slice(prefix.length), dir: false, size: o.size, etag: o.httpEtag, md5: md5Of(o), mtime: mtimeOf(o) });
   }
   if (rel && !out.length && !r.truncated && !(await b.list({ prefix, limit: 1 })).objects.length) return bad(404, "No such folder");
   return jsonResponse({ parent, items: out, cursor: r.truncated ? r.cursor : null });
 }
 
-async function content(req, b, url) {
+async function content(req, b, root, url) {
   const rel = cleanPath(url.searchParams.get("path") || "");
-  if (!rel || !visible(rel)) return bad(400, "Bad path");
+  if (!rel || !visible(rel, root)) return bad(400, "Bad path");
+  const key = root.prefix + rel;
   let obj;
   try {
-    obj = req.method === "HEAD" ? await b.head(rel) : await b.get(rel, { range: req.headers });
+    obj = req.method === "HEAD" ? await b.head(key) : await b.get(key, { range: req.headers });
   } catch (e) {
     return bad(416, "Bad range");
   }
@@ -132,9 +166,12 @@ async function changes(b, root, url) {
   for (const o of r.objects) {
     const n = Number(o.key.slice(log.length, -5));
     if (n !== seq + 1 || n > snap.seq) break;
-    events.push(...(await (await b.get(o.key)).json()).events);
+    const batch = await readJson(b, o.key);
+    if (!batch) break; // moved to history/ since the listing: answer what we have, the device asks again
+    events.push(...batch.events);
     seq = n;
   }
+  if (seq === since) return bad(410, "Anchor expired: enumerate again");
   return jsonResponse({ seq, events, more: seq < snap.seq, ...hold });
 }
 
@@ -165,15 +202,20 @@ export async function reconcile(b, root, now = Date.now()) {
   try {
     const old = (await readSnapshot(b, root)) || { seq: 0, items: {}, at: 0, fresh: true };
     const items = {};
+    const md5s = {}; // only for this pass's events: the snapshot stays small (etag is enough to see a change)
     const folders = new Set();
     let cursor;
     do {
-      const r = await b.list({ include: ["customMetadata"], cursor, limit: PAGE });
+      const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: PAGE });
       for (const o of r.objects) {
-        if (!visible(o.key)) continue;
-        for (let p = parentOf(o.key); p; p = parentOf(p)) folders.add(p);
-        if (o.key.split("/").pop().startsWith(".folder-")) continue;
-        items[await fileId(o.key, o.customMetadata)] = { path: o.key, size: o.size, etag: o.httpEtag, mtime: mtimeOf(o) };
+        const path = o.key.slice(root.prefix.length);
+        if (!path || (!root.prefix && path.split("/")[0].startsWith("."))) continue;
+        if (JUNK_PATHS.some((x) => x.test(path)) || CHURN_PATHS.some((x) => x.test(path))) continue;
+        for (let p = parentOf(path); p; p = parentOf(p)) if (visible(p, root)) folders.add(p);
+        if (!visible(path, root)) continue; // a folder marker: its folder counts (above), it doesn't
+        const id = await fileId(path, o.customMetadata);
+        items[id] = { path, size: o.size, etag: o.httpEtag, mtime: mtimeOf(o) };
+        md5s[id] = md5Of(o);
       }
       cursor = r.truncated ? r.cursor : undefined;
     } while (cursor);
@@ -182,7 +224,7 @@ export async function reconcile(b, root, now = Date.now()) {
     const events = [];
     for (const [id, it] of Object.entries(items)) {
       const was = old.items[id];
-      const ev = { id, path: it.path, dir: !!it.dir, ...(it.dir ? {} : { size: it.size, etag: it.etag, mtime: it.mtime }) };
+      const ev = { id, path: it.path, dir: !!it.dir, ...(it.dir ? {} : { size: it.size, etag: it.etag, md5: md5s[id], mtime: it.mtime }) };
       if (!was) events.push({ op: "create", ...ev });
       else if (was.path !== it.path) events.push({ op: "move", from: was.path, ...ev });
       else if (!it.dir && was.etag !== it.etag) events.push({ op: "modify", ...ev });
@@ -214,8 +256,22 @@ export async function reconcile(b, root, now = Date.now()) {
     }
     const snap = { seq, at: now, chain, items };
     await b.put(root.catalog + "snapshot.json", JSON.stringify(snap));
+    await compact(b, root, now);
     return snap;
   } finally {
     await b.delete(lockKey);
+  }
+}
+
+// batches older than KEEP_MS move from log/ to history/, oldest first, a few per pass (one list and one read when
+// there's nothing to move). Never deleted: `ledger.mjs verify` reads history/ and log/ as one chain.
+async function compact(b, root, now) {
+  const log = root.catalog + "log/";
+  const r = await b.list({ prefix: log, limit: COMPACT_MAX });
+  for (const o of r.objects) {
+    const text = await (await b.get(o.key)).text();
+    if (now - JSON.parse(text).at <= KEEP_MS) break;
+    await b.put(root.catalog + "history/" + o.key.slice(log.length), text);
+    await b.delete(o.key);
   }
 }

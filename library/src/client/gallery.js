@@ -3909,7 +3909,7 @@
       const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
       // a short pause before the next word is bridged, so the light never drops out between words
       const e = next - w.e < 0.6 ? next : w.e;
-      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)) };
+      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h };
     });
 
   // the original words an English word translates; one claiming most of a long line is a misread alignment
@@ -4333,6 +4333,11 @@
         for (let i = p.src[0]; i < p.src[1]; i++) {
           const sp = mkEl("span", "txw");
           sp.textContent = L.beats[i].t;
+          // written from what a correction taught Recense, where the recognizer heard something else: correct it back to unteach it
+          if (L.beats[i].h) {
+            sp.classList.add("txl");
+            sp.title = "Learned from your corrections (heard \u201c" + L.beats[i].h + "\u201d)";
+          }
           sp.dir = rtl ? "rtl" : "ltr";
           src.appendChild(sp);
           if (i + 1 < p.src[1]) src.appendChild(document.createTextNode(" "));
