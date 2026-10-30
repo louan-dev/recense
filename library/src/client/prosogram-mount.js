@@ -36,8 +36,8 @@
   const LANE = "pg-lane";            // the canvas this module appends inside .txs
 
   const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
-  const LANE_H = 1.45;               // lane height, × the line's font size: the ribbon, its swell and a link's sound
-  const BASE = 0;                    // the ribbon's row starts right under the words
+  const LANE_H = 1.9;                // lane height, × the line's font size: room for the ties, labels and dynamics
+  const BASE = 0.3;                  // where the figure's baseline sits inside the lane, same units
 
   const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 
