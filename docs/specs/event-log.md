@@ -1,7 +1,8 @@
 # Sync event log: one format for every Sync log
 
-**Status (2026-10-29 19:30 PDT):** DONE in code and tests. `ledger.mjs` writes v2 now (its launchd jobs run the repo
-file, so the next run writes v2). The catalog side (`gallery/src/fp.js`) is NOT deployed. Written to resolve the
+**Status (2026-10-29 20:55 PDT):** DONE and live (Gallery 0b0ab499 = main 80a2ff2). `ledger.mjs` writes v2 (its launchd jobs run the repo file). The
+catalog side (`gallery/src/fp.js`) is deployed: live batch 3 of the archive is chained and carries md5s, and
+`changes?since=2` answers with events instead of the old false 410. §7.4 waits on one dashboard step. Written to resolve the
 contradictions between `ledger.mjs`, the engine's catalog and `docs/specs/organism.md`.
 
 ## 1 · Two writers, one log
@@ -80,19 +81,40 @@ because the ledger stores content by hash.
 Both names are recognized as `conflict` events: iCloud's `Report 2.docx` and the engine's
 `Report (conflict, iPhone, 2026-10-29 1830).docx`.
 
-## 7 · Not unified yet (each with its reason)
-1. **Junk and dotfiles.** The ledger keeps dotfiles (`.obsidian/` is part of a vault) and ignores a named list; the
-   catalog hides every dot name (`common.js` `JUNK`). Unify when a root needs its dotfiles (the vault's cutover), not
-   before: `JUNK` also guards the mounts.
-2. **Content hash in the catalog.** Only the etag today. The Worker can store `customMetadata.sha256` on every write it
-   serves (slice 3); rclone's direct writes stay etag-only.
-3. **Catalog compaction** (30 days) isn't built, and `snapshot.json` grows with the root.
-4. **Ledger sinks live in the product bucket** (`gallery-main/ledger/<source>/`). Their owner is Sync. Moving them is
-   a data migration (copy, `verify --deep`, switch the jobs), only on the owner's yes.
-5. **More roots.** `FP_ROOTS` has no prefix, and the reconciler lists the whole bucket. Adding Main as it stands would
-   put `ledger/`, `invites/`, `notability-backup/`, `order/` and the rest of `gallery-main`'s top level into Files (listed 2026-10-29). Main needs `prefix: "files/"` first.
+## 7 · The five that were left open (resolved 2026-10-29, owner: "resolve all")
+1. **Junk and dotfiles: one rule.** `JUNK_PATHS` (the OS's litter: `.DS_Store`, `._*`, `.Trash*`, `.localized`,
+   `Thumbs.db`, `desktop.ini`, Office `~$*` and LibreOffice `.~lock.*#` lock files, `Icon\r`, volume folders) and
+   `CHURN_PATHS` (one device's app state: `.obsidian/workspace*.json`, `.obsidian/cache`) are the same in
+   `ledger.mjs` and `fp.js`, with one test vector in both suites. Junk is never listed, logged or synced; churn is stored
+   but never logged or synced. **Every other file is content, dotfiles included**: in the ledger, in the feed and in
+   the Finder mounts (`dav.js`, which used to refuse every dot name). Gallery's own pages still hide dotfiles: that's
+   how Gallery shows a library, not what Sync keeps. Live on the first pass: 7 LibreOffice lock files appeared and
+   4 Office `~$` lock files left the feed (the objects stay in R2), which is what added `.~lock.*#` to the list.
+2. **Content hash in the catalog: md5.** The feed and the log carry `md5` whenever R2 knows it without the bytes (a
+   single-part upload's etag, or rclone's `md5chksum` for a multipart one). The ledger now records `md5` beside
+   `sha256` for every file it captures, so the two logs compare directly. Not covered: multipart uploads that stored no
+   md5 (some Worker chunked joins).
+3. **Compaction.** Each pass moves batches older than 30 days from `log/` to `history/` (oldest first, at most 20).
+   They're never deleted, `ledger.mjs verify` reads both as one chain, and an anchor older than `log/` gets `410`.
+   `snapshot.json` stays a full listing, without md5 (the etag is enough to see a change).
+4. **Ledger sinks out of Gallery's bucket: ready, waiting on one dashboard step.** Bucket `sync-ledger` exists.
+   `bin/move-ledger-sinks.zsh` (dry run by default, `--apply`) pauses each job, copies server-side, runs
+   `verify --deep`, compares the trees, carries the state file over (`ledger.mjs state-path`), points the job at the
+   new bucket (old plist kept) and restarts it. It deletes nothing and prints the purge command. Blocked until the
+   jobs' `gallery-main` key is given the new bucket in the Cloudflare dashboard (the script says how).
+5. **Main as a root.** `FP_ROOTS.main = { bucket: MAIN, prefix: "files/" }`: paths and ids are relative to the prefix,
+   and nothing outside `files/` (ledger, invites, order, trash, the catalog itself) is ever listed. The iOS/Mac apps
+   don't offer Main yet (architecture.md slice 5, and the open Face ID question).
+   **Big roots go in steps.** Main's first live pass was stopped by Cloudflare at ~1 s of CPU (`exceededCpu`, 24 s
+   wall) while listing ~30,000 files in one request. A pass now lists at most 5,000 objects or 8 s per request, saves
+   that part in `.catalog/<root>/pass/` with the cursor, and the next request goes on. The diff, the log and the
+   snapshot happen once, in a request of their own, after the last page. A pass older than 30 minutes starts over.
+   **Measured live (0b0ab499, Main = 29,519 objects):** a pass is 7 requests, 250–345 ms of CPU and 4–8 s each; the
+   snapshot is 6 MB; a pass with no change logs nothing. A root as small as the archive still finishes in one request.
+   Consequence: on Main a change reaches the feed after one pass (~7 polls, ~7 minutes at one a minute), until R2
+   event notifications feed the log directly (organism.md §7).
 
-## 8 · Bug found while unifying (fixed, not deployed)
+## 8 · Bug found while unifying (fixed, live 2026-10-29)
 `changes?since=N` answered `410` whenever batch N still existed: the listing started at `…/N`, and `…/N.json` sorts
 after it, so batch N itself came first and failed the gap check. So **every incremental check made the Files
 extension enumerate everything again**. It was never caught because the only test asked from `since=0`. Fixed

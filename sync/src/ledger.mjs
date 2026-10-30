@@ -679,6 +679,7 @@ async function main() {
   else if (cmd === 'quota') { const q = quota({ total: a.total, alert: a.alert, target: a.target }); console.log(JSON.stringify(q)); if (a.write) { const f = assertWritable(path.join(os.homedir(), '.ledger', 'quota.json')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(q, null, 2)); } process.exit(q.level === 'ok' ? 0 : 1); }
   else if (cmd === 'health') { const r = await health(openSink(a.sink), { maxAgeHours: a['max-age-hours'] ? Number(a['max-age-hours']) : 24 }); process.exit(r.ok ? 0 : 1); }
   else if (cmd === 'overflow') { const r = await overflow({ source: a.source, sink: a.sink, maxMB: a['max-mb'] ? Number(a['max-mb']) : undefined, total: a.total, alert: a.alert, target: a.target }); if (a.json) console.log(JSON.stringify(r, null, 2)); }
+  else if (cmd === 'state-path') { console.log(a.state || defaultStatePath(checkSource(a.source), openSink(a.sink).name)); } // where run keeps its state for this source × sink (move-ledger-sinks.zsh)
   else if (cmd === 'selftest') { await selftest(); }
   else { console.error('usage: node ledger.mjs run|watch|fold|verify|restore|health|audit|backup-status|quota|overflow|selftest  (see the header of this file)'); process.exit(64); }
 }

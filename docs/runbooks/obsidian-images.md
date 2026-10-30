@@ -34,6 +34,42 @@ upload them, or choose "keep" when the plugin asks to delete.
 6. Settings sync to the iPhone/iPad with the vault (`.obsidian/plugins/images-uploader/data.json`, secret included),
    so set it up once on the Mac.
 
+## Move Offsite: any app, Mac + iPhone/iPad
+Same bucket and key as the plugin (the same picture is stored once). Flow: image → `PUT /main/api/img`
+(Access service token + `X-Gallery: 1`) → R2 answers `{url, sha256}` → the device checks sha256 against its own copy
+→ the original goes to the Trash (Mac) / Recently Deleted (iPhone, after iOS asks) → the link is on the clipboard.
+**Nothing expires in `notes-images`**: the link must outlive the original.
+
+What a pasted link becomes:
+| Where | Result |
+|---|---|
+| Markdown (Obsidian, DEVONthink Markdown, iA Writer, Typora, `.md`) | image shows, loaded from R2 |
+| `.odt` (LibreOffice: Insert › Image, tick **Link**, paste the URL as the file name) | image shows, linked |
+| `.docx` (Word for Mac: Insert › Pictures › Picture from File, paste URL, **Link to File**) | works in Word, fragile; Pages can't |
+| Apple Notes, Notability, DEVONthink RTF, `.txt` | a tappable link only (these formats can't show a linked image; pasting the picture itself would copy it back in) |
+
+- **Mac**: `sync/bin/offsite-image.zsh [--md|--url] [--keep] [file…]` (no files = clipboard image). Markdown link when
+  the front app reads Markdown, else the bare URL. Log `~/Library/Logs/offsite-image.log`. Shortcut
+  `sync/tools/shortcuts/Move Offsite (Mac).shortcut` wraps it: Finder › right-click › Quick Actions, menu bar, or a
+  hotkey (with nothing selected it takes the clipboard image).
+- **iPhone/iPad**: `sync/tools/shortcuts/Move Offsite (iPhone).shortcut`: Share Sheet from Photos/screenshots.
+  Asks for the device's token on import (not stored in the file). Copies the URL; deletes the photos only after the
+  hash matched (iOS confirms). In Obsidian on iOS, paste the image itself: the plugin does the rest.
+
+Setup (owner):
+1. Deploy Gallery with `a942b18` (the upload route). Live now is 2045487 + the `/i/` route only.
+2. Mac: Shortcuts › Settings › Advanced › **Allow Running Scripts**; `open "sync/tools/shortcuts/Move Offsite (Mac).shortcut"`
+   › Add; in its ⓘ: Use as Quick Action (Finder, Services), Pin in Menu Bar, Add Keyboard Shortcut (e.g. ⌃⌥⌘O).
+   First run: Keychain asks for `gallery-access` → Always Allow.
+3. iPhone/iPad token: Zero Trust › Access › Service Auth › Create token `gallery-phone`; add it to the Gallery
+   application's Service Auth policy; add its Client ID to the Worker's `SERVICE_CLIENT_ID` list
+   (`wrangler secret put SERVICE_CLIENT_ID`, comma-separated, keep the Mac's).
+4. AirDrop `Move Offsite (iPhone).shortcut` to each device › Add Shortcut › paste Client ID + Secret.
+
+Not tested: both Shortcuts (signed, not imported or run; importing needs your click). The Mac script was tested
+against a local stand-in for the Worker (upload, sha check, Trash, clipboard, Markdown/URL, clipboard image,
+no-image error); the Worker route by `test/images.test.mjs` (8 ok).
+
 ## Check
 `curl -sI https://gallery.improvdiplomat.workers.dev/i/<key>` → 200, `image/…`, `immutable`. Any other path under
 `/i/` → 404.

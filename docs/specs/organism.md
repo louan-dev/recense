@@ -248,7 +248,7 @@ open: plain files, `.ics`, JSON.
 | Step | What | Test | Moves code? |
 |---|---|---|---|
 | 0 | Owner says yes to this file. Update `CLAUDE.md` in all three repos and the nervous-system spec's ownership lines (not its decisions). | the three CLAUDE.md files agree | no |
-| 0b | **One event-log format** (`event-log.md`): ledger v2, chained catalog, one delete guard, one verifier. Also fixed the catalog's false `410` on every incremental check. | ledger selftest 42 ok (was 34); live journals verify unchanged; gallery routes 47 pass; cross-check 0 problems | DONE in code; catalog **not deployed** |
+| 0b | **One event-log format** (`event-log.md`): ledger v2, chained catalog, one delete guard, one verifier. Also fixed the catalog's false `410` on every incremental check. | ledger selftest 42 ok (was 34); live journals verify unchanged; gallery routes 47 pass; cross-check 0 problems | DONE, live (Gallery 0b0ab499); ledger-sink move waits on one dashboard step |
 | 1 | **Boundary inside the Gallery Worker:** move `fp.js`, `dav.js`, `tmp.js`, `archive.js` and the catalog code into `gallery/src/engine/`; a test fails if `engine/` imports anything outside it. | `npm test` unchanged + the new import test | within one repo |
 | 2 | Write `keep/SCHEMA.md` and `MANIFEST.json` + `CONTRACT.md` for the web modules (already ordered in Sill's architecture). | Sill's no-upward-imports test | no |
 | 3 | **Extract the engine** into the Sync Worker; Gallery forwards the same URLs through a service binding. Deploy behind the same paths. | every live test in `gallery-nervous-system.md` "Facts" passes again (120 MB hash, 412, trash, kill -9) | yes |
