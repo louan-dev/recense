@@ -1,5 +1,6 @@
 import assistant from "../client/assistant.js";
 import assistantCss from "../client/assistant.css";
+import cadence from "../client/cadence.js";
 import css from "../client/gallery.css";
 import homebarCss from "../client/homebar.css";
 import homebar from "../client/homebar.js";
@@ -230,6 +231,9 @@ ${room}
 </script>
 <script>
 ${homebar}
+</script>
+<script>
+${cadence}
 </script>
 <script>
 ${js}

@@ -368,7 +368,11 @@
         }
       }
     } else {
-      for (const x of W) if (x.phraseEnd) x.groupEnd = x.phraseEnd
+      for (const x of W) if (x.phraseEnd) {
+        x.groupEnd = x.phraseEnd
+        // any other language: the phrase's last syllable carries its stress and its final rise or fall (notated, not reshaped)
+        if (lang !== 'vi' && x.syl.length) x.syl[x.syl.length - 1].stressed = x.phraseEnd
+      }
     }
 
     // syllable times (from the light's progress) and acoustics
@@ -501,7 +505,7 @@
       let m = 0
       x.syl.forEach((s, si) => {
         const tpl = lang === 'vi' ? VI_TONE[s.toneKey] : null
-        const ev = s.stressed ? FR_EVENT[s.stressed] || null : null
+        const ev = lang === 'fr' && s.stressed ? FR_EVENT[s.stressed] || null : null
         const shape = tpl || ev, measured = !isNaN(s.nP)
         // a host may have no source for a signal and return null for it (never a flag zero): treat that as absent
         let eMax = 1e-6; for (let k = fr(s.t0); k <= fr(s.t1); k++) eMax = Math.max(eMax, at('E', k * hop) ?? 0)

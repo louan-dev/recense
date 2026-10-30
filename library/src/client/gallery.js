@@ -749,7 +749,7 @@
     space: { mix: 0, on: false, room: "room" }, // reverb, -100 to +100: + is the room, − the same room reversed; 0 is dry
     txScale: 1, // subtitle size, times the base size (the a|A pill, Info › Text Size, a pinch over the lyrics)
   };
-  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const KEY_NOTATION = "gallery.keyNotation";
 
   // the native language (spec §1)
@@ -3816,6 +3816,29 @@
   // words for a corrected line until the server's timing arrives: spread over the line's own time
   const spreadWords = (text, l) => {
     const ws = text.split(/\s+/).filter(Boolean);
+    // over the words they replace, each where the same share of the characters falls (corrections.js layOver)
+    const heard = (l.words || []).filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e));
+    if (heard.length && ws.length) {
+      const hc = heard.map((w) => [...w.t].length + 1), totalH = hc.reduce((a, b) => a + b, 0);
+      const totalL = ws.reduce((a, w) => a + [...w].length + 1, 0);
+      const time = (x) => {
+        let at = 0;
+        for (let i = 0; i < heard.length; i++) {
+          if (x <= at + hc[i]) return heard[i].s + ((x - at) / hc[i]) * (heard[i].e - heard[i].s);
+          at += hc[i];
+        }
+        return heard[heard.length - 1].e;
+      };
+      const out = [];
+      let x = 0;
+      for (const t of ws) {
+        const c = (([...t].length + 1) * totalH) / totalL;
+        const s = Math.max(time(x), (out.length ? out[out.length - 1].s : -1) + 0.02);
+        out.push({ t, s, e: Math.max(s + 0.05, time(x + c - 1)) });
+        x += c;
+      }
+      return out;
+    }
     const span = Math.max(0.05 * ws.length, l.e - l.s);
     return ws.map((t, i) => ({ t, s: l.s + (span * i) / ws.length, e: l.s + (span * (i + 1)) / ws.length }));
   };
@@ -4083,21 +4106,23 @@
   //
   // Recense measures each song's voice frame by frame on its vocal stem (keep/<key>/features.json: loudness, onset,
   // pitch, clarity, voiced, every 10 ms). The light takes its shape from it, as in Recense's window: a held or belted
-  // note swells it, fuller and brighter; the pitch contour lifts or lowers it, vibrato makes it shiver; a breathy, soft
+  // note swells it, fuller and brighter (it never moves: no lift, no shiver); a breathy, soft
   // or cracking moment leaves it thin and pale; a clear vowel flows (a feathered edge), an attack stays crisp.
   let curVoice = null; // { f, shift, top, notes } for the item on stage, or null: the plain light
 
+  // (resolves to the voice once it's here, else null: the transcript's words are then timed to it, cadence.js)
   const voiceLoad = (f, url) => {
     curVoice = null;
-    if (!url) return;
-    fetch(url + "&f=features", { headers: { "x-gallery": "1" } })
+    if (!url) return Promise.resolve(null);
+    return fetch(url + "&f=features", { headers: { "x-gallery": "1" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((v) => {
-        if (!v || !Array.isArray(v.db) || v.source !== "vocals" || v.db.length < 20 || items[cur] !== f) return;
+        if (!v || !Array.isArray(v.db) || v.source !== "vocals" || v.db.length < 20 || items[cur] !== f) return null;
         const loud = v.db.filter((_, i) => v.voiced[i] === 1).sort((a, b) => a - b);
         curVoice = { f: v, shift: Number(v.shift) || 0, top: loud.length ? loud[Math.floor(loud.length * 0.95)] : v.floor + 20, notes: new Map(), item: f };
+        return curVoice;
       })
-      .catch(() => {});
+      .catch(() => null);
   };
 
   const voiceAt = (b, t) => {
@@ -4170,12 +4195,8 @@
       if (v.swell > 0.15) sh += ",0 0 " + (0.6 * v.swell).toFixed(1) + "px rgba(255,214,51,.9)"; // fuller strokes
     }
     if (sp._sh !== sh) st.textShadow = sp._sh = sh;
-    const fs = parseFloat(getComputedStyleCached(sp)) || 28;
-    const y = v ? (-((v.lift + 1.4 * v.shiver) * fs) / 28).toFixed(1) + "px" : "";
-    if (sp._y !== y) st.top = sp._y = y; // (relative: the line never reflows)
+    // (the light no longer moves with the pitch or vibrato: the word stays put, the owner found it shaking)
   };
-  // a word's font size, read once (its line rebuilds the spans when the size changes)
-  const getComputedStyleCached = (sp) => sp._fs || (sp._fs = getComputedStyle(sp).fontSize);
 
   const RTL_RE = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
 
@@ -4224,7 +4245,18 @@
     if (host.querySelector(".tx.learn")) return;
 
     let lines = t.lines;
-    voiceLoad(f, txUrl(f));
+    // The words timed to the singer's voice once it's measured (cadence.js: the rules Sill's light follows, so the
+    // same word lights at the same moment in Sill, here and in the iOS app). Always from the server's lines.
+    let voice = null;
+    const timed = (ls) => {
+      if (!voice || !globalThis.Cadence) return ls;
+      try {
+        return globalThis.Cadence.fit(ls, voice.f, voice.shift);
+      } catch (e) {
+        return ls;
+      }
+    };
+    const voiceWait = voiceLoad(f, txUrl(f));
     if (f.txv === undefined || (t.version || 0) > f.txv) f.txv = t.version || 0;
     const w = txWrite(f);
     let editing = null; // the whole transcript is open
@@ -4243,6 +4275,11 @@
       ck.out = v;
       return v;
     };
+    // The prosogram (prosogram-mount.js) draws on this same clock: the notation and the light are both on the time
+    // being heard, at every speed, through Safari's deck and the output latency alike (item 22).
+    // It reads the lines the captions show too (`version` changes whenever they do), so both draw the same times.
+    const hook = { media: el, now: clock, lines: () => lines, version: 0 };
+    globalThis.GalleryClock = hook;
 
     const box = mkEl("div", "tx learn");
     const places = [0, 1].map(() => {
@@ -4257,6 +4294,52 @@
       ev.stopPropagation();
       openAll();
     };
+    // Dense, complex tracks (a choir, few words heard surely): the words and the notation start Off, with Show for
+    // this item, remembered (item 22; Cadence.confidence, the same rule as Sill's). The notation draws only under
+    // visible caption cells, so hiding the box turns it off too.
+    const SHOWN = "gallery.txShown";
+    const itemId = txUrl(f) || String(f.path || f.name || "");
+    const shown = () => {
+      try {
+        return new Set(JSON.parse(localStorage.getItem(SHOWN) || "[]"));
+      } catch (e) {
+        return new Set();
+      }
+    };
+    let quiet = null;
+    const gate = () => {
+      if (!globalThis.Cadence || !box.isConnected) return;
+      let off = false;
+      try {
+        // still being transcribed: words a minute over what's heard so far, not the whole track
+        const d = t.complete === false ? 0 : el.duration;
+        off = globalThis.Cadence.confidence(lines, voice && voice.f, d).off && !shown().has(itemId);
+      } catch (e) {}
+      box.classList.toggle("txoff", off);
+      if (off && !quiet) {
+        quiet = mkEl("div", "txq");
+        quiet.appendChild(document.createTextNode("Lyrics off: many voices"));
+        const b = mkEl("button", "lnk");
+        b.type = "button";
+        b.textContent = "Show";
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          const s = shown();
+          s.add(itemId);
+          try {
+            localStorage.setItem(SHOWN, JSON.stringify([...s].slice(-500)));
+          } catch (e) {}
+          gate();
+        };
+        quiet.appendChild(b);
+        quiet.onclick = (ev) => ev.stopPropagation();
+        host.appendChild(quiet);
+      } else if (!off && quiet) {
+        quiet.remove();
+        quiet = null;
+      }
+    };
+    gate();
     // spec §2: audio with a transcript shows its lyrics on black (mode 2) instead of the cover (mode 1)
     if (host.classList.contains("aw")) host.classList.add("lyrics");
 
@@ -4333,6 +4416,7 @@
         for (let i = p.src[0]; i < p.src[1]; i++) {
           const sp = mkEl("span", "txw");
           sp.textContent = L.beats[i].t;
+          sp.dataset.s = String(L.beats[i].s); // its start: the prosogram matches the word by time, not by its text
           // written from what a correction taught Recense, where the recognizer heard something else: correct it back to unteach it
           if (L.beats[i].h) {
             sp.classList.add("txl");
@@ -4422,6 +4506,11 @@
         if (text === l.text) return;
         l.text = text;
         l.words = spreadWords(text, l);
+        // and sung as the voice sings them, at once: the light keeps the cadence over the corrected words
+        if (voice && l.words.length) {
+          const [fit] = timed([{ ...l, words: l.words }]);
+          if (fit && fit.words) l.words = fit.words;
+        }
         l.fixed = true;
         delete l._learn;
         fits.clear();
@@ -4663,13 +4752,21 @@
     // the server's corrected lines (its timing, glossary applied to other lines) replace the page's
     const onLines = (fresh) => {
       if (!box.isConnected || !Array.isArray(fresh)) return;
-      lines = fresh;
+      lines = timed(fresh);
+      hook.version++;
       places.forEach((pl) => (pl.line = -1));
       fits.clear();
       if (reRender) reRender();
+      gate();
     };
     const q = txQueues.get(f);
     if (q) q.onLines = onLines;
+    // the voice measured: the same lines, timed to it
+    voiceWait.then((V) => {
+      if (!V || voice || !box.isConnected) return;
+      voice = V;
+      onLines(lines);
+    });
 
     // Follow (chosen in the editor): the line being heard in the first place, its trailing language under it,
     // until the next one begins (or a moment after it ends, before a silence); paused, it stays.
@@ -4685,7 +4782,11 @@
     let gapNow = false;
     ambient(host, el, () => gapNow, false, () => openAll()); // between lines too, a tap is the editor
     const paint = () => {
-      if (!box.isConnected) return;
+      if (!box.isConnected) {
+        if (globalThis.GalleryClock === hook) globalThis.GalleryClock = null;
+        if (quiet) quiet.remove();
+        return;
+      }
       if (editing) return requestAnimationFrame(paint);
 
       const now = clock();

@@ -55,7 +55,7 @@ test("parser accepts # b ♯ ♭ ♮ and mode words", () => {
 test("spec examples for Ebm in every state", () => {
   assert.deepEqual(L(0, 0, "Ebm", "fr"), ["E♭m", "Mi♭m"]);
   assert.deepEqual(L(0, 0, "Ebm", "vi"), ["E♭m", "Mi♭t"]);
-  assert.deepEqual(L(0, 0, "Ebm", "en"), ["E♭m"]);
+  assert.deepEqual(L(0, 0, "Ebm", "en"), ["E♭m", "Mi♭t"]); // C/Đô always shows the Vietnamese under the American
   assert.deepEqual(L(0, 1, "Ebm"), ["Mi♭m"]);
   assert.deepEqual(L(0, 1, "Eb"), ["Mi♭maj"]);
   assert.deepEqual(L(0, 2, "Ebm"), ["Mi♭t"]);
@@ -72,7 +72,7 @@ test("spec examples for Ebm in every state", () => {
 
 test("moving the key walks the table; mode never changes", () => {
   // C major up a semitone: the table's major spelling
-  assert.deepEqual(L(1, 0, "C"), ["D♭maj"]);
+  assert.deepEqual(L(1, 0, "C"), ["D♭maj", "Rê♭T"]);
   // A minor up 3: pc 0 minor
   assert.deepEqual(L(3, 1, "Am"), ["Dom"]);
   // E minor down 2: pc 2 minor
@@ -112,7 +112,7 @@ test("position 0 keeps the stored spelling in every notation", () => {
   assert.deepEqual(L(0, 7, "D#m"), ["D♯m", "Kurd"]);
   assert.deepEqual(L(0, 9, "D#m"), ["D♯m", "+0¢"]);
   // away from 0 the table spelling is used
-  assert.deepEqual(L(1, 0, "D#m"), ["Em"]);
+  assert.deepEqual(L(1, 0, "D#m"), ["Em", "Mi t"]);
   // ±12 shows the same label as 0
   assert.deepEqual(L(12, 0, "D#m", "fr"), ["D♯m", "Ré♯m"]);
   assert.deepEqual(L(-12, 3, "D#m"), ["dis"]);
@@ -139,7 +139,7 @@ test("♮ shows only at position 0, and 本 in Japanese", () => {
   assert.deepEqual(L(0, 4, "E♮m"), ["本ホ短"]);
   assert.deepEqual(L(0, 3, "E♮m"), ["e♮"]);
   assert.deepEqual(L(12, 4, "E♮m"), ["本ホ短"]);
-  assert.deepEqual(L(1, 0, "E♮m"), ["Fm"]);
+  assert.deepEqual(L(1, 0, "E♮m"), ["Fm", "Fa t"]);
   assert.deepEqual(L(0, 4, "Em"), ["ホ短"]);
   assert.deepEqual(L(0, 2, "E♮"), ["Mi♮T"]);
 });

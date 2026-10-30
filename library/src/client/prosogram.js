@@ -30,11 +30,13 @@ const PIN = 0.8                   // dynamics / hairpin band under the lane cent
 const DYN = ['pp', 'p', 'mp', 'mf', 'f', 'ff']
 const LOW = 0.62                   // lowest label baseline below the lane centre (clear of the next row)
 const TIE = 0.27 - LANE           // inner ties (apostrophe / hyphen) sit just under the glyphs
-const LIAISON = 'rgb(93,202,165)'      // reserved for liaisons only (teal; gold is the live position)
+const LIAISON = 'rgb(64,224,208)'      // reserved for liaisons only (turquoise; gold is the live position)
 const INK = 'rgb(228,224,214)', GREY = 'rgb(150,148,140)', GOLD = 'rgb(255,214,51)'
 const CHAO = { ngang: '33', huyen: '21', sac: '35', sacK: '45', hoi: '313', nga: '3ʔ5', nang: '21ʔ', nangK: '21' }
 
 const cache = new Map(), phraseDyn = new Map()
+const band = (P, x0, y0, x1, y1, r, s) => { const h = 0.1 * s; P.moveTo(x0 + r * 0.6, y0 - h); P.lineTo(x1 - r * 0.6, y1 - h); P.lineTo(x1 - r * 0.6, y1 + h * 0.6); P.lineTo(x0 + r * 0.6, y0 + h * 0.6); P.closePath() }
+const TOP = []                    // liaison ties, drawn once every word's line is down
 function dynOf(pro, ph) {
   let v = phraseDyn.get(ph.w0); if (v !== undefined) return v
   let sum = 0, cnt = 0
@@ -61,7 +63,10 @@ function stylize(x, Wd, s, E, pro, offY) {
     const pieces = []; let a = j0
     for (let j = j0; j < j1; j++) if (P.cut[j] > thr && P.cut[j] >= 0.3) { pieces.push([a, j]); a = j + 1 }
     pieces.push([a, j1])
-    const span = (sy.u1 - sy.u0) * Wd, inset = Math.min(0.08 * s, span * 0.14)
+    // each syllable keeps clear of its neighbours: at least a hair's gap at either edge, even a short one ("le"),
+    // so two segments never run together, and never more than a third of its own span (item 22)
+    const lo = sy.u0 * Wd, hi = sy.u1 * Wd, span = hi - lo
+    const inset = Math.min(0.08 * s, Math.max(0.025 * s, span * 0.14), span * 0.3)
     pieces.forEach(([ja, jb], pi) => {
       const k = jb - ja + 1, q = Math.max(1, Math.round(k * 0.2))
       let hA = 0, hB = 0, w = 0
@@ -72,7 +77,10 @@ function stylize(x, Wd, s, E, pro, offY) {
       let dev = 0, jm = -1
       for (let j = ja; j <= jb; j++) { const f = k > 1 ? (j - ja) / (k - 1) : 0, d = P.h[j] - lerp(hA, hB, f); if (Math.abs(d) > Math.abs(dev)) { dev = d; jm = j } }
       let xa = P.u[ja] * Wd + (pi === 0 ? inset : 0.02 * s), xb = P.u[jb] * Wd - (pi === pieces.length - 1 ? inset : 0.02 * s)
-      if (xb - xa < 3) { const m = (P.u[ja] + P.u[jb]) / 2 * Wd; xa = m - 1.5; xb = m + 1.5 }
+      if (xb - xa < 3) {   // too short to read: a short mark at its middle, kept inside its own syllable
+        const m = cl((P.u[ja] + P.u[jb]) / 2 * Wd, lo + inset, hi - inset), h = Math.max(0.5, Math.min(1.5, span / 2 - inset))
+        xa = m - h; xb = m + h
+      }
       let ya, yb, cy = null
       if (Math.abs(hB - hA) < gl && Math.abs(dev) < gl) { const hm = (hA + hB) / 2; ya = yb = offY(hm) }    // level
       else {
@@ -99,7 +107,7 @@ function build(f, x, c, s, E, nb) {
     return -up
   }
   const segs = stylize(x, Wd, s, E, pro, offY)
-  const g = { Wd, segs, labels: [], marks: [], glides: new Path2D(), xglide: new Path2D(), ticks: new Path2D(), fdots: new Path2D(), ties: new Path2D(), anchors: new Path2D(), dotted: new Path2D(), inner: null, breath: null, nodes: [], cross: null }
+  const g = { Wd, segs, labels: [], marks: [], glides: new Path2D(), xglide: new Path2D(), ticks: new Path2D(), fdots: new Path2D(), ties: new Path2D(), anchors: new Path2D(), erase: new Path2D(), dotted: new Path2D(), inner: null, breath: null, nodes: [], cross: null }
   const segOf = si => segs.filter(q => q.si === si)
   // glides inside the word: from one syllable's segment to the next one's, where the voice ran on
   for (let i = 0; i + 1 < segs.length; i++) {
@@ -123,7 +131,7 @@ function build(f, x, c, s, E, nb) {
         const fx = (sg.xa + sg.xb) / 2, fy = Math.min(sg.ya, sg.yb) - sg.lw / 2 - 0.07 * s, fr = 0.07 * s
         g.ticks.moveTo(fx - fr, fy); g.ticks.arc(fx, fy, fr, Math.PI, 0); g.fdots.moveTo(fx + 0.018 * s, fy - 0.02 * s); g.fdots.arc(fx, fy - 0.02 * s, 0.018 * s, 0, Math.PI * 2)
       } }
-    if (f.lang === 'fr' && nd.stressed) { const y = sg.ya - sg.lw / 2 - 0.04 * s; g.ticks.moveTo(sg.xa, y); g.ticks.lineTo(sg.xa - 0.025 * s, y - 0.1 * s) }   // ˈ before the stressed syllable
+    if (f.lang !== 'vi' && nd.stressed) { const y = sg.ya - sg.lw / 2 - 0.04 * s; g.ticks.moveTo(sg.xa, y); g.ticks.lineTo(sg.xa - 0.025 * s, y - 0.1 * s) }   // ˈ before the stressed syllable
     if (nd.interval != null && Math.abs(nd.interval) >= 3) {         // the leap drawn to scale: an arrow as long as the interval
       const len = Math.min(0.4 * s, Math.abs(nd.interval) * pro.semitone * A), ax = bx + 0.09 * s, up = nd.interval > 0
       const y0 = up ? by + len / 2 : by - len / 2, y1 = up ? by - len / 2 : by + len / 2, hd = 0.035 * s
@@ -135,13 +143,15 @@ function build(f, x, c, s, E, nb) {
   if (e1 > 0.02) for (const sy of x.syl) {
     const sg = segOf(x.syl.indexOf(sy))[0]; if (!sg) continue
     const xc = cl(sy.un * Wd, sg.xa, sg.xb), y = segY(sg, xc) + sg.lw / 2 + MARK * s, r = Math.max(1.1, 0.026 * s), d = 0.06 * s
+    if ((x.inner || []).some((l) => xc >= l.uFrom * Wd - 0.2 * s && xc <= l.uTo * Wd + 0.2 * s)) continue   // a tie is drawn here
+    if (nb.out && nb.out.link && sy === x.syl[x.syl.length - 1]) continue
     if (sy.art === 'staccato') { g.dots.moveTo(xc + r, y); g.dots.arc(xc, y, r, 0, Math.PI * 2) }
     else if (sy.art === 'tenuto') { g.lines.moveTo(xc - d, y); g.lines.lineTo(xc + d, y) }
     else if (sy.art === 'portato') { g.lines.moveTo(xc - d, y - 0.02 * s); g.lines.lineTo(xc + d, y - 0.02 * s); g.dots.moveTo(xc + r * 0.9, y + 0.05 * s); g.dots.arc(xc, y + 0.05 * s, r * 0.9, 0, Math.PI * 2) }
     else if (sy.art === 'marcato' && !(sy === x.syl[0] && prevBreath)) { g.lines.moveTo(xc - d, y - 0.04 * s); g.lines.lineTo(xc + d, y); g.lines.lineTo(xc - d, y + 0.04 * s) }
     else if (sy.art === 'ricochet') { const x0 = sg.xa + 0.1 * (sg.xb - sg.xa), x1 = sg.xb - 0.1 * (sg.xb - sg.xa); for (let i = 0; i <= 5; i++) { const tau = i / 5, xx = lerp(x0, x1, tau), yy = y + 0.02 * s - 0.06 * s * Math.sin(Math.PI * tau), rr = r * 0.6; g.dots.moveTo(xx + rr, yy); g.dots.arc(xx, yy, rr, 0, Math.PI * 2) } }
   }
-  if (f.lang === 'fr' && x.phraseEnd && segs.length && E > 0.02) {   // the phrase-final event
+  if (f.lang !== 'vi' && x.phraseEnd && segs.length && E > 0.02) {   // the phrase-final event
     const sg = segs[segs.length - 1], nd = x.nodes.find(q => q.stressed)
     const up = nd ? /rise/.test(nd.dir) : /question|continuation|colon/.test(x.phraseEnd)
     g.marks.push({ text: up ? '↗' : '↘', x: sg.xb + 0.13 * s, y: sg.yb + 0.08 * s, size: 0.24 })
@@ -152,18 +162,18 @@ function build(f, x, c, s, E, nb) {
     const last = segs[segs.length - 1], first = nsegs[0]
     if (last && first) {
       if (L) {                                                    // the tie: under the two letters' segments
-        // the liaison is a slur in the line: from the last segment's end straight into the next word's first segment
-        const xa = last.xb, xb = o.dx + first.xa, ya = last.yb, yb = first.ya
-        const path = nb.out ? g.ties : g.dotted, sag = Math.min(0.16 * s, 0.05 * s + 0.25 * (xb - xa))
-        if (nb.out) {                                             // an engraved tie: a crescent, thick in the middle, pointed ends
-          const th = Math.max(1.6, 0.06 * s)
-          path.moveTo(xa, ya); path.bezierCurveTo(lerp(xa, xb, 0.3), ya + sag, lerp(xa, xb, 0.7), yb + sag, xb, yb)
-          path.bezierCurveTo(lerp(xa, xb, 0.7), yb + sag - th, lerp(xa, xb, 0.3), ya + sag - th, xa, ya); path.closePath()
-          const r = Math.max(1.5, 0.045 * s)                    // anchors on the exact two letters
-          g.anchors.moveTo(xa + r, ya); g.anchors.arc(xa, ya, r, 0, Math.PI * 2); g.anchors.moveTo(xb + r, yb); g.anchors.arc(xb, yb, r, 0, Math.PI * 2)
-        } else { path.moveTo(xa, ya); path.bezierCurveTo(lerp(xa, xb, 0.3), ya + sag, lerp(xa, xb, 0.7), yb + sag, xb, yb) }
+        // the tie joins the two lines: from the end of this word's line to the start of the next one's, one curve
+        // a slur hanging from the two lines: at least half a letter wide, centred on the join, both ends on the line
+        const gx0 = last.xb, gx1 = o.dx + first.xa, half = Math.max((gx1 - gx0) / 2, 0.24 * s), mid = (gx0 + gx1) / 2
+        const xa = Math.max(last.xa, mid - half), xb = Math.min(o.dx + first.xb, mid + half)
+        const ya = segY(last, Math.min(xa, last.xb)), yb = segY(first, Math.max(xb - o.dx, first.xa))
+        const path = nb.out ? g.ties : g.dotted, sag = Math.max(0.17 * s, 0.3 * (xb - xa))
+        path.moveTo(xa, ya); path.bezierCurveTo(xa + 0.08 * (xb - xa), ya + sag * 1.33, xb - 0.08 * (xb - xa), yb + sag * 1.33, xb, yb)
+        { const r = Math.max(2.6, 0.07 * s)                       // a dot on each end, always a pair: exactly what is joined
+          band(g.erase, xa, ya, xb, yb, r, s)
+          g.anchors.moveTo(xa + r, ya); g.anchors.arc(xa, ya, r, 0, Math.PI * 2); g.anchors.moveTo(xb + r, yb); g.anchors.arc(xb, yb, r, 0, Math.PI * 2) }
         const ob = L.status === 'obligatory', en = L.kind === 'enchainement'
-        g.labels.push({ text: nb.out ? `[${L.sound}]` : `([${L.sound}])`, x: (xa + xb) / 2, y: Math.min(LOW * s, Math.max(ya, yb) + sag + 0.3 * s), size: 0.28, a: !nb.out ? 0.5 : ob ? 1 : en ? 0.7 : 0.85, prio: 0, kind: 'link', color: LIAISON })
+        g.labels.push({ text: nb.out ? `[${L.sound}]` : `([${L.sound}])`, x: (xa + xb) / 2, y: Math.max(ya, yb) + sag + 0.32 * s, size: 0.28, a: !nb.out ? 0.5 : ob ? 1 : en ? 0.7 : 0.85, prio: 0, kind: 'link', color: LIAISON })
       } else { g.xglide.moveTo(last.xb, last.yb); g.xglide.lineTo(o.dx + first.xa, first.ya) }
       if (nb.out) g.cross = { x0: last.xb, x1: o.dx + first.xa, ts: nb.out.ts }
     }
@@ -171,27 +181,41 @@ function build(f, x, c, s, E, nb) {
   if (x.inner && x.inner.length) {                                // inside the word: elision (half-weight tie) or hyphen liaison (full)
     g.inner = new Path2D()
     const yOn = xx => { let best = null, d = 1e9; for (const q of segs) { const dd = xx < q.xa ? q.xa - xx : xx > q.xb ? xx - q.xb : 0; if (dd < d) { d = dd; best = q } } return best ? segY(best, cl(xx, best.xa, best.xb)) : 0 }
+    g.innerDots = new Path2D()
     for (const l of x.inner) {
-      const full = l.kind === 'liaison', x0 = l.uFrom * Wd, x1 = l.uTo * Wd
-      const drop = full ? 0 : Math.max(...segs.map(q => q.lw)) / 2 + 0.035 * s       // an elision usually sits inside one syllable: hang it just below
-      const y0 = yOn(x0) + drop, y1 = yOn(x1) + drop
-      const sag = (full ? 0.14 : 0.09) * s, th = Math.max(full ? 1.6 : 1, (full ? 0.06 : 0.03) * s)
-      g.inner.moveTo(x0, y0); g.inner.bezierCurveTo(lerp(x0, x1, 0.3), y0 + sag, lerp(x0, x1, 0.7), y1 + sag, x1, y1)
-      g.inner.bezierCurveTo(lerp(x0, x1, 0.7), y1 + sag - th, lerp(x0, x1, 0.3), y0 + sag - th, x0, y0); g.inner.closePath()
-      if (full) { const r = Math.max(1.5, 0.045 * s); g.inner.moveTo(x0 + r, y0); g.inner.arc(x0, y0, r, 0, Math.PI * 2); g.inner.moveTo(x1 + r, y1); g.inner.arc(x1, y1, r, 0, Math.PI * 2) }
-      if (full) g.labels.push({ text: `[${l.sound}]`, x: (x0 + x1) / 2, y: Math.min(LOW * s, Math.max(y0, y1) + sag + 0.3 * s), size: 0.28, a: 0.9, prio: 0, kind: 'link', color: LIAISON })
+      // the same tie as between words: one curve from the point on the line over the first letter to the one over the
+      // second, a dot on each end (an elision a little lighter)
+      const full = l.kind === 'liaison', x0 = l.uFrom * Wd, x1 = l.uTo * Wd, y0 = yOn(x0), y1 = yOn(x1)
+      const sag = Math.max(0.17 * s, 0.3 * (x1 - x0))
+      g.inner.moveTo(x0, y0); g.inner.bezierCurveTo(x0 + 0.08 * (x1 - x0), y0 + sag * 1.33, x1 - 0.08 * (x1 - x0), y1 + sag * 1.33, x1, y1)
+      const r = Math.max(2.6, 0.07 * s)
+      band(g.erase, x0, y0, x1, y1, r, s)
+      g.innerDots.moveTo(x0 + r, y0); g.innerDots.arc(x0, y0, r, 0, Math.PI * 2); g.innerDots.moveTo(x1 + r, y1); g.innerDots.arc(x1, y1, r, 0, Math.PI * 2)
+      g.labels.push({ text: `[${l.sound}]`, x: (x0 + x1) / 2, y: Math.max(y0, y1) + sag + 0.32 * s, size: 0.28, a: full ? 0.9 : 0.7, prio: 0, kind: 'link', color: LIAISON })
     }
   }
-  if (x.breathAfter >= 0.18) {                                    // ’ in the gap, // for a long pause
-    const bx = Wd + (nb.nextGap != null ? nb.nextGap / 2 : 0.2 * s), by = -0.14 * s, p = new Path2D()
-    if (x.breathAfter >= 0.6) { for (const o of [-0.045, 0.045]) { p.moveTo(bx + o * s - 0.05 * s, by + 0.13 * s); p.lineTo(bx + o * s + 0.04 * s, by - 0.15 * s) } g.breath = { path: p, stroke: true } }
-    else {
-      const r = 0.036 * s, hy = by - 0.07 * s
-      p.moveTo(bx + r, hy); p.arc(bx, hy, r, 0, Math.PI * 2)
-      p.moveTo(bx + r * 0.95, hy + r * 0.2); p.quadraticCurveTo(bx + r * 1.05, hy + r * 2.4, bx - r * 1.3, hy + r * 3.6)
-      p.quadraticCurveTo(bx + r * 0.15, hy + r * 2.1, bx - r * 0.1, hy + r * 0.9); p.closePath()
-      g.breath = { path: p, stroke: false }
+  if (x.breathAfter >= 0.12) {                                    // a rest in the gap, as long as the pause
+    // the syllable's median length is an eighth: whole 8, half 4, quarter 2, eighth 1, sixteenth ½
+    const n = x.breathAfter / Math.max(0.08, pro.medDur || 0.2)
+    const kind = n >= 8 ? 'whole' : n >= 4 ? 'half' : n >= 2 ? 'quarter' : n >= 1 ? 'eighth' : 'sixteenth'
+    const bx = Wd + (nb.nextGap != null ? nb.nextGap / 2 : 0.2 * s), by = 0.05 * s, u = 0.16 * s
+    const fill = new Path2D(), line = new Path2D()                   // drawn, not typed: no font has to carry 𝄻 … 𝄿
+    if (kind === 'whole' || kind === 'half') {                       // a block under (whole) or on (half) its line
+      line.moveTo(bx - 1.1 * u, by); line.lineTo(bx + 1.1 * u, by)
+      fill.rect(bx - 0.7 * u, kind === 'whole' ? by : by - 0.5 * u, 1.4 * u, 0.5 * u)
+    } else if (kind === 'quarter') {                                  // the zigzag with its hook
+      line.moveTo(bx - 0.3 * u, by - 1.4 * u); line.lineTo(bx + 0.35 * u, by - 0.7 * u); line.lineTo(bx - 0.25 * u, by - 0.1 * u)
+      line.lineTo(bx + 0.35 * u, by + 0.5 * u); line.quadraticCurveTo(bx - 0.5 * u, by + 0.3 * u, bx - 0.05 * u, by + 1.2 * u)
+    } else {                                                          // a slanted stem with one flag (eighth) or two (sixteenth)
+      const top = by - 0.9 * u
+      line.moveTo(bx + 0.45 * u, top); line.lineTo(bx - 0.15 * u, by + 1.2 * u)
+      for (let k = 0; k < (kind === 'eighth' ? 1 : 2); k++) {
+        const fy = top + k * 0.7 * u, fx = bx + 0.45 * u - k * 0.2 * u
+        fill.moveTo(fx - 0.55 * u + 0.18 * u, fy + 0.1 * u); fill.arc(fx - 0.55 * u, fy + 0.1 * u, 0.18 * u, 0, Math.PI * 2)
+        line.moveTo(fx - 0.55 * u, fy + 0.2 * u); line.quadraticCurveTo(fx - 0.2 * u, fy + 0.3 * u, fx, fy)
+      }
     }
+    g.rest = { fill, line }
   }
   // the segments as paths (the live syllable's is drawn in gold)
   for (const sg of segs) {
@@ -237,17 +261,24 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels) {
   for (const m of g.marks) { ctx.font = `${Math.round(s * m.size)}px "Times New Roman", Times, serif`; ctx.globalAlpha = k * 0.9; ctx.fillText(m.text, m.x, m.y) }
   ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = k * 0.9; ctx.stroke(g.ticks); ctx.stroke(g.lines); ctx.fillStyle = INK; ctx.fill(g.fdots)
   ctx.fillStyle = INK; ctx.fill(g.dots)
-  if (g.inner) { ctx.fillStyle = LIAISON; ctx.globalAlpha = a0; ctx.fill(g.inner) }
+  { const m = ctx.getTransform(); TOP.push(() => {             // every tie last, whole, after every line is down
+    ctx.save(); ctx.setTransform(m)
+    ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(g.erase)   // no line above a slur
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = LIAISON; ctx.fillStyle = LIAISON
+    ctx.lineWidth = Math.max(2, s * 0.055); ctx.lineCap = 'round'
+    if (g.inner) { ctx.stroke(g.inner); ctx.fill(g.innerDots) }
+    ctx.stroke(g.ties); ctx.fill(g.anchors)
+    ctx.lineWidth = Math.max(1.6, s * 0.04); ctx.setLineDash([0.1, Math.max(3, s * 0.08)]); ctx.globalAlpha = a0 * 0.7; ctx.stroke(g.dotted)
+    ctx.restore() }) }
   if (live) { ctx.restore(); ctx.restore(); return }
   if (g.cross) {                                                   // the glide / tie across the gap, as the voice crosses it
     const b = g.cross, rv = b.ts > w.e + 0.01 ? cl((t - w.e) / (b.ts - w.e)) : 1
     ctx.save(); ctx.beginPath(); ctx.rect(-s, -2 * s, b.x0 + (b.x1 - b.x0) * rv + s, 4 * s); ctx.clip()
   } else ctx.save()
-  ctx.fillStyle = LIAISON; ctx.globalAlpha = a0; ctx.fill(g.ties); ctx.fill(g.anchors)
   ctx.lineCap = 'butt'; ctx.lineWidth = gl; ctx.setLineDash([gl, gl * 2.5]); ctx.globalAlpha = k * 0.7; ctx.stroke(g.xglide); ctx.setLineDash([])
   ctx.restore()
-  ctx.strokeStyle = GREY; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.setLineDash([0.1, Math.max(3, s * 0.08)]); ctx.globalAlpha = a0 * 0.6; ctx.stroke(g.dotted); ctx.setLineDash([])
   for (const l of g.labels) labels.push({ ...l, x: c.x + l.x, y: cy + l.y, a: a0 * l.a, floor: cy + (LOW + 0.05) * s })
+  if (g.rest) { ctx.save(); ctx.fillStyle = INK; ctx.strokeStyle = INK; ctx.globalAlpha = a0 * 0.85; ctx.lineWidth = Math.max(1.4, s * 0.035); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(g.rest.line); ctx.fill(g.rest.fill); ctx.restore() }
   if (g.breath) {
     ctx.globalAlpha = a0 * 0.8
     if (g.breath.stroke) { ctx.strokeStyle = GREY; ctx.lineWidth = Math.max(1, s * 0.028); ctx.lineCap = 'round'; ctx.stroke(g.breath.path) }
@@ -289,7 +320,7 @@ const plugin = {
     ['𝄐', 'held before a pause'],
     ['▁▂▃▅  < >', 'loudness level (filled bars) · getting louder / softer'],
     ['· – > ⁘', 'staccato · tenuto · accent · ricochet'],
-    ['‿ z', 'liaison (teal tie) and its sound; dotted = not made'],
+    ['‿ z', 'liaison (turquoise tie) and its sound; dotted = not made'],
     ['’  //', 'breath · long pause'],
   ],
   draw(ctx, f) {
@@ -297,7 +328,7 @@ const plugin = {
     for (const ln of f.page) {
       const s = ln.size, cells = ln.cells, a0 = ln.alpha
       ctx.save()
-      // the staff: reference and ±4 semitones under each row, very faint, labelled at the left
+      // the staff: reference and ±4 semitones under each row, very faint (unlabelled: the numbers read as stray marks)
       if (E > 0.02) {
         const rows = new Map()
         for (const c of cells) { const r = rows.get(c.row) || { x0: Infinity, x1: -Infinity, y: c.y }; r.x0 = Math.min(r.x0, c.x); r.x1 = Math.max(r.x1, c.x + c.width); rows.set(c.row, r) }
@@ -309,7 +340,6 @@ const plugin = {
           const y = r.y + LANE * s + lim(st * pro.semitone)
           ctx.globalAlpha = a0 * (st === 0 ? 0.2 : 0.11); if (st) ctx.setLineDash([2, 5])
           ctx.beginPath(); ctx.moveTo(r.x0 - 0.1 * s, y); ctx.lineTo(r.x1 + 0.1 * s, y); ctx.stroke(); ctx.setLineDash([])
-          ctx.globalAlpha = a0 * 0.4; ctx.fillText(lab, r.x0 - 0.18 * s, y)
         }
       }
       const idx = []
@@ -325,6 +355,7 @@ const plugin = {
         if (!g) { g = build(f, pro.word[w.flat], c, s, eb, nb); cache.set(key, g); if (cache.size > 900) { let d = 300; for (const kk of cache.keys()) { cache.delete(kk); if (--d <= 0) break } } }
         drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels)
       }
+      for (const d of TOP.splice(0)) d()
       const lightRow = new Map()
       for (const k of idx) { const c = cells[k], w = c.w, cur = lightRow.get(c.row) ?? -Infinity
         if (t >= w.e) lightRow.set(c.row, Math.max(cur, c.x + c.width + 0.5 * s)); else if (t >= w.s) lightRow.set(c.row, Math.max(cur, c.x + c.width * f.progress(w, t))) }

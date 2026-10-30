@@ -191,6 +191,17 @@ function shape(r, doc) {
 }
 
 const langsOf = (r) => LANGS.filter((l) => r.tr[l]);
+// the language sung or spoken (asr.json's `language`, else most of its words' own), two letters: the prosogram's French
+// liaisons and Vietnamese tones hang on it. `langs` is only the translations there are.
+const NAMES = { french: "fr", english: "en", vietnamese: "vi", spanish: "es", german: "de", italian: "it", portuguese: "pt", japanese: "ja", chinese: "zh", korean: "ko" };
+const spokenOf = (r) => {
+  const two = (x) => (typeof x !== "string" || !x.trim() ? "" : NAMES[x.trim().toLowerCase()] || x.trim().slice(0, 2).toLowerCase());
+  const own = two(r.c && r.c.language);
+  if (own) return own;
+  const n = {};
+  for (const l of (r.c && r.c.lines) || []) for (const w of l.words || []) { const k = two(w.lang); if (k) n[k] = (n[k] || 0) + 1; }
+  return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || "";
+};
 
 // ---------- the lock ----------
 
@@ -223,7 +234,7 @@ export async function transcriptFor(env, path) {
   const run = runState((await readLock(env, r.own)).lock);
   if (!r.c) return { pending: true, run };
   const { doc } = await readDoc(env, r.key);
-  const out = { lines: shape(r, doc), langs: langsOf(r), complete: !!r.c.complete, version: doc.version };
+  const out = { lines: shape(r, doc), lang: spokenOf(r), langs: langsOf(r), complete: !!r.c.complete, version: doc.version };
   if (run) out.run = run;
   return out;
 }
@@ -348,7 +359,7 @@ export async function transcriptSave(req, env, path, src) {
     logChanges(env, r.key, logged.map((c) => ({ v: doc.version, ...c }))),
   ]);
 
-  return jsonResponse({ ok: true, version: doc.version, lines: shape(r, doc), langs: langsOf(r), glossary: doc.glossary });
+  return jsonResponse({ ok: true, version: doc.version, lines: shape(r, doc), lang: spokenOf(r), langs: langsOf(r), glossary: doc.glossary });
 }
 
 // The change log, appended on its etag (two saves at once both land); never fails the save it records.

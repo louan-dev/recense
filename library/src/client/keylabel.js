@@ -226,7 +226,7 @@ globalThis.GalleryKey = (() => {
   //   value  slider value (semitones; snapped to the state's step here too)
   //   state  0..9
   //   stored the media's original key string (any form parse accepts), or "" / null
-  //   native "en" | "fr" | "vi": only State 0's second line depends on it
+  //   native "en" | "fr" | "vi": only State 0's second line depends on it (Vietnamese unless "fr")
   const label = (value, state, stored, native) => {
     state = mod(Math.round(Number(state) || 0), STATES);
     const v = quantize(value, state);
@@ -266,8 +266,9 @@ globalThis.GalleryKey = (() => {
 
     const s = Math.round(v);
     if (state === 0) {
-      const two = native === "fr" ? "fr" : native === "vi" ? "vi" : "";
-      return { lines: two ? [at(s, "am"), at(s, two)] : [at(s, "am")], caption };
+      // C/Đô: the American over the Vietnamese (the French under a French trailing language)
+      const two = native === "fr" ? "fr" : "vi";
+      return { lines: [at(s, "am"), at(s, two)], caption };
     }
     if (state === 7) return { lines: [at(s, "am"), maqam(s)], caption };
     return { lines: [at(s, COLS[state])], caption };

@@ -721,7 +721,7 @@ await test("Key labels: stored key spelled per caption state; tap resets the key
   const cap = () => pg.$eval(".p-band.key .kcap", (e) => e.textContent);
   const now = () => pg.$eval(".p-band.key .p-btrack", (e) => e.getAttribute("aria-valuenow"));
 
-  assert.deepEqual(await lines(), ["E♭m"]);
+  assert.deepEqual(await lines(), ["E♭m", "Mi♭t"]);
   assert.equal(await cap(), "C/Đô");
   // a tap resets the key to 0 and leaves the caption alone
   await pg.focus(".p-band.key .p-btrack");
@@ -855,7 +855,7 @@ await test("§1 native language: the home bar's language slide (Vietnamese · En
     await editorLang(pg, name);
     await closeTools(pg);
   };
-  assert.deepEqual(await lines(), ["E♭m"]);
+  assert.deepEqual(await lines(), ["E♭m", "Mi♭t"]);
   await openTools(pg);
   assert.deepEqual(await pg.$$eval(".txall .p-tlang .p-ti", (a) => a.map((x) => x.dataset.v)), ["vi", "en", "fr"]);
   assert.equal(await pg.textContent(".txall .p-tlang .p-ti.on"), "English");
@@ -1307,7 +1307,7 @@ await test("Notes 25/26: over the speeds a light swipe turns the slide, never th
   assert.equal(await rate(), 2, "a tap on the last speed");
 });
 
-await test("Notes 33: the light takes the voice's shape from keep/<key>/features.json: a rising belted note lifts and swells it", true, async (pg) => {
+await test("Notes 33: the light takes the voice's shape from keep/<key>/features.json: a held belted note swells it (it never moves)", true, async (pg) => {
   const KEEP = await mf.getR2Bucket("KEEP");
   await MAIN.put("files/Vc/a.wav", wavOf(6), { httpMetadata: { contentType: "audio/wav" } });
   const k = await keepKey("Vc/a.wav");
@@ -1326,7 +1326,7 @@ await test("Notes 33: the light takes the voice's shape from keep/<key>/features
   await pg.waitForTimeout(400);
   const s = await pg.$eval(".txw", (w) => ({ top: w.style.top, sh: w.style.textShadow }));
   await a.evaluate((el) => el.pause());
-  assert.ok(parseFloat(s.top) < -1, "the climb lifts the lit word: " + s.top);
+  assert.ok(!parseFloat(s.top || "0"), "the lit word stays put (no lift, item 21): " + s.top);
   assert.ok(/\b(1[5-9]|2\d)px/.test(s.sh), "a held, loud, clear note glows wider: " + s.sh);
 });
 

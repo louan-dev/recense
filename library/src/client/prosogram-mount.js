@@ -11,8 +11,13 @@
 // canvas default: syllable windows must match the text on screen (prosody.js refuses a hidden default).
 //
 // Time bases (the thing that silently breaks if you get it wrong):
+//   · the clock is the player's own (gallery.js publishes `GalleryClock` for the item on stage): the time being
+//     HEARD, which on Safari is its deck's position and elsewhere currentTime less the output latency, times the
+//     speed. The captions run on it too, so the notation can't lead or trail them at any speed. Without that hook
+//     (another host), the element's currentTime.
 //   · transcript word times are ALREADY shifted into this file's time by the Worker (corrections.js `present`),
-//     so they compare directly against the media element's currentTime.
+//     so they compare directly against that clock. With the player's hook they are its own lines, timed to the
+//     voice (cadence.js) and corrected as shown; the figure is drawn again whenever they change (`version`).
 //   · features frames are in the TRANSCRIPT's time, and the response carries `shift` unapplied.
 //     So frame index = (fileTime - shift) / HOP.
 //
@@ -31,7 +36,8 @@
   const LANE = "pg-lane";            // the canvas this module appends inside .txs
 
   const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
-  const LANE_H = 1.15;               // lane height, in multiples of the line's font size
+  const LANE_H = 1.9;                // lane height, in multiples of the line's font size: room for the ties, labels
+                                     // and dynamics under the figure (at 1.15 they were cut off and crammed)
   const BASE = 0.3;                  // where the figure's baseline sits inside the lane, same units
 
   const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
@@ -114,8 +120,15 @@
     return out;
   }
 
+  // an older Worker sends no `lang`: French by its little words, so liaisons still show
+  const frenchLooking = (t) => {
+    const ws = (t.lines || []).flatMap((l) => (l.words || []).map((w) => String(w.t || "").toLowerCase()));
+    const fr = ws.filter((w) => /^(le|la|les|des|et|est|un|une|du|qui|que|nous|vous|je|tu|il|elle|ce|dans|pour|pas|ne|on|où|à)$/.test(w)).length;
+    return ws.length >= 4 && fr / ws.length > 0.15;
+  };
   const langOf = (t) => {
-    const l = Array.isArray(t.langs) ? t.langs[0] : t.lang;
+    // the language sung (the Worker's `lang`); `langs` lists only the translations, never this
+    const l = typeof t.lang === "string" && t.lang ? t.lang : frenchLooking(t) ? "fr" : "";
     return typeof l === "string" && l.length >= 2 ? l.slice(0, 2).toLowerCase() : "";
   };
 
@@ -224,9 +237,17 @@
    *  first thought — every later lane then comes out empty. */
   function walker(words) {
     let i = 0;
-    return (text) => {
+    // a span carrying its start (data-s) is matched on it: the two places take turns, so the page order isn't
+    // time order, and a repeated word ("le", "la") matched by text alone took another occurrence's figure
+    const at = new Map();
+    for (const w of words) at.set(Math.round(w.s * 1000) + "|" + w.text.trim(), w);
+    return (text, s) => {
       const want = (text || "").trim();
       if (!want) return null;
+      if (s != null && s !== "") {
+        const w = at.get(Math.round(Number(s) * 1000) + "|" + want);
+        if (w) return w;
+      }
       for (let j = i; j < words.length; j++) {
         if (words[j].text.trim() === want) { i = j + 1; return words[j]; }
       }
@@ -245,7 +266,7 @@
     const base = src.getBoundingClientRect();
     const cells = [], rowsY = [];
     for (const sp of spans) {
-      const w = next(sp.textContent || "");
+      const w = next(sp.textContent || "", sp.dataset.s);
       if (!w) continue;
       const r = sp.getBoundingClientRect();
       if (!r.width) continue;
@@ -269,6 +290,22 @@
   }
 
   // ---- drawing ----------------------------------------------------------------------------------------------------
+  /** The player's hook when it publishes one for this element (gallery.js: GalleryClock), else null. */
+  function shared(media) {
+    const c = globalThis.GalleryClock;
+    return c && c.media === media ? c : null;
+  }
+
+  /** The time being heard: the player's clock when it publishes one for this element, else currentTime. */
+  function heardTime(media) {
+    const c = shared(media);
+    if (c && typeof c.now === "function") {
+      const t = c.now();
+      if (Number.isFinite(t)) return t;
+    }
+    return media.currentTime;
+  }
+
   function run(media, plugin, pro, words, at, progress) {
     let raf = 0;
 
@@ -301,7 +338,7 @@
 
     const frame = () => {
       raf = 0;
-      const t = media.currentTime;
+      const t = heardTime(media);
       const next = walker(words);            // one walker for the whole frame, advancing across the thoughts
       for (const cell of document.querySelectorAll(CELL)) {
         const src = cell.querySelector(SRC);
@@ -341,7 +378,8 @@
     if (!document.querySelector(CELL + " " + SRC + " " + WORD)) return;   // the lyrics are not up yet
     const ident = identify(media);
     if (!ident) return teardown();
-    if (live && live.key === ident.key) return;
+    const hook = shared(media);
+    if (live && live.key === ident.key && live.version === (hook ? hook.version : -1)) return;
     busy = true;
     try { await mountFor(media, ident); } finally { busy = false; }
   }
@@ -352,7 +390,11 @@
     if (!t || !f) return teardown();
     teardown();
 
-    const words = flatWords(t.lines);
+    // the very lines the captions show, timed to the voice as they are (cadence.js), when the player shares them
+    const hook = shared(media);
+    const version = hook ? hook.version : -1;
+    const own = hook && typeof hook.lines === "function" ? hook.lines() : null;
+    const words = flatWords(Array.isArray(own) && own.length ? own : t.lines);
     if (!words.length) return;
 
     const shift = typeof f.shift === "number" ? f.shift : 0;
@@ -384,7 +426,7 @@
     if (!plugin || typeof plugin.draw !== "function") return;
 
     const handle = run(media, plugin, pro, words, at, progress);
-    live = { stop: handle.stop, key: ident.key };
+    live = { stop: handle.stop, key: ident.key, version };
   }
 
   const again = () => { tryMount().catch(() => {}); };

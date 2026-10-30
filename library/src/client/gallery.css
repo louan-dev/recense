@@ -1829,6 +1829,12 @@ body.comments-open #next{display:none}
    them opens the editor (SPEC 57) */
 .tx.learn{top:calc(var(--tb) + 4px);bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);justify-content:center}
 .tx.learn .txp{cursor:pointer}
+/* a dense track (a choir): the words and the notation start Off, with Show for this item (item 22) */
+.tx.txoff{display:none !important}
+.txq{position:absolute;left:50%;bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);z-index:4;
+  display:flex;align-items:center;gap:4px;padding:2px 4px 2px 14px;border-radius:18px;background:rgba(0,0,0,.45);
+  color:rgba(255,255,255,.8);font-size:14px;white-space:nowrap;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.txq .lnk{font-size:14px;padding:6px 10px;min-height:0;background:none;border:0}
 /* Follow: the line being heard, its trailing language under it (each phrase over its own translation) */
 .tx.follow .txc{grid-template-rows:auto auto}
 .tx.follow .txc>.txs{grid-area:1/1;visibility:visible !important;-webkit-mask-image:none !important;mask-image:none !important}
