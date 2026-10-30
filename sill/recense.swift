@@ -6575,7 +6575,8 @@ final class NativeSources {
                 guard let path = paths?[key], idle() else { continue }
                 await Store.restoreTranscript(key)
                 let ep = Episode(url: "gallery:files/" + path, page: nil, title: nil, music: false) { 0 }
-                if ep.complete, ep.isSong, !ep.instrumental, await ep.fetch(audio: true) {
+                // (a song: an hour-long lecture also carries songPipeline 4, and would hold the GPU for an hour)
+                if ep.complete, ep.isSong, !ep.instrumental, ep.duration > 0, ep.duration < 900, await ep.fetch(audio: true) {
                     await ep.measureVoice()                // separates, measures, sends features.json to keep/
                     if ep.features != nil { log("gallery: separated and measured the voice of \(path)") }
                 }
