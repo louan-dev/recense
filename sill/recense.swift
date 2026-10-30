@@ -388,6 +388,8 @@ struct Word: Codable {
     var lang: String? = nil   // the language Whisper heard it in (ISO 639-1), when the word is written in that language's script
     var c: Double? = nil      // how sure the recognizer was of it (0–1; on-device ears)
     var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
+    /// The same word, timed again (what it was heard as goes with it).
+    func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard) }
 }
 struct EnWord: Codable { let w: String; let s: [Int] }
 struct Line: Codable {
@@ -3440,9 +3442,8 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// own, then every language Recense translates between.
     func hearing() -> [String] {
         var out: [String] = []
-        for l in [language, languageCode(cfg.language)] + [NativeLang.current] + NativeLang.all.map(\.code) {
-            if let l, !out.contains(l) { out.append(l) }
-        }
+        let all: [String?] = [language, languageCode(cfg.language), NativeLang.current] + NativeLang.all.map { $0.code }
+        for l in all { if let l, !out.contains(l) { out.append(l) } }
         return out
     }
 
@@ -4103,7 +4104,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                   let s = w["start"] as? Double, let e = w["end"] as? Double else { continue }
             let wl = (w["lang"] as? String) ?? lang, ws = (w["lang"] as? String).flatMap { scriptOf(language: $0) } ?? script
             var x = Word(text: text, start: offset + s, end: offset + e, lang: ws != nil && scriptOf(text: text) == ws ? wl : nil)
-            x.c = w["probability"] as? Double
+            x.c = w["probability"] as? Double; x.heard = w["heard"] as? String
             raw.append(x)
         }
         raw = Episode.withoutTranslation(raw, lang: lang)
@@ -4130,7 +4131,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
         words = refine(words, db: frameDB(samples), offset: offset, gate: clean)
         // Without a stem, Whisper stretches a sung word back over the intro before it; no word is held this long.
-        if isSong && !clean { words = words.map { $0.end - $0.start > 1.5 ? Word(text: $0.text, start: $0.end - 0.6, end: $0.end, lang: $0.lang, c: $0.c) : $0 } }
+        if isSong && !clean { words = words.map { $0.end - $0.start > 1.5 ? $0.timed($0.end - 0.6, $0.end) : $0 } }
         // What corrections taught (Lexicon), where this hearing makes the same mistake and the evidence agrees.
         let alts = ((t["segments"] as? [[String: Any]]) ?? []).compactMap { s -> (a: Double, b: Double, texts: [String])? in
             guard let a = s["start"] as? Double, let b = s["end"] as? Double, let x = s["alternatives"] as? [String], x.count > 1 else { return nil }
@@ -4484,7 +4485,7 @@ func refine(_ words: [Word], db: [Float], offset: Double, gate: Bool) -> [Word] 
         }
         if gate && pauseBefore { s = max(s, e - 2.5) }        // a sung word opening a phrase is never held longer
         s = max(s, (out.last?.start ?? -1) + 0.01)
-        out.append(Word(text: w.text, start: s, end: max(e, s + 0.05), lang: w.lang))
+        out.append(w.timed(s, max(e, s + 0.05)))
     }
     return out
 }
@@ -4703,7 +4704,7 @@ enum Cadence {
         }
         var i = 0
         return lines.map { l in
-            Line(id: l.id, words: l.words.map { w in defer { i += 1 }; return Word(text: w.text, start: s[i], end: e[i], lang: w.lang) },
+            Line(id: l.id, words: l.words.map { w in defer { i += 1 }; return w.timed(s[i], e[i]) },
                  english: l.english, draft: l.draft)
         }
     }
@@ -6340,6 +6341,7 @@ final class NativeSources {
             return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
         }
         if OnDeviceASR.enabled { log("speech: transcribing on this Mac (SpeechAnalyzer)\(cfg.apiKey.isEmpty ? ", no Groq key" : ", Groq only for languages it can't hear")") }
+        OnDeviceASR.startup()
         do {
             let s = try Server(port: 47123) { [weak self] p, q, b in await self?.handle(p, q, b) ?? [:] }
             s.start(); server = s
@@ -6984,6 +6986,8 @@ final class NativeSources {
             return ["state": episodeState, "cmds": soundFor(j, cmds)]
         case "/wait":
             return ["cmds": await wait(j["url"] as? String ?? "")]
+        case "/speech":                                // the ears, read-only (OnDeviceASR.report)
+            return await OnDeviceASR.report()
         case "/media":
             guard let url = j["url"] as? String, j["ad"] as? Bool != true else { return ["state": "other"] }
             // a tab that may not have the window doesn't get its media loaded over the followed one's

@@ -52,10 +52,11 @@ else
   # Recense's on-device ears (speech.swift: SpeechAnalyzer) compile only against a macOS 26+ SDK, and this Mac's Xcode
   # is 16.4 (SDK 15.5). Apple's Command Line Tools 27.2, unpacked (not installed) in ../.toolchain, build Sill when
   # they're there, in a build folder of their own; without them Sill builds as before and Recense hears through Groq.
-  tools=${SILL_TOOLCHAIN:-$PWD/../.toolchain/CommandLineTools} scratch=.build
-  if [[ -x $tools/usr/bin/swift ]]; then export DEVELOPER_DIR=$tools; scratch=.build-sdk27; fi
+  # (Their SwiftPM's default build system compiles SwiftTerm's Metal shader, and the tools have no `metal`: native.)
+  tools=${SILL_TOOLCHAIN:-$PWD/../.toolchain/CommandLineTools} scratch=.build flags=()
+  if [[ -x $tools/usr/bin/swift ]]; then export DEVELOPER_DIR=$tools; scratch=.build-sdk27; flags=(--build-system native); fi
   # A Swift package (see Package.swift) so Sill can use SwiftTerm for its terminal panel.
-  if ! swift build -c release --product sill --scratch-path $scratch > .build-log.txt 2>&1; then
+  if ! swift build -c release --product sill --scratch-path $scratch $flags > .build-log.txt 2>&1; then
     grep -E "error" .build-log.txt | head -20 >&2; echo "build failed (full log: .build-log.txt)" >&2; exit 1
   fi
   cp $scratch/release/sill "$exe"

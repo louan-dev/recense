@@ -40,6 +40,34 @@ import Speech
         return nil
     }
 
+    /// What the ears are, for a look from the terminal (`curl -s localhost:47123/speech`): which model hears each
+    /// language, the lexicon's size, the custom language models, the permission they need. Read-only: the server
+    /// answers any page.
+    static func report() async -> [String: Any] {
+        var r: [String: Any] = ["onDevice": enabled, "transcriber": cfg.transcriber, "groqKey": !cfg.apiKey.isEmpty,
+                                "lexicon": ["version": Lexicon.version, "lessons": Lexicon.book.langs.mapValues(\.count)] as [String: Any]]
+        #if compiler(>=6.2)
+        if #available(macOS 26, *), enabled {
+            var hears: [String: String] = [:]
+            for l in NativeLang.all.map(\.code) { if let (m, loc) = await Ears.module(l) { hears[l] = m.rawValue + " " + loc.identifier } }
+            r["hears"] = hears
+            r["customLM"] = CustomLM.built
+            r["permission"] = ["not asked", "denied", "restricted", "allowed"][min(3, SFSpeechRecognizer.authorizationStatus().rawValue)]
+        }
+        #endif
+        return r
+    }
+
+    /// `defaults write local.sill speechCheck -bool YES`, then Sill started: once, a throwaway custom language model is
+    /// built (asking for Speech Recognition permission if it hasn't been), and the outcome logged.
+    static func startup() {
+        guard UserDefaults.standard.bool(forKey: "speechCheck") else { return }
+        UserDefaults.standard.removeObject(forKey: "speechCheck")
+        #if compiler(>=6.2)
+        if #available(macOS 26, *), enabled { Task { try? await Task.sleep(for: .seconds(5)); log("speech check: \(await CustomLM.check())") } }
+        #endif
+    }
+
     /// Whether this Mac hears a language itself (asked before Groq's key is required for it).
     static func hears(_ lang: String) async -> Bool {
         #if compiler(>=6.2)
@@ -53,7 +81,7 @@ import Speech
 @available(macOS 26, *)
 @MainActor enum Ears {
     enum Module: String { case speech = "apple.speechtranscriber", dictation = "apple.dictationtranscriber" }
-    struct W { var text: String; var start: Double; var end: Double; var c: Double; var lang: String }
+    struct W { var text: String; var start: Double; var end: Double; var c: Double; var lang: String; var heard: String? = nil }
     struct Phrase { var start: Double; var end: Double; var text: String; var alts: [String]; var words: [W] }
     struct Hearing { var lang: String; var module: Module; var phrases: [Phrase]; var lm = false
         var words: [W] { phrases.flatMap(\.words) }
@@ -116,13 +144,44 @@ import Speech
             collect = Task { var out: [Phrase] = []; for try await r in t.results { out.append(phrase(r.range, r.text, r.alternatives, lang)) }; return out }
         }
         let analyzer = SpeechAnalyzer(modules: [module], options: .init(priority: .utility, modelRetention: .lingering))
+        // DictationTranscriber fails with "RecogFailed" on speech in a language not its own (silence comes back
+        // empty): it heard nothing it can write, which is an empty hearing, not an error to retry forever.
+        func nothing(_ e: Error) -> Bool { let n = e as NSError; return n.domain == "SFSpeechErrorDomain" && n.localizedDescription == "RecogFailed" }
         do {
             if let last = try await analyzer.analyzeSequence(from: file) { try await analyzer.finalizeAndFinish(through: last) }
             else { await analyzer.cancelAndFinishNow() }
-        } catch { collect.cancel(); throw error }
-        let phrases = try await collect.value
+        } catch {
+            collect.cancel(); rest()
+            if nothing(error) { return Hearing(lang: lang, module: m, phrases: [], lm: custom) }
+            throw error
+        }
+        let phrases: [Phrase]
+        do { phrases = try await collect.value } catch { rest(); if nothing(error) { phrases = [] } else { throw error } }
         rest()
-        return Hearing(lang: lang, module: m, phrases: phrases.filter { !$0.words.isEmpty }, lm: custom)
+        return Hearing(lang: lang, module: m, phrases: tidy(phrases), lm: custom)
+    }
+
+    /// A model hearing speech in a language it doesn't know may write one word of its own over all of it ("Bonjour",
+    /// timed over a whole English sentence): a word longer than 1.5 s keeps only its last 0.6 s (the rule Recense
+    /// already had for Whisper's sung words), and phrases are cut where the words pause, so what was really heard can
+    /// be told from what was skipped, stretch by stretch.
+    nonisolated static func tidy(_ phrases: [Phrase]) -> [Phrase] {
+        var out: [Phrase] = []
+        for p in phrases where !p.words.isEmpty {
+            let ws = p.words.map { w -> W in var x = w; if x.end - x.start > 1.5 { x.start = x.end - 0.6 }; return x }
+            var cur: [W] = []
+            func flush(_ whole: Bool) {
+                guard let a = cur.first, let b = cur.last else { return }
+                out.append(Phrase(start: a.start, end: b.end, text: cur.map(\.text).joined(separator: " "), alts: whole ? p.alts : [], words: cur))
+                cur = []
+            }
+            for w in ws {
+                if let last = cur.last, w.start - last.end > 0.8 { flush(false) }
+                cur.append(w)
+            }
+            flush(out.last.map { $0.start < p.start } ?? true && cur.count == ws.count)
+        }
+        return out
     }
 
     nonisolated static func phrase(_ range: CMTimeRange, _ text: AttributedString, _ alts: [AttributedString], _ lang: String) -> Phrase {
@@ -166,7 +225,8 @@ import Speech
     }
 
     /// Two hearings of the same audio in two languages, kept stretch by stretch: where their phrases overlap, the
-    /// one that heard it more surely.
+    /// one that heard it more surely; where only the second heard anything (a model writes nothing for speech in a
+    /// language it doesn't know: the English between two French sentences), the second's, when it heard it surely.
     static func merge(_ a: Hearing, _ b: Hearing, among: [String]) -> Hearing {
         var all = a.phrases.map { ($0, 0) } + b.phrases.map { ($0, 1) }
         all.sort { $0.0.start < $1.0.start }
@@ -177,11 +237,35 @@ import Speech
             let island = all[i..<j]
             let ha = Hearing(lang: a.lang, module: a.module, phrases: island.filter { $0.1 == 0 }.map(\.0))
             let hb = Hearing(lang: b.lang, module: b.module, phrases: island.filter { $0.1 == 1 }.map(\.0))
-            out += (score(ha, among: among) >= score(hb, among: among) ? ha : hb).phrases
+            if ha.phrases.isEmpty { if quality(hb) >= 0.6 { out += hb.phrases } }
+            else if !hb.phrases.isEmpty { out += (score(ha, among: among) >= score(hb, among: among) ? ha : hb).phrases }
+            else { out += ha.phrases }
             i = j
         }
         var h = a; h.phrases = out
         return h
+    }
+
+    /// Seconds of voice (by loudness, in runs of a second or more) that a hearing wrote no words over.
+    static func unheard(_ h: Hearing, _ samples: [Float]) -> Double {
+        let db = frameDB(samples), sorted = db.sorted()
+        guard sorted.count > 200 else { return 0 }
+        let thr = max(sorted[sorted.count / 10] + 12, sorted[sorted.count * 95 / 100] - 30)
+        var covered = [Bool](repeating: false, count: db.count)
+        for w in h.words {
+            let a = max(0, Int((w.start - 0.3) * 100)), b = min(db.count, Int((w.end + 0.3) * 100))
+            if a < b { for i in a..<b { covered[i] = true } }
+        }
+        // voiced: half of the 300 ms around it is loud (as voiceStretches), so the pauses between words don't count
+        var loud = 0, total = 0, run = 0
+        for i in 0..<min(15, db.count) where db[i] >= thr { loud += 1 }
+        for i in db.indices {
+            if i + 15 < db.count, db[i + 15] >= thr { loud += 1 }
+            if i - 15 >= 0, db[i - 15] >= thr { loud -= 1 }
+            if loud >= 15 && !covered[i] { run += 1 } else { if run >= 100 { total += run }; run = 0 }
+        }
+        if run >= 100 { total += run }
+        return Double(total) / 100
     }
 
     static func transcribe(_ samples: [Float], language: String?, languages: [String], prefer: String?) async throws -> [String: Any]? {
@@ -195,32 +279,46 @@ import Speech
         if cands.count == 1 {
             h = try await hear(samples, cands[0].0, module: cands[0].1, cands[0].2)
         } else {
-            // The language it was heard in last, when it's still heard surely; else each candidate on the stretch
-            // (on a minute of it first, when it's long), the best kept — and the runner-up beside it, phrase by
-            // phrase, when it heard nearly as much.
-            let first = try await hear(samples, cands[0].0, module: cands[0].1, cands[0].2)
-            if prefer == cands[0].0 && quality(first) >= 0.75 && score(first, among: among) > 0 {
+            // The language it was heard in last, when it's still heard surely and nothing voiced was left without
+            // words; else each candidate on the stretch, the best kept, and the runner-up beside it phrase by phrase
+            // where it heard nearly as much, or heard what the best left unheard.
+            // A model that hears nothing in its language says so by failing ("RecogFailed"): that's a score of 0.
+            var failure: Error?
+            func attempt(_ c: (String, Module, Locale)) async -> Hearing {
+                do { return try await hear(samples, c.0, module: c.1, c.2) }
+                catch { failure = failure ?? error; return Hearing(lang: c.0, module: c.1, phrases: []) }
+            }
+            let first = await attempt(cands[0])
+            if prefer == cands[0].0 && quality(first) >= 0.75 && score(first, among: among) > 0 && unheard(first, samples) < 1.5 {
                 h = first
             } else {
                 var tried = [(first, score(first, among: among))]
                 for c in cands.dropFirst() {
-                    let x = try await hear(samples, c.0, module: c.1, c.2)
+                    let x = await attempt(c)
                     tried.append((x, score(x, among: among)))
                 }
                 tried.sort { $0.1 > $1.1 }
+                log("speech: heard as " + tried.map { String(format: "%@ %.1f (sure %.2f)", $0.0.lang, $0.1, quality($0.0)) }.joined(separator: ", ")
+                    + String(format: "; %.1f s of voice left unheard by the first", unheard(tried[0].0, samples)))
+                if tried[0].1 == 0, let failure { throw failure }
                 h = tried[0].0
-                if tried.count > 1, tried[1].1 >= 0.7 * tried[0].1, quality(tried[1].0) >= 0.6 { h = merge(tried[0].0, tried[1].0, among: among) }
+                if tried.count > 1, tried[1].1 > 0, tried[1].1 >= 0.7 * tried[0].1 || unheard(tried[0].0, samples) >= 1.5 {
+                    h = merge(tried[0].0, tried[1].0, among: among)
+                }
             }
         }
         if h.module == .speech { h = await secondOpinion(h, samples) }
         return reply(h)
     }
 
-    /// Where SpeechTranscriber was unsure, DictationTranscriber with this listener's custom language model listens
-    /// again; a word it hears there that a correction taught replaces the unsure ones it overlaps.
+    /// Where SpeechTranscriber was unsure, or wrote a mistake a correction taught (whatever its confidence: a misheard
+    /// name can be heard surely), DictationTranscriber with this listener's custom language model listens again; a
+    /// taught word it hears there replaces the doubtful ones it overlaps, keeping what they were (`heard`).
     static func secondOpinion(_ h: Hearing, _ samples: [Float]) async -> Hearing {
         guard CustomLM.configuration(h.lang) != nil, let taught = Lexicon.rights(h.lang), !taught.isEmpty else { return h }
-        let unsure = h.words.filter { $0.c < 0.6 }
+        let forms = Lexicon.forms(h.lang)
+        func doubtful(_ w: W) -> Bool { w.c < 0.6 || forms[Corrections.fold(w.text)] != nil }
+        let unsure = h.words.filter(doubtful)
         guard !unsure.isEmpty else { return h }
         var spans: [(a: Double, b: Double)] = []
         for w in unsure {
@@ -234,12 +332,14 @@ import Speech
             let lo = Int(s.a * 16000), hi = min(samples.count, Int(s.b * 16000))
             guard hi - lo > 4000, let d = try? await hear(Array(samples[lo..<hi]), h.lang, module: .dictation, loc) else { continue }
             let heard = d.words.map { W(text: $0.text, start: $0.start + s.a, end: $0.end + s.a, c: $0.c, lang: $0.lang) }
-            let found = heard.filter { taught.contains(Corrections.fold($0.text)) }
+            var found = heard.filter { taught.contains(Corrections.fold($0.text)) }
             guard let first = found.first, let last = found.last else { continue }
             for p in out.phrases.indices {
                 let ws = out.phrases[p].words
-                let gone = ws.indices.filter { ws[$0].c < 0.6 && ws[$0].end > first.start - 0.05 && ws[$0].start < last.end + 0.05 }
-                guard let g0 = gone.first, let g1 = gone.last else { continue }
+                let gone = ws.indices.filter { doubtful(ws[$0]) && ws[$0].end > first.start - 0.05 && ws[$0].start < last.end + 0.05 }
+                guard let g0 = gone.first, let g1 = gone.last,
+                      ws[g0...g1].map({ Corrections.fold($0.text) }) != found.map({ Corrections.fold($0.text) }) else { continue }
+                for k in found.indices { found[k].heard = ws[g0...g1].map(\.text).joined(separator: " ") }
                 var nw = Array(ws[..<g0]) + found + Array(ws[(g1 + 1)...])
                 nw.sort { $0.start < $1.start }
                 out.phrases[p].words = nw
@@ -267,7 +367,11 @@ import Speech
                 return ["start": min(p.start, p.words.first?.start ?? p.start), "end": p.end, "text": p.text,
                         "no_speech_prob": 0.0, "avg_logprob": log(max(0.01, c)), "alternatives": p.alts]
             },
-            "words": ws.map { ["word": $0.text, "start": $0.start, "end": $0.end, "probability": $0.c, "lang": $0.lang] as [String: Any] },
+            "words": ws.map { w -> [String: Any] in
+                var x: [String: Any] = ["word": w.text, "start": w.start, "end": w.end, "probability": w.c, "lang": w.lang]
+                if let h = w.heard { x["heard"] = h }
+                return x
+            },
         ]
     }
 }
@@ -288,6 +392,27 @@ import Speech
         let d = dir(lang), lm = d.appendingPathComponent("lm")
         guard built[lang] != nil, FileManager.default.fileExists(atPath: lm.path) else { return nil }
         return SFSpeechLanguageModel.Configuration(languageModel: lm, vocabulary: d.appendingPathComponent("vocab"), weight: 0.6)
+    }
+
+    /// Proof that a custom language model can be built here: three phrases, en-US, into lm/_check.
+    static func check() async -> String {
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+                SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
+            }
+        }
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return "no Speech Recognition permission" }
+        let d = dir("_check"), t0 = Date()
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        let data = SFCustomLanguageModelData(locale: Locale(identifier: "en-US"), identifier: "local.sill.recense", version: "check")
+        for p in ["I met Kefaya", "Kefaya told me", "Kefaya"] { data.insert(phraseCount: .init(phrase: p, count: 20)) }
+        do {
+            try await data.export(to: d.appendingPathComponent("data.bin"))
+            try await SFSpeechLanguageModel.prepareCustomLanguageModel(for: d.appendingPathComponent("data.bin"), configuration:
+                SFSpeechLanguageModel.Configuration(languageModel: d.appendingPathComponent("lm"), vocabulary: d.appendingPathComponent("vocab"), weight: 0.6),
+                ignoresCache: true)
+            return String(format: "custom language model built in %.1f s", Date().timeIntervalSince(t0))
+        } catch { return "custom language model failed: \(error.localizedDescription)" }
     }
 
     static func soon() {
@@ -504,7 +629,11 @@ import Speech
                     }
                 }
                 let sounded = e.like.allSatisfy { $0.v.isEmpty } || dLike <= far
-                guard dUnlike.isInfinite || dLike < dUnlike, same || ((sure < 0.8 || dLike <= near) && sounded) else { continue }
+                guard dUnlike.isInfinite || dLike < dUnlike, same || ((sure < 0.8 || dLike <= near) && sounded) else {
+                    log(String(format: "lexicon: %@ left as heard at %@ (not %@: sure %.2f, sound %.1f, unlike %.1f)", run.map(\.text).joined(separator: " "),
+                               clock(a), e.right, sure, dLike, dUnlike))
+                    continue
+                }
                 if best == nil || form.count > best!.n || dLike < best!.d { best = (e, form.count, dLike, same, sure) }
             }
             if let b = best {

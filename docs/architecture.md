@@ -219,7 +219,37 @@ refactor is verifiable today, and the on-device class becomes an addition rather
   `chat/completions` translate call and the glossary reasoning. Distinct from Apple's Translation framework, which is
   already wired as the quota fallback.
 
-## Offline ASR (planned; owner upgrading 2026-10-28)
+## Offline ASR (built 2026-10-29; the plan below is kept for its reasoning)
+**What was built** (`sill/speech.swift`, `sill/voiceprint.swift`, wired through `recense.swift`; notes 20261029 item 9):
+- **Toolchain.** The Mac runs macOS 27.2 but Xcode is 16.4 (SDK 15.5), which can't compile SpeechAnalyzer. Apple's
+  Command Line Tools 27.2 are unpacked (not installed, no admin) in `sill/.toolchain/`; `build.sh` builds with them
+  into `.build-sdk27` when they're there (`--build-system native`: their SwiftPM would compile SwiftTerm's Metal shader
+  and the tools have no `metal`), else exactly as before with Groq as the only engine (`#if compiler(>=6.2)`).
+- **Not a protocol but an adapter.** `OnDeviceASR.transcribe` answers a request *the way Whisper answers one*
+  (verbose_json: `language`, `segments`, timed `words` + `probability`, `engine`), so `whisper()` is the one seam and
+  everything after it (chunks, cuts, the songs' second pass, `heardWords`, keep/, Gallery) is unchanged. Groq is asked
+  only for a language this Mac can't hear (Persian) and only with a key; Recense no longer needs a key to start.
+- **Modules.** SpeechTranscriber for en/fr (installed), DictationTranscriber for vi (SpeechTranscriber has no
+  Vietnamese). Each language the listener uses is tried and scored (confidence × duration × NaturalLanguage
+  agreement); the language heard last is kept while it's heard surely and leaves no voice unheard. Two languages by
+  turns (French lesson, English aside) are merged phrase by phrase: a model writes nothing, or one 4-second word,
+  over speech it doesn't know, so stretched words are trimmed (> 1.5 s → last 0.6 s) and unheard voice (smoothed
+  loudness) triggers the other languages.
+- **Measured** (blocker 2 settled): on 2 min of a real English recording SpeechTranscriber wrote 98 % of Whisper's
+  words, word times within 0.09 s of Whisper's at the median (p90 0.26 s), ~30× real time; DictationTranscriber
+  92 %, 0.05 s median. `TimingResolution` is `.word` for both.
+- **The glossary prompt became a lexicon** (blocker 3): contextual strings (`AnalysisContext`) changed nothing in
+  tests. `Lexicon` keeps, per language, each corrected word, what was heard instead, a voiceprint of every place it
+  was corrected and of places it was corrected back, and applies it on first transcriptions and replays when the same
+  mistake recurs and the evidence agrees (same recording; or recognizer unsure < 0.8 or sound near; never nearer an
+  "unlike"); the recognizer's own alternatives count too. Voiceprints alone only modestly separate one speaker's word
+  from others (real speech, same word p50 7.4 vs others 8.75), so sound confirms and vetoes, never decides alone.
+- **Blocked:** `SFSpeechLanguageModel.prepareCustomLanguageModel` fails with SFSpeechErrorDomain 1 for every variant
+  tried (3–400 phrases, with/without weight, vocabulary, clientIdentifier; CLI and inside signed Sill with Speech
+  Recognition allowed). `CustomLM` and the DictationTranscriber second opinion are wired and stay inert until it builds.
+- **Check it:** `curl -s localhost:47123/speech`; `defaults write local.sill speechCheck -bool YES` + relaunch builds a
+  throwaway model once and logs the result; `recense.log` lines `speech:` and `lexicon:`.
+
 The owner intends to replace Groq/Whisper with an on-device extractor so transcription runs offline. **Before building
 it, four things must be settled, and one is a blocker:**
 
