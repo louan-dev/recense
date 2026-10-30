@@ -86,6 +86,15 @@
   const T = (t) =>
     new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
+  // A link's expiry always carries the time (a 1-hour link ends today, not just "27 October"),
+  // in the viewer's own clock, like the owner's invite list.
+  const expiresAt = (t) => {
+    const day = (d) => new Date(d).setHours(0, 0, 0, 0);
+    const n = Math.round((day(t) - day(Date.now())) / 86400000);
+    const when = n === 0 ? "today" : n === 1 ? "tomorrow" : D(t, { day: "numeric", month: "long" });
+    return when + " at " + new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
   const dur = (s) => {
     if (!isFinite(s) || s < 0) return "0:00";
 
@@ -3016,7 +3025,7 @@
     $("owner").textContent = G.heading || "Shared by " + G.owner;
     $("count").textContent = txt;
     $("count").hidden = !!G.main && total === 0;
-    $("exp").textContent = G.exp ? "Expires " + D(G.exp, { day: "numeric", month: "long" }) : "";
+    $("exp").textContent = G.exp ? "Expires " + expiresAt(G.exp) : "";
 
     const c = { img: 0, vid: 0, aud: 0, doc: 0 };
     ready.forEach((f) => c[kind(f)]++);

@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Gallery</string>
-  <key>CFBundleDisplayName</key><string>Gallery</string>
+  <key>CFBundleName</key><string>Gallery Files</string>
+  <key>CFBundleDisplayName</key><string>Gallery Files</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleIdentifier</key><string>com.chauphan.galleryfiles</string>
   <key>CFBundleExecutable</key><string>GalleryFiles</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -13,5 +14,6 @@
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>CFBundleIconFile</key><string>GalleryFiles</string>
   <key>LSUIElement</key><true/>
+  <key>LSHasLocalizedDisplayName</key><true/>
 </dict>
 </plist>

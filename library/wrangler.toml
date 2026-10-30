@@ -49,3 +49,10 @@ bucket_name = "gallery-tmp"
 [[r2_buckets]]
 binding = "ARCHIVE"
 bucket_name = "gallery-archive"
+
+# Obsidian note images, uploaded by the vault's "S3 Image Sync" plugin (bucket-scoped token), served
+# publicly at /i/<key> (images.js). Until the owner creates the bucket, `wrangler deploy` fails on this binding:
+#   npx wrangler r2 bucket create notes-images
+[[r2_buckets]]
+binding = "NOTES_IMAGES"
+bucket_name = "notes-images"

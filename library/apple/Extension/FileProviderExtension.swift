@@ -136,8 +136,9 @@ final class Enumerator: NSObject, NSFileProviderEnumerator {
             switch result {
             case .success(let c):
                 let inside = c.events.filter { $0.path.hasPrefix(Gallery.rootPath + "/") }
+                // only these four change the tree (sync/docs/specs/event-log.md); conflict and skip are information
                 let gone = inside.filter { $0.op == "delete" }.map(\.id)
-                let updated = inside.filter { $0.op != "delete" }.map(\.record)
+                let updated = inside.filter { ["create", "modify", "move"].contains($0.op) }.map(\.record)
                 self.store.put(updated)
                 self.store.remove(gone)
                 if !updated.isEmpty { observer.didUpdate(updated.map(Item.init)) }

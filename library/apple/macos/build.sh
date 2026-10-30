@@ -25,6 +25,11 @@ cp "$here/Ext-Info.plist" "$ext/Contents/Info.plist"
 mkdir -p "$ext/Contents/Resources" && cp "$here/GalleryProvider.icns" "$ext/Contents/Resources/"
 cp "$here/App-Info.plist" "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources" && cp "$here/GalleryFiles.icns" "$app/Contents/Resources/"
+# Finder and its sidebar show "Gallery" even though the bundle is "Gallery Files.app" (Gallery.app is taken)
+mkdir -p "$app/Contents/Resources/en.lproj"
+printf 'CFBundleDisplayName = "Gallery";\nCFBundleName = "Gallery";\n' > "$app/Contents/Resources/en.lproj/InfoPlist.strings"
+# Finder (and its sidebar) show "Gallery" though the bundle is named "Gallery Files.app"
+mkdir -p "$app/Contents/Resources/en.lproj" && printf 'CFBundleDisplayName = "Gallery";\nCFBundleName = "Gallery";\n' > "$app/Contents/Resources/en.lproj/InfoPlist.strings"
 
 codesign --force --sign "$sign" --entitlements "$here/Ext.entitlements" --timestamp=none "$ext"
 codesign --force --sign "$sign" --entitlements "$here/App.entitlements" --timestamp=none "$app"

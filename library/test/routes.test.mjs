@@ -5,6 +5,7 @@ import { Miniflare } from "miniflare";
 import { readdirSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
+import { GENESIS, link, massDelete } from "../src/fp.js";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const TEAM = "team.cloudflareaccess.com";
@@ -1255,6 +1256,16 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.equal(mv.from, VM + "/a.m4a");
   assert.ok(by("create", "chauphan/Voice Memos/2025") && by("create", "chauphan/Voice Memos/2025").dir);
   assert.equal(c.events.filter((e) => e.path.includes("/.")).length, 0);
+  // the log is chained like sync's ledger (event-log.md): the batch starts at the snapshot's head, each event links on
+  const batch1 = await (await AR.get(".catalog/archive/log/" + String(c.seq).padStart(12, "0") + ".json")).json();
+  assert.equal(batch1.prev, GENESIS);
+  let head = batch1.prev;
+  for (const e of batch1.events) {
+    const { chain, ...rest } = e;
+    assert.equal(chain, await link(head, rest));
+    head = chain;
+  }
+  assert.equal((await (await AR.get(".catalog/archive/snapshot.json")).json()).chain, head);
   // the new folder's item shows the moved file under the same id
   assert.equal((await j("items?path=chauphan%2FVoice%20Memos%2F2025")).items[0].id, a.id);
   // an anchor older than the log kept: 410, enumerate again
@@ -1265,6 +1276,57 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.notEqual((await call("/main/dav-archive/.catalog/archive/snapshot.json", { as: "mac" })).status, 200);
   const rootList = await (await call("/main/dav-archive/", { as: "mac", method: "PROPFIND", headers: { depth: "1" } })).text();
   assert.ok(!hrefs(rootList).some((h) => h.includes(".catalog")));
+});
+
+await test("fp: the catalog's chain and delete guard are sync's (event-log.md): same vector, held until the owner confirms", async () => {
+  // the same bytes in, the same link out, as ledger.mjs's selftest
+  const vec = { op: "create", id: "h000000000000000000000000", path: "a.m4a", dir: false, size: 1, etag: '"e"', mtime: 1 };
+  assert.equal(await link(GENESIS, vec), "e704650f481588363d585a229270dc0033dc38cd814054bfb4d0e71bde83c894");
+  assert.ok(!massDelete(10, 12) && massDelete(11, 12) && !massDelete(15, 200) && massDelete(21, 200) && massDelete(101, 1e7));
+
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
+  const j = async (p) => (await api(p)).json();
+  const stale = async () => {
+    const s = await (await AR.get(".catalog/archive/snapshot.json")).json();
+    await AR.put(".catalog/archive/snapshot.json", JSON.stringify({ ...s, at: 0 }));
+  };
+  const BULK = "chauphan/Bulk";
+  for (let i = 0; i < 30; i++) await AR.put(`${BULK}/f${i}.m4a`, "x" + i);
+  const logKey = (n) => ".catalog/archive/log/" + String(n).padStart(12, "0") + ".json";
+  await stale();
+  const s0 = (await j("changes")).seq; // this pass logs the 30 new files as the head batch
+  const added = await (await AR.get(logKey(s0))).json();
+  assert.equal(added.events.filter((e) => e.op === "create" && e.path.startsWith(BULK + "/f")).length, 30);
+
+  // 25 of ~35 files gone at once: nothing is logged, the feed says it's held, the head doesn't move
+  for (let i = 0; i < 25; i++) await AR.delete(`${BULK}/f${i}.m4a`);
+  await stale();
+  const held = await j("changes?since=" + s0);
+  assert.deepEqual(held.events, []);
+  assert.equal(held.seq, s0);
+  assert.equal(held.held.deletes, 25);
+  assert.ok((await AR.get(".catalog/archive/held.json")) !== null);
+  assert.equal((await j("changes?since=" + s0)).held.deletes, 25); // asked again within a minute: still held, no relist
+
+  // only the owner, signed in, confirms: never a device token, never a GET
+  assert.equal((await api("confirm", { method: "POST" })).status, 403);
+  assert.equal((await call("/main/api/fp/archive/confirm", { as: "owner" })).status, 405);
+  const ok = await call("/main/api/fp/archive/confirm", { as: "owner", method: "POST" });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).deletes, 25);
+  assert.equal(await AR.get(".catalog/archive/held.json"), null);
+
+  // the next pass goes through, chained onto the last batch, and spends the confirmation
+  const after = await j("changes?since=" + s0);
+  assert.equal(after.seq, s0 + 1);
+  assert.equal(after.events.filter((e) => e.op === "delete").length, 25);
+  assert.equal(after.held, undefined);
+  const prevBatch = await (await AR.get(logKey(s0))).json();
+  const nextBatch = await (await AR.get(logKey(s0 + 1))).json();
+  assert.equal(nextBatch.prev, prevBatch.events[prevBatch.events.length - 1].chain);
+  assert.equal(await AR.get(".catalog/archive/confirm.json"), null);
+  assert.equal((await call("/main/api/fp/archive/confirm", { as: "owner", method: "POST" })).status, 409);
 });
 
 await test("main/archive: Main's page and player over gallery-archive/chauphan, read-only", async () => {

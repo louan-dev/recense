@@ -50,8 +50,9 @@ R2 has no change feed, so the Worker keeps one.
 
 **The change log.** It lives in `<bucket>/.catalog/<root>/`. Mount guards and listings hide it: dot folders at a
 bucket root are never reachable through a mount.
-- `log/<seq:12 digits>.json`: one batch of events `{seq, at, events:[{op: create|modify|delete|move, id, path,
-  from?, dir, size, etag, mtime}]}`. Appends are R2 create-only puts (`onlyIf: etagDoesNotMatch "*"`) on the next
+- `log/<seq:12 digits>.json`: one batch of events `{v, seq, at, prev, events:[{op: create|modify|delete|move, id, path,
+  from?, dir, size, etag, mtime, chain}]}`, in Sync's event-log format (`sync/docs/specs/event-log.md`, 2026-10-29):
+  the same chain as the ledger's journal, checked by `ledger.mjs verify`. Appends are R2 create-only puts (`onlyIf: etagDoesNotMatch "*"`) on the next
   seq. Two writers racing for the same seq: one wins, the other retries on seq+1. That gives a total order with no
   Durable Object.
 - `snapshot.json`: the last full listing (id, path, etag, size, mtime) and the seq it matches. About 120 bytes per
@@ -93,6 +94,8 @@ bucket root are never reachable through a mount.
 - **Delete guard.** A batch from one device that would delete more than 10% of a root or more than 100 items in 10
   minutes is held: the Worker answers 409 `needs-confirmation`, and nothing goes until the owner confirms in `/main`.
   The extension shows the items as "waiting for confirmation" (spec invariant 5).
+  The reconciler already obeys the same guard (one function, `massDelete`, shared with `ledger.mjs`): a pass that would
+  log too many deletes is held in `held.json` and logs nothing until the owner `POST`s `…/confirm` (event-log.md §5).
 - **Renames and moves** are one `move` event with the same id (§3). Folder moves in the Worker are refused today (403).
   Building them is spec step 6: a resumable server-side job, one event per item.
 - **Local originals in `/Users/chauphan` are never touched by the File Provider.** The domain only contains R2. Moving

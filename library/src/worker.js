@@ -9,6 +9,7 @@
 //   /main/archive, /main/archive/f/…        the archive shelf: Main's page over gallery-archive, read-only (archive.js)
 //   /main/api/fp/<root>/…                   the File Provider's feed: items, changes, content (fp.js)
 //   /t/<id>/<name>                          a temporary download from the self-deleting TMP bucket (tmp.js)
+//   /i/attachments/<ext>/<h2>/<sha256>.<ext> an Obsidian note's image, public, from NOTES_IMAGES (images.js)
 //
 // Everything under /main sits behind Cloudflare Access, and the Worker checks the owner itself
 // (access.js). Anyone else gets the same 404 as a link that doesn't exist.
@@ -25,6 +26,7 @@ import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, r
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
 import { archive } from "./archive.js";
+import { noteImage } from "./images.js";
 
 export default {
   async fetch(req, env, ctx) {
@@ -53,6 +55,7 @@ export default {
     if (path === "/api/transcript/run" && method === "POST") return linkTranscriptWrite(req, env, url, true);
     if (method !== "GET" && method !== "HEAD") return new Response("Method not allowed", { status: 405 });
 
+    if (path.startsWith("/i/")) return noteImage(req, env, path.slice(3));
     if (path === "/") return page(landingPage());
     if (path === "/api/gallery") return galleryApi(env, url);
     if (path === "/api/transcript/changes") return linkTranscriptChanges(env, url);

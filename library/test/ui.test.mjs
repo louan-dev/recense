@@ -377,6 +377,19 @@ await test("invite page: no menu, no delete, comment as the participant", false,
   assert.ok(notes["p.jpg"].list.some((c) => c.by === "Ana" && c.text === "from Ana"));
 });
 
+await test("invite page: a 1-hour link says when today it ends, not just the date", false, async (pg) => {
+  const r = await mf.dispatchFetch(base + "/main/api/invites", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, origin: base, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Bo", ttl: 3600, dir: "Pics" }),
+  });
+  const { url, expires } = await r.json();
+  await pg.goto(base + "/m/" + url.split("/m/")[1]);
+  const want = await pg.evaluate((t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), expires);
+  const day = await pg.evaluate((t) => (new Date(t).getDate() === new Date().getDate() ? "today" : "tomorrow"), expires);
+  assert.equal(await pg.textContent("#exp"), "Expires " + day + " at " + want);
+});
+
 await test("select on Main, then … > Create Share Link makes the link and copies it", true, async (pg) => {
   await pg.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
   await pg.goto(base + "/main?p=Raven");

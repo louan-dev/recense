@@ -6,7 +6,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "build:test": "wrangler deploy --dry-run --outdir .test-build",
-    "test": "npm run build:test && node test/keylabel.test.mjs && node test/routes.test.mjs && node test/dav-rclone.test.mjs && node test/transcript.test.mjs && node test/ui.test.mjs"
+    "test": "npm run build:test && node test/keylabel.test.mjs && node test/routes.test.mjs && node test/dav-rclone.test.mjs && node test/transcript.test.mjs && node test/images.test.mjs && node test/ui.test.mjs"
   },
   "devDependencies": {
     "miniflare": "4.20260730.0",
