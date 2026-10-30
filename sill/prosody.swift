@@ -119,11 +119,15 @@ enum Prosody {
               if (!cells.length) return null;
               const cv = document.createElement('canvas');
               cv.width = Math.max(1, Math.ceil(spec.width * dpr)); cv.height = Math.max(1, Math.ceil(laneH * dpr));
-              const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
-              Prosogram.plugin.full(ctx, { t: 1e9, pro: P.pro, words: P.words, progress: P.progress, expr: 1, glyphs: false,
-                page: [{ line: { words: cells.map(c => c.w) }, cells, size: s, alpha: 1, lineHeight: laneH, font: s + 'px sans-serif' }],
-                colors: { ahead: 'rgb(150,148,140)', pale: 'rgb(228,224,214)' }, at: () => null, signals: { E: true } });
-              return cv.toDataURL('image/png');
+              // two pictures: the prosody (dimmed ahead, revealed by the light) and the score's symbols (lit throughout)
+              const one = layer => {
+                const ctx = cv.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.scale(dpr, dpr);
+                Prosogram.plugin.full(ctx, { t: 1e9, pro: P.pro, words: P.words, progress: P.progress, expr: 1, glyphs: false, layer,
+                  page: [{ line: { words: cells.map(c => c.w) }, cells, size: s, alpha: 1, lineHeight: laneH, font: s + 'px sans-serif' }],
+                  colors: { ahead: 'rgb(150,148,140)', pale: 'rgb(228,224,214)' }, at: () => null, signals: { E: true } });
+                return cv.toDataURL('image/png');
+              };
+              return [one('prosody'), one('symbols')];
             };
             </script>
             """
@@ -185,12 +189,12 @@ enum Prosody {
 
     // ---------- the score: Gallery's notation, drawn by prosogram.js for one row ----------
     /// One row's notation pictures, by its layout; asked for once, drawn in the engine page, then only composited.
-    nonisolated(unsafe) private static var scores: [String: NSImage] = [:]
+    nonisolated(unsafe) private static var scores: [String: (NSImage, NSImage)] = [:]
     nonisolated(unsafe) private static var asked: [String: Date] = [:]
     /// The picture of a row's notation (cells: each word's flat index, x from the picture's left, width), or nil while
     /// it is being drawn; `ready` runs once it is, so the view redraws.
     @MainActor
-    static func score(size: CGFloat, width: CGFloat, cells: [(flat: Int, x: CGFloat, w: CGFloat)], ready: @escaping () -> Void) -> NSImage? {
+    static func score(size: CGFloat, width: CGFloat, cells: [(flat: Int, x: CGFloat, w: CGFloat)], ready: @escaping () -> Void) -> (prosody: NSImage, symbols: NSImage)? {
         guard let l = live, let eng = engine else { return nil }
         let id = "\(l.key)|\(Int(size))|\(Int(width))|" + cells.map { "\($0.flat):\(Int($0.x)):\(Int($0.w))" }.joined(separator: ",")
         if let img = scores[id] { return img }
@@ -199,11 +203,14 @@ enum Prosody {
         let spec: [String: Any] = ["key": l.key, "size": size, "width": width, "cells": cells.map { ["flat": $0.flat, "x": $0.x, "w": $0.w] }]
         guard let d = try? JSONSerialization.data(withJSONObject: spec), let json = String(data: d, encoding: .utf8) else { return nil }
         eng.web.evaluateJavaScript("window.score && window.score(\(json))") { value, _ in
-            guard let url = value as? String, let comma = url.firstIndex(of: ","),
-                  let png = Data(base64Encoded: String(url[url.index(after: comma)...])), let img = NSImage(data: png) else { return }
-            img.size = NSSize(width: width, height: size * 1.9)
+            let imgs = (value as? [String] ?? []).compactMap { url -> NSImage? in
+                guard let comma = url.firstIndex(of: ","), let png = Data(base64Encoded: String(url[url.index(after: comma)...])),
+                      let img = NSImage(data: png) else { return nil }
+                img.size = NSSize(width: width, height: size * 1.9); return img
+            }
+            guard imgs.count == 2 else { return }
             if scores.count > 300 { scores.removeAll() }
-            scores[id] = img; asked[id] = nil
+            scores[id] = (imgs[0], imgs[1]); asked[id] = nil
             ready()
         }
         return nil

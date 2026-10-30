@@ -2282,9 +2282,11 @@ final class WordsView: NSView {
         let font = first.0.font, s = font.pointSize, pad = ceil(s)
         let x0 = figs.map { $0.1.x }.min()! - pad, x1 = figs.map { $0.1.x + Self.width($0.0) }.max()! + pad
         let top = first.1.y + Self.lineHeight(font) + Self.above(font)
-        guard let img = Prosody.score(size: s, width: x1 - x0, cells: figs.map { (flat: $0.0.figure!.flat, x: $0.1.x - x0, w: Self.width($0.0)) },
+        guard let pic = Prosody.score(size: s, width: x1 - x0, cells: figs.map { (flat: $0.0.figure!.flat, x: $0.1.x - x0, w: Self.width($0.0)) },
                                       ready: { [weak self] in self?.needsDisplay = true }) else { return }
-        let rect = NSRect(x: x0, y: top, width: x1 - x0, height: s * 1.9)
+        let rect = NSRect(x: x0, y: top, width: x1 - x0, height: s * 1.9), img = pic.prosody
+        // the score's symbols (fermatas, rests, dynamics, articulations) are lit from the start: read ahead, not as heard
+        defer { pic.symbols.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil) }
         // how far the light has gone: through a word at its progress, across a gap over the time between two words
         var light = -CGFloat.infinity
         for (i, (k, p)) in figs.enumerated() {
@@ -7150,7 +7152,10 @@ final class NativeSources {
     }
     /// The app whose sound SoundEngine takes, or nil when the bridge does it (or nothing should be taken).
     var nativeSoundPID: pid_t? {
-        guard browserMode, !SoundEngine.flat(sound) else { return nil }
+        // Held through a track change too: the new piece's episode loads a moment after its sound starts, and dropping
+        // the chain meanwhile let the next track begin in its own key and EQ, then switch (item 21).
+        let held = Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 5)
+        guard browserMode || held, !SoundEngine.flat(sound) else { return nil }
         let ids: [String]
         switch pos.source {
         case "browser":
