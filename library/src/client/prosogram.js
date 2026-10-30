@@ -26,11 +26,12 @@ const STAFF = 4                   // the staff's outer lines, semitones above / 
 const GLISS = 1.5                 // a syllable moving less than this (semitones) is drawn level
 const JOIN = 0.45                 // cutAfter below this (and no breath): a glide joins the words
 const MARK = 0.1                  // articulation marks: this far under a segment's lower edge
-const PIN = 0.8                   // dynamics / hairpin band under the lane centre
+const PIN = 0.66                  // dynamics / hairpin band under the lane centre
 const DYN = ['pp', 'p', 'mp', 'mf', 'f', 'ff']
 const LOW = 0.62                   // lowest label baseline below the lane centre (clear of the next row)
 const TIE = 0.27 - LANE           // inner ties (apostrophe / hyphen) sit just under the glyphs
 const LIAISON = 'rgb(64,224,208)'      // reserved for liaisons only (turquoise; gold is the live position)
+const SYM = 'rgb(236,186,92)'       // the score's symbols (fermata, rests, dynamics, articulations): lit ahead, always
 const INK = 'rgb(228,224,214)', GREY = 'rgb(150,148,140)', GOLD = 'rgb(255,214,51)'
 const CHAO = { ngang: '33', huyen: '21', sac: '35', sacK: '45', hoi: '313', nga: '3ʔ5', nang: '21ʔ', nangK: '21' }
 
@@ -107,7 +108,7 @@ function build(f, x, c, s, E, nb) {
     return -up
   }
   const segs = stylize(x, Wd, s, E, pro, offY)
-  const g = { Wd, segs, labels: [], marks: [], glides: new Path2D(), xglide: new Path2D(), ticks: new Path2D(), fdots: new Path2D(), ties: new Path2D(), anchors: new Path2D(), erase: new Path2D(), dotted: new Path2D(), inner: null, breath: null, nodes: [], cross: null }
+  const g = { Wd, segs, labels: [], marks: [], glides: new Path2D(), xglide: new Path2D(), ticks: new Path2D(), fdots: new Path2D(), ties: new Path2D(), anchors: new Path2D(), erase: new Path2D(), dotted: new Path2D(), inner: null, breath: null, nodes: [], cross: null, ferm: [] }
   const segOf = si => segs.filter(q => q.si === si)
   // glides inside the word: from one syllable's segment to the next one's, where the voice ran on
   for (let i = 0; i + 1 < segs.length; i++) {
@@ -128,8 +129,7 @@ function build(f, x, c, s, E, nb) {
     if (f.lang === 'vi' && nd.tone) { const sy = x.syl[nd.syl]; g.labels.push({ text: CHAO[sy.toneKey] || CHAO[nd.tone] || '', x: bx, y: Math.min(LOW * s, ly), size: 0.17, a: 0.75, prio: 1, kind: 'tone' }); ly += 0.18 * s }
     { const sy = x.syl[nd.syl]
       if (x.breathAfter >= 0.18 && nd.syl === x.syl.length - 1 && sy.lengthen > 0.4) {   // held before the pause: a fermata
-        const fx = (sg.xa + sg.xb) / 2, fy = Math.min(sg.ya, sg.yb) - sg.lw / 2 - 0.07 * s, fr = 0.07 * s
-        g.ticks.moveTo(fx - fr, fy); g.ticks.arc(fx, fy, fr, Math.PI, 0); g.fdots.moveTo(fx + 0.018 * s, fy - 0.02 * s); g.fdots.arc(fx, fy - 0.02 * s, 0.018 * s, 0, Math.PI * 2)
+        g.ferm.push((sg.xa + sg.xb) / 2)                            // placed per row, over the row's highest mark (full)
       } }
     if (f.lang !== 'vi' && nd.stressed) { const y = sg.ya - sg.lw / 2 - 0.04 * s; g.ticks.moveTo(sg.xa, y); g.ticks.lineTo(sg.xa - 0.025 * s, y - 0.1 * s) }   // ˈ before the stressed syllable
     if (nd.interval != null && Math.abs(nd.interval) >= 3) {         // the leap drawn to scale: an arrow as long as the interval
@@ -246,6 +246,14 @@ function context(pro, cells, k, idx) {
 
 function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach) {
   const head = p * g.Wd, k = a0 * lerp(0.95, 0.72, settle)
+  if (f.layer === 'symbols') {                                    // only the score's symbols, in their own lit colour
+    ctx.save(); ctx.translate(c.x, cy); ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.globalAlpha = a0
+    ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(g.lines); ctx.fill(g.dots)
+    if (g.rest) { ctx.lineWidth = Math.max(1.4, s * 0.035); ctx.stroke(g.rest.line); ctx.fill(g.rest.fill) }
+    if (g.breath) { if (g.breath.stroke) { ctx.lineWidth = Math.max(1, s * 0.028); ctx.stroke(g.breath.path) } else ctx.fill(g.breath.path) }
+    ctx.restore(); return
+  }
+  const sym = f.layer !== 'prosody'
   ctx.save(); ctx.translate(c.x, cy)
   if (live) { ctx.save(); ctx.beginPath(); ctx.rect(-s, -2 * s, head + s, 4 * s); ctx.clip() }
   ctx.lineCap = 'butt'
@@ -259,8 +267,8 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
   for (const nd of g.nodes) { ctx.globalAlpha = a0 * lerp(1, 0.8, settle); ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.r, 0, Math.PI * 2); ctx.fill() }
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = INK
   for (const m of g.marks) { ctx.font = `${Math.round(s * m.size)}px "Times New Roman", Times, serif`; ctx.globalAlpha = k * 0.9; ctx.fillText(m.text, m.x, m.y) }
-  ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = k * 0.9; ctx.stroke(g.ticks); ctx.stroke(g.lines); ctx.fillStyle = INK; ctx.fill(g.fdots)
-  ctx.fillStyle = INK; ctx.fill(g.dots)
+  ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = k * 0.9; ctx.stroke(g.ticks); ctx.fillStyle = INK; ctx.fill(g.fdots)
+  if (sym) { ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.stroke(g.lines); ctx.fill(g.dots) }
   { const m = ctx.getTransform(); TOP.push(() => {             // every tie last, whole, after every line is down
     ctx.save(); ctx.setTransform(m)
     if (reach < Infinity) { ctx.beginPath(); ctx.rect(-s, -2 * s, reach + s, 4 * s); ctx.clip() }   // a tie grows with the voice
@@ -279,11 +287,11 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
   ctx.lineCap = 'butt'; ctx.lineWidth = gl; ctx.setLineDash([gl, gl * 2.5]); ctx.globalAlpha = k * 0.7; ctx.stroke(g.xglide); ctx.setLineDash([])
   ctx.restore()
   for (const l of g.labels) labels.push({ ...l, x: c.x + l.x, y: cy + l.y, a: a0 * l.a, floor: cy + (LOW + 0.05) * s })
-  if (g.rest) { ctx.save(); ctx.fillStyle = INK; ctx.strokeStyle = INK; ctx.globalAlpha = a0 * 0.85; ctx.lineWidth = Math.max(1.4, s * 0.035); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(g.rest.line); ctx.fill(g.rest.fill); ctx.restore() }
-  if (g.breath) {
+  if (g.rest && sym) { ctx.save(); ctx.fillStyle = SYM; ctx.strokeStyle = SYM; ctx.globalAlpha = a0 * 0.85; ctx.lineWidth = Math.max(1.4, s * 0.035); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(g.rest.line); ctx.fill(g.rest.fill); ctx.restore() }
+  if (g.breath && sym) {
     ctx.globalAlpha = a0 * 0.8
-    if (g.breath.stroke) { ctx.strokeStyle = GREY; ctx.lineWidth = Math.max(1, s * 0.028); ctx.lineCap = 'round'; ctx.stroke(g.breath.path) }
-    else { ctx.fillStyle = GREY; ctx.fill(g.breath.path) }
+    if (g.breath.stroke) { ctx.strokeStyle = SYM; ctx.lineWidth = Math.max(1, s * 0.028); ctx.lineCap = 'round'; ctx.stroke(g.breath.path) }
+    else { ctx.fillStyle = SYM; ctx.fill(g.breath.path) }
   }
   ctx.restore()
 }
@@ -352,7 +360,7 @@ function drawScore(ctx, f) {
   const cv = ctx.canvas, W = cv.width, H = cv.height, m = ctx.getTransform()
   scratch = surface(scratch, W, H); tint = surface(tint, W, H)
   const sc = scratch.getContext('2d'); sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, W, H); sc.setTransform(m)
-  if (f.ribbon !== false) plugin.full(sc, { ...f, t: 1e9, glyphs: false, expr: f.expr ?? 1 })
+  if (f.ribbon !== false) plugin.full(sc, { ...f, t: 1e9, glyphs: false, expr: f.expr ?? 1, layer: 'prosody' })
   ctx.save()
   for (const ln of f.page) {
     const s = ln.size, light = lights(f.pro, ln.cells, f.t, f.progress)
@@ -383,6 +391,8 @@ function drawScore(ctx, f) {
     }
   }
   ctx.restore()
+  // the score's symbols, lit from the moment the line is on screen: a musician reads them ahead, not as they come
+  if (f.ribbon !== false) plugin.full(ctx, { ...f, t: 1e9, glyphs: false, expr: f.expr ?? 1, layer: 'symbols' })
 }
 
 // ---------- Host contract ----------
@@ -415,8 +425,8 @@ const plugin = {
     ['┈', 'glide: the voice runs on · gap: detached'],
     ['• 35  ˈ', 'nucleus · Vietnamese tone (Chao) · French stress'],
     ['↗ ↘  ↕', 'phrase-final rise / fall · a leap, drawn to scale'],
-    ['𝄐', 'held before a pause'],
-    ['▁▂▃▅  < >', 'loudness level (filled bars) · getting louder / softer'],
+    ['𝄐', 'held before a pause (over the row\'s highest mark)'],
+    ['pp … ff  < >', 'loudness level · getting louder / softer'],
     ['· – > ⁘', 'staccato · tenuto · accent · ricochet'],
     ['‿ z', 'liaison (turquoise tie) and its sound; dotted = not made'],
     ['’  //', 'breath · long pause'],
@@ -429,7 +439,8 @@ const plugin = {
       const s = ln.size, cells = ln.cells, a0 = ln.alpha
       ctx.save()
       // the staff: reference and ±4 semitones under each row, very faint (unlabelled: the numbers read as stray marks)
-      if (E > 0.02) {
+      const symOnly = f.layer === 'symbols', sym = f.layer !== 'prosody'
+      if (E > 0.02 && !symOnly) {
         const rows = new Map()
         for (const c of cells) { const r = rows.get(c.row) || { x0: Infinity, x1: -Infinity, y: c.y }; r.x0 = Math.min(r.x0, c.x); r.x1 = Math.max(r.x1, c.x + c.width); rows.set(c.row, r) }
         const A = AMP * s * E, lim = v => { const up = v * A; return -(up > RISE * s ? RISE * s + KNEE * s * Math.tanh((up - RISE * s) / (KNEE * s)) : up < -FALL * s ? -FALL * s - KNEE * s * Math.tanh((-up - FALL * s) / (KNEE * s)) : up) }
@@ -444,7 +455,7 @@ const plugin = {
       }
       const idx = []
       for (let i = 0; i < cells.length; i++) { const x = pro.word[cells[i].w.flat]; if (x && !x.punct && x.pts.n) idx.push(i) }
-      const labels = []
+      const labels = [], ceil = new Map(), ferms = []        // per row: the highest mark's top (absolute y); fermatas
       for (let k = 0; k < idx.length; k++) {
         const c = cells[idx[k]], w = c.w
         if (t < w.s) continue
@@ -462,12 +473,22 @@ const plugin = {
           reach = t < nw.s ? c.width + (gap - c.width) * (nw.s > w.e + 0.01 ? cl((t - w.e) / (nw.s - w.e)) : 1) : gap + nc.width * f.progress(nw, t)
         }
         drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels, reach)
+        { let top = ceil.get(c.row) ?? Infinity
+          for (const sg of g.segs) for (let i = 0; i <= 4; i++) top = Math.min(top, c.y + LANE * s + segY(sg, lerp(sg.xa, sg.xb, i / 4)) - sg.lw / 2)
+          for (const nd of g.nodes) top = Math.min(top, c.y + LANE * s + nd.y - nd.r)
+          ceil.set(c.row, top); for (const fx of g.ferm) ferms.push({ x: c.x + fx, row: c.row }) }
       }
-      for (const d of TOP.splice(0)) d()
+      if (symOnly) TOP.length = 0; else for (const d of TOP.splice(0)) d()
+      // fermatas: like over a staff, one height per row — just above the row's highest mark (its ceiling)
+      if (sym) for (const q of ferms) {
+        const fr = 0.075 * s, fy = ceil.get(q.row) - 0.11 * s
+        ctx.save(); ctx.globalAlpha = a0; ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.lineWidth = Math.max(1, s * 0.026); ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.arc(q.x, fy, fr, Math.PI, 0); ctx.stroke(); ctx.beginPath(); ctx.arc(q.x, fy - 0.015 * s, 0.02 * s, 0, Math.PI * 2); ctx.fill(); ctx.restore()
+      }
       const lightRow = new Map()
       for (const k of idx) { const c = cells[k], w = c.w, cur = lightRow.get(c.row) ?? -Infinity
         if (t >= w.e) lightRow.set(c.row, Math.max(cur, c.x + c.width + 0.5 * s)); else if (t >= w.s) lightRow.set(c.row, Math.max(cur, c.x + c.width * f.progress(w, t))) }
-      if (E > 0.02) for (let pi = 0; pi < pro.phrases.length; pi++) {
+      if (E > 0.02 && sym) for (let pi = 0; pi < pro.phrases.length; pi++) {
         const ph = pro.phrases[pi], first = ln.line.words[0].flat, last = ln.line.words[ln.line.words.length - 1].flat
         if (ph.w1 < first || ph.w0 > last) continue
         const on = []; for (const k of idx) { const c = cells[k]; if (c.w.flat >= ph.w0 && c.w.flat <= ph.w1) on.push(c) }
@@ -479,22 +500,20 @@ const plugin = {
           if (lx > c0.x) {
             ctx.save(); ctx.beginPath(); ctx.rect(c0.x - s, by - s, lx - c0.x + s, 2 * s); ctx.clip()
             let x0 = c0.x
-            if (showDyn && r0 === 0) {                           // the level as a rising stack of six bars, filled up to it
-              const bw = 0.045 * s, gap = 0.03 * s
-              ctx.fillStyle = INK; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, s * 0.012)
-              for (let q = 0; q < 6; q++) { const h = 0.06 * s + q * 0.04 * s, bx = x0 + q * (bw + gap)
-                ctx.globalAlpha = a0 * (q <= dyn ? 0.85 : 0.25); if (q <= dyn) ctx.fillRect(bx, by + 0.13 * s - h, bw, h); else ctx.strokeRect(bx, by + 0.13 * s - h, bw, h) }
-              x0 += 6 * (bw + gap) + 0.15 * s
+            if (showDyn && r0 === 0) {                           // the level as on a score: pp … ff, bold italic
+              ctx.font = `italic bold ${Math.round(s * 0.3)}px "Times New Roman", Times, serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+              ctx.fillStyle = SYM; ctx.globalAlpha = a0; ctx.fillText(DYN[dyn], x0, by); x0 += ctx.measureText(DYN[dyn]).width + 0.15 * s
             }
             const x1 = c1.x + c1.width, xm = Math.max(x0, x1 - Math.min(1.8 * s, (x1 - x0) / 2))
             if (ph.hairpin && x1 - xm > 0.6 * s) { const o = 0.15 * s, cr = ph.hairpin === 'cresc', ax = cr ? xm : x1, bx = cr ? x1 : xm
-              ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.8, s * 0.02); ctx.globalAlpha = a0 * 0.6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(bx, by - o); ctx.lineTo(ax, by); ctx.lineTo(bx, by + o); ctx.stroke() }
+              ctx.strokeStyle = SYM; ctx.lineWidth = Math.max(0.8, s * 0.02); ctx.globalAlpha = a0 * 0.85; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(bx, by - o); ctx.lineTo(ax, by); ctx.lineTo(bx, by + o); ctx.stroke() }
             ctx.restore()
           }
           r0 = r1 + 1
         }
       }
       // labels: liaison sounds first, then tones, then intervals; a crowded one steps down once or yields
+      if (symOnly) { ctx.restore(); continue }
       labels.sort((a, b) => a.prio - b.prio || a.x - b.x)
       const placed = []
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = GREY
