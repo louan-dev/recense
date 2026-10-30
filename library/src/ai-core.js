@@ -113,34 +113,125 @@ const LABEL = { reference: "published reference", personal: "owner's personal wr
 
 /** What the chat model is asked. Published references are trusted alongside general knowledge; the owner's personal
  *  writing tells what the owner thought or felt, never what is true. */
-export function buildMessages(question, hits, history = []) {
+export function buildMessages(question, hits, history = [], memories = []) {
   const sources = hits.map((h, i) =>
     `[${i + 1}] (${LABEL[h.auth] || LABEL.personal}) ${h.root === "archive" ? "Archive" : "Main"} / ${h.path}${h.t != null ? " at " + fmtTime(h.t) : ""}\n${h.text}`).join("\n\n");
+  const mem = (Array.isArray(memories) ? memories : []).slice(-MEMORY_IN_PROMPT).map((m) => `- ${m.text}`).join("\n");
   const system = [
-    "You are the assistant in the owner's private gallery of documents and recordings.",
+    "You are the owner's personal assistant inside their private gallery of documents and recordings. You know them through their own",
+    "notes and through what they have told you, and you help with both knowledge questions and their own life.",
+    "",
     "Each numbered source below is labelled with what it is worth as evidence:",
     "- (published reference): published material such as a textbook, the MPEP, a statute or an article. Treat it as reliable knowledge,",
     "  on par with or above your general knowledge. Quote or closely paraphrase the wording that matters and cite it like [1].",
     "  For legal or regulatory material, cite section numbers exactly as they appear in the source.",
-    "- (owner's personal writing) and (owner's recording): reflections, journals, venting, drafts, notes, the owner talking. They mix",
-    "  opinions and feelings with factual statements. Sort them claim by claim:",
-    "  * Opinions, feelings, judgements and the owner's own experiences: use them only to answer what the owner thought, felt or did.",
-    "  * Factual claims (e.g. a fact of science, law or history mentioned in a reflection): check each against the published references",
-    "    and your general knowledge. If it checks out, you may use it as a fact and cite it like [2] alongside what confirms it. If it is",
-    "    partly or wholly wrong, use only the correct part, state the correction plainly, and never let the note override the facts.",
-    "    If it can't be checked, say it comes from the owner's notes and is unverified.",
+    "- (owner's personal writing) and (owner's recording): reflections, journals, venting, drafts, notes from therapy or coaching, the",
+    "  owner talking. They mix opinions and feelings with factual statements. Sort them claim by claim:",
+    "  * About the owner (habits, preferences, energy, how they manage time, goals, what they felt, what helps them, and a therapist's or",
+    "    coach's observations of them): this is the best evidence about the owner's own life. A therapist's observation is a professional's",
+    "    view of the owner; weigh it more than a passing mood. Use these to answer questions and give advice about the owner's own life.",
+    "  * Opinions and judgements about the world: they tell what the owner thinks, not what is true.",
+    "  * Factual claims about the world (e.g. a fact of science, law or history mentioned in a reflection): check each against the",
+    "    published references and your general knowledge. If it checks out, use it as a fact and cite it like [2] alongside what confirms",
+    "    it. If it is partly or wholly wrong, use only the correct part, state the correction plainly, and never let the note override",
+    "    the facts. If it can't be checked, say it comes from the owner's notes and is unverified.",
     "- (file name only): the file exists; its content wasn't read.",
+    "",
+    "Advice about the owner's own life (e.g. \"should I meet a friend at 5 pm?\"): ground it in their notes and in what you remember about",
+    "them, say what it rests on (\"Based on your reflections on evenings [3]…\", \"Your therapist observed… [4]\"), give a clear",
+    "recommendation and a practical alternative (e.g. reschedule). If nothing in their notes bears on it, say so and answer generally.",
+    "When the owner is upset or venting: acknowledge how they feel first, briefly and warmly, without lecturing; then draw on what their",
+    "therapy notes and reflections say helps them, and name it. You support their therapy; you are not their therapist, and you don't",
+    "diagnose. If anything suggests they might harm themselves or someone else, or are in danger, gently urge them to contact their",
+    "therapist now or call or text 988 (Suicide & Crisis Lifeline, US), or emergency services.",
+    "",
     "Where no source covers a factual question, answer from general knowledge and start that part with \"General knowledge:\".",
-    "Never invent citations, section numbers, file names, quotes or facts. If you are not sure, say what you don't know.",
+    "Never invent citations, section numbers, file names, quotes, memories or facts. If you are not sure, say what you don't know.",
     "Answer in the language of the question. Be concise unless asked for detail.",
+    "",
+    "What you remember about the owner from past conversations (their own words; preferences and facts about them, not about the world):",
+    mem || "(nothing yet)",
     "",
     "Sources:",
     sources || "(none matched in the owner's files)",
   ].join("\n");
-  const past = (Array.isArray(history) ? history : []).slice(-6)
-    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-    .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
-  return [{ role: "system", content: system }, ...past, { role: "user", content: String(question).slice(0, 4000) }];
+  return [{ role: "system", content: system }, ...cleanHistory(history), { role: "user", content: String(question).slice(0, 4000) }];
+}
+
+const cleanHistory = (history) => (Array.isArray(history) ? history : []).slice(-6)
+  .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+  .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+
+// ---------- finding what bears on a question ----------
+
+/** Asks a small model for up to three searches that would find what bears on the question, including the owner's own notes
+ *  about themselves when the question is about their life ("meet a friend at 5 pm" → "my habits and energy in the evening"). */
+export function planMessages(question, history = []) {
+  return [
+    { role: "system", content: [
+      "You write search queries for a personal library of documents, reflections, therapy notes and transcripts.",
+      "Given the owner's message, reply with JSON only: {\"queries\":[\"…\",\"…\"]} with 1 to 3 short queries in the message's language.",
+      "Include the topic itself; when the message is about the owner's own life, decisions, plans or feelings, add queries for what their",
+      "notes would say about it (habits, preferences, how they manage time or energy, what helps them, a therapist's observations).",
+    ].join("\n") },
+    ...cleanHistory(history).slice(-2),
+    { role: "user", content: String(question).slice(0, 2000) },
+  ];
+}
+
+/** The planner's reply as a list of queries, always starting with the question itself. */
+export function parseQueries(reply, question) {
+  let qs = [];
+  try { const m = /\{[\s\S]*\}/.exec(String(reply || "")); qs = m ? JSON.parse(m[0]).queries : []; } catch { qs = []; }
+  const out = [String(question).slice(0, 500)];
+  for (const q of Array.isArray(qs) ? qs : []) {
+    const t = String(q || "").trim().slice(0, 300);
+    if (t && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+// ---------- remembering the owner ----------
+
+export const MEMORY_MAX = 300;              // memories kept (oldest go first)
+export const MEMORY_IN_PROMPT = 80;         // most recent ones given to the model
+
+/** After an exchange: what the owner said that is worth remembering about them, and which memories they asked to drop. */
+export function memoryMessages(question, answer, memories = []) {
+  const list = memories.map((m) => `${m.id}: ${m.text}`).join("\n") || "(none)";
+  return [
+    { role: "system", content: [
+      "You keep a short memory of the owner for their personal assistant. Read the owner's message (and the assistant's reply for context).",
+      "Reply with JSON only: {\"remember\":[\"…\"],\"forget\":[\"id\"]}.",
+      "remember: durable facts about the owner that THEY stated or clearly confirmed: preferences, routines, how they like to work or manage",
+      "time, goals, important people, constraints, things they asked you to remember. One short third-person sentence each",
+      "(\"Prefers no social plans after 5 pm on weekdays.\"). Not passing moods, not facts about the world, not anything only the assistant",
+      "said, not something already in the memory list. Usually nothing: reply {\"remember\":[],\"forget\":[]}.",
+      "forget: ids from the list that the owner says are wrong, outdated, or asks you to forget.",
+      "",
+      "Memory list:",
+      list,
+    ].join("\n") },
+    { role: "user", content: `Owner: ${String(question).slice(0, 3000)}\n\nAssistant: ${String(answer || "").slice(0, 1500)}` },
+  ];
+}
+
+/** Applies the memory model's reply: new entries appended (deduplicated, capped), forgotten ids removed. */
+export function applyMemory(memories, reply, now = new Date().toISOString(), newId = () => crypto.randomUUID().slice(0, 8)) {
+  let o = {};
+  try { const m = /\{[\s\S]*\}/.exec(String(reply || "")); o = m ? JSON.parse(m[0]) : {}; } catch { o = {}; }
+  const forget = new Set((Array.isArray(o.forget) ? o.forget : []).map(String));
+  let out = (Array.isArray(memories) ? memories : []).filter((m) => !forget.has(m.id));
+  const have = new Set(out.map((m) => m.text.toLowerCase()));
+  for (const r of Array.isArray(o.remember) ? o.remember : []) {
+    const text = String(r || "").trim().slice(0, 300);
+    if (!text || have.has(text.toLowerCase())) continue;
+    have.add(text.toLowerCase());
+    out.push({ id: newId(), text, at: now });
+  }
+  if (out.length > MEMORY_MAX) out = out.slice(out.length - MEMORY_MAX);
+  return { memories: out, changed: forget.size > 0 || out.length !== memories.length || out.some((m, i) => m !== memories[i]) };
 }
 
 /** A vector id (Vectorize allows 64 bytes): a hash of root:path plus the passage number. */

@@ -6,6 +6,10 @@
 //   POST /main/api/ai/index   → one indexing step; call until { done: true } (the nightly cron also steps)
 //   GET  /main/api/ai/authority            → the owner's corrections of what a file or folder is worth as evidence
 //   PUT  /main/api/ai/authority { root, path, auth: "reference"|"personal"|null } → set or clear one (a folder covers what's in it)
+//   GET  /main/api/ai/memory  → what it remembers about the owner;  POST { text } adds one;  DELETE ?id=… forgets one
+// After each answer a small model notes durable things the owner said about themselves (ai/memory.json in MAIN); they go into
+// every later answer. Before searching, the same small model turns the question into up to three searches, so "should I meet a
+// friend at 5 pm?" also finds the owner's reflections on evenings and energy.
 // Each document is classified once when indexed (published reference vs the owner's personal writing, ai-core.js); the
 // owner's corrections (ai/authority.json in MAIN) win over that at question time, so fixing one needs no re-indexing.
 //
@@ -15,12 +19,15 @@
 // once (ai/text/<id>.txt in MAIN) and then embedded a slice at a time; ai/index.json in MAIN remembers where it got to.
 import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
-import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH } from "./ai-core.js";
+import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH,
+  planMessages, parseQueries, memoryMessages, applyMemory } from "./ai-core.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
+const FAST = "@cf/openai/gpt-oss-20b";      // env.AI_FAST_MODEL: planning searches and noting memories
 const EMBED = "@cf/baai/bge-m3";              // changing it means re-indexing everything (different vectors)
 const STATE = "ai/index.json";
 const AUTHORITY = "ai/authority.json";
+const MEMORY = "ai/memory.json";
 const TEXT = "ai/text/";
 const ROOTS = { main: { bucket: "MAIN", prefix: "files/" }, archive: { bucket: "ARCHIVE", prefix: "chauphan/" } };
 const MAX_DOC = 40 * 1024 * 1024;              // larger documents are indexed by name only
@@ -34,6 +41,7 @@ export async function aiRoute(req, env, ctx, url, path, method) {
   if (path === "/main/api/ai/status" && method === "GET") return status(env);
   if (path === "/main/api/ai/authority" && method === "GET") return jsonResponse({ ok: true, rules: await readAuthority(env) });
   if (path === "/main/api/ai/authority" && method === "PUT") return setAuthority(req, env);
+  if (path === "/main/api/ai/memory") return memoryRoute(req, env, url, method);
   if (!ready(env)) return notReady();
   if (path === "/main/api/ai/index" && method === "POST") return jsonResponse(await indexStep(env));
   if (method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -42,7 +50,7 @@ export async function aiRoute(req, env, ctx, url, path, method) {
   const q = String(body?.q || "").trim().slice(0, 4000);
   if (!q) return new Response("Empty question", { status: 400 });
   const scope = cleanScope(body.scope);
-  if (path === "/main/api/ai/search") return jsonResponse({ ok: true, hits: (await retrieve(env, q, scope)).map(publicHit) });
+  if (path === "/main/api/ai/search") return jsonResponse({ ok: true, hits: (await retrieve(env, [q], scope)).map(publicHit) });
   if (path === "/main/api/ai/ask") return ask(env, ctx, q, scope, body.history);
   return new Response("Not found", { status: 404 });
 }
@@ -91,19 +99,76 @@ async function embed(env, texts) {
   return r.data;
 }
 
-async function retrieve(env, q, scope) {
-  const [v] = await embed(env, [q]);
+/** The passages that bear on any of the queries: one embedding call, one Vectorize query each, best score per passage. */
+async function retrieve(env, queries, scope) {
+  const vecs = await embed(env, queries);
   const opts = { topK: 20, returnMetadata: "all" };
   if (scope.root !== "all") opts.filter = { root: scope.root };
-  const res = await env.VECTORS.query(v, opts);
+  const results = await Promise.all(vecs.map((v) => env.VECTORS.query(v, opts)));
+  const best = new Map();
+  for (const res of results) for (const m of res?.matches || []) {
+    if (!m.metadata) continue;
+    const had = best.get(m.id);
+    if (!had || m.score > had.score) best.set(m.id, m);
+  }
   const rules = await readAuthority(env);
-  const matches = (res?.matches || []).filter((m) => m.metadata).map((m) => {
+  const matches = [...best.values()].sort((a, b) => b.score - a.score).map((m) => {
     const h = { ...m.metadata, score: Math.round(m.score * 1000) / 1000 };
     const r = h.auth !== "name" && ruleFor(rules, h.root, h.path);
     if (r) h.auth = r === "personal" && h.kind === "transcript" ? "transcript" : r;
     return h;
   });
-  return pick(matches, scope, 8, 4);
+  return pick(matches, scope, 10, 4);
+}
+
+/** Up to three searches for the question (the question itself first); just the question if the planner fails. */
+async function plan(env, q, history) {
+  try {
+    const r = await env.AI.run(env.AI_FAST_MODEL || FAST, { messages: planMessages(q, history), max_tokens: 600, temperature: 0 });
+    return parseQueries(reply(r), q);
+  } catch { return [q]; }
+}
+
+const reply = (r) => (typeof r?.response === "string" ? r.response : r?.choices?.[0]?.message?.content);
+
+// ---------- memory ----------
+
+async function readMemory(env) {
+  const o = await env.MAIN.get(MEMORY);
+  const r = o ? await o.json().catch(() => null) : null;
+  return Array.isArray(r) ? r : [];
+}
+const writeMemory = (env, m) => env.MAIN.put(MEMORY, JSON.stringify(m), { httpMetadata: { contentType: "application/json" } });
+
+async function memoryRoute(req, env, url, method) {
+  const mem = await readMemory(env);
+  if (method === "GET") return jsonResponse({ ok: true, memories: mem });
+  if (method === "DELETE") {
+    const id = url ? url.searchParams.get("id") : new URL(req.url).searchParams.get("id");
+    const next = mem.filter((m) => m.id !== id);
+    if (next.length === mem.length) return new Response("No such memory", { status: 404 });
+    await writeMemory(env, next);
+    return jsonResponse({ ok: true, memories: next });
+  }
+  if (method === "POST") {
+    let b; try { b = await req.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
+    const text = String(b?.text || "").trim();
+    if (!text) return new Response("Empty memory", { status: 400 });
+    const { memories } = applyMemory(mem, JSON.stringify({ remember: [text] }));
+    await writeMemory(env, memories);
+    return jsonResponse({ ok: true, memories });
+  }
+  return new Response("Method not allowed", { status: 405 });
+}
+
+/** After an answer: what the owner said about themselves worth keeping, and memories they asked to drop. */
+async function remember(env, q, answer) {
+  try {
+    const mem = await readMemory(env);
+    const r = await env.AI.run(env.AI_FAST_MODEL || FAST, { messages: memoryMessages(q, answer, mem), max_tokens: 800, temperature: 0 });
+    const { memories, changed } = applyMemory(mem, reply(r));
+    if (changed) await writeMemory(env, memories);
+  } catch { /* a missed memory is not worth failing over */ }
 }
 
 // ---------- answering ----------
@@ -112,20 +177,24 @@ function ask(env, ctx, q, scope, history) {
   const enc = new TextEncoder(), { readable, writable } = new TransformStream();
   const w = writable.getWriter(), send = (o) => w.write(enc.encode(JSON.stringify(o) + "\n"));
   ctx.waitUntil((async () => {
+    let answer = "", ok = false;
     try {
-      const hits = await retrieve(env, q, scope);
+      const [queries, memories] = await Promise.all([plan(env, q, history), readMemory(env)]);
+      const hits = await retrieve(env, queries, scope);
       await send({ sources: hits.map((h, i) => ({ n: i + 1, root: h.root, path: h.path, kind: h.kind, auth: h.auth, t: h.t ?? null })) });
       const stream = await env.AI.run(env.AI_CHAT_MODEL || CHAT, {
-        messages: buildMessages(q, hits, history), stream: true, max_tokens: 2000, temperature: 0.2,
+        messages: buildMessages(q, hits, history, memories), stream: true, max_tokens: 2000, temperature: 0.2,
       });
       const strip = thinkStripper();
-      for await (const piece of sseText(stream)) { const t = strip(piece); if (t) await send({ t }); }
+      for await (const piece of sseText(stream)) { const t = strip(piece); if (t) { answer += t; await send({ t }); } }
       await send({ done: true });
+      ok = true;
     } catch (e) {
       await send({ error: "The assistant couldn't answer: " + (e && e.message ? e.message : "unknown error") });
     } finally {
       await w.close();
     }
+    if (ok) await remember(env, q, answer);
   })());
   return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
 }
