@@ -47,9 +47,10 @@ const MARK = ".folder-"; // Gallery's empty-folder marker (main.js): the folder 
 // anchor is older than log/ gets 410 and enumerates again instead of replaying months.
 const KEEP_MS = 30 * 24 * 3600 * 1000;
 const COMPACT_MAX = 20; // batches moved per pass
-// one request lists at most STEP_PAGES pages or STEP_MS, then saves where it got to. Measured live 2026-10-29: the
-// Worker is stopped at ~1 s of CPU, and one page of 1,000 objects costs ~35 ms (ids, rules), so 5 pages leave room.
-const STEP_PAGES = 5;
+// one request lists at most STEP_OBJECTS objects or STEP_MS, then saves where it got to. Measured live 2026-10-29 on
+// Main (29,519 objects): the Worker is stopped at ~1 s of CPU; R2 pages with metadata hold ~300 objects; 5 pages took
+// ~70 ms of CPU and ~2.8 s; the merge (21 parts, a 6 MB snapshot) took 236 ms and 7.8 s.
+const STEP_OBJECTS = 5000;
 const STEP_MS = 8000;
 const PASS_MAX_MS = 30 * 60 * 1000; // a pass not finished by then starts over
 export const GENESIS = "aeebad4a796fcc2e15dc4c6061b45ed9b373f26adfc798ca7d2d8cc58182718e"; // sha-256("genesis")
@@ -222,9 +223,11 @@ export async function reconcile(b, root, now = Date.now(), opt = {}) {
       let cursor = pass.cursor;
       const t0 = Date.now();
       let pages = 0;
+      let seen = 0;
       do {
         const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: opt.page || PAGE });
         pages++;
+        seen += r.objects.length;
         for (const o of r.objects) {
           const path = o.key.slice(root.prefix.length);
           if (!path || (!root.prefix && path.split("/")[0].startsWith("."))) continue;
@@ -236,7 +239,7 @@ export async function reconcile(b, root, now = Date.now(), opt = {}) {
           md5s[id] = md5Of(o);
         }
         cursor = r.truncated ? r.cursor : undefined;
-      } while (cursor && pages < (opt.stepPages || STEP_PAGES) && Date.now() - t0 < (opt.stepMs ?? STEP_MS));
+      } while (cursor && pages < (opt.stepPages || Infinity) && seen < STEP_OBJECTS && Date.now() - t0 < (opt.stepMs ?? STEP_MS));
       for (const p of folders) items[await folderId(p)] = { path: p, dir: true }; // this step's folders only
       // more to list, or a pass that already took steps: keep this part, and the merge gets a request of its own
       if (cursor || pass.parts > 0) {
