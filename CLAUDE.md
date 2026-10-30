@@ -2,8 +2,30 @@
 
 Shared plan: `../sync/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `../sync/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 
+## One app, three faces (settled 2026-10-28; this wins over anything that contradicts it)
+**Sill is the only app. There is no Recense app and no Recense process.** `sill/sill/recense.swift` (7.4k lines) *is*
+Recense: the largest and newest source here. Sill owns the window, the audio engine (`sill/soundengine.swift`), the
+localhost server on port 47123, the Groq calls, the caches and the keys. Verified 2026-10-28: `/Applications/Recense.app`
+does not exist, no Recense process runs, and Sill holds 47123.
+
+- **`sill/recense/` is dead.** An older, smaller (6.5k-line) copy of the app Recense used to be, with its own `build.sh`
+  and `Info.plist` that make it look alive. Never build it, never edit it, never cite it as the source of truth. It is
+  reference only, pending deletion by the Nook procedure below.
+- **Recense is a surface inside Sill, not a dependency.** Live transcription, karaoke light, transcript edits, looping,
+  speed, EQ/Key/Space, rename, download, transcript and M4B export, retranscribe, retranslate, vocal and instrumental
+  extraction, share — all of it runs in Sill, in its own window, with Gallery's Worker unreachable and no second process.
+  Transcription calls `api.groq.com` directly and caches locally; `keep/<key>/` is a mirror for sharing with Gallery,
+  merged on read, never required.
+- **Gallery is two things to Sill:** shared client code (`homebar.js`, `homebar.css`, `keylabel.js`, `room.js`, and later
+  `prosody.js`/`prosogram.js`) copied into the bundle by `build.sh`; and an optional cloud side (Worker + R2) for sync.
+  `gallery:files/<path>` is one source among local files and followed players, gated on `Store.r2`. Do not merge the
+  projects, and do not let Recense acquire a hard dependency on the Worker.
+- **Where work goes:** Recense → `sill/sill/recense.swift`. The strip → `sill/sill/sill.swift`. The tap and audio chain →
+  `sill/sill/soundengine.swift`. The home-bar host page → `sill/sill/homebar/index.html` (the one `build.sh` bundles).
+  Shared JS → Gallery's `src/client/`, copied by `build.sh`.
+
 ## Where things are
-- App: `sill/sill.swift` (about 7.2k lines, one file), `sill/build.sh`, `sill/Package.swift`, `sill/Sources/`, `sill/README.md`, `sill/scripts/`.
+- App: `sill/sill.swift` (about 7.6k lines), `sill/recense.swift` (7.4k, Recense), `sill/soundengine.swift` (the process tap and EQ/Key/Space chain), `sill/build.sh`, `sill/Package.swift`, `sill/Sources/`, `sill/README.md`, `sill/scripts/`.
 - `backups/` holds 19 manual `sill.swift.pre-*` snapshots. Git replaces them: keep `backups/` out of git. Never overwrite them.
 - Build: `cd ~/Developer/sill/sill && zsh build.sh`. Check how build.sh compiles (single file or Sources/) before adding files, and wire new files in.
 - `.gitignore` before the first commit: `.build/`, `build/`, `*.bak`, `backups/`, `.env`, `.DS_Store`. Local git only, no remote, no push until the owner names a repo.
@@ -36,3 +58,16 @@ Not a standalone app. A notification-center-style panel that slides out from the
 
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation, next action. Label status DONE (verified) / PARTIAL / BLOCKED / PROPOSED. Commit before you start each task.
+## Changelog
+After each step, append an entry under ## CHANGELOG in ../sync/PROGRESS.md: date and time from `date`, item ID, status (DONE/PARTIAL/BLOCKED), what changed, validation, next action. Keep §7 current.
+
+## Live Notes Inbox Trigger (`/Users/chauphan/Developer/sill/notes`)
+- **Rule override:** The "Don't re-read unchanged files" rule at the top does NOT apply to `/Users/chauphan/Developer/sill/notes`. Treat `notes/` as a live instruction inbox that the owner may edit and save while you are in the middle of a task.
+- **Session baseline:** At the start of every task, run `mkdir -p /Users/chauphan/Developer/sill/notes && touch /Users/chauphan/Developer/sill/.handoff/.notes_sync` to set the timestamp baseline.
+- **Mid-task polling:** Before every build (`zsh build.sh`), git commit, or transition between sub-steps, run this fast check for newly saved files in `notes/`:
+
+    mkdir -p /Users/chauphan/Developer/sill/.handoff && \
+    CHANGED=$(find /Users/chauphan/Developer/sill/notes -type f -not -name '.*' -newer /Users/chauphan/Developer/sill/.handoff/.notes_sync 2>/dev/null) && \
+    if [ -n "$CHANGED" ]; then echo "NOTES_UPDATED:"; echo "$CHANGED"; touch /Users/chauphan/Developer/sill/.handoff/.notes_sync; fi
+
+- **Action on trigger:** Whenever `NOTES_UPDATED:` lists any files, pause your current step immediately, read the revised file(s) in `/Users/chauphan/Developer/sill/notes`, fold the new requirements or changes into your active task plan, and execute them before finishing the session.

@@ -1207,12 +1207,12 @@ final class FlippedView: NSView { override var isFlipped: Bool { true } }
 //
 // Microphone audio is AAC (.m4a) in Voice Memos' recordings folder, where Chau expects it (Voice Memos keeps its own
 // index, so these may not show in its list). Screen (display + system audio, ScreenCaptureKit, macOS 15+) and camera
-// (face-to-face video with the chosen microphone) are .mov files in ~/Movies/Sill Recordings. All selected streams
+// (face-to-face video with the chosen microphone) are .mov files in ~/Recordings. All selected streams
 // start together and stop together. The camera is a separate file for now; a picture-in-picture composite is not
 // built yet. Permissions are asked the first time each source is used.
 
 let recordingsFolder = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings"
-let screenRecordingsFolder = NSHomeDirectory() + "/Movies/Sill Recordings"
+let screenRecordingsFolder = NSHomeDirectory() + "/Recordings"
 
 enum CaptureState: Equatable { case ready, settings, recording, paused }
 
@@ -1230,6 +1230,8 @@ struct CaptureChoice {
     var micID: String? = preferredMicID()
     var cameraID: String? = AVCaptureDevice.default(for: .video)?.uniqueID
     var displayIndex = 0
+    var drawArea = false                  // "Draw Area…": drag out a rectangle before recording starts
+    var area: CGRect?                     // that rectangle, in global screen coordinates
 }
 
 func audioDevices() -> [AVCaptureDevice] {
@@ -1239,13 +1241,103 @@ func videoDevices() -> [AVCaptureDevice] {
     AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
 }
 
+/// "Draw Area…": dims every display; drag a rectangle on one of them and let go to record just that part.
+/// Esc (or a click without dragging) cancels.
+final class AreaPicker {
+    private final class KeyWindow: NSWindow { override var canBecomeKey: Bool { true } }
+    private final class DrawView: NSView {
+        var start: NSPoint?, rect: NSRect?
+        var finish: ((NSRect?) -> Void)?
+        override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
+        override var acceptsFirstResponder: Bool { true }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+        override func mouseDown(with e: NSEvent) { start = convert(e.locationInWindow, from: nil); rect = nil; needsDisplay = true }
+        override func mouseDragged(with e: NSEvent) {
+            guard let a = start else { return }
+            let b = convert(e.locationInWindow, from: nil)
+            rect = NSRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+            needsDisplay = true
+        }
+        override func mouseUp(with e: NSEvent) {
+            guard let r = rect, r.width > 20, r.height > 20, let w = window else { finish?(nil); return }
+            finish?(w.convertToScreen(convert(r, to: nil)))
+        }
+        override func keyDown(with e: NSEvent) { if e.keyCode == 53 { finish?(nil) } }
+        override func draw(_ d: NSRect) {
+            NSColor.black.withAlphaComponent(0.35).setFill(); bounds.fill()
+            if rect == nil {
+                let hint = "Drag to choose the area to record · Esc to cancel" as NSString
+                let at: [NSAttributedString.Key: Any] = [.font: roundedFont(15, .semibold), .foregroundColor: NSColor.white]
+                let sz = hint.size(withAttributes: at)
+                hint.draw(at: NSPoint(x: bounds.midX - sz.width / 2, y: bounds.midY - sz.height / 2), withAttributes: at)
+            }
+            guard let r = rect else { return }
+            NSColor.clear.setFill(); r.fill(using: .copy)
+            NSColor.white.setStroke()
+            let p = NSBezierPath(rect: r.insetBy(dx: -1, dy: -1)); p.lineWidth = 2; p.setLineDash([6, 4], count: 2, phase: 0); p.stroke()
+            let label = "\(Int(r.width)) × \(Int(r.height))" as NSString
+            let at: [NSAttributedString.Key: Any] = [.font: roundedFont(11, .semibold), .foregroundColor: NSColor.white]
+            label.draw(at: NSPoint(x: r.minX + 4, y: max(4, r.minY - 18)), withAttributes: at)
+        }
+    }
+
+    private static var windows: [NSWindow] = []
+
+    /// Calls `done` with the rectangle (global coordinates) and the index of the display it's on, or nil if canceled.
+    static func pick(_ done: @escaping (CGRect?, Int) -> Void) {
+        windows.forEach { $0.orderOut(nil) }; windows = []
+        let finish: (NSRect?) -> Void = { r in
+            windows.forEach { $0.orderOut(nil) }; windows = []
+            let idx = r.flatMap { r in NSScreen.screens.firstIndex { $0.frame.contains(NSPoint(x: r.midX, y: r.midY)) } } ?? 0
+            done(r, idx)
+        }
+        for s in NSScreen.screens {
+            let w = KeyWindow(contentRect: s.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            w.level = .screenSaver; w.isOpaque = false; w.backgroundColor = .clear
+            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            let v = DrawView(frame: NSRect(origin: .zero, size: s.frame.size))
+            v.finish = finish
+            w.contentView = v
+            w.orderFrontRegardless()
+            windows.append(w)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let under = windows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? windows.first
+        under?.makeKeyAndOrderFront(nil); under?.makeFirstResponder(under?.contentView)
+    }
+}
+
+/// While an area is chosen (white) and while it records, a thin outline sits just outside it, so you can see what's being recorded. It's Sill's own
+/// window (left out of the capture) and lets clicks through. Red while recording, orange while paused.
+final class AreaOutline {
+    private let window: NSWindow
+    private let box = CALayer()
+    init(_ area: CGRect) {
+        let pad: CGFloat = 4
+        window = NSWindow(contentRect: area.insetBy(dx: -pad, dy: -pad), styleMask: .borderless, backing: .buffered, defer: false)
+        window.level = .statusBar; window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        let v = NSView(frame: NSRect(origin: .zero, size: window.frame.size)); v.wantsLayer = true
+        box.frame = v.bounds.insetBy(dx: 1, dy: 1)
+        box.borderWidth = 2; box.cornerRadius = 3
+        v.layer?.addSublayer(box)
+        window.contentView = v
+        paused(false)
+        window.orderFrontRegardless()
+    }
+    func paused(_ p: Bool) { tint(p ? .systemOrange : .systemRed) }
+    func tint(_ c: NSColor) { box.borderColor = c.cgColor }
+    func close() { window.orderOut(nil) }
+}
+
 /// Screen + system audio to a .mov, via ScreenCaptureKit's recording output (macOS 15 and later).
 @available(macOS 15.0, *)
 final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
     private var stream: SCStream?
     private var finished: ((Bool) -> Void)?
 
-    func start(to url: URL, screen: NSScreen?, micID: String? = nil, _ done: @escaping (Bool) -> Void) {
+    func start(to url: URL, screen: NSScreen?, area: CGRect? = nil, micID: String? = nil, _ done: @escaping (Bool) -> Void) {
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -1258,6 +1350,12 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
                 let cfg = SCStreamConfiguration()
                 let scale = screen?.backingScaleFactor ?? 2
                 cfg.width = Int(CGFloat(display.width) * scale); cfg.height = Int(CGFloat(display.height) * scale)
+                // A drawn area: ScreenCaptureKit wants it in the display's points, measured from its top-left.
+                if let a = area, let sf = screen?.frame {
+                    let r = a.intersection(sf)
+                    cfg.sourceRect = CGRect(x: r.minX - sf.minX, y: sf.maxY - r.maxY, width: r.width, height: r.height)
+                    cfg.width = Int(r.width * scale) & ~1; cfg.height = Int(r.height * scale) & ~1
+                }
                 cfg.capturesAudio = true                      // computer audio, always
                 cfg.captureMicrophone = true                  // and your voice
                 if let id = micID { cfg.microphoneCaptureDeviceID = id }
@@ -1760,6 +1858,7 @@ final class PreflightView: NSView {
     var staysOpen = false { didSet { close.isHidden = staysOpen } }   // inside the audio menu: its ✕ closes it, not hovering away
     var onClose: (() -> Void)?
     var onCamera: ((Bool) -> Void)?             // Camera on/off: show or hide the mirror
+    private var areaPreview: AreaOutline?       // the drawn area, outlined in white until recording starts
     private var leaveWork: DispatchWorkItem?
     private var menuOpen = false
     let probe = DeviceCapture()
@@ -1777,7 +1876,7 @@ final class PreflightView: NSView {
         title.font = roundedFont(12, .bold); title.textColor = .white
         micChip.on = choice.mic; screenChip.on = choice.screen; camChip.on = choice.camera
         micChip.onToggle = { [weak self] v in self?.choice.mic = v; self?.refreshPath() }
-        screenChip.onToggle = { [weak self] v in self?.choice.screen = v; self?.refreshPath() }
+        screenChip.onToggle = { [weak self] v in self?.choice.screen = v; self?.refreshPath(); self?.showAreaPreview() }
         camChip.onToggle = { [weak self] v in self?.choice.camera = v; self?.refreshPath(); self?.onCamera?(v) }
         for p in [micPick, screenPick, camPick] {
             p.isBordered = false; p.font = roundedFont(11, .medium); p.controlSize = .small
@@ -1849,14 +1948,43 @@ final class PreflightView: NSView {
         for d in cams { camPick.addItem(withTitle: d.localizedName); camPick.lastItem?.representedObject = d.uniqueID }
         if let id = choice.cameraID, let i = cams.firstIndex(where: { $0.uniqueID == id }) { camPick.selectItem(at: i) }
         for (i, s) in NSScreen.screens.enumerated() { screenPick.addItem(withTitle: s.localizedName); screenPick.lastItem?.tag = i }
-        screenPick.selectItem(at: min(choice.displayIndex, NSScreen.screens.count - 1))
+        screenPick.menu?.addItem(.separator())
+        screenPick.addItem(withTitle: areaTitle); screenPick.lastItem?.tag = -1
+        if choice.drawArea { screenPick.select(screenPick.lastItem) }
+        else { screenPick.selectItem(at: min(choice.displayIndex, NSScreen.screens.count - 1)) }
         if cams.isEmpty { camPick.addItem(withTitle: "No camera"); camPick.isEnabled = false }
         refreshPath()
         startMeter()
+        showAreaPreview()
+    }
+
+    /// The area item reads "Draw Area…" until one is drawn, then its size (choosing it again redraws).
+    private var areaTitle: String {
+        guard let a = choice.area else { return "Draw Area…" }
+        return "Area \(Int(a.width)) × \(Int(a.height))"
+    }
+    func showAreaPreview() {
+        areaPreview?.close(); areaPreview = nil
+        if choice.screen, choice.drawArea, let a = choice.area { areaPreview = AreaOutline(a); areaPreview?.tint(.white) }
+    }
+    /// Choosing the area item: dim the screens and drag out the area now, before Start. Esc keeps what was there.
+    func drawArea() {
+        areaPreview?.close(); areaPreview = nil
+        AreaPicker.pick { [weak self] r, idx in
+            guard let self = self else { return }
+            if let r = r { self.choice.area = r; self.choice.displayIndex = idx }
+            self.choice.drawArea = self.choice.area != nil
+            let item = self.screenPick.lastItem
+            item?.title = self.areaTitle
+            if self.choice.drawArea { self.screenPick.select(item) }
+            else { self.screenPick.selectItem(at: min(self.choice.displayIndex, NSScreen.screens.count - 1)) }
+            self.showAreaPreview()
+        }
     }
 
     func shutDown() {
         meterTimer?.invalidate(); meterTimer = nil
+        areaPreview?.close(); areaPreview = nil
         if #available(macOS 15.0, *) { (systemMeter as? SystemAudioMeter)?.stop() }
         systemMeter = nil
         meter.reset()
@@ -1879,7 +2007,7 @@ final class PreflightView: NSView {
     func refreshPath() {
         var where_: [String] = []
         if choice.mic { where_.append("~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/") }
-        if choice.screen || choice.camera { where_.append("~/Movies/Sill Recordings/") }
+        if choice.screen || choice.camera { where_.append("~/Recordings/") }
         path.stringValue = "Choose at least one source"      // where it saves isn't shown: the folder opens when it's saved
         path.isHidden = !where_.isEmpty
         start.isEnabled = !where_.isEmpty
@@ -1889,7 +2017,13 @@ final class PreflightView: NSView {
     @objc func picked(_ p: NSPopUpButton) {
         if p === micPick { choice.micID = p.selectedItem?.representedObject as? String }
         if p === camPick { choice.cameraID = p.selectedItem?.representedObject as? String; if choice.camera { onCamera?(true) } }
-        if p === screenPick { choice.displayIndex = p.selectedItem?.tag ?? 0 }
+        if p === screenPick {
+            let tag = p.selectedItem?.tag ?? 0
+            choice.drawArea = tag < 0
+            if tag >= 0 { choice.displayIndex = tag }
+            if tag < 0, !choice.screen { choice.screen = true; screenChip.on = true; refreshPath() }
+            if tag < 0 { drawArea() } else { showAreaPreview() }
+        }
     }
     @objc func startTapped() { shutDown(); onStart?(choice) }
     @objc func closeTapped() { shutDown(); onClose?() }
@@ -1905,6 +2039,8 @@ final class RecorderView: NSView {
     let meterBars: [CALayer] = (0..<7).map { _ in CALayer() }
     let streams = NSTextField(labelWithString: "")       // which sources are live, as symbols
     let cancelButton = NSButton()                         // discard this recording (files go to the Trash)
+    let pauseButton = NSButton()                          // pause / resume
+    let stopButton = NSButton()                           // stop, save, and show the files in Finder
 
     private(set) var state: CaptureState = .ready
     var onOpenSettings: (() -> Void)?
@@ -1912,6 +2048,7 @@ final class RecorderView: NSView {
     let devices = DeviceCapture()
     var screenCapture: AnyObject?
     var mixed: AnyObject?                     // MixedAudioRecorder (mic + computer audio)
+    var outline: AreaOutline?                 // the drawn area's frame, while it records
     var files: [URL] = []
     var filesAtStart = 0                      // where this recording's files begin in `files`
     var lastFile: URL? { files.last }
@@ -1940,7 +2077,13 @@ final class RecorderView: NSView {
         cancelButton.contentTintColor = NSColor.white.withAlphaComponent(0.55)
         cancelButton.toolTip = "Cancel recording (moves its files to the Trash)"
         cancelButton.target = self; cancelButton.action = #selector(cancelRecording)
-        [ring, core, timer, badge, streams, cancelButton].forEach(addSubview)
+        for (b, sym, tip, sel) in [(pauseButton, "pause.fill", "Pause", #selector(pauseTapped)),
+                                   (stopButton, "stop.fill", "Stop and show in Finder", #selector(stopTapped))] {
+            b.image = NSImage(systemSymbolName: sym, accessibilityDescription: tip)
+            b.isBordered = false; b.contentTintColor = .white; b.toolTip = tip
+            b.target = self; b.action = sel
+        }
+        [ring, core, timer, badge, streams, pauseButton, stopButton, cancelButton].forEach(addSubview)
         render(animated: false)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -1953,7 +2096,9 @@ final class RecorderView: NSView {
         ring.layer?.cornerRadius = 15
         timer.frame = NSRect(x: 40, y: h / 2 - 9, width: 60, height: 19)
         badge.frame = NSRect(x: 102, y: h / 2 - 9, width: 40, height: 18)
-        streams.frame = NSRect(x: 148, y: h / 2 - 8, width: bounds.width - 148 - 24, height: 16)
+        streams.frame = NSRect(x: 148, y: h / 2 - 8, width: max(0, bounds.width - 148 - 72), height: 16)
+        pauseButton.frame = NSRect(x: bounds.width - 68, y: h / 2 - 9, width: 18, height: 18)
+        stopButton.frame = NSRect(x: bounds.width - 44, y: h / 2 - 9, width: 18, height: 18)
         cancelButton.frame = NSRect(x: bounds.width - 20, y: h / 2 - 9, width: 18, height: 18)
         render(animated: false)
     }
@@ -1961,6 +2106,10 @@ final class RecorderView: NSView {
     func render(animated: Bool) {
         let rec = state == .recording, paused = state == .paused
         cancelButton.isHidden = !(rec || paused)
+        pauseButton.isHidden = cancelButton.isHidden; stopButton.isHidden = cancelButton.isHidden
+        let ps = paused ? "play.fill" : "pause.fill"
+        pauseButton.image = NSImage(systemSymbolName: ps, accessibilityDescription: paused ? "Resume" : "Pause")
+        pauseButton.toolTip = paused ? "Resume" : "Pause"
         let size: CGFloat = rec ? 12 : (paused ? 14 : 18)
         let target = NSRect(x: ring.frame.midX - size / 2, y: ring.frame.midY - size / 2, width: size, height: size)
         let radius = rec ? 3 : (paused ? 4 : size / 2)
@@ -2077,6 +2226,8 @@ final class RecorderView: NSView {
         }
         return m
     }
+    @objc func pauseTapped() { singleClick?.cancel(); togglePause() }
+    @objc func stopTapped() { singleClick?.cancel(); stop() }
     @objc func revealFile() { NSWorkspace.shared.activateFileViewerSelecting(Array(files.suffix(3))) }
     @objc func copyPath() {
         guard let f = lastFile else { return }
@@ -2093,9 +2244,8 @@ final class RecorderView: NSView {
 
     /// Starts every selected stream together.
     func begin(_ c: CaptureChoice) {
-        filesAtStart = files.count
         choice = c
-        files = []
+        files = []; filesAtStart = 0
         sessionStart = Date(); pausedTotal = 0; pausedAt = nil
         // Audio: the microphone and whatever the Mac is playing, together in one .m4a. (Fallback on older macOS:
         // the microphone alone.)
@@ -2127,7 +2277,7 @@ final class RecorderView: NSView {
                 let cap = ScreenCapture()
                 let url = newFile("mov", in: screenRecordingsFolder, " screen")
                 let screen = NSScreen.screens.indices.contains(c.displayIndex) ? NSScreen.screens[c.displayIndex] : NSScreen.main
-                cap.start(to: url, screen: screen, micID: c.micID) { ok in
+                cap.start(to: url, screen: screen, area: c.area, micID: c.micID) { ok in
                     DispatchQueue.main.async {
                         if ok { self.screenCapture = cap; self.files.append(url) }
                         else { NSLog("sill: screen stream didn't start (check Screen Recording permission)") }
@@ -2135,6 +2285,7 @@ final class RecorderView: NSView {
                 }
             }
         }
+        if c.screen, let a = c.area { outline = AreaOutline(a) }
         state = .recording
         lastComputerSound = Date()
         runMeter(true)
@@ -2154,6 +2305,7 @@ final class RecorderView: NSView {
             if #available(macOS 15.0, *) { (mixed as? MixedAudioRecorder)?.resume() }
             pausedAt = nil; devices.resume(); runMeter(true); state = .recording
         }
+        outline?.paused(state == .paused)
         render(animated: true)
     }
 
@@ -2189,6 +2341,7 @@ final class RecorderView: NSView {
         let saved = Array(files.dropFirst(filesAtStart))
         group.notify(queue: .main) { if !saved.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(saved) } }
         screenCapture = nil; mixed = nil
+        outline?.close(); outline = nil
         runMeter(false)
         state = .ready; pausedAt = nil
         render(animated: true)
@@ -4298,7 +4451,15 @@ final class EssentialsView: ClickView {
                                              beside: win.convertToScreen(self.preflight.convert(self.preflight.bounds, to: nil))) }
             else { self.cameraPreview.hide() }
         }
-        preflight.onStart = { [weak self] c in self?.closePreflight(); self?.recorder.begin(c) }
+        preflight.onStart = { [weak self] c in
+            self?.closePreflight()
+            guard c.screen && c.drawArea && c.area == nil else { self?.recorder.begin(c); return }
+            AreaPicker.pick { r, idx in
+                guard let r = r else { return }                 // Esc: nothing starts
+                var c = c; c.area = r; c.displayIndex = idx
+                self?.recorder.begin(c)
+            }
+        }
         vault.onKeyboard = { [weak self] v in self?.onKeyboard?(v) }
 
         layoutContent()

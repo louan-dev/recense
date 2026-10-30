@@ -1,0 +1,35 @@
+#!/bin/zsh
+root=${0:A:h:h}
+overlay="$root/build/breakscreen"
+pidfile=/tmp/pomo.pid
+
+if [[ $1 == stop ]]; then
+  if [[ -f $pidfile ]]; then
+    pid=$(cat $pidfile)
+    kids=$(pgrep -P $pid)
+    kill $pid $kids 2>/dev/null
+    rm -f $pidfile
+  fi
+  exit
+fi
+
+work=${1:-25}
+[[ $work == <-> ]] || { echo "usage: pomo <minutes> [break] | pomo stop"; exit 1 }
+[[ -x $overlay ]] || { echo "Overlay not built. Run scripts/build.sh"; exit 1 }
+
+case $work in
+  75) brk=25 ;;
+  25) brk=5 ;;
+  *)  brk=5 ;;
+esac
+[[ $2 == <-> ]] && brk=$2
+
+nohup zsh -c "
+  osascript -e 'display notification \"Focus for $work min\" with title \"Pomodoro\"'
+  sleep $((work*60))
+  '$overlay' \"Time for a break\"
+  osascript -e 'display notification \"Break for $brk min\" with title \"Pomodoro\"'
+  sleep $((brk*60))
+  '$overlay' \"Break over\"
+" >/dev/null 2>&1 &
+echo $! > $pidfile

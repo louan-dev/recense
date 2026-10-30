@@ -33,7 +33,7 @@
     <key>NSCameraUsageDescription</key>
     <string>Sill records your camera when you turn on Camera in its recorder.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-	<string>Sill turns what you say into a draft Calendar event, recognized on this Mac.</string>
+	<string>Sill recognizes speech on this Mac: Recense learns the words you correct in its transcripts, and what you say becomes a draft Calendar event.</string>
 	<key>NSAudioCaptureUsageDescription</key>
     <string>Recense reshapes the sound of the player it follows (its EQ, Key and Space) by taking that app's audio.</string>
 	<key>NSMicrophoneUsageDescription</key>

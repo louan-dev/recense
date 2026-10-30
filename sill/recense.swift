@@ -36,6 +36,7 @@ enum Bookmarks {
 
 struct Config {
     var apiKey = "", whisperModel = "whisper-large-v3", translateModel = "qwen/qwen3.8-27b"
+    var transcriber = "auto"                   // auto: this Mac's own ears (speech.swift), Groq only where they can't hear; groq: Groq only
     var language = "", delay = 8.0, syncOffset = 0.0
     var base = "https://api.groq.com/openai/v1"
     var geniusToken = ""                       // optional: finds a song's lyrics from the words sung when its title doesn't
@@ -52,6 +53,7 @@ struct Config {
         c.apiKey = kv["GROQ_API_KEY"] ?? ""
         if let m = kv["WHISPER_MODEL"], m != "whisper-large-v3-turbo" { c.whisperModel = m }
         c.translateModel = kv["TRANSLATE_MODEL"] ?? c.translateModel
+        c.transcriber = (kv["TRANSCRIBER"] ?? c.transcriber).lowercased()
         c.language = kv["WHISPER_LANGUAGE"] ?? ""
         c.delay = Double(kv["SUBTITLE_DELAY"] ?? "") ?? c.delay
         c.base = kv["API_BASE"] ?? c.base
@@ -152,13 +154,16 @@ func transcribe(_ audio: Data, prompt: String? = nil, language: String? = nil) a
         return l
     }
     static var until: [String: Date] = [:]
-    static func pick() -> String? { list.first { (until[$0] ?? .distantPast) <= Date() } }
+    static func pick() -> String? { cfg.apiKey.isEmpty ? nil : list.first { (until[$0] ?? .distantPast) <= Date() } }
     static func cool(_ m: String, _ s: Double) { until[m] = Date().addingTimeInterval(s); log("\(m) cooling \(Int(s))s") }
-    static func soonest() -> Double { max(0.3, list.map { (until[$0] ?? .distantPast).timeIntervalSinceNow }.min() ?? 1) }
+    static func soonest() -> Double {
+        if cfg.apiKey.isEmpty { return 30 }      // no key: this Mac translates the next half minute, always
+        return max(0.3, list.map { (until[$0] ?? .distantPast).timeIntervalSinceNow }.min() ?? 1)
+    }
     /// When every model is out for more than a minute (daily quotas), translation is on hold until then.
     static var heldUntil: Date? {
         let d = list.map { until[$0] ?? .distantPast }.min() ?? .distantPast
-        return d.timeIntervalSinceNow > 60 ? d : nil
+        return !cfg.apiKey.isEmpty && d.timeIntervalSinceNow > 60 ? d : nil
     }
 }
 
@@ -379,8 +384,10 @@ struct PairSession: View {
 
 // ---------- subtitle model ----------
 struct Word: Codable {
-    let text: String; let start: Double; let end: Double
+    var text: String; let start: Double; let end: Double
     var lang: String? = nil   // the language Whisper heard it in (ISO 639-1), when the word is written in that language's script
+    var c: Double? = nil      // how sure the recognizer was of it (0–1; on-device ears)
+    var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
 }
 struct EnWord: Codable { let w: String; let s: [Int] }
 struct Line: Codable {
@@ -736,7 +743,7 @@ struct Override: Codable, Equatable {
                 let english = ws.count == l.words.count ? l.english : l.english.map { $0.map { EnWord(w: $0.w, s: []) } }
                 n = Line(id: l.id, words: Episode.layOver([ws], l.words)[0], english: english, draft: l.draft)
             } else if !g.isEmpty && !(l.id >= edited && l.id < edited + cutShort) {
-                n = Line(id: l.id, words: l.words.map { Word(text: gloss($0.text, g), start: $0.start, end: $0.end, lang: $0.lang) },
+                n = Line(id: l.id, words: l.words.map { var w = $0; w.text = gloss($0.text, g); return w },
                          english: l.english, draft: l.draft)
             }
             if lang != "en", let nl = tr[i]?[lang], !words(nl).isEmpty {
@@ -834,6 +841,8 @@ struct Override: Codable, Equatable {
         guard let remote else { return }
         let m = Corrections.merged(ep.edits, remote)
         guard !Corrections.sameShared(m, ep.edits) else { return }
+        let had = Set((ep.edits.overrides ?? []).map { "\($0.segId)|\($0.field)|\($0.updatedAt)" })
+        ep.teach(overrides: (m.overrides ?? []).filter { !had.contains("\($0.segId)|\($0.field)|\($0.updatedAt)") }, before: ep.edits)
         ep.edits = m
         ep.saveEdits(push: false)
         log("corrections: \((remote.overrides ?? []).count) fix(es) from Gallery laid over \(ep.key)")
@@ -2847,6 +2856,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             lyricsChecked = c.lyricsChecked9 ?? false; lyrics = c.lyrics ?? []; heard = c.heard ?? []
             songPipeline = c.songPipeline ?? 0; lyricOptions = c.lyricOptions ?? []; lyricsVerified = c.lyricsVerified ?? false
             language = c.language; publishedTitle = c.publishedTitle; redone = c.redone ?? []; offsite = c.offsite ?? []
+            engine = c.engine; lexiconSeen = c.lexicon ?? 0
             complete = (c.complete ?? false) && [0, 4].contains(c.songPipeline ?? 0)   // a newer song pipeline redoes it
             if !lyricsChecked { lyrics = []; lyricOptions = []; lyricsVerified = false; language = nil }
             // "…" means translation gave up on the line, usually only because a daily quota ran out: try again.
@@ -2896,8 +2906,11 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let prior = line.id >= edited && line.id < edited + cutShort ? edits.edits.first { $0.id == line.id - edited } : nil
         let from = prior?.from ?? lineKey(line)
         let lang = prior?.lang ?? languagesOf(line).first
+        // what the recognizer heard there (a line corrected before: the pipeline's words under that correction)
+        let asr = prior.map { p in lines.flatMap(\.words).filter { w in let m = (w.start + w.end) / 2; return m >= p.a && m <= p.b } } ?? line.words
         if let prior { drop(prior) }
         guard new.joined(separator: " ") != from else { saveEdits(); return }   // back to what the pipeline had
+        teach(asr, to: new, lang: lang)
         let terms = Glossary.learned(from: from, to: new)
         if let lang { Glossary.add(terms, lang: lang) }
         // this recording's glossary (shared with Gallery): each word replaced by one other, from the line as shown
@@ -2948,8 +2961,34 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         log("clear: \(all.count) lines hidden")
     }
 
+    /// What a correction teaches the ears (Lexicon), with how it sounded there: the recording around the words.
+    func teach(_ heard: [Word], to new: [String], lang: String?) {
+        guard !heard.isEmpty, !dry else { return }
+        let src = vocals ?? file, lo = max(0, (heard.first?.start ?? 0) - 1.8), hi = (heard.last?.end ?? 0) + 1.8, shift = self.shift, key = self.key
+        Task {
+            var audio: (samples: [Float], origin: Double)?
+            if let src, let s = try? await Task.detached(operation: { try decodeChunk(src, from: lo + shift, to: hi + shift) }).value, !s.isEmpty {
+                audio = (s, lo)
+            }
+            Lexicon.learn(heard, to: new, lang: lang, key: key, audio: audio)
+        }
+    }
+
+    /// Gallery's viewers' corrections (overrides that just arrived) teach the ears as this window's do.
+    func teach(overrides: [Override], before: Edits) {
+        let base = applyOwnEdits(lines, before)
+        var byId: [String: Int] = [:]
+        for (i, l) in base.enumerated() where byId[String(l.id)] == nil { byId[String(l.id)] = i }
+        for o in overrides where o.field == "text" {
+            guard let i = Corrections.target(base, o, byId, before) else { continue }
+            let l = base[i]
+            teach(l.words, to: Corrections.words(o.to), lang: languagesOf(l).first)
+        }
+    }
+
     private func drop(_ e: Edit) {
         if let l = e.lang { Glossary.remove(e.terms, lang: l) }
+        Lexicon.forget(key: key, a: e.a, b: e.b, lang: e.lang)
         if let t = e.taught, var g = edits.glossary {
             for (wrong, right) in t where g[wrong] == right { g[wrong] = "" }   // forgotten (kept as such, so a merge doesn't bring it back)
             edits.glossary = g; edits.updatedAt = (Date().timeIntervalSince1970 * 1000).rounded()
@@ -2962,6 +3001,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         var lyricsChecked9: Bool?; var lyrics: [String]?; var heard: [Word]?; var songPipeline: Int?
         var lyricOptions: [[String]]?; var lyricsVerified: Bool?; var language: String?; var publishedTitle: String?
         var redone: [[Double]]?; var offsite: [String]?; var complete: Bool?
+        var engine: String?; var lexicon: Int?      // the ears that heard it; the lexicon version it was last checked against
         static func read(_ key: String) -> Cache? {
             (try? Data(contentsOf: cacheDir.appendingPathComponent(key + ".v2.json"))).flatMap { try? JSONDecoder().decode(Cache.self, from: $0) }
         }
@@ -2997,7 +3037,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let c = Cache(lines: lines, done: done, duration: duration, lyricsChecked9: lyricsChecked, lyrics: lyrics,
                       heard: heard, songPipeline: songPipeline, lyricOptions: lyricOptions, lyricsVerified: lyricsVerified,
                       language: language, publishedTitle: publishedTitle, redone: redone, offsite: offsite,
-                      complete: complete)
+                      complete: complete, engine: engine, lexicon: lexiconSeen)
         if let d = try? JSONEncoder().encode(c) { try? d.write(to: cacheDir.appendingPathComponent(key + ".v2.json")) }
         Library.flush()
     }
@@ -3286,9 +3326,10 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             // Finished before (a replay whose audio is still here): nothing to separate or transcribe again.
             // (a spoken transcript with a stretch Whisper skipped gets that stretch asked for again, once).
             if complete && !done.isEmpty && !done.contains(false) {
+                await relisten()
                 if isSong { save(); await measureVoice(); return }
                 guard let src = file, let h = await skipped(src) else { save(); return }
-                await fill(h, src: src); try? await Task.sleep(for: .seconds(3.1)); continue
+                await fill(h, src: src); try? await Task.sleep(for: .seconds(pace)); continue
             }
             if isSong && vocals == nil && !vocalsTried { vocalsTried = true; await separateVocals(); continue }
             let p = min(Int(max(0, position()) / chunkLen), done.count)
@@ -3298,13 +3339,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 // Second pass, songs only: pick the lyrics by what was sung, then transcribe again, on its own, each
                 // phrase that came out in the wrong language or matches nothing.
                 if !isSong, !done.isEmpty, let h = await skipped(src) {
-                    await fill(h, src: src); try? await Task.sleep(for: .seconds(3.1)); continue
+                    await fill(h, src: src); try? await Task.sleep(for: .seconds(pace)); continue
                 }
                 guard isSong, !done.isEmpty else { complete = !done.isEmpty; save(); return }
                 if !lyricsVerified { await verifyLyrics(); continue }
                 guard !instrumental, let w = suspects().first else { complete = true; save(); await measureVoice(); return }
                 await redo(w, src: src)
-                try? await Task.sleep(for: .seconds(3.1))
+                try? await Task.sleep(for: .seconds(pace))
                 continue
             }
             let a = await cut(i), b = await cut(i + 1)
@@ -3341,7 +3382,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 log("chunk \(i) error: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(min(30, 3 * failures)))
             }
-            try? await Task.sleep(for: .seconds(3.1))           // Groq free tier: 20 requests/min
+            try? await Task.sleep(for: .seconds(pace))          // Groq free tier: 20 requests/min; none on this Mac
         }
     }
 
@@ -3358,6 +3399,22 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             else { missed.append(String(format: "%.2f–%.2f [%@]", lo, hi, language ?? "auto")); throw err("not captured") }
             return t
         }
+        // This Mac's own ears first: no quota, no connection. Groq only for a language they can't hear.
+        if OnDeviceASR.enabled, let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) {
+            if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
+            engine = t["engine"] as? String; pace = 0.05
+            if ProcessInfo.processInfo.environment["RECENSE_RAW"] != nil {
+                let f = cacheDir.appendingPathComponent(key + ".raw.json")
+                var all = (try? Data(contentsOf: f)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+                var e: [String: Any] = ["from": lo, "to": hi, "language": language ?? "", "stem": vocals != nil, "reply": t]
+                e["keep"] = keep; e["redo"] = redo
+                all.append(e)
+                if let d = try? JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys]) { try? d.write(to: f) }
+            }
+            return t
+        }
+        guard !cfg.apiKey.isEmpty else { throw err("this Mac can't hear \(language.map(languageName) ?? "this language") and there's no GROQ_API_KEY") }
+        pace = 3.1
         // this recording's own corrected words go last: Whisper heeds the end of a prompt most
         let terms = [Glossary.prompt(language ?? languageCode(cfg.language) ?? spokenLanguage ?? edits.edits.last?.lang),
                      Corrections.promptTerms(edits)].compactMap { $0 }.joined(separator: ", ")
@@ -3376,6 +3433,37 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     }
 
     var spokenLanguage: String?        // the language Whisper heard last: the glossary a request without a language gets
+    var engine: String?                // the ears that heard it last (OnDeviceASR's module, or nil: Groq's Whisper)
+    var lexiconSeen = 0                // the lexicon version its lines were last checked against (relisten)
+
+    /// The languages this recording may be in, for ears that must be told: the one it's in when known, the reader's
+    /// own, then every language Recense translates between.
+    func hearing() -> [String] {
+        var out: [String] = []
+        for l in [language, languageCode(cfg.language)] + [NativeLang.current] + NativeLang.all.map(\.code) {
+            if let l, !out.contains(l) { out.append(l) }
+        }
+        return out
+    }
+
+    /// A finished transcript, played again: where a lesson taught since (Lexicon) has its mistake in a line, that line
+    /// is heard against it once more, and translated again if it changed. Speech only: a song's lines follow its lyrics.
+    func relisten() async {
+        guard !isSong, lexiconSeen != Lexicon.version, !dry, let src = vocals ?? file else { return }
+        let seen = Lexicon.version
+        var changed = 0
+        for i in lines.indices where Lexicon.mayApply(lines[i].words) {
+            let l = lines[i], lo = max(0, l.start - 1.8)
+            guard let s = try? await Task.detached(operation: { try decodeChunk(src, from: lo, to: l.end + 1.8) }).value, !stopped, i < lines.count,
+                  lines[i].id == l.id else { continue }
+            let ws = Lexicon.recall(l.words, samples: s, origin: lo, key: key)
+            guard ws.map(\.text) != l.words.map(\.text) else { continue }
+            lines[i] = Line(id: l.id, words: ws, english: l.english?.isEmpty == true ? [] : nil)
+            changed += 1
+        }
+        lexiconSeen = seen
+        if changed > 0 { log("relisten: \(changed) line(s) of \(key) rewritten by the lexicon"); save(); wakeTranslation() }
+    }
     var captured: [[String: Any]]?     // a replay's captured Whisper replies (RECENSE_RAW), served instead of asking Groq
     var missed: [String] = []          // a replay's requests that were never captured
     var pace = 3.1                     // seconds between requests (Groq's free tier: 20 a minute); none in a replay
@@ -4013,7 +4101,10 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             guard let text = (w["word"] as? String)?.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: #"^[.…]+"#, with: "", options: .regularExpression),
                   !text.isEmpty, text.contains(where: { $0.isLetter || $0.isNumber }),          // "¶¶", "♪": music, not words
                   let s = w["start"] as? Double, let e = w["end"] as? Double else { continue }
-            raw.append(Word(text: text, start: offset + s, end: offset + e, lang: script != nil && scriptOf(text: text) == script ? lang : nil))
+            let wl = (w["lang"] as? String) ?? lang, ws = (w["lang"] as? String).flatMap { scriptOf(language: $0) } ?? script
+            var x = Word(text: text, start: offset + s, end: offset + e, lang: ws != nil && scriptOf(text: text) == ws ? wl : nil)
+            x.c = w["probability"] as? Double
+            raw.append(x)
         }
         raw = Episode.withoutTranslation(raw, lang: lang)
         var bySeg = Array(repeating: [Word](), count: segs.count)
@@ -4039,7 +4130,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
         words = refine(words, db: frameDB(samples), offset: offset, gate: clean)
         // Without a stem, Whisper stretches a sung word back over the intro before it; no word is held this long.
-        if isSong && !clean { words = words.map { $0.end - $0.start > 1.5 ? Word(text: $0.text, start: $0.end - 0.6, end: $0.end, lang: $0.lang) : $0 } }
+        if isSong && !clean { words = words.map { $0.end - $0.start > 1.5 ? Word(text: $0.text, start: $0.end - 0.6, end: $0.end, lang: $0.lang, c: $0.c) : $0 } }
+        // What corrections taught (Lexicon), where this hearing makes the same mistake and the evidence agrees.
+        let alts = ((t["segments"] as? [[String: Any]]) ?? []).compactMap { s -> (a: Double, b: Double, texts: [String])? in
+            guard let a = s["start"] as? Double, let b = s["end"] as? Double, let x = s["alternatives"] as? [String], x.count > 1 else { return nil }
+            return (offset + a, offset + b, x)
+        }
+        words = Lexicon.recall(words, samples: samples, origin: offset, key: key, alts: alts)
         return (words, english)
     }
 
@@ -4193,6 +4290,11 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 saveSoon()
             } catch let r as RateLimited {
                 Models.cool(model, r.wait); continue        // another model takes the same batch right away
+            } catch let e as URLError where [.notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost,
+                                              .dnsLookupFailed, .timedOut].contains(e.code) {
+                // Offline: a minute with no model, so what's about to be heard is translated on this Mac (a draft).
+                for m in Models.list { Models.until[m] = Date().addingTimeInterval(60) }
+                continue
             } catch where "\(error.localizedDescription)".contains("JSON") {
                 log("\(model): \(error.localizedDescription.prefix(60))")
                 Models.cool(model, 20); continue            // that model's output was malformed, not the lines' fault
@@ -4830,10 +4932,11 @@ enum Fingerprint {
     /// keep/'s copies merged in (another Mac's, or this one's before its cache was cleared): union, this Mac wins.
     static func pull() async {
         guard Store.r2 else { return }
-        for (name, local) in [("library.json", indexURL), ("translations.json", memoryURL), ("glossary.json", Glossary.url)] {
+        for (name, local) in [("library.json", indexURL), ("translations.json", memoryURL), ("glossary.json", Glossary.url), ("lexicon.json", Lexicon.url)] {
             guard let (d, resp) = try? await URLSession.shared.data(for: Store.request("GET", name, dir: "keep")),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { continue }
             if local == Glossary.url { _ = Glossary.merge(d); continue }
+            if local == Lexicon.url { _ = Lexicon.merge(d); continue }
             if local == indexURL, let r = try? JSONDecoder().decode(Index.self, from: d) {
                 let before = index.pieces.count + index.aliases.count
                 index.pieces.merge(r.pieces) { a, _ in a }; index.aliases.merge(r.aliases) { a, _ in a }
@@ -4853,7 +4956,7 @@ enum Fingerprint {
     /// Sends a changed library file (or the glossary) to keep/ (from the sweep).
     static func mirror() async {
         flush(force: true)
-        for u in [indexURL, memoryURL, Glossary.url] {
+        for u in [indexURL, memoryURL, Glossary.url, Lexicon.url] {
             guard let m = (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970,
                   Store.mirrored[u.lastPathComponent] != m else { continue }
             if await Store.upload(u, dir: "keep") { Store.mirrored[u.lastPathComponent] = m }
@@ -4935,6 +5038,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
         var done: [Bool]?; var lyricsChecked9: Bool?; var lyrics: [String]?; var heard: [Word]?; var songPipeline: Int?
         var lyricOptions: [[String]]?; var lyricsVerified: Bool?; var language: String?; var publishedTitle: String?
         var redone: [[Double]]?; var offsite: [String]?
+        var engine: String?; var lexicon: Int?
     }
     struct ASR: Codable { var format = 1; var complete: Bool?; var duration: Double; var segments: [Segment]; var recense: Meta? }
 
@@ -4963,7 +5067,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
         let segs = c.lines.map { Segment(id: $0.id, start: $0.start, end: $0.end, text: lineKey($0), lang: lang(of: $0.words), words: $0.words) }
         let meta = Meta(done: c.done, lyricsChecked9: c.lyricsChecked9, lyrics: c.lyrics, heard: c.heard, songPipeline: c.songPipeline,
                         lyricOptions: c.lyricOptions, lyricsVerified: c.lyricsVerified, language: c.language, publishedTitle: c.publishedTitle,
-                        redone: c.redone, offsite: c.offsite)
+                        redone: c.redone, offsite: c.offsite, engine: c.engine, lexicon: c.lexicon)
         var en = TrFile(lang: "en", complete: !c.lines.contains { $0.english == nil })
         for l in c.lines {
             guard let e = l.english else { continue }
@@ -4991,7 +5095,8 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
         let m = a.recense
         return Episode.Cache(lines: lines, done: m?.done ?? [], duration: a.duration, lyricsChecked9: m?.lyricsChecked9, lyrics: m?.lyrics,
                              heard: m?.heard, songPipeline: m?.songPipeline, lyricOptions: m?.lyricOptions, lyricsVerified: m?.lyricsVerified,
-                             language: m?.language, publishedTitle: m?.publishedTitle, redone: m?.redone, offsite: m?.offsite, complete: a.complete)
+                             language: m?.language, publishedTitle: m?.publishedTitle, redone: m?.redone, offsite: m?.offsite, complete: a.complete,
+                             engine: m?.engine, lexicon: m?.lexicon)
     }
 
     // ---- R2 ----
@@ -6231,9 +6336,10 @@ final class NativeSources {
         m.autoenablesItems = false; m.delegate = self
         menu = m
 
-        guard !cfg.apiKey.isEmpty else {
+        guard !cfg.apiKey.isEmpty || OnDeviceASR.enabled else {
             return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
         }
+        if OnDeviceASR.enabled { log("speech: transcribing on this Mac (SpeechAnalyzer)\(cfg.apiKey.isEmpty ? ", no Groq key" : ", Groq only for languages it can't hear")") }
         do {
             let s = try Server(port: 47123) { [weak self] p, q, b in await self?.handle(p, q, b) ?? [:] }
             s.start(); server = s
