@@ -2223,7 +2223,7 @@ final class WordsView: NSView {
     static func lane(_ f: NSFont) -> CGFloat {
         let m = Prosody.mode
         guard !m.isEmpty else { return 0 }
-        return (m.contains("p") ? ceil(f.pointSize * 0.8) : ceil(f.pointSize * 0.15)) + above(f)
+        return (m.contains("p") ? ceil(f.pointSize * 1.9) : ceil(f.pointSize * 0.15)) + above(f)   // the score's lane, as Gallery's
     }
     static let liaison = NSColor(red: 64 / 255, green: 224 / 255, blue: 208 / 255, alpha: 1)   // as Gallery: ties only
     /// Where a word's notation sits at u (0…1 across it) and height h (−1…1): under its text, in the row's lane.
@@ -2270,79 +2270,48 @@ final class WordsView: NSView {
     }
     static let ghost = NSColor(red: 160 / 255, green: 172 / 255, blue: 190 / 255, alpha: 1)
     static let sung = NSColor(red: 236 / 255, green: 226 / 255, blue: 200 / 255, alpha: 1)
-    /// The row's ribbon, as Gallery's prosogram draws it (item 20): one continuous shape per breath group under the
-    /// words: height = pitch, thickness = stress and loudness, unbroken where the voice runs on (a turquoise slur's dip
-    /// where words link), broken at a pause. Preloaded as a 35 % ghost; gold sweeps along it with the light, settling
-    /// to a warm white behind it.
-    func drawRibbon(_ words: [(Ink, NSPoint)]) {
-        guard words.contains(where: { $0.0.figure != nil }), !Prosody.mode.isEmpty, let g = NSGraphicsContext.current?.cgContext else { return }
+    /// The row's notation (item 20): Gallery's own prosogram (segments, glides, ties, rests, dynamics), drawn whole for
+    /// this row by prosogram.js in the prosody engine, laid under the words as a 35 % ghost from the moment the line
+    /// is on screen; the light sweeps through it with the words, full behind it and gold at its head.
+    func drawScore(_ words: [(Ink, NSPoint)]) {
+        guard !Prosody.mode.isEmpty, let g = NSGraphicsContext.current?.cgContext else { return }
+        let figs = words.filter { $0.0.figure != nil }
+        guard let first = figs.first else { return }
         drawNames(words)
         guard Prosody.mode.contains("p") else { return }
-        struct Q { var p: CGPoint; var r: CGFloat }
-        var runs: [(pts: [Q], links: [(CGFloat, CGFloat, String)])] = []
-        var cur: [Q] = [], links: [(CGFloat, CGFloat, String)] = [], light = -CGFloat.infinity, prev: (Ink, NSPoint)? = nil
-        func close() { if !cur.isEmpty { runs.append((cur, links)) }; cur = []; links = [] }
-        for (k, p) in words {
-            guard let f = k.figure, !f.u.isEmpty else { close(); prev = nil; continue }
-            let s = k.font.pointSize, w = Self.width(k)
-            let pts = f.u.indices.map { i in Q(p: Self.notePoint(k, at: p, u: f.u[i], h: f.h[i]),
-                                               r: s * (0.05 + 0.11 * pow(CGFloat(max(0, min(1, f.w[i]))), 1.2)) / 2) }
-            if let (a, pa) = prev, a.joins, let last = cur.last, let first = pts.first {
-                let link = a.tie, n = max(4, Int((first.p.x - last.p.x) / 3)), sag = link != nil ? max(0.14 * s, 0.25 * (first.p.x - last.p.x)) : 0
-                for i in 1..<n {
-                    let u = CGFloat(i) / CGFloat(n), e = u * u * (3 - 2 * u)
-                    cur.append(Q(p: CGPoint(x: last.p.x + (first.p.x - last.p.x) * u, y: last.p.y + (first.p.y - last.p.y) * e + sag * 4 * u * (1 - u)),
-                                 r: min(last.r, first.r) * (link != nil ? 0.85 : 0.7)))
-                }
-                if let l = link { let m = (last.p.x + first.p.x) / 2, hw = max(0.32 * s, (first.p.x - last.p.x) / 2 + 0.12 * s); links.append((m - hw, m + hw, l.sound)) }
-                if a.drawn >= 1 { light = max(light, pa.x + Self.width(a) + (p.x - pa.x - Self.width(a)) * min(1, a.tied)) }
-            } else { close() }
-            cur.append(contentsOf: pts)
-            if k.drawn > 0 { light = max(light, k.drawn >= 1 && k.tied >= 1 ? p.x + w : p.x + w * min(1, k.drawn)) }
-            if k.drawn >= 1, k.tied >= 1 { light = max(light, p.x + w + 1) }
-            prev = (k, p)
-        }
-        close()
-        if let (last, _) = words.last, last.drawn >= 1 { light = .infinity }
-        for run in runs {
-            guard let a = run.pts.first, let b = run.pts.last else { continue }
-            let path = CGMutablePath()
-            if run.pts.count == 1 { path.addEllipse(in: CGRect(x: a.p.x - a.r, y: a.p.y - a.r, width: 2 * a.r, height: 2 * a.r)) }
-            else {
-                let up = run.pts.map { CGPoint(x: $0.p.x, y: $0.p.y - $0.r) }, dn = run.pts.reversed().map { CGPoint(x: $0.p.x, y: $0.p.y + $0.r) }
-                func through(_ q: [CGPoint]) {
-                    for i in 1..<(q.count - 1) { path.addQuadCurve(to: CGPoint(x: (q[i].x + q[i + 1].x) / 2, y: (q[i].y + q[i + 1].y) / 2), control: q[i]) }
-                    path.addLine(to: q[q.count - 1])
-                }
-                path.move(to: up[0]); through(up)
-                path.addArc(center: b.p, radius: b.r, startAngle: -.pi / 2, endAngle: .pi / 2, clockwise: false)
-                path.addLine(to: dn[0]); through(dn)
-                path.addArc(center: a.p, radius: a.r, startAngle: .pi / 2, endAngle: .pi * 1.5, clockwise: false)
-                path.closeSubpath()
-            }
-            func fill(_ c: NSColor, alpha: CGFloat) {
-                g.saveGState(); g.addPath(path); g.setFillColor(c.withAlphaComponent(alpha).cgColor); g.fillPath(); g.restoreGState()
-                for l in run.links { g.saveGState(); g.clip(to: CGRect(x: l.0, y: -1e4, width: l.1 - l.0, height: 2e4)); g.addPath(path); g.setFillColor(Self.liaison.withAlphaComponent(alpha).cgColor); g.fillPath(); g.restoreGState() }
-            }
-            fill(Self.ghost, alpha: 0.35)
-            if light > a.p.x - a.r {
-                g.saveGState()
-                g.clip(to: CGRect(x: -1e4, y: -1e4, width: (light == .infinity ? 2e4 : light) + 1e4, height: 2e4))
-                g.saveGState(); g.addPath(path); g.clip()
-                let head = light == .infinity ? b.p.x + 1 : light, s = words[0].0.font.pointSize
-                let grad = CGGradient(colorsSpace: nil, colors: [Self.sung.cgColor, (light == .infinity ? Self.sung : Self.glowColor).cgColor] as CFArray, locations: [0, 1])!
-                g.drawLinearGradient(grad, start: CGPoint(x: head - 2.5 * s, y: 0), end: CGPoint(x: head, y: 0), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-                g.restoreGState()
-                for l in run.links { g.saveGState(); g.clip(to: CGRect(x: l.0, y: -1e4, width: l.1 - l.0, height: 2e4)); g.addPath(path); g.setFillColor(Self.liaison.cgColor); g.fillPath(); g.restoreGState() }
-                g.restoreGState()
-            }
-            for l in run.links where !l.2.isEmpty {
-                let mx = (l.0 + l.1) / 2, near = run.pts.min { abs($0.p.x - mx) < abs($1.p.x - mx) }!, s = words[0].0.font.pointSize
-                let t = NSAttributedString(string: l.2, attributes: [.font: NSFontManager.shared.convert(NSFont(name: "Times New Roman", size: s * 0.3) ?? .systemFont(ofSize: s * 0.3), toHaveTrait: .italicFontMask),
-                                                                     .foregroundColor: Self.liaison.withAlphaComponent(light >= mx ? 0.95 : 0.4)])
-                let sz = t.size(); t.draw(at: NSPoint(x: mx - sz.width / 2, y: near.p.y + near.r + 0.04 * s))
+        let font = first.0.font, s = font.pointSize, pad = ceil(s)
+        let x0 = figs.map { $0.1.x }.min()! - pad, x1 = figs.map { $0.1.x + Self.width($0.0) }.max()! + pad
+        let top = first.1.y + Self.lineHeight(font) + Self.above(font)
+        guard let img = Prosody.score(size: s, width: x1 - x0, cells: figs.map { (flat: $0.0.figure!.flat, x: $0.1.x - x0, w: Self.width($0.0)) },
+                                      ready: { [weak self] in self?.needsDisplay = true }) else { return }
+        let rect = NSRect(x: x0, y: top, width: x1 - x0, height: s * 1.9)
+        // how far the light has gone: through a word at its progress, across a gap over the time between two words
+        var light = -CGFloat.infinity
+        for (i, (k, p)) in figs.enumerated() {
+            let w = Self.width(k)
+            if k.drawn > 0 { light = max(light, p.x + w * min(1, k.drawn)) }
+            if k.drawn >= 1 {
+                if i + 1 < figs.count { let nx = figs[i + 1].1.x; light = max(light, p.x + w + (nx - p.x - w) * min(1, k.tied)) }
+                else { light = .infinity }
             }
         }
+        img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.35, respectFlipped: true, hints: nil)
+        guard light > -.infinity else { return }
+        let head = light == .infinity ? rect.maxX : light
+        g.saveGState()
+        g.clip(to: CGRect(x: rect.minX, y: rect.minY, width: max(0, head - rect.minX), height: rect.height))
+        img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        g.restoreGState()
+        guard light != .infinity else { return }
+        let gold = CGRect(x: head - 1.6 * s, y: rect.minY, width: 1.6 * s, height: rect.height)
+        g.saveGState(); g.clip(to: gold)
+        g.beginTransparencyLayer(auxiliaryInfo: nil)
+        img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        g.setBlendMode(.sourceIn)
+        let grad = CGGradient(colorsSpace: nil, colors: [Self.glowColor.withAlphaComponent(0).cgColor, Self.glowColor.cgColor] as CFArray, locations: [0, 1])!
+        g.drawLinearGradient(grad, start: CGPoint(x: gold.minX, y: 0), end: CGPoint(x: gold.maxX, y: 0), options: [])
+        g.endTransparencyLayer()
+        g.restoreGState()
     }
 
     static func rows(_ cells: [Cell], width room: CGFloat) -> [Row] {
@@ -2423,7 +2392,7 @@ final class WordsView: NSView {
         if drum == nil { inkRects.append(NSRect(x: x, y: y, width: r.width, height: h)) }
         let flow = r.cells.allSatisfy { $0.cell.words.count == 1 } && r.cells.contains { Self.rtl($0.cell) } ? Array(r.cells.reversed()) : r.cells
         var ribbon: [(Ink, NSPoint)] = []        // the row's words in reading order, for its one ribbon
-        defer { if !flow.contains(where: { Self.rtl($0.cell) }) { drawRibbon(ribbon) } }
+        defer { if !flow.contains(where: { Self.rtl($0.cell) }) { drawScore(ribbon) } }
         for (c, w) in flow {
             let rtl = Self.rtl(c)
             // A soft edge sweeps across the phrase the way the light did, the words dissolving ahead of it and their

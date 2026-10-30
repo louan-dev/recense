@@ -107,6 +107,25 @@ enum Prosody {
             let html = """
             <!doctype html><meta charset="utf-8"><title>prosody</title>
             <script src="prosody.js"></script>
+            <script src="prosogram.js"></script>
+            <script>
+            // the score (item 20): Gallery's own notation for one row of words, drawn whole at the positions Recense
+            // draws them, as a PNG; Recense lays it under the row as a ghost and sweeps the light through it
+            window.score = (spec) => {
+              const P = window.__P;
+              if (!P || P.key !== spec.key || !globalThis.Prosogram) return null;
+              const s = spec.size, laneH = s * 1.9, dpr = 2;
+              const cells = spec.cells.map(c => { const w = P.words[c.flat]; return w && { w, x: c.x, width: c.w, row: 0, top: 0, y: s * 0.3 }; }).filter(Boolean);
+              if (!cells.length) return null;
+              const cv = document.createElement('canvas');
+              cv.width = Math.max(1, Math.ceil(spec.width * dpr)); cv.height = Math.max(1, Math.ceil(laneH * dpr));
+              const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+              Prosogram.plugin.full(ctx, { t: 1e9, pro: P.pro, words: P.words, progress: P.progress, expr: 1, glyphs: false,
+                page: [{ line: { words: cells.map(c => c.w) }, cells, size: s, alpha: 1, lineHeight: laneH, font: s + 'px sans-serif' }],
+                colors: { ahead: 'rgb(150,148,140)', pale: 'rgb(228,224,214)' }, at: () => null, signals: { E: true } });
+              return cv.toDataURL('image/png');
+            };
+            </script>
             """
             web.loadHTMLString(html, baseURL: dir)
         }
@@ -162,6 +181,32 @@ enum Prosody {
         let fr = ["Do", "Do♯", "Ré", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"][pc]
         let vi = ["Đô", "Đô♯", "Rê", "Mi♭", "Mi", "Fa", "Fa♯", "Son", "La♭", "La", "Si♭", "Si"][pc]
         return lang == "fr" ? fr : lang == "vi" ? vi : am + "/" + fr.lowercased()
+    }
+
+    // ---------- the score: Gallery's notation, drawn by prosogram.js for one row ----------
+    /// One row's notation pictures, by its layout; asked for once, drawn in the engine page, then only composited.
+    nonisolated(unsafe) private static var scores: [String: NSImage] = [:]
+    nonisolated(unsafe) private static var asked: [String: Date] = [:]
+    /// The picture of a row's notation (cells: each word's flat index, x from the picture's left, width), or nil while
+    /// it is being drawn; `ready` runs once it is, so the view redraws.
+    @MainActor
+    static func score(size: CGFloat, width: CGFloat, cells: [(flat: Int, x: CGFloat, w: CGFloat)], ready: @escaping () -> Void) -> NSImage? {
+        guard let l = live, let eng = engine else { return nil }
+        let id = "\(l.key)|\(Int(size))|\(Int(width))|" + cells.map { "\($0.flat):\(Int($0.x)):\(Int($0.w))" }.joined(separator: ",")
+        if let img = scores[id] { return img }
+        if let t = asked[id], Date().timeIntervalSince(t) < 1 { return nil }
+        asked[id] = Date()
+        let spec: [String: Any] = ["key": l.key, "size": size, "width": width, "cells": cells.map { ["flat": $0.flat, "x": $0.x, "w": $0.w] }]
+        guard let d = try? JSONSerialization.data(withJSONObject: spec), let json = String(data: d, encoding: .utf8) else { return nil }
+        eng.web.evaluateJavaScript("window.score && window.score(\(json))") { value, _ in
+            guard let url = value as? String, let comma = url.firstIndex(of: ","),
+                  let png = Data(base64Encoded: String(url[url.index(after: comma)...])), let img = NSImage(data: png) else { return }
+            img.size = NSSize(width: width, height: size * 1.9)
+            if scores.count > 300 { scores.removeAll() }
+            scores[id] = img; asked[id] = nil
+            ready()
+        }
+        return nil
     }
 
     static func markKey(_ text: String, _ start: Double) -> String { "\(text)@\(Int((start * 1000).rounded()))" }
@@ -228,7 +273,7 @@ enum Prosody {
     @MainActor
     static func compute(key: String, _ input: Input) async -> Result? {
         let stamp = stamp(input.words)
-        if let hit = cached(key, transcript: stamp), hit.lang == input.lang, hit.kind == input.kind { return hit }
+        // (always analysed in the engine page, even with a cached figure: the score is drawn from that analysis)
 
         if engine == nil { engine = Engine() }
         guard let eng = engine else { return nil }
@@ -244,6 +289,7 @@ enum Prosody {
         for w in input.words { widths.append(input.measure(w.text)) }
 
         let payload: [String: Any] = [
+            "key": key,
             "words": input.words.enumerated().map { ["text": $0.element.text, "s": $0.element.start, "e": $0.element.end, "flat": $0.offset] },
             "widths": widths,
             "lang": input.lang,
@@ -294,6 +340,7 @@ enum Prosody {
                        joins: !(x.breathAfter >= 0.12 || x.cutAfter >= 0.85),
                        notes: (x.syl || []).filter(sy => Number.isFinite(sy.pitch) && sy.rel >= 0.4 && sy.un != null).map(sy => [sy.un, sy.pitch]) });
           }
+          window.__P = { key: IN.key, pro, words, progress };
           return JSON.stringify({ semitone: pro.semitone, reference: pro.reference, span: pro.span, words: out });
         })()
         """
