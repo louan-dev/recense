@@ -23,3 +23,4 @@ node_modules/
 gallery/apple/build/
 # the device token build.sh copies in from the Keychain: never commit
 gallery/apple/ios/Secrets/
+gallery/test-results/
