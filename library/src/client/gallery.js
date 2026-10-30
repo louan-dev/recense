@@ -4030,7 +4030,7 @@
       const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
       // a short pause before the next word is bridged, so the light never drops out between words
       const e = next - w.e < 0.6 ? next : w.e;
-      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl };
+      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl, un: w.un };
     });
 
   // the original words an English word translates; one claiming most of a long line is a misread alignment
@@ -4242,6 +4242,13 @@
 
   const paintWord = (sp, b, t) => {
     const st = sp.style;
+    // written but not sung (Cadence found no voice for it): never lit
+    if (b.un) {
+      const col = rgba(UPCOMING);
+      if (sp._c !== col) st.color = sp._c = col;
+      if (sp._bg) st.backgroundImage = st.textShadow = sp._bg = sp._sh = "";
+      return;
+    }
     // a made liaison's letters (prosogram-mount.js sets sp._lz): turquoise as the light reaches them, like the tie
     if (sp._lz && t >= b.s && sp.dir !== "rtl") {
       const f = fillOf(b, t, sp), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = rgba(t >= b.e ? mix([64, 224, 208, 1], SPOKEN, (t - b.e) / 0.45) : [64, 224, 208, 1]);   // eases to white as the gold does
@@ -4489,7 +4496,7 @@
       pl.el.onclick = (ev) => {
         ev.stopPropagation();
         el.currentTime = Math.max(0, l.s - 0.05);
-        openAll();
+        openAll(j);
       };
 
       const rtl = RTL_RE.test(l.text || "");
@@ -4561,12 +4568,16 @@
       x = Math.max(0, Math.floor(x));
       return Math.floor(x / 60) + ":" + String(x % 60).padStart(2, "0");
     };
-    const lineAt = (t) => {
+    // the line at t; for the editor (`ahead`), between lines the next when it comes within a second
+    const lineAt = (t, ahead) => {
       let k = -1;
       lines.forEach((l, i) => l.s <= t + 0.05 && (k = i));
+      if (ahead && k + 1 < lines.length && (k < 0 || lines[k].e < t) && lines[k + 1].s - t < 1) k++;
       return k;
     };
-    const openAll = () => {
+    // `at`: the line tapped, opened on as it is (the time heard runs a little behind the seek to it, which opened the
+    // line before: an edit to the second "Variations on a dream" at 2:35 went to the first)
+    const openAll = (at) => {
       if (editing) return;
       editing = true;
       box.hidden = true;
@@ -4819,15 +4830,19 @@
       sheet.onclick = (e) => e.stopPropagation();
       sheet.append(bar, list);
       host.appendChild(sheet);
-      cur = lineAt(clock());
+      let heardAt = lineAt(clock(), true);
+      cur = Number.isInteger(at) && lines[at] ? at : heardAt;
       render();
       if (rows[cur]) rows[cur].scrollIntoView({ block: "center" });
-      // the field follows what is heard, unless you are typing in it
+      // the field follows what is heard once that moves on, unless you are typing in it
       const tick = () => {
         if (!sheet.isConnected) return;
         if (backBtn.hidden && !(field && document.activeElement === field)) {
-          const i = lineAt(clock());
-          if (i !== cur) follow(i, !el.paused);
+          const i = lineAt(clock(), true);
+          if (i !== heardAt) {
+            heardAt = i;
+            if (i !== cur) follow(i, !el.paused);
+          }
         }
         setTimeout(tick, 200);
       };
