@@ -3813,10 +3813,19 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 p.executableURL = URL(fileURLWithPath: bin)
                 p.arguments = ["-n", "htdemucs", "--two-stems=vocals", "-d", device, "-o", tmp.path,
                                "--filename", "{stem}.{ext}", file.path]
-                p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+                // Demucs reads anything but WAV through ffmpeg, which a launchd app's PATH (/usr/bin:/bin) doesn't
+                // reach: every m4a, mp3 and flac failed here ("FFmpeg is not installed") until 2026-10-30.
+                var env = ProcessInfo.processInfo.environment
+                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+                p.environment = env
+                let err = Pipe()
+                p.standardOutput = FileHandle.nullDevice; p.standardError = err
                 do { try p.run() } catch { return false }
+                let said = err.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
                 if p.terminationStatus == 0 { return true }
+                let last = String(decoding: said, as: UTF8.self).split(separator: "\n").last { !$0.contains("%|") } ?? ""
+                log("demucs (\(device)) failed: \(last.prefix(200))")
             }
             return false
         }.value
@@ -6341,7 +6350,7 @@ final class NativeSources {
         running = true; defer { running = false }
         guard let files = await media(), !files.isEmpty, let listing = await Keep.listing() else { return }
         let have = Set(listing.filter { $0.value.contains("asr") || $0.value.contains("v2") }.keys)
-        defer { Task { await translateMissing(files, listing, idle: idle); await measureMissing(listing, idle: idle) } }
+        defer { Task { await translateMissing(files, listing, idle: idle); await measureMissing(files, listing, idle: idle) } }
         var todo: [(key: String, value: Int)] = []
         for (path, size) in files.sorted(by: { $0.key < $1.key }) where !skipped.contains("\(path)|\(size)") {
             guard let k = await itemKey(path, size: size, listing: listing) else { continue }
@@ -6473,6 +6482,12 @@ final class NativeSources {
         func restore() {
             guard setAside else { return }
             try? FileManager.default.removeItem(at: json); try? FileManager.default.moveItem(at: aside, to: json)
+            for lang in Keep.others {      // and its translations, set aside with it
+                let to = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(tkey).tr.\(lang).json")
+                if FileManager.default.fileExists(atPath: to.path) {
+                    try? FileManager.default.removeItem(at: Keep.trURL(tkey, lang)); try? FileManager.default.moveItem(at: to, to: Keep.trURL(tkey, lang))
+                }
+            }
         }
         guard await ep.fetch() else { log("gallery: can't decode \(path)"); restore(); await failed("can't decode"); return false }
         let t0 = Date()
@@ -6493,7 +6508,11 @@ final class NativeSources {
             try? await Task.sleep(for: .seconds(10))
             await progress()
         }
-        let done = ep.complete || Library.resolve(key) != nil
+        // a retranscription that heard nothing (the Whitacre's, over the full mix: 22 lines became none) never
+        // replaces the transcript it had
+        let emptied = setAside && ep.complete && ep.lines.isEmpty && Library.resolve(key) == nil
+        if emptied { log("gallery: \(path) heard nothing this time: its transcript is kept"); ep.stopped = true }
+        let done = !emptied && (ep.complete || Library.resolve(key) != nil)
         let out = Library.resolve(key)?.key ?? key
         // only a finished transcript goes to keep/: Gallery never shows half of one as if it were done
         if done && ep.complete && !ep.stopped {
@@ -6532,17 +6551,37 @@ final class NativeSources {
     /// Files transcribed before Vietnamese and French were made: their translations, one item at a time while idle.
     /// Songs in keep/ whose voice was never measured (Features), measured while nothing plays from their vocal stem,
     /// while R2's tmp/ still has it (a song played again is measured as it plays). Each is tried once a run.
+    /// A song with no stem anywhere (its separation failed: Demucs had no ffmpeg until 2026-10-30, so no notation or
+    /// cadence) is separated again here from Gallery's file, then measured.
     static var measured = Set<String>()
-    static func measureMissing(_ listing: [String: Set<String>], idle: @escaping @MainActor () -> Bool) async {
+    static func measureMissing(_ files: [String: Int], _ listing: [String: Set<String>], idle: @escaping @MainActor () -> Bool) async {
         guard !running, idle(), let tmp = await Store.list("tmp/") else { return }
         running = true; defer { running = false }
+        var paths: [String: String]? = nil          // key → Gallery path, worked out once, when it's first needed
         for (key, parts) in listing.sorted(by: { $0.key < $1.key })
         where (parts.contains("asr") || parts.contains("v2")) && !parts.contains("features") && !measured.contains(key) {
             guard idle() else { return }
             measured.insert(key)
             let name = key + "-vocals.wav", local = cacheDir.appendingPathComponent(name)
             let here = FileManager.default.fileExists(atPath: local.path)
-            guard here || tmp["tmp/" + name] != nil, let stem = here ? local : await Store.restore([name]) else { continue }
+            guard here || tmp["tmp/" + name] != nil, let stem = here ? local : await Store.restore([name]) else {
+                if paths == nil {
+                    var m: [String: String] = [:]
+                    for (p, size) in files where audioExt.contains((p as NSString).pathExtension.lowercased()) {
+                        if let k = await itemKey(p, size: size, listing: listing) { m[Library.resolve(k)?.key ?? k] = p }
+                    }
+                    paths = m
+                }
+                guard let path = paths?[key], idle() else { continue }
+                await Store.restoreTranscript(key)
+                let ep = Episode(url: "gallery:files/" + path, page: nil, title: nil, music: false) { 0 }
+                if ep.complete, ep.isSong, !ep.instrumental, await ep.fetch(audio: true) {
+                    await ep.measureVoice()                // separates, measures, sends features.json to keep/
+                    if ep.features != nil { log("gallery: separated and measured the voice of \(path)") }
+                }
+                ep.stop()
+                continue
+            }
             let f: Features? = await Task.detached(priority: .utility) {
                 guard let s = try? decodeChunk(stem, from: 0, to: 3600), !s.isEmpty else { return nil }
                 return Features.measure(s, source: "vocals")
@@ -7931,6 +7970,12 @@ final class NativeSources {
     static var working: Bool { delegate?.wasWorking ?? false }
     /// The card, once Recense has started (nil before: Sill can be summoned before Recense finishes launching).
     static var overlay: Overlay? { delegate.flatMap { $0.overlay as Overlay? } }
+    /// Two fingers held still on the trackpad (Sill's MultitouchSupport reader) and lifted: while the card is up, its
+    /// time ruler shows where the media is and moves on with it, and folds away when they lift (item 21).
+    static func hold(_ on: Bool) {
+        guard let o = overlay, on ? o.panel.isVisible : true else { return }
+        o.homeBar.call("hold", on)
+    }
     static func start() {
         guard delegate == nil else { return }
         log("sill: starting Recense")

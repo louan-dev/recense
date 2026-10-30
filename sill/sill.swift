@@ -324,13 +324,35 @@ var gSpent = false
 var gThreeMoving = false, gLastTouchWasSwipe = false
 var gWasDown = false
 
-let frameCallback: MTFrameCallback = { _, data, count, _, _ in
+/// Two fingers resting still (item 21): after `holdDelay` s without either moving more than `holdSlack`, `holdHandler`
+/// hears true; when they lift (or move, or a finger joins) it hears false. A two-finger scroll moves within that time.
+var holdHandler: ((Bool) -> Void)?
+let holdDelay = 0.5, holdSlack: Float = 0.015
+var gHoldStarts: [Int32: MTPoint] = [:], gHoldSince = 0.0, gHoldMoved = false, gHolding = false
+
+func trackHold(_ touching: [(id: Int32, p: MTPoint)], at now: Double) {
+    func end() { if gHolding { gHolding = false; DispatchQueue.main.async { holdHandler?(false) } } }
+    guard touching.count == 2 else { gHoldStarts = [:]; gHoldMoved = false; end(); return }
+    if Set(touching.map { $0.id }) != Set(gHoldStarts.keys) {
+        gHoldStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) }); gHoldSince = now; gHoldMoved = false
+        end(); return
+    }
+    if !gHoldMoved, touching.contains(where: { t in let s = gHoldStarts[t.id]!; return hypot(t.p.x - s.x, t.p.y - s.y) > holdSlack }) {
+        gHoldMoved = true; end()
+    }
+    if !gHoldMoved, !gHolding, now - gHoldSince >= holdDelay {
+        gHolding = true; DispatchQueue.main.async { holdHandler?(true) }
+    }
+}
+
+let frameCallback: MTFrameCallback = { _, data, count, now, _ in
     guard let data = data else { return 0 }
     let fingers = data.assumingMemoryBound(to: MTFinger.self)
     var touching: [(id: Int32, p: MTPoint)] = []
     for i in 0..<Int(count) where (3...5).contains(fingers[i].state) {   // make-touch, touching, break-touch
         touching.append((fingers[i].identifier, fingers[i].normalized.pos))
     }
+    trackHold(touching, at: now)
     let n = touching.count
     if !gWasDown && n > 0 { gLastTouchWasSwipe = false }                 // a new touch begins
     gWasDown = n > 0
@@ -6624,6 +6646,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         gestureHandler = { [weak self] cmd in
             NSLog("sill: three-finger swipe \(cmd)")
             self?.run(cmd)
+        }
+        holdHandler = { on in
+            NSLog("sill: two-finger hold \(on ? "down" : "up")")
+            MainActor.assumeIsolated { Recense.hold(on) }
         }
         let n = gestures?.begin() ?? 0
         NSLog("sill: native gestures listening on \(n) trackpad(s)")

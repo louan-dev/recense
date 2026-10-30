@@ -412,6 +412,8 @@
     },
     // a trackpad swipe's fingers came down or lifted: a swipe-and-hold keeps the time ruler up meanwhile
     fingers: (on) => bar.fingers(on),
+    // two fingers held still: the time ruler on where the media is, while it plays on; folded when they lift
+    hold: (on) => bar.hold(on),
   };
 
   hits();
