@@ -40,7 +40,25 @@
       }
       return out;
     };
-    return { hop, n, onset, pitch, frame, time, isVoiced, sustained, entries };
+    // voiced in 95 % or more of the frames within a second either side
+    const saturated = (k) => {
+      let c = 0, all = 0;
+      for (let j = Math.max(0, k - 100); j < Math.min(n, k + 100); j++, all++) if (voiced[j] === 1) c++;
+      return all > 0 && c >= all * 0.95;
+    };
+    // in [a, b]: the frame where the loudness rises most, its next 150 ms over its last (dB × 10), if by 4 dB or more
+    const db = F.db;
+    const rise = (a, b) => {
+      let best = -1, br = 40;
+      for (let k = Math.max(15, a); k <= Math.min(n - 15, b); k++) {
+        let before = 0, after = 0;
+        for (let j = 1; j <= 15; j++) (before += db[k - j]), (after += db[k + j - 1]);
+        const r = (after - before) / 15;
+        if (r > br) (br = r), (best = k);
+      }
+      return best;
+    };
+    return { hop, n, onset, pitch, frame, time, isVoiced, sustained, entries, saturated, rise };
   }
 
   function fit(lines, F, shift = 0) {
@@ -95,6 +113,13 @@
         const c = f.entries(Math.max(lower + 0.12, w.start - 0.4), w.start);
         const last = c[c.length - 1];
         if (last && last.gap >= (opens[i] ? 0.05 : 0.1)) entry = f.time(last.k);
+      }
+      // a line opening inside a voice that never falls silent (a stem the orchestra bleeds into: Variations at 1:13, voiced
+      // in every frame for seconds): voicing can't say where the singer comes in, so the loudness does, where it rises
+      // most (4 dB or more), from just before the recognizer's start to 0.6 s after (a sung word is heard early there)
+      if (entry === null && opens[i] && f.saturated(hk)) {
+        const k = f.rise(f.frame(Math.max(lower, w.start - 0.12)), f.frame(Math.min(w.end - 0.05, w.start + 0.6))); // (the words after it follow it on)
+        if (k >= 0) entry = f.time(k);
       }
       if (entry !== null) s[i] = entry;
       // else the onset nearest the recognizer's start, as strong as can be

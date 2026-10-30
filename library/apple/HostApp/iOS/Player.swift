@@ -3,6 +3,9 @@
 // which sends it to the Worker with this device's Access token. WebKit never sees the token and no login page appears.
 import SwiftUI
 import WebKit
+#if os(iOS)
+import AVFoundation
+#endif
 // (also compiled into the Mac app: macos/build.sh)
 
 final class SchemeHandler: NSObject, WKURLSchemeHandler, URLSessionDataDelegate {
@@ -84,15 +87,42 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
     return u.url!
 }
 
-func galleryWebView() -> WKWebView {
+@MainActor func galleryWebView() -> WKWebView {
     let config = WKWebViewConfiguration()
     config.setURLSchemeHandler(SchemeHandler(), forURLScheme: SchemeHandler.scheme)
     config.mediaTypesRequiringUserActionForPlayback = []
     #if os(iOS)
     config.allowsInlineMediaPlayback = true
-    #endif
+    config.userContentController.addUserScript(WKUserScript(source: RouteLatency.script(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    let web = WKWebView(frame: .zero, configuration: config)
+    RouteLatency.watch(web)
+    return web
+    #else
     return WKWebView(frame: .zero, configuration: config)
+    #endif
 }
+
+#if os(iOS)
+/// WebKit reports no output latency (AudioContext.outputLatency reads 0), so through AirPods or a car the light and the
+/// notation ran ~0.2 s ahead of the voice on the iPhone while the Mac was in step (Sororité, the Vietnamese ballad).
+/// The audio route's own latency is handed to the page (gallery.js heard()), again whenever the route changes.
+@MainActor enum RouteLatency {
+    static var value: Double {
+        let s = AVAudioSession.sharedInstance()
+        return max(0, min(1, s.outputLatency + s.ioBufferDuration))
+    }
+    static func script() -> String { "globalThis.galleryOutputLatency=\(value);" }
+    private static var observer: NSObjectProtocol?
+    private static let webs = NSHashTable<WKWebView>.weakObjects()
+    static func watch(_ web: WKWebView) {
+        webs.add(web)
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { for w in webs.allObjects { w.evaluateJavaScript(script()) } }
+        }
+    }
+}
+#endif
 
 #if os(iOS)
 // one archive folder in Gallery's page, opened straight onto a file when there is one; or any page (the Assistant)

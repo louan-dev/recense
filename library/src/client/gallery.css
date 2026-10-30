@@ -1829,7 +1829,10 @@ body.comments-open #next{display:none}
 .txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
 /* a vocal score's stave (item 20): the target line, its ribbon (canvas.pg-lane) and, tucked right under the ribbon, a
    smaller, dimmer translation, so pitch drops never collide with it; generous room between staves */
-.tx .txc>.txe{font-size:.6em;line-height:1.3;color:rgba(255,255,255,.45);letter-spacing:.01em}
+.tx.follow .txc>.txe,:root.prom .tx .txc>.txe{font-size:.6em;line-height:1.3;color:rgba(255,255,255,.45);letter-spacing:.01em}
+/* Learn (the default): the phrase and its notation dissolve, and its translation surfaces in their place, full size,
+   where the words were */
+.tx.learn:not(.follow) .txc>.txe{align-self:start}
 .tx .txc>.txs>canvas.pg-lane{margin:.05em 0 .1em}
 :root.nt-off .tx canvas.pg-lane{display:none}
 .tx .txp{row-gap:.9em}

@@ -862,10 +862,11 @@
 
   const PROMINENCE = "gallery.prominence";
   const promViews = new Set(); // () => repaint
+  // Learn is the default view on every load: a prominence lasts while it's on screen, never across loads (a stray
+  // two-finger swipe left 0.43 stored, and the translation stacked under the notation, lit, from then on)
   prefs.prominence = null;
   try {
-    const v = localStorage.getItem(PROMINENCE);
-    if (v !== null && v !== "" && isFinite(+v)) prefs.prominence = Homebar.snapProminence(+v);
+    localStorage.removeItem(PROMINENCE);
   } catch (e) {}
 
   const paintProminence = () => {
@@ -883,10 +884,6 @@
     prefs.prominence = p == null ? null : Homebar.snapProminence(p);
     paintProminence();
     promViews.forEach((f) => f());
-    try {
-      if (prefs.prominence == null) localStorage.removeItem(PROMINENCE);
-      else localStorage.setItem(PROMINENCE, String(prefs.prominence));
-    } catch (e) {}
   };
 
   const setTextScale = (v, live) => {
@@ -2290,7 +2287,8 @@
     // otherwise the element's clock, less the output latency once Web Audio carries the sound.
     const heard = () => {
       const r = el.playbackRate || 1;
-      const out = audioCtx ? (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0) : 0;
+      // (WebKit reports no output latency: the iOS app hands the page its audio route's, AirPods' ~0.2 s included)
+      const out = audioCtx ? Math.max((audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0), +globalThis.galleryOutputLatency || 0) : 0;
       const d = deck;
 
       if (d && d.live && typeof d.at === "number" && !el.paused && !el.seeking) {
@@ -3173,6 +3171,7 @@
     }
 
     endPlayer();
+    if (prefs.prominence != null) setProminence(null); // each item opens in Learn
     stage.replaceChildren();
     meta.hidden = true;
     paintCap();
@@ -4379,7 +4378,7 @@
       box.classList.toggle("txoff", off);
       if (off && !quiet) {
         quiet = mkEl("div", "txq");
-        quiet.appendChild(document.createTextNode("Lyrics off: many voices"));
+        quiet.appendChild(document.createTextNode("Captions off · dense texture"));
         const b = mkEl("button", "lnk");
         b.type = "button";
         b.textContent = "Show";
