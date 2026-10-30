@@ -4188,7 +4188,7 @@
     const st = sp.style;
     // a made liaison's letters (prosogram-mount.js sets sp._lz): turquoise as the light reaches them, like the tie
     if (sp._lz && t >= b.s && sp.dir !== "rtl") {
-      const f = t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s)), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = "rgb(64,224,208)";
+      const f = t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s)), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = rgba(t >= b.e ? mix([64, 224, 208, 1], SPOKEN, (t - b.e) / 0.45) : [64, 224, 208, 1]);   // eases to white as the gold does
       const stops = [];
       let at = 0;
       for (const [u0, u1] of sp._lz) {
@@ -4270,7 +4270,8 @@
       if (t && t.pending) {
         f.tx = null; // ask again next time: Recense may have finished meanwhile
         awaitTranscript(f, el, host, t);
-      } else if (t) ambient(host, el, () => true, true, () => toolsSheet(f, host, el, "No words in this one: [Ambient Sounds]")); // an instrumental, playing or paused
+      } else if (t && t.complete) ambient(host, el, () => true, true, () => toolsSheet(f, host, el, "No words in this one: [Ambient Sounds]")); // heard through and no words: an instrumental, playing or paused
+      // (an unfinished one with no lines yet claims nothing: its words may still come)
       return;
     }
     if (host.querySelector(".tx.learn")) return;

@@ -246,14 +246,15 @@ function context(pro, cells, k, idx) {
 
 /** the liaison ties, queued to draw last over every line: the prosody layer only erases the line under each slur, the
  *  ties layer (swept by the light in turquoise, never gold) draws the slurs; with no layer, both */
-function tieDraw(ctx, f, g, s, a0, reach) {
+function tieDraw(ctx, f, g, s, a0, reach, settle = 0) {
   const m = ctx.getTransform(), er = f.layer !== 'ties', st = f.layer !== 'prosody'
+  const tie = settle > 0 ? `rgb(${Math.round(64 + 191 * settle)},${Math.round(224 + 31 * settle)},${Math.round(208 + 47 * settle)})` : LIAISON   // into white once sung, as the gold
   TOP.push(() => {
     ctx.save(); ctx.setTransform(m)
     if (reach < Infinity) { ctx.beginPath(); ctx.rect(-s, -2 * s, reach + s, 4 * s); ctx.clip() }   // a tie grows with the voice
     if (er) { ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(g.erase) }   // no line above a slur
     if (st) {
-      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = LIAISON; ctx.fillStyle = LIAISON
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = tie; ctx.fillStyle = tie
       ctx.lineWidth = Math.max(2, s * 0.055); ctx.lineCap = 'round'
       if (g.inner) { ctx.stroke(g.inner); ctx.fill(g.innerDots) }
       ctx.stroke(g.ties); ctx.fill(g.anchors)
@@ -262,7 +263,7 @@ function tieDraw(ctx, f, g, s, a0, reach) {
     ctx.restore() })
 }
 
-function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach) {
+function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach, tset = 0) {
   const head = p * g.Wd, k = a0 * lerp(0.95, 0.72, settle)
   if (f.layer === 'symbols') {                                    // only the score's symbols, in their own lit colour
     ctx.save(); ctx.translate(c.x, cy); ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.globalAlpha = a0
@@ -273,7 +274,7 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
   }
   const sym = f.layer !== 'prosody', ties = f.layer === 'ties'
   ctx.save(); ctx.translate(c.x, cy)
-  if (ties) { tieDraw(ctx, f, g, s, a0, reach); for (const l of g.labels) if (l.kind === 'link') labels.push({ ...l, x: c.x + l.x, y: cy + l.y, a: a0 * l.a, floor: cy + (LOW + 0.05) * s }); ctx.restore(); return }
+  if (ties) { tieDraw(ctx, f, g, s, a0, reach, tset); for (const l of g.labels) if (l.kind === 'link') labels.push({ ...l, x: c.x + l.x, y: cy + l.y, a: a0 * l.a, floor: cy + (LOW + 0.05) * s }); ctx.restore(); return }
   if (live) { ctx.save(); ctx.beginPath(); ctx.rect(-s, -2 * s, head + s, 4 * s); ctx.clip() }
   ctx.lineCap = 'butt'
   const gl = Math.max(0.8, s * 0.02)
@@ -288,7 +289,7 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
   for (const m of g.marks) { ctx.font = `${Math.round(s * m.size)}px "Times New Roman", Times, serif`; ctx.globalAlpha = k * 0.9; ctx.fillText(m.text, m.x, m.y) }
   ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = k * 0.9; ctx.stroke(g.ticks); ctx.fillStyle = INK; ctx.fill(g.fdots)
   if (sym) { ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.stroke(g.lines); ctx.fill(g.dots) }
-  tieDraw(ctx, f, g, s, a0, reach)
+  tieDraw(ctx, f, g, s, a0, reach, tset)
   if (live) { ctx.restore(); ctx.restore(); return }
   if (g.cross) {                                                   // the glide / tie across the gap, as the voice crosses it
     const b = g.cross, rv = b.ts > w.e + 0.01 ? cl((t - w.e) / (b.ts - w.e)) : 1
@@ -485,7 +486,9 @@ const plugin = {
           const gap = nc.x - c.x
           reach = t < nw.s ? c.width + (gap - c.width) * (nw.s > w.e + 0.01 ? cl((t - w.e) / (nw.s - w.e)) : 1) : gap + nc.width * f.progress(nw, t)
         }
-        drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels, reach)
+        // a tie eases into white like the gold, once the voice has sung through it (the next word's end on this row)
+        const tEnd = nc && nc.row === c.row ? nw.e : w.e, tset = live || f.t >= 1e9 || t < tEnd ? 0 : ease((t - tEnd) / 0.45)
+        drawWord(ctx, f, g, c, c.y + LANE * s, s, a0, t, w, p, live, live ? 0 : ease((t - w.e) / 0.5), labels, reach, tset)
         { let top = ceil.get(c.row) ?? Infinity
           for (const sg of g.segs) for (let i = 0; i <= 4; i++) top = Math.min(top, c.y + LANE * s + segY(sg, lerp(sg.xa, sg.xb, i / 4)) - sg.lw / 2)
           for (const nd of g.nodes) top = Math.min(top, c.y + LANE * s + nd.y - nd.r)
