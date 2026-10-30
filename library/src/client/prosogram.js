@@ -244,6 +244,24 @@ function context(pro, cells, k, idx) {
   return nb
 }
 
+/** the liaison ties, queued to draw last over every line: the prosody layer only erases the line under each slur, the
+ *  ties layer (swept by the light in turquoise, never gold) draws the slurs; with no layer, both */
+function tieDraw(ctx, f, g, s, a0, reach) {
+  const m = ctx.getTransform(), er = f.layer !== 'ties', st = f.layer !== 'prosody'
+  TOP.push(() => {
+    ctx.save(); ctx.setTransform(m)
+    if (reach < Infinity) { ctx.beginPath(); ctx.rect(-s, -2 * s, reach + s, 4 * s); ctx.clip() }   // a tie grows with the voice
+    if (er) { ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(g.erase) }   // no line above a slur
+    if (st) {
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = LIAISON; ctx.fillStyle = LIAISON
+      ctx.lineWidth = Math.max(2, s * 0.055); ctx.lineCap = 'round'
+      if (g.inner) { ctx.stroke(g.inner); ctx.fill(g.innerDots) }
+      ctx.stroke(g.ties); ctx.fill(g.anchors)
+      ctx.lineWidth = Math.max(1.6, s * 0.04); ctx.setLineDash([0.1, Math.max(3, s * 0.08)]); ctx.globalAlpha = a0 * 0.7; ctx.stroke(g.dotted)
+    }
+    ctx.restore() })
+}
+
 function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach) {
   const head = p * g.Wd, k = a0 * lerp(0.95, 0.72, settle)
   if (f.layer === 'symbols') {                                    // only the score's symbols, in their own lit colour
@@ -253,8 +271,9 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
     if (g.breath) { if (g.breath.stroke) { ctx.lineWidth = Math.max(1, s * 0.028); ctx.stroke(g.breath.path) } else ctx.fill(g.breath.path) }
     ctx.restore(); return
   }
-  const sym = f.layer !== 'prosody'
+  const sym = f.layer !== 'prosody', ties = f.layer === 'ties'
   ctx.save(); ctx.translate(c.x, cy)
+  if (ties) { tieDraw(ctx, f, g, s, a0, reach); for (const l of g.labels) if (l.kind === 'link') labels.push({ ...l, x: c.x + l.x, y: cy + l.y, a: a0 * l.a, floor: cy + (LOW + 0.05) * s }); ctx.restore(); return }
   if (live) { ctx.save(); ctx.beginPath(); ctx.rect(-s, -2 * s, head + s, 4 * s); ctx.clip() }
   ctx.lineCap = 'butt'
   const gl = Math.max(0.8, s * 0.02)
@@ -269,16 +288,7 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach)
   for (const m of g.marks) { ctx.font = `${Math.round(s * m.size)}px "Times New Roman", Times, serif`; ctx.globalAlpha = k * 0.9; ctx.fillText(m.text, m.x, m.y) }
   ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.9, s * 0.024); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = k * 0.9; ctx.stroke(g.ticks); ctx.fillStyle = INK; ctx.fill(g.fdots)
   if (sym) { ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.stroke(g.lines); ctx.fill(g.dots) }
-  { const m = ctx.getTransform(); TOP.push(() => {             // every tie last, whole, after every line is down
-    ctx.save(); ctx.setTransform(m)
-    if (reach < Infinity) { ctx.beginPath(); ctx.rect(-s, -2 * s, reach + s, 4 * s); ctx.clip() }   // a tie grows with the voice
-    ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(g.erase)   // no line above a slur
-    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = a0; ctx.strokeStyle = LIAISON; ctx.fillStyle = LIAISON
-    ctx.lineWidth = Math.max(2, s * 0.055); ctx.lineCap = 'round'
-    if (g.inner) { ctx.stroke(g.inner); ctx.fill(g.innerDots) }
-    ctx.stroke(g.ties); ctx.fill(g.anchors)
-    ctx.lineWidth = Math.max(1.6, s * 0.04); ctx.setLineDash([0.1, Math.max(3, s * 0.08)]); ctx.globalAlpha = a0 * 0.7; ctx.stroke(g.dotted)
-    ctx.restore() }) }
+  tieDraw(ctx, f, g, s, a0, reach)
   if (live) { ctx.restore(); ctx.restore(); return }
   if (g.cross) {                                                   // the glide / tie across the gap, as the voice crosses it
     const b = g.cross, rv = b.ts > w.e + 0.01 ? cl((t - w.e) / (b.ts - w.e)) : 1
@@ -354,13 +364,16 @@ function labelsAbove(ctx, f, ln, light) {
 // The notation of every line on screen is drawn whole from the moment the line appears, as a 35 % ghost, so the eye can
 // read ahead of the ear. The light then sweeps through it at the voice's own pace, the same light as the words above:
 // full ink behind it, gold at its head. One offscreen picture of the finished notation per frame, composited twice.
-let scratch = null, tint = null
+let scratch = null, tint = null, tie = null
 const surface = (c, w, h) => { if (!c) c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h }); if (c.width !== w || c.height !== h) { c.width = w; c.height = h } return c }
 function drawScore(ctx, f) {
   const cv = ctx.canvas, W = cv.width, H = cv.height, m = ctx.getTransform()
   scratch = surface(scratch, W, H); tint = surface(tint, W, H)
   const sc = scratch.getContext('2d'); sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, W, H); sc.setTransform(m)
   if (f.ribbon !== false) plugin.full(sc, { ...f, t: 1e9, glyphs: false, expr: f.expr ?? 1, layer: 'prosody' })
+  // the ties on their own picture: dimmed ahead and filled by the light like the rest, but in turquoise, never gold
+  tie = surface(tie, W, H); const tc0 = tie.getContext('2d'); tc0.setTransform(1, 0, 0, 1, 0, 0); tc0.clearRect(0, 0, W, H); tc0.setTransform(m)
+  if (f.ribbon !== false) plugin.full(tc0, { ...f, t: 1e9, glyphs: false, expr: f.expr ?? 1, layer: 'ties' })
   ctx.save()
   for (const ln of f.page) {
     const s = ln.size, light = lights(f.pro, ln.cells, f.t, f.progress)
@@ -372,12 +385,12 @@ function drawScore(ctx, f) {
       const y0 = r.top - 0.2 * s, hgt = ln.lineHeight + 0.4 * s, lx = light.get(row) ?? -Infinity
       // the ghost: the whole row's notation, preloaded
       ctx.save(); ctx.setTransform(m); ctx.beginPath(); ctx.rect(-1e4, y0, 2e4, hgt); ctx.clip()
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 0.35; ctx.drawImage(scratch, 0, 0); ctx.restore()
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 0.35; ctx.drawImage(scratch, 0, 0); ctx.drawImage(tie, 0, 0); ctx.restore()
       if (lx === -Infinity) continue
       const head = lx === Infinity ? r.x1 + 2 * s : lx
       // behind the light: the notation in full
       ctx.save(); ctx.setTransform(m); ctx.beginPath(); ctx.rect(-1e4, y0, head + 1e4, hgt); ctx.clip()
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.drawImage(scratch, 0, 0); ctx.restore()
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.drawImage(scratch, 0, 0); ctx.drawImage(tie, 0, 0); ctx.restore()
       // at its head: gold over the last stretch it crossed, fading into the ink behind it
       if (lx !== Infinity) {
         const tc = tint.getContext('2d'); tc.setTransform(1, 0, 0, 1, 0, 0); tc.clearRect(0, 0, W, H)
@@ -439,8 +452,8 @@ const plugin = {
       const s = ln.size, cells = ln.cells, a0 = ln.alpha
       ctx.save()
       // the staff: reference and ±4 semitones under each row, very faint (unlabelled: the numbers read as stray marks)
-      const symOnly = f.layer === 'symbols', sym = f.layer !== 'prosody'
-      if (E > 0.02 && !symOnly) {
+      const symOnly = f.layer === 'symbols', tiesOnly = f.layer === 'ties', sym = f.layer !== 'prosody' && !tiesOnly
+      if (E > 0.02 && !symOnly && !tiesOnly) {
         const rows = new Map()
         for (const c of cells) { const r = rows.get(c.row) || { x0: Infinity, x1: -Infinity, y: c.y }; r.x0 = Math.min(r.x0, c.x); r.x1 = Math.max(r.x1, c.x + c.width); rows.set(c.row, r) }
         const A = AMP * s * E, lim = v => { const up = v * A; return -(up > RISE * s ? RISE * s + KNEE * s * Math.tanh((up - RISE * s) / (KNEE * s)) : up < -FALL * s ? -FALL * s - KNEE * s * Math.tanh((-up - FALL * s) / (KNEE * s)) : up) }
@@ -481,9 +494,9 @@ const plugin = {
       if (symOnly) TOP.length = 0; else for (const d of TOP.splice(0)) d()
       // fermatas: like over a staff, one height per row — just above the row's highest mark (its ceiling)
       if (sym) for (const q of ferms) {
-        const fr = 0.075 * s, fy = ceil.get(q.row) - 0.11 * s
-        ctx.save(); ctx.globalAlpha = a0; ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.lineWidth = Math.max(1, s * 0.026); ctx.lineCap = 'round'
-        ctx.beginPath(); ctx.arc(q.x, fy, fr, Math.PI, 0); ctx.stroke(); ctx.beginPath(); ctx.arc(q.x, fy - 0.015 * s, 0.02 * s, 0, Math.PI * 2); ctx.fill(); ctx.restore()
+        const fr = 0.115 * s, fy = ceil.get(q.row) - 0.13 * s
+        ctx.save(); ctx.globalAlpha = a0; ctx.strokeStyle = SYM; ctx.fillStyle = SYM; ctx.lineWidth = Math.max(1.3, s * 0.034); ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.arc(q.x, fy, fr, Math.PI, 0); ctx.stroke(); ctx.beginPath(); ctx.arc(q.x, fy - 0.03 * s, 0.03 * s, 0, Math.PI * 2); ctx.fill(); ctx.restore()
       }
       const lightRow = new Map()
       for (const k of idx) { const c = cells[k], w = c.w, cur = lightRow.get(c.row) ?? -Infinity
@@ -518,6 +531,7 @@ const plugin = {
       const placed = []
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = GREY
       for (const l of labels) {
+        if (f.layer === 'prosody' && l.kind === 'link') continue        // the liaison's sound goes with its tie
         const fs = Math.max(8, Math.round(s * l.size)); ctx.font = `${fs}px "Times New Roman", Times, serif`
         const hw = ctx.measureText(l.text).width / 2 + 2
         let y = l.y

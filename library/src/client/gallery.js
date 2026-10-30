@@ -4186,6 +4186,24 @@
   // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
   const paintWord = (sp, b, t) => {
     const st = sp.style;
+    // a made liaison's letters (prosogram-mount.js sets sp._lz): turquoise as the light reaches them, like the tie
+    if (sp._lz && t >= b.s && sp.dir !== "rtl") {
+      const f = t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s)), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = "rgb(64,224,208)";
+      const stops = [];
+      let at = 0;
+      for (const [u0, u1] of sp._lz) {
+        const a = Math.min(u0, f) * 100, z = Math.min(u1, f) * 100;
+        if (z <= a) continue;
+        stops.push(lit + " " + at + "%", lit + " " + a + "%", TQ + " " + a + "%", TQ + " " + z + "%"); at = z;
+      }
+      stops.push(lit + " " + at + "%", lit + " " + (f * 100).toFixed(1) + "%", rgba(AHEAD) + " " + Math.min(100, f * 100 + (f < 1 ? 6 : 0)).toFixed(1) + "%");
+      const bg = "linear-gradient(to right," + stops.join(",") + ")";
+      if (sp._c !== "transparent") st.color = sp._c = "transparent";
+      if (sp._bg !== bg) st.backgroundImage = sp._bg = bg;
+      const sh = t >= b.e ? "" : "0 0 8px rgba(255,214,51,.45)";
+      if (sp._sh !== sh) st.textShadow = sp._sh = sh;
+      return;
+    }
     if (t >= b.e || t < b.s) {
       const c = t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : UPCOMING;
       const col = rgba(c);

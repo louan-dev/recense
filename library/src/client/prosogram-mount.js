@@ -268,6 +268,7 @@
   const ABOVE = 0.38;                // room above the ribbon for a line of chord or note names, × font size
   const BARE = 0.15;                 // a lane with labels but no ribbon
 
+  const LZ = new Map();
   function blockFor(src, next, size, nt) {
     const spans = [...src.querySelectorAll(WORD)];
     if (!spans.length) return null;
@@ -276,6 +277,7 @@
     for (const sp of spans) {
       const w = next(sp.textContent || "", sp.dataset.s);
       if (!w) continue;
+      sp._lz = LZ.get(w.flat) || null;
       const r = sp.getBoundingClientRect();
       if (!r.width) continue;
       let row = rowsY.findIndex((y) => Math.abs(y - r.top) < r.height * 0.6);
@@ -432,6 +434,14 @@
       return;
     }
 
+    // the letters each made liaison joins (word → [u0, u1] spans of the word): gallery.js paints them turquoise
+    LZ.clear();
+    for (const w of words) {
+      const x = pro.word[w.flat], l = x && x.link, y = l && pro.word[l.next];
+      if (!l || !y || !(l.realized >= 0.7) || !x.uChar || !y.uChar) continue;
+      (LZ.get(w.flat) || LZ.set(w.flat, []).get(w.flat)).push([x.uChar[l.from], x.uChar[l.from + 1] ?? 1]);
+      (LZ.get(l.next) || LZ.set(l.next, []).get(l.next)).push([0, y.uChar[l.to + 1] ?? 1]);
+    }
     let plugin = null;
     Prosogram.mount({ start: (p) => { plugin = p; } });
     if (!plugin || typeof plugin.draw !== "function") return;
