@@ -1493,7 +1493,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     let skipAd = NSButton(title: "Skip Ad", target: nil, action: nil)   // shown while the followed player plays an ad (SPEC 37)
     var onSkipAd: (() -> Void)?
     let spoken = NSColor.white, current = NSColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)
-    let upcoming = NSColor(white: 1, alpha: 0.42), ahead = NSColor(white: 1, alpha: 0.6)
+    let upcoming = NSColor(white: 1, alpha: 0.35), ahead = NSColor(white: 1, alpha: 0.35)   // the ghost: preloaded at 35 % (item 20)
     let meaning = NSColor(white: 1, alpha: 0.8)    // Learning: a heard phrase's English, a step quieter than the original
     var lastKey = ""
     var onCmd: ((Cmd) -> Void)?
@@ -2133,9 +2133,9 @@ final class Overlay: NSObject, NSWindowDelegate {
     func ink(_ b: Beat, at t: Double, font: NSFont, before: NSColor? = nil, after: NSColor? = nil, fade: Double = 0.2) -> WordsView.Ink {
         var k = plainInk(b, at: t, font: font, before: before, after: after, fade: fade)
         guard let m = Prosody.mark(b.text, b.start) else { return k }
-        // the notation follows the light: drawn as far as the voice has gone; the tie grows across the gap from the
-        // moment the word ends to the moment the next one starts, so it shows exactly when the link is sounded
-        k.figure = m.line; k.tie = m.tie
+        // the ribbon is preloaded as a ghost; the light fills it as far as the voice has gone, and across a gap from the
+        // moment the word ends to the moment the next one starts, so a link fills exactly as it is sounded
+        k.figure = m.line; k.tie = m.tie; k.joins = m.line.joins; k.start = b.start; k.end = b.end
         k.drawn = t >= b.end ? 1 : t < b.start ? 0 : max(0.001, CGFloat(Cadence.progress(b, t)))
         k.tied = t < b.end ? 0 : m.next > b.end + 0.01 ? CGFloat(min(1, (t - b.end) / (m.next - b.end))) : 1
         return k
@@ -2151,7 +2151,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let dur = max(0.05, b.end - b.start)
         let env = exp(-(t - b.start) / max(0.06, min(0.3, dur * 0.5)))
         return .init(text: b.text, font: font, color: before ?? ahead, lit: mix(pale, current, env),
-                     wipe: CGFloat(Cadence.progress(b, t)), glow: CGFloat(env), voice: Cadence.voice(b, t))
+                     wipe: CGFloat(Cadence.progress(b, t)), glow: CGFloat(env))   // steady: shaped frame by frame it flickered (item 20)
     }
 }
 
@@ -2166,7 +2166,8 @@ final class WordsView: NSView {
         var voice: Cadence.Voice? = nil
         /// Its prosody notation (the line under the word, Gallery's prosogram) and how much of it the voice has drawn;
         /// its tie to the next word, and how far across the gap the voice has carried it. nil: no notation.
-        var figure: Prosody.WordLine? = nil, drawn: CGFloat = 0, tie: Prosody.Link? = nil, tied: CGFloat = 0
+        var figure: Prosody.WordLine? = nil, drawn: CGFloat = 0, tie: Prosody.Link? = nil, tied: CGFloat = 0, joins = false
+        var start: Double? = nil, end: Double? = nil      // when it is sung (for the chords placed along it)
     }
     /// A run of words drawn together, and what it turns into (`turned` of the way): its slot is wide enough for
     /// either, so nothing moves, before, during or after. Learning's phrases are runs; everything else is a word to a cell.
@@ -2213,53 +2214,134 @@ final class WordsView: NSView {
         guard let f = cells.first?.words.first?.font else { return 0 }
         return lineHeight(f) + (cells.contains { $0.words.contains { $0.figure != nil } } ? lane(f) : 0)
     }
-    /// The room under a row for its notation.
-    static func lane(_ f: NSFont) -> CGFloat { ceil(f.pointSize * 0.8) }
+    /// Room for one line of chord or note names above the ribbon, and how many lines the toggle asks for.
+    static func above(_ f: NSFont) -> CGFloat {
+        let m = Prosody.mode
+        return CGFloat((m.contains("c") ? 1 : 0) + (m.contains("n") ? 1 : 0)) * ceil(f.pointSize * 0.4)
+    }
+    /// The room under a row for its notation (the toggle's All Off: none).
+    static func lane(_ f: NSFont) -> CGFloat {
+        let m = Prosody.mode
+        guard !m.isEmpty else { return 0 }
+        return (m.contains("p") ? ceil(f.pointSize * 0.8) : ceil(f.pointSize * 0.15)) + above(f)
+    }
     static let liaison = NSColor(red: 64 / 255, green: 224 / 255, blue: 208 / 255, alpha: 1)   // as Gallery: ties only
     /// Where a word's notation sits at u (0…1 across it) and height h (−1…1): under its text, in the row's lane.
     static func notePoint(_ k: Ink, at p: NSPoint, u: Float, h: Float) -> CGPoint {
         let lh = lineHeight(k.font), amp = k.font.pointSize * 0.26
-        return CGPoint(x: p.x + width(k) * CGFloat(u), y: p.y + lh + lane(k.font) * 0.45 - amp * CGFloat(max(-1, min(1, h))))
+        return CGPoint(x: p.x + width(k) * CGFloat(u), y: p.y + lh + above(k.font) + ceil(k.font.pointSize * 0.8) * 0.45 - amp * CGFloat(max(-1, min(1, h))))
     }
-    /// A word's line, drawn only as far as the voice has gone (`drawn`), gold under the light, settled after it.
-    func drawFigure(_ k: Ink, at p: NSPoint) {
-        guard let f = k.figure, k.drawn > 0, f.u.count > 1, let g = NSGraphicsContext.current?.cgContext else { return }
-        g.saveGState(); defer { g.restoreGState() }
-        let w = Self.width(k)
-        g.clip(to: CGRect(x: p.x - 4, y: p.y, width: w * min(1, k.drawn) + 4, height: Self.lineHeight(k.font) + Self.lane(k.font)))
-        let live = k.drawn < 1, s = k.font.pointSize
-        g.setLineCap(.round)
-        g.setStrokeColor((live ? Self.glowColor : NSColor(white: 1, alpha: 0.6)).cgColor)
-        for i in 1..<f.u.count where f.cut[i - 1] < 0.5 {
-            let a = Self.notePoint(k, at: p, u: f.u[i - 1], h: f.h[i - 1]), b = Self.notePoint(k, at: p, u: f.u[i], h: f.h[i])
-            g.setLineWidth(max(1, s * (0.03 + 0.09 * CGFloat(max(0, min(1, (f.w[i - 1] + f.w[i]) / 2))))))
-            g.move(to: a); g.addLine(to: b); g.strokePath()
+    /// Chord and note names above the ribbon, under the words (item 20): the chord progression heard so far where each
+    /// chord began, and each syllable's sung note; ghosted ahead of the light, full once it is reached.
+    func drawNames(_ words: [(Ink, NSPoint)]) {
+        guard let first = words.first?.0, words.contains(where: { $0.0.figure != nil }) else { return }
+        let m = Prosody.mode, s = first.font.pointSize, f = NSFont.systemFont(ofSize: max(9, s * 0.3), weight: .semibold)
+        let step = ceil(s * 0.4), top = words[0].1.y + Self.lineHeight(first.font)
+        var taken: [Int: [ClosedRange<CGFloat>]] = [:]
+        func put(_ text: String, x: CGFloat, line: Int, color: NSColor, lit: Bool) {
+            let t = NSAttributedString(string: text, attributes: [.font: f, .foregroundColor: color.withAlphaComponent(lit ? 0.95 : 0.4)])
+            let w = t.size().width, r = (x - w / 2 - 3)...(x + w / 2 + 3)
+            if taken[line, default: []].contains(where: { $0.overlaps(r) }) { return }
+            taken[line, default: []].append(r)
+            t.draw(at: NSPoint(x: x - w / 2, y: top + CGFloat(line) * step))
+        }
+        var line = 0
+        if m.contains("c") {
+            // a chord at the x the light had reached when it was heard
+            for ch in Prosody.chords {
+                var at: CGFloat? = nil
+                for (k, p) in words where k.figure != nil {
+                    guard let st = k.start, let en = k.end else { continue }
+                    if ch.t >= st - 0.3 && ch.t < en { at = p.x + Self.width(k) * CGFloat(max(0, min(1, (ch.t - st) / max(0.05, en - st)))) }
+                }
+                if let x = at { put(ch.text, x: x, line: line, color: NSColor(red: 143 / 255, green: 196 / 255, blue: 1, alpha: 1), lit: ch.t <= Prosody.now) }
+            }
+            line += 1
+        }
+        if m.contains("n") {
+            for (k, p) in words {
+                guard let notes = k.figure?.notes else { continue }
+                for q in notes where q.count == 2 {
+                    let x = p.x + Self.width(k) * CGFloat(q[0])
+                    put(Prosody.noteName(q[1], lang: NativeLang.current), x: x, line: line, color: Self.sung, lit: CGFloat(q[0]) <= k.drawn)
+                }
+            }
         }
     }
-    /// The turquoise tie from word a to word b, as Gallery draws it: a slur hanging between the two lines, revealed as
-    /// the voice crosses the join (never ahead of it), its sound under it; dotted when the liaison isn't made.
-    func drawTie(_ a: Ink, at pa: NSPoint, _ b: Ink, at pb: NSPoint) {
-        guard let l = a.tie, a.tied > 0, let fa = a.figure, let fb = b.figure, let ua = fa.u.last, let ha = fa.h.last,
-              let ub = fb.u.first, let hb = fb.h.first, let g = NSGraphicsContext.current?.cgContext else { return }
-        let s = a.font.pointSize
-        var p0 = Self.notePoint(a, at: pa, u: ua, h: ha), p1 = Self.notePoint(b, at: pb, u: ub, h: hb)
-        let half = max((p1.x - p0.x) / 2, 0.24 * s), mid = (p0.x + p1.x) / 2
-        p0.x = mid - half; p1.x = mid + half
-        let sag = max(0.17 * s, 0.3 * (p1.x - p0.x))
-        g.saveGState(); defer { g.restoreGState() }
-        g.clip(to: CGRect(x: p0.x - s, y: pa.y, width: s + (p1.x - p0.x) * min(1, a.tied) + 0.1 * s, height: Self.lineHeight(a.font) + Self.lane(a.font) + s))
-        let c = Self.liaison.withAlphaComponent(l.made ? 1 : 0.7)
-        g.setStrokeColor(c.cgColor); g.setFillColor(c.cgColor); g.setLineCap(.round)
-        g.setLineWidth(max(1.6, s * (l.made ? 0.055 : 0.04)))
-        if !l.made { g.setLineDash(phase: 0, lengths: [0.1, max(3, s * 0.08)]) }
-        g.move(to: p0)
-        g.addCurve(to: p1, control1: CGPoint(x: p0.x + 0.08 * (p1.x - p0.x), y: p0.y + sag * 1.33),
-                   control2: CGPoint(x: p1.x - 0.08 * (p1.x - p0.x), y: p1.y + sag * 1.33))
-        g.strokePath(); g.setLineDash(phase: 0, lengths: [])
-        if l.made { let r = max(2.2, 0.06 * s); for q in [p0, p1] { g.fillEllipse(in: CGRect(x: q.x - r, y: q.y - r, width: 2 * r, height: 2 * r)) } }
-        if a.tied >= 0.5, !l.sound.isEmpty {
-            let t = NSAttributedString(string: l.made ? "[\(l.sound)]" : "([\(l.sound)])", attributes: [.font: NSFont(name: "Times New Roman", size: s * 0.36) ?? NSFont.systemFont(ofSize: s * 0.36), .foregroundColor: c])
-            let sz = t.size(); t.draw(at: NSPoint(x: mid - sz.width / 2, y: max(p0.y, p1.y) + sag - sz.height * 0.1))
+    static let ghost = NSColor(red: 160 / 255, green: 172 / 255, blue: 190 / 255, alpha: 1)
+    static let sung = NSColor(red: 236 / 255, green: 226 / 255, blue: 200 / 255, alpha: 1)
+    /// The row's ribbon, as Gallery's prosogram draws it (item 20): one continuous shape per breath group under the
+    /// words: height = pitch, thickness = stress and loudness, unbroken where the voice runs on (a turquoise slur's dip
+    /// where words link), broken at a pause. Preloaded as a 35 % ghost; gold sweeps along it with the light, settling
+    /// to a warm white behind it.
+    func drawRibbon(_ words: [(Ink, NSPoint)]) {
+        guard words.contains(where: { $0.0.figure != nil }), !Prosody.mode.isEmpty, let g = NSGraphicsContext.current?.cgContext else { return }
+        drawNames(words)
+        guard Prosody.mode.contains("p") else { return }
+        struct Q { var p: CGPoint; var r: CGFloat }
+        var runs: [(pts: [Q], links: [(CGFloat, CGFloat, String)])] = []
+        var cur: [Q] = [], links: [(CGFloat, CGFloat, String)] = [], light = -CGFloat.infinity, prev: (Ink, NSPoint)? = nil
+        func close() { if !cur.isEmpty { runs.append((cur, links)) }; cur = []; links = [] }
+        for (k, p) in words {
+            guard let f = k.figure, !f.u.isEmpty else { close(); prev = nil; continue }
+            let s = k.font.pointSize, w = Self.width(k)
+            let pts = f.u.indices.map { i in Q(p: Self.notePoint(k, at: p, u: f.u[i], h: f.h[i]),
+                                               r: s * (0.05 + 0.11 * pow(CGFloat(max(0, min(1, f.w[i]))), 1.2)) / 2) }
+            if let (a, pa) = prev, a.joins, let last = cur.last, let first = pts.first {
+                let link = a.tie, n = max(4, Int((first.p.x - last.p.x) / 3)), sag = link != nil ? max(0.14 * s, 0.25 * (first.p.x - last.p.x)) : 0
+                for i in 1..<n {
+                    let u = CGFloat(i) / CGFloat(n), e = u * u * (3 - 2 * u)
+                    cur.append(Q(p: CGPoint(x: last.p.x + (first.p.x - last.p.x) * u, y: last.p.y + (first.p.y - last.p.y) * e + sag * 4 * u * (1 - u)),
+                                 r: min(last.r, first.r) * (link != nil ? 0.85 : 0.7)))
+                }
+                if let l = link { let m = (last.p.x + first.p.x) / 2, hw = max(0.32 * s, (first.p.x - last.p.x) / 2 + 0.12 * s); links.append((m - hw, m + hw, l.sound)) }
+                if a.drawn >= 1 { light = max(light, pa.x + Self.width(a) + (p.x - pa.x - Self.width(a)) * min(1, a.tied)) }
+            } else { close() }
+            cur.append(contentsOf: pts)
+            if k.drawn > 0 { light = max(light, k.drawn >= 1 && k.tied >= 1 ? p.x + w : p.x + w * min(1, k.drawn)) }
+            if k.drawn >= 1, k.tied >= 1 { light = max(light, p.x + w + 1) }
+            prev = (k, p)
+        }
+        close()
+        if let (last, _) = words.last, last.drawn >= 1 { light = .infinity }
+        for run in runs {
+            guard let a = run.pts.first, let b = run.pts.last else { continue }
+            let path = CGMutablePath()
+            if run.pts.count == 1 { path.addEllipse(in: CGRect(x: a.p.x - a.r, y: a.p.y - a.r, width: 2 * a.r, height: 2 * a.r)) }
+            else {
+                let up = run.pts.map { CGPoint(x: $0.p.x, y: $0.p.y - $0.r) }, dn = run.pts.reversed().map { CGPoint(x: $0.p.x, y: $0.p.y + $0.r) }
+                func through(_ q: [CGPoint]) {
+                    for i in 1..<(q.count - 1) { path.addQuadCurve(to: CGPoint(x: (q[i].x + q[i + 1].x) / 2, y: (q[i].y + q[i + 1].y) / 2), control: q[i]) }
+                    path.addLine(to: q[q.count - 1])
+                }
+                path.move(to: up[0]); through(up)
+                path.addArc(center: b.p, radius: b.r, startAngle: -.pi / 2, endAngle: .pi / 2, clockwise: false)
+                path.addLine(to: dn[0]); through(dn)
+                path.addArc(center: a.p, radius: a.r, startAngle: .pi / 2, endAngle: .pi * 1.5, clockwise: false)
+                path.closeSubpath()
+            }
+            func fill(_ c: NSColor, alpha: CGFloat) {
+                g.saveGState(); g.addPath(path); g.setFillColor(c.withAlphaComponent(alpha).cgColor); g.fillPath(); g.restoreGState()
+                for l in run.links { g.saveGState(); g.clip(to: CGRect(x: l.0, y: -1e4, width: l.1 - l.0, height: 2e4)); g.addPath(path); g.setFillColor(Self.liaison.withAlphaComponent(alpha).cgColor); g.fillPath(); g.restoreGState() }
+            }
+            fill(Self.ghost, alpha: 0.35)
+            if light > a.p.x - a.r {
+                g.saveGState()
+                g.clip(to: CGRect(x: -1e4, y: -1e4, width: (light == .infinity ? 2e4 : light) + 1e4, height: 2e4))
+                g.saveGState(); g.addPath(path); g.clip()
+                let head = light == .infinity ? b.p.x + 1 : light, s = words[0].0.font.pointSize
+                let grad = CGGradient(colorsSpace: nil, colors: [Self.sung.cgColor, (light == .infinity ? Self.sung : Self.glowColor).cgColor] as CFArray, locations: [0, 1])!
+                g.drawLinearGradient(grad, start: CGPoint(x: head - 2.5 * s, y: 0), end: CGPoint(x: head, y: 0), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                g.restoreGState()
+                for l in run.links { g.saveGState(); g.clip(to: CGRect(x: l.0, y: -1e4, width: l.1 - l.0, height: 2e4)); g.addPath(path); g.setFillColor(Self.liaison.cgColor); g.fillPath(); g.restoreGState() }
+                g.restoreGState()
+            }
+            for l in run.links where !l.2.isEmpty {
+                let mx = (l.0 + l.1) / 2, near = run.pts.min { abs($0.p.x - mx) < abs($1.p.x - mx) }!, s = words[0].0.font.pointSize
+                let t = NSAttributedString(string: l.2, attributes: [.font: NSFontManager.shared.convert(NSFont(name: "Times New Roman", size: s * 0.3) ?? .systemFont(ofSize: s * 0.3), toHaveTrait: .italicFontMask),
+                                                                     .foregroundColor: Self.liaison.withAlphaComponent(light >= mx ? 0.95 : 0.4)])
+                let sz = t.size(); t.draw(at: NSPoint(x: mx - sz.width / 2, y: near.p.y + near.r + 0.04 * s))
+            }
         }
     }
 
@@ -2340,9 +2422,9 @@ final class WordsView: NSView {
         var x = (bounds.width - r.width) / 2
         if drum == nil { inkRects.append(NSRect(x: x, y: y, width: r.width, height: h)) }
         let flow = r.cells.allSatisfy { $0.cell.words.count == 1 } && r.cells.contains { Self.rtl($0.cell) } ? Array(r.cells.reversed()) : r.cells
-        var prevWord: (Ink, NSPoint)? = nil      // the last cell's last word, for a tie across the gap
+        var ribbon: [(Ink, NSPoint)] = []        // the row's words in reading order, for its one ribbon
+        defer { if !flow.contains(where: { Self.rtl($0.cell) }) { drawRibbon(ribbon) } }
         for (c, w) in flow {
-            defer { if let k = c.words.last, c.turn == nil || c.turned == 0 { prevWord = (k, NSPoint(x: x - gap - w + (w - Self.width(c.words)) / 2 + Self.width(c.words) - Self.width(k), y: y)) } else { prevWord = nil } }
             let rtl = Self.rtl(c)
             // A soft edge sweeps across the phrase the way the light did, the words dissolving ahead of it and their
             // translation surfacing behind it, in place (never a phrase laid over its translation, which is a blur).
@@ -2353,15 +2435,13 @@ final class WordsView: NSView {
             if p < 1 {
                 Self.sweep(slot, from: rtl ? edge - feather : edge, to: rtl ? edge : edge + feather, keepLeft: rtl, whole: p == 0) {
                     var wx = x + (w - Self.width(c.words)) / 2
-                    var before: (Ink, NSPoint)? = nil
                     for k in rtl ? c.words.reversed() : c.words {
                         let at = NSPoint(x: wx, y: y)
-                        draw(k, at: at, alpha: 1); drawFigure(k, at: at)
-                        if !rtl, let (a, pa) = before { drawTie(a, at: pa, k, at: at) }
-                        before = (k, at); wx += Self.width(k) + Self.space(k.font)
+                        draw(k, at: at, alpha: 1)
+                        if p == 0 { ribbon.append((k, at)) }     // a phrase turning into its translation takes its ribbon with it
+                        wx += Self.width(k) + Self.space(k.font)
                     }
                 }
-                if !rtl, c.words.count == 1, let (a, pa) = prevWord { drawTie(a, at: pa, c.words[0], at: NSPoint(x: x + (w - Self.width(c.words)) / 2, y: y)) }
             }
             if let u = c.turn, p > 0 {
                 Self.sweep(slot, from: rtl ? edge : edge - feather, to: rtl ? edge + feather : edge, keepLeft: !rtl, whole: p == 1) {
@@ -6522,7 +6602,13 @@ final class NativeSources {
             case "share": self.shareSource()
             case "fx": self.setSound(b)
             case "chroma?": self.wantChords()          // the tray's chord detector asks (4 a second while it is on)
-            case "chord": self.overlay.showChord(b["t"] as? String)
+            case "chord":
+                let t = b["t"] as? String
+                Prosody.heard(chord: t, key: self.episode?.key ?? "")
+                // with notation on screen the progression is drawn in the lane under the words (item 20)
+                self.overlay.showChord(Prosody.mode.contains("c") && Prosody.live != nil ? nil : t)
+            case "notation":
+                if let m = b["m"] as? String, ["p", "c", "n", "pc", "pn", "cn", ""].contains(m) { Prosody.mode = m; self.overlay.lastKey = "" }
             default: break
             }
         }
@@ -7411,6 +7497,7 @@ final class NativeSources {
             // The line being spoken, held after it ends until the next one shows (unlit, 4 s ahead), so the window
             // never blinks empty between lines; only a real break (12 s or more) clears it. Paused, it never clears.
             Cadence.track = ep.features
+            Prosody.now = t
             Prosody.ensure(key: ep.key, lines: ep.sung, features: ep.features, lang: ep.language.flatMap(languageCode) ?? ep.spokenLanguage ?? Prosody.language(ep.sung), song: ep.isSong)
             let held = expectPaused ?? pos.paused, lines = ep.sung   // the trailing line in the native language, timed to the voice
             let last = lines.last { $0.start - 0.15 <= t }, next = lines.first { $0.start - 0.15 > t }

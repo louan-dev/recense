@@ -194,8 +194,27 @@
     post({ k: "fx", eq: { ...sound.eq }, key: sound.key, mix: sound.space.on ? sound.space.mix : 0, room: sound.space.room, vox: sound.vox || 0 });
     return true;
   };
+  // the notation toggle under the vertical bar (item 20): p ribbon, c chords, n notes; "" nothing. Kept here and in Sill.
+  const NOTATION_MODE = "recense.notationMode";
+  let notationMode = "p";
+  try {
+    const m = localStorage.getItem(NOTATION_MODE);
+    if (m !== null && /^(p|c|n|pc|pn|cn|)$/.test(m)) notationMode = m;
+  } catch (e) {}
+  post({ k: "notation", m: notationMode });
   const vbar = Homebar.vertical({
     prominence: { get: () => st.prominence, set: setProm },
+    notation: {
+      get: () => notationMode,
+      set: (m) => {
+        notationMode = m;
+        try {
+          localStorage.setItem(NOTATION_MODE, m);
+        } catch (e) {}
+        post({ k: "notation", m });
+        if (tray && tray.setChords) tray.setChords(m.includes("c"));
+      },
+    },
     shaped: () => Math.abs(st.size - 1) > 1e-6 || st.prominence != null || !plain(),
     tap: () => (tray.isOpen() ? tray.hide() : tray.show(5000)),
     tare: () => {
@@ -253,6 +272,7 @@
     wake,
   });
   document.getElementById("vw").replaceWith(tray.el);
+  if (notationMode.includes("c") && tray.setChords) tray.setChords(true);   // the chords the saved mode asks for
   vbar.paint();
 
   // ----- the transcript editor's tools (SPEC 57), shown while a line is edited; the same component as Gallery's -----

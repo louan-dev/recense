@@ -32,13 +32,17 @@ enum Prosody {
         var cut: [Float]
         /// the tie to the next word (French liaison / enchaînement / elision), nil where there is none
         var link: Link? = nil
+        /// the voice runs on into the next word (no pause or breath after this one): the ribbon stays unbroken
+        var joins: Bool = false
+        /// the sung note of each syllable whose pitch can be trusted: [u (0…1 across the word), MIDI note]
+        var notes: [[Float]]? = nil
     }
     struct Link: Codable { var next: Int; var sound: String; var kind: String; var made: Bool }
 
     /// Everything the drawing needs, cached as one object.
     struct Result: Codable {
         /// schema version: bump when the shape changes, so a stale cache is recomputed rather than misread
-        var v: Int = 2
+        var v: Int = 4
         /// which transcript this was computed from — a correction changes it and forces a recompute
         var transcript: String
         var lang: String
@@ -59,7 +63,7 @@ enum Prosody {
     static func cached(_ key: String, transcript stamp: String) -> Result? {
         guard let d = try? Data(contentsOf: url(key)),
               let r = try? JSONDecoder().decode(Result.self, from: d),
-              r.v == 2, r.transcript == stamp else { return nil }
+              r.v == 4, r.transcript == stamp else { return nil }
         return r
     }
 
@@ -128,11 +132,38 @@ enum Prosody {
 
     // ---------- what the window draws ----------
 
-    /// One word's notation as the overlay draws it: its line, and its tie to the next word with when that word starts.
+    /// One word's notation as the overlay draws it: its ribbon, its link to the next word, and when the next word starts.
     struct Mark { var line: WordLine; var tie: Link?; var end: Double; var next: Double }
     /// The playing recording's notation, by word (text + start in ms): read by the overlay every frame, no JS involved.
     nonisolated(unsafe) static var live: (key: String, stamp: String, marks: [String: Mark])? = nil
     nonisolated(unsafe) private static var busy: String? = nil
+    // ---------- the notation toggle (item 20) ----------
+    /// What the overlay draws between a line and its translation, set by the toggle under the home bar's vertical bar:
+    /// p = the prosody ribbon, c = the chord progression, n = the sung notes; "" = nothing.
+    nonisolated(unsafe) static var mode: String = UserDefaults.standard.string(forKey: "notationMode") ?? "p" {
+        didSet { UserDefaults.standard.set(mode, forKey: "notationMode") }
+    }
+    /// the media time heard now (the overlay's clock, set every frame) and the chords heard so far on this recording
+    nonisolated(unsafe) static var now: Double = 0
+    nonisolated(unsafe) static var chords: [(t: Double, text: String)] = []
+    nonisolated(unsafe) private static var chordsKey = ""
+    static func heard(chord text: String?, key: String) {
+        guard let text, !text.isEmpty else { return }
+        if chordsKey != key { chordsKey = key; chords = [] }
+        let t = now
+        chords.removeAll { abs($0.t - t) <= 0.4 }
+        if let last = chords.last(where: { $0.t < t }), last.text == text { return }
+        chords.append((t, text)); chords.sort { $0.t < $1.t }
+    }
+    /// A note's name as the Key label spells it: English C/do, French Do, Vietnamese Đô (the native language's).
+    static func noteName(_ midi: Float, lang: String) -> String {
+        let pc = ((Int(midi.rounded()) % 12) + 12) % 12
+        let am = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"][pc]
+        let fr = ["Do", "Do♯", "Ré", "Mi♭", "Mi", "Fa", "Fa♯", "Sol", "La♭", "La", "Si♭", "Si"][pc]
+        let vi = ["Đô", "Đô♯", "Rê", "Mi♭", "Mi", "Fa", "Fa♯", "Son", "La♭", "La", "Si♭", "Si"][pc]
+        return lang == "fr" ? fr : lang == "vi" ? vi : am + "/" + fr.lowercased()
+    }
+
     static func markKey(_ text: String, _ start: Double) -> String { "\(text)@\(Int((start * 1000).rounded()))" }
     static func mark(_ text: String, _ start: Double) -> Mark? { live?.marks[markKey(text, start)] }
 
@@ -159,11 +190,11 @@ enum Prosody {
             guard let r = await compute(key: key, input) else { return }
             var marks: [String: Mark] = [:]
             for wl in r.words where words.indices.contains(wl.flat) {
-                let w = words[wl.flat], nx = wl.link.flatMap { words.indices.contains($0.next) ? words[$0.next].start : nil }
-                marks[markKey(w.text, w.start)] = Mark(line: wl, tie: wl.link, end: w.end, next: nx ?? w.end)
+                let w = words[wl.flat], nx = words.indices.contains(wl.flat + 1) ? words[wl.flat + 1].start : w.end
+                marks[markKey(w.text, w.start)] = Mark(line: wl, tie: wl.link?.made == true ? wl.link : nil, end: w.end, next: nx)
             }
             live = (key, st, marks)
-            log("prosody: \(marks.count) words drawn, \(marks.values.filter { $0.tie != nil }.count) ties (\(lang))")
+            log("prosody: \(marks.count) words on the ribbon, \(marks.values.filter { $0.tie != nil }.count) links (\(lang))")
         }
     }
 
@@ -259,7 +290,9 @@ enum Prosody {
                        w: Array.from(p.w).slice(0, p.n),
                        cut: Array.from(p.cut).slice(0, p.n),
                        link: x.link && x.link.next != null ? { next: x.link.next, sound: String(x.link.sound || ''),
-                             kind: String(x.link.kind || ''), made: (x.link.realized || 0) >= 0.7 } : null });
+                             kind: String(x.link.kind || ''), made: (x.link.realized || 0) >= 0.7 } : null,
+                       joins: !(x.breathAfter >= 0.12 || x.cutAfter >= 0.85),
+                       notes: (x.syl || []).filter(sy => Number.isFinite(sy.pitch) && sy.rel >= 0.4 && sy.un != null).map(sy => [sy.un, sy.pitch]) });
           }
           return JSON.stringify({ semitone: pro.semitone, reference: pro.reference, span: pro.span, words: out });
         })()
