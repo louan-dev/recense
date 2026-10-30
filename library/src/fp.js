@@ -39,7 +39,7 @@ export const FP_ROOTS = {
 // dotfiles included (a vault's .obsidian/, a project's .gitignore).
 export const JUNK_PATHS = [
   /(^|\/)\.DS_Store$/, /(^|\/)\._/, /(^|\/)\.Trash/, /(^|\/)\.localized$/, /(^|\/)Thumbs\.db$/i, /(^|\/)desktop\.ini$/i,
-  /(^|\/)~\$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
+  /(^|\/)~\$/, /(^|\/)\.~lock\.[^/]*#$/, /(^|\/)Icon\r$/, /(^|\/)\.(Spotlight-V100|fseventsd|TemporaryItems|DocumentRevisions-V100)(\/|$)/,
 ];
 export const CHURN_PATHS = [/(^|\/)\.obsidian\/workspace(-mobile)?\.json$/, /(^|\/)\.obsidian\/cache$/];
 const MARK = ".folder-"; // Gallery's empty-folder marker (main.js): the folder is the item, not its marker

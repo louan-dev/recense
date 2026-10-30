@@ -1339,7 +1339,7 @@ await test("fp: the catalog's chain and delete guard are sync's (event-log.md): 
 await test("fp: one junk rule with the ledger, dotfiles as content, md5, Main as a root, old batches to history/", async () => {
   // the same vector as ledger.mjs's selftest (event-log.md §6)
   const cls = (p) => (JUNK_PATHS.some((x) => x.test(p)) ? "junk" : CHURN_PATHS.some((x) => x.test(p)) ? "churn" : "content");
-  const JV = [[".DS_Store", "junk"], ["a/._x.m4a", "junk"], [".Trashes/501/x", "junk"], ["Thumbs.db", "junk"], ["a/~$Report.docx", "junk"],
+  const JV = [[".DS_Store", "junk"], ["a/._x.m4a", "junk"], [".Trashes/501/x", "junk"], ["Thumbs.db", "junk"], ["a/~$Report.docx", "junk"], ["a/.~lock.Report.odt#", "junk"], ["a/.~lock", "content"],
     ["a/Icon\r", "junk"], [".Spotlight-V100/Store", "junk"], [".obsidian/workspace.json", "churn"], ["v/.obsidian/cache", "churn"],
     [".obsidian/app.json", "content"], [".gitignore", "content"], ["a/.env.example", "content"], ["Report.docx", "content"], ["Icon.png", "content"]];
   for (const [p, c] of JV) assert.equal(cls(p), c, p);
