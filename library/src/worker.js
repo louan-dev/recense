@@ -26,7 +26,7 @@ import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, r
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
 import { archive } from "./archive.js";
-import { noteImage } from "./images.js";
+import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexStep } from "./ai.js";
 import { inviteIcs, listEvents, today, TZ_DEFAULT } from "./calendar.js";
 
@@ -99,6 +99,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     if (path.startsWith("/main/api/ai/")) return aiRoute(req, env, ctx, url, path, method);
 
     if (path === "/main/api/file" && method === "PUT") return mainUpload(req, env, url);
+    if (path === "/main/api/img" && method === "PUT") return noteImageUpload(req, env, url);
     if (path === "/main/api/file" && method === "DELETE") return mainDelete(env, url);
     if (path === "/main/api/rename" && method === "POST") return mainRename(req, env);
     if (path === "/main/api/folders" && read) return mainFolders(env, url);
