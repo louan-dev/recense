@@ -1162,6 +1162,26 @@
   position:relative
 }
 
+/* the notation toggle under the vertical bar (item 20): the same font and blue as Select All */
+.p-nmode{
+  display:block;
+  margin:6px auto 0;
+  padding:4px 2px;
+  min-height:0;
+  border:0;
+  background:none;
+  color:var(--blue,#0a84ff);
+  font:inherit;
+  font-size:11px;
+  line-height:1.2;
+  width:44px;
+  overflow:hidden;
+  text-align:center;
+  white-space:normal;
+  cursor:pointer
+}
+.p-nmode.off{opacity:.7}
+
 .p-vlist{
   position:absolute;
   right:calc(100% + 4px);

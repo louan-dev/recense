@@ -789,6 +789,47 @@
   // what a share link made from here carries (page script: Create Share Link, Share, Invite)
   window.galleryView = () => ({ lang: prefs.nativeLang, notation: prefs.keyNotation });
 
+  // What is drawn between a line and its translation (item 20), cycled by the toggle under the vertical bar:
+  // p = the prosody ribbon, c = the chord progression, n = the sung notes; "" = nothing. Kept in this browser.
+  const NOTATION_MODE = "gallery.notationMode";
+  prefs.notationMode = "p";
+  try {
+    const m = localStorage.getItem(NOTATION_MODE);
+    if (m !== null && /^(p|c|n|pc|pn|cn|)$/.test(m)) prefs.notationMode = m;
+  } catch (e) {}
+  // read by prosogram-mount.js every frame: the mode, the chords heard so far on this item (time → name), and a
+  // note's name in the notation the chords are spelled in (English: C/do, as the Key label; else the language's)
+  const notation = (globalThis.GalleryNotation = {
+    mode: () => prefs.notationMode,
+    chords: [],
+    media: null,
+    noteName: (midi) => {
+      const pc = ((Math.round(midi) % 12) + 12) % 12;
+      const st = GalleryKey.chordState(prefs.nativeLang, prefs.keyNotation, prefs.notationLast);
+      const name = GalleryKey.chordName({ pc, minor: false }, st);
+      return st === 0 ? name + "/" + GalleryKey.chordName({ pc, minor: false }, 1).toLowerCase() : name;
+    },
+    heard: (text) => {
+      const c = globalThis.GalleryClock;
+      if (!text || !c || typeof c.now !== "function") return;
+      if (notation.media !== c.media) (notation.media = c.media), (notation.chords = []);
+      const t = c.now();
+      if (!Number.isFinite(t)) return;
+      const log = notation.chords.filter((x) => Math.abs(x.t - t) > 0.4);
+      const last = log.filter((x) => x.t < t).pop();
+      if (last && last.text === text) return; // the same chord held on
+      log.push({ t, text });
+      log.sort((a, b) => a.t - b.t);
+      notation.chords = log;
+    },
+  });
+  const applyNotation = () => {
+    const m = prefs.notationMode, root = document.documentElement;
+    root.classList.toggle("nt-off", !m);
+    root.classList.toggle("nt-p", m.includes("p"));
+  };
+  applyNotation();
+
   // Subtitle size: one value, kept in this browser (a share link's visitor keeps their own), and
   // every control that shows it repaints when it changes, wherever the change came from.
   const TEXT_SCALE = "gallery.textScale";
@@ -1698,6 +1739,17 @@
 
     const vbar = Homebar.vertical({
       prominence: { get: () => prefs.prominence, set: (v) => setProminence(v) },
+      notation: {
+        get: () => prefs.notationMode,
+        set: (m) => {
+          prefs.notationMode = m;
+          try {
+            localStorage.setItem(NOTATION_MODE, m);
+          } catch (e) {}
+          applyNotation();
+          if (tray && tray.setChords) tray.setChords(m.includes("c"));
+        },
+      },
       shaped: () => !soundPlain() || prefs.txScale !== 1 || prefs.prominence != null,
       tap: () => (tray.isOpen() ? tray.hide() : tray.show(5000)),
       tare: () => {
@@ -1738,6 +1790,9 @@
       chords: (t) => {
         const st = el.closest(".vw, .aw") || w;
         let c = st.querySelector(".txchord");
+        notation.heard(t);
+        // with a transcript on screen the progression is drawn in the notation lane, under the words (item 20)
+        if (t && st.querySelector("canvas.pg-lane") && prefs.notationMode.includes("c")) t = null;
         if (!t) return c && (c.hidden = true);
         if (!c) {
           c = document.createElement("div");
@@ -1802,6 +1857,8 @@
     });
 
     ctrl.append(tray.el);
+    // a saved mode with chords: the detector starts with the first play (it starts the sound engine, which wants a gesture)
+    if (prefs.notationMode.includes("c") && tray.setChords) el.addEventListener("play", () => prefs.notationMode.includes("c") && tray.setChords(true), { once: true });
 
     // Recense's tray (note 30) is its own controller: while Recense follows this tab its values drive this
     // chain (not saved as Gallery's prefs), and the bridge is told so it never takes the element a second time
@@ -4094,8 +4151,8 @@
   // flashes gold and settles, then it eases into white.
   const SPOKEN = [255, 255, 255, 1];
   const GOLD = [255, 214, 51, 1];
-  const UPCOMING = [255, 255, 255, 0.42];
-  const AHEAD = [255, 255, 255, 0.6];
+  const UPCOMING = [255, 255, 255, 0.35]; // the ghost: every word of a line on screen is preloaded at 35 % (item 20)
+  const AHEAD = [255, 255, 255, 0.35];
   const mix = (a, b, f) => {
     f = Math.max(0, Math.min(1, f));
     return a.map((v, i) => v + (b[i] - v) * f);
@@ -4105,9 +4162,8 @@
   // ----- the voice under the light (notes 33) -----
   //
   // Recense measures each song's voice frame by frame on its vocal stem (keep/<key>/features.json: loudness, onset,
-  // pitch, clarity, voiced, every 10 ms). The light takes its shape from it, as in Recense's window: a held or belted
-  // note swells it, fuller and brighter (it never moves: no lift, no shiver); a breathy, soft
-  // or cracking moment leaves it thin and pale; a clear vowel flows (a feathered edge), an attack stays crisp.
+  // pitch, clarity, voiced, every 10 ms). The words are timed to it (cadence.js) and the ribbon under the line draws
+  // it (prosogram.js); the light itself stays steady (item 20: shaped frame by frame, it flickered).
   let curVoice = null; // { f, shift, top, notes } for the item on stage, or null: the plain light
 
   // (resolves to the voice once it's here, else null: the transcript's words are then timed to it, cadence.js)
@@ -4125,51 +4181,13 @@
       .catch(() => null);
   };
 
-  const voiceAt = (b, t) => {
-    const V = curVoice;
-    if (!V) return null;
-    const f = V.f;
-    const n = f.db.length;
-    const fr = (x) => Math.max(0, Math.min(n - 1, Math.floor((x - V.shift) / (f.hop || 0.01))));
-    const k = fr(t);
-    const mean = (a, lo, hi, pitched) => {
-      let sum = 0;
-      let c = 0;
-      for (let i = Math.max(0, lo); i <= Math.min(n - 1, hi); i++) if (!pitched || a[i] > 0) (sum += a[i]), c++;
-      return c ? sum / c : null;
-    };
-    if (f.voiced[k] !== 1) return { swell: 0, lift: 0, shiver: 0, thin: 0.35, soft: 0 };
-    const e = Math.min(1.15, Math.max(0, ((mean(f.db, k - 3, k + 3) ?? f.floor) - f.floor) / Math.max(6, V.top - f.floor)));
-    const clear = (mean(f.clarity, k - 3, k + 3) || 0) / 100;
-    const note = f.pitch[k];
-    let held = 0; // how long the note has run on unbroken (up to 0.8 s)
-    while (held < 80 && k - held - 1 >= 0 && f.pitch[k - held - 1] > 0 && Math.abs(f.pitch[k - held - 1] - note) < 150) held++;
-    const v = {
-      swell: Math.min(1, e * (0.55 + 0.45 * clear) + (note > 0 ? (0.3 * held) / 80 : 0)),
-      lift: 0,
-      shiver: 0,
-      thin: Math.min(1, Math.max(0, 0.55 - clear) * 1.8 * Math.max(0, 1.1 - e)),
-      soft: 0,
-    };
-    if (note > 0 && k >= 3 && f.pitch[k - 3] > 0 && Math.abs(f.pitch[k - 3] - note) > 300) v.thin = Math.max(v.thin, 0.8); // a crack
-    if (note > 0) {
-      const key = b.s + "|" + b.e;
-      let mid = V.notes.get(key);
-      if (mid == null) V.notes.set(key, (mid = mean(f.pitch, fr(b.s), fr(Math.max(b.s, b.e)), true) ?? note));
-      v.lift = Math.max(-6, Math.min(6, ((note - mid) / 100) * 1.5));
-      const local = mean(f.pitch, k - 12, k + 12, true);
-      if (local != null && held >= 12) v.shiver = Math.max(-1, Math.min(1, (note - local) / 50));
-      v.soft = clear > 0.6 ? Math.min(1, held / 15) * (1 - Math.min(1, f.onset[k] / 60)) : 0;
-    }
-    return v;
-  };
 
   // Styles are only written when they change: a page that rewrites them every frame keeps style-watching
   // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
   const paintWord = (sp, b, t) => {
     const st = sp.style;
     if (t >= b.e || t < b.s) {
-      const c = t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : mix(UPCOMING, AHEAD, 1 - (b.s - t) / 0.2);
+      const c = t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : UPCOMING;
       const col = rgba(c);
       if (sp._c !== col) st.color = sp._c = col;
       if (sp._bg) {
@@ -4178,22 +4196,17 @@
       if (sp._y) st.top = sp._y = "";
       return;
     }
-    // the light stays full gold for the whole word and wipes across all of it, with a soft edge; the voice shapes it
-    const v = voiceAt(b, t);
+    // the light stays full gold for the whole word and wipes across all of it at the voice's speed, with a steady
+    // soft edge and a steady glow: the frame-to-frame voice measures no longer change its opacity, edge or glow,
+    // which made it flicker (item 20). The ribbon under the line carries the voice's stress and pitch instead.
     const dur = Math.max(0.05, b.e - b.s);
     const f = Math.min(1, (t - b.s) / dur);
     const w = (f * 100).toFixed(1);
-    const edge = Math.min(100, f * 100 + 6 + (v ? 22 * v.soft : 0)).toFixed(1);
-    const lit = v ? rgba([GOLD[0], GOLD[1], GOLD[2], 1 - 0.5 * v.thin]) : rgba(GOLD);
+    const edge = Math.min(100, f * 100 + 6).toFixed(1);
     if (sp._c !== "transparent") st.color = sp._c = "transparent";
-    const bg = "linear-gradient(" + (sp.dir === "rtl" ? "to left," : "to right,") + lit + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
+    const bg = "linear-gradient(" + (sp.dir === "rtl" ? "to left," : "to right,") + rgba(GOLD) + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
     if (sp._bg !== bg) st.backgroundImage = sp._bg = bg;
-    let sh = "0 0 8px rgba(255,214,51,.45)";
-    if (v) {
-      const shine = Math.max(0.45, 0.85 * v.swell) * (1 - 0.75 * v.thin);
-      sh = "0 0 " + (8 + 14 * v.swell).toFixed(0) + "px rgba(255,214,51," + Math.min(0.85, 0.45 * shine + 0.3 * v.swell).toFixed(2) + ")";
-      if (v.swell > 0.15) sh += ",0 0 " + (0.6 * v.swell).toFixed(1) + "px rgba(255,214,51,.9)"; // fuller strokes
-    }
+    const sh = "0 0 8px rgba(255,214,51,.45)";
     if (sp._sh !== sh) st.textShadow = sp._sh = sh;
     // (the light no longer moves with the pitch or vibrato: the word stays put, the owner found it shaking)
   };
@@ -4823,6 +4836,9 @@
           } else if (raw < 1) {
             c.words.forEach((w) => paintWord(w.sp, w.b, now));
             if (c.en && c.en._c) (c.en.style.color = c.en.style.backgroundImage = c.en.style.textShadow = ""), (c.en._c = c.en._bg = c.en._sh = undefined);
+          } else {
+            // turned: its words are settled, never left mid-fade (a last word stuck faded yellow, item 20)
+            c.words.forEach((w) => paintWord(w.sp, w.b, Math.max(now, w.b.e + 1)));
           }
           if (c.en) turn(c, raw, rtl, h);
         }

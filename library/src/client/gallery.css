@@ -1823,6 +1823,13 @@ body.comments-open #next{display:none}
 /* a word Recense's lexicon wrote from what a correction taught it (its title says what was heard): a faint blue dotted underline */
 .txw.txl{text-decoration:underline dotted rgba(10,132,255,.55);text-decoration-thickness:1.5px;text-underline-offset:.22em}
 .txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
+/* a vocal score's stave (item 20): the target line, its ribbon (canvas.pg-lane) and, tucked right under the ribbon, a
+   smaller, dimmer translation, so pitch drops never collide with it; generous room between staves */
+.tx .txc>.txe{font-size:.6em;line-height:1.3;color:rgba(255,255,255,.45);letter-spacing:.01em}
+.tx .txc>.txs>canvas.pg-lane{margin:.05em 0 .1em}
+:root.nt-off .tx canvas.pg-lane{display:none}
+.tx .txp{row-gap:.9em}
+.tx.learn .txp+.txp{margin-top:.6em}
 
 /* Learn and Follow: the lyrics are centred in the band between the top bar (with its day and time) and the two bars,
    in either orientation: never under the date or the browser's chrome, never over the bars (SPEC 55, 56). A tap on

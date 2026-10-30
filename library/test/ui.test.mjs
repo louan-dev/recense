@@ -433,6 +433,24 @@ await test("a Recense transcript shows in Learn mode: original first, then its E
   await pg.$eval("audio", (a) => (a.currentTime = 1.6));
   await pg.waitForFunction(() => [...document.querySelectorAll(".tx .txe")].every((e) => getComputedStyle(e).visibility === "visible"));
   assert.equal(await pg.$eval(".tx .txs", (e) => getComputedStyle(e).visibility), "hidden");
+  // item 20: once a phrase has turned, its last word is settled white, never left faded yellow
+  await pg.waitForFunction(() => [...document.querySelectorAll(".tx .txw")].every((w) => w.style.color === "rgb(255, 255, 255)" || w.style.color === "rgba(255, 255, 255, 1)"));
+});
+
+await test("item 20: the notation toggle under the vertical bar cycles Prosody, Chords, Notes, the pairs, All Off, and is kept", true, async (pg) => {
+  await pg.goto(base + "/main?p=Songs");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".p-nmode");
+  const label = () => pg.$eval(".p-nmode", (e) => e.title);
+  assert.equal(await label(), "Prosody");
+  const seen = [];
+  for (let i = 0; i < 6; i++) { await pg.$eval(".p-nmode", (e) => e.click()); seen.push(await label()); }
+  assert.deepEqual(seen, ["Chords", "Notes", "Prosody + Chords", "Prosody + Notes", "Chords + Notes", "All Off"]);
+  assert.ok(await pg.$eval("html", (e) => e.classList.contains("nt-off")), "All Off hides the notation lane");
+  assert.equal(await pg.evaluate(() => localStorage.getItem("gallery.notationMode")), "");
+  await pg.$eval(".p-nmode", (e) => e.click());
+  assert.equal(await label(), "Prosody");
+  assert.ok(await pg.$eval("html", (e) => e.classList.contains("nt-p") && !e.classList.contains("nt-off")));
 });
 
 await test("Learn mode: tap a line to correct it; saved a second later and shown after a reload; no transcript asks Recense", true, async (pg) => {
@@ -1307,7 +1325,7 @@ await test("Notes 25/26: over the speeds a light swipe turns the slide, never th
   assert.equal(await rate(), 2, "a tap on the last speed");
 });
 
-await test("Notes 33: the light takes the voice's shape from keep/<key>/features.json: a held belted note swells it (it never moves)", true, async (pg) => {
+await test("Notes 33 / item 20: with the voice measured (keep/<key>/features.json) the light stays steady: no lift, no glow that changes frame to frame (it flickered)", true, async (pg) => {
   const KEEP = await mf.getR2Bucket("KEEP");
   await MAIN.put("files/Vc/a.wav", wavOf(6), { httpMetadata: { contentType: "audio/wav" } });
   const k = await keepKey("Vc/a.wav");
@@ -1325,9 +1343,11 @@ await test("Notes 33: the light takes the voice's shape from keep/<key>/features
   await a.evaluate((el) => { el.currentTime = 3.6; return el.play(); });
   await pg.waitForTimeout(400);
   const s = await pg.$eval(".txw", (w) => ({ top: w.style.top, sh: w.style.textShadow }));
+  await pg.waitForTimeout(250);
+  const s2 = await pg.$eval(".txw", (w) => ({ top: w.style.top, sh: w.style.textShadow }));
   await a.evaluate((el) => el.pause());
   assert.ok(!parseFloat(s.top || "0"), "the lit word stays put (no lift, item 21): " + s.top);
-  assert.ok(/\b(1[5-9]|2\d)px/.test(s.sh), "a held, loud, clear note glows wider: " + s.sh);
+  assert.ok(s.sh && s.sh === s2.sh, "the glow is steady while the note is held: " + s.sh + " / " + s2.sh);
 });
 
 await test("Notes 31: an instrumental with cover art shows [Ambient Sounds] on black, the cover only as the thumbnail", true, async (pg) => {

@@ -254,6 +254,47 @@
     return syl
   }
 
+  // ---- scripts whose letters are syllables (item 20: Chinese, Amharic) and Zulu's open syllables -------------------
+  // Chinese: one Han character is one syllable (its tone is drawn from the measured voice: no pinyin needed).
+  // Amharic: one Ethiopic fidel is one consonant-vowel syllable. Any letters of another script inside the word fall
+  // back to the generic rule, so a mixed token ("AI时代") still gets every syllable.
+  const HAN = /\p{Script=Han}/u, ETHI = /\p{Script=Ethiopic}/u
+  function scriptSyllables(text, re) {
+    const ch = [...text], [a, b] = core(text), syl = []
+    let i = a
+    while (i < b) {
+      if (re.test(ch[i])) { syl.push({ c0: i, c1: i + 1, nucleus: i, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }); i++; continue }
+      let j = i; while (j < b && !re.test(ch[j])) j++
+      const run = ch.slice(i, j).join('')
+      if (/\p{L}/u.test(run)) for (const q of genSyllables(run)) syl.push({ ...q, c0: q.c0 + i, c1: q.c1 + i, nucleus: q.nucleus + i })
+      i = j
+    }
+    return syl.length ? syl : [{ c0: a, c1: b, nucleus: a, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }]
+  }
+  // Zulu: every vowel is its own syllable (CV, no diphthongs: "ukuthula" u-ku-thu-la); a syllabic m before a consonant
+  // ("umntwana") is one too.
+  function zuSyllables(text) {
+    const [a, b] = core(text), ch = [...text].map(c => base(c)), syl = []
+    const isV = c => 'aeiou'.includes(c)
+    let start = a
+    for (let i = a; i < b; i++) {
+      const syllabicM = ch[i] === 'm' && i + 1 < b && !isV(ch[i + 1]) && !'bpfvy'.includes(ch[i + 1])   // not "mb": prenasalised
+      if (isV(ch[i]) || syllabicM) {
+        syl.push({ c0: start, c1: i + 1, nucleus: i, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }); start = i + 1
+      }
+    }
+    if (!syl.length) return [{ c0: a, c1: b, nucleus: a, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }]
+    syl[syl.length - 1].c1 = b
+    return syl
+  }
+  /** the syllables of a word in any language: the language's own rule, else its script's, else vowel groups */
+  function anySyllables(text, lang) {
+    if (HAN.test(text)) return scriptSyllables(text, HAN)
+    if (ETHI.test(text)) return scriptSyllables(text, ETHI)
+    if (lang === 'zu') return zuSyllables(text)
+    return genSyllables(text)
+  }
+
   // ---- shape helpers ---------------------------------------------------------------------------------------------
   function shapeAt(pts, x) {                 // piecewise-linear through [[τ, v]], smoothed with a cosine ease
     if (x <= pts[0][0]) return pts[0][1]
@@ -328,7 +369,7 @@
       } else if (lang === 'fr') {
         const r = frSyllables(x.text); x.syl = r.syl; x.silentEnt = r.silentEnt
         x.inner = frInner(x.text)
-      } else x.syl = genSyllables(x.text)
+      } else x.syl = anySyllables(x.text, lang)
       x.uChar = measure(x.text)                                  // char boundary → fraction of the word's width
     }
     // sentences / phrase ends (punctuation), French rhythmic groups and their stressed syllables, French links
@@ -371,7 +412,9 @@
       for (const x of W) if (x.phraseEnd) {
         x.groupEnd = x.phraseEnd
         // any other language: the phrase's last syllable carries its stress and its final rise or fall (notated, not reshaped)
-        if (lang !== 'vi' && x.syl.length) x.syl[x.syl.length - 1].stressed = x.phraseEnd
+        // (Zulu lengthens and stresses the penultimate syllable instead)
+        if (lang === 'zu' && x.syl.length >= 2) x.syl[x.syl.length - 2].stressed = x.phraseEnd
+        else if (lang !== 'vi' && x.syl.length) x.syl[x.syl.length - 1].stressed = x.phraseEnd
       }
     }
 
@@ -647,7 +690,7 @@
     }
   }
 
-  const api = { analyze, canvasMeasure, evenMeasure, viSyllable, frSyllables, frLink, frInner, frVowelStart, core, bare, VI_TONE, FR_EVENT }
+  const api = { anySyllables, analyze, canvasMeasure, evenMeasure, viSyllable, frSyllables, frLink, frInner, frVowelStart, core, bare, VI_TONE, FR_EVENT }
   if (typeof window !== 'undefined') window.Prosody = api
   if (typeof module !== 'undefined') module.exports = api
 })()

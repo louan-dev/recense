@@ -36,9 +36,8 @@
   const LANE = "pg-lane";            // the canvas this module appends inside .txs
 
   const HOP = 0.01;                  // features are measured every 10 ms (Recense Features)
-  const LANE_H = 1.9;                // lane height, in multiples of the line's font size: room for the ties, labels
-                                     // and dynamics under the figure (at 1.15 they were cut off and crammed)
-  const BASE = 0.3;                  // where the figure's baseline sits inside the lane, same units
+  const LANE_H = 1.45;               // lane height, × the line's font size: the ribbon, its swell and a link's sound
+  const BASE = 0;                    // the ribbon's row starts right under the words
 
   const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 
@@ -260,7 +259,16 @@
   }
 
   /** The block prosogram.js wants, built from where the words really are on screen. */
-  function blockFor(src, next, size) {
+  // what the toggle under the vertical bar asks for (gallery.js GalleryNotation; another host: the ribbon alone)
+  const notationNow = () => {
+    const N = globalThis.GalleryNotation;
+    const m = N && typeof N.mode === "function" ? N.mode() : "p";
+    return { ribbon: m.includes("p"), chords: m.includes("c") ? N.chords || [] : null, notes: m.includes("n") && N ? N.noteName : null };
+  };
+  const ABOVE = 0.38;                // room above the ribbon for a line of chord or note names, × font size
+  const BARE = 0.15;                 // a lane with labels but no ribbon
+
+  function blockFor(src, next, size, nt) {
     const spans = [...src.querySelectorAll(WORD)];
     if (!spans.length) return null;
     const base = src.getBoundingClientRect();
@@ -275,8 +283,9 @@
       cells.push({ w, x: r.left - base.left, width: r.width, row, y: 0, top: 0 });
     }
     if (!cells.length) return null;
-    const laneH = size * LANE_H;
-    for (const c of cells) { c.top = c.row * laneH; c.y = c.top + size * BASE; }
+    const above = nt ? (nt.chords ? ABOVE : 0) + (nt.notes ? ABOVE : 0) : 0;   // a line of names each
+    const laneH = size * ((nt && !nt.ribbon ? BARE : LANE_H) + above);
+    for (const c of cells) { c.top = c.row * laneH; c.y = c.top + size * (BASE + above); }
     const byFlat = new Map();
     for (const c of cells) byFlat.set(c.w.flat, c);
     return {
@@ -311,9 +320,10 @@
 
     const paintOne = (src, t, next) => {
       const size = parseFloat(getComputedStyle(src).fontSize) || 17;
-      const built = blockFor(src, next, size);
+      const nt = notationNow();
+      const built = nt.ribbon || nt.chords || nt.notes ? blockFor(src, next, size, nt) : null;
       const cv = laneIn(src);
-      if (!built) { cv.width = 0; cv.height = 0; return; }
+      if (!built) { cv.width = 0; cv.height = 0; cv.style.height = "0px"; return; }
       const w = Math.max(1, Math.round(src.getBoundingClientRect().width));
       const h = Math.max(1, Math.round(built.rows * built.laneH));
       const dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -331,6 +341,7 @@
         at, progress,
         signals: at.have || { E: true },
         glyphs: false,                 // Gallery draws the words as DOM text; only the figure belongs here
+        ribbon: nt.ribbon, chords: nt.chords, noteName: nt.notes,
         expr: 1, colors: COLORS, playing: !media.paused, hop: HOP,
       });
       ctx.restore();

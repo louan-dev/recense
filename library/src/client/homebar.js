@@ -1580,6 +1580,18 @@ globalThis.Homebar = (() => {
   const HOLD_SHOW = 150; // the light starts filling after this, so a plain tap never flickers
   const UNDO_MS = 6000; // after a tare, a tap this soon undoes it
 
+  // the notation toggle's cycle: p = prosody ribbon, c = chords, n = single notes; "" = all off.
+  // [code, name, the short label that fits under the 44 px bar]
+  const NOTATION_MODES = [
+    ["p", "Prosody", "Prosody"],
+    ["c", "Chords", "Chords"],
+    ["n", "Notes", "Notes"],
+    ["pc", "Prosody + Chords", "P + C"],
+    ["pn", "Prosody + Notes", "P + N"],
+    ["cn", "Chords + Notes", "C + N"],
+    ["", "All Off", "Off"],
+  ];
+
   const vertical = (host) => {
     const wrap = mkEl("div", "p-vbar");
     const btn = mkBtn("p-eqbtn", "Original language: drag or swipe up and down · press to reset", "<i></i>");
@@ -1869,10 +1881,36 @@ globalThis.Homebar = (() => {
 
     paintRuler(); // (the blue waits for the host's first paint(): what it stands for may not exist yet)
 
+    // the notation toggle under the stroke (item 20): a tap cycles what is drawn between a line and its translation
+    // (the prosody ribbon, the chord progression, the sung notes), alone, in pairs, or nothing
+    let modeBtn = null;
+    const paintMode = () => {
+      if (!modeBtn) return;
+      const m = NOTATION_MODES.find((x) => x[0] === host.notation.get()) || NOTATION_MODES[0];
+      modeBtn.textContent = m[2];
+      modeBtn.title = m[1];
+      modeBtn.classList.toggle("off", !m[0]);
+      modeBtn.setAttribute("aria-label", "Notation: " + m[1] + " · tap for the next");
+    };
+    if (host.notation) {
+      modeBtn = mkBtn("p-nmode", "Notation", "");
+      wrap.appendChild(modeBtn);
+      modeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const i = NOTATION_MODES.findIndex((x) => x[0] === host.notation.get());
+        const next = NOTATION_MODES[(i + 1) % NOTATION_MODES.length];
+        host.notation.set(next[0]);
+        paintMode();
+        host.say && host.say("Notation: " + next[1]);
+      });
+      paintMode();
+    }
+
     return {
       el: wrap,
       btn,
       paint,
+      paintMode,
       // the end of a gesture on it (so a click right after isn't taken for a press)
       get recent() {
         return performance.now() - endAt < 450;

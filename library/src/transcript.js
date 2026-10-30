@@ -193,7 +193,7 @@ function shape(r, doc) {
 const langsOf = (r) => LANGS.filter((l) => r.tr[l]);
 // the language sung or spoken (asr.json's `language`, else most of its words' own), two letters: the prosogram's French
 // liaisons and Vietnamese tones hang on it. `langs` is only the translations there are.
-const NAMES = { french: "fr", english: "en", vietnamese: "vi", spanish: "es", german: "de", italian: "it", portuguese: "pt", japanese: "ja", chinese: "zh", korean: "ko" };
+const NAMES = { french: "fr", english: "en", vietnamese: "vi", spanish: "es", german: "de", italian: "it", portuguese: "pt", japanese: "ja", chinese: "zh", mandarin: "zh", cantonese: "zh", korean: "ko", amharic: "am", zulu: "zu", isizulu: "zu" };
 const spokenOf = (r) => {
   const two = (x) => (typeof x !== "string" || !x.trim() ? "" : NAMES[x.trim().toLowerCase()] || x.trim().slice(0, 2).toLowerCase());
   const own = two(r.c && r.c.language);
