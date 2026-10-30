@@ -47,7 +47,10 @@ const MARK = ".folder-"; // Gallery's empty-folder marker (main.js): the folder 
 // anchor is older than log/ gets 410 and enumerates again instead of replaying months.
 const KEEP_MS = 30 * 24 * 3600 * 1000;
 const COMPACT_MAX = 20; // batches moved per pass
-const STEP_MS = 8000; // one request lists a root for at most this long, then saves where it got to
+// one request lists at most STEP_PAGES pages or STEP_MS, then saves where it got to. Measured live 2026-10-29: the
+// Worker is stopped at ~1 s of CPU, and one page of 1,000 objects costs ~35 ms (ids, rules), so 5 pages leave room.
+const STEP_PAGES = 5;
+const STEP_MS = 8000;
 const PASS_MAX_MS = 30 * 60 * 1000; // a pass not finished by then starts over
 export const GENESIS = "aeebad4a796fcc2e15dc4c6061b45ed9b373f26adfc798ca7d2d8cc58182718e"; // sha-256("genesis")
 const GUARD = { files: 100, floor: 10, pct: 10 };
@@ -151,8 +154,10 @@ async function changes(b, root, url) {
   const recent = (t) => Date.now() - t <= RECONCILE_MS;
   // a held pass is re-checked once a minute, like any other, not on every ask
   if (!snap || (!recent(snap.at) && !(held && recent(held.at)))) {
-    snap = (await reconcile(b, root)) || snap || (await readSnapshot(b, root));
-    held = snap && snap.held ? snap.held : await readJson(b, root.catalog + "held.json");
+    const r = await reconcile(b, root); // null: another pass holds the lock; { building }: a step of a big root's pass
+    if (r && !r.building) snap = r;
+    snap = snap || (await readSnapshot(b, root));
+    held = r && r.held ? r.held : await readJson(b, root.catalog + "held.json");
   }
   if (!snap) return bad(503, "Catalog is being built, try again");
   const hold = held ? { held: { deletes: held.deletes, known: held.known, at: held.at } } : {};
@@ -194,7 +199,8 @@ async function readSnapshot(b, root) {
   return o ? o.json() : null;
 }
 
-// one pass: list the root, diff against the snapshot, append the events, write the new snapshot. null: another pass holds the lock.
+// one pass: list the root, diff against the snapshot, append the events, write the new snapshot. null: another pass
+// holds the lock. { building: true }: a big root's pass took one more step and isn't done (see pass/ below).
 export async function reconcile(b, root, now = Date.now(), opt = {}) {
   const lockKey = root.catalog + "lock";
   const lock = await b.head(lockKey);
@@ -202,7 +208,6 @@ export async function reconcile(b, root, now = Date.now(), opt = {}) {
   if (lock) await b.delete(lockKey);
   if (!(await b.put(lockKey, "", { onlyIf: { etagDoesNotMatch: "*" } }))) return null;
   try {
-    const old = (await readSnapshot(b, root)) || { seq: 0, items: {}, at: 0, fresh: true };
     const items = {};
     const md5s = {}; // only for this pass's events: the snapshot stays small (etag is enough to see a change)
     const folders = new Set();
@@ -213,38 +218,42 @@ export async function reconcile(b, root, now = Date.now(), opt = {}) {
     let pass = await readJson(b, passKey + "state.json");
     if (pass && now - pass.started > PASS_MAX_MS) pass = await dropPass(b, passKey); // list cursors don't last forever
     pass ||= { v: 1, started: now, cursor: undefined, parts: 0 };
-    let cursor = pass.cursor;
-    const t0 = Date.now();
-    let pages = 0;
-    do {
-      const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: opt.page || PAGE });
-      pages++;
-      for (const o of r.objects) {
-        const path = o.key.slice(root.prefix.length);
-        if (!path || (!root.prefix && path.split("/")[0].startsWith("."))) continue;
-        if (JUNK_PATHS.some((x) => x.test(path)) || CHURN_PATHS.some((x) => x.test(path))) continue;
-        for (let p = parentOf(path); p; p = parentOf(p)) if (visible(p, root)) folders.add(p);
-        if (!visible(path, root)) continue; // a folder marker: its folder counts (above), it doesn't
-        const id = await fileId(path, o.customMetadata);
-        items[id] = { path, size: o.size, etag: o.httpEtag, mtime: mtimeOf(o) };
-        md5s[id] = md5Of(o);
+    if (!pass.done) {
+      let cursor = pass.cursor;
+      const t0 = Date.now();
+      let pages = 0;
+      do {
+        const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: opt.page || PAGE });
+        pages++;
+        for (const o of r.objects) {
+          const path = o.key.slice(root.prefix.length);
+          if (!path || (!root.prefix && path.split("/")[0].startsWith("."))) continue;
+          if (JUNK_PATHS.some((x) => x.test(path)) || CHURN_PATHS.some((x) => x.test(path))) continue;
+          for (let p = parentOf(path); p; p = parentOf(p)) if (visible(p, root)) folders.add(p);
+          if (!visible(path, root)) continue; // a folder marker: its folder counts (above), it doesn't
+          const id = await fileId(path, o.customMetadata);
+          items[id] = { path, size: o.size, etag: o.httpEtag, mtime: mtimeOf(o) };
+          md5s[id] = md5Of(o);
+        }
+        cursor = r.truncated ? r.cursor : undefined;
+      } while (cursor && pages < (opt.stepPages || STEP_PAGES) && Date.now() - t0 < (opt.stepMs ?? STEP_MS));
+      for (const p of folders) items[await folderId(p)] = { path: p, dir: true }; // this step's folders only
+      // more to list, or a pass that already took steps: keep this part, and the merge gets a request of its own
+      if (cursor || pass.parts > 0) {
+        await b.put(passKey + pass.parts + ".json", JSON.stringify({ items, md5s }));
+        await b.put(passKey + "state.json", JSON.stringify({ ...pass, cursor, parts: pass.parts + 1, done: !cursor }));
+        return { building: true };
       }
-      cursor = r.truncated ? r.cursor : undefined;
-    } while (cursor && pages < (opt.stepPages || Infinity) && Date.now() - t0 < (opt.stepMs ?? STEP_MS));
-    if (cursor) { // not done: keep this step's part, and say so (no events, the old snapshot still stands)
-      await b.put(passKey + pass.parts + ".json", JSON.stringify({ items, md5s, folders: [...folders] }));
-      await b.put(passKey + "state.json", JSON.stringify({ ...pass, cursor, parts: pass.parts + 1 }));
-      return old.fresh ? null : { ...old, building: true };
     }
     for (let n = 0; n < pass.parts; n++) { // the earlier steps of this pass
       const part = await readJson(b, passKey + n + ".json");
-      if (!part) return (await dropPass(b, passKey), old.fresh ? null : { ...old, building: true }); // lost: start over
+      if (!part) return (await dropPass(b, passKey), { building: true }); // lost: start over
       Object.assign(items, part.items);
       Object.assign(md5s, part.md5s);
-      for (const p of part.folders) folders.add(p);
     }
     if (pass.parts) await dropPass(b, passKey); // all in hand: a held or lost pass starts over next time
-    for (const p of folders) items[await folderId(p)] = { path: p, dir: true };
+    // the old snapshot only now: a step that isn't the last never reads it (Main's is ~3.6 MB of JSON)
+    const old = (await readSnapshot(b, root)) || { seq: 0, items: {}, at: 0, fresh: true };
 
     const events = [];
     for (const [id, it] of Object.entries(items)) {

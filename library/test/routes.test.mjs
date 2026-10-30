@@ -1413,20 +1413,20 @@ await test("fp: a big root's pass goes in steps across requests (pass/); the dif
   for (let i = 0; i < 7; i++) await b.put(`files/S/f${i}.m4a`, "x" + i);
   const root = { bucket: "MAIN", prefix: "files/", catalog: ".catalog/step/" };
   const opt = { page: 2, stepPages: 1 };
-  // the baseline: 4 steps for 7 files; nothing to show until the last
+  // the baseline: 4 listing steps for 7 files, then the merge in a request of its own; nothing to show until then
   const r = [];
-  for (let i = 0; i < 4; i++) r.push(await reconcile(b, root, 1000 + i, opt));
-  assert.deepEqual(r.slice(0, 3), [null, null, null]);
-  assert.equal(Object.values(r[3].items).filter((i) => !i.dir).length, 7);
+  for (let i = 0; i < 5; i++) r.push(await reconcile(b, root, 1000 + i, opt));
+  assert.deepEqual(r.slice(0, 4), [{ building: true }, { building: true }, { building: true }, { building: true }]);
+  assert.equal(Object.values(r[4].items).filter((i) => !i.dir).length, 7);
   assert.equal(await b.get(".catalog/step/pass/state.json"), null);
   assert.equal((await b.list({ prefix: ".catalog/step/pass/" })).objects.length, 0);
   // a change: while the pass is in steps the old snapshot stands (building), then one batch holds the change
   await b.put("files/S/new.m4a", "n");
   const s1 = await reconcile(b, root, 2000, opt);
-  assert.ok(s1.building && s1.seq === r[3].seq);
+  assert.deepEqual(s1, { building: true });
   let s = s1;
-  for (let i = 0; i < 5 && s.building; i++) s = await reconcile(b, root, 2001 + i, opt);
-  assert.equal(s.seq, r[3].seq + 1);
+  for (let i = 0; i < 6 && s.building; i++) s = await reconcile(b, root, 2001 + i, opt);
+  assert.equal(s.seq, r[4].seq + 1);
   const batch = JSON.parse(await (await b.get(".catalog/step/log/" + String(s.seq).padStart(12, "0") + ".json")).text());
   assert.deepEqual(batch.events.map((e) => e.op + " " + e.path), ["create S/new.m4a"]);
   assert.equal(batch.events[0].md5, createHash("md5").update("n").digest("hex"));
