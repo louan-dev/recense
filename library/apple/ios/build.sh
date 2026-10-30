@@ -9,7 +9,8 @@ here="${0:A:h}"
 out="${here:h}/build/ios-$(date +%Y%m%d-%H%M%S)"
 dev="${1:-}"
 if [[ -z $dev ]]; then
-  dev=$(xcrun devicectl list devices 2>/dev/null | awk '/available/ && /(iPhone|iPad)/ {print $(NF-4); exit}')
+  # the Identifier column (a model like "iPhone 12 Pro Max (iPhone13,4)" has spaces, so no counting from the end)
+  dev=$(xcrun devicectl list devices 2>/dev/null | awk '/ available/ && /(iPhone|iPad)/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-F]{8}-[0-9A-F-]{27}$/) {print $i; exit}}')
 fi
 [[ -n $dev ]] || { echo "No iPhone or iPad available: plug it in, unlock it, trust this Mac."; exit 1; }
 name=$(xcrun devicectl list devices 2>/dev/null | awk -v d="$dev" '$0 ~ d {print tolower($0)}' | grep -o -E 'ipad|iphone' | head -1)

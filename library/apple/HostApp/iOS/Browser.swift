@@ -146,7 +146,10 @@ struct FolderView: View {
         .refreshable { folder.load() }
         .toolbar {
             // the assistant, on this folder ("This folder"; it has an All switch)
-            ToolbarItem(placement: .primaryAction) { Button("Ask") { asking = true } }
+            ToolbarItem(placement: .primaryAction) {
+                Button { asking = true } label: { Label("Assistant", systemImage: "sparkles") }
+                    .keyboardShortcut("k")  // ⌘K, as on the Mac
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Picker("View", selection: $asList) {
