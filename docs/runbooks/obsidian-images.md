@@ -52,6 +52,10 @@ What a pasted link becomes:
   the front app reads Markdown, else the bare URL. Log `~/Library/Logs/offsite-image.log`. Shortcut
   `sync/tools/shortcuts/Move Offsite (Mac).shortcut` wraps it: Finder › right-click › Quick Actions, menu bar, or a
   hotkey (with nothing selected it takes the clipboard image).
+- **Finder Quick Action**: `sync/tools/quick-actions/Move Offsite.workflow` (Automator, installed in
+  `~/Library/Services`). The Shortcut's Quick Action can't read Finder files (TCC: "macOS blocked reading …"), so
+  untick its "Use as Quick Action". Install: `cp -R` it to `~/Library/Services/`, then
+  `/System/Library/CoreServices/pbs -update`.
 - **iPhone/iPad**: `sync/tools/shortcuts/Move Offsite (iPhone).shortcut`: Share Sheet from Photos/screenshots.
   Asks for the device's token on import (not stored in the file). Copies the URL; deletes the photos only after the
   hash matched (iOS confirms). In Obsidian on iOS, paste the image itself: the plugin does the rest.
