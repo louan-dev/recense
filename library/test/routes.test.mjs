@@ -5,7 +5,8 @@ import { Miniflare } from "miniflare";
 import { readdirSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
-import { GENESIS, link, massDelete } from "../src/fp.js";
+import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS } from "../src/fp.js";
+import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const TEAM = "team.cloudflareaccess.com";
@@ -950,15 +951,15 @@ await test("dav: path traversal on either mount is refused and writes nothing ou
       }
     }
   }
-  // hidden names and folder markers are not served or written
-  const hid = ["._a.jpg", ".DS_Store", "Dt/.folder-0123456789abcdef", "Dt/.secret"];
+  // junk and folder markers are not served or written (other dotfiles are content: the archive test)
+  const hid = ["._a.jpg", ".DS_Store", "Dt/.folder-0123456789abcdef", "Dt/Thumbs.db"];
   for (const p of hid) {
     assert.equal((await md(p, { method: "PUT", body: "x" })).status, 403, "put " + p);
     assert.equal((await nb(p, { method: "PUT", body: "x" })).status, 403, "nb put " + p);
     assert.equal((await md(p, { method: "MKCOL" })).status, 403, "mkcol " + p);
   }
   // a Destination off this mount, off this host, or with traversal
-  for (const d of [ORIGIN + "/main/api/folder", "http://evil.test/main/dav/Dt/b.jpg", ORIGIN + "/main/dav/%2e%2e/art/b.jpg", ORIGIN + "/dav/notability/b.jpg", ORIGIN + "/main/dav/Dt/.b.jpg", "", ORIGIN + "/main/dav/"]) {
+  for (const d of [ORIGIN + "/main/api/folder", "http://evil.test/main/dav/Dt/b.jpg", ORIGIN + "/main/dav/%2e%2e/art/b.jpg", ORIGIN + "/dav/notability/b.jpg", ORIGIN + "/main/dav/Dt/._b.jpg", ORIGIN + "/main/dav/Dt/.folder-0123456789abcdef", "", ORIGIN + "/main/dav/"]) {
     assert.equal((await md("Dt/a.jpg", { method: "MOVE", headers: { destination: d } })).status, 400, "dest " + d);
     assert.equal((await md("Dt/a.jpg", { method: "COPY", headers: { destination: d } })).status, 400, "copy dest " + d);
   }
@@ -1179,7 +1180,12 @@ await test("main/dav-archive: Access only; read-write with its own trash, nothin
   assert.equal((await ma("chauphan/Movies/._b.mp4", { method: "DELETE" })).status, 204);
   assert.equal(await AR.head("chauphan/Movies/._b.mp4"), null);
   assert.equal((await trashed("chauphan/Movies/._b.mp4")).length, 0);
-  assert.equal((await ma("chauphan/Movies/.hidden", { method: "PUT", body: "h" })).status, 403);
+  // any other dotfile is content (event-log.md §6): written, listed, read and trashed like any file
+  assert.equal((await ma("chauphan/Movies/.hidden", { method: "PUT", body: "h" })).status, 201);
+  assert.ok(hrefs(await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text()).some((h) => h.endsWith("/.hidden")));
+  assert.equal(await (await ma("chauphan/Movies/.hidden")).text(), "h");
+  assert.equal((await ma("chauphan/Movies/.hidden", { method: "DELETE" })).status, 204);
+  assert.equal((await trashed("chauphan/Movies/.hidden")).length, 1);
   assert.equal((await call("/main/dav/Dm/._x", { as: "mac", method: "PUT", body: "x" })).status, 403);
   // chunked uploads land in the archive and keep the old file
   const up = (path, init = {}) => call("/main/nc-archive/dav/uploads/owner/rclone-chunked-upload-aa/" + path, { as: "mac", ...init });
@@ -1328,6 +1334,60 @@ await test("fp: the catalog's chain and delete guard are sync's (event-log.md): 
   assert.equal(nextBatch.prev, prevBatch.events[prevBatch.events.length - 1].chain);
   assert.equal(await AR.get(".catalog/archive/confirm.json"), null);
   assert.equal((await call("/main/api/fp/archive/confirm", { as: "owner", method: "POST" })).status, 409);
+});
+
+await test("fp: one junk rule with the ledger, dotfiles as content, md5, Main as a root, old batches to history/", async () => {
+  // the same vector as ledger.mjs's selftest (event-log.md §6)
+  const cls = (p) => (JUNK_PATHS.some((x) => x.test(p)) ? "junk" : CHURN_PATHS.some((x) => x.test(p)) ? "churn" : "content");
+  const JV = [[".DS_Store", "junk"], ["a/._x.m4a", "junk"], [".Trashes/501/x", "junk"], ["Thumbs.db", "junk"], ["a/~$Report.docx", "junk"],
+    ["a/Icon\r", "junk"], [".Spotlight-V100/Store", "junk"], [".obsidian/workspace.json", "churn"], ["v/.obsidian/cache", "churn"],
+    [".obsidian/app.json", "content"], [".gitignore", "content"], ["a/.env.example", "content"], ["Report.docx", "content"], ["Icon.png", "content"]];
+  for (const [p, c] of JV) assert.equal(cls(p), c, p);
+  const md5 = (s) => createHash("md5").update(s).digest("hex");
+  const sha = (s) => createHash("sha256").update(s).digest("hex");
+  const j = async (root, p) => (await call(`/main/api/fp/${root}/` + p, { as: "mac" })).json();
+
+  // the feed: dotfiles are content; junk, churn and folder markers aren't; md5 from the etag
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  for (const [k, v] of [["chauphan/Proj/.gitignore", "node_modules"], ["chauphan/Proj/.DS_Store", "ds"], ["chauphan/Proj/.folder-0123456789abcdef", ""],
+    ["chauphan/Proj/.obsidian/workspace.json", "{}"], ["chauphan/Proj/.obsidian/app.json", "{}"]]) await AR.put(k, v);
+  const proj = await j("archive", "items?path=chauphan%2FProj");
+  assert.deepEqual(proj.items.map((i) => i.name).sort(), [".gitignore", ".obsidian"]);
+  assert.equal(proj.items.find((i) => i.name === ".gitignore").md5, md5("node_modules"));
+  assert.deepEqual((await j("archive", "items?path=chauphan%2FProj%2F.obsidian")).items.map((i) => i.name), ["app.json"]);
+  assert.equal((await call("/main/api/fp/archive/content?path=chauphan%2FProj%2F.DS_Store", { as: "mac" })).status, 400);
+
+  // Main: only files/, paths and ids relative to it
+  await MAIN.put("files/FpMain/x.mp3", "X");
+  await MAIN.put("ledger/obsidian/journal/j.jsonl", "j");
+  const top = await j("main", "items");
+  assert.ok(top.items.some((i) => i.name === "FpMain" && i.dir));
+  assert.ok(!top.items.some((i) => ["ledger", "invites", "files", "order", "trash"].includes(i.name) || i.name.startsWith(".")));
+  const fm = await j("main", "items?path=FpMain");
+  assert.equal(fm.items[0].id, "h" + sha("FpMain/x.mp3").slice(0, 24));
+  assert.equal(await (await call("/main/api/fp/main/content?path=FpMain%2Fx.mp3", { as: "mac" })).text(), "X");
+  const base = await j("main", "changes"); // the baseline pass
+  const stale = async () => {
+    const s = await (await MAIN.get(".catalog/main/snapshot.json")).json();
+    await MAIN.put(".catalog/main/snapshot.json", JSON.stringify({ ...s, at: 0 }));
+  };
+  await MAIN.put("files/FpMain/y.mp3", "Y");
+  await MAIN.put("ledger/obsidian/journal/k.jsonl", "k");
+  await stale();
+  const c = await j("main", "changes?since=" + base.seq);
+  assert.equal(c.seq, base.seq + 1);
+  assert.ok(c.events.some((e) => e.op === "create" && e.path === "FpMain/y.mp3" && e.md5 === md5("Y")));
+  assert.ok(!c.events.some((e) => e.path.startsWith("files/") || e.path.startsWith("ledger")));
+
+  // a batch older than 30 days moves to history/ on the next pass, kept; an anchor before log/ then gets 410
+  const key = (dir, n) => `.catalog/main/${dir}/` + String(n).padStart(12, "0") + ".json";
+  const b1 = await (await MAIN.get(key("log", c.seq))).json();
+  await MAIN.put(key("log", c.seq), JSON.stringify({ ...b1, at: 0 }));
+  await stale();
+  assert.equal((await j("main", "changes?since=" + c.seq)).seq, c.seq);
+  assert.equal(await MAIN.get(key("log", c.seq)), null);
+  assert.deepEqual((await (await MAIN.get(key("history", c.seq))).json()).events, b1.events);
+  assert.equal((await call("/main/api/fp/main/changes?since=" + base.seq, { as: "mac" })).status, 410);
 });
 
 await test("main/archive: Main's page and player over gallery-archive/chauphan, read-only", async () => {

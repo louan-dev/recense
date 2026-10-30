@@ -24,6 +24,8 @@ crons = ["0 3 * * *"]
 
 [vars]
 ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
+# the assistant's model (src/ai.js); any Workers AI chat model that takes messages. The search model is fixed (bge-m3).
+AI_CHAT_MODEL = "@cf/openai/gpt-oss-120b"
 # ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
 # NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
 
@@ -56,3 +58,15 @@ bucket_name = "gallery-archive"
 [[r2_buckets]]
 binding = "NOTES_IMAGES"
 bucket_name = "notes-images"
+
+# The assistant (src/ai.js, /main/api/ai/…, owner-only): Workers AI answers, Vectorize finds the passages.
+# Until the owner creates the index, `wrangler deploy` fails on this binding:
+#   npx wrangler vectorize create gallery-ai --dimensions=1024 --metric=cosine
+#   npx wrangler vectorize create-metadata-index gallery-ai --property-name=root --type=string
+# Then index everything once: POST /main/api/ai/index until it answers { done: true } (the sidebar does this).
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORS"
+index_name = "gallery-ai"

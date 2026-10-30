@@ -19,18 +19,19 @@
 //
 // Every path is the URL path after the mount, percent-decoded once and run through cleanPath (no
 // empty, "." or ".." segments, no control characters), then prefixed: nothing reaches art/, trash/,
-// order/, invites/ or another mount. New names (PUT, MKCOL, MOVE, COPY) also pass segmentName.
+// order/, invites/ or another mount. New names (PUT, MKCOL, MOVE, COPY) also pass nameOk (no junk, no folder markers; dotfiles are content).
 // Folder moves and deletes are refused for now; no LOCK, so Finder mounts it read-only.
 
-import { JUNK, MIME_BY_EXT, IMG_BY_EXT, cleanPath, urlPath, esc, serveObject } from "./common.js";
-import { segmentName, folderExists, makeFolder, moveFile, trashFile, keepInTrash } from "./main.js";
+import { MIME_BY_EXT, IMG_BY_EXT, cleanPath, urlPath, esc, serveObject } from "./common.js";
+import { folderExists, makeFolder, moveFile, trashFile, keepInTrash } from "./main.js";
+import { JUNK_PATHS } from "./fp.js";
 
 const MARK = ".folder-";
 const LIST_MAX = 5000;
 const FAILS_MAX = 10; // wrong passwords per address per 15 minutes
 const FAIL_WINDOW = 15 * 60000;
 const CHUNKED_MAX = 32 * 1024 * 1024;
-const STAGE = ".uploads/"; // chunks wait here (hidden: dot names are never listed or writable through a mount)
+const STAGE = ".uploads/"; // chunks wait here, at the bucket root (a whole-bucket mount never lists or writes its root dot folders; Main's mount is files/)
 const UPLOAD_DIR = /^[A-Za-z0-9_-]{1,100}$/;
 const CHUNK = /^(\d{15})-(\d{15})$/; // rclone names a chunk by its first and last byte
 const CHUNK_MAX = 100 * 1000 * 1000;
@@ -116,7 +117,14 @@ async function stat(env, mount, rel) {
   return (await exists(env, mount, rel)) ? { dir: true } : null;
 }
 
-const hidden = (name) => !name || name.startsWith(".") || JUNK.test(name);
+// what a mount never lists: the bucket's own dot folders at a whole-bucket mount's root, Gallery's folder markers and
+// the OS's litter (one list for all of Sync: fp.js JUNK_PATHS, sync/docs/specs/event-log.md §6). Other dotfiles are
+// content: listed, read and written like any file (a vault's .obsidian/, a project's .gitignore).
+const hidden = (mount, rel) => {
+  const name = rel.split("/").pop();
+  if (!name || name.startsWith(MARK) || JUNK_PATHS.some((x) => x.test(rel))) return true;
+  return !mount.prefix && rel.split("/")[0].startsWith(".");
+};
 const typeOf = (name, o) => {
   const t = (o.httpMetadata && o.httpMetadata.contentType) || "";
   const ext = (name.split(".").pop() || "").toLowerCase();
@@ -160,11 +168,11 @@ async function propfind(req, env, mount, rel) {
       const r = await r2(env, mount).list({ prefix, delimiter: "/", include: ["httpMetadata", "customMetadata"], cursor });
       for (const p of r.delimitedPrefixes || []) {
         const name = p.slice(prefix.length).replace(/\/$/, "");
-        if (!hidden(name)) out.push(entry(mount, (rel ? rel + "/" : "") + name, null));
+        if (!hidden(mount, (rel ? rel + "/" : "") + name)) out.push(entry(mount, (rel ? rel + "/" : "") + name, null));
       }
       for (const o of r.objects) {
         const name = o.key.slice(prefix.length);
-        if (!hidden(name)) out.push(entry(mount, (rel ? rel + "/" : "") + name, o));
+        if (!hidden(mount, (rel ? rel + "/" : "") + name)) out.push(entry(mount, (rel ? rel + "/" : "") + name, o));
       }
       n += r.objects.length;
       cursor = r.truncated && n < LIST_MAX ? r.cursor : undefined;
@@ -179,7 +187,7 @@ async function propfind(req, env, mount, rel) {
 
 async function get(req, env, url, mount, rel) {
   const name = rel.split("/").pop();
-  if (!rel || (hidden(name) && !finderFile(mount, rel))) return text(rel ? 404 : 405, rel ? "Not found" : "A folder");
+  if (!rel || (hidden(mount, rel) && !finderFile(mount, rel))) return text(rel ? 404 : 405, rel ? "Not found" : "A folder");
   let obj;
   try {
     const b = r2(env, mount);
@@ -205,7 +213,12 @@ async function get(req, env, url, mount, rel) {
 // ---------- writing ----------
 
 const parentOf = (rel) => rel.split("/").slice(0, -1).join("/");
-const nameOk = (rel) => segmentName(rel.split("/").pop()) === rel.split("/").pop();
+// a name the mount takes: what a file system holds, dotfiles included, except the OS's litter and folder markers
+const nameOk = (rel) => {
+  const name = rel.split("/").pop();
+  if (!name || name !== name.normalize("NFC").trim() || name.length > 300 || /[\u0000-\u001f\u007f\/\\]/.test(name)) return false;
+  return !name.startsWith(MARK) && !JUNK_PATHS.some((x) => x.test(rel));
+};
 const FINDER = /^(\._.+|\.DS_Store)$/;
 // a mount that takes Finder's own files: they're written and read by name only, and go for good
 const finderFile = (mount, rel) => !!(mount.finder && rel && FINDER.test(rel.split("/").pop()));

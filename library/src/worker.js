@@ -27,6 +27,7 @@ import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
 import { archive } from "./archive.js";
 import { noteImage } from "./images.js";
+import { aiRoute, indexStep } from "./ai.js";
 
 export default {
   async fetch(req, env, ctx) {
@@ -70,7 +71,8 @@ export default {
   },
 
     async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env)]));
+    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env),
+      env.AI && env.VECTORS ? indexStep(env).catch(() => {}) : null]));
   },
 };
 
@@ -91,6 +93,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
   if (path.startsWith("/main/api/")) {
     if (path === "/main/api/whoami" && read) return jsonResponse({ ok: true });
     if (!sameSite(req, url)) return new Response("Forbidden", { status: 403 });
+    if (path.startsWith("/main/api/ai/")) return aiRoute(req, env, ctx, url, path, method);
 
     if (path === "/main/api/file" && method === "PUT") return mainUpload(req, env, url);
     if (path === "/main/api/file" && method === "DELETE") return mainDelete(env, url);
