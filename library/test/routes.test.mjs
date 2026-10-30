@@ -1511,5 +1511,101 @@ await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at e
   assert.equal(await TMP.head(key), null);
 });
 
+await test("shared: owner-only list of live links and invites, detail, delete expires now, activity feed (item 15)", async () => {
+  const x = { "x-gallery": "1" };
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { ...x, ...(init.headers || {}) } });
+
+  // owner-only: page and API are the same 404 as anything else under /main for anyone else
+  for (const p of ["/main/shared", "/main/api/shares", "/main/api/activity"]) {
+    assert.equal((await call(p)).status, 404, p);
+    const st = await call(p, { as: "stranger", headers: x });
+    assert.equal(st.status, p.includes("/api/") ? 404 : 403, p); // a signed-in stranger gets "This account can't open Main"
+    assert.ok(!(await st.text()).includes("SHARED"), p);
+  }
+  assert.equal((await call("/shared")).status, 404);
+  assert.equal((await call("/main/api/shares", { as: "owner" })).status, 403); // same-site only
+  const pageRes = await call("/main/shared", { as: "owner" });
+  assert.equal(pageRes.status, 200);
+  assert.match(await pageRes.text(), /Personal[\s\S]*Activity|window\.SHARED/);
+
+  // one of each: an upload link with a file, a folder link, an invite
+  const up = await (await call("/main/api/link?action=start&days=7", { as: "owner", method: "POST", body: "1\t1700000000000\timage%2Fjpeg\tbeach.jpg" })).json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { name: "beach.jpg", expires: String(up.exp) } });
+  await PUBLIC.put("folders/Hike/top.jpg", "T", { httpMetadata: { contentType: "image/jpeg" } });
+  const fl = await (await call("/main/api/link?action=folder&name=Hike", { as: "mac", method: "POST" })).json();
+  await MAIN.put("files/Fest/f1.jpg", "F", { httpMetadata: { contentType: "image/jpeg" } });
+  const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Ana Lee", ttl: 0, dir: "Fest" }) })).json();
+  const gone = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Old", ttl: 1, dir: "Fest" }) })).json();
+  const gk = (await MAIN.list({ prefix: "invites/" + gone.id })).objects[0].key;
+  const gv = await (await MAIN.get(gk)).json();
+  await MAIN.put(gk, JSON.stringify({ ...gv, expires: Date.now() - 1 }));
+
+  let { shares } = await (await own("/main/api/shares")).json();
+  const find = (kind, id) => shares.find((s) => s.kind === kind && s.id === id);
+  const a = find("link", up.id), b = find("link", fl.id), c = find("invite", inv.id);
+  assert.ok(a && b && c, JSON.stringify(shares.map((s) => s.kind + ":" + s.id)));
+  assert.ok(!find("invite", gone.id), "an expired invite is no tile");
+  assert.equal(a.type, "upload"); assert.equal(a.count, 1); assert.equal(a.cover, "/f/" + up.id + "/000"); assert.equal(a.url, "/s/" + up.id);
+  assert.equal(b.type, "folder"); assert.equal(b.title, "Hike");
+  assert.equal(c.who, "Ana Lee"); assert.equal(c.title, "Fest"); assert.equal(c.url, null); assert.equal(c.cover, "/main/f/Fest/f1.jpg");
+  assert.equal(a.items, undefined, "the list carries no file lists");
+  assert.ok(!JSON.stringify(shares).includes(inv.url.split("/m/")[1]), "never an invite token");
+
+  // detail: every file in the link
+  const d = (await (await own("/main/api/shares/invite/" + inv.id)).json()).share;
+  assert.deepEqual(d.items.map((f) => f.name), ["f1.JPG"]);
+  assert.equal(d.items[0].src, "/main/f/Fest/f1.jpg");
+  assert.equal((await own("/main/api/shares/link/" + up.id)).status, 200);
+  assert.equal((await own("/main/api/shares/link/NoSuchLink123")).status, 404);
+  assert.equal((await own("/main/api/shares/nope/" + up.id)).status, 404);
+
+  // activity: a participant's upload, comment and like, and the owner's like, newest first, with the file
+  const at = "/m/" + inv.url.split("/m/")[1];
+  const w = (path, init) => call(at + path, { ...init, headers: { ...x, ...(init.headers || {}) } });
+  let r = await w("/api/file?name=f2.jpg", { method: "PUT", body: "G", headers: { "content-type": "image/jpeg", "content-length": "1" } });
+  assert.equal(r.status, 200, await r.clone().text());
+  r = await w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "add", text: "so good" }) });
+  assert.equal(r.status, 200);
+  r = await w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "like" }) });
+  let j = await r.json();
+  assert.deepEqual(j.likes.map((l) => l.by), ["Ana Lee"]);
+  assert.deepEqual(j.comments.map((c) => c.text), ["so good"], "a like keeps the thread");
+  // a like toggles, one per person; the owner's sits beside it
+  j = await (await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "like" }) })).json();
+  assert.equal(j.likes.length, 2);
+  j = await (await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "like" }) })).json();
+  assert.deepEqual(j.likes.map((l) => l.by), ["Ana Lee"]);
+  // a public link's item can be liked and commented by the owner, and shows in the feed too
+  r = await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "link", id: up.id, key: "000", op: "add", text: "sunset" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+
+  const { events } = await (await own("/main/api/activity")).json();
+  const mine = events.filter((e) => [up.id, inv.id].includes(e.share.id));
+  const kinds = mine.map((e) => e.type + ":" + e.by);
+  assert.deepEqual(kinds.slice(0, 4), ["comment:Chau Phan", "like:Ana Lee", "comment:Ana Lee", "upload:Ana Lee"], kinds.join());
+  assert.ok(kinds.includes("share:Chau Phan"));
+  assert.equal(mine[0].text, "sunset"); assert.equal(mine[0].mine, true); assert.equal(mine[0].items[0].thumb, "/f/" + up.id + "/000");
+  assert.equal(mine[1].items[0].thumb, "/main/f/Fest/f1.jpg");
+  assert.equal(mine[3].items[0].name, "f2.JPG");
+  assert.equal(mine[3].share.title, "Fest");
+  assert.ok(!events.some((e) => e.type === "like" && e.by === "Chau Phan"), "a like turned off was never news; one turned on is");
+
+  // Delete expires at once: the upload link 404s, the folder link 410s, the invite is the same 404, the tiles go
+  assert.equal((await call("/main/api/shares/link/" + up.id, { as: "owner", method: "DELETE" })).status, 200);
+  assert.equal((await call("/s/" + up.id)).status, 404);
+  assert.equal((await call("/f/" + up.id + "/000")).status, 404);
+  assert.equal((await call("/main/api/shares/link/" + fl.id, { as: "owner", method: "DELETE" })).status, 200);
+  assert.equal((await call("/s/" + fl.id)).status, 410);
+  assert.equal((await call("/main/api/shares/invite/" + inv.id, { as: "owner", method: "DELETE" })).status, 200);
+  assert.equal((await call(at)).status, 404);
+  assert.equal((await call("/main/api/shares/invite/" + inv.id, { as: "owner", method: "DELETE" })).status, 404);
+  assert.equal((await call("/main/api/shares/link/" + up.id, { method: "DELETE" })).status, 404, "not without Access");
+  ({ shares } = await (await own("/main/api/shares")).json());
+  assert.ok(!find("link", up.id) && !find("link", fl.id) && !find("invite", inv.id));
+  // their activity goes with them
+  const after = (await (await own("/main/api/activity")).json()).events;
+  assert.ok(!after.some((e) => [up.id, fl.id, inv.id].includes(e.share.id)));
+});
+
 console.log(`\n${passed} passed`);
 await mf.dispose();

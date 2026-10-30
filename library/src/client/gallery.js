@@ -3390,6 +3390,7 @@
     f.comments = j.comments || [];
     f.caption = j.caption || "";
     f.capAt = j.capAt || 0;
+    f.likes = j.likes || [];
   };
 
   const setOpen = (o) => {
@@ -3531,8 +3532,36 @@
     hideBtn.type = "button";
     hideBtn.textContent = "Hide Comments";
     hideBtn.onclick = () => setOpen(false);
+    // Like, left of Hide Comments (ui/README §3.2); the Shared section's Activity shows it (notes item 15)
+    const likes = Array.isArray(f.likes) ? f.likes : [];
+    const iLike = likes.some((l) => l.by === me);
+    if (can) {
+      const likeBtn = mkEl("button", "lnk tlike");
+      likeBtn.type = "button";
+      likeBtn.textContent = iLike ? "Liked" : "Like";
+      likeBtn.setAttribute("aria-pressed", String(iLike));
+      likeBtn.onclick = async () => {
+        likeBtn.disabled = true;
+        try {
+          await send(f, { op: "like" });
+          paintComment();
+        } catch (e) {
+          likeBtn.disabled = false;
+          tell(e.message, true);
+        }
+      };
+      actions.appendChild(likeBtn);
+    }
     actions.appendChild(hideBtn);
     thread.appendChild(actions);
+    if (likes.length) {
+      const others = likes.filter((l) => l.by !== me).map((l) => (l.by === G.owner ? ownerName : l.by));
+      const lr = mkEl("p", "tliked");
+      const b = mkEl("b");
+      b.textContent = iLike ? "You" : others.shift();
+      lr.append(b, (others.length ? ", " + others.join(", ") : "") + " liked this");
+      thread.appendChild(lr);
+    }
 
     for (const c of list) {
       const row = mkEl("div", "crow");

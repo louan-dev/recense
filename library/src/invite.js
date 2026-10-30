@@ -16,6 +16,7 @@ import { commentApi } from "./public.js";
 import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
+import { logActivity } from "./shared.js";
 
 const INVITES = "invites/";
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -124,14 +125,38 @@ export async function inviteApi(req, env, url, path) {
   if (m && method === "DELETE") {
     if (!ID_RE.test(m[1])) return new Response("Bad id", { status: 400 });
 
-    const r = await env.MAIN.list({ prefix: INVITES + m[1] });
-    if (!r.objects.length) return new Response("Not found", { status: 404 });
-
-    await env.MAIN.delete(r.objects.map((o) => o.key));
+    if (!(await revokeInvite(env, m[1]))) return new Response("Not found", { status: 404 });
     return jsonResponse({ ok: true });
   }
 
   return new Response("Not found", { status: 404 });
+}
+
+// Revokes an invite by its public id: the link is the same 404 as any unknown one from now on.
+export async function revokeInvite(env, id) {
+  if (!ID_RE.test(id)) return false;
+  const r = await env.MAIN.list({ prefix: INVITES + id });
+  if (!r.objects.length) return false;
+  await env.MAIN.delete(r.objects.map((o) => o.key));
+  return true;
+}
+
+// Every invite still alive, for the Shared section (shared.js): [{ id, name, folder, items, created, expires, perms }]
+export async function liveInvites(env) {
+  const now = Date.now();
+  const out = [];
+  let cursor;
+
+  do {
+    const r = await env.MAIN.list({ prefix: INVITES, cursor });
+    for (const o of r.objects) {
+      const inv = await readInvite(env, o.key);
+      if (inv && !(inv.expires && inv.expires <= now)) out.push(pub(o.key.slice(INVITES.length, -5), inv));
+    }
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+
+  return out;
 }
 
 async function readInvite(env, key) {
@@ -243,7 +268,7 @@ export async function participantRoute(req, env, ctx, url, path) {
       if (!b || b.kind !== "main" || !rel || rel !== inFolder(rel.split("/").pop()) || !allowed(rel.split("/").pop())) {
         return new Response("Not allowed", { status: 403 });
       }
-      if (b.op !== "add" && b.op !== "del" && b.op !== "edit") return new Response("Not allowed", { status: 403 });
+      if (b.op !== "add" && b.op !== "del" && b.op !== "edit" && b.op !== "like") return new Response("Not allowed", { status: 403 });
 
       return commentApi(req, env, inv.name, true);
     }
@@ -260,7 +285,9 @@ export async function participantRoute(req, env, ctx, url, path) {
 
       const u = new URL(url);
       u.search = new URLSearchParams({ key, mtime: url.searchParams.get("mtime") || "" }).toString();
-      return mainUpload(req, env, u);
+      const res = await mainUpload(req, env, u);
+      if (res.ok) await logActivity(env, { type: "upload", by: inv.name, kind: "main", ref: key }).catch(() => {});
+      return res;
     }
 
     return new Response("Not found", { status: 404 });

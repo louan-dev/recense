@@ -69,6 +69,7 @@ extension Record {
 
 struct Browser: View {
     static let assistant = "\u{0}assistant"  // a sidebar tag no folder path can be
+    static let shared = "\u{0}shared"
     @StateObject private var top = Folder(Gallery.rootPath)
     @State private var picked: String? = Gallery.rootPath
 
@@ -77,6 +78,7 @@ struct Browser: View {
             List(selection: $picked) {
                 Section("Locations") {
                     Label("Chauphan", systemImage: "icloud").tag(Gallery.rootPath)
+                    Label("Shared", systemImage: "person.2").tag(Browser.shared)
                     Label("Assistant", systemImage: "sparkles").tag(Browser.assistant)
                 }
                 Section("Folders") {
@@ -92,6 +94,10 @@ struct Browser: View {
                 if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
                         .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                } else if picked == Browser.shared {
+                    // the site's Shared section, with its own top bar (back, Shared, + ⋯) and Personal | Shared | Activity (notes item 15)
+                    PlayerView(url: galleryURL("/main/shared")).ignoresSafeArea(edges: .bottom)
+                        .navigationTitle("").navigationBarTitleDisplayMode(.inline)  // only the way back to the sidebar
                 } else if let picked { FolderView(path: picked).id(picked) }
             }
         }

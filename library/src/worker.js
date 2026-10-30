@@ -22,6 +22,7 @@ import { uploadPage } from "./page/upload.js";
 import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, upload, gallery, galleryApi, file, folderFile } from "./public.js";
 import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
+import { sharesApi, sharedPage, activitySweep } from "./shared.js";
 import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, rateSweep } from "./transcript.js";
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
@@ -75,7 +76,7 @@ export default {
     async scheduled(event, env, ctx) {
     // every minute: up to ~45 s of the assistant's indexing steps (ai.js), nothing else
     if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env).catch(() => {})); return; }
-    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env),
+    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env),
       warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },
 };
@@ -125,6 +126,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     }
     if (path === "/main/api/caption" && method === "PUT") return commentApi(req, env);
     if (path === "/main/api/invites" || path.startsWith("/main/api/invites/")) return inviteApi(req, env, url, path);
+    if (path === "/main/api/activity" || path === "/main/api/shares" || path.startsWith("/main/api/shares/")) return sharesApi(req, env, url, path);
     if (path === "/main/api/link" && method === "POST") return linkApi(req, env, url);
     if (path === "/main/api/link" && method === "DELETE") return deleteFromLink(env, url);
     if (path === "/main/api/upload" && (method === "PUT" || method === "POST")) return upload(req, env, url);
@@ -134,6 +136,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
 
   if (!read) return new Response("Method not allowed", { status: 405 });
   if (path === "/main/share" && read) return page(uploadPage());
+  if (path === "/main/shared" && read) return sharedPage(url);
   if (path === "/main" || path === "/main/") return mainFolder(env, url);
   if (path.startsWith("/main/f/")) return mainFile(req, env, ctx, url, path.slice("/main/f/".length));
 

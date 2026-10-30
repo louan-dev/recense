@@ -10,6 +10,7 @@ import { extractArt } from "./art.js";
 import { galleryPage } from "./page/gallery.js";
 import { transcriptChanges, transcriptResponse, transcriptRun, transcriptSave } from "./transcript.js";
 import { mainKeys, keyFields } from "./main.js";
+import { logActivity, unlogLike } from "./shared.js";
 
 const LINKS = "links/";
 
@@ -348,16 +349,25 @@ export function thread(v) {
 // What every item list carries: the whole thread, plus caption/capAt (the first comment) for old pages.
 export function commentFields(v) {
   const list = thread(v);
-  return { caption: list.length ? list[0].text : "", capAt: list.length ? list[0].at : 0, comments: list };
+  return { caption: list.length ? list[0].text : "", capAt: list.length ? list[0].at : 0, comments: list, likes: likesOf(v) };
 }
 
-// op "add" appends, op "edit" rewrites one of your own by id, op "del" removes one comment by id, no op replaces the thread with one comment (or none).
+// Likes ride along with the thread: { list, likes: [{ by, at }] }, one per person.
+const likesOf = (v) => (v && Array.isArray(v.likes) ? v.likes.filter((l) => l && l.by) : []);
+
+// op "add" appends, op "edit" rewrites one of your own by id, op "del" removes one comment by id, op "like" turns your like
+// on or off, no op replaces the thread with one comment (or none).
 // Returns the new stored value (null = nothing left) or a string error.
 function applyComment(v, b, by, participant) {
   const text = String((b && b.text) || "").trim().slice(0, COMMENT_MAX);
   const list = thread(v);
+  const likes = likesOf(v);
 
-  if (b.op === "add") {
+  if (b.op === "like") {
+    const i = likes.findIndex((l) => l.by === by);
+    if (i < 0) likes.push({ by, at: Date.now() });
+    else likes.splice(i, 1);
+  } else if (b.op === "add") {
     if (!text) return "Empty comment";
     if (list.length >= THREAD_MAX) return "Too many comments";
     const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -379,7 +389,8 @@ function applyComment(v, b, by, participant) {
     if (text) list.push({ id: "c" + Date.now().toString(36), text, at: Date.now(), by });
   }
 
-  return list.length ? { list } : null;
+  if (!list.length && !likes.length) return null;
+  return likes.length ? { list, likes } : { list };
 }
 
 const noteKey = (id) => INDEX + "note/" + id + ".json";
@@ -450,7 +461,18 @@ export async function commentApi(req, env, by = OWNER, participant = false) {
 
   // the stored value goes in, the new one comes out; null means remove
   const change = (v) => applyComment(v, b, by, participant);
-  const done = (v) => jsonResponse({ ok: true, ...commentFields(v), text: commentFields(v).caption, at: commentFields(v).capAt });
+  const done = async (v, where) => {
+    const f = commentFields(v);
+    // the Shared section's Activity: new comments, and likes turned on
+    const liked = b.op === "like" && f.likes.some((l) => l.by === by);
+    if (b.op === "add" || liked) {
+      const c = f.comments[f.comments.length - 1];
+      await logActivity(env, { type: liked ? "like" : "comment", by, ...where, text: liked || !c ? "" : c.text }).catch(() => {});
+    } else if (b.op === "like") {
+      await unlogLike(env, { by, ...where }).catch(() => {}); // a like taken back leaves the feed too
+    }
+    return jsonResponse({ ok: true, ...f, text: f.caption, at: f.capAt });
+  };
   const bad = (e) => new Response(e, { status: e === "Comment not found" ? 404 : 400 });
 
   if (b.kind === "main") {
@@ -468,7 +490,7 @@ export async function commentApi(req, env, by = OWNER, participant = false) {
     else delete map[name];
 
     await saveMap(env.MAIN, mainNotesKey(dir), map);
-    return done(v);
+    return done(v, { kind: "main", ref: rel });
   }
 
   if (b.kind === "link") {
@@ -491,7 +513,7 @@ export async function commentApi(req, env, by = OWNER, participant = false) {
       else delete it.comment;
 
       await writeManifest(env, manifest);
-      return done(v);
+      return done(v, { kind: "link", ref: id, key: n, name: it.name || "" });
     }
 
     const link = await readLink(env, id);
@@ -507,10 +529,59 @@ export async function commentApi(req, env, by = OWNER, participant = false) {
     else delete map[rel];
 
     await saveMap(env.PUBLIC, noteKey(id), map);
-    return done(v);
+    return done(v, { kind: "link", ref: id, key: rel });
   }
 
   return new Response("Bad request", { status: 400 });
+}
+
+// ---------- the owner's Shared section (shared.js) ----------
+
+// Every link still alive: upload links (their manifest) and folder links (index/<id>.json).
+export async function liveLinks(env) {
+  const now = Date.now();
+  const out = [];
+  let cursor;
+
+  do {
+    const r = await env.PUBLIC.list({ prefix: LINKS, delimiter: "/", cursor });
+    for (const p of r.delimitedPrefixes || []) {
+      const id = p.slice(LINKS.length, -1);
+      const m = ID_RE.test(id) ? await readManifest(env, id) : null;
+      if (m && Number(m.exp) > now) out.push({ id, kind: "upload", created: Number(m.created) || 0, exp: Number(m.exp) });
+    }
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+
+  do {
+    const r = await env.PUBLIC.list({ prefix: INDEX, delimiter: "/", cursor });
+    for (const o of r.objects) {
+      const link = await readLink(env, o.key.slice(INDEX.length).replace(/\.json$/, ""));
+      if (link && link.exp > now) out.push({ id: link.id, kind: "folder", folder: link.folder, created: Number(link.created) || 0, exp: link.exp });
+    }
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+
+  return out;
+}
+
+// Expires a link now. An upload link's files are copies and go with it, as at its expiry; a folder
+// link only stops working, and its Public folder then goes the way an expired one does (sweepFolders).
+export async function expireLink(env, id) {
+  if (!ID_RE.test(id)) return false;
+
+  const manifest = await readManifest(env, id);
+  if (manifest) {
+    await deletePrefix(env, LINKS + id + "/");
+    return true;
+  }
+
+  const link = await readLink(env, id);
+  if (!link) return false;
+
+  link.exp = Date.now() - 1;
+  await env.PUBLIC.put(linkKey(id), JSON.stringify(link), { httpMetadata: { contentType: "application/json" } });
+  return true;
 }
 
 // ---------- folder links (Gallery/Public on the Mac) ----------

@@ -1421,5 +1421,68 @@ await test("assistant sidebar: owner opens it, asks in this folder or everywhere
   assert.ok(await pg.$eval("#aihere", (e) => e.classList.contains("on")));
 });
 
+await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's files, Delete expires the link; Like in the viewer feeds Activity", true, async (pg) => {
+  await MAIN.put("files/Fair/one.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Fair/two.jpg", "y", { httpMetadata: { contentType: "image/jpeg" } });
+  await pg.goto(base + "/main?p=Fair");
+  // Main's menu leads to Shared
+  await pg.click("#mbtn");
+  assert.equal(await pg.getAttribute("#m-shared", "href"), "/main/shared");
+  // the owner likes a file from the viewer's expanded action row (Like left of Hide Comments)
+  await pg.keyboard.press("Escape");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.click(".cmlabel");
+  await pg.click("#thread .tlike");
+  await pg.waitForSelector("#thread .tliked");
+  assert.equal(await pg.textContent("#thread .tlike"), "Liked");
+  assert.match(await pg.textContent("#thread .tliked"), /You liked this/);
+  const id = await pg.evaluate(async () => {
+    const r = await fetch("/main/api/invites", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Bo Kim", ttl: 0, dir: "Fair" }) });
+    return (await r.json()).id;
+  });
+
+  await pg.goto(base + "/main/shared");
+  const tile = '.card[data-id="' + id + '"]';
+  await pg.waitForSelector(tile);
+  assert.deepEqual(await pg.$$eval(".seg button", (b) => b.map((x) => x.textContent + ":" + x.getAttribute("aria-selected"))), ["Personal:false", "Shared:true", "Activity:false"]);
+  assert.equal(await pg.textContent(".top h1"), "Shared");
+  assert.equal(await pg.textContent(tile + " .badge"), "BK");
+  assert.match(await pg.textContent(tile + " .t"), /^Fair2 items/);
+  const sq = await pg.$eval(tile, (e) => e.getBoundingClientRect().width / e.getBoundingClientRect().height);
+  assert.ok(Math.abs(sq - 1) < 0.02, "square tile " + sq);
+  // no red anywhere, and no glass (backdrop-filter) on this page
+  assert.ok(await pg.evaluate(() => [...document.querySelectorAll("*")].every((e) => { const s = getComputedStyle(e); return !/blur/.test(s.backdropFilter || "") && !/rgb\((2[0-9]{2}), (\d|[1-5]\d), (\d|[1-5]\d)\)/.test(s.color); })));
+
+  // Activity: the like shows with its picture on the right; a row opens its share
+  await pg.click('.seg button:text("Activity")');
+  await pg.waitForSelector(".ev");
+  assert.equal(await pg.getAttribute('.seg button:text("Activity")', "aria-selected"), "true");
+  const rows = await pg.$$eval(".ev", (r) => r.map((x) => x.querySelector(".x").textContent));
+  assert.ok(rows.some((r) => /^You liked a photoFair · /.test(r)), rows.join(" | "));
+  assert.ok(rows.some((r) => /^You shared 2 items with Bo KimFair/.test(r)), rows.join(" | "));
+  assert.ok(await pg.$('.ev[href="#s/invite/' + id + '"] .th img'));
+  await pg.click('.ev[href="#s/invite/' + id + '"]');
+
+  // the share: all its files; a tile opens it; Delete asks, then the link is gone and so is the tile
+  await pg.waitForSelector(".files .tile");
+  assert.equal(await pg.textContent(".dhead h2"), "Fair");
+  assert.equal(await pg.$$eval(".files .tile", (t) => t.length), 2);
+  await pg.click(".files .tile");
+  await pg.waitForSelector(".view img");
+  await pg.click('.view .lnk:text("Next")');
+  assert.match(await pg.textContent(".view .vt"), /2 of 2/);
+  await pg.click('.view .lnk:text("Done")');
+  await pg.click('.top .lnk:text("Delete")');
+  await pg.click('.sheet .lnk:text("Delete Share Link")');
+  await pg.waitForSelector(".grid, .empty");
+  assert.equal(await pg.$(tile), null);
+  const left = await pg.evaluate(async () => (await (await fetch("/main/api/invites?dir=Fair", { headers: { "x-gallery": "1" } })).json()).length);
+  assert.equal(left, 0);
+
+  // Personal goes back to Main
+  await pg.click('.seg button:text("Personal")');
+  await pg.waitForURL(/\/main\/$/);
+});
+
 await browser.close();
 await mf.dispose();
