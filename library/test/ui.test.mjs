@@ -1415,6 +1415,10 @@ await test("assistant sidebar: owner opens it, asks in this folder or everywhere
   await pg.waitForFunction(() => !document.querySelector(".aimemrow"));
   await pg.click("#aidone");
   assert.ok(await pg.$eval("#aip", (e) => e.hidden));
+  // the Mac and iOS apps open it with ?ask=1, on the folder that's open
+  await pg.goto(base + "/main?p=Am&ask=1");
+  await pg.waitForSelector("#aip:not([hidden])");
+  assert.ok(await pg.$eval("#aihere", (e) => e.classList.contains("on")));
 });
 
 await browser.close();

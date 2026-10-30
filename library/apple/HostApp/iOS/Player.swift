@@ -3,6 +3,7 @@
 // which sends it to the Worker with this device's Access token. WebKit never sees the token and no login page appears.
 import SwiftUI
 import WebKit
+// (also compiled into the Mac app: macos/build.sh)
 
 final class SchemeHandler: NSObject, WKURLSchemeHandler, URLSessionDataDelegate {
     static let scheme = "gallery"
@@ -24,6 +25,12 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler, URLSessionDataDelegate 
         r.url = parts.url
         r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
         r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+        // the page's origin is gallery://app, which the Worker's same-site check (access.js sameSite) would refuse;
+        // it's our own page, so it goes as the apps do: no Origin, x-gallery: 1
+        if r.value(forHTTPHeaderField: "Origin") != nil {
+            r.setValue(nil, forHTTPHeaderField: "Origin")
+            r.setValue("1", forHTTPHeaderField: "x-gallery")
+        }
         let t = session.dataTask(with: r)
         lock.lock(); running[t.taskIdentifier] = (task, asked); byTask[ObjectIdentifier(task)] = t; lock.unlock()
         t.resume()
@@ -69,24 +76,42 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler, URLSessionDataDelegate 
     }
 }
 
-// one archive folder in Gallery's page, opened straight onto a file when there is one
+// a page of Gallery's site, loaded through SchemeHandler (iOS and the Mac app's window)
+func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
+    var u = URLComponents(string: "\(SchemeHandler.scheme)://app\(path)")!
+    let q = query.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }.sorted { $0.name < $1.name }
+    if !q.isEmpty { u.queryItems = q }
+    return u.url!
+}
+
+func galleryWebView() -> WKWebView {
+    let config = WKWebViewConfiguration()
+    config.setURLSchemeHandler(SchemeHandler(), forURLScheme: SchemeHandler.scheme)
+    config.mediaTypesRequiringUserActionForPlayback = []
+    #if os(iOS)
+    config.allowsInlineMediaPlayback = true
+    #endif
+    return WKWebView(frame: .zero, configuration: config)
+}
+
+#if os(iOS)
+// one archive folder in Gallery's page, opened straight onto a file when there is one; or any page (the Assistant)
 struct PlayerView: UIViewRepresentable {
-    let folder: String  // inside chauphan/
-    let open: String?   // the file's path inside chauphan/
+    let url: URL
+
+    init(folder: String, open: String?) {  // inside chauphan/
+        url = galleryURL("/main/archive", ["p": folder, "open": open])
+    }
+    init(url: URL) { self.url = url }
 
     func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.setURLSchemeHandler(SchemeHandler(), forURLScheme: SchemeHandler.scheme)
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = galleryWebView()
         web.isOpaque = false
         web.backgroundColor = .black
-        var u = URLComponents(string: "\(SchemeHandler.scheme)://app/main/archive")!
-        u.queryItems = [URLQueryItem(name: "p", value: folder)] + (open.map { [URLQueryItem(name: "open", value: $0)] } ?? [])
-        web.load(URLRequest(url: u.url!))
+        web.load(URLRequest(url: url))
         return web
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {}
 }
+#endif

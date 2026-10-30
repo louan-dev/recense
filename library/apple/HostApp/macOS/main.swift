@@ -1,5 +1,6 @@
-// Gallery Files (macOS): puts the archive in Finder's sidebar as a File Provider location and keeps it current.
-// No window; it stays running (login item) and every 60 s tells the system to ask the extension what changed
+// Gallery Files (macOS): puts the archive in Finder's sidebar as a File Provider location and keeps it current, and
+// opened by hand shows Gallery's window with the assistant (Window.swift). At login it has no window; it stays running
+// (login item) and every 60 s tells the system to ask the extension what changed
 // (there's no push without a paid account: docs/architecture.md §3).
 //   "Gallery Files.app/Contents/MacOS/GalleryFiles" remove   takes the location out of Finder (R2 is untouched)
 import AppKit
@@ -57,4 +58,6 @@ Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
+let galleryWindow = GalleryWindow()
+app.delegate = galleryWindow
 app.run()

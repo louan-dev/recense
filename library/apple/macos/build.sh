@@ -18,8 +18,9 @@ swiftc -O -target $target -parse-as-library -application-extension -module-name 
   "$src/FileProviderCore/Core.swift" "$src/Extension/FileProviderExtension.swift" \
   -framework FileProvider -Xlinker -e -Xlinker _NSExtensionMain -o "$ext/Contents/MacOS/GalleryProvider"
 swiftc -O -target $target -module-name GalleryFiles \
-  "$src/FileProviderCore/Core.swift" "$src/HostApp/macOS/main.swift" \
-  -framework AppKit -framework FileProvider -o "$app/Contents/MacOS/GalleryFiles"
+  "$src/FileProviderCore/Core.swift" "$src/HostApp/macOS/main.swift" "$src/HostApp/macOS/Window.swift" \
+  "$src/HostApp/iOS/Player.swift" \
+  -framework AppKit -framework FileProvider -framework WebKit -framework SwiftUI -o "$app/Contents/MacOS/GalleryFiles"
 cp "$here/Ext-Info.plist" "$ext/Contents/Info.plist"
 # the cloud alone, on transparency: Finder's sidebar draws it as a template, so an opaque square turns into a black block
 mkdir -p "$ext/Contents/Resources" && cp "$here/GalleryProvider.icns" "$ext/Contents/Resources/"

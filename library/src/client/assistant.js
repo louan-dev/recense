@@ -178,4 +178,7 @@
       }
     } catch { memo.innerHTML = '<p class="aiwait">Couldn’t load memories.</p>'; }
   });
+
+  // the Mac and iOS apps' Assistant row opens a page with ?ask=1 (apple/HostApp)
+  if (new URLSearchParams(location.search).get("ask") === "1") open();
 })();

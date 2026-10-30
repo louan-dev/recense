@@ -68,6 +68,7 @@ extension Record {
 }
 
 struct Browser: View {
+    static let assistant = "\u{0}assistant"  // a sidebar tag no folder path can be
     @StateObject private var top = Folder(Gallery.rootPath)
     @State private var picked: String? = Gallery.rootPath
 
@@ -76,6 +77,7 @@ struct Browser: View {
             List(selection: $picked) {
                 Section("Locations") {
                     Label("Chauphan", systemImage: "icloud").tag(Gallery.rootPath)
+                    Label("Assistant", systemImage: "sparkles").tag(Browser.assistant)
                 }
                 Section("Folders") {
                     ForEach(top.items.filter(\.dir), id: \.id) { f in
@@ -87,7 +89,10 @@ struct Browser: View {
             .task { top.load() }
         } detail: {
             NavigationStack {
-                if let picked { FolderView(path: picked).id(picked) }
+                if picked == Browser.assistant {
+                    PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
+                        .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                } else if let picked { FolderView(path: picked).id(picked) }
             }
         }
     }
@@ -102,6 +107,7 @@ struct FolderView: View {
     @State private var linking: (done: Int, total: Int)?
     @State private var shared: SharedLink?
     @State private var failed: String?
+    @State private var asking = false
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
 
@@ -139,6 +145,8 @@ struct FolderView: View {
         .searchable(text: $query)
         .refreshable { folder.load() }
         .toolbar {
+            // the assistant, on this folder ("This folder"; it has an All switch)
+            ToolbarItem(placement: .primaryAction) { Button("Ask") { asking = true } }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Picker("View", selection: $asList) {
@@ -158,6 +166,15 @@ struct FolderView: View {
                     .font(.footnote).padding(.horizontal, 14).padding(.vertical, 10)
                     .background(.thinMaterial, in: Capsule()).padding(.bottom, 24)
             }
+        }
+        .sheet(isPresented: $asking) {
+            NavigationStack {
+                PlayerView(url: galleryURL("/main/archive", ["p": folder.path == Gallery.rootPath ? nil : String(folder.path.dropFirst(Gallery.rootPath.count + 1)), "ask": "1"]))
+                    .ignoresSafeArea(edges: .bottom)
+                    .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { asking = false } } }
+            }
+            .presentationDetents([.medium, .large])
         }
         .sheet(item: $shared) { ActivityView(items: [$0.url]).presentationDetents([.medium, .large]) }
         .alert("Couldn’t make the link", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
