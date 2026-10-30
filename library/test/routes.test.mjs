@@ -5,7 +5,7 @@ import { Miniflare } from "miniflare";
 import { readdirSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
-import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS } from "../src/fp.js";
+import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS, reconcile } from "../src/fp.js";
 import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
@@ -1388,6 +1388,54 @@ await test("fp: one junk rule with the ledger, dotfiles as content, md5, Main as
   assert.equal(await MAIN.get(key("log", c.seq)), null);
   assert.deepEqual((await (await MAIN.get(key("history", c.seq))).json()).events, b1.events);
   assert.equal((await call("/main/api/fp/main/changes?since=" + base.seq, { as: "mac" })).status, 410);
+});
+
+await test("fp: a big root's pass goes in steps across requests (pass/); the diff, log and snapshot happen once, at the end", async () => {
+  // an in-memory bucket with R2's list/put/get/head/delete shape, so the steps can be tiny (2 objects a page, 1 page a step)
+  const mem = new Map();
+  const obj = (k) => { const v = mem.get(k); return v && { key: k, size: v.body.length, etag: v.etag, httpEtag: `"${v.etag}"`, uploaded: v.at, customMetadata: {}, json: async () => JSON.parse(v.body), text: async () => v.body }; };
+  const b = {
+    head: async (k) => obj(k) || null,
+    get: async (k) => obj(k) || null,
+    delete: async (k) => void mem.delete(k),
+    put: async (k, body, o = {}) => {
+      if (o.onlyIf && o.onlyIf.etagDoesNotMatch === "*" && mem.has(k)) return null;
+      mem.set(k, { body: String(body), etag: createHash("md5").update(String(body)).digest("hex"), at: new Date() });
+      return obj(k);
+    },
+    list: async ({ prefix = "", cursor, limit = 1000 } = {}) => {
+      const all = [...mem.keys()].sort().filter((k) => k.startsWith(prefix));
+      const at = cursor ? Number(cursor) : 0;
+      const truncated = at + limit < all.length;
+      return { objects: all.slice(at, at + limit).map(obj), truncated, cursor: truncated ? String(at + limit) : undefined, delimitedPrefixes: [] };
+    },
+  };
+  for (let i = 0; i < 7; i++) await b.put(`files/S/f${i}.m4a`, "x" + i);
+  const root = { bucket: "MAIN", prefix: "files/", catalog: ".catalog/step/" };
+  const opt = { page: 2, stepPages: 1 };
+  // the baseline: 4 steps for 7 files; nothing to show until the last
+  const r = [];
+  for (let i = 0; i < 4; i++) r.push(await reconcile(b, root, 1000 + i, opt));
+  assert.deepEqual(r.slice(0, 3), [null, null, null]);
+  assert.equal(Object.values(r[3].items).filter((i) => !i.dir).length, 7);
+  assert.equal(await b.get(".catalog/step/pass/state.json"), null);
+  assert.equal((await b.list({ prefix: ".catalog/step/pass/" })).objects.length, 0);
+  // a change: while the pass is in steps the old snapshot stands (building), then one batch holds the change
+  await b.put("files/S/new.m4a", "n");
+  const s1 = await reconcile(b, root, 2000, opt);
+  assert.ok(s1.building && s1.seq === r[3].seq);
+  let s = s1;
+  for (let i = 0; i < 5 && s.building; i++) s = await reconcile(b, root, 2001 + i, opt);
+  assert.equal(s.seq, r[3].seq + 1);
+  const batch = JSON.parse(await (await b.get(".catalog/step/log/" + String(s.seq).padStart(12, "0") + ".json")).text());
+  assert.deepEqual(batch.events.map((e) => e.op + " " + e.path), ["create S/new.m4a"]);
+  assert.equal(batch.events[0].md5, createHash("md5").update("n").digest("hex"));
+  // a pass that has been going for over 30 minutes starts over instead of trusting an old cursor
+  await reconcile(b, root, 3000, opt);
+  const st = JSON.parse(await (await b.get(".catalog/step/pass/state.json")).text());
+  assert.equal(st.parts, 1);
+  await reconcile(b, root, 3000 + 31 * 60 * 1000, opt);
+  assert.equal(JSON.parse(await (await b.get(".catalog/step/pass/state.json")).text()).started, 3000 + 31 * 60 * 1000);
 });
 
 await test("main/archive: Main's page and player over gallery-archive/chauphan, read-only", async () => {

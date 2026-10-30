@@ -47,6 +47,8 @@ const MARK = ".folder-"; // Gallery's empty-folder marker (main.js): the folder 
 // anchor is older than log/ gets 410 and enumerates again instead of replaying months.
 const KEEP_MS = 30 * 24 * 3600 * 1000;
 const COMPACT_MAX = 20; // batches moved per pass
+const STEP_MS = 8000; // one request lists a root for at most this long, then saves where it got to
+const PASS_MAX_MS = 30 * 60 * 1000; // a pass not finished by then starts over
 export const GENESIS = "aeebad4a796fcc2e15dc4c6061b45ed9b373f26adfc798ca7d2d8cc58182718e"; // sha-256("genesis")
 const GUARD = { files: 100, floor: 10, pct: 10 };
 export const massDelete = (n, known) => n > GUARD.files || (n > GUARD.floor && n * 100 > known * GUARD.pct);
@@ -193,7 +195,7 @@ async function readSnapshot(b, root) {
 }
 
 // one pass: list the root, diff against the snapshot, append the events, write the new snapshot. null: another pass holds the lock.
-export async function reconcile(b, root, now = Date.now()) {
+export async function reconcile(b, root, now = Date.now(), opt = {}) {
   const lockKey = root.catalog + "lock";
   const lock = await b.head(lockKey);
   if (lock && now - lock.uploaded.getTime() < LOCK_MS) return null;
@@ -204,9 +206,19 @@ export async function reconcile(b, root, now = Date.now()) {
     const items = {};
     const md5s = {}; // only for this pass's events: the snapshot stays small (etag is enough to see a change)
     const folders = new Set();
-    let cursor;
+    // A big root (Main: ~30,000 files) can't be listed in one request. A pass lists for at most STEP_MS, saves what it
+    // has in pass/<n>.json and its cursor in pass/state.json, and the next request goes on from there. The diff, the
+    // log and the snapshot happen once, when the listing is complete. A small root finishes in one request.
+    const passKey = root.catalog + "pass/";
+    let pass = await readJson(b, passKey + "state.json");
+    if (pass && now - pass.started > PASS_MAX_MS) pass = await dropPass(b, passKey); // list cursors don't last forever
+    pass ||= { v: 1, started: now, cursor: undefined, parts: 0 };
+    let cursor = pass.cursor;
+    const t0 = Date.now();
+    let pages = 0;
     do {
-      const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: PAGE });
+      const r = await b.list({ prefix: root.prefix, include: ["customMetadata"], cursor, limit: opt.page || PAGE });
+      pages++;
       for (const o of r.objects) {
         const path = o.key.slice(root.prefix.length);
         if (!path || (!root.prefix && path.split("/")[0].startsWith("."))) continue;
@@ -218,7 +230,20 @@ export async function reconcile(b, root, now = Date.now()) {
         md5s[id] = md5Of(o);
       }
       cursor = r.truncated ? r.cursor : undefined;
-    } while (cursor);
+    } while (cursor && pages < (opt.stepPages || Infinity) && Date.now() - t0 < (opt.stepMs ?? STEP_MS));
+    if (cursor) { // not done: keep this step's part, and say so (no events, the old snapshot still stands)
+      await b.put(passKey + pass.parts + ".json", JSON.stringify({ items, md5s, folders: [...folders] }));
+      await b.put(passKey + "state.json", JSON.stringify({ ...pass, cursor, parts: pass.parts + 1 }));
+      return old.fresh ? null : { ...old, building: true };
+    }
+    for (let n = 0; n < pass.parts; n++) { // the earlier steps of this pass
+      const part = await readJson(b, passKey + n + ".json");
+      if (!part) return (await dropPass(b, passKey), old.fresh ? null : { ...old, building: true }); // lost: start over
+      Object.assign(items, part.items);
+      Object.assign(md5s, part.md5s);
+      for (const p of part.folders) folders.add(p);
+    }
+    if (pass.parts) await dropPass(b, passKey); // all in hand: a held or lost pass starts over next time
     for (const p of folders) items[await folderId(p)] = { path: p, dir: true };
 
     const events = [];
@@ -261,6 +286,13 @@ export async function reconcile(b, root, now = Date.now()) {
   } finally {
     await b.delete(lockKey);
   }
+}
+
+// a pass's saved steps, gone; returns null (no pass)
+async function dropPass(b, passKey) {
+  const r = await b.list({ prefix: passKey });
+  for (const o of r.objects) await b.delete(o.key);
+  return null;
 }
 
 // batches older than KEEP_MS move from log/ to history/, oldest first, a few per pass (one list and one read when
