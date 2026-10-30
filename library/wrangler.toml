@@ -26,6 +26,10 @@ crons = ["0 3 * * *"]
 ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
 # the assistant's model (src/ai.js); any Workers AI chat model that takes messages. The search model is fixed (bge-m3).
 AI_CHAT_MODEL = "@cf/openai/gpt-oss-120b"
+# the assistant's calendar (src/calendar.js): the owner's time zone, and the Sync worker's CalDAV user (sync/worker/wrangler.toml)
+OWNER_TZ = "America/Los_Angeles"
+CALDAV_USER = "chau"
+CALDAV_DEFAULT_NAME = "Calendar"
 # ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
 # NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
 
@@ -70,3 +74,9 @@ binding = "AI"
 [[vectorize]]
 binding = "VECTORS"
 index_name = "gallery-ai"
+
+# The owner's own calendar: the Sync worker's CalDAV store (sync/worker), shared so the assistant can read and write events
+# the way a CalDAV client would (same keys, same trash copies). The bucket exists (created for G1-0).
+[[r2_buckets]]
+binding = "CALENDAR"
+bucket_name = "sync"

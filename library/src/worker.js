@@ -28,6 +28,7 @@ import { fp } from "./fp.js";
 import { archive } from "./archive.js";
 import { noteImage } from "./images.js";
 import { aiRoute, indexStep } from "./ai.js";
+import { inviteIcs, listEvents, today, TZ_DEFAULT } from "./calendar.js";
 
 export default {
   async fetch(req, env, ctx) {
@@ -66,13 +67,15 @@ export default {
     if ((m = path.match(/^\/f\/([A-Za-z0-9]+)\/(\d{3})$/))) return file(req, env, ctx, url, m[1], m[2]);
     if ((m = path.match(/^\/d\/([A-Za-z0-9]+)\/[A-Za-z0-9]+\/(.+)$/))) return folderFile(req, env, url, m[1], m[2]);
     if ((m = path.match(/^\/t\/([0-9a-f]{32})\/([^/]+)$/))) return tmpGet(req, env, ctx, url, m[1], m[2]);
+    if ((m = path.match(/^\/c\/([0-9a-f]{32})\.ics$/))) return inviteIcs(env, m[1]);   // a calendar invite the assistant made (calendar.js)
 
     return notice("Link not found", 404);
   },
 
     async scheduled(event, env, ctx) {
     ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env),
-      env.AI && env.VECTORS ? indexStep(env).catch(() => {}) : null]));
+      env.AI && env.VECTORS ? indexStep(env).catch(() => {}) : null,
+      listEvents(env, today(env.OWNER_TZ || TZ_DEFAULT), today(env.OWNER_TZ || TZ_DEFAULT)).catch(() => {})]));   // keeps the iCloud event cache warm
   },
 };
 

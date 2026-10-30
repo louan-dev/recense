@@ -170,7 +170,9 @@ export function planMessages(question, history = []) {
   return [
     { role: "system", content: [
       "You write search queries for a personal library of documents, reflections, therapy notes and transcripts.",
-      "Given the owner's message, reply with JSON only: {\"queries\":[\"…\",\"…\"]} with 1 to 3 short queries in the message's language.",
+      "Given the owner's message, reply with JSON only: {\"queries\":[\"…\",\"…\"],\"calendar\":false} with 1 to 3 short queries in the",
+      "message's language. Set \"calendar\" to true when the message is about the owner's schedule or calendar: what's on it, availability,",
+      "or creating, changing or sharing an event or appointment (including follow-ups like giving an invitee's email address).",
       "Include the topic itself; when the message is about the owner's own life, decisions, plans or feelings, add queries for what their",
       "notes would say about it (habits, preferences, how they manage time or energy, what helps them, a therapist's observations).",
     ].join("\n") },
@@ -190,6 +192,49 @@ export function parseQueries(reply, question) {
     if (out.length >= 4) break;
   }
   return out;
+}
+
+const CAL_WORDS = /\b(calendar|schedul\w*|appointment|meeting|event|invite\w*|availab\w*|free (on|at|this|next)|busy|today|tonight|tomorrow|this week|next week|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(:\d{2})?\s?(am|pm))\b/i;
+
+/** Whether the question needs the calendar: the planner's flag, or calendar words when the planner said nothing. */
+export function wantsCalendar(reply, question, history = []) {
+  try { const m = /\{[\s\S]*\}/.exec(String(reply || "")); const o = m ? JSON.parse(m[0]) : null; if (o && typeof o.calendar === "boolean") return o.calendar; } catch { /* fall through */ }
+  const last = (Array.isArray(history) ? history : []).slice(-2).map((m) => (m && m.content) || "").join(" ");
+  return CAL_WORDS.test(String(question)) || (/@/.test(String(question)) && CAL_WORDS.test(last));
+}
+
+/** The calendar actions the chat model may call (ai.js runs them; calendar.js does the work). */
+export const CALENDAR_TOOLS = [
+  { type: "function", function: { name: "list_events", description: "List events on the owner's calendars (their own calendar and their iCloud calendars) between two local dates, inclusive.",
+    parameters: { type: "object", properties: { start_date: { type: "string", description: "YYYY-MM-DD" }, end_date: { type: "string", description: "YYYY-MM-DD" } }, required: ["start_date", "end_date"] } } },
+  { type: "function", function: { name: "create_event", description: "Create an event on the owner's own calendar. Times are the owner's local time, 24-hour. Without start_time it is an all-day event.",
+    parameters: { type: "object", properties: {
+      title: { type: "string" }, date: { type: "string", description: "YYYY-MM-DD" }, start_time: { type: "string", description: "HH:MM" },
+      end_time: { type: "string", description: "HH:MM" }, duration_minutes: { type: "number", description: "used when end_time is not given; default 60" },
+      end_date: { type: "string", description: "YYYY-MM-DD, for events ending on a later day" }, location: { type: "string" }, notes: { type: "string" },
+      calendar: { type: "string", description: "calendar name; default the first" } }, required: ["title", "date"] } } },
+  { type: "function", function: { name: "update_event", description: "Change an event on the owner's own calendar (from list_events, editable: true). Give only what changes; a new time needs date and start_time.",
+    parameters: { type: "object", properties: {
+      uid: { type: "string" }, title: { type: "string" }, date: { type: "string" }, start_time: { type: "string" }, end_time: { type: "string" },
+      duration_minutes: { type: "number" }, location: { type: "string" }, notes: { type: "string" } }, required: ["uid"] } } },
+  { type: "function", function: { name: "add_invitee", description: "Invite someone to an event on the owner's own calendar. Needs their email; without it the tool tells you to ask the owner. Returns a link the owner texts to them.",
+    parameters: { type: "object", properties: { uid: { type: "string" }, name: { type: "string", description: "e.g. Mom" }, email: { type: "string" } }, required: ["uid", "name"] } } },
+];
+
+/** What the chat model is told when the calendar is in play. */
+export function calendarGuide(nowText, tz) {
+  return [
+    "",
+    `Calendar: it is now ${nowText} (${tz}). Use the calendar tools for anything about the owner's schedule; never guess what is on it.`,
+    "- Resolve relative dates (\"Friday\", \"this week\" = today through Sunday) to YYYY-MM-DD in that time zone before calling a tool.",
+    "- Only events with editable: true (the owner's own calendar) can be changed or shared; iCloud events are read-only here, so say so.",
+    "- Only say an event was created, changed or shared when the tool returned ok: true, and repeat its title and time from the result.",
+    "- When the owner asks to share an event with someone, use add_invitee. If you don't know their email (check what you remember about",
+    "  the owner), ask the owner for it and wait; when they reply with it, call add_invitee again with the same event. Then give the owner",
+    "  the link from the result to text to that person, and say that tapping it adds the event to their calendar.",
+    "- If a request is ambiguous (which event, what time), ask one short question instead of guessing.",
+    "- When the owner asks whether to accept a plan, check the calendar for conflicts and their notes for what suits them, then advise.",
+  ].join("\n");
 }
 
 // ---------- remembering the owner ----------

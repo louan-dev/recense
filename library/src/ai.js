@@ -10,6 +10,9 @@
 // After each answer a small model notes durable things the owner said about themselves (ai/memory.json in MAIN); they go into
 // every later answer. Before searching, the same small model turns the question into up to three searches, so "should I meet a
 // friend at 5 pm?" also finds the owner's reflections on evenings and energy.
+// Calendar questions (the planner flags them) run with tools instead of streaming: list_events reads the owner's own
+// calendar (Sync's CalDAV store, binding CALENDAR) and their iCloud calendars (the 30-minute backup); create_event,
+// update_event and add_invitee write only the owner's own calendar (calendar.js). An invite gives a /c/<token>.ics link.
 // Each document is classified once when indexed (published reference vs the owner's personal writing, ai-core.js); the
 // owner's corrections (ai/authority.json in MAIN) win over that at question time, so fixing one needs no re-indexing.
 //
@@ -20,7 +23,8 @@
 import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
 import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH,
-  planMessages, parseQueries, memoryMessages, applyMemory } from "./ai-core.js";
+  planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide } from "./ai-core.js";
+import { listEvents, createEvent, updateEvent, addInvitee, showLocal, TZ_DEFAULT } from "./calendar.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
 const FAST = "@cf/openai/gpt-oss-20b";      // env.AI_FAST_MODEL: planning searches and noting memories
@@ -51,7 +55,7 @@ export async function aiRoute(req, env, ctx, url, path, method) {
   if (!q) return new Response("Empty question", { status: 400 });
   const scope = cleanScope(body.scope);
   if (path === "/main/api/ai/search") return jsonResponse({ ok: true, hits: (await retrieve(env, [q], scope)).map(publicHit) });
-  if (path === "/main/api/ai/ask") return ask(env, ctx, q, scope, body.history);
+  if (path === "/main/api/ai/ask") return ask(env, ctx, q, scope, body.history, (url || new URL(req.url)).origin);
   return new Response("Not found", { status: 404 });
 }
 
@@ -121,12 +125,11 @@ async function retrieve(env, queries, scope) {
   return pick(matches, scope, 10, 4);
 }
 
-/** Up to three searches for the question (the question itself first); just the question if the planner fails. */
+/** Up to three searches for the question (the question itself first), and whether it is about the calendar. */
 async function plan(env, q, history) {
-  try {
-    const r = await env.AI.run(env.AI_FAST_MODEL || FAST, { messages: planMessages(q, history), max_tokens: 600, temperature: 0 });
-    return parseQueries(reply(r), q);
-  } catch { return [q]; }
+  let r = null;
+  try { r = reply(await env.AI.run(env.AI_FAST_MODEL || FAST, { messages: planMessages(q, history), max_tokens: 600, temperature: 0 })); } catch { r = null; }
+  return { queries: parseQueries(r, q), calendar: wantsCalendar(r, q, history) };
 }
 
 const reply = (r) => (typeof r?.response === "string" ? r.response : r?.choices?.[0]?.message?.content);
@@ -173,20 +176,26 @@ async function remember(env, q, answer) {
 
 // ---------- answering ----------
 
-function ask(env, ctx, q, scope, history) {
+function ask(env, ctx, q, scope, history, origin) {
   const enc = new TextEncoder(), { readable, writable } = new TransformStream();
   const w = writable.getWriter(), send = (o) => w.write(enc.encode(JSON.stringify(o) + "\n"));
   ctx.waitUntil((async () => {
     let answer = "", ok = false;
     try {
-      const [queries, memories] = await Promise.all([plan(env, q, history), readMemory(env)]);
+      const [{ queries, calendar }, memories] = await Promise.all([plan(env, q, history), readMemory(env)]);
       const hits = await retrieve(env, queries, scope);
       await send({ sources: hits.map((h, i) => ({ n: i + 1, root: h.root, path: h.path, kind: h.kind, auth: h.auth, t: h.t ?? null })) });
-      const stream = await env.AI.run(env.AI_CHAT_MODEL || CHAT, {
-        messages: buildMessages(q, hits, history, memories), stream: true, max_tokens: 2000, temperature: 0.2,
-      });
-      const strip = thinkStripper();
-      for await (const piece of sseText(stream)) { const t = strip(piece); if (t) { answer += t; await send({ t }); } }
+      const messages = buildMessages(q, hits, history, memories);
+      if (calendar) {
+        const tz = env.OWNER_TZ || TZ_DEFAULT;
+        messages[0].content += calendarGuide(showLocal(Date.now(), tz), tz);
+        answer = await withTools(env, messages, origin, send);
+        if (answer) await send({ t: answer });
+      } else {
+        const stream = await env.AI.run(env.AI_CHAT_MODEL || CHAT, { messages, stream: true, max_tokens: 2000, temperature: 0.2 });
+        const strip = thinkStripper();
+        for await (const piece of sseText(stream)) { const t = strip(piece); if (t) { answer += t; await send({ t }); } }
+      }
       await send({ done: true });
       ok = true;
     } catch (e) {
@@ -197,6 +206,43 @@ function ask(env, ctx, q, scope, history) {
     if (ok) await remember(env, q, answer);
   })());
   return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
+}
+
+/** Lets the model call the calendar tools until it answers (at most 6 rounds). Progress goes to the page as {tool, ok}. */
+async function withTools(env, messages, origin, send) {
+  for (let round = 0; round < 6; round++) {
+    const r = await env.AI.run(env.AI_CHAT_MODEL || CHAT, { messages, tools: CALENDAR_TOOLS, max_tokens: 2000, temperature: 0.2 });
+    const msg = r?.choices?.[0]?.message || {};
+    const content = typeof r?.response === "string" ? r.response : msg.content || "";
+    const calls = (Array.isArray(r?.tool_calls) ? r.tool_calls : Array.isArray(msg.tool_calls) ? msg.tool_calls : []).map((c, i) => ({
+      id: c.id || `call_${round}_${i}`, name: c.function?.name ?? c.name, args: c.function?.arguments ?? c.arguments ?? {},
+    }));
+    if (!calls.length) { const strip = thinkStripper(); return strip(String(content || "")).trim(); }
+    messages.push({ role: "assistant", content: content || "", tool_calls: calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: typeof c.args === "string" ? c.args : JSON.stringify(c.args) } })) });
+    for (const c of calls) {
+      let result;
+      try {
+        const args = typeof c.args === "string" ? JSON.parse(c.args || "{}") : c.args;
+        result = await runTool(env, c.name, args, origin);
+      } catch (e) { result = { ok: false, error: e && e.message ? e.message : String(e) }; }
+      await send({ tool: c.name, ok: result.ok !== false });
+      messages.push({ role: "tool", tool_call_id: c.id, name: c.name, content: JSON.stringify(result).slice(0, 12000) });
+    }
+  }
+  return "I couldn't finish that with the calendar; please try again or say it differently.";
+}
+
+async function runTool(env, name, a, origin) {
+  if (name === "list_events") {
+    const r = await listEvents(env, a.start_date, a.end_date);
+    const events = r.events.slice(0, 80).map(({ start, end, ...e }) => e);
+    return { ok: true, timezone: r.tz, count: r.events.length, events, ...(r.events.length > 80 ? { note: "first 80 shown" } : {}),
+      ...(r.partial ? { note: "the iCloud calendars are still being read; some events may be missing" } : {}) };
+  }
+  if (name === "create_event") return createEvent(env, a);
+  if (name === "update_event") return updateEvent(env, a);
+  if (name === "add_invitee") return addInvitee(env, a, origin);
+  return { ok: false, error: "unknown tool " + name };
 }
 
 /** The answer's text out of Workers AI's event stream, whichever shape the model streams in. Reasoning is dropped. */
