@@ -1525,6 +1525,14 @@ globalThis.Homebar = (() => {
         fingersUpAt = performance.now();
         if (ws) endWheel();
       },
+      // two fingers held still on the trackpad (a host that can tell: Recense): the ruler comes up on where the media
+      // is, its playhead and time moving on with it; lifting folds it away without a seek (item 21)
+      hold: (on) => {
+        if (on) {
+          if (sk || g || ws) return;
+          if (beginSeek(0, true)) sk.held = true;
+        } else if (sk && sk.held && sk.live) finishSeek();
+      },
       // what the player says, for a host whose media lives elsewhere (Recense)
       report: (s) => {
         if (s.rate != null && s.rate !== speed) {
