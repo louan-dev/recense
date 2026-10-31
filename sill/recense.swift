@@ -37,10 +37,10 @@ enum Bookmarks {
 }
 
 struct Config {
-    var apiKey = "", whisperModel = "whisper-large-v3", translateModel = "qwen/qwen3.8-27b"
-    var transcriber = "auto"                   // auto: this Mac's own ears (speech.swift), Groq only where they can't hear; groq: Groq only
+    // Optional: a translator of the owner's own (an OpenAI-compatible server: LM Studio, Ollama, llama.cpp on this Mac),
+    // asked only for the language pairs Apple's Translation doesn't have. Off unless TRANSLATE_BASE is set; never Groq.
+    var translateBase = "", translateKey = "", translateModel = ""
     var language = "", delay = 8.0, syncOffset = 0.0
-    var base = "https://api.groq.com/openai/v1"
     var geniusToken = ""                       // optional: finds a song's lyrics from the words sung when its title doesn't
     var r2Account = "", r2Key = "", r2Secret = "", r2Bucket = "recense-tmp"   // optional: offsite, self-deleting media cache
     static func load() -> Config {
@@ -52,13 +52,12 @@ struct Config {
         }
         for (k, v) in ProcessInfo.processInfo.environment { kv[k] = v }
         var c = Config()
-        c.apiKey = kv["GROQ_API_KEY"] ?? ""
-        if let m = kv["WHISPER_MODEL"], m != "whisper-large-v3-turbo" { c.whisperModel = m }
-        c.translateModel = kv["TRANSLATE_MODEL"] ?? c.translateModel
-        c.transcriber = (kv["TRANSCRIBER"] ?? c.transcriber).lowercased()
+        c.translateBase = kv["TRANSLATE_BASE"] ?? ""
+        if c.translateBase.contains("groq.com") { c.translateBase = "" }     // a rate-limited free tier stalls the job
+        c.translateKey = kv["TRANSLATE_KEY"] ?? ""
+        c.translateModel = kv["TRANSLATE_MODEL"] ?? ""
         c.language = kv["WHISPER_LANGUAGE"] ?? ""
         c.delay = Double(kv["SUBTITLE_DELAY"] ?? "") ?? c.delay
-        c.base = kv["API_BASE"] ?? c.base
         c.syncOffset = Double(kv["SYNC_OFFSET"] ?? "") ?? 0
         c.geniusToken = kv["GENIUS_TOKEN"] ?? ""
         c.r2Account = kv["R2_ACCOUNT_ID"] ?? ""; c.r2Key = kv["R2_ACCESS_KEY_ID"] ?? ""; c.r2Secret = kv["R2_SECRET_ACCESS_KEY"] ?? ""
@@ -82,91 +81,23 @@ func wav(_ s: [Float], sr: Int) -> Data {
     return d
 }
 
-/// A 429. `daily` is a per-day quota (tokens or audio seconds): waiting it out takes minutes to hours.
-struct RateLimited: Error { let wait: Double; let daily: Bool }
-
-/// Sends a request; on a per-minute rate limit (429) waits as long as the server asks and retries — or, with
-/// `retry: false`, throws RateLimited so the caller can switch to another model instead of waiting.
-/// A per-day limit always throws RateLimited with the full wait, so the caller can pause instead of hammering.
-func send(_ req: URLRequest, retry: Bool = true) async throws -> [String: Any] {
-    for attempt in 0..<6 {
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let http = resp as? HTTPURLResponse, code = http?.statusCode ?? 0
-        if code == 200 { return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
-        var msg = String(data: data.prefix(300), encoding: .utf8) ?? "request failed"
-        if let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let e = j["error"] as? [String: Any], let m = e["message"] as? String { msg = m }
-        guard code == 429 else { throw err("HTTP \(code): \(msg)") }
-        let daily = msg.contains("per day") || msg.range(of: #"\((TPD|RPD|ASPD)\)"#, options: .regularExpression) != nil
-        let wait = retryAfter(msg, header: http?.value(forHTTPHeaderField: "retry-after")) + 0.2
-        if !retry || daily || attempt == 5 { throw RateLimited(wait: wait, daily: daily) }
-        log("rate limited, retrying in \(String(format: "%.1f", wait))s: \(msg.prefix(320))")
-        try await Task.sleep(for: .seconds(wait))
-    }
-    throw err("rate limited")
+/// Sends a request to the owner's own translator (Config.translateBase) and reads its JSON reply.
+func send(_ req: URLRequest) async throws -> [String: Any] {
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    if code == 200 { return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
+    var msg = String(data: data.prefix(300), encoding: .utf8) ?? "request failed"
+    if let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let e = j["error"] as? [String: Any], let m = e["message"] as? String { msg = m }
+    throw err("HTTP \(code): \(msg)")
 }
 
-/// Parses Groq's "Please try again in 975ms" / "in 1m2.5s" (or Retry-After) into seconds.
-func retryAfter(_ msg: String, header: String?) -> Double {
-    if let r = msg.range(of: #"try again in ([0-9hms.]+)"#, options: .regularExpression) {
-        let s = String(msg[r]).replacingOccurrences(of: "try again in ", with: "")
-        var total = 0.0, num = ""
-        var i = s.startIndex
-        while i < s.endIndex {
-            let c = s[i]
-            if c.isNumber || c == "." { num.append(c) }
-            else if s[i...].hasPrefix("ms") { total += (Double(num) ?? 0) / 1000; num = ""; i = s.index(after: i) }
-            else if c == "h" { total += (Double(num) ?? 0) * 3600; num = "" }
-            else if c == "m" { total += (Double(num) ?? 0) * 60; num = "" }
-            else if c == "s" { total += Double(num) ?? 0; num = "" }
-            i = s.index(after: i)
-        }
-        if total > 0 { return total }
-    }
-    return Double(header ?? "") ?? 2
-}
-
-func transcribe(_ audio: Data, prompt: String? = nil, language: String? = nil) async throws -> [String: Any] {
-    let boundary = "B" + UUID().uuidString
-    var body = Data()
-    func field(_ n: String, _ v: String) {
-        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(n)\"\r\n\r\n\(v)\r\n".data(using: .utf8)!)
-    }
-    field("model", cfg.whisperModel)
-    field("response_format", "verbose_json")
-    field("timestamp_granularities[]", "word")
-    field("timestamp_granularities[]", "segment")
-    if let l = language ?? (cfg.language.isEmpty ? nil : cfg.language) { field("language", l) }
-    if let prompt, !prompt.isEmpty { field("prompt", prompt) }
-    body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
-    body.append(audio); body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-    var req = URLRequest(url: URL(string: cfg.base + "/audio/transcriptions")!)
-    req.httpMethod = "POST"; req.timeoutInterval = 60; req.httpBody = body
-    req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-    req.setValue("Bearer \(cfg.apiKey)", forHTTPHeaderField: "Authorization")
-    return try await send(req)
-}
-
-/// The free tier caps each model separately (qwen: 1,000 output tokens/min), so translation rotates
-/// across every free model: when one hits its limit the next takes over at once.
+/// The secondary translator: a model of the owner's own (Config.translateBase), asked only for the lines Apple's
+/// Translation can't take (a pair it doesn't have). No quota to wait out: unreachable, it rests a minute.
 @MainActor enum Models {
-    static var list: [String] {
-        var l = [cfg.translateModel]
-        for m in ["qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"] where !l.contains(m) { l.append(m) }
-        return l
-    }
-    static var until: [String: Date] = [:]
-    static func pick() -> String? { cfg.apiKey.isEmpty ? nil : list.first { (until[$0] ?? .distantPast) <= Date() } }
-    static func cool(_ m: String, _ s: Double) { until[m] = Date().addingTimeInterval(s); log("\(m) cooling \(Int(s))s") }
-    static func soonest() -> Double {
-        if cfg.apiKey.isEmpty { return 30 }      // no key: this Mac translates the next half minute, always
-        return max(0.3, list.map { (until[$0] ?? .distantPast).timeIntervalSinceNow }.min() ?? 1)
-    }
-    /// When every model is out for more than a minute (daily quotas), translation is on hold until then.
-    static var heldUntil: Date? {
-        let d = list.map { until[$0] ?? .distantPast }.min() ?? .distantPast
-        return !cfg.apiKey.isEmpty && d.timeIntervalSinceNow > 60 ? d : nil
-    }
+    static var restUntil = Date.distantPast
+    static func pick() -> String? { cfg.translateBase.isEmpty || restUntil > Date() ? nil : cfg.translateModel }
+    static func rest() { restUntil = Date().addingTimeInterval(60); log("translator at \(cfg.translateBase) unreachable: resting a minute") }
 }
 
 /// Translates consecutive lines in one JSON request, into English or (`to`) another language: Vietnamese and French
@@ -194,8 +125,7 @@ func translateBatch(_ lines: [[String]], languages: [String?] = [], context: Str
     """
     let user = (context.isEmpty ? "" : "Context (previous line, do not translate): \(context)\n") + input
     let total = lines.reduce(0) { $0 + $1.count }
-    // Groq counts max_tokens against the per-minute budget, so ask for no more than the reply needs (Vietnamese
-    // takes more words, and more tokens a word, than English).
+    // ask for no more than the reply needs (Vietnamese takes more words, and more tokens a word, than English)
     let per = target == "vi" ? 9 : target == "en" ? 5 : 6
     let j = try await chatJSON(system, user, model: model, maxTokens: 60 + per * total + (model.contains("gpt-oss") ? 1000 : 0))
     var out: [Int: [EnWord]] = [:]
@@ -240,27 +170,27 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
         "response_format": ["type": "json_object"],
         "messages": [["role": "system", "content": system], ["role": "user", "content": user]],
     ]
-    // Reasoning tokens count against the per-minute token limit, so keep them off or minimal.
+    // reasoning only slows a local model down: keep it off or minimal
     if model.contains("qwen") { payload["reasoning_effort"] = "none" }
     if model.contains("gpt-oss") { payload["reasoning_effort"] = "low" }
-    var req = URLRequest(url: URL(string: cfg.base + "/chat/completions")!)
-    req.httpMethod = "POST"; req.timeoutInterval = 30
+    var req = URLRequest(url: URL(string: cfg.translateBase + "/chat/completions")!)
+    req.httpMethod = "POST"; req.timeoutInterval = 120
     req.httpBody = try JSONSerialization.data(withJSONObject: payload)
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.setValue("Bearer \(cfg.apiKey)", forHTTPHeaderField: "Authorization")
-    let r = try await send(req, retry: false)
+    if !cfg.translateKey.isEmpty { req.setValue("Bearer \(cfg.translateKey)", forHTTPHeaderField: "Authorization") }
+    let r = try await send(req)
     guard let content = ((r["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String,
           let j = try? JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any]
     else { throw err("bad translation response") }
     return j
 }
 
-// ---------- on-device translation (Apple's Translation, macOS 15+): the stand-in when every Groq model is out ----------
-// Groq's free daily quotas run out a few hours into a long podcast, and the rolling window then frees only a little
-// at a time. Lines about to be heard that no model can take in time are translated on this Mac instead: free, no
-// limit, offline, a little plainer and without word alignment. They're marked drafts, and a model redoes them
-// once it has quota to spare. A session only exists inside a SwiftUI view's translationTask, so 1-point views host
-// them and the work runs there.
+// ---------- on-device translation (Apple's Translation, macOS 15+): how every line is translated ----------
+// On this Mac, free, no quota, offline: a whole podcast is translated as fast as it's transcribed (Groq's free daily
+// quotas used to run out a few hours in and hold the job for hours; since 2026-10-30 no translation goes to Groq).
+// Without word alignment (a line in the same language is its own alignment). A pair Apple doesn't have goes to the
+// owner's own translator (Models) if one is set, else the line keeps its original only ("…").
+// A session only exists inside a SwiftUI view's translationTask, so 1-point views host them and the work runs there.
 // One session per language pair, each in a view of its own, kept while it has work and closed a minute after its last
 // job. One session used to be switched from pair to pair (fr>en, en>vi, ja>en… as the lines changed language), and it
 // sat in the subtitle window, which is hidden, shown and moved into Sill's page: each switch and each move had
@@ -275,6 +205,7 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
     struct Job { let id: Int; let texts: [String]; let lang: String; let done: CheckedContinuation<[String]?, Never> }
     var jobs: [Job] = [], nextJob = 0
     var failed: Set<String> = []          // pairs it can't do: unsupported, not downloaded, or Translation gave up
+    var missing: Set<String> = []         // of those, the ones a download in System Settings would give it
     var used: [String: Date] = [:]        // a pair's last job
     private var window: NSPanel?
 
@@ -290,6 +221,7 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
             let status = await LanguageAvailability().status(from: .init(identifier: src), to: .init(identifier: target))
             guard status == .installed else {
                 failed.insert(lang)
+                if status == .supported { missing.insert(lang) }
                 log("on-device translation: \(src) to \(target) \(status == .unsupported ? "isn't supported" : "isn't downloaded (System Settings › General › Language & Region › Translation Languages)")")
                 return nil
             }
@@ -366,22 +298,24 @@ struct PairSession: View {
     }
 }
 
-/// Lines translated on this Mac into English (or `to`: Vietnamese, French), as words without alignment; nil when it
-/// can't (older macOS, a pair of languages Apple's Translation doesn't have).
+/// Lines translated on this Mac into English (or `to`: Vietnamese, French), as words without alignment. A line already
+/// in that language (or in none: numbers, a cry) is itself, word for word. Missing: the lines it can't do (older macOS,
+/// a pair Apple's Translation doesn't have or hasn't downloaded).
 /// Each line from its own language (`languages`, by sound and spelling; else the spelling's guess).
-@MainActor func translateOnDevice(_ lines: [[String]], languages: [String?] = [], to target: String = "en") async -> [Int: [EnWord]]? {
-    guard #available(macOS 15.0, *) else { return nil }
+@MainActor func translateOnDevice(_ lines: [[String]], languages: [String?] = [], to target: String = "en") async -> [Int: [EnWord]] {
     let texts = lines.map { $0.joined(separator: " ") }
     var groups: [String: [Int]] = [:]
+    var r: [Int: [EnWord]] = [:]
     for (k, t) in texts.enumerated() {
         if let l = (k < languages.count ? languages[k] : nil) ?? dominantLanguage(t)?.code, l != target { groups[l, default: []].append(k) }
+        else { r[k] = lines[k].enumerated().map { EnWord(w: $0.element, s: [$0.offset]) } }
     }
-    var r: [Int: [EnWord]] = [:]
+    guard #available(macOS 15.0, *) else { return r }
     for (lang, ks) in groups {
         guard let out = await OnDevice.shared.translate(ks.map { texts[$0] }, from: lang, to: target) else { continue }
         for (k, t) in zip(ks, out) where !t.isEmpty { r[k] = t.split(separator: " ").map { EnWord(w: String($0), s: []) } }
     }
-    return r.isEmpty ? nil : r
+    return r
 }
 
 // ---------- subtitle model ----------
@@ -401,7 +335,7 @@ struct Line: Codable {
     let id: Int
     let words: [Word]
     var english: [EnWord]?   // nil while translating; [] when the speech is already English
-    var draft: Bool? = nil   // translated on this Mac while Groq's quota was out: a model redoes it when it can
+    var draft: Bool? = nil   // older transcripts: translated on this Mac while Groq's quota was out (kept as it is now)
     var start: Double { words.first?.start ?? 0 }
     var end: Double { words.last?.end ?? 0 }
 }
@@ -3021,8 +2955,6 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     var offsite: [String] = []         // media files moved to the R2 cache (Store)
     var complete = false               // transcribed, lyrics chosen and second pass done: the audio isn't needed again
     var songPipeline = 0               // 4: vocal stem, lyrics chosen by content, language checked per phrase
-    var limitedUntil: Date?            // transcription waiting out Groq's daily audio quota
-    var onDevice = false               // the last lines were translated on this Mac (every model out)
     var cuts: [Int: Double] = [:]      // chunk k starts at cuts[k]
 
     /// A blob:/MediaSource stream has no URL of its own that lasts, so it's keyed by the page playing it.
@@ -3563,13 +3495,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             || (duration > 60 && duration < 480 && t.range(of: #"^[^-–—|]{2,40} [-–—] [^-–—|]{2,80}$"#, options: .regularExpression) != nil)
     }
 
-    /// What's holding the work up, for the window's status line.
+    /// What's keeping lines untranslated, for the window's status line: a pair of languages Apple's Translation
+    /// has but this Mac hasn't downloaded (its download sheet can't show from Recense's hidden sessions).
     var limitStatus: String? {
-        let hm = { (d: Date) in DateFormatter.localizedString(from: d, dateStyle: .none, timeStyle: .short) }
-        if let u = limitedUntil, u > Date() { return "Transcription paused: Groq's daily audio limit — resumes \(hm(u))" }
-        if let u = Models.heldUntil, onDevice { return "Translating on this Mac: Groq's daily token limit — full quality from \(hm(u))" }
-        if lines.contains(where: { $0.english == nil }), let u = Models.heldUntil { return "Translation paused: Groq's daily token limit — resumes \(hm(u))" }
-        return nil
+        guard #available(macOS 15.0, *), Models.pick() == nil, let pair = OnDevice.shared.missing.sorted().first,
+              lines.contains(where: { $0.english?.first?.w == "…" }) else { return nil }
+        let p = pair.split(separator: ">").map { languageName(String($0)) }
+        return "To translate \(p[0]) to \(p.last ?? ""): System Settings › General › Language & Region › Translation Languages"
     }
 
     // Transcribe the chunk being played first, then onward, then anything earlier.
@@ -3649,22 +3581,15 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                                           language: isSong ? language : nil, keep: [a, b.isFinite ? b : duration + 1])
                 guard !stopped, i < done.count else { return }
                 add(t, samples: samples, offset: lo, keep: a..<b)
-                done[i] = true; failures = 0; limitedUntil = nil
+                done[i] = true; failures = 0
                 log("episode chunk \(i + 1)/\(done.count) transcribed")
                 save()
-            } catch let r as RateLimited {
-                if r.daily {
-                    limitedUntil = Date().addingTimeInterval(r.wait)
-                    log("transcription: daily audio limit, resuming in \(Int(r.wait / 60)) min")
-                }
-                try? await Task.sleep(for: .seconds(r.wait))
-                continue
             } catch {
                 failures += 1
                 log("chunk \(i) error: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(min(30, 3 * failures)))
             }
-            try? await Task.sleep(for: .seconds(pace))          // Groq free tier: 20 requests/min; none on this Mac
+            try? await Task.sleep(for: .seconds(pace))
         }
     }
 
@@ -3683,36 +3608,18 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
         // This Mac's own ears, always: no quota, no connection. Apple's for every language they have, the open ears
         // (Omnilingual, on this Mac) for every other and to tell which language it is, the canon for recited texts
-        // (speech.swift). Groq only when Sill was built or set without them (TRANSCRIBER=groq), never as a fallback.
-        if OnDeviceASR.enabled {
-            guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) else {
-                throw err("this Mac can't hear \(language.map(languageName) ?? "this language") yet: the open ears aren't installed (~/.local/share/recense/omni)")
-            }
-            if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
-            engine = t["engine"] as? String; pace = 0.05
-            if ProcessInfo.processInfo.environment["RECENSE_RAW"] != nil {
-                let f = cacheDir.appendingPathComponent(key + ".raw.json")
-                var all = (try? Data(contentsOf: f)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
-                var e: [String: Any] = ["from": lo, "to": hi, "language": language ?? "", "stem": vocals != nil, "reply": t]
-                e["keep"] = keep; e["redo"] = redo
-                all.append(e)
-                if let d = try? JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys]) { try? d.write(to: f) }
-            }
-            return t
+        // (speech.swift). Never Groq (since 2026-10-30).
+        guard OnDeviceASR.enabled else { throw err("this Mac can't transcribe: Recense needs macOS 26 and Sill built with its SDK") }
+        guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) else {
+            throw err("this Mac can't hear \(language.map(languageName) ?? "this language") yet: the open ears aren't installed (~/.local/share/recense/omni)")
         }
-        guard !cfg.apiKey.isEmpty else { throw err("this Mac can't hear \(language.map(languageName) ?? "this language") and there's no GROQ_API_KEY") }
-        pace = 3.1
-        // this recording's own corrected words go last: Whisper heeds the end of a prompt most
-        let terms = [Glossary.prompt(language ?? languageCode(cfg.language) ?? spokenLanguage ?? edits.edits.last?.lang),
-                     Corrections.promptTerms(edits)].compactMap { $0 }.joined(separator: ", ")
-        let prompt = prompt ?? (terms.isEmpty ? nil : terms)
-        let t = try await transcribe(wav(samples, sr: 16000), prompt: prompt, language: language)
         if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
+        engine = t["engine"] as? String
         if ProcessInfo.processInfo.environment["RECENSE_RAW"] != nil {
             let f = cacheDir.appendingPathComponent(key + ".raw.json")
             var all = (try? Data(contentsOf: f)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
             var e: [String: Any] = ["from": lo, "to": hi, "language": language ?? "", "stem": vocals != nil, "reply": t]
-            e["keep"] = keep; e["redo"] = redo; e["prompt"] = prompt
+            e["keep"] = keep; e["redo"] = redo
             all.append(e)
             if let d = try? JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys]) { try? d.write(to: f) }
         }
@@ -3720,7 +3627,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     }
 
     var spokenLanguage: String?        // the language Whisper heard last: the glossary a request without a language gets
-    var engine: String?                // the ears that heard it last (OnDeviceASR's module, or nil: Groq's Whisper)
+    var engine: String?                // the ears that heard it last (OnDeviceASR's module)
     var lexiconSeen = 0                // the lexicon version its lines were last checked against (relisten)
 
     /// The languages this recording may be in, for ears that must be told: the one it's in when known, the reader's
@@ -3750,9 +3657,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         lexiconSeen = seen
         if changed > 0 { log("relisten: \(changed) line(s) of \(key) rewritten by the lexicon"); save(); wakeTranslation() }
     }
-    var captured: [[String: Any]]?     // a replay's captured Whisper replies (RECENSE_RAW), served instead of asking Groq
+    var captured: [[String: Any]]?     // a replay's captured Whisper replies (RECENSE_RAW), served instead of asking the ears
     var missed: [String] = []          // a replay's requests that were never captured
-    var pace = 3.1                     // seconds between requests (Groq's free tier: 20 a minute); none in a replay
+    var pace = 0.05                    // seconds between requests; none in a replay
 
     /// Where the voice starts in 16 kHz stem audio (seconds), if anywhere: the first moment with voice in most of
     /// the second after it.
@@ -4392,10 +4299,6 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 add(t, samples: samples, offset: lo, keep: (w.a + 0.01)..<w.b)
                 if lines.count > before { wakeTranslation() }   // the loop may have finished before these came
                 log("skipped \(clock(w.a))–\(clock(w.b)) asked again: \(lines.count - before) line(s)")
-            } catch let r as RateLimited {
-                if r.daily { limitedUntil = Date().addingTimeInterval(r.wait) }
-                try? await Task.sleep(for: .seconds(r.wait))
-                return                                         // not marked: asked again after the wait
             } catch let e as URLError {
                 log("skipped stretch: network error \(e.code.rawValue), asked again shortly")
                 try? await Task.sleep(for: .seconds(10))
@@ -4428,10 +4331,6 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                     let heardLang = language(of: words)?.code
                     for l in songLanguages() where l != heardLang && tries.count < 3 { tries.append(l) }
                 }
-            } catch let r as RateLimited {
-                if r.daily { limitedUntil = Date().addingTimeInterval(r.wait) }
-                try? await Task.sleep(for: .seconds(r.wait))
-                return                                         // not marked done: tried again after the wait
             } catch { log("redo error: \(error.localizedDescription)"); break }
             k += 1
         }
@@ -4573,10 +4472,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         return out
     }
 
-    // Translate lines just ahead of the playhead first, in batches. A line the model drops is retried on its
-    // own; one the models keep dropping gets a placeholder so it never blocks the lines after it. Rate limits
-    // and network errors never cost a line its translation: they only wait — unless the line would be heard
-    // before a model is free, when it's translated on this Mac instead (a draft, redone by a model later).
+    // Translate lines just ahead of the playhead first, in batches, on this Mac (Apple's Translation): no quota, so
+    // nothing ever waits. A pair Apple can't do goes to the owner's own translator if one is set (Models); a line
+    // neither can take, or that keeps coming back empty, gets a placeholder so it never blocks the lines after it.
     // The lines are the ones shown: a corrected line is translated as corrected, a hidden one not at all.
     func translateLoop() async {
         translating = true; defer { translating = false }
@@ -4584,91 +4482,68 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         var tries: [String: Int] = [:]
         while !Task.isCancelled && !stopped {
             let p = position(), lines = shown
-            // The window shows the listener's language where it has a line, else the English: with Groq's quota short,
-            // the English alone kept up and the subtitles turned English partway through. The lines about to be
+            // The window shows the listener's language where it has a line, else the English: the lines about to be
             // heard get the listener's language first.
             if nativeBehind(p, lines), await nativeStep() { continue }
             let ahead = lines.firstIndex { $0.end >= p - 3 && $0.english == nil }
-            // With nothing left untranslated, drafts are redone while a model has quota to spare.
-            let redo = Models.heldUntil == nil && Models.pick() != nil ? lines.firstIndex { $0.draft == true } : nil
-            guard let s = ahead ?? lines.firstIndex(where: { $0.english == nil }) ?? redo else {
+            guard let s = ahead ?? lines.firstIndex(where: { $0.english == nil }) else {
                 // the English has nothing to do: Vietnamese and French, the native language first
                 if await nativeStep() { continue }
-                if complete && !lines.contains(where: { $0.draft == true }) && nativeDone { save(); return }
+                if complete && nativeDone { save(); return }
                 try? await Task.sleep(for: .seconds(complete ? 30 : 0.5)); continue
             }
-            let drafts = lines[s].english != nil
-            let open = { (l: Line) in drafts ? l.draft == true : l.english == nil }
-            // Ten lines a request: the instructions, sent with every request, are a smaller share of the quota.
+            let open = { (l: Line) in l.english == nil }
             let size = (tries[lineKey(lines[s])] ?? 0) > 0 ? 1 : 10
             var idx: [Int] = [], texts: [String] = []
             for i in s..<lines.count where open(lines[i]) && idx.count < size && !texts.contains(lineKey(lines[i])) {
                 idx.append(i); texts.append(lineKey(lines[i]))
             }
-            // Lines translated before, in this piece or any other: no request at all.
+            // Lines translated before, in this piece or any other: nothing to do.
             let known = retranslate ? [] : texts.compactMap { t in Library.recall(t).map { (t, $0) } }
             if !known.isEmpty {
                 for (t, e) in known { give(t, e, draft: nil, open) }
                 saveSoon(); continue
             }
-            let context = s > 0 ? lineKey(lines[s - 1]) : ""
-            guard let model = Models.pick() else {
-                // No model before this line is heard: translate what's coming on this Mac.
-                if !drafts, lines[s].start < p + Models.soonest() + 3,
-                   let en = await translateOnDevice(idx.map { lines[$0].words.map(\.text) }, languages: idx.map { languagesOf(lines[$0]).first }), !stopped {
-                    for (k, text) in texts.enumerated() {
-                        guard let e = en[k] else { continue }
-                        give(text, e, draft: true) { $0.english == nil }
-                    }
-                    onDevice = true
-                    saveSoon(); continue
+            let words = idx.map { lines[$0].words.map(\.text) }
+            var en = await translateOnDevice(words, languages: idx.map { languagesOf(lines[$0]).first })
+            guard !stopped else { return }
+            let left = texts.indices.filter { en[$0] == nil }
+            if !left.isEmpty, let model = Models.pick() {
+                do {
+                    let out = try await translateBatch(left.map { words[$0] },
+                                                       languages: left.map { let l = languagesOf(lines[idx[$0]]); return l.isEmpty ? nil : l.map(languageName).joined(separator: " and ") },
+                                                       context: s > 0 ? lineKey(lines[s - 1]) : "", model: model)
+                    guard !stopped else { return }
+                    for (j, k) in left.enumerated() { if let e = out[j] { en[k] = e } }
+                    fails = 0
+                } catch let e as URLError {
+                    log("translator: \(e.localizedDescription)"); Models.rest()
+                } catch {
+                    fails += 1
+                    log("translate error: \(error.localizedDescription)")
+                    try? await Task.sleep(for: .seconds(min(30, 2 * fails)))
                 }
-                try? await Task.sleep(for: .seconds(min(1, Models.soonest()))); continue
             }
-            do {
-                let en = try await translateBatch(idx.map { lines[$0].words.map(\.text) },
-                                                  languages: idx.map { let l = languagesOf(lines[$0]); return l.isEmpty ? nil : l.map(languageName).joined(separator: " and ") },
-                                                  context: context, model: model)
-                guard !stopped else { return }
-                for (k, text) in texts.enumerated() {
-                    var e = en[k]
-                    if e == nil {
-                        tries[text, default: 0] += 1
-                        if tries[text]! >= 4 { e = drafts ? nil : [EnWord(w: "…", s: [])] }
-                        if drafts && tries[text]! >= 4 { for i in self.lines.indices where lineKey(self.lines[i]) == text { self.lines[i].draft = nil } }
-                    }
-                    // Lines are matched by text: a song's lines may have been re-timed meanwhile, and a chorus
-                    // translated once is translated everywhere it's sung.
-                    if let e { give(text, e, draft: nil, open) }
-                    if let e = en[k] { Library.remember(text, e) }
+            for (k, text) in texts.enumerated() {
+                var e = en[k]
+                if e == nil {
+                    tries[text, default: 0] += 1
+                    if tries[text]! >= 2 { e = [EnWord(w: "…", s: [])] }
                 }
-                onDevice = false
-                fails = 0
-                saveSoon()
-            } catch let r as RateLimited {
-                Models.cool(model, r.wait); continue        // another model takes the same batch right away
-            } catch let e as URLError where [.notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost,
-                                              .dnsLookupFailed, .timedOut].contains(e.code) {
-                // Offline: a minute with no model, so what's about to be heard is translated on this Mac (a draft).
-                for m in Models.list { Models.until[m] = Date().addingTimeInterval(60) }
-                continue
-            } catch where "\(error.localizedDescription)".contains("JSON") {
-                log("\(model): \(error.localizedDescription.prefix(60))")
-                Models.cool(model, 20); continue            // that model's output was malformed, not the lines' fault
-            } catch {
-                fails += 1
-                log("translate error: \(error.localizedDescription)")
-                try? await Task.sleep(for: .seconds(min(30, 2 * fails)))
+                // Lines are matched by text: a song's lines may have been re-timed meanwhile, and a chorus
+                // translated once is translated everywhere it's sung.
+                if let e { give(text, e, draft: nil, open) }
+                if let e = en[k] { Library.remember(text, e) }
             }
-            try? await Task.sleep(for: .seconds(0.3))
+            saveSoon()
         }
     }
     var translating = false
 
     // ---- Vietnamese and French ----
     // Translated from the original (not from the English), with the same prompt, once the English has nothing left
-    // to do: playback needs the English first. The native language goes first, then the other. Same models, same
-    // rotation and quota handling; on this Mac (a draft) only for the native language's lines about to be heard.
+    // to do: playback needs the English first. The native language goes first, then the other. On this Mac, as the
+    // English is; a pair Apple can't do goes to the owner's own translator, else a placeholder.
     // Kept by segment with the words each was made from: a line remade or corrected since is translated again.
     var nativeTries: [String: Int] = [:]
 
@@ -4690,22 +4565,19 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         try? d.write(to: Keep.trURL(key, lang), options: .atomic)
     }
 
-    /// One batch of Vietnamese or French. false: nothing it can do now (all done, or no model free).
+    /// One batch of Vietnamese or French. false: nothing it can do now (all done).
     func nativeStep() async -> Bool {
         guard !dry, !stopped else { return false }
         var order = [firstLang ?? NativeLang.current].filter { $0 != "en" }
         for l in Keep.others where !order.contains(l) { order.append(l) }
         let p = position()
         let lines = shown.filter { !$0.words.isEmpty }
-        let model = Models.pick()
         for lang in order {
             var f = native[lang] ?? TrFile(lang: lang)
             let have = { (l: Line) in f.lines[String(l.id)].flatMap { $0.src == lineKey(l) ? $0 : nil } }
-            let open = lines.indices.filter { have(lines[$0]) == nil }
-            let redo = model != nil && Models.heldUntil == nil ? lines.indices.filter { have(lines[$0])?.draft == true } : []
-            let whole = complete && open.isEmpty
+            let todo = lines.indices.filter { have(lines[$0]) == nil }
+            let whole = complete && todo.isEmpty
             if f.complete != whole || native[lang] == nil { f.complete = whole; native[lang] = f; saveNative(lang) }
-            let todo = open.isEmpty ? redo : open
             guard !todo.isEmpty else { continue }
             let from = todo.firstIndex { lines[$0].end >= p - 3 } ?? 0
             var batch: [Int] = []
@@ -4722,40 +4594,30 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             }
             guard !send.isEmpty else { store(); return true }
             let texts = send.map { lines[$0].words.map(\.text) }
-            guard let model else {
-                if lang == NativeLang.current, have(lines[send[0]]) == nil, lines[send[0]].start < p + Models.soonest() + 3,
-                   let out = await translateOnDevice(texts, languages: send.map { languagesOf(lines[$0]).first }, to: lang), !stopped {
-                    for (k, i) in send.enumerated() {
-                        guard let w = out[k] else { continue }
-                        f.lines[String(lines[i].id)] = TrLine(src: lineKey(lines[i]), text: w.map(\.w).joined(separator: " "), words: w, draft: true)
-                    }
-                    store(); return true
+            var out = await translateOnDevice(texts, languages: send.map { languagesOf(lines[$0]).first }, to: lang)
+            guard !stopped else { return false }
+            let left = send.indices.filter { out[$0] == nil }
+            if !left.isEmpty, let model = Models.pick() {
+                do {
+                    let more = try await translateBatch(left.map { texts[$0] },
+                                                        languages: left.map { let l = languagesOf(lines[send[$0]]); return l.isEmpty ? nil : l.map(languageName).joined(separator: " and ") },
+                                                        context: send[0] > 0 ? lineKey(lines[send[0] - 1]) : "", model: model, to: lang)
+                    for (j, k) in left.enumerated() { if let w = more[j] { out[k] = w } }
+                } catch let e as URLError {
+                    log("translator (\(lang)): \(e.localizedDescription)"); Models.rest()
+                } catch {
+                    log("translate (\(lang)) error: \(error.localizedDescription)")
                 }
-                if send.count < batch.count { store() }
-                return false
             }
-            do {
-                let out = try await translateBatch(texts, languages: send.map { let l = languagesOf(lines[$0]); return l.isEmpty ? nil : l.map(languageName).joined(separator: " and ") },
-                                                   context: send[0] > 0 ? lineKey(lines[send[0] - 1]) : "", model: model, to: lang)
-                guard !stopped else { return false }
-                for (k, i) in send.enumerated() {
-                    let l = lines[i], id = String(l.id), t = lang + "|" + lineKey(l)
-                    if let w = out[k] { f.lines[id] = TrLine(src: lineKey(l), text: w.map(\.w).joined(separator: " "), words: w); continue }
-                    nativeTries[t, default: 0] += 1
-                    guard nativeTries[t]! >= 4 else { continue }
-                    // the models keep dropping it: a placeholder (tried again next time), or the draft kept as it is
-                    if f.lines[id]?.draft == true { f.lines[id]?.draft = nil } else { f.lines[id] = TrLine(src: lineKey(l), text: "…") }
-                }
-                store(); return true
-            } catch let r as RateLimited {
-                Models.cool(model, r.wait); return true
-            } catch where "\(error.localizedDescription)".contains("JSON") {
-                log("\(model): \(error.localizedDescription.prefix(60))")
-                Models.cool(model, 20); return true
-            } catch {
-                log("translate (\(lang)) error: \(error.localizedDescription)")
-                return false
+            guard !stopped else { return false }
+            for (k, i) in send.enumerated() {
+                let l = lines[i], id = String(l.id), t = lang + "|" + lineKey(l)
+                if let w = out[k] { f.lines[id] = TrLine(src: lineKey(l), text: w.map(\.w).joined(separator: " "), words: w); continue }
+                nativeTries[t, default: 0] += 1
+                // neither can take it: a placeholder (tried again next time the line changes)
+                if nativeTries[t]! >= 2 { f.lines[id] = TrLine(src: lineKey(l), text: "…") }
             }
+            store(); return true
         }
         return false
     }
@@ -5325,9 +5187,9 @@ enum Fingerprint {
 //   anything is spent on it; a match makes its source an alias of that transcript (with the time offset between
 //   the two), so a song played from YouTube, then from the mp3, then in Music is one transcript, done once.
 // - aliases: source key → the transcript it plays, found from then on without even fetching the audio.
-// - memory: every translation a model made, by the line's words — a chorus, a live version or cover of a song
-//   heard before, a podcast's recurring intro cost nothing the second time. Only model output that passed
-//   translateBatch's checks goes in; on-device drafts and given-up lines ("…") never do.
+// - memory: every translation made, by the line's words — a chorus, a live version or cover of a song heard
+//   before, a podcast's recurring intro cost nothing the second time. Apple's Translation's lines and those that
+//   passed translateBatch's checks go in; older drafts and given-up lines ("…") never do.
 // It's exact recall, not a model trained on its own output: that would drift on its own mistakes and could never be
 // checked. Both files are mirrored to keep/ in R2 (never expires) and merged back on launch, so nothing is lost
 // with this Mac's cache.
@@ -6322,7 +6184,7 @@ final class NativeSources {
 // transcribes it like any other source: its address is "gallery:files/<path>", its key its content's (ContentKey), and
 // the transcript goes to its folder in keep/ like any other item's (Keep): the original and its English first, then
 // its Vietnamese and French. Files transcribed before those existed get them too, one at a time, while idle. The Worker computes the same key (and follows library.json's aliases when
-// the recording was already transcribed from somewhere else). One file at a time, Groq's free pace.
+// the recording was already transcribed from somewhere else). One file at a time.
 @MainActor enum GalleryJob {
     static let bucket = "gallery-main"
     static let audioExt: Set<String> = ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aif", "aiff", "caf"]
@@ -6597,11 +6459,10 @@ final class NativeSources {
         return done ? true : nil
     }
 
-    /// An item's Vietnamese and French, for up to half an hour (while a model has quota and, given `idle`, while
-    /// nothing plays here); each sent to keep/ once it covers the whole transcript.
+    /// An item's Vietnamese and French, for up to half an hour (given `idle`, while nothing plays here); each sent to keep/ once it covers the whole transcript.
     static func translations(_ ep: Episode, idle: (@MainActor () -> Bool)? = nil) async {
         let t0 = Date()
-        while !ep.stopped && !ep.nativeDone && Date().timeIntervalSince(t0) < 1800 && Models.heldUntil == nil && (idle?() ?? true) {
+        while !ep.stopped && !ep.nativeDone && Date().timeIntervalSince(t0) < 1800 && (idle?() ?? true) {
             try? await Task.sleep(for: .seconds(10))
         }
         for lang in Keep.others where ep.native[lang]?.complete == true { await Keep.pushTranslation(ep.key, lang) }
@@ -6660,7 +6521,7 @@ final class NativeSources {
         guard !running else { return }
         running = true; defer { running = false }
         for path in files.keys.sorted() {
-            guard idle(), Models.heldUntil == nil else { return }
+            guard idle() else { return }
             let src = "gallery:files/" + path
             guard let own = await itemKey(path, size: files[path], listing: listing) else { continue }
             let key = Library.resolve(own)?.key ?? own
@@ -6744,11 +6605,18 @@ final class NativeSources {
     /// An episode whose audio couldn't be fetched still shows the transcript it has (cached, or from keep/): only one
     /// with no lines at all leaves the window to "no transcribed speech".
     var browserActive: Bool {
-        guard let ep = episode, episodeState != "failed" || !ep.lines.isEmpty,
-              Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 2.5) else { return false }
+        guard let ep = episode, episodeState != "failed" || !ep.lines.isEmpty, reported else { return false }
         return ep.url == pos.url || (browserMode && Date().timeIntervalSince(addressChanged) < 3)
     }
     var addressChanged = Date.distantPast
+    /// The followed player is still there: it reported lately. A browser tab playing the transcribed piece may go quiet
+    /// for 5–15 s (Firefox throttles a tab whose window is covered or in the background); it's followed through that
+    /// on the clock, or the window flipped to "Play something" and back every few seconds (notes row 36). A pause is
+    /// reported at once, so only a closed tab is followed on for those seconds.
+    var reported: Bool {
+        let quiet = pos.paused ? 30 : pos.source == "browser" && episode?.url == pos.url ? 20 : 2.5
+        return Date().timeIntervalSince(pos.received) < quiet
+    }
 
     // ----- two players at once -----
     // The player started last is the one being watched: it takes the window, and one that was already playing never
@@ -6857,10 +6725,8 @@ final class NativeSources {
         m.autoenablesItems = false; m.delegate = self
         menu = m
 
-        guard !cfg.apiKey.isEmpty || OnDeviceASR.enabled else {
-            return overlay.setStatus("Put GROQ_API_KEY=… in ~/.config/recense/config and relaunch")
-        }
-        if OnDeviceASR.enabled { log("speech: transcribing on this Mac (SpeechAnalyzer\(OpenEars.installed ? " + open ears" : ""), no Groq)") }
+        log(OnDeviceASR.enabled ? "speech: transcribing on this Mac (SpeechAnalyzer\(OpenEars.installed ? " + open ears" : ""), no Groq)"
+                                : "speech: this Mac can't transcribe (needs macOS 26 and Sill built with its SDK): transcripts already made still play")
         OnDeviceASR.startup()
         do {
             let s = try Server(port: 47123) { [weak self] p, q, b in await self?.handle(p, q, b) ?? [:] }
@@ -6910,7 +6776,7 @@ final class NativeSources {
     var wasWorking: Bool?
     var kickedAt = Date.distantPast, pollTimer: Timer?
     var busy: Bool {
-        (!pos.paused && Date().timeIntervalSince(pos.received) < 5) || scrubbing || Date().timeIntervalSince(kickedAt) < 3
+        (!pos.paused && reported) || scrubbing || Date().timeIntervalSince(kickedAt) < 3
     }
     /// A command or a drag: back to 20 Hz at once, and for a few seconds after.
     func kick() {
@@ -7740,7 +7606,7 @@ final class NativeSources {
         overlay.render(nil, at: 0)
         // A player is reporting but there's no transcript (no speech, or its audio couldn't be fetched): the home bar
         // still follows it, so loop, speed and seek work and it's plain the player is being followed.
-        let reporting = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < (pos.paused ? 30 : 2.5)
+        let reporting = !pos.url.isEmpty && reported
         if overlay.browserControls != reporting { overlay.setControls(reporting) }
         if reporting {
             overlay.update(time: mediaTime, duration: pos.dur, paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)

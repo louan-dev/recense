@@ -18,13 +18,13 @@ import Speech
 // keep/, Gallery) is unchanged. Whisper picked the language itself; here the open ears name it (Apple's must be
 // told), and where two win by turns (a French lesson explained in English) both are kept, phrase by phrase.
 // Platform reach: macOS only; the engine needs macOS 26+ at run time and a 26+ SDK to compile (compiler(>=6.2));
-// built without one, Groq is the only engine and the Lexicon still learns.
+// built without one, nothing is transcribed (transcripts already made still play) and the Lexicon still learns.
 
 @MainActor enum OnDeviceASR {
-    /// This Mac transcribes for itself: built with the SDK, running macOS 26+, and TRANSCRIBER isn't "groq".
+    /// This Mac transcribes for itself: built with the SDK, running macOS 26+.
     static var enabled: Bool {
         #if compiler(>=6.2)
-        if #available(macOS 26, *) { return cfg.transcriber != "groq" }
+        if #available(macOS 26, *) { return true }
         #endif
         return false
     }
@@ -45,7 +45,7 @@ import Speech
     /// language, the lexicon's size, the custom language models, the permission they need. Read-only: the server
     /// answers any page.
     static func report() async -> [String: Any] {
-        var r: [String: Any] = ["onDevice": enabled, "transcriber": cfg.transcriber, "groqKey": !cfg.apiKey.isEmpty,
+        var r: [String: Any] = ["onDevice": enabled, "translator": cfg.translateBase.isEmpty ? "apple" : "apple, then \(cfg.translateModel)",
                                 "lexicon": ["version": Lexicon.version, "lessons": Lexicon.book.langs.mapValues(\.count)] as [String: Any]]
         #if compiler(>=6.2)
         if #available(macOS 26, *), enabled {
@@ -76,7 +76,7 @@ import Speech
         #endif
     }
 
-    /// Whether this Mac hears a language itself (asked before Groq's key is required for it).
+    /// Whether this Mac hears a language itself.
     static func hears(_ lang: String) async -> Bool {
         #if compiler(>=6.2)
         if #available(macOS 26, *), enabled {
@@ -319,7 +319,11 @@ import Speech
             else { return nil }
         } else if let p = prefer, let (m, loc) = await module(p), await prepare(m, loc),
                   let first = try? await hear(samples, p, module: m, loc),
-                  quality(first) >= 0.75, score(first, among: [p]) > 0, unheard(first, samples) < 1.5, !reads(first, otherThan: p) {
+                  score(first, among: [p]) > 0, !reads(first, otherThan: p),
+                  quality(first) >= 0.75 && unheard(first, samples) < 1.5 || !OpenEars.keepsUp {
+            // Unsure, or with voice left unheard (a radio show's music bed), the stretch goes to the open ears too, to
+            // name its language again: only while they keep up with real time. On an 8 GB M1 they took 1,147 s for
+            // 127 s of French Apple had already heard, and the podcast took hours.
             h = first
         } else if OpenEars.installed, let open = try? await heardOpen(samples, nil, like: prefer) {
             h = open

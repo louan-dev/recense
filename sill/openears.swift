@@ -36,6 +36,9 @@ import NaturalLanguage
     private static var ready: CheckedContinuation<Void, Error>?
     private static var next = 0, fails = 0
     private static var queue: Task<Void, Never> = Task {}
+    static var pace: Double?                        // seconds a second of audio took them last (a request of 20 s or more)
+    /// They hear at least as fast as it plays: worth asking about a stretch another ears already heard.
+    static var keepsUp: Bool { (pace ?? 0) <= 1 }
 
     /// Hears 16 kHz mono samples; `script`: the one the recording's language is written in, when it's known (the model
     /// then writes only its letters, plus Latin where it earns its place). One request at a time.
@@ -70,7 +73,9 @@ import NaturalLanguage
             guard let t = w["w"] as? String, let s = w["s"] as? Double, let e = w["e"] as? Double else { return nil }
             return Word(text: t, start: s, end: e, c: w["c"] as? Double ?? 0.5, t: w["t"] as? [Double] ?? [])
         }
-        log(String(format: "speech: open ears heard %.0f s in %.1f s (%d words)", Double(samples.count) / 16000, Date().timeIntervalSince(t0), ws.count))
+        let secs = Double(samples.count) / 16000, took = Date().timeIntervalSince(t0)
+        if secs >= 20 { pace = took / secs }
+        log(String(format: "speech: open ears heard %.0f s in %.1f s (%d words)", secs, took, ws.count))
         return ws
     }
 
