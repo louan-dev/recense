@@ -684,7 +684,7 @@ struct Override: Codable, Equatable {
                 let ws = words(t)
                 if ws.isEmpty { continue }           // corrected to nothing: words the ASR made up
                 let english = ws.count == l.words.count ? l.english : l.english.map { $0.map { EnWord(w: $0.w, s: []) } }
-                n = Line(id: l.id, words: Episode.layOver([ws], l.words)[0], english: english, draft: l.draft, fixed: true)
+                n = Line(id: l.id, words: Episode.correct(ws, over: l.words), english: english, draft: l.draft, fixed: true)
             } else if !g.isEmpty && !(l.id >= edited && l.id < edited + cutShort) {
                 n = Line(id: l.id, words: l.words.map { var w = $0; w.text = gloss($0.text, g); return w },
                          english: l.english, draft: l.draft)
@@ -3109,7 +3109,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let taught = Corrections.teach(&g, from: lineKey(line), to: new.joined(separator: " "))
         let now = (Date().timeIntervalSince1970 * 1000).rounded()
         edits.glossary = g; edits.updatedAt = now
-        let words = new.isEmpty ? [] : Episode.layOver([new], line.words)[0]
+        let words = new.isEmpty ? [] : Episode.correct(new, over: line.words)
         let id = max(edits.last ?? 0, edits.edits.map(\.id).max() ?? 0) + 1
         edits.last = id
         edits.edits.append(Edit(id: id, a: prior?.a ?? line.start, b: prior?.b ?? line.end, from: from, words: words, lang: lang, terms: terms,
@@ -3599,7 +3599,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             if complete && !done.isEmpty && !done.contains(false) {
                 await relisten()
                 if isSong { save(); await measureVoice(); return }
-                guard let src = file, let h = await skipped(src) else { save(); return }
+                guard let src = file, let h = await skipped(src) else { save(); await measureVoice(); return }
                 await fill(h, src: src); try? await Task.sleep(for: .seconds(pace)); continue
             }
             if isSong && vocals == nil && !vocalsTried { vocalsTried = true; await separateVocals(); continue }
@@ -3612,7 +3612,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
                 if !isSong, !done.isEmpty, let h = await skipped(src) {
                     await fill(h, src: src); try? await Task.sleep(for: .seconds(pace)); continue
                 }
-                guard isSong, !done.isEmpty else { complete = !done.isEmpty; save(); return }
+                guard isSong, !done.isEmpty else { complete = !done.isEmpty; save(); if complete { await measureVoice() }; return }
                 if !lyricsVerified { await verifyLyrics(); continue }
                 guard !instrumental, let w = suspects().first else { complete = true; save(); await measureVoice(); return }
                 await redo(w, src: src)
@@ -3764,10 +3764,11 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// vocal stem — this Mac's, R2's while it lasts, or separated again from the audio here. Never from the mix: its
     /// loudness is the band's.
     func measureVoice() async {
-        guard features == nil, isSong, !instrumental, !stopped, !dry else { return }
+        guard features == nil, !instrumental, !stopped, !dry else { return }
         if let (d, _) = await Keep.get(Keep.features(key)), let f = try? JSONDecoder().decode(Features.self, from: d) {
             try? d.write(to: Features.url(key)); features = f; return
         }
+        guard isSong else { return await measureSpeech() }
         if vocals == nil, let f = await Store.restore(offsite.filter { $0.contains("-vocals") }) { vocals = f }
         if vocals == nil, file != nil, !vocalsTried { vocalsTried = true; await separateVocals() }
         guard let stem = vocals, !stopped else { return }
@@ -3779,6 +3780,29 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         guard let f, !stopped else { return }
         f.write(key); features = f
         log(String(format: "measured the voice of %@ in %.1f s", key, Date().timeIntervalSince(t0)))
+        await Keep.pushFeatures(key)
+    }
+
+    /// Speech (not a song) measured on its own sound, the mix being the voice: features.json with source "speech", for
+    /// the prosody notation under the words (Gallery's prosogram draws it as speech; the light and Cadence only take a
+    /// song's "vocals"). Read 5 minutes at a time, so an hour's lecture never holds its whole decoded audio (row 21).
+    static let speechLimit = 5400.0
+    func measureSpeech() async {
+        guard let src = file, duration > 0, duration <= Episode.speechLimit, !stopped else { return }
+        let length = duration + 1, t0 = Date()
+        let f: Features? = await Task.detached(priority: .utility) {
+            var s: [Float] = []
+            var a = 0.0
+            while a < length {
+                guard let c = try? decodeChunk(src, from: a, to: min(length, a + 300)) else { return nil }
+                s += c; a += 300
+                if c.isEmpty { break }
+            }
+            return s.isEmpty ? nil : Features.measure(s, source: "speech")
+        }.value
+        guard let f, !stopped else { return }
+        f.write(key); features = f
+        log(String(format: "measured the speech of %@ in %.1f s", key, Date().timeIntervalSince(t0)))
         await Keep.pushFeatures(key)
     }
 
@@ -4200,6 +4224,42 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             }
             out.append(words)
         }
+        return out
+    }
+
+    /// A correction timed over the words it replaces (corrections.js: layOver): a word the listener left as it was
+    /// keeps the time it was heard at, so the light stays on the voice; only the runs between those are spread
+    /// (layOver over the heard words they replace, or over the gap if they replaced none).
+    static func correct(_ words: [String], over heard: [Word]) -> [Word] {
+        guard !words.isEmpty, !heard.isEmpty else { return [] }
+        func fold(_ t: String) -> String { t.precomposedStringWithCompatibilityMapping.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let a = words.map(fold), b = heard.map { fold($0.text) }
+        var L = Array(repeating: Array(repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in stride(from: a.count - 1, through: 0, by: -1) {
+            for j in stride(from: b.count - 1, through: 0, by: -1) {
+                L[i][j] = !a[i].isEmpty && a[i] == b[j] ? L[i + 1][j + 1] + 1 : max(L[i + 1][j], L[i][j + 1])
+            }
+        }
+        var out: [Word] = [], i = 0, j = 0, i0 = 0, j0 = 0
+        func flush(_ i1: Int, _ j1: Int) {
+            let ws = Array(words[i0..<i1])
+            guard !ws.isEmpty else { return }
+            var hs = Array(heard[j0..<j1])
+            if hs.isEmpty {
+                let s = j0 > 0 ? heard[j0 - 1].end : heard[0].start
+                let e = j0 < heard.count ? heard[j0].start : heard.last!.end
+                hs = [Word(text: ws.joined(separator: " "), start: s, end: max(e, s + 0.05 * Double(ws.count)))]
+            }
+            out += layOver([ws], hs)[0]
+        }
+        while i < a.count && j < b.count {
+            if !a[i].isEmpty && a[i] == b[j] {
+                flush(i, j)
+                out.append(Word(text: words[i], start: heard[j].start, end: heard[j].end))
+                i += 1; j += 1; i0 = i; j0 = j
+            } else if L[i + 1][j] >= L[i][j + 1] { i += 1 } else { j += 1 }
+        }
+        flush(words.count, heard.count)
         return out
     }
 
@@ -6601,6 +6661,9 @@ final class NativeSources {
                 if ep.complete, ep.isSong, !ep.instrumental, ep.duration > 0, ep.duration < (ep.inMusicFolder ? 2400 : 900), await ep.fetch(audio: true) {
                     await ep.measureVoice()                // separates, measures, sends features.json to keep/
                     if ep.features != nil { log("gallery: separated and measured the voice of \(path)") }
+                } else if ep.complete, !ep.isSong, !ep.instrumental, ep.duration > 0, ep.duration <= Episode.speechLimit, await ep.fetch(audio: true) {
+                    await ep.measureVoice()                // speech: measured on its own sound (measureSpeech)
+                    if ep.features != nil { log("gallery: measured the speech of \(path)") }
                 }
                 ep.stop()
                 continue
