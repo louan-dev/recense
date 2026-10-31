@@ -11,6 +11,7 @@ import ReplayKit
 import Speech
 import Translation
 import CryptoKit
+import NaturalLanguage
 
 struct Sentence: Identifiable, Codable, Equatable, Hashable {
     var id: String
@@ -275,16 +276,23 @@ final class Listener: NSObject, ObservableObject {
         rebuild()
     }
 
-    // "Bonjour. Ça va ? Oui" → ["Bonjour.", "Ça va ?", "Oui"]
+    // "Bonjour. Ça va ? Oui" → ["Bonjour.", "Ça va ?", "Oui"]; "你好吗？我很好。" → ["你好吗？", "我很好。"] (row 30: scripts
+    // without spaces end a sentence at their own stops, which need no space after them; Arabic ؟ and Ge'ez ። too)
+    static let stops: Set<Character> = [".", "?", "!", "…", "。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
+    static let wideStops: Set<Character> = ["。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
     static func split(_ text: String) -> [String] {
         var out: [String] = [], cur = ""
-        let words = text.split(separator: " ", omittingEmptySubsequences: true)
-        for (i, w) in words.enumerated() {
-            cur += (cur.isEmpty ? "" : " ") + w
-            let next = i + 1 < words.count ? words[i + 1] : nil
-            if let c = w.last, ".?!…".contains(c), next.map({ !".?!…".contains($0.first!) }) ?? true { out.append(cur); cur = "" }
+        let cs = Array(text)
+        for (i, c) in cs.enumerated() {
+            cur.append(c)
+            guard stops.contains(c) else { continue }
+            let next = i + 1 < cs.count ? cs[i + 1] : nil
+            if let n = next, stops.contains(n) || "」』”\"')）".contains(n) { continue }
+            if next == nil || next!.isWhitespace || wideStops.contains(c) {
+                let t = cur.trimmingCharacters(in: .whitespaces); if !t.isEmpty { out.append(t) }; cur = ""
+            }
         }
-        if !cur.isEmpty { out.append(cur) }
+        let t = cur.trimmingCharacters(in: .whitespaces); if !t.isEmpty { out.append(t) }
         return out
     }
 
@@ -468,13 +476,21 @@ final class Listener: NSObject, ObservableObject {
         }
     }
 
+    // the last word, by the language's own word breaks (Chinese, Thai, Tibetan have no spaces), with what trails it
+    static func lastWord(_ text: String) -> Range<String.Index>? {
+        let t = NLTokenizer(unit: .word); t.string = text
+        var last: Range<String.Index>?
+        t.enumerateTokens(in: text.startIndex..<text.endIndex) { r, _ in last = r; return true }
+        return last.map { $0.lowerBound..<text.endIndex } ?? text.range(of: #"\S+$"#, options: .regularExpression)
+    }
+
     static let lit = UIColor(red: 1, green: 0.84, blue: 0.04, alpha: 1)  // the word being heard, Recense's yellow
 
     // the sentence with its newest word lit, as Recense's light follows the voice
     static func karaoke(_ text: String, size: CGFloat, weight: UIFont.Weight, color: UIColor, lit on: Bool, alpha: CGFloat = 1, center: Bool = true) -> NSAttributedString {
-        let style = NSMutableParagraphStyle(); style.alignment = center ? .center : .left; style.lineBreakMode = .byWordWrapping
+        let style = NSMutableParagraphStyle(); style.alignment = center ? .center : .natural; style.baseWritingDirection = .natural; style.lineBreakMode = .byWordWrapping
         let a = NSMutableAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color.withAlphaComponent(alpha), .paragraphStyle: style])
-        if on, let r = text.range(of: #"\S+$"#, options: .regularExpression) { a.addAttribute(.foregroundColor, value: lit.withAlphaComponent(alpha), range: NSRange(r, in: text)) }
+        if on, let r = lastWord(text) { a.addAttribute(.foregroundColor, value: lit.withAlphaComponent(alpha), range: NSRange(r, in: text)) }
         return a
     }
 
