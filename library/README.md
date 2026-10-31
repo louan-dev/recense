@@ -83,6 +83,8 @@ Recense (in Sill, on the Mac) transcribes Main's audio and video while idle and 
 the first 24 hex of SHA-256 of `fp:<bytes>:<sha256 of the first 64 KiB>:<sha256 of the last 64 KiB>`, computed the
 same way on the Mac, so one recording has one transcript wherever it plays, renamed, moved or uploaded twice.
 `keep/library.json` aliases a recording heard from another source, with its time shift.
+A corrected line keeps the space typed before `! ? ; :` (French writes `fini !`); a space before `, . …` and the
+Arabic and Ethiopic stops is dropped. Sill joins words by the same rule.
 
 ### Sharing
 - Share links from Main, the archive or the apps; each draws a large preview card in iMessage, Messenger and Telegram.

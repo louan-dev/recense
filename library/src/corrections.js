@@ -31,11 +31,11 @@ const ENDS = new RegExp(UNSPACED + "$", "u");
 const OPENS = new RegExp("^" + UNSPACED, "u");
 const SHAD = /[\u0F0D-\u0F11\u0F14]$/u;
 export const unspaced = (a, b) => ENDS.test(a) && OPENS.test(b) && !SHAD.test(a);
-// and no space before a stop or comma (Latin, Arabic ، ؛ ؟, Ethiopic ። ፣ ፤ ፥ ፦ ፧)
+// and no space before a stop or comma (a typed space before ! ? ; : stays, as French writes it) (Latin, Arabic ، ؛ ؟, Ethiopic ። ፣ ፤ ፥ ፦ ፧)
 export const joinWords = (ws) =>
   ws
     .reduce((s, w) => (s === "" ? w : s + (unspaced(s, w) ? "" : " ") + w), "")
-    .replace(/\s+([,.!?;:…\u060C\u061B\u061F\u1362-\u1367])/gu, "$1")
+    .replace(/\s+([,.…\u060C\u061B\u061F\u1362-\u1367])/gu, "$1")
     .trim();
 const SEG = typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: "word" }) : null;
 const HAS_UNSPACED = new RegExp(UNSPACED, "u");
