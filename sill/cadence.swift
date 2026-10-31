@@ -58,6 +58,8 @@ extension Cadence {
 
     /// A syllable the voice sang: from, to, its middle pitch (MIDI × 100), its loudest (dB), and weak (15 dB or more
     /// under the song's sung level, or 11 semitones or more from the singer's middle: bleed, an octave slip, a breath).
+    /// A quiet one joined to the singing (300 ms or less between, a chain of them) is the voice going soft, not bleed: a
+    /// word sung out to a whisper is held for as long as it's sung (Variations on a Dream's "dream" at 2:51).
     struct Unit { var s: Double, e: Double, m: Int, db: Double, weak: Bool }
 
     /// The voice's own syllables, from the stem alone: where it's pitched, cut where it stops for 30 ms or more (a
@@ -103,7 +105,11 @@ extension Cadence {
             let byLen = out.filter { $0.m > 0 }.map { ($0.m, $0.e - $0.s) }.sorted { $0.0 < $1.0 }
             var half = byLen.reduce(0) { $0 + $1.1 } / 2, reg = byLen.first?.0 ?? 0
             for (m, d) in byLen { reg = m; half -= d; if half <= 0 { break } }
-            for i in out.indices { out[i].weak = out[i].db < lv - 15 || (out[i].m > 0 && abs(out[i].m - reg) >= 1100) }
+            let off = out.map { $0.m > 0 && abs($0.m - reg) >= 1100 }
+            for i in out.indices { out[i].weak = off[i] || out[i].db < lv - 15 }
+            // soft singing: a quiet unit next to a sung one (≤ 0.3 s), outward from the sung ones both ways
+            for k in out.indices.dropFirst() where out[k].weak && !off[k] && !out[k - 1].weak && out[k].s - out[k - 1].e <= 0.3 { out[k].weak = false }
+            for k in stride(from: out.count - 2, through: 0, by: -1) where out[k].weak && !off[k] && !out[k + 1].weak && out[k + 1].s - out[k].e <= 0.3 { out[k].weak = false }
         }
         return out
     }

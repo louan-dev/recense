@@ -699,6 +699,19 @@ struct Override: Codable, Equatable {
         return out
     }
 
+    /// Where the listener cleared a line (corrected to nothing, or an edit of theirs left with no words): their word that
+    /// nobody speaks or sings there, so the window shows [Ambient Sounds] over it, whatever the sound classifier hears.
+    static func blanked(_ lines: [Line], _ e: Edits) -> [ClosedRange<Double>] {
+        var out = e.edits.filter { $0.words.isEmpty && $0.b > $0.a }.map { $0.a...$0.b }
+        let ovs = (e.overrides ?? []).enumerated().sorted { ($0.element.updatedAt, $0.offset) < ($1.element.updatedAt, $1.offset) }.map(\.element)
+        var byId: [String: Int] = [:]
+        for (i, l) in lines.enumerated() where byId[String(l.id)] == nil { byId[String(l.id)] = i }
+        var text: [Int: String] = [:]
+        for o in ovs where o.field == "text" { if let i = target(lines, o, byId, e) { text[i] = o.to } }
+        for (i, t) in text where words(t).isEmpty && !lines[i].words.isEmpty { out.append(lines[i].start...max(lines[i].start, lines[i].end)) }
+        return out
+    }
+
     /// keep/'s copy and this Mac's: overrides per segment and field (the latest wins, a tie goes to keep/'s), the
     /// glossary by word (the newer file's on a clash, forgotten words included), the higher version. Recense's own
     /// fields stay this Mac's.
@@ -2955,8 +2968,8 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     var onIdentified: (() -> Void)?    // its recording turned out to have a transcript already: load that instead
     var file: URL?
     var duration = 0.0
-    var lines: [Line] = [] { didSet { _shown = nil; _display = nil; _sung = nil } }   // as the pipeline made them
-    var edits = Edits() { didSet { _shown = nil; _display = nil; _sung = nil } }       // the listener's corrections, over them
+    var lines: [Line] = [] { didSet { _shown = nil; _display = nil; _sung = nil; _blanked = nil } }   // as the pipeline made them
+    var edits = Edits() { didSet { _shown = nil; _display = nil; _sung = nil; _blanked = nil } }       // the listener's corrections, over them
     /// Its translations beyond the English (vi, fr), by segment (<key>.tr.<lang>.json, keep/<key>/tr/<lang>.json).
     var native: [String: TrFile] = [:] { didSet { _display = nil; _sung = nil } }
     /// A song's voice, measured on its stem (<key>.features.json, keep/<key>/features.json): what the light follows.
@@ -2964,6 +2977,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     private var _sung: [Line]?
     private var _sungLang = ""
     private var _shown: [Line]?
+    private var _blanked: [ClosedRange<Double>]?
+    /// Stretches the listener cleared (Corrections.blanked): [Ambient Sounds] there.
+    var blanked: [ClosedRange<Double>] {
+        if let b = _blanked { return b }
+        let b = Corrections.blanked(applyOwnEdits(lines, edits), edits); _blanked = b
+        return b
+    }
     private var _display: [Line]?
     private var _displayLang = ""       // the native language _display was made in
     /// What is exported and translated: the lines with the listener's edits laid over them, with their English.
@@ -7738,7 +7758,9 @@ final class NativeSources {
             // between the words: [Ambient Sounds] while there is sound, from the end of a line to the next one's start
             let speaking = last.map { t <= $0.end + 0.3 } ?? false
             // (only where no voice is heard: a voice with no line up isn't ambient, it's words not shown)
-            let ambient = !speaking && t >= 0 && ep.sounding(t) && (ep.instrumental || ep.voiced(t) == false) && (ep.instrumental || ep.complete || next != nil)
+            // (or where the listener cleared the line: their word that nobody sings there)
+            let ambient = !speaking && t >= 0 && (ep.blanked.contains { $0.contains(t) }
+                || ep.sounding(t) && (ep.instrumental || ep.voiced(t) == false) && (ep.instrumental || ep.complete || next != nil))
             if ep.instrumental { if ambient { overlay.renderAmbient() } else { overlay.render(nil, at: t) } }
             else if ambient && overlay.mode != .learning { overlay.renderAmbient(); editable = nil }
             else if overlay.mode == .learning {
