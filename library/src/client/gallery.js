@@ -4889,6 +4889,7 @@
       // through it first) while that stretch plays round; Auto gives it back to the voice's measure (cadence.js pin).
       const sec = (x) => Math.floor(x / 60) + ":" + (x % 60).toFixed(2).padStart(5, "0");
       let looping = null;
+      let timingOn = false; // the toolbar's Timing shows the current line's words to time
       const unloop = () => {
         if (looping) el.removeEventListener("timeupdate", looping);
         looping = null;
@@ -5057,7 +5058,7 @@
           ta.onclick = (e) => e.stopPropagation();
           field = ta;
           body.append(ta, trField());
-          if (l.words.length) body.appendChild(timer(l));
+          if (l.words.length && timingOn) body.appendChild(timer(l));
         } else {
           const b = mkEl("button", "txline");
           b.type = "button";
@@ -5187,6 +5188,15 @@
         },
         clear: wipe,
         redo,
+        timing: () => {
+          timingOn = !timingOn;
+          if (!timingOn) unloop();
+          if (cur < 0 || !rows[cur]) return void (timingOn && say("Tap a line, then a word, to time it"));
+          const r = row(lines[cur], cur);
+          rows[cur].replaceWith(r);
+          rows[cur] = r;
+          r.scrollIntoView({ block: "center", behavior: "smooth" });
+        },
       });
       bar.prepend(tools.el);
       const close = () => {
@@ -6359,6 +6369,7 @@
       },
       view: { get: () => prefs.view, set: (v) => setView(v) },
       items: [
+        w && hooks.timing ? { id: "timing", label: "Timing by ear: set each word's light", icon: I.timing, act: hooks.timing } : null,
         w && hooks.clear ? { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: hooks.clear } : null,
         { id: "download", label: "Download", icon: I.download, act: (b) => download(b) },
         own && window.galleryInvite ? { id: "share", label: "Share", icon: I.share, act: () => window.galleryInvite([f]) } : null,
