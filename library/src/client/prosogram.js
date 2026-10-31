@@ -7,7 +7,8 @@
 //              to its end height, gently curved when the voice turns inside it (hỏi's dip); a glottal break splits it.
 //              Its thickness is loudness, its length the syllable's span.
 //   glide    = a thin dotted glide joins syllables the voice runs through (legato, linked); a detached syllable stands alone.
-//   nodes    = a dot at the nucleus. Vietnamese: the tone in Chao numbers under it (33 21 35 313 3ʔ5 21ʔ). French: ˈ on the
+//   nodes    = a dot at the nucleus. Vietnamese: the tone in Chao numbers under it (33 21 35 313 3ʔ5 21ʔ); Chinese: its tone as
+//              measured from the voice, in the same numbers (55 35 214 51). French: ˈ on the
 //              stressed syllable of each rhythmic group, ↗ / ↘ for the phrase-final event. Salient intervals (|Δ| ≥ 3 st)
 //              labelled (↘m3).
 //   liaison  = a tie from the latent consonant (uFrom) to the vowel (uTo), its sound in IPA brackets; elision: a small tie.
@@ -126,7 +127,7 @@ function build(f, x, c, s, E, nb) {
     const bx = cl(nd.u * Wd, sg.xa, sg.xb), by = segY(sg, bx), r = Math.max(1.4, sg.lw * 0.45 + 0.6)
     g.nodes.push({ x: bx, y: by, r })
     let ly = by + sg.lw / 2 + 0.36 * s
-    if (f.lang === 'vi' && nd.tone) { const sy = x.syl[nd.syl]; g.labels.push({ text: CHAO[sy.toneKey] || CHAO[nd.tone] || '', x: bx, y: Math.min(LOW * s, ly), size: 0.17, a: 0.75, prio: 1, kind: 'tone' }); ly += 0.18 * s }
+    if ((f.lang === 'vi' && nd.tone) || x.syl[nd.syl].chao) { const sy = x.syl[nd.syl]; g.labels.push({ text: sy.chao || CHAO[sy.toneKey] || CHAO[nd.tone] || '', x: bx, y: Math.min(LOW * s, ly), size: 0.17, a: 0.75, prio: 1, kind: 'tone' }); ly += 0.18 * s }
     { const sy = x.syl[nd.syl]
       if (x.breathAfter >= 0.18 && nd.syl === x.syl.length - 1 && sy.lengthen > 0.4) {   // held before the pause: a fermata
         g.ferm.push((sg.xa + sg.xb) / 2)                            // placed per row, over the row's highest mark (full)
@@ -437,7 +438,7 @@ const plugin = {
     ['≡ staff', 'reference pitch and ±4 semitones'],
     ['▬ / ╱', 'syllable: level or glissando; thickness = loudness'],
     ['┈', 'glide: the voice runs on · gap: detached'],
-    ['• 35  ˈ', 'nucleus · Vietnamese tone (Chao) · French stress'],
+    ['• 35  ˈ', 'nucleus · tone in Chao numbers (Vietnamese as written, Chinese as heard) · French stress'],
     ['↗ ↘  ↕', 'phrase-final rise / fall · a leap, drawn to scale'],
     ['𝄐', 'held before a pause (over the row\'s highest mark)'],
     ['pp … ff  < >', 'loudness level · getting louder / softer'],
@@ -517,7 +518,7 @@ const plugin = {
             ctx.save(); ctx.beginPath(); ctx.rect(c0.x - s, by - s, lx - c0.x + s, 2 * s); ctx.clip()
             let x0 = c0.x
             if (showDyn && r0 === 0) {                           // the level as on a score: pp … ff, bold italic
-              ctx.font = `italic bold ${Math.round(s * 0.3)}px "Times New Roman", Times, serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+              ctx.font = `italic bold ${Math.round(s * 0.45)}px "Times New Roman", Times, serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
               ctx.fillStyle = SYM; ctx.globalAlpha = a0; ctx.fillText(DYN[dyn], x0, by); x0 += ctx.measureText(DYN[dyn]).width + 0.15 * s
             }
             const x1 = c1.x + c1.width, xm = Math.max(x0, x1 - Math.min(1.8 * s, (x1 - x0) / 2))

@@ -263,7 +263,7 @@
     const ch = [...text], [a, b] = core(text), syl = []
     let i = a
     while (i < b) {
-      if (re.test(ch[i])) { syl.push({ c0: i, c1: i + 1, nucleus: i, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }); i++; continue }
+      if (re.test(ch[i])) { syl.push({ c0: i, c1: i + 1, nucleus: i, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0, han: re === HAN }); i++; continue }
       let j = i; while (j < b && !re.test(ch[j])) j++
       const run = ch.slice(i, j).join('')
       if (/\p{L}/u.test(run)) for (const q of genSyllables(run)) syl.push({ ...q, c0: q.c0 + i, c1: q.c1 + i, nucleus: q.nucleus + i })
@@ -287,10 +287,52 @@
     syl[syl.length - 1].c1 = b
     return syl
   }
+  function langByLetters(t) {
+    if (HAN.test(t)) return 'zh'
+    if (ETHI.test(t)) return 'am'
+    if (/\p{Script=Arabic}/u.test(t)) return 'ar'
+    if (/[ăđơư]|[ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/iu.test(t)) return 'vi'
+    return 'und'
+  }
+  // Arabic: short vowels are rarely written, so a syllable is found where one must be: a consonant before a long vowel
+  // (ا آ ى, and و ي after a consonant) or carrying a haraka is a syllable's onset, a word-initial alef (ال) opens one,
+  // and a run of bare consonants is read as CVC syllables, its first consonant closing the syllable before it
+  // (مكتبة mak-ta-ba, مرحبا mar-ḥa-bā, كتاب ki-tāb). The count is what the light and the line need.
+  const AR = /\p{Script=Arabic}/u, HARAKA = /[\u064B-\u0650]/u, AR_MARK = /[\u064B-\u065F\u0670]/u
+  function arSyllables(text) {
+    const ch = [...text], [a, b] = core(text), U = []                    // letters with their marks: [c0, c1)
+    for (let i = a; i < b; i++) { if (AR_MARK.test(ch[i]) && U.length) U[U.length - 1][1] = i + 1; else U.push([i, i + 1]) }
+    const L = U.map(([c0]) => ch[c0]), voweled = U.map(([c0, c1]) => ch.slice(c0, c1).some(c => HARAKA.test(c)))
+    const longV = k => 'اآى'.includes(L[k]) || ('وي'.includes(L[k]) && k > 0 && !isLV(k - 1) && !(k + 1 < L.length && 'اآى'.includes(L[k + 1])))
+    function isLV(k) { return 'اآى'.includes(L[k]) }
+    const syl = [], at = (u0, u1, nu) => syl.push({ c0: U[u0][0], c1: U[u1 - 1][1], nucleus: U[nu][0], accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 })
+    let run = [], k = 0
+    const flush = () => {                                                // bare consonants: coda of the last, then CVC
+      if (!run.length) return
+      if (syl.length) { syl[syl.length - 1].c1 = U[run[0]][1]; run = run.slice(1) }
+      for (let j = 0; j < run.length; j += 2) at(run[j], Math.min(run.length, j + 2) === run.length ? run[run.length - 1] + 1 : run[j + 1] + 1, run[j])
+      run = []
+    }
+    while (k < U.length) {
+      if (k === 0 && 'اأإآ'.includes(L[0])) { at(0, 1, 0); k = 1; continue }
+      if (longV(k)) { flush(); at(k, k + 1, k); k++; continue }       // a vowel with no consonant before it
+      if (voweled[k] || (k + 1 < U.length && longV(k + 1))) {
+        flush(); const e = k + 1 < U.length && longV(k + 1) && !voweled[k] ? k + 2 : k + 1
+        at(k, e, e - 1); k = e; continue
+      }
+      run.push(k); k++
+    }
+    flush()
+    if (!syl.length) return [{ c0: a, c1: b, nucleus: a, accent: null, schwa: 0, mute: -1, onset: 0, coda: 0 }]
+    syl[0].c0 = a; syl[syl.length - 1].c1 = b
+    for (let i = 1; i < syl.length; i++) syl[i].c0 = syl[i - 1].c1
+    return syl
+  }
   /** the syllables of a word in any language: the language's own rule, else its script's, else vowel groups */
   function anySyllables(text, lang) {
     if (HAN.test(text)) return scriptSyllables(text, HAN)
     if (ETHI.test(text)) return scriptSyllables(text, ETHI)
+    if (AR.test(text)) return arSyllables(text)
     if (lang === 'zu') return zuSyllables(text)
     return genSyllables(text)
   }
@@ -318,7 +360,9 @@
   // ---- analysis --------------------------------------------------------------------------------------------------
   function analyze(data, api) {
     const { at, progress, words } = api, F = data.features, hop = data.hop, n = data.frames
-    const lang = data.lang || 'vi', kind = data.kind || 'song'
+    // a clip that doesn't say its language: by its letters (it was always Vietnamese, so a Chinese line was read as
+    // one syllable a word with Vietnamese tones, and Arabic and Ge'ez lines the same: owner, row 30)
+    const lang = data.lang || langByLetters(words.map(w => w.text).join(' ')), kind = data.kind || 'song'
     for (const w of words) if (w.text !== w.text.normalize('NFC')) w.text = w.text.normalize('NFC')
     // The host MUST say what glyph metrics it draws with. These fractions become each syllable's u0/un/u1, which
     // invert() turns into t0/t1 — the windows every pitch and loudness number is measured over. A hidden default meant
@@ -472,6 +516,27 @@
       s.nP = isNaN(s.pitch) ? NaN : clamp((s.pitch - s.center) * scale, -1, 1)
       s.lengthen = clamp((s.dur / medDur - 1) / 1.0)                 // syllable-timed languages: longer than usual is meaningful
     })
+    // Chinese (a Han syllable, Mandarin or Cantonese alike): its tone as heard, in Chao's five levels over the speaker's
+    // own range (5 high … 1 low: the lowest and highest the voice goes over the syllables around it), from the syllable's
+    // start, its lowest point and its end: 55 level, 35 rise, 214 dip, 51 fall. No dictionary: the voice is the source,
+    // so a line misheard or sung shows the tones as they sound.
+    const track = s => { const v = []; for (let k = fr(s.t0), k1 = Math.max(fr(s.t0) + 1, fr(s.t1)); k < k1; k++) if (!isNaN(st[k])) v.push(st[k]); return v }
+    S.forEach((s, i) => {
+      if (!s.han || s.rel < 0.4) return
+      const v = track(s)
+      if (v.length < 5) return
+      let r0 = Infinity, r1 = -Infinity
+      for (let j = Math.max(0, i - 10); j <= Math.min(S.length - 1, i + 5); j++) { const u = j === i ? v : track(S[j]); if (u.length) { r0 = Math.min(r0, pctl(u, .05)); r1 = Math.max(r1, pctl(u, .95)) } }
+      const mid = (r0 + r1) / 2, half = Math.max(3, r1 - r0) / 2           // (a narrow stretch is read over 6 semitones at least)
+      const q = Math.max(1, Math.round(v.length * 0.2)), lv = y => Math.round(3 + 2 * clamp((y - mid) / half, -1, 1))
+      const a = lv(pctl(v.slice(0, q), .5)), b = lv(pctl(v.slice(-q), .5)), lo = lv(pctl(v.slice(q, -q).length ? v.slice(q, -q) : v, 0))
+      const dip = lo <= Math.min(a, b) - 1
+      s.chao = dip ? `${a}${lo}${b}` : `${a}${b}`
+      s.chaoDir = dip ? 'dip' : a < b ? 'rise' : a > b ? 'fall' : 'level'
+      // and the shape the line is drawn toward, as a Vietnamese tone's is (level L → (L − 3) / 2)
+      const y = L => (L - 3) / 2
+      s.chaoTpl = { pts: dip ? [[0, y(a)], [.55, y(lo)], [1, y(b)]] : [[0, y(a)], [1, y(b)]], sharp: 0, soft: 0, glottal: -1 }
+    })
     // the interval from the previous syllable's nucleus, in semitones (none across a pause)
     const NAMES = ['P1', 'm2', 'M2', 'm3', 'M3', 'P4', 'TT', 'P5', 'm6', 'M6', 'm7', 'M7', 'P8']
     for (let i = 1; i < S.length; i++) {
@@ -548,7 +613,7 @@
       const sent = x.sentence || [0, 0], sw = W.indexOf(x), sentPos = (sw - sent[0]) / Math.max(1, sent[1] - sent[0])
       let m = 0
       x.syl.forEach((s, si) => {
-        const tpl = lang === 'vi' ? VI_TONE[s.toneKey] : null
+        const tpl = lang === 'vi' ? VI_TONE[s.toneKey] : s.chaoTpl || null
         const ev = lang === 'fr' && s.stressed ? FR_EVENT[s.stressed] || null : null
         const shape = tpl || ev, measured = !isNaN(s.nP)
         // a host may have no source for a signal and return null for it (never a flag zero): treat that as absent
@@ -631,15 +696,16 @@
       x.nodes = []
       x.syl.forEach((s, si) => {
         let j = 0, best = 9; for (let k = 0; k < m; k++) if (sIdx[k] === si && Math.abs(u[k] - s.un) < best) { best = Math.abs(u[k] - s.un); j = k }
-        const tpl = lang === 'vi' ? VI_TONE[s.toneKey] : null
-        const kindN = lang === 'vi' ? s.tone : s.stressed ? 'stress' : s.accent ? s.accent : null
+        const tpl = lang === 'vi' ? VI_TONE[s.toneKey] : s.chaoTpl || null
+        const kindN = lang === 'vi' ? s.tone : s.chao ? 'tone' : s.stressed ? 'stress' : s.accent ? s.accent : null
         if (!kindN) return
         const move = tpl ? Math.abs(tpl.pts[tpl.pts.length - 1][1] - tpl.pts[0][1]) : s.stressed ? 0.6 : 0.25
         // direction the line takes through the node: rising, falling, dipping, broken, level
-        const dir = tpl ? { ngang: 'level', huyen: 'fall', sac: 'rise', hoi: 'dip', nga: 'broken-rise', nang: 'fall-cut' }[s.tone]
+        const dir = tpl && lang === 'vi' ? { ngang: 'level', huyen: 'fall', sac: 'rise', hoi: 'dip', nga: 'broken-rise', nang: 'fall-cut' }[s.tone]
+          : s.chao ? s.chaoDir
           : s.stressed ? ({ minor: 'rise', continuation: 'rise', question: 'rise', colon: 'rise', final: 'fall', wh: 'fall', exclamation: 'fall' }[s.stressed])
           : s.accent === 'trema' ? 'break' : 'level'
-        x.nodes.push({ u: s.un, h: hs[j], i: j, kind: kindN, dir, strength: clamp(move), syl: si, stressed: !!s.stressed, accent: s.accent || null, tone: s.tone || null,
+        x.nodes.push({ u: s.un, h: hs[j], i: j, kind: kindN, dir, strength: clamp(move), syl: si, stressed: !!s.stressed, accent: s.accent || null, tone: s.tone || s.chao || null,
           st: s.pitch, interval: s.interval ?? null, intervalName: s.intervalName ?? null })
       })
     }
