@@ -1340,7 +1340,8 @@ await test("Notes 33 / item 20: with the voice measured (keep/<key>/features.jso
   await pg.click('.tile[data-n="00000"]');
   await pg.waitForSelector(".tx.learn .txp:not([hidden]) .txw");
   const a = await pg.$("audio");
-  await a.evaluate((el) => { el.currentTime = 3.6; return el.play(); });
+  // (both samples inside the held note, 1–4 s: the light holds as long as the voice does, and no longer)
+  await a.evaluate((el) => { el.currentTime = 3.0; return el.play(); });
   await pg.waitForTimeout(400);
   const s = await pg.$eval(".txw", (w) => ({ top: w.style.top, sh: w.style.textShadow }));
   await pg.waitForTimeout(250);

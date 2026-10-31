@@ -308,7 +308,7 @@ function drawWord(ctx, f, g, c, cy, s, a0, t, w, p, live, settle, labels, reach,
 }
 
 function lights(pro, cells, t, progress) {
-  const by = new Map(), seen = cells.filter(c => { const x = pro.word[c.w.flat]; return x && !x.punct })
+  const by = new Map(), seen = cells.filter(c => { const x = pro.word[c.w.flat]; return x && !x.punct && !x.un })
   for (let i = 0; i < seen.length; i++) {
     const c = seen[i], w = c.w, nx = seen[i + 1]
     let lx = -Infinity
@@ -349,7 +349,7 @@ function labelsAbove(ctx, f, ln, light) {
   }
   if (f.noteName) {                                          // the melody: a note per syllable, under the chords
     for (const c of cells) {
-      const x = pro.word[c.w.flat]; if (!x || x.punct || !x.syl) continue
+      const x = pro.word[c.w.flat]; if (!x || x.punct || x.un || !x.syl) continue
       for (const sy of x.syl) {
         if (!Number.isFinite(sy.pitch) || !(sy.rel >= 0.4) || sy.un == null) continue
         const px = c.x + sy.un * c.width
@@ -468,7 +468,7 @@ const plugin = {
         }
       }
       const idx = []
-      for (let i = 0; i < cells.length; i++) { const x = pro.word[cells[i].w.flat]; if (x && !x.punct && x.pts.n) idx.push(i) }
+      for (let i = 0; i < cells.length; i++) { const x = pro.word[cells[i].w.flat]; if (x && !x.punct && !x.un && x.pts.n) idx.push(i) }
       const labels = [], ceil = new Map(), ferms = []        // per row: the highest mark's top (absolute y); fermatas
       for (let k = 0; k < idx.length; k++) {
         const c = cells[idx[k]], w = c.w

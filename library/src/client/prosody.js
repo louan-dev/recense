@@ -358,10 +358,11 @@
 
     // words → syllables (letters)
     const ALL = words.map(w => ({ w, text: w.text, bare: bare(w.text), core: core(w.text), syl: [], link: null, inner: [], phraseEnd: null, nodes: [],
-      punct: core(w.text)[0] >= core(w.text)[1], breathAfter: 0, gapAfter: 0, cutAfter: 0, pts: { u: new Float32Array(0), h: new Float32Array(0), w: new Float32Array(0), cut: new Float32Array(0), syl: new Uint8Array(0), n: 0 } }))
+      punct: core(w.text)[0] >= core(w.text)[1], un: !!w.un, breathAfter: 0, gapAfter: 0, cutAfter: 0, pts: { u: new Float32Array(0), h: new Float32Array(0), w: new Float32Array(0), cut: new Float32Array(0), syl: new Uint8Array(0), n: 0 } }))
     // a token with no letters (French sets "?", "!", ":", ";" apart with a space) gives its punctuation to the word before
     for (let i = 1; i < ALL.length; i++) if (ALL[i].punct) { let j = i - 1; while (j > 0 && ALL[j].punct) j--; ALL[j].tail = (ALL[j].tail || '') + ALL[i].text.trim() }
-    const W = ALL.filter(x => !x.punct)
+    // (a word written but not sung has no voice to draw: Cadence's `un`)
+    const W = ALL.filter(x => !x.punct && !x.un)
     for (const x of W) {
       if (lang === 'vi') {
         const s = viSyllable(x.text)
@@ -644,7 +645,7 @@
     }
 
     const word = []
-    for (const x of ALL) { if (x.punct) x.uChar = measure(x.text); word[x.w.flat] = x }
+    for (const x of ALL) { if (x.punct || x.un) x.uChar = measure(x.text); word[x.w.flat] = x }
     const res = { lang, kind, word, phrases, syllables: S, medDur, VI_TONE, FR_EVENT,
       semitone: scale,                   // h units per semitone (h = ±1 is ±span/2 semitones around the speaker's reference)
       span, reference: gRef,

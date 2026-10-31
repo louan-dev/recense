@@ -983,6 +983,11 @@
   // cut up, skipping ahead, and what piled up is still being let out after a pause. There the
   // player's sound comes from the deck (see DeckProcessor in the Worker) and the element plays
   // muted. Elsewhere the element feeds Web Audio as before.
+  // an iPhone or iPad (every browser there is WebKit), and its built-in speaker's output path when nothing reports one:
+  // the hardware latency and I/O buffer an iPhone's speaker route reports to the iOS app (Player.swift), with the
+  // WebKit render buffer on top
+  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const IOS_ROUTE = 0.06;
   const DECK =
     (() => {
       const u = navigator.userAgent;
@@ -2288,8 +2293,11 @@
     // otherwise the element's clock, less the output latency once Web Audio carries the sound.
     const heard = () => {
       const r = el.playbackRate || 1;
-      // (WebKit reports no output latency: the iOS app hands the page its audio route's, AirPods' ~0.2 s included)
-      const out = audioCtx ? Math.max((audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0), +globalThis.galleryOutputLatency || 0) : 0;
+      // (WebKit reports no output latency: the iOS app hands the page its audio route's, AirPods' ~0.2 s included; a
+      // browser on the iPhone or iPad, Firefox and Safari alike, gets nothing, so it assumes the built-in speaker's path,
+      // IOS_ROUTE: without it the light ran ahead of the voice there, owner 2026-10-30)
+      const route = +globalThis.galleryOutputLatency || (IOS ? IOS_ROUTE : 0);
+      const out = audioCtx ? Math.max((audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0), route) : 0;
       const d = deck;
 
       if (d && d.live && typeof d.at === "number" && !el.paused && !el.seeking) {
