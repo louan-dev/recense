@@ -15,7 +15,7 @@ import { OWNER, VERSION, esc, page } from "../common.js";
 
 // The gallery page for any list of items: a public link, or a folder of Main.
 // live.title, live.heading and live.zip reframe it; nav goes above the grid.
-export function galleryPage(live, nav = "", crumbs = "") {
+export function galleryPage(live, nav = "", crumbs = "", og = null) {
   const data = JSON.stringify({ ...live, version: VERSION }).replace(/</g, "\\u003c");
 
   const svg = (d, w = 2) =>
@@ -40,7 +40,7 @@ export function galleryPage(live, nav = "", crumbs = "") {
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex">
 <title>${esc(live.title || "Shared by " + OWNER)}</title>
-<style>${homebarCss}
+${og ? ogTags(og) : ""}<style>${homebarCss}
 ${css}${live.main ? "\n" + assistantCss : ""}</style>
 </head>
 
@@ -563,6 +563,22 @@ qs('#invform').addEventListener('submit', async e => {
 
 </body>
 </html>`);
+}
+
+// A share link's preview card (iMessage, Messenger, Telegram): Open Graph plus Twitter's large-image card.
+function ogTags(og) {
+  const tag = (k, v, attr = "property") => (v ? "<meta " + attr + '="' + k + '" content="' + esc(v) + '">\n' : "");
+  return (
+    tag("og:type", "website") +
+    tag("og:title", og.title) +
+    tag("og:description", og.description) +
+    tag("og:url", og.url) +
+    (og.image ? tag("og:image", og.image) + tag("og:image:width", "1200") + tag("og:image:height", "630") : "") +
+    tag("twitter:card", og.image ? "summary_large_image" : "summary", "name") +
+    tag("twitter:title", og.title, "name") +
+    tag("twitter:description", og.description, "name") +
+    tag("twitter:image", og.image, "name")
+  );
 }
 
 // ---------- gallery CSS ----------

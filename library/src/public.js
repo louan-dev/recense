@@ -143,8 +143,9 @@ export async function linkApi(req, env, url) {
   return new Response("Bad request", { status: 400 });
 }
 
-// POST /main/api/link?action=fromMain&days=7[&from=archive]   body: { paths: ["Folder/a.jpg", …] } (files in Main, or
-//   in the archive's chauphan/ with from=archive: the same link, the same page; archive files carry no keys or covers)
+// POST /main/api/link?action=fromMain&days=7[&from=archive]   body: { paths: ["Folder/a.jpg", …], cover? } (files in Main, or
+//   in the archive's chauphan/ with from=archive: the same link, the same page; archive files carry no keys or covers;
+//   cover, one of paths or its index, is the picture the link's preview card shows, else its first image)
 //   -> { ok, id, exp, count, url }   the link exists at once; its items show as pending until copied
 // POST /main/api/link?action=copy&id=ID&i=N      copies item N from Main into the link (one file per call,
 //   so a big video never has to fit in one request's time)
@@ -194,6 +195,8 @@ async function fromMainLink(req, env, q) {
   const manifest = { id, owner: OWNER, created: Date.now(), exp: Date.now() + days * 864e5, count: items.length, items };
   const view = viewOf(b);
   if (view) manifest.view = view;
+  const ci = b.cover == null ? -1 : typeof b.cover === "number" ? b.cover : items.findIndex((it) => it.src === cleanPath(String(b.cover)));
+  if (ci >= 0 && ci < items.length) manifest.coverItem = String(ci).padStart(3, "0");
 
   await writeManifest(env, manifest);
 
@@ -818,6 +821,7 @@ async function folderGalleryData(env, link) {
     ready: items.length,
     complete: true,
     items,
+    ...(link.coverItem ? { coverItem: String(link.coverItem) } : {}),
   };
 }
 
@@ -1334,6 +1338,7 @@ export async function getGalleryData(env, id) {
     complete: readyItems.length >= expected,
     items: items.map(({ exp, ...f }) => f),
     ...(manifest && manifest.view ? { view: manifest.view } : {}),
+    ...(manifest && manifest.coverItem ? { coverItem: String(manifest.coverItem) } : {}),
   };
 }
 
@@ -1352,7 +1357,64 @@ export async function gallery(env, id, req) {
   if (live.expired) return notice("Link expired", 410);
 
   const you = req ? await guestId(req) : null;
-  return galleryPage(you ? { ...live, you } : live);
+  return galleryPage(you ? { ...live, you } : live, "", "", req ? linkPreview(live, new URL(req.url)) : null);
+}
+
+// ---------- link previews (notes 20261029 item 3) ----------
+// iMessage, Messenger and Telegram draw a big card from the Open Graph tags in /s/<id>'s <head> instead of a bare
+// link with Safari's compass. The picture is GET /api/og-image/<id>[?cover=]: public, an hour's cache, any origin.
+// Which picture: ?cover= (an item's number, path or name), else the link's coverItem, else its first image a
+// card can show (jpeg/png/webp/gif, under Messenger's 8 MB), else any image, else a song's cover. None: a small card.
+const OG_IMG = /^image\/(jpeg|png|webp|gif)$/;
+const OG_MAX = 8 * 1024 * 1024;
+
+function previewCover(live, want) {
+  const items = (live.items || []).filter((f) => !f.pending);
+  const is = (k) => (f) => k && (f.n === k || f.path === k || f.name === k || (/^\d+$/.test(k) && Number(f.n) === Number(k)));
+  const asked = want && items.find(is(want));
+  if (asked && (/^image\//.test(asked.type) || asked.art)) return asked;
+  return (
+    (live.coverItem && items.find(is(live.coverItem))) ||
+    items.find((f) => OG_IMG.test(f.type) && !(f.size > OG_MAX)) ||
+    items.find((f) => /^image\//.test(f.type)) ||
+    items.find((f) => f.art) ||
+    null
+  );
+}
+
+function linkPreview(live, url) {
+  const count = live.expected || (live.items || []).length;
+  const want = url.searchParams.get("cover");
+  const cover = previewCover(live, want);
+  return {
+    title: (live.title || count + (count === 1 ? " file" : " files") + " for you") + " · Shared by " + OWNER,
+    description: "View and download shared files",
+    url: url.href,
+    image: cover ? url.origin + "/api/og-image/" + live.id + (want ? "?cover=" + encodeURIComponent(want) : "") : null,
+  };
+}
+
+// GET /api/og-image/<id>[?cover=]   the preview card's picture, streamed from the link's own copy in PUBLIC
+export async function ogImage(env, ctx, url, id) {
+  const none = (status) => new Response("No preview image", { status, headers: { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" } });
+  const live = await getGalleryData(env, id);
+  if (!live || live.missing) return none(404);
+  if (live.expired) return none(410);
+
+  const f = previewCover(live, url.searchParams.get("cover"));
+  if (!f) return none(404);
+
+  const art = !/^image\//.test(f.type);
+  const folder = !!f.path;
+  const at = new URL((folder ? "/d/" + id + "/v/" + urlPath(f.path) : "/f/" + id + "/" + f.n) + (art ? "?art=1" : ""), url);
+  const r = folder ? await folderFile(new Request(at), env, at, id, urlPath(f.path)) : await file(new Request(at), env, ctx, at, id, f.n);
+  const type = (r.headers.get("content-type") || "").split(";")[0].trim();
+  if (r.status !== 200 || !/^image\//.test(type)) return none(404);
+
+  const h = { "content-type": type, "cache-control": "public, max-age=3600", "access-control-allow-origin": "*", "x-content-type-options": "nosniff" };
+  const len = r.headers.get("content-length");
+  if (len) h["content-length"] = len;
+  return new Response(r.body, { headers: h });
 }
 
 // ---------- guests: whoever opens a share link may comment and like (notes 20261029 item 16) ----------

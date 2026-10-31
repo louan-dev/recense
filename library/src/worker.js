@@ -1,6 +1,6 @@
 // Gallery: public links and the private Main library, on one Cloudflare Worker.
 //
-//   /, /s/<id>, /f/…, /d/…, /api/gallery   the public side, from the PUBLIC bucket
+//   /, /s/<id>, /f/…, /d/…, /api/gallery, /api/og-image/<id>   the public side, from the PUBLIC bucket
 //   /main, /main/f/…                        the owner's library, from the MAIN bucket
 //   /main/api/…                             every write: uploads, links, deletes, invites
 //   /m/<token>/…                            an invited person's view of one Main folder (invite.js)
@@ -19,7 +19,7 @@ import { isOwner, sameSite, signedInAs } from "./access.js";
 import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
-import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, upload, gallery, galleryApi, file, folderFile } from "./public.js";
+import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, upload, gallery, galleryApi, file, folderFile, ogImage } from "./public.js";
 import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
 import { sharesApi, sharedPage, activitySweep } from "./shared.js";
@@ -66,6 +66,7 @@ export default {
     if (path === "/api/transcript") return linkTranscript(env, url);
     if (path === "/player/key.js") return keyWorklet();
     if ((m = path.match(/^\/s\/([A-Za-z0-9]+)$/))) return gallery(env, m[1], req);
+    if ((m = path.match(/^\/api\/og-image\/([A-Za-z0-9]+)$/))) return ogImage(env, ctx, url, m[1]);   // a share link's preview picture
     if ((m = path.match(/^\/f\/([A-Za-z0-9]+)\/(\d{3})$/))) return file(req, env, ctx, url, m[1], m[2]);
     if ((m = path.match(/^\/d\/([A-Za-z0-9]+)\/[A-Za-z0-9]+\/(.+)$/))) return folderFile(req, env, url, m[1], m[2]);
     if ((m = path.match(/^\/t\/([0-9a-f]{32})\/([^/]+)$/))) return tmpGet(req, env, ctx, url, m[1], m[2]);

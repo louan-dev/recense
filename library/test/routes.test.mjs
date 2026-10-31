@@ -267,6 +267,10 @@ await test("folder link: a folder in Public gets one link, items delete, whole f
   assert.equal(g.items.length, 2);
   const one = g.items.find((f) => f.path === "day 1/a.jpg");
   assert.equal(await (await call(one.src)).text(), "jpg-a");
+  // its preview card: the folder's name, the first picture by name (notes 20261029 item 3)
+  assert.ok((await (await call("/s/" + link.id)).text()).includes('<meta property="og:title" content="Trip · Shared by Chau Phan">'));
+  assert.equal(await (await call("/api/og-image/" + link.id)).text(), "jpg-b");
+  assert.equal(await (await call("/api/og-image/" + link.id + "?cover=" + encodeURIComponent("day 1/a.jpg"))).text(), "jpg-a");
 
   r = await call(`/main/api/link?id=${link.id}&item=${encodeURIComponent("day 1/a.jpg")}`, { as: "owner", method: "DELETE" });
   assert.equal(r.status, 200);
@@ -460,6 +464,55 @@ await test("share link from Main: owner only, copies just the picked files, visi
   assert.ok(!g.items[0].pending);
   assert.equal(await (await call("/f/" + j.id + "/000")).text(), "BBB");
   assert.ok(await MAIN.head("files/Pick/b.jpg"));
+});
+
+await test("share link preview card: Open Graph tags on /s/<id>, the picture at /api/og-image/<id> (notes 20261029 item 3)", async () => {
+  await MAIN.put("files/Og/a.txt", "TXT", { httpMetadata: { contentType: "text/plain" } });
+  await MAIN.put("files/Og/b.jpg", "JPG", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Og/c.png", "PNG", { httpMetadata: { contentType: "image/png" } });
+  const mk = async (paths, extra = {}) => {
+    const l = await (await call("/main/api/link?action=fromMain&days=1", { as: "owner", method: "POST", body: JSON.stringify({ paths, ...extra }) })).json();
+    for (let i = 0; i < paths.length; i++) assert.equal((await call(`/main/api/link?action=copy&id=${l.id}&i=${i}`, { as: "owner", method: "POST" })).status, 200);
+    return l.id;
+  };
+  const meta = (html, k) => (html.match(new RegExp('<meta (?:property|name)="' + k + '" content="([^"]*)"')) || [])[1];
+
+  // no cover chosen: the first image
+  const l = await mk(["Og/a.txt", "Og/b.jpg", "Og/c.png"]);
+  const html = await (await call("/s/" + l)).text();
+  assert.equal(meta(html, "og:title"), "3 files for you · Shared by Chau Phan");
+  assert.equal(meta(html, "og:description"), "View and download shared files");
+  assert.equal(meta(html, "og:type"), "website");
+  assert.equal(meta(html, "og:url"), ORIGIN + "/s/" + l);
+  assert.equal(meta(html, "og:image"), ORIGIN + "/api/og-image/" + l);
+  assert.equal(meta(html, "og:image:width"), "1200");
+  assert.equal(meta(html, "og:image:height"), "630");
+  assert.equal(meta(html, "twitter:card"), "summary_large_image");
+  assert.ok(html.indexOf('property="og:image"') < html.indexOf("<style>"), "tags sit before the page's CSS");
+  let r = await call("/api/og-image/" + l);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/jpeg");
+  assert.equal(r.headers.get("cache-control"), "public, max-age=3600");
+  assert.equal(r.headers.get("access-control-allow-origin"), "*");
+  assert.equal(await r.text(), "JPG");
+
+  // ?cover= wins, on the page (carried into og:image) and at the picture; a file that isn't a picture is ignored
+  assert.equal(meta(await (await call("/s/" + l + "?cover=002")).text(), "og:image"), ORIGIN + "/api/og-image/" + l + "?cover=002");
+  assert.equal(await (await call("/api/og-image/" + l + "?cover=2")).text(), "PNG");
+  assert.equal(await (await call("/api/og-image/" + l + "?cover=000")).text(), "JPG");
+
+  // the cover picked when the link was made (coverItem)
+  const c = await mk(["Og/b.jpg", "Og/c.png"], { cover: "Og/c.png" });
+  assert.equal(await (await call("/api/og-image/" + c)).text(), "PNG");
+
+  // nothing to show: no og:image, a small card, and the picture 404s
+  const t = await mk(["Og/a.txt"]);
+  const th = await (await call("/s/" + t)).text();
+  assert.equal(meta(th, "og:title"), "1 file for you · Shared by Chau Phan");
+  assert.equal(meta(th, "og:image"), undefined);
+  assert.equal(meta(th, "twitter:card"), "summary");
+  assert.equal((await call("/api/og-image/" + t)).status, 404);
+  assert.equal((await call("/api/og-image/nosuchlink00000000000")).status, 404);
 });
 
 await test("share link from the archive (from=archive): same link and page, copied from gallery-archive, the Mac app may make it", async () => {
