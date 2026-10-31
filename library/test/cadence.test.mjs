@@ -84,6 +84,16 @@ test("the light waits for the singer, and a word written but not sung (as correc
   assert.equal(n.words[0].un, true, JSON.stringify(n.words));
 });
 
+test("a listener's corrected words are lit even where no syllable of the voice is theirs (Whitacre's \"A world\")", () => {
+  const G = voice([[3.0, 3.3, 6200], [3.5, 4.4, 6100]], 7);
+  const ws = () => [{ t: "A", s: 0.6, e: 0.9 }, { t: "world", s: 3.0, e: 3.3 }, { t: "in", s: 3.5, e: 3.8 }];
+  const [n] = C.fit([{ id: 3000001, words: ws() }], G, 0);
+  assert.equal(n.words[0].un, true, "as heard, a word with no voice isn't lit: " + JSON.stringify(n.words));
+  const [m] = C.fit([{ id: 3000001, fixed: true, words: ws() }], G, 0);
+  assert.ok(m.words.every((w) => !w.un && w.e > w.s), JSON.stringify(m.words));
+  assert.ok(m.words.every((w, i) => !i || w.s >= m.words[i - 1].s), "in order: " + JSON.stringify(m.words));
+});
+
 test("speech is left as heard", () => {
   const F = voice([[1.0, 2.0, 6000]]);
   const [l] = C.fit([{ id: 3, words: [{ t: "hello", s: 1.2, e: 1.6 }] }], F, 0);

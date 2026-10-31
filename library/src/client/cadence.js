@@ -182,7 +182,7 @@
       for (let i = from; i < at; i++) {
         const cut = syllables(flat[i].t, flat[i].lang), K = cut.length || 1;
         for (let k = 0; k < K; k++) Y.push({ i, c: cut[k] || Array.from(flat[i].t).length, exp: s[i] + ((e[i] - s[i]) * k) / K,
-          wt: (k ? 0.3 : 1) * (l.fixed ? 0.25 : 1), inner: k > 0, first: i === from && !k, end: i === at - 1 && k === K - 1 });
+          wt: (k ? 0.3 : 1) * (l.fixed ? 0.25 : 1), inner: k > 0, first: i === from && !k, end: i === at - 1 && k === K - 1, fx: !!l.fixed });
       }
     }
     if (!Y.length) return { res, un };
@@ -272,6 +272,14 @@
       for (let k = 0; k < S; k++) if (Y[k].i === i) ys.push(k);
       if (!ys.length) continue;
       const sung = ys.filter((k) => got[k]);
+      // a word a listener wrote in is sung (they heard it): with no syllable of its own it keeps the time it was given,
+      // between its neighbours, and the light goes on over it (Whitacre's "A world", owner 2026-10-30)
+      if (!sung.length && Y[ys[0]].fx) {
+        s[i] = Math.max(lastEnd, s[i]);
+        e[i] = Math.max(s[i] + 0.05, e[i]);
+        lastEnd = e[i];
+        continue;
+      }
       if (!sung.length) {
         un[i] = true;
         s[i] = e[i] = Math.max(lastEnd, Math.min(s[i], i + 1 < flat.length ? s[i + 1] : s[i]));
