@@ -4373,15 +4373,17 @@
   // Styles are only written when they change: a page that rewrites them every frame keeps style-watching
   // extensions (Dark Reader, translators) recomputing the whole page, which froze Firefox.
   // How much of a word is lit at t. A sung word timed syllable by syllable (Cadence's melody: { c, s, e }, c where it
-  // ends in the letters) lights each syllable as its note comes in, quickly (0.3 s at most), and holds it lit to the
-  // note's end, so var-i-a-tions steps with the singer and a held "on" stays lit as long as it's sung. Else evenly.
+  // ends in the letters) sweeps through its letters without stopping: each syllable's letters are spread over the time
+  // it's sung, up to where the next one comes in (or a quarter second past its end, so a breath isn't swept through),
+  // so the light slows on a held "on" and hurries through a quick var-i-a. Else evenly.
   const fillOf = (b, t, sp) => {
     const n = b.syl && b.syl.length ? Array.from(b.t || sp.textContent || "").length : 0;
     if (!n) return t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s));
     let c0 = 0;
-    for (const y of b.syl) {
+    for (let k = 0; k < b.syl.length; k++) {
+      const y = b.syl[k], end = k + 1 < b.syl.length ? Math.min(b.syl[k + 1].s, y.e + 0.25) : y.e;
       if (t < y.s) return c0 / n;
-      if (t < y.e) return Math.min(1, (c0 + (y.c - c0) * Math.min(1, (t - y.s) / Math.max(0.05, Math.min(y.e - y.s, 0.3)))) / n);
+      if (t < end) return Math.min(1, (c0 + (y.c - c0) * (t - y.s) / Math.max(0.05, end - y.s)) / n);
       c0 = y.c;
     }
     return 1;
