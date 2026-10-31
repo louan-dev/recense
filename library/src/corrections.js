@@ -22,8 +22,33 @@ const parts = (w) => {
   const m = String(w).normalize("NFC").match(/^([^\p{L}\p{N}]*)([\s\S]*?)([^\p{L}\p{N}]*)$/u);
   return m ? [m[1], m[2], m[3]] : ["", String(w), ""];
 };
-export const tokens = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
-const joinWords = (ws) => ws.join(" ").replace(/\s+([,.!?;:…])/g, "$1").trim();
+// Scripts written without spaces between words (Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan): Recense hands
+// their words over already cut, so they're joined with nothing between them (a space only after a Tibetan shad), and a
+// correction typed the way they're written is cut into words again here. gallery.js (unspaced, joinWords, tokens) and
+// recense.swift (unspaced, joinWords, words) are the same.
+const UNSPACED = "[\\u0E00-\\u0EFF\\u0F00-\\u0FFF\\u1000-\\u109F\\u1780-\\u17FF\\u2E80-\\u2FFF\\u3000-\\u30FF\\u3100-\\u312F\\u31A0-\\u31FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFE30-\\uFE4F\\uFF00-\\uFFEF\\u{20000}-\\u{3134F}]";
+const ENDS = new RegExp(UNSPACED + "$", "u");
+const OPENS = new RegExp("^" + UNSPACED, "u");
+const SHAD = /[\u0F0D-\u0F11\u0F14]$/u;
+export const unspaced = (a, b) => ENDS.test(a) && OPENS.test(b) && !SHAD.test(a);
+// and no space before a stop or comma (Latin, Arabic ، ؛ ؟, Ethiopic ። ፣ ፤ ፥ ፦ ፧)
+export const joinWords = (ws) =>
+  ws
+    .reduce((s, w) => (s === "" ? w : s + (unspaced(s, w) ? "" : " ") + w), "")
+    .replace(/\s+([,.!?;:…\u060C\u061B\u061F\u1362-\u1367])/gu, "$1")
+    .trim();
+const SEG = typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: "word" }) : null;
+const HAS_UNSPACED = new RegExp(UNSPACED, "u");
+const cut = (t) => {
+  if (!SEG || !HAS_UNSPACED.test(t)) return [t];
+  const out = [];
+  for (const { segment, isWordLike } of SEG.segment(t)) {
+    if (!isWordLike && out.length) out[out.length - 1] += segment; // a stop or a tsheg stays with the word before it
+    else out.push(segment);
+  }
+  return out;
+};
+export const tokens = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).flatMap(cut);
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
 export const emptyDoc = () => ({ edits: [], english: {}, version: 0, updatedAt: 0, overrides: [], glossary: {} });
@@ -53,7 +78,13 @@ export function baseLines(c) {
     out.push({
       id: l.id != null ? String(l.id) : "t" + Math.round(Number(words[0].start) * 1000),
       // h: what the recognizer heard where Recense's lexicon (what corrections taught it) wrote this word instead
-      words: words.map((w) => (typeof w.heard === "string" ? { t: w.text, s: Number(w.start), e: Number(w.end), h: w.heard } : { t: w.text, s: Number(w.start), e: Number(w.end) })),
+      words: words.map((w) => ({
+        t: w.text,
+        s: Number(w.start),
+        e: Number(w.end),
+        ...(typeof w.heard === "string" ? { h: w.heard } : {}),
+        ...(typeof w.lang === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(w.lang) ? { lang: w.lang } : {}),
+      })),
       english: l.english,
     });
   }
@@ -175,7 +206,7 @@ export function applyOverrides(lines, overrides) {
       const ws = tokens(text.get(i));
       if (!ws.length) return; // corrected to nothing: words the ASR made up
       const same = ws.length === l.words.length;
-      n = { ...l, words: layOver(ws, l.words), fixed: true, text: ws.join(" ") };
+      n = { ...l, words: layOver(ws, l.words), fixed: true, text: joinWords(ws) };
       // a translation aligned word by word no longer lines up once the words change in number
       if (!same && Array.isArray(l.english)) n.english = l.english.map((w) => ({ w: w.w, s: [] }));
     }
@@ -288,7 +319,8 @@ export function present(lines, shift = 0) {
         e: r(endOf(l)),
         text: l.fixed ? l.text : joinWords(l.words.map((w) => w.t)),
         en: en && en.length ? joinWords(en.map((w) => w.w)) : "",
-        words: l.words.map((w) => (w.h ? { t: w.t, s: r(w.s), e: r(w.e), h: w.h } : { t: w.t, s: r(w.s), e: r(w.e) })),
+        // a word's language (Recense's, when it wrote one) names its script's letters and fonts on the page
+        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e), ...(w.h ? { h: w.h } : {}), ...(w.lang ? { lang: w.lang } : {}) })),
         // Learn mode: the English words, each with the original words (by index) it translates; null = not translated yet
         enw: en ? en.map((w) => ({ w: w.w, s: Array.isArray(w.s) ? w.s.filter(Number.isInteger) : [] })) : null,
       };

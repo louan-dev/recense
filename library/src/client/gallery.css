@@ -1818,6 +1818,16 @@ body.comments-open #next{display:none}
   -webkit-tap-highlight-color:transparent
 }
 .txp[hidden]{display:none}
+/* row 30: a line in a script written without spaces (Chinese, Thai, Tibetan) has no gap between its phrases either;
+   letters that join (Arabic) are never spaced apart; a lit word's light reaches its marks above and below the line
+   (Devanagari, Tibetan stacks, Arabic dots), which the text clip would otherwise cut off */
+.txp.txglued{column-gap:0}
+/* ...and each phrase leans on its neighbour (a phrase is as wide as its English, which would leave a gap) */
+.txp.txglued .txc:not(:last-child)>.txs{text-align:end}
+.txp.txglued .txc:not(:first-child)>.txs{text-align:start}
+.txp.txglued .txc:not(:first-child)>.txe{padding-inline-start:.3em} /* (its English keeps a space from the one before) */
+.txp[dir=rtl],.txline[dir=rtl],.txin:dir(rtl){letter-spacing:0}
+.txp.txother .txw{padding-block:.3em;margin-block:-.3em}
 .txc{display:inline-grid;justify-items:stretch;white-space:nowrap;max-width:100%}
 /* a phrase wider than the place wraps inside it (one size for every line, SPEC 59: never shrunk to fit) */
 .txc>.txs,.txc>.txe{white-space:normal;overflow-wrap:anywhere}

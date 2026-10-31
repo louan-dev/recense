@@ -3942,7 +3942,7 @@
 
   // words for a corrected line until the server's timing arrives: spread over the line's own time
   const spreadWords = (text, l) => {
-    const ws = text.split(/\s+/).filter(Boolean);
+    const ws = tokens(text);
     // over the words they replace, each where the same share of the characters falls (corrections.js layOver)
     const heard = (l.words || []).filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e));
     if (heard.length && ws.length) {
@@ -4043,8 +4043,10 @@
 
   const TURN = 0.3; // how long a heard phrase takes to turn into its English
 
-  const endsClause = (w) => /[,.;:?!…]$/.test(String(w).replace(/["'»”’)]+$/, ""));
-  const leansOn = (w) => !endsClause(w) && (String(w).match(/\p{L}/gu) || []).length <= 3;
+  // (and the stops of Chinese, Arabic and Ge'ez: ，。；：？！、 ، ؛ ؟ ። ፣ ፤ ፧)
+  const endsClause = (w) => /[,.;:?!…，。；：？！、،؛؟።፣፤፧]$/.test(String(w).replace(/["'»”’)」』]+$/, ""));
+  // (a Chinese or Thai word is short without leaning on the next)
+  const leansOn = (w) => !endsClause(w) && !U_ANY.test(w) && (String(w).match(/\p{L}/gu) || []).length <= 3;
   const LEAN_EN = new Set(
     ("a an the of to in on at by for from with into about as and or but if than that which who whose this these those " +
       "my your his her its our their i you he she it we they is are was were be been am do does did have has had will " +
@@ -4279,7 +4281,7 @@
       return;
     }
     // a made liaison's letters (prosogram-mount.js sets sp._lz): turquoise as the light reaches them, like the tie
-    if (sp._lz && t >= b.s && sp.dir !== "rtl") {
+    if (sp._lz && t >= b.s && sp._dir !== "rtl") {
       const f = fillOf(b, t, sp), lit = rgba(t >= b.e ? mix(GOLD, SPOKEN, (t - b.e) / 0.45) : GOLD), TQ = rgba(t >= b.e ? mix([64, 224, 208, 1], SPOKEN, (t - b.e) / 0.45) : [64, 224, 208, 1]);   // eases to white as the gold does
       const stops = [];
       let at = 0;
@@ -4313,7 +4315,7 @@
     const w = (f * 100).toFixed(1);
     const edge = Math.min(100, f * 100 + 6).toFixed(1);
     if (sp._c !== "transparent") st.color = sp._c = "transparent";
-    const bg = "linear-gradient(" + (sp.dir === "rtl" ? "to left," : "to right,") + rgba(GOLD) + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
+    const bg = "linear-gradient(" + (sp._dir === "rtl" ? "to left," : "to right,") + rgba(GOLD) + " " + w + "%," + rgba(AHEAD) + " " + edge + "%)";
     if (sp._bg !== bg) st.backgroundImage = sp._bg = bg;
     const sh = "0 0 8px rgba(255,214,51,.45)";
     if (sp._sh !== sh) st.textShadow = sp._sh = sh;
@@ -4321,6 +4323,37 @@
   };
 
   const RTL_RE = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
+  // A line's direction by most of its letters (an Arabic line with a name in Latin letters reads right to left; an
+  // English line with one Arabic word left to right); a word's by its own letters, none: the line's.
+  const RTL_L = new RegExp(RTL_RE.source, "gu");
+  const LTR_L = new RegExp("(?!" + RTL_RE.source + ")[\\p{L}\\p{N}]", "gu");
+  const dirOf = (s, or = "ltr") => {
+    const r = (String(s || "").match(RTL_L) || []).length, l = (String(s || "").match(LTR_L) || []).length;
+    return r + l === 0 ? or : r >= l ? "rtl" : "ltr";
+  };
+  // a line's language for the page (lang=, which picks the font: Chinese and Japanese letters differ), by most of its words
+  const langOf = (words) => {
+    const n = {};
+    for (const w of words || []) if (w.lang) n[w.lang] = (n[w.lang] || 0) + 1;
+    return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || "";
+  };
+  // Scripts written without spaces between words (Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan): their words
+  // come cut, so nothing goes between them (a space only after a Tibetan shad), and a correction typed the way they're
+  // written is cut into words again. corrections.js (unspaced, joinWords, tokens) is the same.
+  const UNSPACED = "[\\u0E00-\\u0EFF\\u0F00-\\u0FFF\\u1000-\\u109F\\u1780-\\u17FF\\u2E80-\\u2FFF\\u3000-\\u30FF\\u3100-\\u312F\\u31A0-\\u31FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFE30-\\uFE4F\\uFF00-\\uFFEF\\u{20000}-\\u{3134F}]";
+  const U_ENDS = new RegExp(UNSPACED + "$", "u"), U_OPENS = new RegExp("^" + UNSPACED, "u"), U_ANY = new RegExp(UNSPACED, "u");
+  const unspaced = (a, b) => U_ENDS.test(a) && U_OPENS.test(b) && !/[།-༑༔]$/u.test(a);
+  const U_SEG = typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: "word" }) : null;
+  const tokens = (s) =>
+    String(s || "").trim().split(/\s+/).filter(Boolean).flatMap((t) => {
+      if (!U_SEG || !U_ANY.test(t)) return [t];
+      const out = [];
+      for (const { segment, isWordLike } of U_SEG.segment(t)) {
+        if (!isWordLike && out.length) out[out.length - 1] += segment; // a stop or a tsheg stays with the word before it
+        else out.push(segment);
+      }
+      return out;
+    });
 
   // [Ambient Sounds], as Recense shows it: while the media plays and no line is up
   const ambient = (host, el, gap, always, onTap) => {
@@ -4528,9 +4561,13 @@
         openAll(j);
       };
 
-      const rtl = RTL_RE.test(l.text || "");
+      const rtl = dirOf(l.text) === "rtl";
       pl.el.dir = rtl ? "rtl" : "ltr";
+      pl.el.lang = langOf(l.words);
+      pl.el.classList.toggle("txother", /[^\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\P{L}]/u.test(l.text || ""));
       const parts = L.parts || L.beats.map((_, i) => ({ src: [i, i + 1], en: null }));
+      // a line of Chinese, Thai or Tibetan reads with no gap between its phrases either
+      pl.el.classList.toggle("txglued", parts.length > 1 && parts.every((p, k) => k === 0 || unspaced(L.beats[p.src[0] - 1].t, L.beats[p.src[0]].t)));
 
       for (const p of parts) {
         const cell = mkEl("span", "txc");
@@ -4545,9 +4582,13 @@
             sp.classList.add("txl");
             sp.title = "Learned from your corrections (heard \u201c" + L.beats[i].h + "\u201d)";
           }
-          sp.dir = rtl ? "rtl" : "ltr";
+          // a word in another direction than its line (a name in Latin letters in Arabic) is lit the way it reads; no dir=
+          // on the word, which would make each word its own island and "New York" in an Arabic line read "York New"
+          sp._dir = dirOf(L.beats[i].t, rtl ? "rtl" : "ltr");
+          const lw = l.words[i];
+          if (lw && lw.lang && lw.lang !== pl.el.lang) sp.lang = lw.lang;
           src.appendChild(sp);
-          if (i + 1 < p.src[1]) src.appendChild(document.createTextNode(" "));
+          if (i + 1 < p.src[1] && !unspaced(L.beats[i].t, L.beats[i + 1].t)) src.appendChild(document.createTextNode(" "));
           words.push({ sp, b: L.beats[i] });
         }
         cell.appendChild(src);
@@ -4555,7 +4596,7 @@
         const native = p.text != null ? p.text : p.en ? l.enw.slice(p.en[0], p.en[1]).map((w) => w.w).join(" ") : null;
         if (native != null) {
           en = mkEl("span", "txe");
-          en.dir = RTL_RE.test(native) ? "rtl" : "ltr";
+          en.dir = dirOf(native);
           en.textContent = native;
           cell.appendChild(en);
         }
@@ -4665,6 +4706,7 @@
         const trField = () => {
           const tb = mkEl("textarea", "txin txtr");
           tb.value = tr;
+          tb.dir = "auto";
           tb.rows = 1;
           tb.maxLength = 2000;
           tb.placeholder = langName(lang);
@@ -4688,6 +4730,8 @@
         if (i === cur && w) {
           const ta = mkEl("textarea", "txin");
           ta.value = l.text;
+          ta.dir = "auto"; // typed in Arabic, it runs right to left
+          ta.lang = langOf(l.words);
           ta.rows = 2;
           ta.maxLength = 2000;
           ta.setAttribute("aria-label", "Correct this line");
@@ -4711,7 +4755,8 @@
           const b = mkEl("button", "txline");
           b.type = "button";
           b.textContent = l.text;
-          b.dir = RTL_RE.test(l.text || "") ? "rtl" : "ltr";
+          b.dir = dirOf(l.text);
+          b.lang = langOf(l.words);
           b.onclick = (e) => {
             e.stopPropagation();
             el.currentTime = Math.max(0, l.s - 0.05);
@@ -4722,7 +4767,7 @@
           if (tr && tr !== (l.text || "").trim()) {
             const t = mkEl("div", "txtrl");
             t.textContent = tr;
-            t.dir = RTL_RE.test(tr) ? "rtl" : "ltr";
+            t.dir = dirOf(tr);
             body.appendChild(t);
           }
         }

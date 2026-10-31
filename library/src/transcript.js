@@ -28,7 +28,7 @@
 // first); langs the translations the media has a file of: the page shows the native language's, else the English.
 
 import { jsonResponse } from "./common.js";
-import { applyNative, baseLines, cleanText, correctedLines, emptyDoc, HISTORY, mergeOverrides, normalizeDoc, present, teach } from "./corrections.js";
+import { applyNative, baseLines, cleanText, correctedLines, emptyDoc, HISTORY, joinWords, mergeOverrides, normalizeDoc, present, teach } from "./corrections.js";
 import { asrName, changesName, corrName, entryFor, histName, join, LANGS, oldCorrName, oldTranscriptName, split, srcOf, trName } from "./layout.js";
 
 export const LOCK_TTL = 15 * 60 * 1000;
@@ -332,7 +332,7 @@ export async function transcriptSave(req, env, path, src) {
   // segments are the transcript's lines once Recense's own edits are laid over (overrides never change ids)
   const base = new Map(applyNative(baseLines(r.c), doc).map((l) => [l.id, l]));
   const shown = new Map(correctedLines(r.c, doc).map((l) => [l.id, l]));
-  const wasText = (s) => (s ? (s.fixed ? s.text : s.words.map((w) => w.t).join(" ")) : "");
+  const wasText = (s) => (s ? (s.fixed ? s.text : joinWords(s.words.map((w) => w.t))) : "");
   const logged = [];
   for (const e of clean) {
     const line = base.get(e.segId);
@@ -341,7 +341,7 @@ export async function transcriptSave(req, env, path, src) {
     const had = doc.overrides.find((x) => x.segId === o.segId && x.field === o.field);
     if (had && (Number(had.updatedAt) || 0) > o.updatedAt) continue; // a later correction of it is already saved
     const s = shown.get(o.segId);
-    const from = o.field === "text" ? (s ? wasText(s) : line.words.map((w) => w.t).join(" ")) : (had ? had.to : (s && s.tr && s.tr[o.field.slice(3)]) || "");
+    const from = o.field === "text" ? (s ? wasText(s) : joinWords(line.words.map((w) => w.t))) : (had ? had.to : (s && s.tr && s.tr[o.field.slice(3)]) || "");
     if (o.field === "text") teach(doc.glossary, from, o.to);
     if (from !== o.to) logged.push({ segId: o.segId, field: o.field, from, to: o.to, src, at: o.updatedAt });
     doc.overrides = mergeOverrides(doc.overrides, [o]);
