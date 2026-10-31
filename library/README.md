@@ -3,6 +3,20 @@
 The owner's library and share links, served at **https://gallery.improvdiplomat.workers.dev** (Cloudflare Worker + R2),
 with native apps for macOS, iOS and iPadOS and a Finder/Files location.
 
+## Why this exists
+Gallery is where my library lives now that it no longer fits in iCloud or on an old MacBook with 8 GB of memory and a
+disk that is always almost full. Photos, recordings, notes and calendars kept growing; failing SanDisk drives and a
+full iCloud broke the syncing I depended on. So I moved things somewhere I can hold: R2 for storage, a Worker I wrote,
+and native places in Finder and Files that still work when the connection doesn't. Apple Calendar gave way to my own
+CalDAV, and confidential things stay mine.
+
+But it is not only a storage story. I learn best through many senses at once, the way a song can teach a language
+faster than a textbook ever did for me, so Gallery plays, shows, lights and translates what I keep, and shares
+transcripts with Recense in Sill. I hope that turns everyday media into a playground for my family, for neighbours who
+meet English as a barrier, for English speakers exploring other cultures and cities with a curious mind, and for
+people with disabilities who deserve learning that meets them where they are. It is a small, humble attempt to make
+technology a little more accessible and a little more humane, built from what has worked for me, and offered freely.
+
 ## Long-term outcomes
 - Every file usable with no connection on Mac, iPhone and iPad, in each device's native place (Finder, Files).
 - Edits flow both ways when a connection appears; nothing runs 24/7; R2 is the storage, the Worker the sync engine.
