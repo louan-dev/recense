@@ -137,8 +137,42 @@ export function applyNative(lines, doc) {
 
 // ---------- overrides ----------
 
-// New words timed over the ones they replace, each where the same share of the characters falls (main.swift: layOver)
+// New words timed over the ones they replace (recense.swift: layOver). A word the listener left as it was keeps the
+// time it was heard at (the light stays on the voice); only the runs between those are spread, each new word where
+// the same share of the characters falls in the heard words it replaces (or in the gap, if it replaced none).
 export function layOver(words, heard) {
+  if (!heard.length || !words.length) return [];
+  const a = words.map(fold), b = heard.map((w) => fold(w.t));
+  const L = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--)
+      L[i][j] = a[i] && a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0, i0 = 0, j0 = 0;
+  const flush = (i1, j1) => {
+    const ws = words.slice(i0, i1);
+    if (ws.length) {
+      let hs = heard.slice(j0, j1);
+      if (!hs.length) {
+        const s = j0 ? heard[j0 - 1].e : heard[0].s, e = j0 < heard.length ? heard[j0].s : heard[heard.length - 1].e;
+        hs = [{ t: ws.join(" "), s, e: Math.max(e, s + 0.05 * ws.length) }];
+      }
+      out.push(...spread(ws, hs));
+    }
+  };
+  while (i < a.length && j < b.length) {
+    if (a[i] && a[i] === b[j]) {
+      flush(i, j);
+      out.push({ t: words[i], s: heard[j].s, e: heard[j].e });
+      i0 = ++i; j0 = ++j;
+    } else if (L[i + 1][j] >= L[i][j + 1]) i++;
+    else j++;
+  }
+  flush(words.length, heard.length);
+  return out;
+}
+
+function spread(words, heard) {
   if (!heard.length || !words.length) return [];
   const len = (s) => [...s].length;
   const hc = heard.map((w) => len(w.t) + 1);
