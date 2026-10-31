@@ -5199,16 +5199,17 @@ enum Cadence {
     }
 
     /// How far through a word the light is at t (0…1): by the voice spent, or the clock where nothing was measured.
-    /// A sung word timed syllable by syllable lights each syllable as its note comes in, quickly (0.3 s at most), and
-    /// holds it lit to the note's end, so var-i-a-tions steps with the singer and a held "on" stays lit as long as it's
-    /// sung (gallery.js `fillOf`).
+    /// A sung word timed syllable by syllable sweeps through its letters without stopping: each syllable's letters are
+    /// spread over the time it's sung, up to where the next comes in (or 0.25 s past its end, so a breath isn't swept
+    /// through), so the light slows on a held "on" and hurries through a quick var-i-a (gallery.js `fillOf`).
     static func progress(_ b: Beat, _ t: Double) -> Double {
         if let syl = b.syl, !syl.isEmpty, !b.text.isEmpty {
             let n = Double(b.text.unicodeScalars.count)
             var c0 = 0.0
-            for y in syl {
+            for (k, y) in syl.enumerated() {
+                let end = k + 1 < syl.count ? min(syl[k + 1].s, y.e + 0.25) : y.e
                 if t < y.s { return c0 / n }
-                if t < y.e { return min(1, (c0 + (Double(y.c) - c0) * min(1, (t - y.s) / max(0.05, min(y.e - y.s, 0.3)))) / n) }
+                if t < end { return min(1, (c0 + (Double(y.c) - c0) * (t - y.s) / max(0.05, end - y.s)) / n) }
                 c0 = Double(y.c)
             }
             return 1
