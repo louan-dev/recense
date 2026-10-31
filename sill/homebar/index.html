@@ -281,6 +281,7 @@
     lang: { get: () => st.lang, set: (v) => { st.lang = v; post({ k: "lang", v }); } },
     view: { get: () => st.view, set: (v) => { st.view = v; post({ k: "view", v }); } },
     items: [
+      { id: "timing", label: "Timing by ear: set each word's light", icon: I.timing, act: () => post({ k: "timing" }) },
       { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: () => post({ k: "clear" }) },
       { id: "download", label: "Download the played audio", icon: I.download, act: () => post({ k: "download" }) },
       { id: "share", label: "Share", icon: I.share, act: () => post({ k: "share" }) },

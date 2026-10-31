@@ -3740,10 +3740,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         // (Omnilingual, on this Mac) for every other and to tell which language it is, the canon for recited texts
         // (speech.swift). Never Groq (since 2026-10-30).
         guard OnDeviceASR.enabled else { throw err("this Mac can't transcribe: Recense needs macOS 26 and Sill built with its SDK") }
-        guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(), prefer: spokenLanguage) else {
+        // A stretch asked again (a few seconds a line was misheard in) is too short to tell its language by: it's
+        // heard as the song is sung, and what it's heard as doesn't become the song's language
+        guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(),
+                                                         prefer: redo != nil ? songLanguages().first ?? spokenLanguage : spokenLanguage) else {
             throw err("this Mac can't hear \(language.map(languageName) ?? "this language") yet: the open ears aren't installed (~/.local/share/recense/omni)")
         }
-        if let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
+        if redo == nil, let l = (t["language"] as? String).flatMap(languageCode) { spokenLanguage = l }
         engine = t["engine"] as? String
         if ProcessInfo.processInfo.environment["RECENSE_RAW"] != nil {
             let f = cacheDir.appendingPathComponent(key + ".raw.json")
@@ -4032,6 +4035,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     /// The languages this song is sung in (10 % of it or more).
     func songLanguages() -> [String] { languageShares().filter { $0.share >= 0.1 }.map(\.code) }
+
+    /// The one language this song is sung in, when it's sung in one: a stretch asked again is heard in it.
+    var soleLanguage: String? { let l = songLanguages(); return l.count == 1 ? l[0] : nil }
 
     /// A language as the spelling guessed it, or — where the spelling can't tell (Persian read as Urdu) — the language
     /// Whisper heard most in that script; nil if it heard none.
@@ -4484,7 +4490,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let lo = max(0, w.a - 3), hi = min(duration, w.b + 3)
         if let samples = try? await Task.detached(operation: { try decodeChunk(src, from: lo, to: hi) }).value, !samples.isEmpty {
             do {
-                let t = try await whisper(samples, lo, hi, language: nil, redo: [w.a, w.b])
+                let t = try await whisper(samples, lo, hi, language: soleLanguage, redo: [w.a, w.b])
                 let before = lines.count
                 add(t, samples: samples, offset: lo, keep: (w.a + 0.01)..<w.b)
                 if lines.count > before { wakeTranslation() }   // the loop may have finished before these came
@@ -4504,7 +4510,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         else { redone.append([w.a, w.b]); return }
         let outside = heard.filter { $0.start < w.a - 0.05 || $0.start > w.b + 0.05 }
         let before = heard.count - outside.count, base = lyrics.isEmpty ? 0 : matchScore(lyrics)
-        var tries: [String?] = [language], best: (score: Double, words: [Word])?
+        var tries: [String?] = [language ?? soleLanguage], best: (score: Double, words: [Word])?
         var k = 0
         while k < tries.count, !stopped {
             if k > 0 { try? await Task.sleep(for: .seconds(pace)) }
@@ -6906,6 +6912,7 @@ final class NativeSources {
             case "export": self.export(audiobook: b["as"] as? String == "m4b")
             case "download": self.downloadPlayed()
             case "clear": self.clearTranscript()
+            case "timing": if let l = self.editable { self.timeLine(l) } else { self.overlay.toast.say("Edit a line, then Timing") }
             case "share": self.shareSource()
             case "fx": self.setSound(b)
             case "chroma?": self.wantChords()          // the tray's chord detector asks (4 a second while it is on)
