@@ -586,12 +586,15 @@
 }
 
 /* ---- Speed, only when asked for ----
-   Six values across the width the two actions were using, so each one is a generous target.
+   Every value (0.5× … 2×, seven of them) on one row across the width the two actions were using: one column
+   each, however many there are (six fixed columns put 2× on a line of its own once 1.75× came, notes row 34).
    The selected one lights up, and a bead rides the stroke underneath it. */
 
 .p-strack{
   display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(0,1fr);
+  container-type:inline-size;
   height:100%;
   touch-action:none;
   cursor:pointer;
@@ -610,6 +613,9 @@
 .p-sv{
   display:grid;
   place-items:center;
+  white-space:nowrap;
+  min-width:0;
+  font-size:min(1em,4.6cqi);         /* "0.75×" is 2.5–2.9 em by font: on a phone each label shrinks to its column */
   color:rgba(235,235,245,.74);
   transition:color .2s ease,text-shadow .2s ease
 }

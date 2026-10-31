@@ -1325,6 +1325,26 @@ await test("Notes 25/26: over the speeds a light swipe turns the slide, never th
   assert.equal(await rate(), 2, "a tap on the last speed");
 });
 
+await test("Notes row 34: the speed ruler keeps 0.5× … 2× on one row, on a phone and on a laptop", true, async (pg) => {
+  await MAIN.put("files/Sp/a.wav", wavOf(4), { httpMetadata: { contentType: "audio/wav" } });
+  for (const [w, h] of [[375, 812], [320, 640], [1280, 800]]) {
+    await pg.setViewportSize({ width: w, height: h });
+    await pg.goto(base + "/main?p=Sp");
+    await pg.click('.tile[data-n="00000"]');
+    await pg.waitForSelector(".p-hb");
+    await barTo(pg, "speed");
+    const r = await pg.$eval('.p-slide[data-pos="cur"] .p-strack', (t) => {
+      const tr = t.getBoundingClientRect();
+      return { track: [tr.left, tr.right], cells: [...t.querySelectorAll(".p-sv")].map((c) => { const b = c.getBoundingClientRect(); return { t: c.textContent, top: Math.round(b.top), l: b.left, r: b.right, sw: c.scrollWidth, cw: c.clientWidth }; }) };
+    });
+    assert.equal(r.cells.length, 7);
+    assert.equal(r.cells.at(-1).t, "2×");
+    assert.equal(new Set(r.cells.map((c) => c.top)).size, 1, `${w}px: one row: ` + JSON.stringify(r.cells.map((c) => [c.t, c.top])));
+    for (const c of r.cells) assert.ok(c.l >= r.track[0] - 1 && c.r <= r.track[1] + 1 && c.sw <= c.cw + 1, `${w}px: ${c.t} fits: ` + JSON.stringify(c));
+    await pg.keyboard.press("Escape");
+  }
+});
+
 await test("Notes 33 / item 20: with the voice measured (keep/<key>/features.json) the light stays steady: no lift, no glow that changes frame to frame (it flickered)", true, async (pg) => {
   const KEEP = await mf.getR2Bucket("KEEP");
   await MAIN.put("files/Vc/a.wav", wavOf(6), { httpMetadata: { contentType: "audio/wav" } });
