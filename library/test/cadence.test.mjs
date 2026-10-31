@@ -99,3 +99,14 @@ test("speech is left as heard", () => {
   const [l] = C.fit([{ id: 3, words: [{ t: "hello", s: 1.2, e: 1.6 }] }], F, 0);
   assert.equal(l.words[0].syl, undefined);
 });
+
+test("a word sung out to a whisper is held for as long as it's sung, and a lone quiet blip is still nobody", () => {
+  // "dream" at full voice, then going soft (20 dB down) in a chain of short phrases; later a far-off quiet blip
+  const F = voice([[1.0, 1.4, 6500], [1.5, 2.2, 6700], [2.4, 2.8, 6700], [3.0, 3.4, 6650], [3.6, 4.0, 6600], [6.5, 6.6, 6700]], 8);
+  for (let k = 240; k < 600; k++) F.db[k] = -400;
+  for (let k = 620; k < 690; k++) F.db[k] = -600;
+  const [l] = C.fit([{ id: 2000001, words: [{ t: "a", s: 1.0, e: 1.4 }, { t: "dream", s: 1.5, e: 2.0 }] }], F, 0);
+  assert.ok(l.words[1].e >= 3.95, "held through the soft phrases: " + JSON.stringify(l.words[1]));
+  const u = C.units(F);
+  assert.ok(u.find((x) => x.s >= 6.4).weak, "the blip far from the voice stays weak: " + JSON.stringify(u));
+});

@@ -109,7 +109,9 @@
   // 2.5 dB or more between two peaks (syllables sung legato on one breath, va-ri-a-tions: syllabic nuclei as Prosogram
   // finds them). A pitch move with no dip stays inside its syllable (a held word falling to its next note, a run on one
   // vowel). Each: { s, e, m (middle pitch, MIDI × 100), db (its loudest, dB), weak (15 dB or more under the song's
-  // sung level, or 11 semitones or more from the singer's middle: bleed, an octave slip, breath) }.
+  // sung level, or 11 semitones or more from the singer's middle: bleed, an octave slip, breath) }. A quiet one joined to
+  // the singing (30 ms to 300 ms between, a chain of them) is the voice going soft, not bleed: a word sung out to a
+  // whisper is held for as long as it's sung (Variations on a Dream's "dream" at 2:51, owner 2026-10-31).
   function unitsOf(f) {
     const p = f.pitch, db = f.db, n = f.n;
     const on = (k) => f.isVoiced(k) && p[k] > 0;
@@ -146,7 +148,11 @@
       const byLen = out.filter((u) => u.m > 0).map((u) => [u.m, u.e - u.s]).sort((q, r) => q[0] - r[0]);
       let half = byLen.reduce((q, x) => q + x[1], 0) / 2, reg = byLen.length ? byLen[0][0] : 0;
       for (const [m, d] of byLen) { reg = m; if ((half -= d) <= 0) break; }
-      for (const u of out) u.weak = u.db < lv - 15 || (u.m > 0 && Math.abs(u.m - reg) >= 1100);
+      const off = out.map((u) => u.m > 0 && Math.abs(u.m - reg) >= 1100);
+      out.forEach((u, k) => (u.weak = off[k] || u.db < lv - 15));
+      // soft singing: a quiet unit next to a sung one (≤ 0.3 s), outward from the sung ones both ways
+      for (let k = 1; k < out.length; k++) if (out[k].weak && !off[k] && !out[k - 1].weak && out[k].s - out[k - 1].e <= 0.3) out[k].weak = false;
+      for (let k = out.length - 2; k >= 0; k--) if (out[k].weak && !off[k] && !out[k + 1].weak && out[k + 1].s - out[k].e <= 0.3) out[k].weak = false;
     }
     return out;
   }
