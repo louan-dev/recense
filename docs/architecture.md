@@ -1,6 +1,6 @@
 # Sill · architecture and reuse
 
-Read this with `CLAUDE.md` § "One app, three faces". That section settles *what is an app*; this file settles *how code
+Read this with `.claude/CLAUDE.md` § "One app, three faces". That section settles *what is an app*; this file settles *how code
 is arranged so it can be reused and recombined*. Written 2026-10-28 from the owner's words; changes only when a
 decision does.
 
@@ -26,7 +26,7 @@ Three separate causes, all now understood. Record them so nobody reintroduces on
    Claude Code scratchpad path that no longer exists. Harmless but it kept the name alive in System Settings.
 
 Removal order: `lsregister -u` the trashed bundle → delete the bundle → remove the login item in System Settings →
-delete `sill/recense/` by the Nook procedure in `CLAUDE.md` (snapshot zip outside the folder first; the only live work
+delete `sill/recense/` by the Nook procedure in `.claude/CLAUDE.md` (snapshot zip outside the folder first; the only live work
 inside it is `recense/homebar/prosogram/`, which must be moved out before deletion).
 
 ## The reuse problem, in the owner's words
@@ -291,7 +291,7 @@ and re-check **after**. A major OS release is exactly when these break.
 
 | At risk | Why | Check after |
 |---|---|---|
-| **MultitouchSupport gestures** (`sill.swift`, three-finger swipes) | **private API**, already marked experimental in `CLAUDE.md` — first casualty of a major upgrade | layers up/down and panel paging still respond |
+| **MultitouchSupport gestures** (`sill.swift`, three-finger swipes) | **private API**, already marked experimental in `.claude/CLAUDE.md` — first casualty of a major upgrade | layers up/down and panel paging still respond |
 | **Core Audio process tap** (`soundengine.swift`) | tap and `muteBehavior` semantics have shifted between releases; SoundSource already breaks tap muting | tap a followed player, confirm original audio mutes and returns on quit |
 | **Accessibility and Calendar permissions** | `build.sh` keeps a stable signing identity specifically so these survive *rebuilds*; an OS upgrade commonly still resets them | strip reads events; Recense follows a player |
 | **Apple Events to QuickTime / Music** | `osascript` automation permissions reset on upgrade | exact-sync seek test from the handoffs |

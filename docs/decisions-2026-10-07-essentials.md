@@ -1,4 +1,4 @@
-# Essentials redesign: decisions (2026-10-07)
+# Essentials layer: decisions (2026-10-07)
 
 To merge into 06_DECISIONS / 01_CURRENT_STATE / 04_IDEAS.
 
@@ -20,7 +20,7 @@ To merge into 06_DECISIONS / 01_CURRENT_STATE / 04_IDEAS.
 
 ## Constraints noted
 
-- macOS 15.4+ restricts MediaRemote, so "is anything playing" can't be read reliably. The pause button is always shown when the strip is awake.
+- macOS 15.4+ restricts MediaRemote, so "is anything playing" can't be read reliably; the pause button shows whenever the strip is awake.
 - Clock-app alarms and timers can't be read by other apps; Calendar alarms and Reminders can.
 - iPhone/iPad battery: no public API.
 - The notebook sends content to Claude (cloud) when asked, so it needs a disclosure when it opens.
@@ -38,7 +38,7 @@ To merge into 06_DECISIONS / 01_CURRENT_STATE / 04_IDEAS.
 ## 2026-10-08 (round 6)
 
 - **Essentials panels flow left → right (two fingers):** essentials → DEVONthink hub → notebook. Right → left goes back. The terminal panel is removed.
-- **DEVONthink hub:** search across DEVONthink, the Global Inbox by default, drop files to import into the Global Inbox, click to open in DEVONthink (AppleScript; it never launches DEVONthink by itself).
+- **DEVONthink hub:** search across DEVONthink, the Global Inbox by default, drop files to import into the Global Inbox, click to open in DEVONthink (AppleScript; it leaves DEVONthink closed unless asked).
 - **Notebook:** the Claude CLI running in the Obsidian vault, with Read aloud for the selected text. Claude is a cloud service, and the panel says so. It's no longer reached by canceling Touch ID.
 - **Awake strip:** the next event reads "NOW +x", where NOW is the anchor: the current moment. The new-desktop button is replaced by Mission Control, between the ‹ › desktop arrows.
 - **Repeating events** show once on the horizon (the next occurrence). Empty days fall back to whatever comes next.

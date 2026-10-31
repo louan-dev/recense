@@ -40,7 +40,7 @@ does not exist, no Recense process runs, and Sill holds 47123.
 - Do one item per session, update §7 in `../sync/PROGRESS.md`, then stop.
 
 ## Owner decisions: Nook folds into Sill (supersedes BACKLOG SL6 wording)
-Source to import: `~/Developer/nook/main.swift` (379 lines, `BarController`, `Rule`/`RuleAction`, `Prefs`). Copy it to `reference/` in this repo first so you can read it here.
+Source: `nook/main.swift` in this repo (379 lines, `BarController`, `Rule`/`RuleAction`, `Prefs`); build it standalone with `zsh nook/build.sh`. The old `~/Developer/nook` folder is already gone.
 
 1. **Import the menu-bar hider into Sill** as its own file, controlled by a **Sill setting that can be turned off**. When on, running Sill automatically installs the two divider status items and collapses so the hidden icons are out of sight. When off: no status items, no global mouse monitors, no timers.
 2. **Two tiers, as in the Nook source:** `[ always-hidden ] ┆ [ hidden ] │ ‹› [ visible ] [ system ]`. Icons are placed by ⌘-dragging them left of a divider (macOS has no API to move other apps' icons; say so in the UI).

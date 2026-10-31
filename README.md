@@ -1,37 +1,66 @@
 # sill
 
-Sill is a quiet strip at the top centre of the Mac's screen: time, date, batteries, a recorder, Draftpad and Recense,
-the listening surface for transcripts, karaoke light and sound. One app, one process, no Dock icon. It works offline;
-Gallery's Worker and R2 are an optional cloud side for sharing transcripts and files.
+Sill is a quiet strip at the top centre of the Mac's screen; time, date, batteries, a recorder, Draftpad and Recense,
+the listening surface where a recording becomes something to learn from: heard, read, seen lit and felt in its rhythm.
+One app, one process, no Dock icon. It works offline; Gallery's Worker and R2 are an optional cloud side for sharing
+transcripts and files.
 
-## Long-term outcomes
-- One calm surface for time, notes, listening and the Mac's sound, costing near nothing while idle.
-- Every recording heard, transcribed and translated on this Mac, in every language and in its own script.
-- The same transcript, corrections and timing wherever a recording plays: in Sill, in Gallery, on iPhone and iPad.
-- Desk tools inside Sill: notes (Obsidian, Notability, files), calendar, a menu-bar icon hider and a right-edge widget
-  panel.
+Beside it sits **Nook**, a menu-bar hider in `nook/` that builds and runs on its own today (see Nook below), until it
+folds into Sill.
+
+## Long-term goals
+Each goal comes from one design philosophy, zero friction: nothing stands between a thought, a sound or a glance and
+what it's for. Each project meets a different kind of friction, so each carries its own part of that philosophy.
+
+- **The strip: friction of attention.** Time, the next event and the Mac's state sit where the eye already rests; it
+  costs near nothing while idle, takes no focus, and asks for nothing until reached for.
+- **Recense: friction of understanding.** Language is learned through more than one sense at once; Recense joins the
+  voice you hear, the words in their own script, a light that moves with the syllables as sung, the melody and liaison
+  drawn over the line, and a translation beside it. Every recording heard, transcribed and translated on this Mac, in
+  its language and its script, so a song or a sermon becomes a lesson without leaving it.
+- **Continuity: friction of place.** The same transcript, corrections and timing wherever a recording plays; in Sill,
+  in Gallery, on iPhone and iPad. A correction made once teaches every surface.
+- **Draftpad: friction of capture.** One endless `draftpad.md`, reached by a swipe, so a thought lands before it fades;
+  topics instead of files, so nothing needs a name first.
+- **Nook and the desk tools: friction of clutter.** Menu-bar icons tucked until wanted; notes (Obsidian, Notability,
+  files), calendar and a right-edge widget panel inside Sill, so the tools come to the work instead of the reverse.
+
+## Nook
+A menu-bar hider with two tiers: `[ deep ] ┆ [ hidden ] │ ‹› [ visible ] [ system ]`. ⌘-drag icons left of a divider
+(macOS has no API to move other apps' icons). Hovering the first divider peeks at the hidden tier only; option-click
+‹›, or right-click → "Reveal Always-Hidden Items", shows the deep tier, which tucks itself away again after the
+auto-hide delay. Per-app rules (hide all, show all, show selection) and launch at login are in its menu.
+
+```
+zsh ~/Developer/sill/nook/build.sh      # builds /Applications/Nook.app
+open /Applications/Nook.app
+```
 
 ## Features
 
-### The strip
-- Time and date (never takes keyboard focus), batteries (a bolt while charging), and four icons between them:
-  recorder, Recense and others, glowing on hover.
-- Layers by three-finger swipe: hidden → essentials → Draftpad. Essentials pages: essentials → DEVONthink hub →
+### Layers
+Three fingers up and down move through the strip's layers: hidden → **Essentials** → **Drafting**.
+- **Essentials:** time and date (it doesn't take keyboard focus), batteries (a bolt while charging), and four icons
+  between them; recorder, Recense and others, glowing on hover. Two fingers page through essentials → DEVONthink hub →
   notebook (Obsidian).
+- **Drafting:** the layer where Draftpad runs; one endless `draftpad.md` in the Obsidian vault, paged by topic, with
+  cursor memory.
 - Edge bars on hover: recorder / volume (left), vault / brightness (right), R2 (bottom).
-- Draftpad: one endless `draftpad.md` in the Obsidian vault, paged by topic, with cursor memory.
 - Voice → calendar card; Mac ↔ iPhone ↔ iPad handoff.
 
 ### Recense
-- Follows what is playing in QuickTime, Music, Safari, Chrome, Firefox and Gallery pages, or opens local files, and
-  shows the transcript as a see-through strip below the menu bar and notch, or in its own window.
-- Hears on this Mac: Apple SpeechAnalyzer for every system language (corrections teach it), the open ears
-  (Omnilingual ASR) for the rest, and the canon for recited texts. Each language in its own script.
-- Translates on this Mac with Apple's Translation framework.
-- Karaoke light that follows the voice: syllables heard from the vocal stem (Demucs), words hung on them, unsung words
-  never lit, held notes held, each syllable swept at its sung speed. Word timing by ear in the editor's toolbar.
-- Prosody notation over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes.
-- Every script laid out correctly:
+Recense is built for learning by ear, eye and rhythm together; each feature below adds a sense to the same line.
+- **Follows what plays** in QuickTime, Music, Safari, Chrome, Firefox and Gallery pages, or opens local files; the
+  transcript shows as a see-through strip below the menu bar and notch, or in its own window.
+- **Hears** on this Mac: Apple SpeechAnalyzer for each system language (corrections teach it), the open ears
+  (Omnilingual ASR) for the rest, and the canon for recited texts.
+- **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
+- **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
+  dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
+  Word timing by ear in the editor's toolbar.
+- **Draws the prosody** over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes;
+  the shape of the sentence becomes visible, which helps where the written word and the spoken one part ways.
+- **Reads each script as its readers do:**
   - Written without spaces between words: Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan.
   - Right to left, laid out by the bidi algorithm (Latin names and numbers keep their order): Arabic, Persian, Urdu,
     Hebrew, Syriac, Thaana.
@@ -41,12 +70,12 @@ Gallery's Worker and R2 are an optional cloud side for sharing transcripts and f
     - East Asia: Korean (Hangul).
     - South Asia: Devanagari (Hindi, Marathi, Nepali, Sanskrit), Bengali (Bengali, Assamese), Gurmukhi (Punjabi),
       Gujarati, Odia, Tamil, Telugu, Kannada, Malayalam, Sinhala.
-    - Africa: Ge'ez (Amharic, Tigrinya), Tifinagh (Tamazight), Coptic..
+    - Africa: Ge'ez (Amharic, Tigrinya), Tifinagh (Tamazight), Coptic.
+- **Practice:** loop, A–B and speed for shadowing a line until it sits; edit lines in place (corrections keep the
+  voice's timing); rename, download, Retranscribe, Retranslate, transcript and M4B export, share.
 - `[Ambient Sounds]` where no voice is heard; no overlay over captions the video already shows.
-- Edit lines in place; corrections keep the voice's timing. Loop, A–B, speed, rename, download, Retranscribe,
-  Retranslate, transcript and M4B export, share.
-- Sound tray: a native process tap → EQ / Key / Space → limiter chain for every player, vocal / instrumental
-  extraction, chord detection.
+- **Sound tray:** a native process tap → EQ / Key / Space → limiter chain for each player; vocal / instrumental
+  extraction, so the voice can be heard alone or sung over; chord detection.
 - Idle backfill separates and measures songs under 15 minutes. Transcripts cache locally and mirror to Gallery's
   `keep/<key>/` when available.
 
@@ -68,11 +97,12 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
-  nook/main.swift    menu-bar hider source, to be folded into Sill
+  nook/              Nook: main.swift and build.sh; to be folded into Sill
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions
   notes/             task tables
+  .claude/CLAUDE.md  instructions for Claude Code sessions
 ```
 
 ## Build and run
@@ -100,25 +130,25 @@ macOS 27 SDK, which on-device hearing needs.
 | Where | Two fingers right → left | Two fingers left → right |
 | --- | --- | --- |
 | Essentials | Back toward the first panel | Next panel |
-| Draftpad | Back toward the first topic; leaving a blank topic deletes it | Next topic; past the last, a new dated topic |
+| Drafting | Back toward the first topic; leaving a blank topic deletes it | Next topic; past the last, a new dated topic |
 
 | Do this | Result |
 | --- | --- |
 | Three fingers up / down | One layer up / down |
-| Click the time | Open the pad |
-| Click the small time at the top of the pad | Back to the time view |
-| Ctrl+Option+Space | Toggle the pad |
-| Esc or ⌘W (in the pad) | Hide |
+| Click the time | Open Draftpad |
+| Click the small time at the top of Draftpad | Back to the time view |
+| Ctrl+Option+Space | Toggle Draftpad |
+| Esc or ⌘W (in Draftpad) | Hide |
 | ⌘] / ⌘[ | Next / previous topic |
-| Swipe up | Summon Sill, dismiss the Recense card |
+| Swipe up | Summon Sill; dismiss the Recense card |
 | Two fingers held still | Time ruler on where the media is |
 
-Three-finger swipes use Apple's private MultitouchSupport framework (no permission prompt, experimental: a macOS
+Three-finger swipes use Apple's private MultitouchSupport framework (no permission prompt; experimental, so a macOS
 update could break it). Turn macOS's own three-finger swipes off in System Settings → Trackpad → More Gestures.
 `SILL_GESTURES=0 ./sill &` disables them. Swipes are logged to `~/Library/Logs/sill.log` when Sill runs from the login
 item. BetterTouchTool fallback: `zsh ~/Developer/sill/sill/scripts/gesture.sh up` (or `down`, `hide`, `quit`).
 
 ## Roadmap
-Idle efficiency (file watchers over polling, clock ticks only while visible), strip colours and panels, Notes in Sill
-(Obsidian, Notability read-only, filesystem), a health chip from `views/health.json`, the menu-bar hider (hidden and
-always-hidden tiers, hover to peek, behind a setting), and a right-edge widget panel starting with Find My.
+Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Sill
+(Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; Nook folded into Sill (hidden
+and deep tiers, hover to peek, behind a setting); and a right-edge widget panel starting with Find My.

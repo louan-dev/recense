@@ -1,5 +1,5 @@
 // Nook — a menu bar hider inspired by Tuck. Targets macOS 14+ (tested design: Sequoia 15.5).
-// Build & run: bash build.sh
+// Build & run: zsh build.sh, then open /Applications/Nook.app
 //
 // How it works: macOS gives apps no way to hide Apple's own icons (clock, battery...).
 // Nook adds two divider status items. When collapsed, a divider becomes 10,000pt wide and
