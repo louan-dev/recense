@@ -5,7 +5,7 @@
 //                      the old file in trash/<day>/<path>@<time>; DELETE moves a file to the trash.
 //   /main/dav-tmp/…    the gallery-tmp bucket, behind Access too. Throwaway by design (it expires), so
 //                      DELETE and overwrites are for good: no trash, no versions.
-//   /main/dav-archive/…  the gallery-archive bucket (chauphan/… and later computers), behind Access. Read-write
+//   /main/dav-archive/…  the gallery-archive bucket (archive/… and later computers), behind Access. Read-write
 //                      like Main: an overwrite keeps the old file in .trash/<day>/<path>@<time> in the same
 //                      bucket, and DELETE moves a file there. Finder's own files (._* and .DS_Store: NFS has no
 //                      extended attributes) are stored as they come, never listed, never trashed.

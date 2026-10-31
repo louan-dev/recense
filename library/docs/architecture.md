@@ -10,7 +10,7 @@ One folder, **Gallery**, in Finder (macOS) and in Files (iOS/iPadOS), that mirro
 
 | Inside the folder | Backed by | Today, through |
 |---|---|---|
-| `Chauphan/` (what moved out of `/Users/chauphan`) | `gallery-archive/chauphan/` | `/main/nc-archive/` (always-on NFS mount, `~/Cloud/Chauphan`) |
+| `Archive/` (what moved out of `/Users/chauphan`) | `gallery-archive/archive/` | `/main/nc-archive/` (always-on NFS mount, `~/Cloud/Archive`) |
 | `Main/`, `Public/` (what the NFS Gallery mount shows) | `gallery-main/files/`, `gallery-public/folders/` | `/main/nc/`, Gallery.app (Touch ID) |
 | `tmp/` (every device's downloads, 14 days) | `gallery-tmp` | `/main/nc-tmp/`, `com.chauphan.downloads-to-r2` |
 
@@ -118,7 +118,7 @@ bucket root are never reachable through a mount.
     file opens offline even after iOS has evicted the Files copy. The cost is up to 2× space for kept files while
     both copies exist (an APFS clone may avoid it: verify on device).
   - **Domains.** On macOS one domain per root. The app can `disconnect` the Main domain on screen lock (Gallery.app's
-    wipe-on-lock posture) while Chauphan stays connected (Decided 3). On iOS one domain holding all roots, and Main's
+    wipe-on-lock posture) while Archive stays connected (Decided 3). On iOS one domain holding all roots, and Main's
     Face ID gate is an OPEN question (§8).
   - **Host app:** AppKit menu-bar item on macOS, SwiftUI single screen on iOS. Both only do sign-in, the Keep list
     and status.
@@ -154,7 +154,7 @@ Files under "On My iPhone".
 | Slice | What | Proof |
 |---|---|---|
 | **1** | Backend, read-only, `gallery-archive`: ids, reconciler, `items`, `changes`, `content` with Range. Miniflare tests. | `test/fp.test.mjs`; live `changes` against the archive (after a deploy yes) |
-| **1b** | iOS read-only: host app plus extension, root `Chauphan/Voice Memos/` first. Signing test (a) comes first. | Voice Memos visible in Files on the iPhone, one opens and plays, airplane mode still lists |
+| **1b** | iOS read-only: host app plus extension, root `Archive/Voice Memos/` first. Signing test (a) comes first. | Voice Memos visible in Files on the iPhone, one opens and plays, airplane mode still lists |
 | 2 | Offline Keep: macOS content policy, iOS keep store | a kept memo plays in airplane mode after an eviction |
 | 3 | Uploads and edits: create, modify (If-Match, 412 → conflict copy), delete to trash, delete guard, rename via `fid` | two-device conflict test; trash restore |
 | 4 | Shared `tmp/`: the tmp root in the domain, plus iOS Safari's download location set to it | a Safari download on the iPhone shows on the Mac, gone after 14 days |
@@ -175,7 +175,7 @@ The app is a Files-like browser **and** the Files location, at the same time:
   every request (page, scripts, `/main/f/…` media with Range) to the Worker with the device's Access service token.
   WebKit never holds the token, and no cookie or login page is involved.
 - **What the Worker needs: the `/main/archive` shelf.** The existing `/main` folder page and file route, served from a
-  second *library* (bucket `gallery-archive`, prefix `chauphan/`) instead of Main. It's one code path with a
+  second *library* (bucket `gallery-archive`, prefix `archive/`) instead of Main. It's one code path with a
   `library` parameter (`listFolder`, `mainFolder`, `mainFile`). The archive is read-only at first:
   - no folder-order, comment, key or cover writes;
   - the page tells the client (`G.readOnly`), and the Worker refuses those APIs for archive paths, so a hidden button

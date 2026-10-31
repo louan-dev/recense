@@ -29,4 +29,4 @@ xcodebuild -project "$here/GalleryFiles.xcodeproj" -scheme GalleryFiles -configu
 app="$out/Debug-iphoneos/Gallery Files.app"
 [[ -d $app ]] || { echo "Build failed (see above)"; exit 1; }
 xcrun devicectl device install app --device "$dev" "$app"
-echo "Installed on $dev. Open Gallery once; the Chauphan location is in Files › Browse."
+echo "Installed on $dev. Open Gallery once; the Archive location is in Files › Browse."

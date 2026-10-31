@@ -279,7 +279,7 @@ function toast(t){
 
 // Add Media: the owner on Main, or an invited person allowed to upload
 const canAdd = G.main || (G.invite && G.invite.perms && G.invite.perms.upload);
-qs('#addtile').hidden = !canAdd;
+qs('#addtile').hidden = !canAdd || !G.dir;   // the + tile lives only inside sub-folders, never on a top-level shelf
 qs('#addtile').addEventListener('click', () => qs('#up').click());
 
 const setMenu = o => { mnu.hidden = !o; mbtn.setAttribute('aria-expanded', o); };
@@ -410,12 +410,21 @@ qs('#m-share').addEventListener('click', e => {
   qs('#shrn').textContent = picked.length + (picked.length === 1 ? ' item selected' : ' items selected');
   qs('#shr').hidden = false;
 });
+/* item 18: the home bar's Share → Create a Share Link, for the item on screen */
+let shrList = null;
+window.galleryShareLink = list => {
+  if (!G.main) { location.href = '/main/share'; return; }
+  shrList = list;
+  qs('#shrn').textContent = list.length + (list.length === 1 ? ' item selected' : ' items selected');
+  qs('#shr').hidden = false;
+};
 qs('#shrx').addEventListener('click', () => { qs('#shr').hidden = true; });
 qs('#shr').addEventListener('click', e => { if (e.target === qs('#shr')) qs('#shr').hidden = true; });
 
 // the tap on Create Link is the gesture Safari needs for the clipboard
 qs('#shrgo').addEventListener('click', async () => {
-  const picked = window.gallerySelection ? window.gallerySelection() : [];
+  const picked = shrList || (window.gallerySelection ? window.gallerySelection() : []);
+  shrList = null;
   if (!picked.length) return;
   const days = (document.querySelector('input[name="shrd"]:checked') || {}).value || '7';
   qs('#shr').hidden = true;

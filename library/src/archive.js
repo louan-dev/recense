@@ -1,4 +1,4 @@
-// The archive shelf (docs/architecture.md §10): gallery-archive/chauphan/ shown with the same page and player as Main,
+// The archive shelf (docs/architecture.md §10): gallery-archive/archive/ shown with the same page and player as Main,
 // read-only. Owner only, behind Access like the rest of /main.
 //
 //   GET /main/archive?p=<folder>[&open=<path>]   a folder, as Main shows one (open: straight onto that file)
@@ -6,12 +6,12 @@
 //   /main/archive/api/…                          the page's API base (G.mainApi): whoami answers, every other read is
 //                                                404 and every write is 403. Nothing here writes, whatever a page sends.
 //
-// Paths are inside chauphan/; the bucket's dot folders (.catalog, .trash, .uploads) are never reachable.
+// Paths are inside archive/; the bucket's dot folders (.catalog, .trash, .uploads) are never reachable.
 
 import { OWNER, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, cleanPath, urlPath, esc, notice, jsonResponse, serveObject } from "./common.js";
 import { galleryPage } from "./page/gallery.js";
 
-const ROOT = "chauphan/";
+const ROOT = "archive/";
 const MARK = ".folder-";
 
 export async function archive(req, env, ctx, url, path) {
@@ -77,9 +77,9 @@ async function archiveFolder(env, url) {
 
   const subs = folders.map((p) => p.slice(prefix.length).replace(/\/$/, "")).filter((x) => x && !JUNK.test(x)).sort(byName);
   const here = rel ? rel.split("/") : [];
-  const title = here.length ? here[here.length - 1] : "Chauphan";
+  const title = here.length ? here[here.length - 1] : "Chau Phan's Archive";
   const go = (p) => (p ? "/main/archive?p=" + encodeURIComponent(p) : "/main/archive");
-  const crumbs = [`<a href="/main/">Main Gallery</a>`, `<a href="/main/archive">Chauphan</a>`]
+  const crumbs = [`<a href="/main/">Main Gallery</a>`, `<a href="/main/archive">Archive</a>`]
     .concat(here.map((x, i) => `<a href="${go(here.slice(0, i + 1).join("/"))}">${esc(x)}</a>`))
     .join("<i>/</i>");
   const links = subs.map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}">${esc(x)}</a>`).join("");
@@ -103,7 +103,7 @@ async function archiveFolder(env, url) {
       uploadMax: 0,
       owner: OWNER,
       title,
-      heading: "Chauphan · read-only",
+      heading: (here.length ? title : "Chau Phan's Archive") + " · read-only",
       zip: title + ".zip",
       exp: 0,
       expected: items.length,

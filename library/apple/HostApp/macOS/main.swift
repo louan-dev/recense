@@ -7,7 +7,7 @@ import AppKit
 import FileProvider
 
 let domain: NSFileProviderDomain = {
-    let d = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("chauphan"), displayName: "Chauphan")
+    let d = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("archive"), displayName: "Archive")
     d.supportsSyncingTrash = false  // read-only: deleting is refused anyway, and R2's trash is the Worker's
     return d
 }()
@@ -48,8 +48,10 @@ guard handOverToken() else {
     log("no gallery-access token in the Keychain")
     exit(1)
 }
+// the location was "Chauphan" until 2026-10-31; take that one out so Finder shows only Archive
+NSFileProviderManager.remove(NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("chauphan"), displayName: "Chauphan")) { _ in }
 NSFileProviderManager.add(domain) { e in
-    log(e.map { "add failed: \($0)" } ?? "Chauphan is in Finder")
+    log(e.map { "add failed: \($0)" } ?? "Archive is in Finder")
 }
 
 Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in

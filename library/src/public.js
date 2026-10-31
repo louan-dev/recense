@@ -18,7 +18,7 @@ const LINKS = "links/";
 const STALL_MS = 15 * 60 * 1000;
 
 // Daily: every upload-link object past its expiry goes.
-const ARCHIVE_ROOT = "chauphan/"; // where the archive keeps what the app and /main/archive show
+const ARCHIVE_ROOT = "archive/"; // where the archive keeps what the app and /main/archive show
 
 export async function cleanup(env) {
   const now = Date.now();
@@ -129,6 +129,31 @@ export async function linkApi(req, env, url) {
   const id = q.get("id") || "";
   if (!ID_RE.test(id)) return new Response("Bad request", { status: 400 });
 
+  // POST /main/api/link?action=arrange&id=ID   body: { order?: [n, …], cover?: n | null, v? }
+  //   the owner's order for the link's items (the first picture is then the preview card's), and the
+  //   pinned cover (null: back to the first picture); v is the stamp the copied link carries (?v=), so
+  //   iMessage fetches the card again instead of showing the one it cached
+  if (action === "arrange") {
+    const manifest = await readManifest(env, id);
+    if (!manifest) return new Response("Link not found", { status: 404 });
+
+    let b;
+    try {
+      b = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    const known = new Set((manifest.items || []).map((it) => String(it.i).padStart(3, "0")));
+    if (Array.isArray(b.order)) manifest.order = [...new Set(b.order.map(String))].filter((n) => known.has(n));
+    if (b.cover === null) delete manifest.coverItem;
+    else if (b.cover != null && known.has(String(b.cover))) manifest.coverItem = String(b.cover);
+    if ("cover" in b) manifest.coverAt = Number(b.v) || Date.now();
+
+    await writeManifest(env, manifest);
+    return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, v: manifest.coverAt || 0 });
+  }
+
   if (action === "cancel") {
     const manifest = await readManifest(env, id);
 
@@ -144,7 +169,7 @@ export async function linkApi(req, env, url) {
 }
 
 // POST /main/api/link?action=fromMain&days=7[&from=archive]   body: { paths: ["Folder/a.jpg", …], cover? } (files in Main, or
-//   in the archive's chauphan/ with from=archive: the same link, the same page; archive files carry no keys or covers;
+//   in the archive's archive/ with from=archive: the same link, the same page; archive files carry no keys or covers;
 //   cover, one of paths or its index, is the picture the link's preview card shows, else its first image)
 //   -> { ok, id, exp, count, url }   the link exists at once; its items show as pending until copied
 // POST /main/api/link?action=copy&id=ID&i=N      copies item N from Main into the link (one file per call,
@@ -1320,7 +1345,10 @@ export async function getGalleryData(env, id) {
     });
   }
 
-  items.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+  // the owner's order (arrange), then the rest by number
+  const rank = new Map(((manifest && manifest.order) || []).map((n, i) => [n, i]));
+  const at = (f) => (rank.has(f.n) ? rank.get(f.n) : 1e6 + Number(f.n));
+  items.sort((a, b) => at(a) - at(b));
 
   const readyItems = items.filter((f) => !f.pending);
   const expected = manifest ? Math.max(Number(manifest.count) || 0, items.length) : items.length;
@@ -1339,6 +1367,8 @@ export async function getGalleryData(env, id) {
     items: items.map(({ exp, ...f }) => f),
     ...(manifest && manifest.view ? { view: manifest.view } : {}),
     ...(manifest && manifest.coverItem ? { coverItem: String(manifest.coverItem) } : {}),
+    ...(manifest && manifest.order ? { order: manifest.order } : {}),
+    ...(manifest && manifest.coverAt ? { coverAt: manifest.coverAt } : {}),
   };
 }
 
@@ -1390,7 +1420,10 @@ function linkPreview(live, url) {
     title: (live.title || count + (count === 1 ? " file" : " files") + " for you") + " · Shared by " + OWNER,
     description: "View and download shared files",
     url: url.href,
-    image: cover ? url.origin + "/api/og-image/" + live.id + (want ? "?cover=" + encodeURIComponent(want) : "") : null,
+    // v: the cover's stamp, so a card cached under the old picture is fetched again
+    image: cover
+      ? url.origin + "/api/og-image/" + live.id + (want || live.coverAt ? "?" + new URLSearchParams({ ...(want ? { cover: want } : {}), ...(live.coverAt ? { v: String(live.coverAt) } : {}) }) : "")
+      : null,
   };
 }
 

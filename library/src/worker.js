@@ -26,6 +26,7 @@ import { sharesApi, sharedPage, activitySweep } from "./shared.js";
 import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, rateSweep } from "./transcript.js";
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
+import { listenApi } from "./listen.js";
 import { archive } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexRun } from "./ai.js";
@@ -101,6 +102,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     if (path === "/main/api/whoami" && read) return jsonResponse({ ok: true });
     if (!sameSite(req, url)) return new Response("Forbidden", { status: 403 });
     if (path.startsWith("/main/api/ai/")) return aiRoute(req, env, ctx, url, path, method);
+    if (path === "/main/api/listen" || path.startsWith("/main/api/listen/")) return listenApi(req, env, path, method);
 
     if (path === "/main/api/file" && method === "PUT") return mainUpload(req, env, url);
     if (path === "/main/api/img" && method === "PUT") return noteImageUpload(req, env, url);

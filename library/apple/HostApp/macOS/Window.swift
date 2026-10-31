@@ -188,7 +188,7 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         case "back": item.label = "Back"; item.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Back"); item.action = #selector(back)
         case "forward": item.label = "Forward"; item.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Forward"); item.action = #selector(forward)
         case "shared": item.label = "Shared"; item.toolTip = "Shared links and Activity (⌘3)"; item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Shared"); item.action = #selector(shared)
-        case "ask": item.label = "Assistant"; item.toolTip = "Ask about what’s open (⌘K)"; item.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Assistant"); item.action = #selector(ask)
+        case "ask": item.label = "Assistant"; item.toolTip = "Ask about what’s open (⌘K)"; item.image = NSImage(systemSymbolName: "lightbulb", accessibilityDescription: "Assistant"); item.action = #selector(ask)
         default: return nil
         }
         item.isBordered = true

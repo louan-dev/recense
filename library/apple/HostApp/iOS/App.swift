@@ -1,19 +1,20 @@
 // Gallery (iOS/iPadOS): the app's own Files-like browser and Gallery's player (Browser.swift, Player.swift), and the
-// "Chauphan" location in the Files app.
+// "Archive" location in the Files app.
 // The device's Access token comes inside the app (ios/Secrets/token.json, written by ios/build.sh from the Mac's
 // Keychain, never in git) and is moved into the shared Keychain group on first launch, where the extension reads it.
 import SwiftUI
 import FileProvider
 
-let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("chauphan"), displayName: "Chauphan")
+let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("archive"), displayName: "Archive")
 
 @main
 struct GalleryFilesApp: App {
-    @State private var status = "Adding Chauphan to Files…"
+    @State private var status = "Adding Archive to Files…"
 
     var body: some Scene {
         WindowGroup {
             Browser()
+                .listening()
                 .task { status = await setUp() }
                 .overlay(alignment: .bottom) {
                     // only says something when the Files location couldn't be set up
@@ -31,9 +32,10 @@ struct GalleryFilesApp: App {
         }
         guard Token.read() != nil else { return "No access token in this build." }
         do {
+            try? await NSFileProviderManager.remove(NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("chauphan"), displayName: "Chauphan"))  // the old name
             try await NSFileProviderManager.add(domain)
             try? await NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet)
-            return "Chauphan is in Files."
+            return "Archive is in Files."
         } catch {
             return "Couldn't add it: \(error.localizedDescription)"
         }

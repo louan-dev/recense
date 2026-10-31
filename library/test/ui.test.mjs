@@ -203,13 +203,28 @@ await test("Main: a file over the limit only shows a warning", true, async (pg) 
   assert.equal(await MAIN.head("files/Raven/huge.MOV"), null);
 });
 
-await test("Main: Upload adds a file", true, async (pg) => {
+await test("Main: Upload adds a file inline (no reload, no message)", true, async (pg) => {
   await pg.goto(base + "/main?p=Raven");
-  await Promise.all([
-    pg.waitForEvent("load"),
-    pg.setInputFiles("#upin", { name: "three.txt", mimeType: "text/plain", buffer: Buffer.from("3") }),
-  ]);
+  let reloaded = false;
+  pg.on("load", () => (reloaded = true));
+  await pg.setInputFiles("#upin", { name: "three.txt", mimeType: "text/plain", buffer: Buffer.from("3") });
+  await pg.waitForSelector('.tile[aria-label="three.TXT"]:not(.pending)');
   assert.ok(await MAIN.head("files/Raven/three.txt"));
+  assert.equal(reloaded, false);
+  assert.equal(await pg.isVisible("#note"), false);
+});
+
+await test("Main: files dropped anywhere on the page upload inline (notes item 14)", true, async (pg) => {
+  await MAIN.put("files/Drop/x.txt", "x", { httpMetadata: { contentType: "text/plain" } });
+  await pg.goto(base + "/main?p=Drop");
+  const dt = await pg.evaluateHandle(() => {
+    const d = new DataTransfer();
+    d.items.add(new File(["4"], "four.txt", { type: "text/plain" }));
+    return d;
+  });
+  await pg.dispatchEvent("body", "drop", { dataTransfer: dt });
+  await pg.waitForSelector('.tile[aria-label="four.TXT"]:not(.pending)');
+  assert.ok(await MAIN.head("files/Drop/four.txt"));
 });
 
 await test("Main: Delete picks files, then moves them to the trash", true, async (pg) => {
@@ -654,6 +669,36 @@ await test("SPEC 69: playing sets the lock screen's title and state; pausing mar
   assert.equal(await pg.evaluate(() => navigator.mediaSession.playbackState), "playing");
   await pg.$eval("audio", (a) => a.pause());
   await pg.waitForFunction(() => navigator.mediaSession.playbackState === "paused");
+});
+
+await test("item 11: the lock screen has ⏮ / ⏭ (no ±15 s); ⏭ plays the next sound, skipping photos; Loop shows on its second line", true, async (pg) => {
+  await MAIN.put("files/Nt/a.wav", wavOf(3), { httpMetadata: { contentType: "audio/wav" } });
+  await MAIN.put("files/Nt/b.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"), { httpMetadata: { contentType: "image/png" } });
+  await MAIN.put("files/Nt/c.wav", wavOf(3), { httpMetadata: { contentType: "audio/wav" } });
+  await pg.addInitScript(() => {
+    const ms = navigator.mediaSession;
+    window.__h = {};
+    const set = ms.setActionHandler.bind(ms);
+    ms.setActionHandler = (a, h) => {
+      if (h) window.__h[a] = h;
+      else delete window.__h[a];
+      try { set(a, h); } catch (x) {}
+    };
+  });
+  await pg.goto(base + "/main?p=Nt");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector("audio", { state: "attached" });
+  await pg.$eval("audio", (a) => a.play());
+  await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "a");
+  const acts = await pg.evaluate(() => Object.keys(window.__h).sort());
+  assert.deepEqual(acts, ["nexttrack", "pause", "play", "previoustrack", "seekto"]);
+  await pg.evaluate(() => window.__h.nexttrack({ action: "nexttrack" }));
+  await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "c" && navigator.mediaSession.playbackState === "playing");
+  await barTo(pg, "loop");
+  await pg.click(".p-hloop");
+  await pg.waitForFunction(() => navigator.mediaSession.metadata.artist === "Loop");
+  await pg.evaluate(() => window.__h.previoustrack({ action: "previoustrack" }));
+  await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "a");
 });
 
 await test("SPEC 57 audio: Info and Share leave the bottom bar; the editor holds Download · Share · Transpose · Retranscribe, white, blue only on hover", true, async (pg) => {

@@ -50,7 +50,7 @@ final class Folder: ObservableObject {
 enum Sort: String, CaseIterable { case name = "Name", date = "Date", size = "Size" }
 
 extension Record {
-    var inArchive: String { String(path.dropFirst(Gallery.rootPath.count + 1)) }  // the path inside chauphan/
+    var inArchive: String { String(path.dropFirst(Gallery.rootPath.count + 1)) }  // the path inside archive/
     var type: UTType { dir ? .folder : UTType(filenameExtension: (name as NSString).pathExtension) ?? .data }
     var symbol: String {
         if dir { return "folder.fill" }
@@ -72,6 +72,7 @@ struct Browser: View {
     static let assistant = "\u{0}assistant"  // a sidebar tag no folder path can be
     static let shared = "\u{0}shared"
     static let main = "\u{0}main"
+    static let listen = "\u{0}listen"
     @StateObject private var top = Folder(Gallery.rootPath)
     @State private var picked: String? = Gallery.rootPath
 
@@ -80,9 +81,10 @@ struct Browser: View {
             List(selection: $picked) {
                 Section("Locations") {
                     Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
-                    Label("Chauphan", systemImage: "icloud").tag(Gallery.rootPath)
+                    Label("Archive", systemImage: "icloud").tag(Gallery.rootPath)
                     Label("Shared", systemImage: "person.2").tag(Browser.shared)
-                    Label("Assistant", systemImage: "sparkles").tag(Browser.assistant)
+                    Label("Assistant", systemImage: "lightbulb").tag(Browser.assistant)
+                    Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                 }
                 Section("Folders") {
                     ForEach(top.items.filter(\.dir), id: \.id) { f in
@@ -99,6 +101,8 @@ struct Browser: View {
                 } else if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
                         .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                } else if picked == Browser.listen {
+                    ListenView()
                 } else if picked == Browser.shared {
                     // the site's Shared section, with its own top bar (back, Shared, + ⋯) and Personal | Shared | Activity (notes item 15)
                     PlayerView(url: galleryURL("/main/shared")).ignoresSafeArea(edges: .bottom)
@@ -117,7 +121,7 @@ struct MainView: View {
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { asking = true } label: { Label("Assistant", systemImage: "sparkles") }
+                    Button { asking = true } label: { Label("Assistant", systemImage: "lightbulb") }
                         .keyboardShortcut("k")
                 }
             }
@@ -194,7 +198,7 @@ struct FolderView: View {
         .toolbar {
             // the assistant, on this folder ("This folder"; it has an All switch)
             ToolbarItem(placement: .primaryAction) {
-                Button { asking = true } label: { Label("Assistant", systemImage: "sparkles") }
+                Button { asking = true } label: { Label("Assistant", systemImage: "lightbulb") }
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
@@ -264,7 +268,7 @@ struct FolderView: View {
         }
     }
 
-    private var title: String { folder.path == Gallery.rootPath ? "Chauphan" : String(folder.path.split(separator: "/").last ?? "") }
+    private var title: String { folder.path == Gallery.rootPath ? "Archive" : String(folder.path.split(separator: "/").last ?? "") }
     private var files: [Record] { shown.filter { !$0.dir } }
     // what an action works on: the picked files, else every file here
     private var chosen: [Record] { picked.isEmpty ? files : files.filter { picked.contains($0.id) } }
@@ -533,7 +537,7 @@ struct ActivityView: UIViewControllerRepresentable {
 }
 
 extension Folder {
-    // the files directly in a folder, as paths inside chauphan/, every page of them
+    // the files directly in a folder, as paths inside archive/, every page of them
     static func files(in path: String) async throws -> [String] {
         let feed = Feed()
         var out: [String] = []

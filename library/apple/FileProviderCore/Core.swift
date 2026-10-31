@@ -10,7 +10,7 @@ public enum Gallery {
     public static let keychainGroup = "48RZ72DNP3.com.chauphan.galleryfiles"
     public static let base = URL(string: "https://gallery.improvdiplomat.workers.dev/main/api/fp/archive/")!
     // the domain shows this folder of the archive bucket as its root
-    public static let rootPath = "chauphan"
+    public static let rootPath = "archive"
 
     // where the extension keeps its item store (macOS: shared with the host app; iOS: the extension's own)
     public static var container: URL {
@@ -289,7 +289,7 @@ public enum Share {
         return data
     }
 
-    // paths are inside chauphan/; progress(done, total) after each file is in the link
+    // paths are inside archive/; progress(done, total) after each file is in the link
     public static func link(_ paths: [String], days: Int, progress: @escaping (Int, Int) -> Void) async throws -> URL {
         let body = try JSONEncoder().encode(["paths": paths])
         let made = try JSONDecoder().decode(Made.self, from: try await call("action=fromMain&from=archive&days=\(days)", body))

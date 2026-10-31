@@ -85,7 +85,7 @@ const mpep = Array.from({ length: 60 }, (_, i) =>
 await env.MAIN.put("files/Books/MPEP.pdf", mpep);
 await env.MAIN.put("files/Books/.hidden.txt", "should never be indexed");
 await env.MAIN.put("files/Music/Raven/song.mp3", "binary");
-await env.ARCHIVE.put("chauphan/CV/Loza CV.docx", "Chau Phan, legal assistant, patent prosecution experience.");
+await env.ARCHIVE.put("archive/CV/Loza CV.docx", "Chau Phan, legal assistant, patent prosecution experience.");
 await env.MAIN.put("files/Journal/vent.txt", "I feel like the Alice/Mayo test is a total scam and nobody at the office listens to me today.");
 await env.MAIN.put("files/Journal/time.txt", "Reflection after therapy: I get drained after work, and when I schedule social plans in the evening I regret it. My therapist observed that I overcommit.");
 await env.MAIN.put("files/Journal/broken.txt", "Some text the classifier can't decide about, long enough to be a passage.");

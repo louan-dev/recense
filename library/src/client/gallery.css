@@ -1421,6 +1421,13 @@ body.lbopen main{
 
 #cm .cmlabel:active{opacity:.6}
 #cm .cmlabel:not(.has){color:#fff}
+/* item 18: "Add a comment…" and "Share" side by side; a horizontal swipe slides between them */
+#cm{overflow:hidden}
+#cm .cmtrack{display:flex;width:200%;transition:transform .3s ease;touch-action:pan-y}
+#cm .cmtrack>.cmlabel{flex:0 0 50%}
+#cm .cmtrack.on{transform:translateX(-50%)}
+#cm .cmlabel.cmshare{color:#fff}
+.cmmenu{position:fixed;top:auto;right:auto;z-index:1000}
 
 #thread{
   position:absolute;
@@ -2086,3 +2093,26 @@ body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
     padding-right:max(76px,calc(env(safe-area-inset-right) + 64px))
   }
 }
+
+/* a share link's tiles, for its owner (notes item 4): drag to order, pin the preview card's cover */
+.tile .pin{
+  position:absolute;
+  left:6px;
+  top:6px;
+  width:26px;
+  height:26px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:rgba(0,0,0,.35);
+  color:#fff;
+  opacity:0;
+  transition:opacity .15s
+}
+.tile .pin svg{width:15px;height:15px}
+.tile:hover .pin,
+.tile.cover .pin{opacity:1}
+.tile.cover .pin{background:var(--blue)}
+.selecting .tile .pin{display:none}
+@media (hover:none){.tile .pin{opacity:1}}
+.tile.lift{opacity:.4}

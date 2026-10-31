@@ -14,7 +14,7 @@ final class Item: NSObject, NSFileProviderItem {
         guard let r, r.parent != "root" else { return .rootContainer }
         return NSFileProviderItemIdentifier(r.parent)
     }
-    var filename: String { r?.name ?? "Chauphan" }
+    var filename: String { r?.name ?? "Archive" }
     var contentType: UTType {
         guard let r, !r.dir else { return .folder }
         return UTType(filenameExtension: (r.name as NSString).pathExtension) ?? .data

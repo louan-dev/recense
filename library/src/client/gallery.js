@@ -1520,6 +1520,20 @@
   const I_X = SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
 
   let nowEl = null; // the element the lock screen's Now Playing speaks for (SPEC 69)
+  let nowGo = false; // the lock screen's ⏮ / ⏭ opened this item: it plays as soon as it is built
+
+  // ⏮ / ⏭ on the lock screen step to the previous or next sound or video in this folder (photos are
+  // skipped) and play it; ⏮ more than 3 s in starts this one over, as Apple Music does (notes item 11)
+  const nowTrack = (d) => {
+    for (let n = 1; n <= items.length; n++) {
+      const j = (((cur + d * n) % items.length) + items.length) % items.length;
+      const k = kind(items[j]);
+      if (k === "aud" || k === "vid") {
+        nowGo = true;
+        return show(j);
+      }
+    }
+  };
 
   const buildMedia = (tag, mediaSrc, artUrl) => {
     const item = items[cur]; // whose original key the Key labels spell
@@ -1540,6 +1554,10 @@
     el.preload = "metadata";
     // a video shows its first frame instead of black before play (iOS paints nothing at t=0)
     el.src = tag === "video" ? mediaSrc + "#t=0.001" : mediaSrc;
+    if (nowGo) {
+      nowGo = false;
+      el.play().catch(() => {});
+    }
 
     // ----- state: the home bar (below) keeps Track Loop, A–B and speed; this is what it last said -----
 
@@ -1634,6 +1652,7 @@
         prefs.loop = l.track ? "track" : "off";
         el.loop = l.track && !l.ab; // the only loop flag painted onto the media element
         watch();
+        if (nowEl === el && ms) nowMeta(); // (nowEl first: ms is declared below) the lock screen says which loop is on
       },
       scrub: (on) => {
         dragging = on;
@@ -1658,8 +1677,10 @@
 
     // ----- lock screen / Control Center Now Playing (SPEC 69) -----
     //
-    // The file's own title and cover instead of "Music", and a scrubber that works: Play, Pause,
-    // Seek and ±15 s act on this element, and its position, length and speed are kept current.
+    // The file's own title and cover instead of "Music", and a scrubber that works: Play, Pause and
+    // Seek act on this element, and its position, length and speed are kept current. No ±15 s (the
+    // scrubber does that): ⏮ / ⏭ either side of Play, as in Apple Music. The web can't add buttons
+    // there, so the loop is set in the player and the lock screen's second line says which is on.
     // Whichever element last started playing has it; a parked track keeps it while it plays on.
 
     const ms = navigator.mediaSession;
@@ -1680,9 +1701,21 @@
       } catch (x) {}
     };
 
-    const nowSkip = (d) => {
-      el.currentTime = clamp(el.currentTime + d, 0, el.duration || 0);
-      nowPos();
+    const nowLoop = () =>
+      loopNow.ab && loopNow.a != null && loopNow.b != null ? "A–B loop · " + dur(loopNow.a) + " – " + dur(loopNow.b) : loopNow.track ? "Loop" : "";
+
+    const nowMeta = () => {
+      const title = String(item.name || item.path || "").replace(/\.[^/.]+$/, "") || "Gallery";
+      const art = artUrl || artSrc(item);
+      const meta = { title, artist: nowLoop(), album: "" };
+
+      try {
+        if (art) meta.artwork = [{ src: new URL(art, location.href).href }];
+      } catch (x) {}
+
+      try {
+        ms.metadata = new MediaMetadata(meta);
+      } catch (x) {}
     };
 
     const nowClaim = () => {
@@ -1692,18 +1725,7 @@
       } catch (x) {}
       if (!ms) return;
       nowEl = el;
-
-      const title = String(item.name || item.path || "").replace(/\.[^/.]+$/, "") || "Gallery";
-      const art = artUrl || artSrc(item);
-      const meta = { title, artist: "", album: "" };
-
-      try {
-        if (art) meta.artwork = [{ src: new URL(art, location.href).href }];
-      } catch (x) {}
-
-      try {
-        ms.metadata = new MediaMetadata(meta);
-      } catch (x) {}
+      nowMeta();
 
       nowAct("play", () => el.play().catch(() => {}));
       nowAct("pause", () => el.pause());
@@ -1713,8 +1735,15 @@
         else el.currentTime = e.seekTime;
         nowPos();
       });
-      nowAct("seekbackward", (e) => nowSkip(-((e && e.seekOffset) || 15)));
-      nowAct("seekforward", (e) => nowSkip((e && e.seekOffset) || 15));
+      nowAct("seekbackward", null);
+      nowAct("seekforward", null);
+      nowAct("previoustrack", () => {
+        if (el.currentTime > 3) {
+          el.currentTime = loopNow.ab ? loopNow.a : 0;
+          nowPos();
+        } else nowTrack(-1);
+      });
+      nowAct("nexttrack", () => nowTrack(1));
       nowPos();
     };
 
@@ -1726,7 +1755,7 @@
         ms.playbackState = "none";
         ms.setPositionState();
       } catch (x) {}
-      ["play", "pause", "seekto", "seekbackward", "seekforward"].forEach((a) => nowAct(a, null));
+      ["play", "pause", "seekto", "previoustrack", "nexttrack"].forEach((a) => nowAct(a, null));
     };
 
     el.addEventListener("play", nowClaim);
@@ -2308,7 +2337,7 @@
         if (ts && ts.contextTime > 0 && ts.performanceTime > 0) {
           const outNow = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
           const known = Math.max(0, audioCtx.currentTime - outNow);
-          const more = Math.max(0, (+globalThis.galleryOutputLatency || 0) - known);
+          const more = Math.max(0, route - known);
           const ran = d.playing ? Math.max(-0.5, Math.min(outNow - d.ctx, 0.5)) : 0;
           const t = d.at + (ran - more - DELAY.deck / audioCtx.sampleRate - (nodes ? nodes.dryLag || 0 : 0)) * r;
           if (Math.abs(t - el.currentTime) < 1.5) return Math.max(0, t);
@@ -3075,10 +3104,18 @@
     b.dataset.n = f.n;
     fillTile(b, f);
     b.onclick = () => tapTile(f, b);
+    if (ownsLink()) arrangeTile(b, f);
     return b;
   };
 
   const tileOf = (f) => grid.querySelector('[data-n="' + f.n + '"]');
+
+  // the owner's order on a share link (notes item 4), then the rest by number
+  const byOrder = (a, b) => {
+    const o = G.order || [];
+    const at = (f) => (o.includes(f.n) ? o.indexOf(f.n) : 1e6 + Number(f.n));
+    return at(a) - at(b) || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0);
+  };
 
   // ---------- header card, footer, hero ----------
 
@@ -3464,7 +3501,86 @@
     label.textContent = n ? n + (n === 1 ? " comment" : " comments") : "Add a comment…";
     label.classList.toggle("has", !!n); // white with none, blue with comments (SPEC 41)
     label.onclick = () => setOpen(true);
-    cmEl.appendChild(label);
+    // item 18: a horizontal swipe over the label slides to "Share" (right to left) and back (left to right)
+    const share = mkEl("button", "cmlabel cmshare");
+    share.type = "button";
+    share.textContent = "Share";
+    share.onclick = () => shareMenu(f, share);
+    const track = mkEl("div", "cmtrack");
+    track.append(label, share);
+    track.classList.toggle("on", cmShare);
+    cmEl.appendChild(track);
+    const go = (on) => {
+      cmShare = on;
+      track.classList.toggle("on", on);
+    };
+    let x0 = null;
+    track.addEventListener("touchstart", (e) => (x0 = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : null), { passive: true });
+    track.addEventListener(
+      "touchend",
+      (e) => {
+        if (!x0) return;
+        const t = e.changedTouches[0], dx = t.clientX - x0[0], dy = t.clientY - x0[1];
+        x0 = null;
+        if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          e.preventDefault(); // the swipe is not a tap
+          go(dx < 0);
+        }
+      },
+      { passive: false },
+    );
+    let wheelAt = 0;
+    track.addEventListener(
+      "wheel",
+      (e) => {
+        if (Math.abs(e.deltaX) < 12 || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+        e.preventDefault();
+        if (Date.now() - wheelAt < 500) return; // one trackpad swipe, one step
+        wheelAt = Date.now();
+        go(e.deltaX > 0);
+      },
+      { passive: false },
+    );
+  };
+
+  // "Share" in the home bar: Create a Share Link, AirDrop, Invite for the item on screen
+  let cmShare = false;
+  const shareMenu = (f, at) => {
+    document.querySelectorAll(".cmmenu").forEach((m) => m.remove());
+    if (!f) return;
+    const menu = mkEl("div", "mnu cmmenu");
+    menu.setAttribute("role", "menu");
+    const close = () => {
+      menu.remove();
+      document.removeEventListener("pointerdown", away, true);
+    };
+    const away = (e) => !menu.contains(e.target) && close();
+    const row = (text, act) => {
+      const b = mkEl("button", "mi");
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.textContent = text;
+      b.onclick = () => (close(), act());
+      menu.appendChild(b);
+    };
+    row("Create a Share Link", () => (window.galleryShareLink ? window.galleryShareLink([f]) : (location.href = "/main/share")));
+    row("AirDrop", async () => {
+      const url = location.href;
+      try {
+        if (navigator.share) return await navigator.share({ title: f.name || document.title, url });
+        await navigator.clipboard.writeText(url);
+        tell("Link copied");
+      } catch (e) {
+        if (!e || e.name !== "AbortError") tell("Open this page in Safari to use AirDrop");
+      }
+    });
+    if (window.galleryInvite) row("Invite", () => window.galleryInvite([f]));
+    document.body.appendChild(menu);
+    const r = at.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, r.left + r.width / 2 - menu.offsetWidth / 2)) + "px";
+    menu.style.bottom = innerHeight - r.top + 8 + "px";
+    menu.hidden = false;
+    setTimeout(() => document.addEventListener("pointerdown", away, true));
   };
 
   // Swipe to reveal Delete at a comment's right end (spec §7). Touch: a swipe leftward that starts on
@@ -5030,6 +5146,91 @@
     paintCap();
     if (G.main) up.hidden = false;
     label();
+    if (ownsLink()) rebuildGrid(); // the tiles take their drag handles and Pin as Cover
+  };
+
+  // ----- a share link's order and its preview card's cover (notes item 4) -----
+  //
+  // The owner drags tiles into order; the first picture is then the card iMessage shows, unless a
+  // tile's pin chose another. Pinning copies the link with ?v=<stamp>: iMessage keys its cached
+  // card by the address, so a new address shows the new cover.
+
+  const ownsLink = () => owner && !G.main && !G.invite && !G.readOnly && !!G.id;
+  const linkUrl = (v) => location.origin + "/s/" + G.id + (v ? "?v=" + v : "");
+
+  const arrange = async (body) => {
+    const r = await fetch(MAIN_API + "/link?" + new URLSearchParams({ action: "arrange", id: G.id }), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gallery": "1" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.text()) || "Couldn’t save");
+    return r.json();
+  };
+
+  const pinCover = (f) => {
+    const off = G.coverItem === f.n;
+    const v = Date.now();
+    const url = linkUrl(v);
+    // copied inside the tap (Safari allows the clipboard only there), then saved
+    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+    G.coverItem = off ? null : f.n;
+    G.coverAt = v;
+    grid.querySelectorAll(".tile").forEach((b) => b.classList.toggle("cover", b.dataset.n === G.coverItem));
+    arrange({ cover: G.coverItem, v })
+      .then(() => (window.galleryToast || say)(off ? "Cover unpinned · link copied" : "Pinned as cover · link copied"))
+      .catch((e) => say(e.message || String(e), true));
+  };
+
+  let dragN = null;
+
+  const arrangeTile = (b, f) => {
+    b.classList.toggle("cover", G.coverItem === f.n);
+    if (f.pending) return;
+
+    const pin = mkEl("span", "pin");
+    pin.setAttribute("role", "button");
+    pin.setAttribute("aria-label", "Pin as Cover");
+    pin.title = "Pin as Cover";
+    pin.innerHTML = SVG('<path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2.5 3.2h-11z"/>');
+    pin.onclick = (e) => {
+      e.stopPropagation();
+      pinCover(f);
+    };
+    b.appendChild(pin);
+
+    b.draggable = true;
+    b.addEventListener("dragstart", (e) => {
+      if (selecting) return e.preventDefault();
+      dragN = f.n;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", f.n);
+      b.classList.add("lift");
+    });
+    b.addEventListener("dragend", () => {
+      dragN = null;
+      b.classList.remove("lift");
+    });
+    b.addEventListener("dragover", (e) => {
+      if (dragN === null || dragN === f.n) return;
+      e.preventDefault();
+      const from = items.findIndex((x) => x.n === dragN);
+      const to = items.indexOf(f);
+      const moving = tileOf(items[from]);
+      items.splice(to, 0, items.splice(from, 1)[0]);
+      if (moving) grid.insertBefore(moving, from < to ? b.nextSibling : b);
+    });
+    b.addEventListener("drop", (e) => {
+      if (dragN === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      G.order = items.map((x) => x.n);
+      if (thumbs) {
+        thumbs = null;
+        strip.replaceChildren();
+      }
+      arrange({ order: G.order }).catch((x) => say(x.message || String(x), true));
+    });
   };
 
   // a read-only library (the archive) never gets the owner's controls
@@ -5079,9 +5280,47 @@
 
   up.onclick = () => upin.click();
 
-  upin.onchange = async () => {
+  upin.onchange = () => {
     const files = Array.from(upin.files || []);
     upin.value = "";
+    addFiles(files);
+  };
+
+  // Files dropped anywhere on the page, no drop box (notes item 14): the owner on Main, or an
+  // invited person allowed to upload. Not while the viewer is open.
+  const canDrop = () =>
+    !G.readOnly && lb.hidden && ((G.main && owner) || !!(G.invite && G.invite.perms && G.invite.perms.upload));
+  const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+
+  document.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); // a file dropped where we don't take it must not open in the tab either
+    e.dataTransfer.dropEffect = canDrop() ? "copy" : "none";
+  });
+  document.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (canDrop()) addFiles(Array.from(e.dataTransfer.files || []));
+  });
+
+  let upSeq = 0;
+
+  // one PUT with progress (fetch has none for uploads)
+  const putFile = (to, file, onp) =>
+    new Promise((ok, bad) => {
+      const x = new XMLHttpRequest();
+      x.open("PUT", to);
+      x.setRequestHeader("content-type", file.type || "application/octet-stream");
+      x.setRequestHeader("x-gallery", "1");
+      x.upload.onprogress = (e) => e.lengthComputable && onp(e.loaded / e.total);
+      x.onload = () => (x.status >= 200 && x.status < 300 ? ok() : bad(new Error(x.responseText || "Upload failed")));
+      x.onerror = () => bad(new Error("Upload failed"));
+      x.send(file);
+    });
+
+  // Each file shows as a tile in the grid at once and fills its ring as it goes, as on a share
+  // link; no message when it's done, and a failed one keeps its red ring.
+  const addFiles = async (files) => {
     if (!files.length) return;
 
     const big = files.filter((f) => f.size > G.uploadMax);
@@ -5112,41 +5351,68 @@
       return;
     }
 
-    up.disabled = true;
-    let done = 0;
+    say("");
 
-    try {
-      for (const file of files) {
-        say("Uploading " + (done + 1) + " of " + files.length + "…");
+    // a replaced file's old tile goes; the new one comes in uploading
+    clash.forEach((f) => {
+      const i = items.findIndex((x) => x.path === keyOf(f));
+      if (i >= 0) items.splice(i, 1);
+    });
 
-        const mtime = String(file.lastModified || Date.now());
-        // an invited person adds new files only, into their one folder (the server picks the folder)
-        const to = G.invite
-          ? API + "/file?" + new URLSearchParams({ name: file.name, mtime })
-          : MAIN_API + "/file?" + new URLSearchParams({ key: keyOf(file), mtime });
-        const r = await fetch(to, {
-          method: "PUT",
-          headers: { "content-type": file.type || "application/octet-stream", "x-gallery": "1" },
-          body: file,
+    const jobs = files.map((file) => ({
+      file,
+      it: { n: "up" + ++upSeq + "-" + Date.now(), name: file.name, type: file.type || "", pending: true, progress: 0 },
+    }));
+    jobs.forEach((j) => items.push(j.it));
+    rebuildGrid();
+    refreshInfo();
+
+    let failed = 0;
+
+    for (const { file, it } of jobs) {
+      const mtime = String(file.lastModified || Date.now());
+      // an invited person adds new files only, into their one folder (the server picks the folder)
+      const to = G.invite
+        ? API + "/file?" + new URLSearchParams({ name: file.name, mtime })
+        : MAIN_API + "/file?" + new URLSearchParams({ key: keyOf(file), mtime });
+
+      try {
+        await putFile(to, file, (p) => {
+          it.progress = p;
+          const b = tileOf(it);
+          if (b) paintPending(b, it);
         });
-
-        if (!r.ok) throw new Error((await r.text()) || "Upload failed");
-        done++;
-
-        // the owner's audio: find its original key now, for the Key slider's labels (best effort)
-        if (!G.invite && kind({ type: file.type || "", name: file.name }) === "aud" && file.size <= DETECT_BYTES) {
-          say("Finding the key of " + file.name + "…");
-          await detectKey(file)
-            .then((k) => k && saveKey(keyOf(file), k, "auto"))
-            .catch(() => {});
-        }
+      } catch (e) {
+        failed++;
+        it.failed = true;
+        const b = tileOf(it);
+        if (b) paintPending(b, it);
+        refreshInfo();
+        continue;
       }
 
-      location.reload();
-    } catch (e) {
-      say("Upload stopped after " + done + " of " + files.length + ": " + (e.message || e), true);
-      up.disabled = false;
+      if (G.invite) continue; // its address comes from the share; the page is reloaded below
+
+      const path = keyOf(file);
+      becameReady(it, {
+        name: file.name.replace(/\.[^/.]+$/, (x) => x.toUpperCase()),
+        path,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        taken: Number(mtime),
+        src: MAIN_API.replace(/\/api$/, "/f/") + path.split("/").map(encodeURIComponent).join("/"),
+      });
+      refreshInfo();
+
+      // the owner's audio: find its original key now, for the Key slider's labels (best effort)
+      if (kind({ type: file.type || "", name: file.name }) === "aud" && file.size <= DETECT_BYTES) {
+        detectKey(file)
+          .then((k) => k && saveKey(path, k, "auto"))
+          .catch(() => {});
+      }
     }
+
+    if (G.invite && !failed) location.reload();
   };
 
   // ----- the original key (Key slider labels) -----
@@ -5801,6 +6067,19 @@
       });
     }
 
+    // a share link's preview card: this item is its cover, or not (notes item 4)
+    if (ownsLink() && f && !f.pending && (kind(f) !== "doc")) {
+      out.push({
+        id: "linkcover",
+        label: "Link preview cover",
+        items: [
+          null,
+          { label: "Use as the link preview’s cover", text: "Link Cover", icon: I.cover, cls: "p-stack", on: () => G.coverItem === f.n, act: () => pinCover(f) },
+          null,
+        ],
+      });
+    }
+
     return out.concat(["loop", "speed"]); // no Play ±15 trio (notes 2026-10-26): a tap on the picture plays and pauses
   };
 
@@ -6238,7 +6517,7 @@
     });
 
     if (structural) {
-      items.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+      items.sort(byOrder);
       rebuildGrid();
     }
 

@@ -129,7 +129,7 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
 struct PlayerView: UIViewRepresentable {
     let url: URL
 
-    init(folder: String, open: String?) {  // inside chauphan/
+    init(folder: String, open: String?) {  // inside archive/
         url = galleryURL("/main/archive", ["p": folder, "open": open])
     }
     init(url: URL) { self.url = url }
@@ -138,10 +138,42 @@ struct PlayerView: UIViewRepresentable {
         let web = galleryWebView()
         web.isOpaque = false
         web.backgroundColor = .black
+        web.uiDelegate = context.coordinator
         web.load(URLRequest(url: url))
         return web
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {}
+
+    func makeCoordinator() -> Dialogs { Dialogs() }
+
+    /// Without a UI delegate WKWebView answers the page's alert/confirm/prompt silently (confirm → false), so
+    /// "Delete this comment?" never deleted anything on the iPhone (item 18).
+    final class Dialogs: NSObject, WKUIDelegate {
+        private func show(_ a: UIAlertController, from w: WKWebView, else fallback: () -> Void) {
+            var top = w.window?.rootViewController
+            while let p = top?.presentedViewController { top = p }
+            guard let top else { return fallback() }
+            top.present(a, animated: true)
+        }
+        func webView(_ w: WKWebView, runJavaScriptAlertPanelWithMessage m: String, initiatedByFrame f: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            let a = UIAlertController(title: nil, message: m, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+            show(a, from: w, else: completionHandler)
+        }
+        func webView(_ w: WKWebView, runJavaScriptConfirmPanelWithMessage m: String, initiatedByFrame f: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            let a = UIAlertController(title: nil, message: m, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+            show(a, from: w) { completionHandler(false) }
+        }
+        func webView(_ w: WKWebView, runJavaScriptTextInputPanelWithPrompt p: String, defaultText d: String?, initiatedByFrame f: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+            let a = UIAlertController(title: nil, message: p, preferredStyle: .alert)
+            a.addTextField { $0.text = d }
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+            a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
+            show(a, from: w) { completionHandler(nil) }
+        }
+    }
 }
 #endif

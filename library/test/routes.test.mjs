@@ -505,6 +505,19 @@ await test("share link preview card: Open Graph tags on /s/<id>, the picture at 
   const c = await mk(["Og/b.jpg", "Og/c.png"], { cover: "Og/c.png" });
   assert.equal(await (await call("/api/og-image/" + c)).text(), "PNG");
 
+  // arrange (notes item 4): the owner's order is the page's, its first picture the card's; a pin wins and stamps v
+  const arr = (id, body, as = "owner") => call(`/main/api/link?action=arrange&id=${id}`, { as, method: "POST", body: JSON.stringify(body) });
+  assert.equal((await arr(l, { order: ["002", "000"] }, "stranger")).status, 404);
+  assert.equal((await arr(l, { order: ["002", "000", "nope"] })).status, 200);
+  let g = await (await call("/api/gallery?id=" + l)).json();
+  assert.deepEqual(g.items.map((f) => f.n), ["002", "000", "001"]);
+  assert.equal(await (await call("/api/og-image/" + l)).text(), "PNG");
+  assert.equal((await arr(l, { cover: "001", v: 1234 })).status, 200);
+  assert.equal(await (await call("/api/og-image/" + l)).text(), "JPG");
+  assert.equal(meta(await (await call("/s/" + l)).text(), "og:image"), ORIGIN + "/api/og-image/" + l + "?v=1234");
+  assert.equal((await arr(l, { cover: null, v: 1235 })).status, 200);
+  assert.equal(await (await call("/api/og-image/" + l)).text(), "PNG");
+
   // nothing to show: no og:image, a small card, and the picture 404s
   const t = await mk(["Og/a.txt"]);
   const th = await (await call("/s/" + t)).text();
@@ -517,7 +530,7 @@ await test("share link preview card: Open Graph tags on /s/<id>, the picture at 
 
 await test("share link from the archive (from=archive): same link and page, copied from gallery-archive, the Mac app may make it", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
-  await AR.put("chauphan/Memos/m.m4a", "MEMO", { httpMetadata: { contentType: "audio/mp4" }, customMetadata: { mtime: "1700000000.5" } });
+  await AR.put("archive/Memos/m.m4a", "MEMO", { httpMetadata: { contentType: "audio/mp4" }, customMetadata: { mtime: "1700000000.5" } });
   await AR.put(".catalog/archive/x.json", "{}");
   const mk = (paths, as = "mac", from = "archive") => call(`/main/api/link?action=fromMain&days=1&from=${from}`, { as, method: "POST", body: JSON.stringify({ paths }) });
   assert.equal((await mk(["Memos/m.m4a"], "stranger")).status, 404);
@@ -535,7 +548,7 @@ await test("share link from the archive (from=archive): same link and page, copi
   assert.ok(!g.items[0].pending);
   assert.equal(await (await call("/f/" + j.id + "/000")).text(), "MEMO");
   // the archive is untouched, and nothing of Main's was looked for
-  assert.equal(await (await AR.get("chauphan/Memos/m.m4a")).text(), "MEMO");
+  assert.equal(await (await AR.get("archive/Memos/m.m4a")).text(), "MEMO");
   assert.equal(await MAIN.head("files/Memos/m.m4a"), null);
 });
 
@@ -1184,109 +1197,109 @@ await test("main/dav-archive: Access only; read-write with its own trash, nothin
   const ma = (path, init = {}) => call("/main/dav-archive/" + path, { as: "mac", ...init });
   const dest = (p) => ({ destination: ORIGIN + "/main/dav-archive/" + p });
   const trashed = async (p) => (await AR.list({ prefix: ".trash/" })).objects.filter((o) => o.key.includes("/" + p + "@"));
-  await AR.put("chauphan/Movies/a.mp4", "A", { customMetadata: { mtime: "1700000000" } });
+  await AR.put("archive/Movies/a.mp4", "A", { customMetadata: { mtime: "1700000000" } });
   // nobody else
   assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-archive/", { method: "PROPFIND" })).status, 404);
   assert.equal((await call("/main/dav-archive/", { as: "stranger", method: "PROPFIND" })).status, 404);
-  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-archive/chauphan/Movies/a.mp4", { headers: { authorization: basic("note-pass") } })).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/dav-archive/archive/Movies/a.mp4", { headers: { authorization: basic("note-pass") } })).status, 404);
   // lists the ARCHIVE bucket; the trash is never listed or reachable
-  const xml = await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text();
-  assert.deepEqual(hrefs(xml).sort(), ["/main/dav-archive/chauphan/Movies/", "/main/dav-archive/chauphan/Movies/a.mp4"]);
-  assert.equal(await (await ma("chauphan/Movies/a.mp4")).text(), "A");
+  const xml = await (await ma("archive/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text();
+  assert.deepEqual(hrefs(xml).sort(), ["/main/dav-archive/archive/Movies/", "/main/dav-archive/archive/Movies/a.mp4"]);
+  assert.equal(await (await ma("archive/Movies/a.mp4")).text(), "A");
   // overwrite: the old copy goes to .trash/, a stale base is refused
-  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "PUT", body: "A2" })).status, 204);
-  assert.equal(await (await AR.get("chauphan/Movies/a.mp4")).text(), "A2");
-  const old = await trashed("chauphan/Movies/a.mp4");
+  assert.equal((await ma("archive/Movies/a.mp4", { method: "PUT", body: "A2" })).status, 204);
+  assert.equal(await (await AR.get("archive/Movies/a.mp4")).text(), "A2");
+  const old = await trashed("archive/Movies/a.mp4");
   assert.equal(old.length, 1);
   assert.equal(await (await AR.get(old[0].key)).text(), "A");
-  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "PUT", body: "A3", headers: { "if-match": '"stale"' } })).status, 412);
+  assert.equal((await ma("archive/Movies/a.mp4", { method: "PUT", body: "A3", headers: { "if-match": '"stale"' } })).status, 412);
   const root = await (await ma("", { method: "PROPFIND", headers: { depth: "1" } })).text();
   assert.ok(!hrefs(root).some((h) => h.includes(".trash")));
   assert.notEqual((await ma(".trash/")).status, 200);
   assert.notEqual((await ma(encodeURI(old[0].key))).status, 200);
   assert.notEqual((await ma(".trash/x", { method: "PUT", body: "x" })).status, 201);
   // move, copy over a file (old one to the trash), delete to the trash; folders and the root are refused
-  assert.equal((await ma("chauphan/Old", { method: "MKCOL" })).status, 201);
-  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "COPY", headers: dest("chauphan/Old/b.mp4") })).status, 201);
-  assert.equal((await ma("chauphan/Old/b.mp4", { method: "PUT", body: "B" })).status, 204);
-  assert.equal((await ma("chauphan/Movies/a.mp4", { method: "COPY", headers: dest("chauphan/Old/b.mp4") })).status, 204);
-  assert.equal((await trashed("chauphan/Old/b.mp4")).length, 2);
-  assert.equal((await ma("chauphan/Old/b.mp4", { method: "MOVE", headers: dest("chauphan/Old/c.mp4") })).status, 201);
-  assert.equal(await AR.head("chauphan/Old/b.mp4"), null);
-  assert.equal((await ma("chauphan/Old/c.mp4", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav/Old/c.mp4" } })).status, 400);
-  assert.equal((await ma("chauphan/Old/c.mp4", { method: "DELETE" })).status, 204);
-  assert.equal(await AR.head("chauphan/Old/c.mp4"), null);
-  assert.equal(await (await AR.get((await trashed("chauphan/Old/c.mp4"))[0].key)).text(), "A2");
-  assert.equal((await ma("chauphan/Old/", { method: "DELETE" })).status, 403);
+  assert.equal((await ma("archive/Old", { method: "MKCOL" })).status, 201);
+  assert.equal((await ma("archive/Movies/a.mp4", { method: "COPY", headers: dest("archive/Old/b.mp4") })).status, 201);
+  assert.equal((await ma("archive/Old/b.mp4", { method: "PUT", body: "B" })).status, 204);
+  assert.equal((await ma("archive/Movies/a.mp4", { method: "COPY", headers: dest("archive/Old/b.mp4") })).status, 204);
+  assert.equal((await trashed("archive/Old/b.mp4")).length, 2);
+  assert.equal((await ma("archive/Old/b.mp4", { method: "MOVE", headers: dest("archive/Old/c.mp4") })).status, 201);
+  assert.equal(await AR.head("archive/Old/b.mp4"), null);
+  assert.equal((await ma("archive/Old/c.mp4", { method: "MOVE", headers: { destination: ORIGIN + "/main/dav/Old/c.mp4" } })).status, 400);
+  assert.equal((await ma("archive/Old/c.mp4", { method: "DELETE" })).status, 204);
+  assert.equal(await AR.head("archive/Old/c.mp4"), null);
+  assert.equal(await (await AR.get((await trashed("archive/Old/c.mp4"))[0].key)).text(), "A2");
+  assert.equal((await ma("archive/Old/", { method: "DELETE" })).status, 403);
   assert.equal((await ma("", { method: "DELETE" })).status, 403);
-  assert.equal((await ma("chauphan/Old", { method: "MOVE", headers: dest("chauphan/New") })).status, 403);
+  assert.equal((await ma("archive/Old", { method: "MOVE", headers: dest("archive/New") })).status, 403);
   // Finder's own files: stored by name, never listed, never trashed; other dot names still refused
-  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PUT", body: "xattr" })).status, 201);
-  assert.equal((await ma("chauphan/Movies/.DS_Store", { method: "PUT", body: "ds" })).status, 201);
-  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PUT", body: "xattr2" })).status, 204);
-  assert.equal((await trashed("chauphan/Movies/._a.mp4")).length, 0);
-  assert.equal(await (await ma("chauphan/Movies/._a.mp4")).text(), "xattr2");
-  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "PROPFIND", headers: { depth: "0" } })).status, 207);
-  const listed = hrefs(await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text());
+  assert.equal((await ma("archive/Movies/._a.mp4", { method: "PUT", body: "xattr" })).status, 201);
+  assert.equal((await ma("archive/Movies/.DS_Store", { method: "PUT", body: "ds" })).status, 201);
+  assert.equal((await ma("archive/Movies/._a.mp4", { method: "PUT", body: "xattr2" })).status, 204);
+  assert.equal((await trashed("archive/Movies/._a.mp4")).length, 0);
+  assert.equal(await (await ma("archive/Movies/._a.mp4")).text(), "xattr2");
+  assert.equal((await ma("archive/Movies/._a.mp4", { method: "PROPFIND", headers: { depth: "0" } })).status, 207);
+  const listed = hrefs(await (await ma("archive/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text());
   assert.ok(!listed.some((h) => h.includes("/.")));
-  assert.equal((await ma("chauphan/Movies/._a.mp4", { method: "MOVE", headers: dest("chauphan/Movies/._b.mp4") })).status, 201);
-  assert.equal((await ma("chauphan/Movies/._b.mp4", { method: "DELETE" })).status, 204);
-  assert.equal(await AR.head("chauphan/Movies/._b.mp4"), null);
-  assert.equal((await trashed("chauphan/Movies/._b.mp4")).length, 0);
+  assert.equal((await ma("archive/Movies/._a.mp4", { method: "MOVE", headers: dest("archive/Movies/._b.mp4") })).status, 201);
+  assert.equal((await ma("archive/Movies/._b.mp4", { method: "DELETE" })).status, 204);
+  assert.equal(await AR.head("archive/Movies/._b.mp4"), null);
+  assert.equal((await trashed("archive/Movies/._b.mp4")).length, 0);
   // any other dotfile is content (event-log.md §6): written, listed, read and trashed like any file
-  assert.equal((await ma("chauphan/Movies/.hidden", { method: "PUT", body: "h" })).status, 201);
-  assert.ok(hrefs(await (await ma("chauphan/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text()).some((h) => h.endsWith("/.hidden")));
-  assert.equal(await (await ma("chauphan/Movies/.hidden")).text(), "h");
-  assert.equal((await ma("chauphan/Movies/.hidden", { method: "DELETE" })).status, 204);
-  assert.equal((await trashed("chauphan/Movies/.hidden")).length, 1);
+  assert.equal((await ma("archive/Movies/.hidden", { method: "PUT", body: "h" })).status, 201);
+  assert.ok(hrefs(await (await ma("archive/Movies/", { method: "PROPFIND", headers: { depth: "1" } })).text()).some((h) => h.endsWith("/.hidden")));
+  assert.equal(await (await ma("archive/Movies/.hidden")).text(), "h");
+  assert.equal((await ma("archive/Movies/.hidden", { method: "DELETE" })).status, 204);
+  assert.equal((await trashed("archive/Movies/.hidden")).length, 1);
   assert.equal((await call("/main/dav/Dm/._x", { as: "mac", method: "PUT", body: "x" })).status, 403);
   // chunked uploads land in the archive and keep the old file
   const up = (path, init = {}) => call("/main/nc-archive/dav/uploads/owner/rclone-chunked-upload-aa/" + path, { as: "mac", ...init });
   await up("", { method: "MKCOL" });
   await up("000000000000000-000000000000002", { method: "PUT", body: "BIG" });
-  assert.equal((await up(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/nc-archive/dav/files/owner/chauphan/Movies/a.mp4" } })).status, 204);
-  assert.equal(await (await AR.get("chauphan/Movies/a.mp4")).text(), "BIG");
-  assert.equal((await trashed("chauphan/Movies/a.mp4")).length, 2);
+  assert.equal((await up(".file", { method: "MOVE", headers: { destination: ORIGIN + "/main/nc-archive/dav/files/owner/archive/Movies/a.mp4" } })).status, 204);
+  assert.equal(await (await AR.get("archive/Movies/a.mp4")).text(), "BIG");
+  assert.equal((await trashed("archive/Movies/a.mp4")).length, 2);
   assert.equal((await AR.list({ prefix: ".uploads/" })).objects.length, 0);
   // nothing written to Main or tmp
-  assert.equal((await MAIN.list({ prefix: "files/chauphan/" })).objects.length, 0);
-  assert.equal((await TMP.list({ prefix: "chauphan/" })).objects.length, 0);
+  assert.equal((await MAIN.list({ prefix: "files/archive/" })).objects.length, 0);
+  assert.equal((await TMP.list({ prefix: "archive/" })).objects.length, 0);
 });
 
 await test("fp: the owner's devices add files and folders (Add Media, New Folder), never over anything", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
   const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
   const at = (p) => "?path=" + encodeURIComponent(p);
-  await AR.put("chauphan/Adds/x.txt", "X");
+  await AR.put("archive/Adds/x.txt", "X");
   // a stranger, no x-gallery, a dot path, a missing folder, the wrong method
-  assert.equal((await call("/main/api/fp/archive/folder" + at("chauphan/Adds/New"), { as: "stranger", method: "POST" })).status, 404);
-  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/fp/archive/folder" + at("chauphan/Adds/New"), { method: "POST", headers: { "cf-access-jwt-assertion": serviceJwt } })).status, 403);
-  assert.equal((await api("folder" + at("chauphan/.trash/x"), { method: "POST" })).status, 400);
-  assert.equal((await api("folder" + at("chauphan/Nowhere/New"), { method: "POST" })).status, 404);
-  assert.equal((await api("folder" + at("chauphan/Adds/New"))).status, 405);
+  assert.equal((await call("/main/api/fp/archive/folder" + at("archive/Adds/New"), { as: "stranger", method: "POST" })).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/fp/archive/folder" + at("archive/Adds/New"), { method: "POST", headers: { "cf-access-jwt-assertion": serviceJwt } })).status, 403);
+  assert.equal((await api("folder" + at("archive/.trash/x"), { method: "POST" })).status, 400);
+  assert.equal((await api("folder" + at("archive/Nowhere/New"), { method: "POST" })).status, 404);
+  assert.equal((await api("folder" + at("archive/Adds/New"))).status, 405);
   // a folder, listed at once; never twice, never over a file
-  assert.equal((await api("folder" + at("chauphan/Adds/New"), { method: "POST" })).status, 200);
-  assert.ok((await (await api("items" + at("chauphan/Adds"))).json()).items.some((i) => i.name === "New" && i.dir));
-  assert.equal((await api("folder" + at("chauphan/Adds/New"), { method: "POST" })).status, 409);
-  assert.equal((await api("folder" + at("chauphan/Adds/x.txt"), { method: "POST" })).status, 409);
+  assert.equal((await api("folder" + at("archive/Adds/New"), { method: "POST" })).status, 200);
+  assert.ok((await (await api("items" + at("archive/Adds"))).json()).items.some((i) => i.name === "New" && i.dir));
+  assert.equal((await api("folder" + at("archive/Adds/New"), { method: "POST" })).status, 409);
+  assert.equal((await api("folder" + at("archive/Adds/x.txt"), { method: "POST" })).status, 409);
   // a file into it, with its mtime; never over one that's there
-  const put = await api("file" + at("chauphan/Adds/New/a.jpg") + "&mtime=1700000000", { method: "PUT", body: "JPEG", headers: { "content-length": "4" } });
+  const put = await api("file" + at("archive/Adds/New/a.jpg") + "&mtime=1700000000", { method: "PUT", body: "JPEG", headers: { "content-length": "4" } });
   assert.equal(put.status, 200);
-  const o = await AR.get("chauphan/Adds/New/a.jpg");
+  const o = await AR.get("archive/Adds/New/a.jpg");
   assert.equal(await o.text(), "JPEG");
   assert.equal(o.httpMetadata.contentType, "image/jpeg");
   assert.equal(o.customMetadata.mtime, "1700000000");
-  assert.equal((await api("file" + at("chauphan/Adds/New/a.jpg"), { method: "PUT", body: "OTHER", headers: { "content-length": "5" } })).status, 409);
-  assert.equal(await (await AR.get("chauphan/Adds/New/a.jpg")).text(), "JPEG");
-  assert.equal((await api("file" + at("chauphan/Nowhere/a.jpg"), { method: "PUT", body: "J", headers: { "content-length": "1" } })).status, 404);
-  await AR.delete((await AR.list({ prefix: "chauphan/Adds/" })).objects.map((o) => o.key));
+  assert.equal((await api("file" + at("archive/Adds/New/a.jpg"), { method: "PUT", body: "OTHER", headers: { "content-length": "5" } })).status, 409);
+  assert.equal(await (await AR.get("archive/Adds/New/a.jpg")).text(), "JPEG");
+  assert.equal((await api("file" + at("archive/Nowhere/a.jpg"), { method: "PUT", body: "J", headers: { "content-length": "1" } })).status, 404);
+  await AR.delete((await AR.list({ prefix: "archive/Adds/" })).objects.map((o) => o.key));
 });
 
 await test("fp: the File Provider's read-only feed over gallery-archive (ids, items, content, changes)", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
   const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
   const j = async (p) => (await api(p)).json();
-  const VM = "chauphan/Voice Memos/2024";
+  const VM = "archive/Voice Memos/2024";
   await AR.put(VM + "/a.m4a", "ABCDEF", { customMetadata: { mtime: "1700000000.8020115" } }); // rclone's fractional mtime
   await AR.put(VM + "/b.m4a", "B1");
   await AR.put(VM + "/c.m4a", "C1");
@@ -1300,10 +1313,10 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   // the root: folders only from what's stored, never the bucket's own dot folders
   const top = await j("items");
   assert.equal(top.parent, "root");
-  assert.ok(top.items.some((i) => i.name === "chauphan" && i.dir && /^d[0-9a-f]{24}$/.test(i.id)));
+  assert.ok(top.items.some((i) => i.name === "archive" && i.dir && /^d[0-9a-f]{24}$/.test(i.id)));
   assert.ok(!top.items.some((i) => i.name.startsWith(".")));
   assert.equal((await api("items?path=.trash")).status, 400);
-  assert.equal((await api("items?path=chauphan/nowhere")).status, 404);
+  assert.equal((await api("items?path=archive/nowhere")).status, 404);
   // a folder: files with stable ids, size, etag, mtime; Finder files left out
   await AR.put(VM + "/._a.m4a", "x");
   const vm = await j("items?path=" + encodeURIComponent(VM));
@@ -1312,7 +1325,7 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.match(a.id, /^h[0-9a-f]{24}$/);
   assert.equal(a.size, 6);
   assert.equal(a.mtime, 1700000000);
-  assert.equal(vm.parent, top.items.length && (await j("items?path=chauphan%2FVoice%20Memos")).items.find((i) => i.name === "2024").id);
+  assert.equal(vm.parent, top.items.length && (await j("items?path=archive%2FVoice%20Memos")).items.find((i) => i.name === "2024").id);
   assert.equal((await j("items?path=" + encodeURIComponent(VM))).items.find((i) => i.name === "a.m4a").id, a.id);
   // content, with Range
   const part = await api("content?path=" + encodeURIComponent(VM + "/a.m4a"), { headers: { range: "bytes=1-2" } });
@@ -1328,7 +1341,7 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   await AR.put(VM + "/d.m4a", "D1");
   await AR.put(VM + "/b.m4a", "B2");
   await AR.delete(VM + "/c.m4a");
-  await AR.put("chauphan/Voice Memos/2025/a renamed.m4a", "ABCDEF", { customMetadata: { fid: a.id } });
+  await AR.put("archive/Voice Memos/2025/a renamed.m4a", "ABCDEF", { customMetadata: { fid: a.id } });
   await AR.delete(VM + "/a.m4a");
   // within a minute nothing is re-listed; an older snapshot is
   assert.equal((await j("changes?since=" + base.seq)).events.length, 0);
@@ -1340,10 +1353,10 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   assert.ok(by("create", VM + "/d.m4a"));
   assert.ok(by("modify", VM + "/b.m4a"));
   assert.ok(by("delete", VM + "/c.m4a"));
-  const mv = by("move", "chauphan/Voice Memos/2025/a renamed.m4a");
+  const mv = by("move", "archive/Voice Memos/2025/a renamed.m4a");
   assert.equal(mv.id, a.id);
   assert.equal(mv.from, VM + "/a.m4a");
-  assert.ok(by("create", "chauphan/Voice Memos/2025") && by("create", "chauphan/Voice Memos/2025").dir);
+  assert.ok(by("create", "archive/Voice Memos/2025") && by("create", "archive/Voice Memos/2025").dir);
   assert.equal(c.events.filter((e) => e.path.includes("/.")).length, 0);
   // the log is chained like sync's ledger (event-log.md): the batch starts at the snapshot's head, each event links on
   const batch1 = await (await AR.get(".catalog/archive/log/" + String(c.seq).padStart(12, "0") + ".json")).json();
@@ -1356,7 +1369,7 @@ await test("fp: the File Provider's read-only feed over gallery-archive (ids, it
   }
   assert.equal((await (await AR.get(".catalog/archive/snapshot.json")).json()).chain, head);
   // the new folder's item shows the moved file under the same id
-  assert.equal((await j("items?path=chauphan%2FVoice%20Memos%2F2025")).items[0].id, a.id);
+  assert.equal((await j("items?path=archive%2FVoice%20Memos%2F2025")).items[0].id, a.id);
   // an anchor older than the log kept: 410, enumerate again
   await AR.delete(".catalog/archive/log/" + String(c.seq).padStart(12, "0") + ".json");
   assert.equal((await api("changes?since=" + base.seq)).status, 410);
@@ -1380,7 +1393,7 @@ await test("fp: the catalog's chain and delete guard are sync's (event-log.md): 
     const s = await (await AR.get(".catalog/archive/snapshot.json")).json();
     await AR.put(".catalog/archive/snapshot.json", JSON.stringify({ ...s, at: 0 }));
   };
-  const BULK = "chauphan/Bulk";
+  const BULK = "archive/Bulk";
   for (let i = 0; i < 30; i++) await AR.put(`${BULK}/f${i}.m4a`, "x" + i);
   const logKey = (n) => ".catalog/archive/log/" + String(n).padStart(12, "0") + ".json";
   await stale();
@@ -1431,13 +1444,13 @@ await test("fp: one junk rule with the ledger, dotfiles as content, md5, Main as
 
   // the feed: dotfiles are content; junk, churn and folder markers aren't; md5 from the etag
   const AR = await mf.getR2Bucket("ARCHIVE");
-  for (const [k, v] of [["chauphan/Proj/.gitignore", "node_modules"], ["chauphan/Proj/.DS_Store", "ds"], ["chauphan/Proj/.folder-0123456789abcdef", ""],
-    ["chauphan/Proj/.obsidian/workspace.json", "{}"], ["chauphan/Proj/.obsidian/app.json", "{}"]]) await AR.put(k, v);
-  const proj = await j("archive", "items?path=chauphan%2FProj");
+  for (const [k, v] of [["archive/Proj/.gitignore", "node_modules"], ["archive/Proj/.DS_Store", "ds"], ["archive/Proj/.folder-0123456789abcdef", ""],
+    ["archive/Proj/.obsidian/workspace.json", "{}"], ["archive/Proj/.obsidian/app.json", "{}"]]) await AR.put(k, v);
+  const proj = await j("archive", "items?path=archive%2FProj");
   assert.deepEqual(proj.items.map((i) => i.name).sort(), [".gitignore", ".obsidian"]);
   assert.equal(proj.items.find((i) => i.name === ".gitignore").md5, md5("node_modules"));
-  assert.deepEqual((await j("archive", "items?path=chauphan%2FProj%2F.obsidian")).items.map((i) => i.name), ["app.json"]);
-  assert.equal((await call("/main/api/fp/archive/content?path=chauphan%2FProj%2F.DS_Store", { as: "mac" })).status, 400);
+  assert.deepEqual((await j("archive", "items?path=archive%2FProj%2F.obsidian")).items.map((i) => i.name), ["app.json"]);
+  assert.equal((await call("/main/api/fp/archive/content?path=archive%2FProj%2F.DS_Store", { as: "mac" })).status, 400);
 
   // Main: only files/, paths and ids relative to it
   await MAIN.put("files/FpMain/x.mp3", "X");
@@ -1520,12 +1533,12 @@ await test("fp: a big root's pass goes in steps across requests (pass/); the dif
   assert.equal(JSON.parse(await (await b.get(".catalog/step/pass/state.json")).text()).started, 3000 + 31 * 60 * 1000);
 });
 
-await test("main/archive: Main's page and player over gallery-archive/chauphan, read-only", async () => {
+await test("main/archive: Main's page and player over gallery-archive/archive, read-only", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
-  await AR.put("chauphan/Shelf/Sub/x.txt", "x");
-  await AR.put("chauphan/Shelf/b.m4a", "0123456789", { customMetadata: { mtime: "1700000000" } });
-  await AR.put("chauphan/Shelf/a.m4a", "AAAA");
-  await AR.put("chauphan/Shelf/.DS_Store", "ds");
+  await AR.put("archive/Shelf/Sub/x.txt", "x");
+  await AR.put("archive/Shelf/b.m4a", "0123456789", { customMetadata: { mtime: "1700000000" } });
+  await AR.put("archive/Shelf/a.m4a", "AAAA");
+  await AR.put("archive/Shelf/.DS_Store", "ds");
   await AR.put(".catalog/archive/secret.json", "{}");
   // owner only
   assert.equal((await mf.dispatchFetch(ORIGIN + "/main/archive")).status, 404);
@@ -1545,7 +1558,7 @@ await test("main/archive: Main's page and player over gallery-archive/chauphan, 
   assert.ok(!page.includes(".DS_Store"));
   assert.equal((await call("/main/archive?p=Nope", { as: "owner" })).status, 404);
   assert.equal((await call("/main/archive?p=..%2F.catalog", { as: "owner" })).status, 404);
-  // files, with Range; nothing outside chauphan/ or in a dot folder
+  // files, with Range; nothing outside archive/ or in a dot folder
   const part = await call("/main/archive/f/Shelf/b.m4a", { as: "owner", headers: { range: "bytes=2-4" } });
   assert.equal(part.status, 206);
   assert.equal(await part.text(), "234");
@@ -1560,7 +1573,7 @@ await test("main/archive: Main's page and player over gallery-archive/chauphan, 
   }
   assert.equal((await call("/main/archive/f/Shelf/a.m4a", { as: "owner", method: "PUT", body: "z" })).status, 403);
   assert.equal((await AR.list()).objects.length, before);
-  assert.equal(await (await AR.get("chauphan/Shelf/a.m4a")).text(), "AAAA");
+  assert.equal(await (await AR.get("archive/Shelf/a.m4a")).text(), "AAAA");
 });
 
 await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at expiry", async () => {
