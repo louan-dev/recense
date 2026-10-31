@@ -2098,9 +2098,9 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     func plainInk(_ b: Beat, at t: Double, font: NSFont, before: NSColor? = nil, after: NSColor? = nil, fade: Double = 0.2) -> WordsView.Ink {
         let pale = mix(current, spoken, 0.6)
-        if t >= b.end { return .init(text: b.text, font: font, color: mix(pale, after ?? spoken, (t - b.end) / fade)) }
         // written but not sung (Cadence's `un`): never lit, no glow (gallery.js paintWord)
         if b.un { return .init(text: b.text, font: font, color: before ?? upcoming) }
+        if t >= b.end { return .init(text: b.text, font: font, color: mix(pale, after ?? spoken, (t - b.end) / fade)) }
         if t < b.start {
             let near = max(0, 1 - (b.start - t) / 0.2)
             return .init(text: b.text, font: font, color: before ?? mix(upcoming, ahead, near))
@@ -5087,6 +5087,9 @@ enum Cadence {
             guard let j = (i + 1..<n).first(where: { flat[$0].start > flat[i].start }) else { continue }
             e[i] = legato[i] ? max(s[i] + 0.05, s[j]) : min(e[i], max(s[i] + 0.05, s[j]))
         }
+        // then a song's words hung on the voice's own syllables (cadence.swift): the audio decides when each is sung
+        // and for how long; a written word that isn't sung is marked so
+        let (syl, un) = align(lines, f, flat, &s, &e)
         var i = 0
         return lines.map { l in
             Line(id: l.id, words: l.words.map { w in
@@ -5168,9 +5171,6 @@ enum Fingerprint {
         out.reserveCapacity(n)
         for f in 0..<n {
             s.withUnsafeBufferPointer { vDSP_vmul($0.baseAddress! + start + f * hop, 1, window, 1, &x, 1, vDSP_Length(frame)) }
-        // then a song's words hung on the voice's own syllables (cadence.swift): the audio decides when each is sung
-        // and for how long; a written word that isn't sung is marked so
-        let (syl, un) = align(lines, f, flat, &s, &e)
             re.withUnsafeMutableBufferPointer { r in im.withUnsafeMutableBufferPointer { i in
                 var z = DSPSplitComplex(realp: r.baseAddress!, imagp: i.baseAddress!)
                 x.withUnsafeBytes { vDSP_ctoz($0.bindMemory(to: DSPComplex.self).baseAddress!, 2, &z, 1, vDSP_Length(frame / 2)) }
