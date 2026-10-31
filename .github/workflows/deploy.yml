@@ -17,6 +17,7 @@ jobs:
           cache: npm
           cache-dependency-path: gallery/package-lock.json
       - run: npm ci
+      - run: npx playwright install --with-deps
       - run: npm test
       - run: npx wrangler deploy
         env:
