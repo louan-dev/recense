@@ -3,6 +3,19 @@
 The backend root for storage the owner runs instead of iCloud: Cloudflare R2 behind always-on mounts, an own CalDAV,
 offsite disks for Photos, Messages and Mail, and a read-only iCloud ledger. Private repo.
 
+## Why this exists
+This started with a full iCloud and a laptop out of breath. My M1 has 8 GB of memory and a small disk, the files keep
+growing, external SanDisk drives kept failing me, and when iCloud filled up it took Calendar, Notability and Obsidian
+sync down with it. I could have paid for more space, but what I really wanted was to stop renting my own memories:
+calendars, notes and messages on open standards (CalDAV, WebDAV, plain Markdown in an Obsidian vault), on storage I
+choose, with a ledger that can prove nothing was lost or quietly changed.
+
+Sync is the plumbing for that, and I want it to be plumbing anyone can borrow. Privacy, a working machine that doesn't
+have to be thrown away, and tools free of a single corporation's say-so should not be luxuries. The same spirit runs
+through Sill and Gallery: one unified, corporate-free home for the essentials, so the people I care about, including
+those facing language, disability or cost barriers, can learn and keep their lives in the ways that suit them. I lacked
+the resources to buy that, so I am making it, playfully and in the open, and learning a lot along the way.
+
 ## Long-term outcomes
 - Files usable with no connection on Mac, iPhone and iPad, in each device's native place; edits flow both ways when a
   connection appears.
