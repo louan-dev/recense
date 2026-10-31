@@ -6496,7 +6496,8 @@ final class ShelfDivider {
         item.autosaveName = "local.sill.divider"
         item.button?.title = ""
         item.button?.appearsDisabled = true
-        collapse()
+        expand()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.collapse() }   // once it has a place
         let watch: (NSEvent) -> Void = { [weak self] e in self?.commandChanged(e.modifierFlags.contains(.command)) }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: watch) { flagMonitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { e in watch(e); return e }) { flagMonitors.append(l) }
@@ -6522,10 +6523,21 @@ final class ShelfDivider {
         item.button?.title = showing ? "┃" : ""
         item.button?.alphaValue = 0.35
     }
+    /// Since macOS 27 a status item wider than the room left of it is moved off the menu bar instead of pushing the
+    /// icons away, so the collapsed divider spans only that room, stepping down until it stays on the bar.
     func collapse() {
         collapsed = true
         item.button?.title = ""
-        item.length = 10_000
+        let room = (item.button?.window?.frame.minX ?? 0) - (item.button?.window?.screen?.frame.minX ?? 0)
+        fit(max(room + 12, 200), tries: 12)
+    }
+    private func fit(_ length: CGFloat, tries: Int) {
+        item.length = length
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self = self, self.collapsed, tries > 0, let w = self.item.button?.window else { return }
+            let onBar = NSScreen.screens.contains { $0.frame.contains(NSPoint(x: w.frame.maxX - 1, y: w.frame.midY)) }
+            if !onBar { self.fit(length * 0.85, tries: tries - 1) }
+        }
     }
 }
 

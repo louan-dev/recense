@@ -5,8 +5,7 @@ the listening surface where a recording becomes something to learn from: heard, 
 One app, one process, no Dock icon. It works offline; Gallery's Worker and R2 are an optional cloud side for sharing
 transcripts and files.
 
-Beside it sits **Nook**, a menu-bar hider in `nook/` that builds and runs on its own today (see Nook below), until it
-folds into Sill.
+Its menu-bar hider (Nook) is part of Sill, not an app of its own.
 
 ## Long-term goals
 Each goal comes from one design philosophy, zero friction: nothing stands between a thought, a sound or a glance and
@@ -25,16 +24,11 @@ what it's for. Each project meets a different kind of friction, so each carries 
 - **Nook and the desk tools: friction of clutter.** Menu-bar icons tucked until wanted; notes (Obsidian, Notability,
   files), calendar and a right-edge widget panel inside Sill, so the tools come to the work instead of the reverse.
 
-## Nook
-A menu-bar hider with two tiers: `[ deep ] ┆ [ hidden ] │ ‹› [ visible ] [ system ]`. ⌘-drag icons left of a divider
-(macOS has no API to move other apps' icons). Hovering the first divider peeks at the hidden tier only; option-click
-‹›, or right-click → "Reveal Always-Hidden Items", shows the deep tier, which tucks itself away again after the
-auto-hide delay. Per-app rules (hide all, show all, show selection) and launch at login are in its menu.
-
-```
-zsh ~/Developer/sill/nook/build.sh      # builds /Applications/Nook.app
-open /Applications/Nook.app
-```
+## Menu-bar hider (Nook, inside Sill)
+Sill adds a divider to the menu bar; ⌘-drag icons to its left (macOS has no API to move other apps' icons), and they
+stay tucked away. Hold ⌘ for a moment to see the divider; let go and it tucks them away again. Since macOS 27 the
+divider spans only the room left of it, as a wider item is moved off the bar. Still to bring over from
+`nook/main.swift`: the second tier, hover to peek, per-app rules and a setting to turn it off.
 
 ## Features
 
@@ -97,7 +91,7 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
-  nook/              Nook: main.swift and build.sh; to be folded into Sill
+  nook/main.swift    Nook's original source; its features are being folded into Sill
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions
