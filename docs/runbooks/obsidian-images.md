@@ -65,9 +65,11 @@ Setup (owner):
 2. Mac: Shortcuts › Settings › Advanced › **Allow Running Scripts**; `open "sync/tools/shortcuts/Move Offsite (Mac).shortcut"`
    › Add; in its ⓘ: Use as Quick Action (Finder, Services), Pin in Menu Bar, Add Keyboard Shortcut (e.g. ⌃⌥⌘O).
    First run: Keychain asks for `gallery-access` → Always Allow.
-3. iPhone/iPad token: Zero Trust › Access › Service Auth › Create token `gallery-phone`; add it to the Gallery
-   application's Service Auth policy; add its Client ID to the Worker's `SERVICE_CLIENT_ID` list
-   (`wrangler secret put SERVICE_CLIENT_ID`, comma-separated, keep the Mac's).
+3. One token per device (Zero Trust › Access › Service Auth), each in the Gallery application's Service Auth
+   policy and in the Worker's `SERVICE_CLIENT_ID` list (comma-separated; `wrangler secret put` replaces the whole
+   list, so always pass all of them). Since 2026-10-30: Mac `gallery-access` (Keychain), iPhone `gallery-ios`
+   (`aa419e6a….access`), iPad `gallery-ios-black` (`4052f8b2….access`). Revoke one token to cut off one device:
+   `MAC=$(security find-generic-password -s gallery-access -a client-id -w) && [ -n "$MAC" ] && printf '%s,%s,%s' "$MAC" <iphone-id> <ipad-id> | npx wrangler secret put SERVICE_CLIENT_ID`
 4. AirDrop `Move Offsite (iPhone).shortcut` to each device › Add Shortcut › paste Client ID + Secret.
 
 Not tested: both Shortcuts (signed, not imported or run; importing needs your click). The Mac script was tested

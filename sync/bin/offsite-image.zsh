@@ -48,7 +48,16 @@ for f in $files; do
   [[ -f $f ]] || { log "skip (not a file) $f"; continue; }
   # macOS privacy (TCC) lets the file be seen but not read when Shortcuts has no access to its folder (Documents,
   # Desktop, Downloads): say what to allow instead of curl's "error encountered when reading a file"
-  head -c 1 "$f" >/dev/null 2>&1 || fail "${f:t}: macOS blocked reading ${f:h:t}. Allow it: System Settings › Privacy & Security › Files & Folders › Shortcuts (or Full Disk Access › Shortcuts), then run Move Offsite again"
+  # Run as a Finder Quick Action, the script gets the path without the right to read it (the keyboard shortcut,
+  # with nothing selected, reads the clipboard and never hits this). Finder can read it: it copies the file here.
+  src=$f
+  if ! head -c 1 "$f" >/dev/null 2>&1; then
+    mkdir -p "$tmp/finder"
+    osascript -e "tell application \"Finder\" to duplicate (POSIX file \"$f\" as alias) to (POSIX file \"$tmp/finder\" as alias) with replacing" >/dev/null 2>&1
+    head -c 1 "$tmp/finder/${f:t}" >/dev/null 2>&1 || fail "${f:t}: macOS blocked reading ${f:h:t}. Allow it: System Settings › Privacy & Security › Files & Folders › Shortcuts (or Full Disk Access › Shortcuts), or allow Shortcuts to control Finder (Automation), then run Move Offsite again"
+    f=$tmp/finder/${f:t}
+    log "read through Finder: $src"
+  fi
   name=${f:t}
   ext=${${name:e}:l}; [[ $from_clip == 1 ]] && ext=png
   resp=$(curl -sS --fail-with-body -X PUT --data-binary @"$f" \
@@ -60,10 +69,11 @@ for f in $files; do
   lsha=$(shasum -a 256 "$f" | cut -c1-64)
   [[ -n $url && $rsha == $lsha ]] || fail "$name: R2 copy does not match (local $lsha, R2 ${rsha:-none})"
   if [[ $from_clip == 0 && $keep == 0 ]]; then
-    trash "$f" 2>/dev/null || { log "uploaded but not trashed: $f"; note "Move Offsite" "$name is offsite but stayed here (Trash refused)"; }
+    trash "$src" 2>/dev/null || osascript -e "tell application \"Finder\" to delete (POSIX file \"$src\" as alias)" >/dev/null 2>&1 \
+      || { log "uploaded but not trashed: $src"; note "Move Offsite" "$name is offsite but stayed here (Trash refused)"; }
   fi
   [[ $form == md ]] && links+=("![${name:r}]($url)") || links+=("$url")
-  log "ok $form $f → $url"
+  log "ok $form $src → $url"
   (( n++ ))
 done
 (( n )) || fail "nothing to send"
