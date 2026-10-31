@@ -1248,7 +1248,7 @@ func preferredMicID() -> String? {
 }
 
 struct CaptureChoice {
-    var mic = true, screen = false, camera = false
+    var mic = true, screen = false, camera = true   // item 31: the camera is on when the recorder opens, as in a call
     var micID: String? = preferredMicID()
     var cameraID: String? = AVCaptureDevice.default(for: .video)?.uniqueID
     var displayIndex = 0
@@ -1286,7 +1286,7 @@ final class AreaPicker {
         }
         override func keyDown(with e: NSEvent) { if e.keyCode == 53 { finish?(nil) } }
         override func draw(_ d: NSRect) {
-            NSColor.black.withAlphaComponent(0.35).setFill(); bounds.fill()
+            NSColor.black.withAlphaComponent(0.45).setFill(); bounds.fill()
             if rect == nil {
                 let hint = "Drag to choose the area to record · Esc to cancel" as NSString
                 let at: [NSAttributedString.Key: Any] = [.font: roundedFont(15, .semibold), .foregroundColor: NSColor.white]
@@ -1295,8 +1295,13 @@ final class AreaPicker {
             }
             guard let r = rect else { return }
             NSColor.clear.setFill(); r.fill(using: .copy)
+            // QuickTime's frame (item 31): a thin solid line with a round handle at each corner and side
             NSColor.white.setStroke()
-            let p = NSBezierPath(rect: r.insetBy(dx: -1, dy: -1)); p.lineWidth = 2; p.setLineDash([6, 4], count: 2, phase: 0); p.stroke()
+            let p = NSBezierPath(rect: r.insetBy(dx: -0.5, dy: -0.5)); p.lineWidth = 1; p.stroke()
+            for x in [r.minX, r.midX, r.maxX] { for y in [r.minY, r.midY, r.maxY] where !(x == r.midX && y == r.midY) {
+                let k = NSBezierPath(ovalIn: NSRect(x: x - 4, y: y - 4, width: 8, height: 8))
+                NSColor.white.setFill(); k.fill(); NSColor.black.withAlphaComponent(0.3).setStroke(); k.lineWidth = 0.5; k.stroke()
+            } }
             let label = "\(Int(r.width)) × \(Int(r.height))" as NSString
             let at: [NSAttributedString.Key: Any] = [.font: roundedFont(11, .semibold), .foregroundColor: NSColor.white]
             label.draw(at: NSPoint(x: r.minX + 4, y: max(4, r.minY - 18)), withAttributes: at)
@@ -1329,29 +1334,43 @@ final class AreaPicker {
     }
 }
 
-/// While an area is chosen (white) and while it records, a thin outline sits just outside it, so you can see what's being recorded. It's Sill's own
-/// window (left out of the capture) and lets clicks through. Red while recording, orange while paused.
+/// While an area is chosen (white) and while it records, the screen around it is dimmed as QuickTime does and a thin
+/// outline sits just outside it, so you can see what's being recorded (item 31). Its window lets clicks through and
+/// is left out of the capture (CaptureExcluded); the rest of Sill is recorded like any other app. Red while
+/// recording, orange while paused.
 final class AreaOutline {
+    private final class Shade: NSView {
+        var hole = NSRect.zero, color = NSColor.white
+        override func draw(_ d: NSRect) {
+            NSColor.black.withAlphaComponent(0.4).setFill(); bounds.fill()
+            NSColor.clear.setFill(); hole.fill(using: .copy)
+            color.setStroke()
+            let p = NSBezierPath(rect: hole.insetBy(dx: -1.5, dy: -1.5)); p.lineWidth = 2; p.stroke()
+        }
+    }
     private let window: NSWindow
-    private let box = CALayer()
+    private let shade: Shade
     init(_ area: CGRect) {
-        let pad: CGFloat = 4
-        window = NSWindow(contentRect: area.insetBy(dx: -pad, dy: -pad), styleMask: .borderless, backing: .buffered, defer: false)
+        let sf = NSScreen.screens.first { $0.frame.intersects(area) }?.frame ?? area.insetBy(dx: -4, dy: -4)
+        window = NSWindow(contentRect: sf, styleMask: .borderless, backing: .buffered, defer: false)
         window.level = .statusBar; window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = false
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        let v = NSView(frame: NSRect(origin: .zero, size: window.frame.size)); v.wantsLayer = true
-        box.frame = v.bounds.insetBy(dx: 1, dy: 1)
-        box.borderWidth = 2; box.cornerRadius = 3
-        v.layer?.addSublayer(box)
-        window.contentView = v
+        shade = Shade(frame: NSRect(origin: .zero, size: sf.size))
+        shade.hole = area.offsetBy(dx: -sf.minX, dy: -sf.minY)
+        window.contentView = shade
         paused(false)
         window.orderFrontRegardless()
+        CaptureExcluded.ids.insert(CGWindowID(window.windowNumber))
     }
-    func paused(_ p: Bool) { tint(p ? .systemOrange : .systemRed) }
-    func tint(_ c: NSColor) { box.borderColor = c.cgColor }
-    func close() { window.orderOut(nil) }
+    func paused(_ p: Bool) { tint(p ? NSColor(white: 0.85, alpha: 1) : calmBlue) }   // row 31: white and the essentials blue
+    func tint(_ c: NSColor) { shade.color = c; shade.needsDisplay = true }
+    func close() { CaptureExcluded.ids.remove(CGWindowID(window.windowNumber)); window.orderOut(nil) }
 }
+
+/// Sill's windows that must never show in a screen recording (the dimmed shade around a drawn area). Everything else
+/// of Sill's is recorded: item 31 wants the player in the picture when you record it.
+enum CaptureExcluded { static var ids = Set<CGWindowID>() }
 
 /// Screen + system audio to a .mov, via ScreenCaptureKit's recording output (macOS 15 and later).
 @available(macOS 15.0, *)
@@ -1367,8 +1386,8 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
                 guard let display = content.displays.first(where: { $0.displayID == id }) ?? content.displays.first else {
                     done(false); return
                 }
-                let me = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-                let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
+                let hidden = content.windows.filter { CaptureExcluded.ids.contains($0.windowID) }
+                let filter = SCContentFilter(display: display, excludingWindows: hidden)
                 let cfg = SCStreamConfiguration()
                 let scale = screen?.backingScaleFactor ?? 2
                 cfg.width = Int(CGFloat(display.width) * scale); cfg.height = Int(CGFloat(display.height) * scale)
@@ -1764,7 +1783,7 @@ final class SourceChip: NSView {
         label.frame = NSRect(x: 28, y: (bounds.height - 15) / 2, width: bounds.width - 32, height: 15)
     }
     func paint() {
-        layer?.backgroundColor = (on ? NSColor.systemRed.withAlphaComponent(0.85) : NSColor.white.withAlphaComponent(0.08)).cgColor
+        layer?.backgroundColor = (on ? calmBlue.withAlphaComponent(0.85) : NSColor.white.withAlphaComponent(0.08)).cgColor
         icon.contentTintColor = .white                       // white whether on or off; the chip's fill shows the state
         label.textColor = .white
     }
@@ -1772,14 +1791,15 @@ final class SourceChip: NSView {
     override func mouseDown(with e: NSEvent) { on.toggle(); onToggle?(on) }
 }
 
-/// A small floating mirror: turn Camera on in the output settings and you see yourself, to check framing and
-/// lighting before you record. It sits beside the panel, rounded, mirrored like FaceTime, and closes when Camera
-/// goes off (or the settings close without recording).
+/// The mirror: you see yourself, to check framing and lighting before you record. Docked inside the recorder's card
+/// (item 31; it used to float outside the panel's corner), rounded, mirrored like FaceTime; it goes dark when the
+/// camera is turned off (or the card closes).
 final class CameraPreview {
     let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 180), styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
     let session = AVCaptureSession()
     private var layer: AVCaptureVideoPreviewLayer?
+    private var view: NSView!
 
     init() {
         window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
@@ -1796,10 +1816,15 @@ final class CameraPreview {
         pl.frame = v.bounds
         v.layer?.addSublayer(pl)
         layer = pl
-        window.contentView = v
+        view = v
     }
 
-    func show(cameraID: String?, beside anchor: NSRect) {
+    /// The mirror's picture, put inside `host` (the card's mirror slot) at its full size.
+    func show(cameraID: String?, in host: NSView) {
+        let v: NSView = view
+        if v.superview !== host { v.removeFromSuperview(); host.addSubview(v, positioned: .below, relativeTo: nil) }
+        v.frame = host.bounds; v.autoresizingMask = [.width, .height]; layer?.frame = v.bounds
+        v.isHidden = false
         let begin = {
             self.session.beginConfiguration()
             self.session.inputs.forEach { self.session.removeInput($0) }
@@ -1813,10 +1838,7 @@ final class CameraPreview {
                 c.isVideoMirrored = true
             }
             DispatchQueue.global().async { self.session.startRunning() }
-            // To the right of the panel's card, level with its bottom.
-            self.window.setFrameOrigin(NSPoint(x: anchor.maxX + 12, y: anchor.minY))
-            self.window.orderFrontRegardless()
-            if let l = self.window.contentView?.layer {
+            if let l = v.layer {
                 let a = CASpringAnimation(keyPath: "transform.scale"); a.fromValue = 0.85; a.toValue = 1
                 a.stiffness = 260; a.damping = 20; a.duration = a.settlingDuration; l.add(a, forKey: "pop")
             }
@@ -1829,7 +1851,7 @@ final class CameraPreview {
     }
 
     func hide() {
-        window.orderOut(nil)
+        view.isHidden = true
         DispatchQueue.global().async { self.session.stopRunning() }
     }
 }
@@ -1880,6 +1902,8 @@ final class PreflightView: NSView {
     var staysOpen = false { didSet { close.isHidden = staysOpen } }   // inside the audio menu: its ✕ closes it, not hovering away
     var onClose: (() -> Void)?
     var onCamera: ((Bool) -> Void)?             // Camera on/off: show or hide the mirror
+    let mirror = NSView()                       // item 31: the camera's mirror, docked in the card
+    let camToggle = NSButton()                  // on the mirror: "Camera off" / "Camera on"
     private var areaPreview: AreaOutline?       // the drawn area, outlined in white until recording starts
     private var leaveWork: DispatchWorkItem?
     private var menuOpen = false
@@ -1899,7 +1923,14 @@ final class PreflightView: NSView {
         micChip.on = choice.mic; screenChip.on = choice.screen; camChip.on = choice.camera
         micChip.onToggle = { [weak self] v in self?.choice.mic = v; self?.refreshPath() }
         screenChip.onToggle = { [weak self] v in self?.choice.screen = v; self?.refreshPath(); self?.showAreaPreview() }
-        camChip.onToggle = { [weak self] v in self?.choice.camera = v; self?.refreshPath(); self?.onCamera?(v) }
+        camChip.onToggle = { [weak self] v in self?.setCamera(v) }
+        mirror.wantsLayer = true
+        mirror.layer?.cornerRadius = 12; mirror.layer?.masksToBounds = true
+        mirror.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
+        camToggle.isBordered = false; camToggle.wantsLayer = true
+        camToggle.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        camToggle.target = self; camToggle.action = #selector(camToggled)
+        mirror.addSubview(camToggle)
         for p in [micPick, screenPick, camPick] {
             p.isBordered = false; p.font = roundedFont(11, .medium); p.controlSize = .small
             p.target = self; p.action = #selector(picked(_:))
@@ -1910,7 +1941,7 @@ final class PreflightView: NSView {
         path.font = roundedFont(9.5, .medium); path.textColor = .white
         path.lineBreakMode = .byTruncatingMiddle
         start.isBordered = false; start.wantsLayer = true
-        start.layer?.backgroundColor = NSColor.systemRed.cgColor
+        start.layer?.backgroundColor = calmBlue.cgColor
         start.attributedTitle = NSAttributedString(string: "Start Recording",
             attributes: [.font: roundedFont(12, .bold), .foregroundColor: NSColor.white])
         start.target = self; start.action = #selector(startTapped)
@@ -1919,7 +1950,26 @@ final class PreflightView: NSView {
         close.contentTintColor = NSColor.white.withAlphaComponent(0.5)
         close.target = self; close.action = #selector(closeTapped)
         meterLabel.font = roundedFont(10, .semibold); meterLabel.textColor = .white
-        [title, close, micChip, screenChip, camChip, micPick, screenPick, camPick, meter, meterLabel, path, start].forEach(addSubview)
+        [title, close, micChip, screenChip, camChip, micPick, screenPick, camPick, meter, meterLabel, mirror, path, start].forEach(addSubview)
+        paintCamToggle()
+    }
+
+    /// The camera on or off, from its chip or from the pill on the mirror (both say the same thing).
+    func setCamera(_ on: Bool) {
+        choice.camera = on; camChip.on = on; refreshPath(); paintCamToggle(); onCamera?(on)
+    }
+    @objc func camToggled() { setCamera(!choice.camera) }
+    func paintCamToggle() {
+        let on = choice.camera
+        camToggle.attributedTitle = NSAttributedString(string: on ? "Camera off" : "Camera on",
+            attributes: [.font: roundedFont(11, .semibold), .foregroundColor: NSColor.white])
+        camToggle.image = NSImage(systemSymbolName: on ? "video.slash.fill" : "video.fill", accessibilityDescription: nil)
+        camToggle.imagePosition = .imageLeading; camToggle.contentTintColor = .white
+        let w: CGFloat = 104, m = mirror.bounds
+        // on: a small pill in the mirror's corner; off: in the middle of the dark mirror
+        camToggle.frame = on ? NSRect(x: m.width - w - 8, y: 8, width: w, height: 24)
+                             : NSRect(x: (m.width - w) / 2, y: (m.height - 24) / 2, width: w, height: 24)
+        camToggle.layer?.cornerRadius = 12
     }
     required init?(coder: NSCoder) { fatalError() }
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
@@ -1957,6 +2007,11 @@ final class PreflightView: NSView {
         meterLabel.frame = NSRect(x: pad, y: h - 104, width: 96, height: 13)
         meter.frame = NSRect(x: pad + 100, y: h - 114, width: w - 2 * pad - 100, height: 30)
         path.frame = NSRect(x: pad, y: 46, width: w - 2 * pad, height: 13)
+        // the mirror takes the room between the meter and the path (the card is taller for it); none when too short
+        let mh = h - 120 - 64
+        mirror.isHidden = mh < 60
+        mirror.frame = NSRect(x: pad, y: 64, width: w - 2 * pad, height: max(0, mh))
+        paintCamToggle()
         start.frame = NSRect(x: pad, y: 12, width: w - 2 * pad, height: 26)
         start.layer?.cornerRadius = 13
     }
@@ -1974,10 +2029,13 @@ final class PreflightView: NSView {
         screenPick.addItem(withTitle: areaTitle); screenPick.lastItem?.tag = -1
         if choice.drawArea { screenPick.select(screenPick.lastItem) }
         else { screenPick.selectItem(at: min(choice.displayIndex, NSScreen.screens.count - 1)) }
-        if cams.isEmpty { camPick.addItem(withTitle: "No camera"); camPick.isEnabled = false }
+        if cams.isEmpty { camPick.addItem(withTitle: "No camera"); camPick.isEnabled = false; choice.camera = false }
+        camChip.on = choice.camera
         refreshPath()
         startMeter()
         showAreaPreview()
+        paintCamToggle()
+        onCamera?(choice.camera)              // item 31: on as the card opens, like joining a call
     }
 
     /// The area item reads "Draw Area…" until one is drawn, then its size (choosing it again redraws).
@@ -2061,8 +2119,6 @@ final class RecorderView: NSView {
     let meterBars: [CALayer] = (0..<7).map { _ in CALayer() }
     let streams = NSTextField(labelWithString: "")       // which sources are live, as symbols
     let cancelButton = NSButton()                         // discard this recording (files go to the Trash)
-    let pauseButton = NSButton()                          // pause / resume
-    let stopButton = NSButton()                           // stop, save, and show the files in Finder
 
     private(set) var state: CaptureState = .ready
     var onOpenSettings: (() -> Void)?
@@ -2092,20 +2148,18 @@ final class RecorderView: NSView {
         core.layer?.addSublayer(pauseBars)
         timer.font = roundedFont(14, .semibold); timer.textColor = .white
         badge.wantsLayer = true
-        for b in meterBars { b.backgroundColor = NSColor.systemRed.cgColor; b.cornerRadius = 1; badge.layer?.addSublayer(b) }
+        for b in meterBars { b.backgroundColor = NSColor.white.cgColor; b.cornerRadius = 1; badge.layer?.addSublayer(b) }
         streams.font = .systemFont(ofSize: 12); streams.textColor = NSColor.white.withAlphaComponent(0.7)
         cancelButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Cancel recording")
         cancelButton.isBordered = false
         cancelButton.contentTintColor = NSColor.white.withAlphaComponent(0.55)
         cancelButton.toolTip = "Cancel recording (moves its files to the Trash)"
         cancelButton.target = self; cancelButton.action = #selector(cancelRecording)
-        for (b, sym, tip, sel) in [(pauseButton, "pause.fill", "Pause", #selector(pauseTapped)),
-                                   (stopButton, "stop.fill", "Stop and show in Finder", #selector(stopTapped))] {
-            b.image = NSImage(systemSymbolName: sym, accessibilityDescription: tip)
-            b.isBordered = false; b.contentTintColor = .white; b.toolTip = tip
-            b.target = self; b.action = sel
-        }
-        [ring, core, timer, badge, streams, pauseButton, stopButton, cancelButton].forEach(addSubview)
+        // item 31: the red button does it all (tap: pause / resume; hold: stop and save), so no pause and stop up here
+        holdRing.fillColor = nil; holdRing.strokeColor = NSColor.white.cgColor; holdRing.lineWidth = 2.5
+        holdRing.lineCap = .round; holdRing.strokeEnd = 0
+        ring.layer?.addSublayer(holdRing)
+        [ring, core, timer, badge, streams, cancelButton].forEach(addSubview)
         render(animated: false)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -2118,9 +2172,10 @@ final class RecorderView: NSView {
         ring.layer?.cornerRadius = 15
         timer.frame = NSRect(x: 40, y: h / 2 - 9, width: 60, height: 19)
         badge.frame = NSRect(x: 102, y: h / 2 - 9, width: 40, height: 18)
-        streams.frame = NSRect(x: 148, y: h / 2 - 8, width: max(0, bounds.width - 148 - 72), height: 16)
-        pauseButton.frame = NSRect(x: bounds.width - 68, y: h / 2 - 9, width: 18, height: 18)
-        stopButton.frame = NSRect(x: bounds.width - 44, y: h / 2 - 9, width: 18, height: 18)
+        streams.frame = NSRect(x: 148, y: h / 2 - 8, width: max(0, bounds.width - 148 - 28), height: 16)
+        holdRing.path = CGPath(ellipseIn: CGRect(x: 1.25, y: 1.25, width: 27.5, height: 27.5), transform: nil)
+        holdRing.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+        holdRing.setAffineTransform(CGAffineTransform(rotationAngle: .pi / 2).scaledBy(x: 1, y: -1))  // from 12 o'clock, clockwise
         cancelButton.frame = NSRect(x: bounds.width - 20, y: h / 2 - 9, width: 18, height: 18)
         render(animated: false)
     }
@@ -2128,10 +2183,7 @@ final class RecorderView: NSView {
     func render(animated: Bool) {
         let rec = state == .recording, paused = state == .paused
         cancelButton.isHidden = !(rec || paused)
-        pauseButton.isHidden = cancelButton.isHidden; stopButton.isHidden = cancelButton.isHidden
-        let ps = paused ? "play.fill" : "pause.fill"
-        pauseButton.image = NSImage(systemSymbolName: ps, accessibilityDescription: paused ? "Resume" : "Pause")
-        pauseButton.toolTip = paused ? "Resume" : "Pause"
+        toolTip = rec ? "Tap to pause · hold to stop and save" : paused ? "Tap to go on · hold to stop and save" : "Record"
         let size: CGFloat = rec ? 12 : (paused ? 14 : 18)
         let target = NSRect(x: ring.frame.midX - size / 2, y: ring.frame.midY - size / 2, width: size, height: size)
         let radius = rec ? 3 : (paused ? 4 : size / 2)
@@ -2147,7 +2199,7 @@ final class RecorderView: NSView {
             }
         } else { core.frame = target }
         core.layer?.cornerRadius = radius
-        core.layer?.backgroundColor = (paused ? NSColor.systemOrange : NSColor.systemRed).cgColor
+        core.layer?.backgroundColor = (paused ? NSColor(white: 0.85, alpha: 1) : calmBlue).cgColor
         let bars = CGMutablePath()
         bars.addRect(CGRect(x: 3.5, y: 3, width: 2.5, height: 8)); bars.addRect(CGRect(x: 8, y: 3, width: 2.5, height: 8))
         pauseBars.path = bars
@@ -2229,13 +2281,31 @@ final class RecorderView: NSView {
     }
     override func mouseEntered(with e: NSEvent) { if state == .ready { onOpenSettings?() } }
 
+    // While recording, one button: a tap pauses or goes on; holding it fills a ring around it and, once full
+    // (0.8 s), stops and saves. Letting go early is just a tap. A double-click still stops at once.
+    private let holdRing = CAShapeLayer()
+    private var holdWork: DispatchWorkItem?
+    private static let holdTime = 0.8
     override func mouseDown(with e: NSEvent) {
         if state == .ready || state == .settings { onOpenSettings?(); return }      // Ready → pre-flight
-        if e.clickCount >= 2 { singleClick?.cancel(); stop(); return }
+        if e.clickCount >= 2 { singleClick?.cancel(); cancelHold(); stop(); return }
+        let fill = CABasicAnimation(keyPath: "strokeEnd")
+        fill.fromValue = 0; fill.toValue = 1; fill.duration = Self.holdTime
+        fill.fillMode = .forwards; fill.isRemovedOnCompletion = false
+        holdRing.add(fill, forKey: "hold")
+        let w = DispatchWorkItem { [weak self] in self?.holdWork = nil; self?.cancelHold(); self?.stop() }
+        holdWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdTime, execute: w)
+    }
+    override func mouseUp(with e: NSEvent) {
+        guard holdWork != nil else { return }        // the hold already stopped it (or it wasn't recording)
+        cancelHold()
+        guard e.clickCount < 2 else { return }
         let w = DispatchWorkItem { [weak self] in self?.togglePause() }
         singleClick = w
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
     }
+    private func cancelHold() { holdWork?.cancel(); holdWork = nil; holdRing.removeAnimation(forKey: "hold") }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let m = NSMenu()
@@ -2294,6 +2364,8 @@ final class RecorderView: NSView {
             devices.startFiles(audio: audioURL, movie: movieURL)
             files += [audioURL, movieURL].compactMap { $0 }
         }
+        // the shade goes up first, so the capture (which lists the windows to leave out) already sees it
+        if c.screen, let a = c.area { outline = AreaOutline(a) }
         if c.screen {
             if #available(macOS 15.0, *) {
                 let cap = ScreenCapture()
@@ -2307,7 +2379,6 @@ final class RecorderView: NSView {
                 }
             }
         }
-        if c.screen, let a = c.area { outline = AreaOutline(a) }
         state = .recording
         lastComputerSound = Date()
         runMeter(true)
@@ -4469,8 +4540,8 @@ final class EssentialsView: ClickView {
         preflight.onClose = { [weak self] in self?.showAudio(false) }
         preflight.onCamera = { [weak self] on in
             guard let self = self, let win = self.window else { return }
-            if on { self.cameraPreview.show(cameraID: self.preflight.choice.cameraID,
-                                             beside: win.convertToScreen(self.preflight.convert(self.preflight.bounds, to: nil))) }
+            _ = win
+            if on { self.cameraPreview.show(cameraID: self.preflight.choice.cameraID, in: self.preflight.mirror) }
             else { self.cameraPreview.hide() }
         }
         preflight.onStart = { [weak self] c in
@@ -4548,7 +4619,7 @@ final class EssentialsView: ClickView {
         let aw = audioSheet.bounds.width, ah = audioSheet.bounds.height
         audioClose.frame = NSRect(x: aw - 30, y: ah - 30, width: 20, height: 20)
         recorder.frame = NSRect(x: 16, y: ah - 46, width: aw - 60, height: 36)
-        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(200, ah - 58))
+        preflight.frame = NSRect(x: 10, y: 8, width: aw - 20, height: min(330, ah - 58))   // item 31: room for the mirror
     }
     var onAudioClosed: (() -> Void)?
     @objc func closeAudio() { showAudio(false); onAudioClosed?() }

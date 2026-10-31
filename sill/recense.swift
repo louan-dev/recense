@@ -1568,21 +1568,25 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     override init() {
         let screen = NSScreen.main!.visibleFrame
-        let w: CGFloat = min(1000, screen.width - 80), h: CGFloat = 270
+        // item 31: room for everything ported from Gallery's player (two lines + notation, home bar, vertical bar, the
+        // sound tray's 240 pt sliders): 960 × 420, a 16 : 7 strip that still sits under a video
+        let w: CGFloat = min(960, screen.width - 80), h: CGFloat = min(420, screen.height - 80)
         panel = RecenseKeyPanel(contentRect: NSRect(x: screen.midX - w / 2, y: screen.minY + 40, width: w, height: h),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
                          backing: .buffered, defer: false)
         super.init()
         panel.title = "Recense"
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
+        // row 31: no traffic lights; the strip's Recense button and CC Off already open and close it
+        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { panel.standardWindowButton(b)?.isHidden = true }
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.level = .statusBar; panel.isFloatingPanel = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false; panel.backgroundColor = NSColor(white: 0.04, alpha: 0.86)
         panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = false
-        panel.minSize = NSSize(width: 380, height: 120)
+        panel.minSize = NSSize(width: 520, height: 220)
         panel.delegate = self
-        panel.setFrameAutosaveName("RecenseWindow")
+        panel.setFrameAutosaveName("RecenseWindow2")   // item 31: the new size once, then the listener's own
 
         let root = HoverView()
         root.onHover = { [weak self] inside in self?.hover(inside) }
@@ -1628,7 +1632,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         for v in [video, area, editor, status, skipAd, homeBar, modeCtl, langCtl, toast, chord] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
         words.translatesAutoresizingMaskIntoConstraints = false; area.addSubview(words)
         NSLayoutConstraint.activate([
-            status.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
+            status.topAnchor.constraint(equalTo: root.topAnchor, constant: 34),   // row 31: under the top row, not on the wake strip
             status.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             status.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -180),
             skipAd.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 4),
@@ -6933,6 +6937,10 @@ final class NativeSources {
         // and what Gallery's viewers asked for (keep/locks/), every minute
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             _ = Task { await GalleryJob.serve { self?.galleryIdle ?? false } }
+        }
+        // Handoff (handoff.swift): the transcript and place shared with Gallery's Listen on the iPhone and iPad
+        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { if let self { _ = Task { await Handoff.tick(self) } } }
         }
         let link = overlay.panel.contentView!.displayLink(target: self, selector: #selector(tick))
         link.add(to: .main, forMode: .common)

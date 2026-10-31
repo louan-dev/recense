@@ -38,7 +38,7 @@ final class SoundEngine {
         let t = SoundTap(pid: p)
         t.onDead = { [weak self] why in DispatchQueue.main.async { self?.stop(); self?.set(why) } }
         guard t.start() else { set(t.why); return }
-        t.apply(s)
+        t.apply(s, now: true)   // a new tap starts on the tray's sound, not on flat
         impl = t
         set(.on)
     }
@@ -118,6 +118,8 @@ private final class SoundTap {
     private var watchdog: Timer?
     private var ramp: Timer?
     private var target: [Float] = [0, 0, 0, 0]   // low, mid, high (dB), trim (dB)
+    private var desc: CATapDescription?
+    private var objs: Set<AudioObjectID> = []
 
     init(pid: pid_t) { self.pid = pid }
 
@@ -129,6 +131,7 @@ private final class SoundTap {
         var size = UInt32(0)
 
         let desc = CATapDescription(stereoMixdownOfProcesses: objs)
+        self.desc = desc; self.objs = Set(objs)
         desc.uuid = UUID()
         desc.muteBehavior = .mutedWhenTapped
         desc.isPrivate = true
@@ -207,9 +210,26 @@ private final class SoundTap {
         watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.alive else { return }
             // a stuck tap (or engine) must never leave the original muted
-            if Date().timeIntervalSinceReferenceDate - (self.ring?.lastWrite ?? 0) > 1 || !self.engine.isRunning { self.stop(); self.onDead?(.failed) }
+            if Date().timeIntervalSinceReferenceDate - (self.ring?.lastWrite ?? 0) > 1 || !self.engine.isRunning { self.stop(); self.onDead?(.failed); return }
+            self.refresh()
         }
         return true
+    }
+
+    /// The processes are a list taken when the tap starts; a browser plays a newly opened tab (or a reloaded page) from a
+    /// content process that wasn't making sound then, which went untapped: heard as it is, no EQ or Key, until something
+    /// restarted the tap (item 21). So the list is kept current, on the running tap.
+    private func refresh() {
+        guard let desc else { return }
+        let now = SoundTap.audioObjects(for: pid)
+        guard !now.isEmpty, Set(now) != objs else { return }
+        desc.processes = now
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyDescription,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var d: CATapDescription = desc
+        let st = withUnsafeMutablePointer(to: &d) { AudioObjectSetPropertyData(tapID, &addr, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), $0) }
+        log("sound: tap now takes \(now.count) processes (was \(objs.count))\(st == noErr ? "" : ", error \(st)")")
+        if st == noErr { objs = Set(now) } else { stop(); onDead?(.failed) }   // a fresh tap takes the new list
     }
 
     private var chromaLock = os_unfair_lock()
@@ -245,13 +265,14 @@ private final class SoundTap {
     }
 
     /// The tray's values, glided over ~60 ms so a drag never clicks.
-    func apply(_ s: [String: Any]) {
+    func apply(_ s: [String: Any], now: Bool = false) {
         let n = { (x: Any?) in Float((x as? NSNumber)?.doubleValue ?? 0) }
         let e = s["eq"] as? [String: Any] ?? [:]
         let g = [n(e["low"]), n(e["mid"]), n(e["high"])]
         // trim: take back the highest boost (shelves and the peak barely overlap at Q 0.7), so a boost never clips
         let trim = -max(0, g.max() ?? 0, g[0] > 0 && g[1] > 0 ? (g[0] + g[1]) * 0.6 : 0, g[1] > 0 && g[2] > 0 ? (g[1] + g[2]) * 0.6 : 0)
         target = g + [trim]
+        if now { for i in 0..<3 { eq.bands[i].gain = g[i] }; eq.globalGain = trim }
         vox?.amount = max(-1, min(1, n(s["vox"])))   // the extractor: −1 the vocals out, 1 the vocals alone
         pitch.pitch = max(-2400, min(2400, n(s["key"]) * 100))   // Key in semitones
         pitch.bypass = n(s["key"]) == 0
@@ -264,7 +285,7 @@ private final class SoundTap {
                 var done = true
                 for i in 0..<3 {
                     let c = self.eq.bands[i].gain, d = self.target[i] - c
-                    self.eq.bands[i].gain = abs(d) < 0.05 ? self.target[i] : c + d * 0.25
+                    self.eq.bands[i].gain = abs(d) < 0.05 ? self.target[i] : c + d * 0.45   // ~50 ms: heard at once, no click
                     if abs(d) >= 0.05 { done = false }
                 }
                 let c = self.eq.globalGain, d = self.target[3] - c

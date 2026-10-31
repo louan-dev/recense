@@ -40,7 +40,7 @@
   }
 
   /* the sound tray (Homebar.tray): its sliders as long as the window allows, so the open tray stays inside it */
-  .p-eq{--eqt:clamp(36px,calc(100vh - 104px),116px)}
+  .p-eq{--eqt:clamp(36px,calc(100vh - 120px),240px);--eqtw:clamp(38px,calc((100vw - 120px) / 9),60px)}  /* item 31: room to feel where a knob sits */
 
   /* while playing, both bars fade after a moment, as Gallery's chrome does; any movement brings them back */
   .p-hb,.p-ctrl{transition:opacity .3s}
@@ -339,6 +339,7 @@
       add(bar.el.querySelector(".p-hbval"));
     }
     add(vbar.btn, [100, 16, 8, 30]); // the stroke's own hit area (.p-eqbtn::before)
+    add(vbar.el.querySelector(".p-nmode"), [4, 4, 4, 4]); // the notation toggle under it (item 31: it took no clicks)
     if (tray.isOpen()) {
       add(tray.el.querySelector(".p-eqin"));
       add(tray.el.querySelector(".kpop:not([hidden])"));
