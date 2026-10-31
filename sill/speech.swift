@@ -423,11 +423,17 @@ import Speech
             let tok = NLTokenizer(unit: .word)
             tok.string = w.text
             if code != "und" { tok.setLanguage(NLLanguage(code)) }
-            var parts: [(String, Double)] = []
+            // each word keeps what follows it up to the next (a tsheg, a shad, a Chinese comma): nothing heard is dropped
+            var cuts: [(String.Index, Double)] = []
             tok.enumerateTokens(in: w.text.startIndex..<w.text.endIndex) { r, _ in
                 let k = w.text.unicodeScalars.distance(from: w.text.unicodeScalars.startIndex, to: r.lowerBound)
-                parts.append((String(w.text[r]), w.t[min(k, w.t.count - 1)]))
+                cuts.append((r.lowerBound, w.t[min(k, w.t.count - 1)]))
                 return true
+            }
+            if !cuts.isEmpty { cuts[0].0 = w.text.startIndex }
+            var parts: [(String, Double)] = cuts.indices.compactMap { i in
+                let t = w.text[cuts[i].0..<(i + 1 < cuts.count ? cuts[i + 1].0 : w.text.endIndex)].trimmingCharacters(in: .whitespaces)
+                return t.isEmpty ? nil : (t, cuts[i].1)
             }
             if parts.isEmpty { parts = [(w.text, w.start)] }
             for (i, p) in parts.enumerated() {

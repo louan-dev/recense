@@ -609,7 +609,8 @@ struct Override: Codable, Equatable {
         guard let right = g[core.lowercased()], !right.isEmpty else { return w }
         return pre + caseLike(core, right) + post
     }
-    nonisolated static func words(_ s: String) -> [String] { s.split(whereSeparator: \.isWhitespace).map(String.init) }
+    /// (a run typed the way Chinese, Thai or Tibetan are written, without spaces, cut into words: cutUnspaced)
+    nonisolated static func words(_ s: String) -> [String] { s.split(whereSeparator: \.isWhitespace).flatMap { cutUnspaced(String($0)) } }
 
     /// What an edit teaches: each word replaced by one other (a run changed word for word), wrong → right as typed.
     nonisolated static func learned(from: String, to: String) -> [(String, String)] {
@@ -2166,7 +2167,14 @@ final class WordsView: NSView {
     static func lineHeight(_ f: NSFont) -> CGFloat { ceil(f.ascender - f.descender + f.leading) }
     static func width(_ k: Ink) -> CGFloat { (k.text as NSString).size(withAttributes: [.font: k.font, .kern: k.kern]).width }
     static func space(_ f: NSFont) -> CGFloat { (" " as NSString).size(withAttributes: [.font: f]).width }
-    static func width(_ run: [Ink]) -> CGFloat { run.map { width($0) + space($0.font) }.reduce(0, +) - (run.last.map { space($0.font) } ?? 0) }
+    /// What goes between two words: a space, none between words of Chinese, Thai or Tibetan (unspaced).
+    static func sep(_ a: Ink, _ b: Ink) -> CGFloat { unspaced(a.text, b.text) || unspaced(b.text, a.text) ? 0 : space(a.font) }
+    static func width(_ run: [Ink]) -> CGFloat { run.map(width).reduce(0, +) + zip(run, run.dropFirst()).map { sep($0, $1) }.reduce(0, +) }
+    /// ...and between two phrases (cells) of a row
+    static func gap(_ a: Cell, _ b: Cell, _ g: CGFloat) -> CGFloat {
+        guard let x = a.words.last, let y = b.words.first else { return g }
+        return sep(x, y) == 0 && sep(b.words.last ?? y, a.words.first ?? x) == 0 ? 0 : g
+    }
     static func width(_ c: Cell) -> CGFloat { max(width(c.words), c.turn.map(width) ?? 0) }
     static func gap(_ cells: [Cell]) -> CGFloat { cells.first?.words.first.map { space($0.font) } ?? 0 }
     static func rowHeight(_ cells: [Cell]) -> CGFloat {
@@ -2297,9 +2305,9 @@ final class WordsView: NSView {
         let gap = gap(cells)
         var out: [Row] = [], cur = Row()
         for c in cells {
-            let w = width(c)
-            if !cur.cells.isEmpty, cur.width + gap + w > room { out.append(cur); cur = Row() }
-            cur.width += cur.cells.isEmpty ? w : gap + w; cur.cells.append((c, w))
+            let w = width(c), g = cur.cells.last.map { Self.gap($0.cell, c, gap) } ?? 0
+            if !cur.cells.isEmpty, cur.width + g + w > room { out.append(cur); cur = Row() }
+            cur.width += cur.cells.isEmpty ? w : g + w; cur.cells.append((c, w))
         }
         if !cur.cells.isEmpty { out.append(cur) }
         return out
@@ -2360,19 +2368,56 @@ final class WordsView: NSView {
         }
     }
 
-    /// Text in a script read right to left (Persian, Arabic, Urdu, Hebrew).
-    static func rtl(_ s: String) -> Bool { ["Arab", "Hebr"].contains(scriptOf(text: s) ?? "") }
-    static func rtl(_ c: Cell) -> Bool { c.words.contains { rtl($0.text) } }
+    /// Text in a script read right to left (Persian, Arabic, Urdu, Hebrew, Syriac, Thaana, N'Ko).
+    static func rtl(_ s: String) -> Bool { ["Arab", "Hebr", "Syrc", "Thaa", "Nkoo"].contains(scriptOf(text: s) ?? "") }
+    /// A phrase reads right to left when most of its letters do, or it opens in Arabic and they're at least a third
+    /// (an Arabic line with a name in Latin letters does, "و New York كثيرا"; an English line with one Arabic word doesn't).
+    static func rtl(_ c: Cell) -> Bool {
+        var r = 0, l = 0, first: Bool? = nil
+        for k in c.words {
+            let n = k.text.unicodeScalars.filter { $0.properties.isAlphabetic }.count
+            if n > 0, first == nil { first = rtl(k.text) }
+            if rtl(k.text) { r += n } else { l += n }
+        }
+        return r > 0 && (r >= l || (first == true && 2 * r >= l))
+    }
+    /// Words in the order they're seen left to right. A right-to-left phrase runs backwards, but a run of words read
+    /// left to right inside it ("New York", and a number after them) keeps its own order, as the bidi algorithm lays
+    /// out a line (a number after Arabic words, or a comma between them, goes with the Arabic).
+    static func visual<T>(_ xs: [T], rtl: Bool, text: (T) -> String) -> [T] {
+        guard rtl else { return xs }
+        // each word: r (read right to left), l (left to right), n (a number), o (a mark)
+        let kind: [Character] = xs.map { x in
+            let t = text(x)
+            if Self.rtl(t) { return "r" }
+            if t.unicodeScalars.contains(where: { $0.properties.isAlphabetic }) { return "l" }
+            return t.unicodeScalars.contains(where: { $0.properties.numericType != nil }) ? "n" : "o"
+        }
+        var lt = [Bool](repeating: false, count: xs.count), last: Character = "r"
+        for i in xs.indices {
+            switch kind[i] { case "l": lt[i] = true; last = "l"; case "r": last = "r"; case "n": lt[i] = last == "l"; default: break }
+        }
+        for i in xs.indices where kind[i] == "o" {     // between two words read left to right, it reads with them
+            let a = xs[..<i].indices.last { kind[$0] != "o" }, b = xs[(i + 1)...].indices.first { kind[$0] != "o" }
+            lt[i] = a.map { lt[$0] } == true && b.map { lt[$0] } == true
+        }
+        var out: [T] = [], run: [T] = []
+        for i in xs.indices.reversed() {
+            if lt[i] { run.insert(xs[i], at: 0) } else { out += run; run = []; out.append(xs[i]) }
+        }
+        return out + run
+    }
 
     /// Right-to-left words run right to left: a row of single words (the original over its English) all the way
     /// across, and inside a phrase (Learning, whose phrases stay in English reading order) its own words.
     func draw(_ r: Row, at y: CGFloat, gap: CGFloat, h: CGFloat) {
         var x = (bounds.width - r.width) / 2
         if drum == nil { inkRects.append(NSRect(x: x, y: y, width: r.width, height: h)) }
-        let flow = r.cells.allSatisfy { $0.cell.words.count == 1 } && r.cells.contains { Self.rtl($0.cell) } ? Array(r.cells.reversed()) : r.cells
+        let one = r.cells.allSatisfy { $0.cell.words.count == 1 }
+        let flow = one ? Self.visual(r.cells, rtl: Self.rtl(Cell(words: r.cells.flatMap(\.cell.words))), text: { $0.cell.words[0].text }) : r.cells
         var ribbon: [(Ink, NSPoint)] = []        // the row's words in reading order, for its one ribbon
         defer { if !flow.contains(where: { Self.rtl($0.cell) }) { drawScore(ribbon) } }
-        for (c, w) in flow {
+        for (i, (c, w)) in flow.enumerated() {
             let rtl = Self.rtl(c)
             // A soft edge sweeps across the phrase the way the light did, the words dissolving ahead of it and their
             // translation surfacing behind it, in place (never a phrase laid over its translation, which is a blur).
@@ -2380,23 +2425,29 @@ final class WordsView: NSView {
             let feather = min(w, 1.5 * h)                     // a soft gap between the two, moving the way the words are read
             let edge = rtl ? x + w + feather - (w + 2 * feather) * p : x - feather + (w + 2 * feather) * p
             let slot = NSRect(x: x - 24, y: y - 24, width: w + 48, height: h + 48)
+            // a phrase of Chinese or Thai leans on the one it's glued to (it is as wide as its English), and its English
+            // keeps a space from its neighbour's
+            let before = i > 0 && Self.gap(flow[i - 1].cell, c, gap) == 0, after = i + 1 < flow.count && Self.gap(c, flow[i + 1].cell, gap) == 0
             if p < 1 {
                 Self.sweep(slot, from: rtl ? edge - feather : edge, to: rtl ? edge : edge + feather, keepLeft: rtl, whole: p == 0) {
-                    var wx = x + (w - Self.width(c.words)) / 2
-                    for k in rtl ? c.words.reversed() : c.words {
+                    let slack = w - Self.width(c.words)
+                    var wx = x + (before ? 0 : after ? slack : slack / 2)
+                    let seen = Self.visual(c.words, rtl: rtl, text: \.text)
+                    for (j, k) in seen.enumerated() {
                         let at = NSPoint(x: wx, y: y)
                         draw(k, at: at, alpha: 1)
                         if p == 0 { ribbon.append((k, at)) }     // a phrase turning into its translation takes its ribbon with it
-                        wx += Self.width(k) + Self.space(k.font)
+                        wx += Self.width(k) + (j + 1 < seen.count ? Self.sep(k, seen[j + 1]) : 0)
                     }
                 }
             }
             if let u = c.turn, p > 0 {
                 Self.sweep(slot, from: rtl ? edge : edge - feather, to: rtl ? edge + feather : edge, keepLeft: !rtl, whole: p == 1) {
-                    draw(u, at: NSPoint(x: x + (w - Self.width(u)) / 2, y: y), alpha: 1)
+                    let apart = ((before ? 1 : 0) - (after ? 1 : 0)) * Self.space(u.font) / 2
+                    draw(u, at: NSPoint(x: x + (w - Self.width(u)) / 2 + apart, y: y), alpha: 1)
                 }
             }
-            x += w + gap
+            x += w + (i + 1 < flow.count ? Self.gap(c, flow[i + 1].cell, gap) : gap)
         }
     }
 
@@ -2607,11 +2658,13 @@ func phrases(_ line: Line, _ en: [EnWord]) -> [Phrase] {
 }
 
 /// A word that ends a clause: a comma, a full stop, a question mark (before any closing quote).
+/// (and the stops of Chinese, Arabic and Ge'ez: ，。；：？！、 ، ؛ ؟ ። ፣ ፤ ፧)
 func endsClause(_ w: String) -> Bool {
-    w.trimmingCharacters(in: CharacterSet(charactersIn: "\"'»”’)")).last.map { ",.;:?!…".contains($0) } ?? false
+    w.trimmingCharacters(in: CharacterSet(charactersIn: "\"'»”’)」』")).last.map { ",.;:?!…，。；：？！、،؛؟።፣፤፧".contains($0) } ?? false
 }
-/// A short word that leans on the next one, in whatever language: le, de, il, und, a.
-func leansOn(_ w: String) -> Bool { !endsClause(w) && w.filter(\.isLetter).count <= 3 }
+/// A short word that leans on the next one, in whatever language: le, de, il, und, a (a Chinese or Thai word is short
+/// without leaning).
+func leansOn(_ w: String) -> Bool { !endsClause(w) && !w.unicodeScalars.contains(where: isUnspaced) && w.filter(\.isLetter).count <= 3 }
 let leaningEnglish: Set<String> = ["a", "an", "the", "of", "to", "in", "on", "at", "by", "for", "from", "with", "into", "about",
                                    "as", "and", "or", "but", "if", "than", "that", "which", "who", "whose", "this", "these",
                                    "those", "my", "your", "his", "her", "its", "our", "their", "i", "you", "he", "she", "it",
@@ -3040,7 +3093,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// words they replace. A line corrected again keeps the stretch and the automatic words of the first time.
     func correct(_ line: Line, to text: String) {
         let line = shown.first { $0.id == line.id } ?? line     // (the window's line may carry another language)
-        let new = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        let new = Corrections.words(text)
         let prior = line.id >= edited && line.id < edited + cutShort ? edits.edits.first { $0.id == line.id - edited } : nil
         let from = prior?.from ?? lineKey(line)
         let lang = prior?.lang ?? languagesOf(line).first
@@ -5911,7 +5964,42 @@ func safeName(_ s: String) -> String {
     return String((t.isEmpty ? "Recense" : t).prefix(120))
 }
 
-func lineText(_ l: Line) -> String { l.words.map(\.text).joined(separator: " ").replacingOccurrences(of: #"\s+([,.;:!?…])"#, with: "$1", options: .regularExpression) }
+func lineText(_ l: Line) -> String { joinWords(l.words.map(\.text)) }
+
+/// Scripts written without spaces between words (Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan): the ears hand
+/// their words over cut (speech.swift: heardOpen), and they're joined with nothing between them, a space only after a
+/// Tibetan shad. Gallery's corrections.js and gallery.js (unspaced, joinWords, tokens) are the same.
+func isUnspaced(_ u: Unicode.Scalar) -> Bool {
+    switch u.value {
+    case 0x0E00...0x0EFF, 0x0F00...0x0FFF, 0x1000...0x109F, 0x1780...0x17FF, 0x2E80...0x2FFF, 0x3000...0x30FF, 0x3100...0x312F,
+         0x31A0...0x31FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0xFE30...0xFE4F, 0xFF00...0xFFEF, 0x20000...0x3134F: return true
+    default: return false
+    }
+}
+func unspaced(_ a: String, _ b: String) -> Bool {
+    guard let x = a.unicodeScalars.last, let y = b.unicodeScalars.first else { return false }
+    return isUnspaced(x) && isUnspaced(y) && !(0x0F0D...0x0F11).contains(x.value) && x.value != 0x0F14
+}
+/// A line's words as it's written (and no space before a stop or comma: Latin, Arabic ، ؛ ؟, Ge'ez ። ፣ ፤).
+func joinWords(_ ws: [String]) -> String {
+    var s = ""
+    for w in ws { s += s.isEmpty || unspaced(s, w) ? w : " " + w }
+    return s.replacingOccurrences(of: #"\s+([,.;:!?…،؛؟።፣፤፥፦፧])"#, with: "$1", options: .regularExpression)
+}
+/// A run in one of those scripts cut into words, each keeping what follows it up to the next (a stop, a tsheg): nothing
+/// written is dropped.
+func cutUnspaced(_ t: String, lang: String? = nil) -> [String] {
+    guard t.unicodeScalars.contains(where: isUnspaced) else { return [t] }
+    let tok = NLTokenizer(unit: .word)
+    tok.string = t
+    if let lang, lang != "und" { tok.setLanguage(NLLanguage(lang)) }
+    var at: [String.Index] = []
+    tok.enumerateTokens(in: t.startIndex..<t.endIndex) { r, _ in at.append(r.lowerBound); return true }
+    guard !at.isEmpty else { return [t] }
+    at[0] = t.startIndex
+    return at.indices.map { i in String(t[at[i]..<(i + 1 < at.count ? at[i + 1] : t.endIndex)]).trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+}
 func englishText(_ l: Line) -> String? {
     guard let en = l.english, !en.isEmpty else { return nil }
     return en.map(\.w).joined(separator: " ")
@@ -7641,12 +7729,15 @@ final class NativeSources {
         guard let ep = episode else { return }
         let all = ep.shown
         let i = all.firstIndex { $0.id == line.id } ?? all.firstIndex { $0.start >= line.start - 0.01 } ?? max(0, all.count - 1)
-        let above = all.indices.contains(i) ? all[..<i].map(lineKey) : []
-        let below = all.indices.contains(i) ? all[(i + 1)...].map(lineKey) : []
-        overlay.beginEdit(lineKey(line), edited: Episode.isEdited(line), above: Array(above), below: Array(below)) { [weak self, weak ep] r in
+        // shown as they're written (Chinese without spaces between its words; a correction is cut into words again)
+        let above = all.indices.contains(i) ? all[..<i].map(lineText) : []
+        let below = all.indices.contains(i) ? all[(i + 1)...].map(lineText) : []
+        let shownText = lineText(line)
+        overlay.beginEdit(shownText, edited: Episode.isEdited(line), above: Array(above), below: Array(below)) { [weak self, weak ep] r in
             guard let self, let ep, self.episode === ep else { return }
             @MainActor func save(_ text: String) {
-                guard text.split(whereSeparator: \.isWhitespace).joined(separator: " ") != lineKey(line) else { return }
+                guard text.split(whereSeparator: \.isWhitespace).joined(separator: " ") != shownText,
+                      Corrections.words(text).joined(separator: " ") != lineKey(line) else { return }
                 ep.correct(line, to: text)
                 self.overlay.toast.say(text.allSatisfy(\.isWhitespace) ? "Line hidden" : "Corrected")
             }
