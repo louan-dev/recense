@@ -1200,6 +1200,35 @@ await test("main/dav-archive: Access only; read-write with its own trash, nothin
   assert.equal((await TMP.list({ prefix: "chauphan/" })).objects.length, 0);
 });
 
+await test("fp: the owner's devices add files and folders (Add Media, New Folder), never over anything", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
+  const at = (p) => "?path=" + encodeURIComponent(p);
+  await AR.put("chauphan/Adds/x.txt", "X");
+  // a stranger, no x-gallery, a dot path, a missing folder, the wrong method
+  assert.equal((await call("/main/api/fp/archive/folder" + at("chauphan/Adds/New"), { as: "stranger", method: "POST" })).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/fp/archive/folder" + at("chauphan/Adds/New"), { method: "POST", headers: { "cf-access-jwt-assertion": serviceJwt } })).status, 403);
+  assert.equal((await api("folder" + at("chauphan/.trash/x"), { method: "POST" })).status, 400);
+  assert.equal((await api("folder" + at("chauphan/Nowhere/New"), { method: "POST" })).status, 404);
+  assert.equal((await api("folder" + at("chauphan/Adds/New"))).status, 405);
+  // a folder, listed at once; never twice, never over a file
+  assert.equal((await api("folder" + at("chauphan/Adds/New"), { method: "POST" })).status, 200);
+  assert.ok((await (await api("items" + at("chauphan/Adds"))).json()).items.some((i) => i.name === "New" && i.dir));
+  assert.equal((await api("folder" + at("chauphan/Adds/New"), { method: "POST" })).status, 409);
+  assert.equal((await api("folder" + at("chauphan/Adds/x.txt"), { method: "POST" })).status, 409);
+  // a file into it, with its mtime; never over one that's there
+  const put = await api("file" + at("chauphan/Adds/New/a.jpg") + "&mtime=1700000000", { method: "PUT", body: "JPEG", headers: { "content-length": "4" } });
+  assert.equal(put.status, 200);
+  const o = await AR.get("chauphan/Adds/New/a.jpg");
+  assert.equal(await o.text(), "JPEG");
+  assert.equal(o.httpMetadata.contentType, "image/jpeg");
+  assert.equal(o.customMetadata.mtime, "1700000000");
+  assert.equal((await api("file" + at("chauphan/Adds/New/a.jpg"), { method: "PUT", body: "OTHER", headers: { "content-length": "5" } })).status, 409);
+  assert.equal(await (await AR.get("chauphan/Adds/New/a.jpg")).text(), "JPEG");
+  assert.equal((await api("file" + at("chauphan/Nowhere/a.jpg"), { method: "PUT", body: "J", headers: { "content-length": "1" } })).status, 404);
+  await AR.delete((await AR.list({ prefix: "chauphan/Adds/" })).objects.map((o) => o.key));
+});
+
 await test("fp: the File Provider's read-only feed over gallery-archive (ids, items, content, changes)", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
   const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
@@ -1509,6 +1538,52 @@ await test("SPEC 42: temporary downloads go to TMP, are owner-made, and die at e
   assert.equal((await call(up.url)).status, 404);
   for (let i = 0; i < 20 && (await TMP.head(key)); i++) await new Promise((r) => setTimeout(r, 25));
   assert.equal(await TMP.head(key), null);
+});
+
+await test("guests: whoever opens a share link comments and likes under their name, known by a cookie; Activity shows them (item 16)", async () => {
+  const up = await (await call("/main/api/link?action=start&days=7", { as: "owner", method: "POST", body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg" })).json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { name: "dune.jpg", expires: String(up.exp) } });
+  const g = (body, cookie, headers = { origin: ORIGIN }) =>
+    mf.dispatchFetch(ORIGIN + "/api/caption", { method: "PUT", body: JSON.stringify({ kind: "link", id: up.id, key: "000", ...body }), headers: { ...headers, ...(cookie ? { cookie } : {}) } });
+  // no name, the owner's name, another site, a whole-thread replace: refused
+  assert.equal((await g({ op: "add", text: "hi" })).status, 400);
+  assert.equal((await g({ op: "add", text: "hi", name: "you" })).status, 400);
+  assert.equal((await g({ op: "add", text: "hi", name: "Mia" }, null, { origin: "https://evil.example" })).status, 403);
+  assert.equal((await g({ text: "wiped", name: "Mia" })).status, 400);
+  // the first comment sets the cookie; the comment keeps only its hash
+  let r = await g({ op: "add", text: "lovely", name: "Mia" });
+  assert.equal(r.status, 200, await r.clone().text());
+  const set = r.headers.get("set-cookie") || "";
+  const secret = /gv=([0-9a-f]{32})/.exec(set)[1];
+  assert.match(set, /HttpOnly/);
+  let j = await r.json();
+  assert.match(j.you, /^[0-9a-f]{24}$/);
+  assert.equal(j.comments[0].by, "Mia");
+  assert.equal(j.comments[0].vid, j.you);
+  assert.ok(!JSON.stringify(j).includes(secret), "never the cookie itself");
+  const mia = "gv=" + secret, cid = j.comments[0].id;
+  // the page knows its guest
+  assert.ok((await (await mf.dispatchFetch(ORIGIN + "/s/" + up.id, { headers: { cookie: mia } })).text()).includes(j.you));
+  // another guest, same name: can't edit or delete Mia's, likes separately
+  r = await g({ op: "add", text: "me too", name: "Mia" });
+  const other = "gv=" + /gv=([0-9a-f]{32})/.exec(r.headers.get("set-cookie"))[1];
+  assert.equal((await g({ op: "del", cid, name: "Mia" }, other)).status, 404);
+  assert.equal((await g({ op: "edit", cid, text: "x", name: "Mia" }, other)).status, 404);
+  j = await (await g({ op: "edit", cid, text: "lovely light", name: "Mia" }, mia)).json();
+  assert.equal(j.comments[0].text, "lovely light");
+  await g({ op: "like", name: "Mia" }, mia);
+  j = await (await g({ op: "like", name: "Mia" }, other)).json();
+  assert.equal(j.likes.length, 2);
+  // Activity: the guests' comments and likes, by name, marked Guest
+  const ev = (await (await call("/main/api/activity", { as: "owner", headers: { "x-gallery": "1" } })).json()).events.filter((e) => e.share.id === up.id && e.type !== "share");
+  assert.ok(ev.some((e) => e.type === "comment" && e.by === "Mia" && e.text === "lovely" && /^[0-9a-f]{4}$/.test(e.guest) && !e.mine));
+  assert.equal(ev.filter((e) => e.type === "like").length, 2);
+  // a guest's like taken back leaves only theirs
+  await g({ op: "like", name: "Mia" }, other);
+  assert.equal((await (await call("/main/api/activity", { as: "owner", headers: { "x-gallery": "1" } })).json()).events.filter((e) => e.share.id === up.id && e.type === "like").length, 1);
+  // the owner removes any comment
+  j = await (await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "link", id: up.id, key: "000", op: "del", cid }) })).json();
+  assert.deepEqual(j.comments.map((c) => c.text), ["me too"]);
 });
 
 await test("shared: owner-only list of live links and invites, detail, delete expires now, activity feed (item 15)", async () => {

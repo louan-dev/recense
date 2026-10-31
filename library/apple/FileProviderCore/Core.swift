@@ -159,6 +159,36 @@ public final class Feed {
         json("changes", since.map { ["since": String($0)] } ?? [:], Changes.self, done)
     }
 
+    // the owner's writes (Add Media, New Folder; src/fp.js): never over anything already there (409)
+    public func put(_ path: String, file: URL, mtime: Date? = nil) async throws {
+        var q = ["path": path]
+        if let mtime { q["mtime"] = String(Int(mtime.timeIntervalSince1970)) }
+        var r = try request("file", q)
+        r.httpMethod = "PUT"
+        r.timeoutInterval = 600
+        r.setValue("1", forHTTPHeaderField: "x-gallery")
+        let (_, response) = try await session.upload(for: r, fromFile: file)
+        try check(response, nil)
+    }
+
+    public func folder(_ path: String) async throws {
+        var r = try request("folder", ["path": path])
+        r.httpMethod = "POST"
+        r.setValue("1", forHTTPHeaderField: "x-gallery")
+        let (_, response) = try await session.data(for: r)
+        try check(response, nil)
+    }
+
+    // the file's bytes, downloaded to a temporary file, keeping its name (for Download and AirDrop)
+    public func download(_ path: String) async throws -> URL {
+        let tmp: URL = try await withCheckedThrowingContinuation { k in _ = content(path) { k.resume(with: $0) } }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let named = dir.appendingPathComponent((path as NSString).lastPathComponent)
+        try FileManager.default.moveItem(at: tmp, to: named)
+        return named
+    }
+
     // the file's bytes, downloaded to a temporary file
     public func content(_ path: String, _ done: @escaping (Result<URL, Error>) -> Void) -> Progress {
         let r: URLRequest

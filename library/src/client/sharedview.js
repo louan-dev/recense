@@ -398,6 +398,13 @@
     const who = el("b", "", e.mine ? "You" : e.by);
     const x = el("span");
     x.appendChild(who);
+    // someone who opened a share link: the name they gave, and a short tag that tells two guests of one name apart
+    if (e.guest) {
+      x.append(" ");
+      const g = el("span", "guest", "Guest");
+      g.title = "Commented from the share link · visitor " + e.guest;
+      x.appendChild(g);
+    }
     const what = (n, noun) => (n === 1 ? "a " + noun : n + " " + noun + "s");
     const kind = (f) => (f && f.type ? (f.type.startsWith("video/") ? "video" : f.type.startsWith("audio/") ? "recording" : f.type.startsWith("image/") ? "photo" : "file") : "item");
     if (e.type === "comment") {

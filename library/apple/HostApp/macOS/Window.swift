@@ -9,6 +9,7 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private var window: NSWindow?
     private var web: WKWebView?
     private var atLogin = false
+    private weak var selectButton: NSButton?
 
     func applicationWillFinishLaunching(_ n: Notification) {
         let e = NSAppleEventManager.shared().currentAppleEvent
@@ -29,6 +30,10 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             web.uiDelegate = self
             web.navigationDelegate = self
             web.allowsBackForwardNavigationGestures = true
+            // the toolbar's … and Select stand in for the page's own (notes 20261029 item 16)
+            web.configuration.userContentController.addUserScript(WKUserScript(
+                source: "const s = document.createElement('style'); s.textContent = '.bar #mbtn, .bar #sel { display: none !important }'; document.documentElement.appendChild(s);",
+                injectionTime: .atDocumentEnd, forMainFrameOnly: true))
             web.load(URLRequest(url: galleryURL("/main")))
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -67,11 +72,116 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     // every live share link as an album, and their Activity (src/shared.js; notes item 15)
     @objc func shared() { show(); web?.load(URLRequest(url: galleryURL("/main/shared"))) }
 
+    // ---------- the … menu and Select (the site's header: page/gallery.js .bar; notes 20261029 item 16) ----------
+    // Select mode, the sheets and the writes are the page's own; Download and AirDrop are the Mac's.
+    private func page(_ js: String, _ done: ((Any?) -> Void)? = nil) {
+        web?.evaluateJavaScript("(() => { const $ = (id) => document.getElementById(id); \(js) })()") { r, _ in done?(r) }
+    }
+    private func paintSelect(_ r: Any?) { selectButton?.title = (r as? String) == "Cancel" ? "Cancel" : "Select" }
+    // the page's own menu row, when this page has it (Invite, Add Media and New Folder are Main's)
+    private func row(_ id: String, _ what: String) {
+        page("const b = $('\(id)'); if (!b || b.hidden) return false; b.click(); return true") { r in
+            if (r as? Bool) != true { self.tell("\(what) isn’t here", "Open a folder in Main to use \(what).") }
+        }
+    }
+    private func tell(_ title: String, _ text: String) {
+        let a = NSAlert(); a.messageText = title; a.informativeText = text; a.runModal()
+    }
+
+    @objc func toggleSelect() { page("const b = $('sel'); if (!b) return null; b.click(); return b.textContent", paintSelect) }
+    @objc func selectAll() {
+        page("const b = $('sel'), a = $('selall'); if (!b) return null; if (b.textContent === 'Select') b.click(); if (a && a.textContent === 'Select All') a.click(); return b.textContent", paintSelect)
+    }
+    @objc func deselect() { page("const a = $('selall'); if (a && !a.hidden && a.textContent === 'Deselect All') a.click()") }
+    @objc func shareLink() { row("m-share", "Create Share Link") }
+    @objc func invite() { row("m-inv", "Invite") }
+    @objc func addMedia() { row("m-add", "Add Media") }
+    @objc func newFolder() { row("m-dir", "New Folder") }
+    @objc func download() { picked { urls in
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    } }
+    @objc func airDrop() { picked(into: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)) { urls in
+        guard let s = NSSharingService(named: .sendViaAirDrop), s.canPerform(withItems: urls) else {
+            return self.tell("AirDrop isn’t available", "Turn on Wi-Fi and Bluetooth, then try again.")
+        }
+        s.perform(withItems: urls)
+    } }
+
+    // the picked items' files, fetched with this Mac's token: into Downloads for Download, a temporary folder for AirDrop
+    private func picked(into dir: URL? = nil, _ then: @escaping ([URL]) -> Void) {
+        page("const s = window.gallerySelection ? window.gallerySelection() : []; return s.map((f) => [f.name, f.src || '/f/' + G.id + '/' + f.n])") { r in
+            let list = (r as? [[String]] ?? []).filter { $0.count == 2 }
+            guard !list.isEmpty else { return self.tell("Nothing is selected", "Click Select, pick some items, then try again.") }
+            Task { @MainActor in
+                do { then(try await self.fetch(list, into: dir ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0])) }
+                catch { self.tell("Couldn’t download", "Check the connection and try again.") }
+            }
+        }
+    }
+    private func fetch(_ list: [[String]], into fetchInto: URL) async throws -> [URL] {
+        try FileManager.default.createDirectory(at: fetchInto, withIntermediateDirectories: true)
+        guard let t = Token.read().flatMap({ try? JSONDecoder().decode([String: String].self, from: $0) }),
+              let id = t["id"], let secret = t["secret"] else { throw FeedError.notSignedIn }
+        var out: [URL] = []
+        for item in list {
+            guard let u = URL(string: "https://\(Gallery.base.host!)\(item[1])?dl=1") else { continue }
+            var r = URLRequest(url: u)
+            r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+            r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+            let (tmp, response) = try await URLSession.shared.download(for: r)
+            guard let h = response as? HTTPURLResponse, h.url?.host == Gallery.base.host, (200...299).contains(h.statusCode) else { throw FeedError.server(-1) }
+            // never over a file already in Downloads: "name 2.ext", as Safari does
+            let name = (item[0] as NSString).lastPathComponent, base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+            var to = fetchInto.appendingPathComponent(name), n = 2
+            while FileManager.default.fileExists(atPath: to.path) {
+                to = fetchInto.appendingPathComponent("\(base) \(n)" + (ext.isEmpty ? "" : "." + ext)); n += 1
+            }
+            try FileManager.default.moveItem(at: tmp, to: to)
+            out.append(to)
+        }
+        return out
+    }
+
+    private func moreMenu() -> NSMenu {
+        let m = NSMenu()
+        func add(_ t: String, _ symbol: String, _ a: Selector) {
+            let i = NSMenuItem(title: t, action: a, keyEquivalent: ""); i.target = self
+            i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: t); m.addItem(i)
+        }
+        add("Select", "checkmark.circle", #selector(selectAll)); add("Deselect", "circle", #selector(deselect))
+        m.addItem(.separator())
+        add("Download", "arrow.down.circle", #selector(download)); add("AirDrop", "airplayaudio", #selector(airDrop))
+        add("Create Share Link", "link", #selector(shareLink)); add("Invite", "person.badge.plus", #selector(invite))
+        m.addItem(.separator())
+        add("Add Media", "plus", #selector(addMedia)); add("New Folder", "folder.badge.plus", #selector(newFolder))
+        return m
+    }
+
+    // a new page starts out of Select mode
+    func webView(_ w: WKWebView, didFinish n: WKNavigation!) { selectButton?.title = "Select" }
+
     // ---------- toolbar ----------
-    private let ids: [NSToolbarItem.Identifier] = [.init("back"), .init("forward"), .flexibleSpace, .init("shared"), .init("ask")]
+    private let ids: [NSToolbarItem.Identifier] = [.init("back"), .init("forward"), .flexibleSpace, .init("shared"), .init("ask"), .init("more"), .init("select")]
     func toolbarDefaultItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] { ids }
     func toolbarAllowedItemIdentifiers(_ t: NSToolbar) -> [NSToolbarItem.Identifier] { ids }
     func toolbar(_ t: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar: Bool) -> NSToolbarItem? {
+        if id.rawValue == "more" {
+            let m = NSMenuToolbarItem(itemIdentifier: id)
+            m.label = "More"; m.toolTip = "Select, share, add"
+            m.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "More")
+            m.menu = moreMenu(); m.showsIndicator = false
+            return m
+        }
+        if id.rawValue == "select" {
+            // blue text, as the site's Select (and Select All) are
+            let b = NSButton(title: "Select", target: self, action: #selector(toggleSelect))
+            b.isBordered = false; b.contentTintColor = .controlAccentColor; b.font = .systemFont(ofSize: 13)
+            b.attributedTitle = NSAttributedString(string: "Select", attributes: [.foregroundColor: NSColor.controlAccentColor, .font: NSFont.systemFont(ofSize: 13)])
+            selectButton = b
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.label = "Select"; item.view = b
+            return item
+        }
         let item = NSToolbarItem(itemIdentifier: id)
         item.target = self
         switch id.rawValue {

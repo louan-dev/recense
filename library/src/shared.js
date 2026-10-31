@@ -34,13 +34,14 @@ export async function logActivity(env, ev) {
   if (ev.key) meta.key = String(ev.key).slice(0, 400);
   if (ev.name) meta.name = String(ev.name).slice(0, 200);
   if (ev.text) meta.text = String(ev.text).slice(0, 240);
+  if (ev.vid) meta.vid = String(ev.vid).slice(0, 24); // a share link's guest (public.js guestCommentApi)
   await env.MAIN.put(key, new Uint8Array(0), { customMetadata: meta });
 }
 
 // A like taken back: its event goes (the newest SHOWN events are where it can be).
 export async function unlogLike(env, ev) {
   const r = await env.MAIN.list({ prefix: ACTIVITY, include: ["customMetadata"], limit: SHOWN });
-  const same = (m) => m.type === "like" && m.by === String(ev.by || OWNER).slice(0, 80) && m.kind === ev.kind && m.ref === String(ev.ref || "").slice(0, 900) && (m.key || "") === String(ev.key || "").slice(0, 400);
+  const same = (m) => m.type === "like" && (ev.vid ? m.vid === ev.vid : m.by === String(ev.by || OWNER).slice(0, 80) && !m.vid) && m.kind === ev.kind && m.ref === String(ev.ref || "").slice(0, 900) && (m.key || "") === String(ev.key || "").slice(0, 400);
   const keys = r.objects.filter((o) => same(o.customMetadata || {})).map((o) => o.key);
   if (keys.length) await env.MAIN.delete(keys);
 }
@@ -158,7 +159,7 @@ async function activity(env) {
       continue;
     }
 
-    events.push({ type: m.type, by, at, end: at, text: m.text || "", count: 1, share: brief(s), items: [one] });
+    events.push({ type: m.type, by, at, end: at, text: m.text || "", count: 1, share: brief(s), items: [one], ...(m.vid ? { guest: m.vid.slice(0, 4) } : {}) });
   }
 
   // each share's own start: "You shared 5 items"

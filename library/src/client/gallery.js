@@ -3382,23 +3382,44 @@
   const commentScope = (f) =>
     G.main || G.invite ? { kind: "main", path: f.path || f.name } : { kind: "link", id: G.id, key: f.path || f.n };
 
-  const canWrite = () => (G.invite ? !!(G.invite.perms && G.invite.perms.comment) : owner);
+  // someone who opened a share link (not the owner): they comment under a name they choose once, and the server knows
+  // them by a cookie; G.you is its hash, the vid on their comments and likes (public.js guestCommentApi)
+  const GUEST_NAME = "gallery.guestName";
+  const guest = () => !owner && !G.main && !G.invite && !G.readOnly && !!G.id;
+  const guestName = () => {
+    try { return localStorage.getItem(GUEST_NAME) || ""; } catch (_) { return ""; }
+  };
+  const askName = () => {
+    const n = (prompt("Your name, so " + (String(G.owner || "").split(" ")[0] || "the owner") + " knows who commented", guestName()) || "").trim();
+    if (n) try { localStorage.setItem(GUEST_NAME, n); } catch (_) {}
+    return n;
+  };
+  const isMe = (x) => (guest() ? !!G.you && x.vid === G.you : !x.vid && (G.invite ? x.by === me : !x.by || x.by === G.owner));
+  const canWrite = () => (G.invite ? !!(G.invite.perms && G.invite.perms.comment) : owner || guest());
   const listOf = (f) => (f && Array.isArray(f.comments) ? f.comments : f && f.caption ? [{ id: "c0", text: f.caption, at: f.capAt, by: G.owner }] : []);
-  const mine = (c) => (G.invite ? c.by === me : !c.by || c.by === G.owner);
+  const mine = isMe;
   const nameOf = (c) => (mine(c) ? "You" : c.by === G.owner || !c.by ? ownerName : c.by);
   const postedAt = (t) => D(t, { day: "numeric", month: "short", year: "numeric" }) + " at " + T(t);
   const isOpen = () => document.body.classList.contains("comments-open");
 
   const send = async (f, body) => {
-    const r = await fetch(API + "/caption", {
+    const asGuest = guest();
+    const name = asGuest ? guestName() || askName() : "";
+    if (asGuest && !name) throw new Error("Add your name to comment");
+    const r = await fetch(asGuest ? "/api/caption" : API + "/caption", {
       method: "PUT",
       headers: { "content-type": "application/json", "x-gallery": "1" },
-      body: JSON.stringify({ ...commentScope(f), ...body }),
+      body: JSON.stringify({ ...commentScope(f), ...body, ...(asGuest ? { name } : {}) }),
     });
 
-    if (!r.ok) throw new Error((await r.text()) || "Couldn’t save the comment");
+    if (!r.ok) {
+      const t = await r.text();
+      if (asGuest && r.status === 400 && /name/i.test(t)) try { localStorage.removeItem(GUEST_NAME); } catch (_) {}
+      throw new Error(t || "Couldn’t save the comment");
+    }
 
     const j = await r.json();
+    if (j.you) G.you = j.you;
     f.comments = j.comments || [];
     f.caption = j.caption || "";
     f.capAt = j.capAt || 0;
@@ -3546,7 +3567,7 @@
     hideBtn.onclick = () => setOpen(false);
     // Like, left of Hide Comments (ui/README §3.2); the Shared section's Activity shows it (notes item 15)
     const likes = Array.isArray(f.likes) ? f.likes : [];
-    const iLike = likes.some((l) => l.by === me);
+    const iLike = likes.some(isMe);
     if (can) {
       const likeBtn = mkEl("button", "lnk tlike");
       likeBtn.type = "button";
@@ -3567,7 +3588,7 @@
     actions.appendChild(hideBtn);
     thread.appendChild(actions);
     if (likes.length) {
-      const others = likes.filter((l) => l.by !== me).map((l) => (l.by === G.owner ? ownerName : l.by));
+      const others = likes.filter((l) => !isMe(l)).map((l) => (l.by === G.owner && !l.vid ? ownerName : l.by));
       const lr = mkEl("p", "tliked");
       const b = mkEl("b");
       b.textContent = iLike ? "You" : others.shift();

@@ -24,8 +24,13 @@
 // until the owner, signed in, POSTs …/confirm; until then no device removes anything.
 //
 //   POST /main/api/fp/<root>/confirm                     the owner lets the held pass through (409: nothing held)
+//
+// Writes, from the owner's devices (the iOS app's Add Media and New Folder; notes 20261029 item 16). Both need the
+// x-gallery header (no Origin) and never replace anything; the reconciler logs them like any other write:
+//   PUT  /main/api/fp/<root>/file?path=<file>[&mtime=<s>]  the body is the file, into a folder that exists (409: taken)
+//   POST /main/api/fp/<root>/folder?path=<folder>          an empty folder (Gallery's .folder- marker)
 
-import { cleanPath, jsonResponse, serveObject } from "./common.js";
+import { cleanPath, jsonResponse, serveObject, MIME_BY_EXT, IMG_BY_EXT } from "./common.js";
 import { sameSite, signedInAs } from "./access.js";
 
 // a root: its bucket, the prefix its files live under ("" = the whole bucket), and where its catalog is kept.
@@ -61,6 +66,7 @@ const RECONCILE_MS = 60 * 1000;
 const LOCK_MS = 5 * 60 * 1000;
 const EVENTS_MAX = 50; // log entries per changes answer
 const PAGE = 1000;
+const UPLOAD_MAX = 90 * 1024 * 1024; // what one Worker request body carries (main.js's PAGE_UPLOAD_MAX)
 
 const hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 export const fileId = async (path, meta) => (meta && /^[A-Za-z0-9_-]{8,64}$/.test(meta.fid || "") ? meta.fid : "h" + (await hex(path)).slice(0, 24));
@@ -99,15 +105,48 @@ const mtimeOf = (o) => Math.floor(Number(o.customMetadata && o.customMetadata.mt
 const parentOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 
 export async function fp(req, env, url, path) {
-  const m = path.match(/^\/main\/api\/fp\/([a-z]+)\/(items|changes|content|confirm)$/);
+  const m = path.match(/^\/main\/api\/fp\/([a-z]+)\/(items|changes|content|confirm|file|folder)$/);
   const root = m && FP_ROOTS[m[1]];
   if (!root) return bad(404, "Not found");
   const b = env[root.bucket];
   if (m[2] === "confirm") return confirm(req, env, url, b, root);
+  if (m[2] === "file" || m[2] === "folder") return write(req, b, root, url, m[2]);
   if (req.method !== "GET" && req.method !== "HEAD") return bad(405, "Read-only for now");
   if (m[2] === "items") return items(b, root, url);
   if (m[2] === "changes") return changes(b, root, url);
   return content(req, b, root, url);
+}
+
+async function write(req, b, root, url, what) {
+  if (req.method !== (what === "file" ? "PUT" : "POST")) return bad(405, what === "file" ? "PUT only" : "POST only");
+  if (!sameSite(req, url)) return bad(403, "Forbidden");
+  const rel = cleanPath(url.searchParams.get("path") || "");
+  if (!rel || !visible(rel, root) || rel.split("/").some((s) => s.startsWith("."))) return bad(400, "Bad path");
+  const key = root.prefix + rel;
+  const parent = parentOf(rel);
+  if (parent && !(await b.list({ prefix: root.prefix + parent + "/", limit: 1 })).objects.length) return bad(404, "No such folder");
+  if ((await b.head(key)) || (await b.list({ prefix: key + "/", limit: 1 })).objects.length) return bad(409, "Something with that name is already here");
+  const now = Math.floor(Date.now() / 1000);
+  if (what === "folder") {
+    const id = [...crypto.getRandomValues(new Uint8Array(8))].map((x) => x.toString(16).padStart(2, "0")).join("");
+    await b.put(key + "/" + MARK + id, "", { customMetadata: { mtime: String(now) }, onlyIf: { etagDoesNotMatch: "*" } });
+    return jsonResponse({ ok: true, path: rel, id: await folderId(rel) });
+  }
+  const length = req.headers.get("content-length");
+  const size = length === null ? NaN : Number(length);
+  if (!req.body || !Number.isSafeInteger(size)) return bad(411, "Missing file or its length");
+  if (size > UPLOAD_MAX) return bad(413, "Too big for one upload");
+  const mtime = Math.floor(Number(url.searchParams.get("mtime"))) || now;
+  const ext = rel.includes(".") ? rel.split(".").pop().toLowerCase() : "";
+  const body = new FixedLengthStream(size); // R2 needs the length up front, whatever the client sent
+  req.body.pipeTo(body.writable).catch(() => {});
+  const done = await b.put(key, body.readable, {
+    httpMetadata: { contentType: (MIME_BY_EXT[ext] || IMG_BY_EXT[ext] || req.headers.get("content-type") || "application/octet-stream").slice(0, 200) },
+    customMetadata: { mtime: String(mtime) },
+    onlyIf: { etagDoesNotMatch: "*" },
+  });
+  if (!done) return bad(409, "Something with that name is already here");
+  return jsonResponse({ ok: true, path: rel, id: await fileId(rel, done.customMetadata), size: done.size });
 }
 
 async function items(b, root, url) {

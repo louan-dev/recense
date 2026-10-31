@@ -358,30 +358,31 @@ const likesOf = (v) => (v && Array.isArray(v.likes) ? v.likes.filter((l) => l &&
 // op "add" appends, op "edit" rewrites one of your own by id, op "del" removes one comment by id, op "like" turns your like
 // on or off, no op replaces the thread with one comment (or none).
 // Returns the new stored value (null = nothing left) or a string error.
-function applyComment(v, b, by, participant) {
+// vid: a share link's guest (guestCommentApi); their comments and likes are theirs by vid, never by the name they typed
+function applyComment(v, b, by, participant, vid = null) {
   const text = String((b && b.text) || "").trim().slice(0, COMMENT_MAX);
   const list = thread(v);
   const likes = likesOf(v);
 
   if (b.op === "like") {
-    const i = likes.findIndex((l) => l.by === by);
-    if (i < 0) likes.push({ by, at: Date.now() });
+    const i = likes.findIndex((l) => (vid ? l.vid === vid : l.by === by && !l.vid));
+    if (i < 0) likes.push(vid ? { by, at: Date.now(), vid } : { by, at: Date.now() });
     else likes.splice(i, 1);
   } else if (b.op === "add") {
     if (!text) return "Empty comment";
     if (list.length >= THREAD_MAX) return "Too many comments";
     const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    list.push({ id, text, at: Date.now(), by });
+    list.push(vid ? { id, text, at: Date.now(), by, vid } : { id, text, at: Date.now(), by });
   } else if (b.op === "edit") {
     // only the comment's own author changes it (the owner too: never someone else's words)
     if (!text) return "Empty comment";
-    const c = list.find((c) => c.id === String(b.cid || "") && (c.by || OWNER) === by);
+    const c = list.find((c) => c.id === String(b.cid || "") && (vid ? c.vid === vid : (c.by || OWNER) === by && !c.vid));
     if (!c) return "Comment not found";
     c.text = text;
     c.edited = Date.now();
   } else if (b.op === "del") {
     // a participant may only remove their own
-    const i = list.findIndex((c) => c.id === String(b.cid || "") && (!participant || c.by === by));
+    const i = list.findIndex((c) => c.id === String(b.cid || "") && (!participant || (vid ? c.vid === vid : c.by === by && !c.vid)));
     if (i < 0) return "Comment not found";
     list.splice(i, 1);
   } else {
@@ -448,7 +449,7 @@ export async function renameComment(env, rel, to) {
 //   plus { op: "add", text } to append, { op: "edit", cid, text } to rewrite your own, { op: "del", cid } to remove one, or { text } to replace
 //   the whole thread (empty text clears it).  -> { ok, text, at, comments }
 // by: who is writing (the owner, or an invited participant's name).
-export async function commentApi(req, env, by = OWNER, participant = false) {
+export async function commentApi(req, env, by = OWNER, participant = false, vid = null) {
   let b;
 
   try {
@@ -460,16 +461,16 @@ export async function commentApi(req, env, by = OWNER, participant = false) {
   if (!b || typeof b !== "object") return new Response("Bad request", { status: 400 });
 
   // the stored value goes in, the new one comes out; null means remove
-  const change = (v) => applyComment(v, b, by, participant);
+  const change = (v) => applyComment(v, b, by, participant, vid);
   const done = async (v, where) => {
     const f = commentFields(v);
     // the Shared section's Activity: new comments, and likes turned on
-    const liked = b.op === "like" && f.likes.some((l) => l.by === by);
+    const liked = b.op === "like" && f.likes.some((l) => (vid ? l.vid === vid : l.by === by));
     if (b.op === "add" || liked) {
       const c = f.comments[f.comments.length - 1];
-      await logActivity(env, { type: liked ? "like" : "comment", by, ...where, text: liked || !c ? "" : c.text }).catch(() => {});
+      await logActivity(env, { type: liked ? "like" : "comment", by, vid, ...where, text: liked || !c ? "" : c.text }).catch(() => {});
     } else if (b.op === "like") {
-      await unlogLike(env, { by, ...where }).catch(() => {}); // a like taken back leaves the feed too
+      await unlogLike(env, { by, vid, ...where }).catch(() => {}); // a like taken back leaves the feed too
     }
     return jsonResponse({ ok: true, ...f, text: f.caption, at: f.capAt });
   };
@@ -1344,13 +1345,65 @@ export async function galleryApi(env, url) {
 
   return jsonResponse(data);
 }
-export async function gallery(env, id) {
+export async function gallery(env, id, req) {
   const live = await getGalleryData(env, id);
 
   if (!live || live.missing) return notice("Link not found", 404);
   if (live.expired) return notice("Link expired", 410);
 
-  return galleryPage(live);
+  const you = req ? await guestId(req) : null;
+  return galleryPage(you ? { ...live, you } : live);
+}
+
+// ---------- guests: whoever opens a share link may comment and like (notes 20261029 item 16) ----------
+// A guest is a random 128-bit cookie (gv, HttpOnly, a year). Comments and likes keep only its hash (vid, 24 hex), so
+// what a page reads can't be used to pass as someone. The name is what they typed the first time they commented: a
+// label, never the owner's name or "You". A guest edits and deletes only their own comments; the owner deletes any.
+// Each comment and like goes to the Shared section's Activity as "<name> · Guest".
+//   PUT /api/caption   body: { kind: "link", id, key, op: add | edit | del | like, text?, cid?, name }
+//                      -> what /main/api/caption answers, plus you: this guest's vid
+const GUEST_RE = /(?:^|;\s*)gv=([0-9a-f]{32})(?:;|$)/;
+const sha24 = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("guest:" + s)))].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+export const guestId = async (req) => {
+  const m = GUEST_RE.exec(req.headers.get("cookie") || "");
+  return m ? sha24(m[1]) : null;
+};
+export function guestName(v) {
+  const n = String(v || "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const l = n.toLowerCase();
+  const taken = ["you", "owner", OWNER.toLowerCase(), OWNER.split(" ")[0].toLowerCase()];
+  return n && !taken.includes(l) ? n : null;
+}
+
+export async function guestCommentApi(req, env, url) {
+  const origin = req.headers.get("origin");
+  if (origin ? origin !== url.origin : req.headers.get("x-gallery") !== "1") return new Response("Forbidden", { status: 403 });
+  let b;
+  try {
+    b = await req.json();
+  } catch (e) {
+    return new Response("Bad request", { status: 400 });
+  }
+  if (!b || b.kind !== "link" || !["add", "edit", "del", "like"].includes(b.op)) return new Response("Bad request", { status: 400 });
+  const name = guestName(b.name);
+  if (!name) return new Response("Choose a name to comment with", { status: 400 });
+
+  // only a live link takes comments
+  const id = String(b.id || "");
+  const manifest = ID_RE.test(id) ? await readManifest(env, id) : null;
+  const link = manifest ? null : await readLink(env, id);
+  if (!(manifest ? manifest.exp > Date.now() : link && link.exp > Date.now())) return new Response("Link expired", { status: 410 });
+
+  let secret = (GUEST_RE.exec(req.headers.get("cookie") || "") || [])[1];
+  const fresh = !secret;
+  if (fresh) secret = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
+  const vid = await sha24(secret);
+
+  const inner = new Request(url, { method: "PUT", body: JSON.stringify(b), headers: { "content-type": "application/json" } });
+  const r = await commentApi(inner, env, name, true, vid);
+  const out = r.ok ? jsonResponse({ ...(await r.json()), you: vid }) : r;
+  if (fresh && r.ok) out.headers.append("set-cookie", `gv=${secret}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`);
+  return out;
 }
 
 

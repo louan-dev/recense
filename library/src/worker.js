@@ -19,7 +19,7 @@ import { isOwner, sameSite, signedInAs } from "./access.js";
 import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
-import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, upload, gallery, galleryApi, file, folderFile } from "./public.js";
+import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, upload, gallery, galleryApi, file, folderFile } from "./public.js";
 import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
 import { sharesApi, sharedPage, activitySweep } from "./shared.js";
@@ -54,6 +54,7 @@ export default {
       return (await notabilityAuth(req, env)) || dav(req, env, url, NOTABILITY_DAV);
     }
 
+    if (path === "/api/caption" && method === "PUT") return guestCommentApi(req, env, url);
     if (path === "/api/transcript" && method === "PUT") return linkTranscriptWrite(req, env, url, false);
     if (path === "/api/transcript/run" && method === "POST") return linkTranscriptWrite(req, env, url, true);
     if (method !== "GET" && method !== "HEAD") return new Response("Method not allowed", { status: 405 });
@@ -64,7 +65,7 @@ export default {
     if (path === "/api/transcript/changes") return linkTranscriptChanges(env, url);
     if (path === "/api/transcript") return linkTranscript(env, url);
     if (path === "/player/key.js") return keyWorklet();
-    if ((m = path.match(/^\/s\/([A-Za-z0-9]+)$/))) return gallery(env, m[1]);
+    if ((m = path.match(/^\/s\/([A-Za-z0-9]+)$/))) return gallery(env, m[1], req);
     if ((m = path.match(/^\/f\/([A-Za-z0-9]+)\/(\d{3})$/))) return file(req, env, ctx, url, m[1], m[2]);
     if ((m = path.match(/^\/d\/([A-Za-z0-9]+)\/[A-Za-z0-9]+\/(.+)$/))) return folderFile(req, env, url, m[1], m[2]);
     if ((m = path.match(/^\/t\/([0-9a-f]{32})\/([^/]+)$/))) return tmpGet(req, env, ctx, url, m[1], m[2]);

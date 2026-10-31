@@ -2,6 +2,7 @@
 // folder as icons or a list, searched and sorted like Files. It reads the same feed as the Files extension. Opening a
 // file shows it in Gallery's own player (PlayerView), in its folder, so next and previous work as on the web.
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 
 @MainActor
@@ -141,6 +142,19 @@ struct FolderView: View {
     @State private var shared: SharedLink?
     @State private var failed: String?
     @State private var asking = false
+    // the site's header (notes 20261029 item 16): the … menu, then Select; Select mode picks files
+    @State private var selecting = false
+    @State private var picked: Set<String> = []
+    @State private var status: String?
+    @State private var sending: SharedFiles?
+    @State private var saving: SharedFiles?
+    @State private var linkFor: LinkUse?
+    @State private var naming = false
+    @State private var newName = ""
+    @State private var photos = false
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var importing = false
+    private let feed = Feed()
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
 
@@ -174,7 +188,7 @@ struct FolderView: View {
                 }
             }
         }
-        .navigationTitle(folder.path == Gallery.rootPath ? "Chauphan" : String(folder.path.split(separator: "/").last ?? ""))
+        .navigationTitle(selecting ? (picked.isEmpty ? "Select Items" : "\(picked.count) Selected") : title)
         .searchable(text: $query)
         .refreshable { folder.load() }
         .toolbar {
@@ -183,23 +197,43 @@ struct FolderView: View {
                 Button { asking = true } label: { Label("Assistant", systemImage: "sparkles") }
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
+            ToolbarItem(placement: .primaryAction) { more }
+            // Select sits right of the … menu, as on the site; Cancel leaves Select mode
             ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("View", selection: $asList) {
-                        Label("Icons", systemImage: "square.grid.2x2").tag(false)
-                        Label("List", systemImage: "list.bullet").tag(true)
-                    }
-                    Picker("Sort By", selection: $sort) {
-                        ForEach(Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
+                Button(selecting ? "Cancel" : "Select") { selecting.toggle(); if !selecting { picked = [] } }
+                    .disabled(files.isEmpty && !selecting)
             }
         }
+        .alert("New Folder", isPresented: $naming) {
+            TextField("Name", text: $newName)
+            Button("Create") { makeFolder(newName) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(linkFor?.title ?? "", isPresented: Binding(get: { linkFor != nil }, set: { if !$0 { linkFor = nil } }), titleVisibility: .visible) {
+            ForEach([(1, "1 Day"), (7, "7 Days"), (30, "30 Days")], id: \.0) { days, name in
+                Button(name) { if let use = linkFor { makeLink(use, days: days) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(linkFor?.message ?? "") }
+        .photosPicker(isPresented: $photos, selection: $photoItems, matching: .any(of: [.images, .videos]))
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            addPhotos(items)
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
+            if case .success(let urls) = r { addFiles(urls) }
+        }
+        .sheet(item: $sending) { ActivityView(items: $0.urls).presentationDetents([.medium, .large]) }
+        .sheet(item: $saving) { ExportView(urls: $0.urls) }
         .task { folder.load() }
         .overlay(alignment: .bottom) {
             if let l = linking {
                 Label(l.total > 1 ? "Making the link… \(l.done) of \(l.total)" : "Making the link…", systemImage: "link")
                     .font(.footnote).padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(.thinMaterial, in: Capsule()).padding(.bottom, 24)
+            } else if let status {
+                Text(status).font(.footnote).padding(.horizontal, 14).padding(.vertical, 10)
                     .background(.thinMaterial, in: Capsule()).padding(.bottom, 24)
             }
         }
@@ -212,8 +246,8 @@ struct FolderView: View {
             }
             .presentationDetents([.medium, .large])
         }
-        .sheet(item: $shared) { ActivityView(items: [$0.url]).presentationDetents([.medium, .large]) }
-        .alert("Couldn’t make the link", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
+        .sheet(item: $shared) { l in ActivityView(items: l.note.map { [$0, l.url] as [Any] } ?? [l.url]).presentationDetents([.medium, .large]) }
+        .alert("Something went wrong", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(failed ?? "") }
         .navigationDestination(for: String.self) { FolderView(path: $0) }
@@ -230,9 +264,168 @@ struct FolderView: View {
         }
     }
 
+    private var title: String { folder.path == Gallery.rootPath ? "Chauphan" : String(folder.path.split(separator: "/").last ?? "") }
+    private var files: [Record] { shown.filter { !$0.dir } }
+    // what an action works on: the picked files, else every file here
+    private var chosen: [Record] { picked.isEmpty ? files : files.filter { picked.contains($0.id) } }
+
+    // the … menu: the site's (page/gallery.js), wired to the archive (src/fp.js) and the system's own sheets
+    private var more: some View {
+        Menu {
+            Section {
+                Button { selecting = true; picked = Set(files.map(\.id)) } label: { Label("Select", systemImage: "checkmark.circle") }
+                    .disabled(files.isEmpty)
+                Button { picked = [] } label: { Label("Deselect", systemImage: "circle") }
+                    .disabled(picked.isEmpty)
+            }
+            Section {
+                Button { fetch(chosen) { saving = SharedFiles(urls: $0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+                Button { fetch(chosen) { sending = SharedFiles(urls: $0) } } label: { Label("AirDrop", systemImage: "airplayaudio") }
+                Button { linkFor = .copy } label: { Label("Create Share Link", systemImage: "link") }
+                Button { linkFor = .invite } label: { Label("Invite", systemImage: "person.badge.plus") }
+            }
+            .disabled(files.isEmpty)
+            Section {
+                Menu {
+                    Button { photos = true } label: { Label("Photos", systemImage: "photo.on.rectangle") }
+                    Button { importing = true } label: { Label("Files", systemImage: "folder") }
+                } label: { Label("Add Media", systemImage: "plus") }
+                Button { newName = ""; naming = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+            }
+            Section {
+                Picker("View", selection: $asList) {
+                    Label("Icons", systemImage: "square.grid.2x2").tag(false)
+                    Label("List", systemImage: "list.bullet").tag(true)
+                }
+                Picker("Sort By", selection: $sort) {
+                    ForEach(Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+            }
+        } label: { Image(systemName: "ellipsis.circle") }
+    }
+
+    private func say(_ text: String?, for seconds: Double = 2.4) {
+        status = text
+        guard text != nil else { return }
+        Task { try? await Task.sleep(for: .seconds(seconds)); if status == text { status = nil } }
+    }
+
+    // the files' bytes, to hand to Save to Files or the share sheet (AirDrop)
+    private func fetch(_ rs: [Record], then: @escaping ([URL]) -> Void) {
+        guard !rs.isEmpty, status == nil else { return }
+        Task {
+            var urls: [URL] = []
+            do {
+                for (i, r) in rs.enumerated() {
+                    status = rs.count > 1 ? "Downloading \(i + 1) of \(rs.count)…" : "Downloading…"
+                    urls.append(try await feed.download(r.path))
+                }
+                status = nil
+                then(urls)
+            } catch {
+                status = nil
+                failed = "Couldn’t download \(rs.count > 1 ? "them" : "it"). Check the connection and try again."
+            }
+        }
+    }
+
+    private func makeLink(_ use: LinkUse, days: Int) {
+        let rs = chosen
+        guard linking == nil, !rs.isEmpty else { return }
+        linking = (0, rs.count)
+        Task {
+            do {
+                let url = try await Share.link(rs.map(\.inArchive), days: days) { done, total in
+                    Task { @MainActor in linking = (done, total) }
+                }
+                linking = nil
+                switch use {
+                case .copy:
+                    UIPasteboard.general.url = url
+                    say("Link copied. \(rs.count) \(rs.count == 1 ? "item" : "items") shared for \(days) \(days == 1 ? "day" : "days")")
+                case .invite:
+                    // whoever opens it can comment and like under their name (src/public.js guestCommentApi)
+                    shared = SharedLink(url: url, note: "Come see \(rs.count == 1 ? rs[0].name : title) on Gallery. Leave a comment if you like:")
+                }
+            } catch {
+                linking = nil
+                failed = "Couldn’t make the link. Check the connection and try again."
+            }
+        }
+    }
+
+    private func makeFolder(_ raw: String) {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { failed = "That name can’t be used."; return }
+        Task {
+            do {
+                try await feed.folder(folder.path + "/" + name)
+                folder.load()
+                say("Made “\(name)”")
+            } catch {
+                failed = (error as? FeedError) == .server(409) ? "Something called “\(name)” is already here." : "Couldn’t make the folder. Check the connection and try again."
+            }
+        }
+    }
+
+    // into this folder; a name already here gets " 2", " 3"…, never replaces anything
+    private func upload(_ files: [(url: URL, mtime: Date?)]) async {
+        var done = 0
+        for (i, f) in files.enumerated() {
+            status = files.count > 1 ? "Uploading \(i + 1) of \(files.count)…" : "Uploading…"
+            let base = (f.url.lastPathComponent as NSString).deletingPathExtension, ext = f.url.pathExtension
+            for n in 1...20 {
+                let name = (n == 1 ? base : "\(base) \(n)") + (ext.isEmpty ? "" : "." + ext)
+                do { try await feed.put(folder.path + "/" + name, file: f.url, mtime: f.mtime); done += 1; break }
+                catch FeedError.server(409) { continue }
+                catch { break }
+            }
+        }
+        status = nil
+        folder.load()
+        if done < files.count { failed = "\(files.count - done) of \(files.count) didn’t upload. Check the connection and try again." }
+        else { say("Added \(done) \(done == 1 ? "item" : "items")") }
+    }
+
+    private func addPhotos(_ items: [PhotosPickerItem]) {
+        Task {
+            var got: [(url: URL, mtime: Date?)] = []
+            for item in items {
+                if let p = try? await item.loadTransferable(type: PickedFile.self) { got.append((p.url, nil)) }
+            }
+            await upload(got)
+        }
+    }
+
+    private func addFiles(_ urls: [URL]) {
+        Task {
+            var got: [(url: URL, mtime: Date?)] = []
+            for u in urls {
+                let scoped = u.startAccessingSecurityScopedResource()
+                defer { if scoped { u.stopAccessingSecurityScopedResource() } }
+                if let copy = try? PickedFile.copy(u) {
+                    got.append((copy, (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate))
+                }
+            }
+            await upload(got)
+        }
+    }
+
     @ViewBuilder private func open(_ r: Record, @ViewBuilder _ label: () -> some View) -> some View {
         Group {
-            if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
+            if selecting {
+                Button { if picked.contains(r.id) { picked.remove(r.id) } else if !r.dir { picked.insert(r.id) } } label: {
+                    label().opacity(r.dir ? 0.4 : 1)
+                        .overlay(alignment: .topTrailing) {
+                            if !r.dir {
+                                Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3).foregroundStyle(Color.accentColor).background(Circle().fill(.background))
+                            }
+                        }
+                }
+                .buttonStyle(.plain).disabled(r.dir)
+            }
+            else if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
             else { Button { playing = r } label: { label() }.buttonStyle(.plain) }
         }
         .contextMenu {
@@ -297,7 +490,40 @@ struct FolderView: View {
 
 extension Record: Identifiable {}
 
-struct SharedLink: Identifiable { let url: URL; var id: URL { url } }
+struct SharedLink: Identifiable { let url: URL; var note: String? = nil; var id: URL { url } }
+struct SharedFiles: Identifiable { let urls: [URL]; let id = UUID() }
+
+enum LinkUse {
+    case copy, invite
+    var title: String { self == .copy ? "Create Share Link" : "Invite" }
+    var message: String {
+        self == .copy ? "The link goes to the clipboard. It works for anyone who has it until it expires."
+            : "Send the link in Messages or Mail. Whoever opens it can comment and like, under the name they give."
+    }
+}
+
+// a picked photo or video, or a file from Files, copied into this app's temporary folder under its own name
+struct PickedFile: Transferable {
+    let url: URL
+    static func copy(_ from: URL) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let to = dir.appendingPathComponent(from.lastPathComponent)
+        try FileManager.default.copyItem(at: from, to: to)
+        return to
+    }
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { PickedFile(url: try copy($0.file)) }
+        FileRepresentation(importedContentType: .image) { PickedFile(url: try copy($0.file)) }
+    }
+}
+
+// Save to Files, for Download
+struct ExportView: UIViewControllerRepresentable {
+    let urls: [URL]
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController { UIDocumentPickerViewController(forExporting: urls, asCopy: true) }
+    func updateUIViewController(_ c: UIDocumentPickerViewController, context: Context) {}
+}
 
 // the iOS share sheet (Messages, Mail, AirDrop, Copy)
 struct ActivityView: UIViewControllerRepresentable {
