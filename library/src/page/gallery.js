@@ -68,10 +68,6 @@ ${css}${live.main ? "\n" + assistantCss : ""}</style>
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
         Create Share Link
       </a>
-      ${live.main ? `<a class="mi" role="menuitem" href="/main/shared" id="m-shared">
-        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14a5 5 0 0 1 6 5"/></svg>
-        Shared
-      </a>` : ""}
       <button class="mi" role="menuitem" id="m-air" type="button">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="2"/><path d="M7.8 17.2a6 6 0 1 1 8.4 0"/><path d="M4.9 20.1a10 10 0 1 1 14.2 0"/></svg>
         AirDrop

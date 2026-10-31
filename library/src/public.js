@@ -183,7 +183,23 @@ async function fromMainLink(req, env, q) {
     return new Response("Bad request", { status: 400 });
   }
 
-  const paths = Array.isArray(b && b.paths) ? b.paths : [];
+  let paths = Array.isArray(b && b.paths) ? b.paths : [];
+  // "Folder/" is a whole folder in Main: every file under it (notes item 16, a picked Collections folder)
+  if (q.get("from") !== "archive" && paths.some((p) => String(p).endsWith("/"))) {
+    const out = [];
+    for (const p of paths) {
+      if (!String(p).endsWith("/")) { out.push(p); continue; }
+      const dir = cleanPath(String(p).slice(0, -1));
+      if (!dir) return new Response("Bad file path", { status: 400 });
+      let cursor;
+      do {
+        const r = await env.MAIN.list({ prefix: "files/" + dir + "/", cursor });
+        for (const o of r.objects) if (!o.key.split("/").some((x) => x.startsWith("."))) out.push(o.key.slice(6));
+        cursor = r.truncated ? r.cursor : undefined;
+      } while (cursor && out.length <= 1000);
+    }
+    paths = out;
+  }
   if (!paths.length || paths.length > 1000) return new Response("Bad file count", { status: 400 });
 
   const days = Math.min(365, Math.max(1, parseInt(q.get("days") || "", 10) || 7));

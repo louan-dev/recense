@@ -82,7 +82,6 @@ struct Browser: View {
                 Section("Locations") {
                     Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
                     Label("Archive", systemImage: "icloud").tag(Gallery.rootPath)
-                    Label("Shared", systemImage: "person.2").tag(Browser.shared)
                     Label("Assistant", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                 }
@@ -205,7 +204,7 @@ struct FolderView: View {
             // Select sits right of the … menu, as on the site; Cancel leaves Select mode
             ToolbarItem(placement: .primaryAction) {
                 Button(selecting ? "Cancel" : "Select") { selecting.toggle(); if !selecting { picked = [] } }
-                    .disabled(files.isEmpty && !selecting)
+                    .disabled(shown.isEmpty && !selecting)
             }
         }
         .alert("New Folder", isPresented: $naming) {
@@ -270,25 +269,25 @@ struct FolderView: View {
 
     private var title: String { folder.path == Gallery.rootPath ? "Archive" : String(folder.path.split(separator: "/").last ?? "") }
     private var files: [Record] { shown.filter { !$0.dir } }
-    // what an action works on: the picked files, else every file here
-    private var chosen: [Record] { picked.isEmpty ? files : files.filter { picked.contains($0.id) } }
+    // what an action works on: the picked files and folders, else every file here (a folder is shared whole; notes item 16)
+    private var chosen: [Record] { picked.isEmpty ? files : shown.filter { picked.contains($0.id) } }
 
     // the … menu: the site's (page/gallery.js), wired to the archive (src/fp.js) and the system's own sheets
     private var more: some View {
         Menu {
             Section {
-                Button { selecting = true; picked = Set(files.map(\.id)) } label: { Label("Select", systemImage: "checkmark.circle") }
-                    .disabled(files.isEmpty)
+                Button { selecting = true; picked = Set(shown.map(\.id)) } label: { Label("Select", systemImage: "checkmark.circle") }
+                    .disabled(shown.isEmpty)
                 Button { picked = [] } label: { Label("Deselect", systemImage: "circle") }
                     .disabled(picked.isEmpty)
             }
             Section {
-                Button { fetch(chosen) { saving = SharedFiles(urls: $0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
-                Button { fetch(chosen) { sending = SharedFiles(urls: $0) } } label: { Label("AirDrop", systemImage: "airplayaudio") }
+                Button { fetch(chosen.filter { !$0.dir }) { saving = SharedFiles(urls: $0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+                Button { fetch(chosen.filter { !$0.dir }) { sending = SharedFiles(urls: $0) } } label: { Label("AirDrop", systemImage: "airplayaudio") }
                 Button { linkFor = .copy } label: { Label("Create Share Link", systemImage: "link") }
                 Button { linkFor = .invite } label: { Label("Invite", systemImage: "person.badge.plus") }
             }
-            .disabled(files.isEmpty)
+            .disabled(chosen.isEmpty)
             Section {
                 Menu {
                     Button { photos = true } label: { Label("Photos", systemImage: "photo.on.rectangle") }
@@ -339,7 +338,10 @@ struct FolderView: View {
         linking = (0, rs.count)
         Task {
             do {
-                let url = try await Share.link(rs.map(\.inArchive), days: days) { done, total in
+                var paths: [String] = []
+                for r in rs { paths += r.dir ? try await Folder.files(in: r.path) : [r.inArchive] }
+                guard !paths.isEmpty else { throw FeedError.notFound }
+                let url = try await Share.link(paths, days: days) { done, total in
                     Task { @MainActor in linking = (done, total) }
                 }
                 linking = nil
@@ -418,16 +420,14 @@ struct FolderView: View {
     @ViewBuilder private func open(_ r: Record, @ViewBuilder _ label: () -> some View) -> some View {
         Group {
             if selecting {
-                Button { if picked.contains(r.id) { picked.remove(r.id) } else if !r.dir { picked.insert(r.id) } } label: {
-                    label().opacity(r.dir ? 0.4 : 1)
+                Button { if picked.contains(r.id) { picked.remove(r.id) } else { picked.insert(r.id) } } label: {
+                    label()
                         .overlay(alignment: .topTrailing) {
-                            if !r.dir {
-                                Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3).foregroundStyle(Color.accentColor).background(Circle().fill(.background))
-                            }
+                            Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle")
+                                .font(.title3).foregroundStyle(Color.accentColor).background(Circle().fill(.background))
                         }
                 }
-                .buttonStyle(.plain).disabled(r.dir)
+                .buttonStyle(.plain)
             }
             else if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
             else { Button { playing = r } label: { label() }.buttonStyle(.plain) }

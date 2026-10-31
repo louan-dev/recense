@@ -953,8 +953,54 @@
     Object.keys(roomIRs).forEach((k) => delete roomIRs[k]);
     ctxEls.clear();
     clearTimeout(ctxSleepT);
+    keepDrop();
     if (c && c.state !== "closed") c.close().catch(() => {});
   };
+
+  // iPhone: iOS lets Web Audio carry on out of sight only while it is sounding, and won't start it again
+  // until the page is seen. A context gone quiet (paused, or the digital silence a track opens with) was
+  // stopped on lock, and the lock screen's Play then moved the scrubber in silence (notes 20261029 item 10).
+  // A trickle of DC far below hearing keeps it sounding; after 10 minutes paused out of sight it lets go.
+  let keepNode = null;
+  let keepT = 0;
+  const keepDrop = () => {
+    clearTimeout(keepT);
+    if (!keepNode) return;
+    try {
+      keepNode.s.stop();
+      keepNode.s.disconnect();
+    } catch (x) {}
+    keepNode = null;
+  };
+  const ctxKeep = () => {
+    const c = audioCtx;
+    if (!IOS || !c || c.state === "closed") return;
+    clearTimeout(keepT);
+
+    if (!keepNode || keepNode.c !== c) {
+      try {
+        let s;
+        if (c.createConstantSource) {
+          s = c.createConstantSource();
+          s.offset.value = 2e-5;
+        } else {
+          const b = c.createBuffer(1, 128, c.sampleRate);
+          b.getChannelData(0).fill(2e-5);
+          s = c.createBufferSource();
+          s.buffer = b;
+          s.loop = true;
+        }
+        s.connect(c.destination);
+        s.start();
+        keepNode = { s, c };
+      } catch (x) {
+        return;
+      }
+    }
+
+    if (document.hidden && !(nowEl && !nowEl.paused)) keepT = setTimeout(keepDrop, 10 * 60e3);
+  };
+  document.addEventListener("visibilitychange", ctxKeep);
   addEventListener("pagehide", (e) => {
     if (!e.persisted && !DECK) ctxClose();
   });
@@ -2015,6 +2061,7 @@
           };
           c.onstatechange = back;
           document.addEventListener("visibilitychange", back);
+          ctxKeep();
         }
 
         // Firefox: an element taken into a context that isn't running goes silent, and on some Macs
@@ -2754,6 +2801,7 @@
       // a suspended (or sleeping) context would silence a connected element: wake it on the play gesture
       clearTimeout(ctxSleepT);
       if (nodes && audioCtx && audioCtx.state !== "running") audioCtx.resume().catch(() => {});
+      if (nodes) ctxKeep();
 
       wake();
     };
@@ -2761,6 +2809,7 @@
     el.onpause = () => {
       sync();
       if (nodes && !DECK) ctxSleep();
+      if (nodes) ctxKeep();
       cancelAnimationFrame(raf);
       wake();
     };
@@ -3089,7 +3138,15 @@
   const readyItems = () => items.filter((f) => !f.pending);
 
   // what is picked in Select mode, for the "…" menu's Create Share Link
-  window.gallerySelection = () => (selecting ? readyItems().filter((f) => picked.has(f.n)) : []);
+  // a picked Collections folder rides along as "dir/": the server shares every file under it (notes item 16)
+  const pickedDirs = () => [].map.call(document.querySelectorAll(".mainnav .fd.on[data-p]"), (a) => ({ path: a.dataset.p + "/", n: a.dataset.p }));
+  window.gallerySelection = () => (selecting ? readyItems().filter((f) => picked.has(f.n)).concat(pickedDirs()) : []);
+  document.addEventListener("click", (e) => {
+    const a = selecting && e.target.closest && e.target.closest(".mainnav .fd[data-p]");
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    a.classList.toggle("on");
+  }, true);
 
   const label = () => {
     const n = picked.size;
@@ -3351,6 +3408,7 @@
     $("sel").textContent = selecting ? "Cancel" : "Select";
 
     grid.querySelectorAll(".on").forEach((t) => t.classList.remove("on"));
+    document.querySelectorAll(".mainnav .fd.on").forEach((t) => t.classList.remove("on"));
     label();
   };
 

@@ -329,7 +329,7 @@ export async function mainFolder(env, url) {
     .join("<i>/</i>");
 
   const links = subs
-    .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${esc(x)}</a>`)
+    .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${esc(x)}</a>`)
     .join("");
 
   const empty =
@@ -343,12 +343,17 @@ export async function mainFolder(env, url) {
 .mainnav .cr a{color:inherit;text-decoration:none}
 .mainnav .cr a:last-child{color:#fff}
 .mainnav .cr i{font-style:normal;margin:0 6px;opacity:.5}
-.mainnav .fs{display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.mainnav h2{margin:0 0 10px;font:700 22px -apple-system,BlinkMacSystemFont,sans-serif;color:#fff}
+.mainnav .fs{display:grid;grid-template-rows:repeat(3,auto);grid-auto-flow:column;grid-auto-columns:minmax(150px,calc((100% - 16px)/2.3));gap:8px;overflow-x:auto;scrollbar-width:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .mainnav .fs::-webkit-scrollbar{display:none}
+.mainnav .sh{display:block;color:#0a84ff;font:600 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:12px 14px;border-radius:12px;background:#1c1c1e;margin-bottom:8px}
+body.selecting .mainnav .fd{position:relative;padding-right:40px}
+body.selecting .mainnav .fd::after{content:"";position:absolute;right:12px;top:50%;width:18px;height:18px;margin-top:-10px;border:1.5px solid #0a84ff;border-radius:50%}
+body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 3px #1c1c1e}
 .mainnav .fs.dragging{cursor:grabbing}
-.mainnav .fd{color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.08);flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${links ? `<div class="fs">${links}</div>` : ""}${empty}</nav>
+<nav class="mainnav">${links || !rel ? `<h2>Collections</h2>${rel ? "" : `<a class="sh" href="/main/shared">Shared</a>`}<div class="fs">${links}</div>` : ""}${empty}</nav>
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}
@@ -360,7 +365,7 @@ export async function mainFolder(env, url) {
   if(!bar)return;
   var dir=${JSON.stringify(rel).replace(/</g, "\\u003c")};
   var HOLD=250,MOVE=6,timer=null,chip=null,lifted=false,scrolling=false,suppress=false;
-  var id=null,type="",sx=0,sl=0,px=0,grab=0,loop=null,before="";
+  var id=null,type="",sx=0,sl=0,px=0,py=0,gy=0,grab=0,loop=null,before="";
 
  var oid=${JSON.stringify(cur.k).replace(/</g, "\\u003c")},lk="fo2:"+oid,syncing=0;
 
@@ -467,13 +472,17 @@ export async function mainFolder(env, url) {
 
   function place(){
     if(!chip)return;
-    var cx=px-grab+chip.offsetWidth/2;
-    var p=chip.previousElementSibling,n=chip.nextElementSibling,r;
-    if(p){r=p.getBoundingClientRect();if(cx<r.left+r.width/2){bar.insertBefore(chip,p)}}
-    if(n&&chip.previousElementSibling===p){r=n.getBoundingClientRect();if(cx>r.left+r.width/2){bar.insertBefore(n,chip)}}
+    // grid of 3 per column: drop onto whichever tile the lifted tile's centre is over
+    var cx=px-grab+chip.offsetWidth/2,cy=py-gy+chip.offsetHeight/2;
+    var all=[].slice.call(bar.children),from=all.indexOf(chip);
+    for(var i=0;i<all.length;i++){
+      if(all[i]===chip)continue;
+      var r=all[i].getBoundingClientRect();
+      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom){bar.insertBefore(chip,i>from?all[i].nextSibling:all[i]);break}
+    }
     chip.style.transform="";
-    var nat=chip.getBoundingClientRect().left;
-    chip.style.transform="translateX("+(px-grab-nat)+"px)";
+    var nb=chip.getBoundingClientRect();
+    chip.style.transform="translate("+(px-grab-nb.left)+"px,"+(py-gy-nb.top)+"px)";
   }
 
   function tick(){
@@ -487,7 +496,7 @@ export async function mainFolder(env, url) {
     timer=null;lifted=true;suppress=true;before=JSON.stringify(names());
     chip.classList.add("lift");
     try{bar.setPointerCapture(id)}catch(e){}
-    grab=px-chip.getBoundingClientRect().left;
+    grab=px-chip.getBoundingClientRect().left;gy=py-chip.getBoundingClientRect().top;
     if(navigator.vibrate)navigator.vibrate(10);
     loop=setInterval(tick,16);
     place();
@@ -505,7 +514,7 @@ export async function mainFolder(env, url) {
   bar.addEventListener("pointerdown",function(e){
     if(e.button>0||lifted)return;
     suppress=false;scrolling=false;
-    id=e.pointerId;type=e.pointerType;sx=px=e.clientX;sl=bar.scrollLeft;
+    id=e.pointerId;type=e.pointerType;sx=px=e.clientX;py=e.clientY;sl=bar.scrollLeft;
     chip=e.target.closest?e.target.closest(".fd"):null;
     clearTimeout(timer);timer=null;
     if(chip)timer=setTimeout(lift,HOLD);
@@ -513,7 +522,7 @@ export async function mainFolder(env, url) {
 
   bar.addEventListener("pointermove",function(e){
     if(e.pointerId!==id)return;
-    px=e.clientX;
+    px=e.clientX;py=e.clientY;
     if(lifted){place();return}
     if(Math.abs(px-sx)>MOVE){
       if(timer){clearTimeout(timer);timer=null}
