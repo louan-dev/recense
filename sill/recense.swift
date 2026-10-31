@@ -326,9 +326,13 @@ struct Word: Codable {
     var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
     var syl: [Syl]? = nil     // a sung word's syllables on the voice's own (Cadence.align, cadence.swift)
     var un: Bool? = nil       // written but not sung: Cadence found no voice for it, so it's never lit
+    var tm: Pin? = nil        // timed by the listener's ear (corrections field "time"): wins over Cadence (Cadence.pin)
     /// The same word, timed again (what it was heard as goes with it; its syllables don't: they were the old times').
-    func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard) }
+    func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard, tm: tm) }
 }
+/// A word as the listener timed it (notes 20261029 row 35; Gallery's corrections.js `pinsOf`): lit from s to e, its light
+/// shaped by k (−1 lingers at the start and hurries at the end, 1 the reverse, 0 even).
+struct Pin: Codable, Equatable { let s: Double; let e: Double; let k: Double }
 /// A syllable of a sung word: where it ends in the word's letters (code points), and when its note is sung.
 struct Syl: Codable { let c: Int; let s: Double; let e: Double }
 struct EnWord: Codable { let w: String; let s: [Int] }
@@ -664,6 +668,18 @@ struct Override: Codable, Equatable {
         return best
     }
 
+    /// A "time" override's words: JSON [[word index, start, end, sweep], …] (Gallery's corrections.js `pinsOf`, same checks).
+    nonisolated static func pins(_ to: String) -> [Int: Pin] {
+        guard let a = try? JSONSerialization.jsonObject(with: Data(to.utf8)) as? [[Double]] else { return [:] }
+        var out: [Int: Pin] = [:]
+        for x in a.prefix(200) where x.count >= 3 {
+            let i = Int(x[0]), s = x[1], e = x[2], k = x.count > 3 ? x[3] : 0
+            guard Double(i) == x[0], i >= 0, s >= 0, e > s, e - s <= 30 else { continue }
+            out[i] = Pin(s: s, e: e, k: max(-1, min(1, k)))
+        }
+        return out
+    }
+
     /// Overrides, then the glossary, over the lines (Recense's own edits already laid over them). The trailing line
     /// is English, or in `lang`: a correction in it first, else `native`'s translation, else the English.
     static func apply(_ lines: [Line], _ e: Edits, lang: String = "en", native: ((Line, Line) -> [EnWord]?)? = nil) -> [Line] {
@@ -672,10 +688,11 @@ struct Override: Codable, Equatable {
         guard !ovs.isEmpty || !g.isEmpty || (lang != "en" && native != nil) else { return lines }
         var byId: [String: Int] = [:]
         for (i, l) in lines.enumerated() where byId[String(l.id)] == nil { byId[String(l.id)] = i }
-        var text: [Int: String] = [:], tr: [Int: [String: String]] = [:]
+        var text: [Int: String] = [:], tr: [Int: [String: String]] = [:], time: [Int: [Int: Pin]] = [:]
         for o in ovs {
             guard let i = target(lines, o, byId, e) else { continue }
-            if o.field == "text" { text[i] = o.to } else if o.field.hasPrefix("tr.") { tr[i, default: [:]][String(o.field.dropFirst(3))] = o.to }
+            if o.field == "text" { text[i] = o.to } else if o.field == "time" { time[i] = pins(o.to) }
+            else if o.field.hasPrefix("tr.") { tr[i, default: [:]][String(o.field.dropFirst(3))] = o.to }
         }
         var out: [Line] = []
         for (i, l) in lines.enumerated() {
@@ -688,6 +705,10 @@ struct Override: Codable, Equatable {
             } else if !g.isEmpty && !(l.id >= edited && l.id < edited + cutShort) {
                 n = Line(id: l.id, words: l.words.map { var w = $0; w.text = gloss($0.text, g); return w },
                          english: l.english, draft: l.draft)
+            }
+            if let p = time[i], !p.isEmpty {
+                n = Line(id: n.id, words: n.words.enumerated().map { k, w in var x = w; x.tm = p[k]; return x },
+                         english: n.english, draft: n.draft, fixed: n.fixed)
             }
             if lang != "en", let nl = tr[i]?[lang], !words(nl).isEmpty {
                 n.english = words(nl).map { EnWord(w: $0, s: []) }
@@ -1355,6 +1376,8 @@ final class LineEditor: NSView, NSTextFieldDelegate {
     let field = NSTextField(string: "")
     let hint = PassLabel(labelWithString: "Return saves  ·  Esc cancels  ·  empty hides the line")
     let resetButton = NSButton(title: "Reset to Auto", target: nil, action: nil)
+    let timingButton = NSButton(title: "Timing…", target: nil, action: nil)
+    var onTiming: (() -> Void)?            // the line's words timed by ear (TimingPanel); set by whoever began the edit
     private var done: ((Result) -> Void)?
     var editing: Bool { done != nil }
 
@@ -1370,7 +1393,10 @@ final class LineEditor: NSView, NSTextFieldDelegate {
         resetButton.bezelStyle = .recessed; resetButton.controlSize = .small; resetButton.font = .systemFont(ofSize: 11)
         resetButton.refusesFirstResponder = true      // pressing it mustn't end the typing first (that would save it)
         resetButton.target = self; resetButton.action = #selector(resetPressed)
-        for v in [field, hint, resetButton] { addSubview(v) }
+        timingButton.bezelStyle = .recessed; timingButton.controlSize = .small; timingButton.font = .systemFont(ofSize: 11)
+        timingButton.refusesFirstResponder = true
+        timingButton.target = self; timingButton.action = #selector(timingPressed)
+        for v in [field, hint, resetButton, timingButton] { addSubview(v) }
         isHidden = true
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -1400,6 +1426,8 @@ final class LineEditor: NSView, NSTextFieldDelegate {
         d(r)
     }
     @objc func resetPressed() { finish(.reset) }
+    /// The typing is saved as Return would, then the line's timing opens over the window.
+    @objc func timingPressed() { let f = onTiming; finish(.save(field.stringValue)); f?() }
     private func addRow(_ t: String, _ off: Int, _ size: CGFloat) {
         let d = CGFloat(abs(off))
         let l = PassLabel(labelWithString: t.isEmpty ? "…" : t)
@@ -1441,6 +1469,9 @@ final class LineEditor: NSView, NSTextFieldDelegate {
         field.frame = NSRect(x: 28, y: y, width: w, height: h)
         hint.frame = NSRect(x: (bounds.width - row) / 2, y: y - 8 - max(hs.height, bs.height) / 2 - hs.height / 2, width: hs.width, height: hs.height)
         resetButton.frame = NSRect(x: hint.frame.maxX + 14, y: y - 8 - max(hs.height, bs.height) / 2 - bs.height / 2, width: bs.width, height: bs.height)
+        let ts = timingButton.intrinsicContentSize
+        timingButton.isHidden = onTiming == nil
+        timingButton.frame = NSRect(x: (resetButton.isHidden ? hint.frame.maxX : resetButton.frame.maxX) + 10, y: y - 8 - max(hs.height, ts.height) / 2 - ts.height / 2, width: ts.width, height: ts.height)
         // the barrel: lines before stack up from the field, lines after down from the hint
         var up = field.frame.maxY + 6, down = min(hint.frame.minY, resetButton.isHidden ? hint.frame.minY : resetButton.frame.minY) - 6
         for (l, off) in zip(rows, rowOffsets).sorted(by: { abs($0.1) < abs($1.1) }) {
@@ -2570,12 +2601,12 @@ func mix(_ a: NSColor, _ b: NSColor, _ f: Double) -> NSColor {
 }
 
 /// A word and the stretch of media time in which it's spoken.
-struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil; var un = false }
+struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil; var un = false; var k: Double? = nil }
 
 func sourceBeats(_ line: Line) -> [Beat] {
     line.words.enumerated().map { i, w in
         let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true)
+        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm?.k)
     }
 }
 
@@ -3009,10 +3040,9 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// What the window draws: `display` with its words timed to the voice (Cadence) once the song's is measured.
     /// Corrections are still made to `display`'s lines (same ids), so an edit's stretch is the line as transcribed.
     var sung: [Line] {
-        guard let f = features else { return display }
         let lang = NativeLang.current
         if let s = _sung, _sungLang == lang { return s }
-        let s = Cadence.fit(display, f); _sung = s; _sungLang = lang
+        let s = Cadence.pin(features.map { Cadence.fit(display, $0) } ?? display); _sung = s; _sungLang = lang
         return s
     }
     var done: [Bool] = []
@@ -3109,6 +3139,25 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         try? d.write(to: editsURL, options: .atomic)
         if push { CorrectionSync.schedule(key) }
     }
+
+    /// A line's words as the listener timed them ([word index: Pin], transcript time): one "time" override for the
+    /// line (Gallery's corrections.js `pinsOf` shape), the latest wins; none left removes the timing. `push` when settled.
+    func setTiming(_ line: Line, _ pins: [Int: Pin], push: Bool) {
+        let r3 = { (x: Double) in (x * 1000).rounded() / 1000 }
+        let a = pins.keys.sorted().map { i -> String in
+            let p = pins[i]!
+            return "[\(i),\(fmt(r3(p.s))),\(fmt(r3(p.e))),\(fmt((p.k * 100).rounded() / 100))]"
+        }
+        let to = a.isEmpty ? "" : "[" + a.joined(separator: ",") + "]"
+        var o = edits.overrides ?? []
+        o.removeAll { $0.segId == String(line.id) && $0.field == "time" }
+        o.append(Override(segId: String(line.id), start: line.start, end: line.end, field: "time", to: to, src: "main",
+                          updatedAt: (Date().timeIntervalSince1970 * 1000).rounded()))
+        edits.overrides = o
+        saveEdits(push: push)
+    }
+    /// A number as JavaScript's JSON writes it (83.1, 84, -0.5), so Gallery's check of the override reads it the same.
+    private func fmt(_ x: Double) -> String { x == x.rounded() && abs(x) < 1e15 ? String(Int(x)) : String(x) }
 
     /// A shown line the listener corrected, or one an edit cut short.
     static func isEdited(_ l: Line) -> Bool { l.id >= edited }
@@ -5203,6 +5252,10 @@ enum Cadence {
     /// spread over the time it's sung, up to where the next comes in (or 0.25 s past its end, so a breath isn't swept
     /// through), so the light slows on a held "on" and hurries through a quick var-i-a (gallery.js `fillOf`).
     static func progress(_ b: Beat, _ t: Double) -> Double {
+        if let k = b.k {                     // timed by the listener: one sweep shaped by k (cadence.js `fill`)
+            let u = max(0, min(1, (t - b.start) / max(0.05, b.end - b.start)))
+            return pow(u, pow(2, -1.5 * k))
+        }
         if let syl = b.syl, !syl.isEmpty, !b.text.isEmpty {
             let n = Double(b.text.unicodeScalars.count)
             var c0 = 0.0
@@ -7827,6 +7880,7 @@ final class NativeSources {
         let above = all.indices.contains(i) ? all[..<i].map(lineText) : []
         let below = all.indices.contains(i) ? all[(i + 1)...].map(lineText) : []
         let shownText = lineText(line)
+        overlay.editor.onTiming = { [weak self] in self?.timeLine(line) }
         overlay.beginEdit(shownText, edited: Episode.isEdited(line), above: Array(above), below: Array(below)) { [weak self, weak ep] r in
             guard let self, let ep, self.episode === ep else { return }
             @MainActor func save(_ text: String) {
@@ -7856,6 +7910,36 @@ final class NativeSources {
             if resume { self.setPlaying(true) }
         }
     }
+    /// Timing by ear (notes 20261029 row 35): the voice can't always tell how a word is sung, the listener can. A word
+    /// of the line, then where its light starts and ends and how it sweeps, while that stretch plays round; Auto gives it
+    /// back to Cadence. Saved as a corrections override (field "time", Gallery's own), so Gallery shows it too.
+    var timing: TimingPanel?
+    func timeLine(_ line: Line) {
+        guard let ep = episode, let l = ep.sung.first(where: { $0.id == line.id }), !l.words.isEmpty else { return }
+        timing?.close()
+        let t = TimingPanel(l) { [weak self, weak ep] pins, push in
+            guard let self, let ep, self.episode === ep else { return }
+            ep.setTiming(l, pins, push: push)
+            self.overlay.lastKey = ""
+        }
+        t.hear = { [weak self] a, b in
+            guard let self, let ep = self.episode else { return }
+            self.loopTimer?.invalidate()
+            guard let a, let b else { self.loopTimer = nil; self.setPlaying(false); return }
+            self.command(.seek(max(0, a - 0.8) - cfg.syncOffset * self.pos.rate + ep.shift)); self.setPlaying(true)
+            self.loopTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let ep = self.episode, let (a, b) = t.span else { return }
+                    let now = self.mediaTime - ep.shift
+                    if now > b + 0.5 || now < a - 1.5 { self.command(.seek(max(0, a - 0.8) - cfg.syncOffset * self.pos.rate + ep.shift)) }
+                }
+            }
+        }
+        t.onClose = { [weak self] in self?.loopTimer?.invalidate(); self?.loopTimer = nil; self?.timing = nil }
+        timing = t
+        t.show(over: overlay.panel)
+    }
+    var loopTimer: Timer?
     func resetLine() {
         guard let ep = episode, let line = editable, Episode.isEdited(line) else { return }
         ep.reset(line); overlay.lastKey = ""; overlay.toast.say("Back to auto")
@@ -8125,5 +8209,101 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         let i = Int(r.timeRange.start.seconds / Episode.voicesStep + 0.5)
         if env.count <= i { env += [UInt8](repeating: 0, count: i + 1 - env.count) }
         if v { env[i] = 1 }
+    }
+}
+
+/// A line's words timed by ear (notes 20261029 row 35): pick a word, then set where its light starts and ends and how
+/// it sweeps (lingering first, even, or hurrying first) while that stretch plays round (`hear`); Auto gives the word
+/// back to Cadence. Every change shows at once (`changed` without push), and is saved for Gallery when a slider is let go.
+@MainActor final class TimingPanel: NSObject, NSWindowDelegate {
+    private let line: Line
+    private var pins: [Int: Pin]
+    private let changed: ([Int: Pin], Bool) -> Void
+    var hear: ((Double?, Double?) -> Void)?
+    var onClose: (() -> Void)?
+    private let win: NSPanel
+    private let words = NSPopUpButton()
+    private let start = NSSlider(), end = NSSlider(), sweep = NSSlider()
+    private let startL = NSTextField(labelWithString: ""), endL = NSTextField(labelWithString: ""), sweepL = NSTextField(labelWithString: "")
+    private let hearB = NSButton(title: "Hear it", target: nil, action: nil), autoB = NSButton(title: "Auto", target: nil, action: nil)
+    private var cur = 0
+    private var looping = false
+    /// The stretch being heard round: the chosen word as it's now set.
+    var span: (Double, Double)? { let p = pinOf(cur); return (p.s, p.e) }
+
+    init(_ line: Line, changed: @escaping ([Int: Pin], Bool) -> Void) {
+        self.line = line; self.changed = changed
+        var p: [Int: Pin] = [:]
+        for (i, w) in line.words.enumerated() { if let t = w.tm { p[i] = t } }
+        pins = p
+        win = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled, .closable, .utilityWindow, .hudWindow],
+                      backing: .buffered, defer: false)
+        super.init()
+        win.title = "Timing by ear"; win.isFloatingPanel = true; win.hidesOnDeactivate = false; win.delegate = self
+        win.isReleasedWhenClosed = false
+        for (i, w) in line.words.enumerated() { words.addItem(withTitle: "\(i + 1). \(w.text)"); words.lastItem?.tag = i }
+        words.target = self; words.action = #selector(pick)
+        let grid = NSGridView(views: [
+            [NSTextField(labelWithString: "Word"), words, NSView()],
+            [NSTextField(labelWithString: "Starts"), start, startL],
+            [NSTextField(labelWithString: "Ends"), end, endL],
+            [NSTextField(labelWithString: "Sweep"), sweep, sweepL],
+        ])
+        grid.column(at: 1).width = 240; grid.rowSpacing = 8; grid.columnSpacing = 10
+        for s in [start, end, sweep] { s.target = self; s.action = #selector(slid(_:)); s.isContinuous = true }
+        sweep.minValue = -1; sweep.maxValue = 1
+        for l in [startL, endL, sweepL] { l.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular) }
+        hearB.target = self; hearB.action = #selector(hearPressed); autoB.target = self; autoB.action = #selector(autoPressed)
+        let buttons = NSStackView(views: [hearB, autoB]); buttons.spacing = 12
+        let stack = NSStackView(views: [grid, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        win.contentView = stack
+        load(0)
+    }
+
+    func show(over w: NSWindow) {
+        let f = w.frame
+        win.setFrameOrigin(NSPoint(x: f.midX - win.frame.width / 2, y: max(40, f.minY - win.frame.height - 8)))
+        win.orderFront(nil); win.makeKey()
+    }
+    func close() { win.close() }
+    func windowWillClose(_ n: Notification) { if looping { hear?(nil, nil) }; onClose?() }
+
+    private func auto(_ i: Int) -> Pin { let w = line.words[i]; return Pin(s: w.start, e: max(w.end, w.start + 0.05), k: 0) }
+    private func pinOf(_ i: Int) -> Pin { pins[i] ?? auto(i) }
+    private func load(_ i: Int) {
+        cur = i
+        let p = pinOf(i), a = line.words[i].tm.map { _ in p } ?? auto(i)
+        start.minValue = a.s - 1.5; start.maxValue = a.s + 1.5
+        end.minValue = a.e - 1.5; end.maxValue = a.e + 3
+        start.doubleValue = p.s; end.doubleValue = p.e; sweep.doubleValue = p.k
+        words.selectItem(withTag: i)
+        labels()
+    }
+    private func labels() {
+        let p = pinOf(cur)
+        func t(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
+        startL.stringValue = t(p.s); endL.stringValue = t(p.e)
+        sweepL.stringValue = p.k < -0.05 ? "lingers first" : p.k > 0.05 ? "hurries first" : "even"
+    }
+    @objc private func pick() { load(words.selectedTag()) }
+    @objc private func slid(_ s: NSSlider) {
+        var a = start.doubleValue, b = end.doubleValue
+        if s === start { a = min(a, b - 0.05) } else if s === end { b = max(b, a + 0.05) }
+        pins[cur] = Pin(s: a, e: b, k: (sweep.doubleValue * 20).rounded() / 20)
+        labels()
+        let up = NSApp.currentEvent?.type == .leftMouseUp
+        changed(pins, up)
+    }
+    @objc private func hearPressed() {
+        looping.toggle()
+        hearB.title = looping ? "Stop" : "Hear it"
+        let p = pinOf(cur)
+        hear?(looping ? p.s : nil, looping ? p.e : nil)
+    }
+    @objc private func autoPressed() {
+        pins[cur] = nil
+        changed(pins, true)
+        load(cur)
     }
 }

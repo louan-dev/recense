@@ -259,3 +259,28 @@ extension Cadence {
         return (res, un)
     }
 }
+
+extension Cadence {
+    /// The listener's own timing (a word's `tm`, corrections field "time", set with its sliders while listening; notes
+    /// 20261029 row 35) over whatever was worked out: the word is lit from s to e, its light shaped by k (`progress`),
+    /// and the words beside it give way so none runs into it. Same rule as Gallery's cadence.js `pin`.
+    static func pin(_ lines: [Line]) -> [Line] {
+        lines.map { l in
+            guard l.words.contains(where: { $0.tm != nil }) else { return l }
+            var ws = l.words.map { w -> Word in
+                guard let p = w.tm else { return w }
+                var x = w.timed(p.s, p.e); x.syl = nil; x.un = nil; return x
+            }
+            func trim(_ w: Word, _ s: Double, _ e: Double) -> Word {
+                var x = w.timed(s, e)
+                x.syl = w.syl?.map { y in Syl(c: y.c, s: min(max(y.s, s), e), e: min(max(y.e, s), e)) }; x.un = w.un
+                return x
+            }
+            for i in ws.indices where ws[i].tm != nil {
+                if i > 0, ws[i - 1].tm == nil, ws[i - 1].end > ws[i].start { ws[i - 1] = trim(ws[i - 1], min(ws[i - 1].start, ws[i].start), ws[i].start) }
+                if i + 1 < ws.count, ws[i + 1].tm == nil, ws[i + 1].start < ws[i].end { ws[i + 1] = trim(ws[i + 1], ws[i].end, max(ws[i + 1].end, ws[i].end + 0.05)) }
+            }
+            return Line(id: l.id, words: ws, english: l.english, draft: l.draft, fixed: l.fixed)
+        }
+    }
+}
