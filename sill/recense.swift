@@ -324,7 +324,8 @@ struct Word: Codable {
     var lang: String? = nil   // the language Whisper heard it in (ISO 639-1), when the word is written in that language's script
     var c: Double? = nil      // how sure the recognizer was of it (0–1; on-device ears)
     var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
-    var syl: [Syl]? = nil     // a sung word's syllables on the notes they're sung on (Cadence.melody)
+    var syl: [Syl]? = nil     // a sung word's syllables on the voice's own (Cadence.align, cadence.swift)
+    var un: Bool? = nil       // written but not sung: Cadence found no voice for it, so it's never lit
     /// The same word, timed again (what it was heard as goes with it; its syllables don't: they were the old times').
     func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard) }
 }
@@ -336,6 +337,7 @@ struct Line: Codable {
     let words: [Word]
     var english: [EnWord]?   // nil while translating; [] when the speech is already English
     var draft: Bool? = nil   // older transcripts: translated on this Mac while Groq's quota was out (kept as it is now)
+    var fixed: Bool? = nil   // a listener corrected its text (Gallery's `fixed`): Cadence lights its words even where it finds no voice for them
     var start: Double { words.first?.start ?? 0 }
     var end: Double { words.last?.end ?? 0 }
 }
@@ -681,7 +683,7 @@ struct Override: Codable, Equatable {
                 let ws = words(t)
                 if ws.isEmpty { continue }           // corrected to nothing: words the ASR made up
                 let english = ws.count == l.words.count ? l.english : l.english.map { $0.map { EnWord(w: $0.w, s: []) } }
-                n = Line(id: l.id, words: Episode.layOver([ws], l.words)[0], english: english, draft: l.draft)
+                n = Line(id: l.id, words: Episode.layOver([ws], l.words)[0], english: english, draft: l.draft, fixed: true)
             } else if !g.isEmpty && !(l.id >= edited && l.id < edited + cutShort) {
                 n = Line(id: l.id, words: l.words.map { var w = $0; w.text = gloss($0.text, g); return w },
                          english: l.english, draft: l.draft)
@@ -2021,7 +2023,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let big = NSFont.systemFont(ofSize: size, weight: .semibold), small = NSFont.systemFont(ofSize: size, weight: .regular)
         let src = sourceBeats(line), trailLit = pr.p < 0.5
         let top: [WordsView.Cell] = pr.a1 > 0 ? src.map { b in
-            .init(top: dim(ink(trailLit ? Beat(text: b.text, start: b.start, end: b.start) : b, at: t, font: big), pr.a1))
+            .init(top: dim(ink(trailLit ? Beat(text: b.text, start: b.start, end: b.start, un: b.un) : b, at: t, font: big), pr.a1))
         } : []
         var under: [WordsView.Cell] = []
         if pr.a2 > 0 {
@@ -2082,7 +2084,7 @@ final class Overlay: NSObject, NSWindowDelegate {
 
     func ink(_ b: Beat, at t: Double, font: NSFont, before: NSColor? = nil, after: NSColor? = nil, fade: Double = 0.2) -> WordsView.Ink {
         var k = plainInk(b, at: t, font: font, before: before, after: after, fade: fade)
-        guard let m = Prosody.mark(b.text, b.start) else { return k }
+        guard !b.un, let m = Prosody.mark(b.text, b.start) else { return k }
         // the ribbon is preloaded as a ghost; the light fills it as far as the voice has gone, and across a gap from the
         // moment the word ends to the moment the next one starts, so a link fills exactly as it is sounded
         k.figure = m.line; k.tie = m.tie; k.joins = m.line.joins; k.start = b.start; k.end = b.end
@@ -2096,6 +2098,8 @@ final class Overlay: NSObject, NSWindowDelegate {
     func plainInk(_ b: Beat, at t: Double, font: NSFont, before: NSColor? = nil, after: NSColor? = nil, fade: Double = 0.2) -> WordsView.Ink {
         let pale = mix(current, spoken, 0.6)
         if t >= b.end { return .init(text: b.text, font: font, color: mix(pale, after ?? spoken, (t - b.end) / fade)) }
+        // written but not sung (Cadence's `un`): never lit, no glow (gallery.js paintWord)
+        if b.un { return .init(text: b.text, font: font, color: before ?? upcoming) }
         if t < b.start {
             let near = max(0, 1 - (b.start - t) / 0.2)
             return .init(text: b.text, font: font, color: before ?? mix(upcoming, ahead, near))
@@ -2498,12 +2502,12 @@ func mix(_ a: NSColor, _ b: NSColor, _ f: Double) -> NSColor {
 }
 
 /// A word and the stretch of media time in which it's spoken.
-struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil }
+struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil; var un = false }
 
 func sourceBeats(_ line: Line) -> [Beat] {
     line.words.enumerated().map { i, w in
         let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl)
+        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true)
     }
 }
 
@@ -5032,8 +5036,12 @@ enum Cadence {
         }
         var i = 0
         return lines.map { l in
-            Line(id: l.id, words: l.words.map { w in defer { i += 1 }; return w.timed(s[i], e[i]) },
-                 english: l.english, draft: l.draft)
+            Line(id: l.id, words: l.words.map { w in
+                defer { i += 1 }
+                var x = w.timed(ms(s[i]), ms(e[i])); x.syl = syl[i].map { $0.map { Syl(c: $0.c, s: ms($0.s), e: ms($0.e)) } }
+                if un[i] { x.un = true }
+                return x
+            }, english: l.english, draft: l.draft, fixed: l.fixed)
         }
     }
 
@@ -5107,6 +5115,9 @@ enum Fingerprint {
         out.reserveCapacity(n)
         for f in 0..<n {
             s.withUnsafeBufferPointer { vDSP_vmul($0.baseAddress! + start + f * hop, 1, window, 1, &x, 1, vDSP_Length(frame)) }
+        // then a song's words hung on the voice's own syllables (cadence.swift): the audio decides when each is sung
+        // and for how long; a written word that isn't sung is marked so
+        let (syl, un) = align(lines, f, flat, &s, &e)
             re.withUnsafeMutableBufferPointer { r in im.withUnsafeMutableBufferPointer { i in
                 var z = DSPSplitComplex(realp: r.baseAddress!, imagp: i.baseAddress!)
                 x.withUnsafeBytes { vDSP_ctoz($0.bindMemory(to: DSPComplex.self).baseAddress!, 2, &z, 1, vDSP_Length(frame / 2)) }
