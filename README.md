@@ -106,7 +106,6 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
-  nook/main.swift    Nook's original source, folded into sill/nook.swift (pending deletion)
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions
