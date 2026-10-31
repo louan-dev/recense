@@ -78,7 +78,7 @@ export default {
 
     async scheduled(event, env, ctx) {
     // every minute: up to ~45 s of the assistant's indexing steps (ai.js), nothing else
-    if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env).catch(() => {})); return; }
+    if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch(() => {})); return; }
     ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env),
       warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },

@@ -344,11 +344,27 @@ export async function indexStep(env) {
 
 /** The one-minute cron's work: steps until the pass is done, about 45 s have passed (so runs never overlap), or the
  *  run's subrequest allowance (1,000) is nearly spent. */
-export async function indexRun(env, wallMs = 45000, maxSteps = 24) {
-  const t0 = Date.now();
-  for (let i = 0; i < maxSteps && Date.now() - t0 < wallMs; i++) {
-    const r = await indexStep(env);
-    if (r.done) return r;
+// daily: the most steps per UTC day (the per-minute cron passes one). Workers AI's free plan is 10,000 neurons a day for
+// everything, so unbounded indexing left nothing for questions (error 4006); hitting 4006 also stops it until tomorrow.
+const INDEX_BUDGET = "ai/index-budget.json";
+export async function indexRun(env, wallMs = 45000, maxSteps = 24, daily = 0) {
+  const t0 = Date.now(), day = new Date().toISOString().slice(0, 10);
+  let b = null;
+  if (daily) {
+    b = (await env.MAIN.get(INDEX_BUDGET).then((o) => o && o.json()).catch(() => null)) || {};
+    if (b.day !== day) b = { day, steps: 0 };
+    if (b.out || b.steps >= daily) return { ok: true, done: false, resting: true };
+  }
+  try {
+    for (let i = 0; i < maxSteps && Date.now() - t0 < wallMs && !(b && b.steps >= daily); i++) {
+      if (b) b.steps++;
+      const r = await indexStep(env);
+      if (r.done) return r;
+    }
+  } catch (e) {
+    if (b && /4006|neurons/.test(String(e?.message || e))) b.out = true; else throw e;
+  } finally {
+    if (b) await env.MAIN.put(INDEX_BUDGET, JSON.stringify(b));
   }
   return { ok: true, done: false };
 }
