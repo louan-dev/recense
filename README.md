@@ -7,6 +7,19 @@ transcripts and files.
 
 Its menu-bar hider (Nook) is part of Sill, not an app of its own.
 
+## Why this exists
+Sill began as a kindness to an old MacBook: an M1 with 8 GB of memory and a nearly full disk, gasping under files that
+only ever grow. Instead of buying a new machine, I wanted to give this one room to breathe again, with one small app
+in place of a handful of always-on ones, and with my words, recordings and drafts kept on hardware I can see.
+
+It is also my attempt to make learning feel like a playground. Long walls of text lose me; a song I love, a sermon in
+my parents' language, a film watched twice do not. Recense grew out of what has actually worked for me: hearing a
+voice while its words light up as they are sung, seeing the melody drawn over the line, reading the translation beside
+it. If it helps me, I hope it can help the people dear to me, people for whom English is a wall, English speakers
+curious about a culture or a city they don't yet know, and people whose bodies or minds learn better through more than
+one sense. I didn't find a tool like that without a company in the middle, so I am building one, slowly, and handing
+it on. Everyday media is full of quiet lessons; Sill tries to catch them in the moment they pass by.
+
 ## Long-term goals
 Each goal comes from one design philosophy, zero friction: nothing stands between a thought, a sound or a glance and
 what it's for. Each project meets a different kind of friction, so each carries its own part of that philosophy.
@@ -25,10 +38,12 @@ what it's for. Each project meets a different kind of friction, so each carries 
   files), calendar and a right-edge widget panel inside Sill, so the tools come to the work instead of the reverse.
 
 ## Menu-bar hider (Nook, inside Sill)
-Sill adds a divider to the menu bar; ⌘-drag icons to its left (macOS has no API to move other apps' icons), and they
-stay tucked away. Hold ⌘ for a moment to see the divider; let go and it tucks them away again. Since macOS 27 the
-divider spans only the room left of it, as a wider item is moved off the bar. Still to bring over from
-`nook/main.swift`: the second tier, hover to peek, per-app rules and a setting to turn it off.
+`sill/nook.swift`. Sill adds `[ always-hidden ] ┆ [ hidden ] │ ‹›` to the menu bar; ⌘-drag icons left of │ to hide them,
+left of ┆ to always hide them (macOS has no API to move other apps' icons). Click ‹› to show or hide; hovering ‹› peeks
+at the hidden tier only; ⌥-click (or right-click ▸ Reveal Always-Hidden Items) shows both; holding ⌘ shows both dividers
+for arranging. Everything tucks back after the auto-hide delay (3 s). Right-click ‹› (or Sill's app menu ▸ Menu-Bar
+Hider) for auto-hide, Peek on Hover, per-app Rules (hide all, show all, show selection) and the off switch; off means no
+status items, monitors or timers. Nook.app is retired; it opens with Sill.
 
 ## Features
 
@@ -91,7 +106,7 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
-  nook/main.swift    Nook's original source; its features are being folded into Sill
+  nook/main.swift    Nook's original source, folded into sill/nook.swift (pending deletion)
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions

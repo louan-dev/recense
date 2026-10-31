@@ -6486,66 +6486,11 @@ final class ShelfUsage {
     }
 }
 
-/// The ⌘-drag divider that tucks icons away (Nook's technique: when collapsed it is enormously wide, pushing every
-/// icon to its left off the screen).
-final class ShelfDivider {
-    let item = NSStatusBar.system.statusItem(withLength: 12)
-    private(set) var collapsed = true
-    private var flagMonitors: [Any] = []
-    init() {
-        item.autosaveName = "local.sill.divider"
-        item.button?.title = ""
-        item.button?.appearsDisabled = true
-        expand()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.collapse() }   // once it has a place
-        let watch: (NSEvent) -> Void = { [weak self] e in self?.commandChanged(e.modifierFlags.contains(.command)) }
-        if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: watch) { flagMonitors.append(g) }
-        if let l = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { e in watch(e); return e }) { flagMonitors.append(l) }
-        // Any key pressed with ⌘ means a shortcut, not arranging: don't reveal anything.
-        if let k = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] _ in self?.holdWork?.cancel() }) { flagMonitors.append(k) }
-    }
-    private var holdWork: DispatchWorkItem?
-    /// Holding ⌘ on its own for a moment shows the divider so icons can be ⌘-dragged across it; letting go tucks
-    /// them away again. A quick ⌘ for a shortcut does nothing.
-    private func commandChanged(_ down: Bool) {
-        holdWork?.cancel()
-        if down {
-            let w = DispatchWorkItem { [weak self] in self?.expand(showing: true) }
-            holdWork = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
-        } else if !collapsed {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.collapse() }
-        }
-    }
-    func expand(showing: Bool = false) {
-        collapsed = false
-        item.length = 12
-        item.button?.title = showing ? "┃" : ""
-        item.button?.alphaValue = 0.35
-    }
-    /// Since macOS 27 a status item wider than the room left of it is moved off the menu bar instead of pushing the
-    /// icons away, so the collapsed divider spans only that room, stepping down until it stays on the bar.
-    func collapse() {
-        collapsed = true
-        item.button?.title = ""
-        let room = (item.button?.window?.frame.minX ?? 0) - (item.button?.window?.screen?.frame.minX ?? 0)
-        fit(max(room + 12, 200), tries: 12)
-    }
-    private func fit(_ length: CGFloat, tries: Int) {
-        item.length = length
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self = self, self.collapsed, tries > 0, let w = self.item.button?.window else { return }
-            let onBar = NSScreen.screens.contains { $0.frame.contains(NSPoint(x: w.frame.maxX - 1, y: w.frame.midY)) }
-            if !onBar { self.fit(length * 0.85, tries: tries - 1) }
-        }
-    }
-}
-
-/// Counts clicks on menu bar icons and owns the divider. (The floating shelf that used to show the top icons was
+/// Counts clicks on menu bar icons and owns the menu-bar hider (nook.swift). (The floating shelf that used to show the top icons was
 /// retired on 2026-10-07: the ranking is meant to decide which icons stay visible and which go past the divider.)
 final class MenuBarUsage {
     let usage = ShelfUsage()
-    let divider = ShelfDivider()
+    let nook = Nook()
     private var monitors: [Any] = []
 
     init() {
@@ -6553,6 +6498,7 @@ final class MenuBarUsage {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             self?.noteClick(at: NSEvent.mouseLocation)
         }) { monitors.append(m) }
+        nook.start()
     }
 
     private func noteClick(at p: NSPoint) {
@@ -6940,6 +6886,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
+        let hider = NSMenuItem(title: "Menu-Bar Hider", action: nil, keyEquivalent: "")
+        hider.submenu = menuBar.nook.menu(); appMenu.addItem(hider)
+        appMenu.delegate = self                                   // rebuilds the hider's entries each time it opens
         appMenu.addItem(withTitle: "Quit Sill", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editItem = NSMenuItem(); main.addItem(editItem)
@@ -7730,3 +7679,9 @@ NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotif
     MainActor.assumeIsolated { Recense.delegate?.applicationWillTerminate(n) }
 }
 app.run()
+
+extension App: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.nook.menu()
+    }
+}
