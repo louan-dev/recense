@@ -41,18 +41,19 @@ import NaturalLanguage
     static var keepsUp: Bool { (pace ?? 0) <= 1 }
 
     /// Hears 16 kHz mono samples; `script`: the one the recording's language is written in, when it's known (the model
-    /// then writes only its letters, plus Latin where it earns its place). One request at a time.
-    static func hear(_ samples: [Float], script: String? = nil) async throws -> [Word] {
+    /// then writes only its letters, plus Latin where it earns its place); `soft`: only guessed, so it competes with the
+    /// scripts the model writes instead of being kept to. One request at a time.
+    static func hear(_ samples: [Float], script: String? = nil, soft: Bool = false) async throws -> [Word] {
         let prev = queue
         let mine = Task { @MainActor () async throws -> [Word] in
             await prev.value
-            return try await request(samples, script: script)
+            return try await request(samples, script: script, soft: soft)
         }
         queue = Task { _ = try? await mine.value }
         return try await mine.value
     }
 
-    private static func request(_ samples: [Float], script: String?) async throws -> [Word] {
+    private static func request(_ samples: [Float], script: String?, soft: Bool) async throws -> [Word] {
         if proc == nil { try await start() }
         guard let input else { throw err("the open ears aren't running") }
         let f = FileManager.default.temporaryDirectory.appendingPathComponent("recense-open-\(UUID().uuidString).f32")
@@ -61,7 +62,7 @@ import NaturalLanguage
         next += 1
         let id = next
         var q: [String: Any] = ["id": id, "f32": f.path]
-        if let script { q["script"] = script }
+        if let script { q["script"] = script; if soft { q["soft"] = true } }
         let line = try JSONSerialization.data(withJSONObject: q) + Data("\n".utf8)
         let t0 = Date()
         let reply = try await withCheckedThrowingContinuation { (c: CheckedContinuation<[String: Any], Error>) in

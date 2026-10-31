@@ -50,6 +50,8 @@ NAMES = {"ETHIOPIC": "Ethi", "ARABIC": "Arab", "HEBREW": "Hebr", "SYRIAC": "Syrc
          "CYRILLIC": "Cyrl", "LATIN": "Latn", "CJK": "Hani", "HIRAGANA": "Jpan", "KATAKANA": "Jpan", "HANGUL": "Kore",
          "TIFINAGH": "Tfng", "COPTIC": "Copt", "CHEROKEE": "Cher", "CANADIAN": "Cans", "NKO": "Nkoo", "VAI": "Vaii"}
 # scripts a model hearing without a language confuses with each other (Ge'ez and Arabic both write Semitic sounds)
+KIN = {"Arab": ("Ethi", "Hebr", "Syrc", "Thaa"), "Ethi": ("Arab", "Hebr"), "Hebr": ("Arab", "Ethi", "Syrc"), "Syrc": ("Arab", "Hebr"),
+       "Thaa": ("Arab",), "Copt": ("Grek",)}
 SCRIPT_OF = []
 MASKS = None
 
@@ -120,8 +122,9 @@ def decode(chars, ids, conf, off):
 
 
 @torch.no_grad()
-def hear(model, chars, dev, x, hint=None):
-    """`hint`: the script the recording's language is written in, when Sill knows it."""
+def hear(model, chars, dev, x, hint=None, soft=False):
+    """`hint`: the script the recording's language is written in, when Sill knows it; `soft`: only guessed (the
+    language the last stretch was heard in), so it competes with the rest instead of being kept to."""
     from fairseq2.nn.batch_layout import BatchLayout
     global MASKS
     bounds = [(a, b) for a, b in zip(cuts(x), cuts(x)[1:]) if b - a >= SR // 10]
@@ -153,26 +156,58 @@ def hear(model, chars, dev, x, hint=None):
             sc = SCRIPT_OF[i]
             if sc and sc != "Zzzz":
                 seen[sc] = seen.get(sc, 0) + 1
-    total = sum(seen.values())
-    cands = [sc for sc, n in seen.items() if n >= 0.05 * total and sc in MASKS] or [max(seen, key=seen.get)] if seen else []
+    # every script it wrote competes, however little of it, and the scripts that write the same sounds beside them
+    # (Tsehaye's Amharic came out nearly all in Arabic letters, and Ge'ez heard it better wherever both wrote)
+    cands = [sc for sc in seen if sc in MASKS]
+    for sc in list(cands):
+        cands += [p for p in KIN.get(sc, ()) if p in MASKS and p not in cands]
     if hint in MASKS and hint not in cands:
         cands.append(hint)
     chosen = None
-    if len(seen) > 1 or (hint in MASKS and set(seen) != {hint}):
+    if len(cands) > 1 or (hint in MASKS and set(seen) != {hint}):
         full = sum(float(lp.max(-1).values.sum()) for lp in lps)
-        def score(scs):
+
+        def mask(scs):
             m = MASKS[scs[0]]
             for sc in scs[1:]:
                 m = m | MASKS[sc]
-            return sum(float(lp.masked_fill(~m, -1e4).max(-1).values.sum()) for lp in lps)
-        margin = 0.01 * abs(full) + 1.0
-        # a known script is the recording's (Sill knows its language); otherwise each script the model wrote competes.
-        # Latin may sit beside another (English in an Amharic song), two scripts that write the same sounds may not.
-        firsts = [hint] if hint in MASKS else cands
-        options = [(score([sc]), (sc,)) for sc in firsts]
-        options += [(score([sc, "Latn"]) - margin, (sc, "Latn")) for sc in firsts if sc != "Latn" and "Latn" in MASKS
-                    and ("Latn" in cands)]
-        chosen = max(options)[1]
+            return m
+
+        def per_piece(scs):
+            """Each piece's best path through these scripts' letters: its score and how many letters it writes."""
+            m, out = mask(scs), []
+            for lp in lps:
+                top, ids = lp.masked_fill(~m, -1e4).max(-1)
+                ids = ids.tolist()
+                n = sum(1 for k, i in enumerate(ids) if i not in (0, 4) and SCRIPT_OF[i] and (k == 0 or ids[k - 1] != i))
+                out.append((float(top.sum()), n))
+            return out
+
+        # A known script is the recording's (Sill knows its language); otherwise each script the model wrote competes,
+        # two at a time, on the pieces both write letters in: a script that writes nothing in a piece hasn't lost it
+        # (the model hears a sung vowel as an Arabic letter more readily than as a Ge'ez syllable, and summed over a
+        # song that outweighed Ge'ez hearing every line both wrote better). The one that beats the most others is kept.
+        firsts = [hint] if hint in MASKS and not soft else cands
+        pp = {sc: per_piece((sc,)) for sc in firsts}
+        wins = {sc: 0 for sc in firsts}
+        for i, x in enumerate(firsts):
+            for y in firsts[i + 1:]:
+                both = [(a[0], b[0]) for a, b in zip(pp[x], pp[y]) if a[1] >= 3 and b[1] >= 3]
+                if not both:
+                    continue
+                d = sum(a - b for a, b in both)
+                wins[x if d > 0 else y] += 1
+        # no piece to tell them by (each writes where the other is silent): the script guessed for it (the language
+        # the song's first stretch was heard in) stands if it writes a fair share of what's heard, else the one whose
+        # letters keep the most
+        letters = {sc: sum(n for _, n in pp[sc]) for sc in firsts}
+        most = max(letters.values())
+        first = max(firsts, key=lambda sc: (wins[sc], sc == hint and letters[sc] >= 0.15 * most, sum(s for s, _ in pp[sc])))
+        chosen = (first,)
+        # Latin may sit beside it (English in an Amharic song); two scripts that write the same sounds may not
+        if first != "Latn" and "Latn" in cands and "Latn" in MASKS:
+            if sum(s for s, _ in per_piece((first, "Latn"))) - (0.01 * abs(full) + 1.0) > sum(s for s, _ in pp[first]):
+                chosen = (first, "Latn")
         if hint not in MASKS and len(seen) == 1 and chosen == tuple(seen):
             chosen = None
     words = []
@@ -209,7 +244,7 @@ def main():
             q = json.loads(line)
             x = np.fromfile(q["f32"], dtype=np.float32)
             t0 = time.time()
-            ws, scripts = hear(model, chars, dev, x, q.get("script"))
+            ws, scripts = hear(model, chars, dev, x, q.get("script"), bool(q.get("soft")))
             out({"id": q.get("id"), "words": ws, "text": " ".join(w["w"] for w in ws), "scripts": scripts, "took": round(time.time() - t0, 2)})
         except Exception as e:
             out({"id": q.get("id"), "error": f"{type(e).__name__}: {e}"})

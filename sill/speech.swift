@@ -401,11 +401,12 @@ import Speech
     /// Words of a script written without spaces (Chinese, Japanese, Thai, Lao, Khmer, Burmese, Tibetan) come as one
     /// run per breath; they're cut into words here, each timed by its first letter.
     static func heardOpen(_ samples: [Float], _ lang: String?, like: String? = nil) async throws -> Hearing {
-        // A language known (pinned, or heard in the last stretch) keeps the model to its script. Not the Indic ones: the
+        // A language pinned keeps the model to its script; one heard in the last stretch is only a guess, which the
+        // scripts the model writes compete with (a song misheard once must not be kept to the wrong letters). Not the Indic ones: the
         // model writes Sanskrit in Gujarati letters as readily as in Devanagari, and they're the same sounds letter for
         // letter, so they're written over into Devanagari below instead.
         let hint = (lang ?? like).flatMap { scriptOf(language: $0) }.flatMap { indic.keys.contains($0) || $0 == "Deva" || $0 == "CJK" ? nil : $0 }
-        var ws = try await OpenEars.hear(samples, script: hint)
+        var ws = try await OpenEars.hear(samples, script: hint, soft: lang == nil)
         let text = ws.map(\.text).joined(separator: " ")
         let id = lang.map { ($0, 1.0) } ?? Tongue.identify(text)
         let code = id?.0 ?? "und"
