@@ -110,3 +110,18 @@ test("a word sung out to a whisper is held for as long as it's sung, and a lone 
   const u = C.units(F);
   assert.ok(u.find((x) => x.s >= 6.4).weak, "the blip far from the voice stays weak: " + JSON.stringify(u));
 });
+
+test("a word timed by the listener (corrections field \"time\") is lit where they set it, its neighbours giving way", async () => {
+  const { pinsOf, applyOverrides } = await import("../src/corrections.js");
+  const to = JSON.stringify([[1, 84.08, 85.26, -0.5]]);
+  assert.deepEqual(pinsOf(to), { 1: { s: 84.08, e: 85.26, k: -0.5 } });
+  assert.deepEqual(pinsOf("[[0, 5, 4, 0], \"x\"]"), {});
+  const lines = applyOverrides([{ id: "2000008", words: [{ t: "a", s: 82.5, e: 83 }, { t: "dream", s: 83, e: 85.64 }] }],
+    [{ segId: "2000008", field: "time", to, updatedAt: 1 }]);
+  assert.deepEqual(lines[0].words[1].tm, { s: 84.08, e: 85.26, k: -0.5 });
+  const [l] = globalThis.Cadence.pin([{ id: 2000008, words: [{ t: "a", s: 82.5, e: 84.5, syl: [{ c: 1, s: 82.5, e: 84.5 }] }, lines[0].words[1]] }]);
+  assert.equal(l.words[1].s, 84.08);
+  assert.equal(l.words[1].k, -0.5);
+  assert.equal(l.words[0].e, 84.08);
+  assert.equal(l.words[0].syl[0].e, 84.08);
+});

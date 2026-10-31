@@ -111,10 +111,12 @@
     const out = [];
     for (const l of lines) {
       if (!Array.isArray(l.words)) continue;
-      for (const w of l.words) {
-        if (!w || typeof w.t !== "string") continue;
-        out.push({ text: w.t, s: w.s, e: w.e, flat: out.length, line: l.id, syl: w.syl, un: w.un });
-      }
+      l.words.forEach((w, i) => {
+        if (!w || typeof w.t !== "string") return;
+        // lasting as the captions' light has it (gallery.js sourceBeats): to the next word, over a pause under 0.6 s
+        const nx = l.words[i + 1], next = nx ? nx.s : Infinity, e = w.k !== undefined ? w.e : next - w.e < 0.6 ? next : w.e;
+        out.push({ text: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), flat: out.length, line: l.id, syl: w.syl, un: w.un, k: w.k });
+      });
     }
     return out;
   }
@@ -192,39 +194,15 @@
     return sampler;
   }
 
-  /** How far the voice has crossed a word. Timed by its sung syllables (Cadence: the voice's own, found from the
-   *  audio), as the captions' light fills them (gallery.js fillOf): each syllable as its voice comes in, so the
-   *  notation's syllable windows are the voice's. Else its loudness spent so far, else linear. Unsung: never. */
-  function progressFor(f, shift) {
-    const db = f.db, voiced = f.voiced, n = db.length;
-    const floor = typeof f.floor === "number" ? f.floor : -60;
-    const w8 = (k) => (voiced && voiced[k] !== 1 ? 0 : Math.max(0, db[k] / 10 - floor));
-    const sums = new Map();
+  /** How far the light has crossed a word: Cadence.fill, the very rule the captions' light follows (gallery.js
+   *  fillOf), so the notation under a word is lit to the same point as its letters (notes 20261029 row 35). */
+  function progressFor() {
     return (w, t) => {
-      if (w.un) return 0;
-      const len = w.syl && w.syl.length ? Array.from(w.text || "").length : 0;
-      if (len) {
-        let c0 = 0;
-        for (const y of w.syl) {
-          if (t < y.s) return c0 / len;
-          if (t < y.e) return clamp((c0 + (y.c - c0) * Math.min(1, (t - y.s) / Math.max(0.05, Math.min(y.e - y.s, 0.3)))) / len);
-          c0 = y.c;
-        }
-        return 1;
-      }
-      const dur = w.e - w.s;
-      if (!(dur > 0)) return clamp(t >= w.e ? 1 : 0);
-      const k0 = Math.round((w.s - shift) / HOP), k1 = Math.round((w.e - shift) / HOP);
-      if (k0 < 0 || k1 > n || k1 <= k0) return clamp((t - w.s) / dur);
-      let total = sums.get(w.flat);
-      if (total == null) { total = 0; for (let k = k0; k < k1; k++) total += w8(k); sums.set(w.flat, total); }
-      if (!(total > 0)) return clamp((t - w.s) / dur);
-      const kt = Math.min(k1, Math.max(k0, Math.round((t - shift) / HOP)));
-      let spent = 0;
-      for (let k = k0; k < kt; k++) spent += w8(k);
-      return clamp(spent / total);
+      if (globalThis.Cadence && globalThis.Cadence.fill) return clamp(globalThis.Cadence.fill(w, t, w.syl && w.syl.length ? Array.from(w.text || "").length : 0));
+      return w.un ? 0 : clamp((t - w.s) / Math.max(0.05, w.e - w.s));
     };
   }
+
 
   // ---- the lane: one canvas per thought, inside .txs so it rides --po ---------------------------------------------
   const COLORS = { ahead: "rgb(150,148,140)", pale: "rgb(228,224,214)" };

@@ -61,7 +61,7 @@ export function normalizeDoc(d) {
   doc.version = Number.isInteger(doc.version) ? doc.version : 0;
   doc.updatedAt = Number(doc.updatedAt) || 0;
   doc.overrides = Array.isArray(doc.overrides)
-    ? doc.overrides.filter((o) => o && o.segId != null && typeof o.to === "string" && /^(text|tr\.[a-z]{2,3})$/.test(o.field))
+    ? doc.overrides.filter((o) => o && o.segId != null && typeof o.to === "string" && /^(text|time|tr\.[a-z]{2,3})$/.test(o.field))
     : [];
   if (!doc.glossary || typeof doc.glossary !== "object" || Array.isArray(doc.glossary)) doc.glossary = {};
   return doc;
@@ -221,16 +221,35 @@ export function targetOf(lines, o, byId) {
   return best;
 }
 
+// A line's words timed by the listener (field "time", notes 20261029 row 35: the ear sets what the voice can't tell):
+// `to` is JSON [[word index, start, end, sweep], …] in transcript time; sweep −1 … 1 shapes the light across the word
+// (−1 lingers at its start and hurries at the end, 1 the reverse, 0 even). Words left out keep Cadence's timing.
+export function pinsOf(to) {
+  const out = {};
+  let a;
+  try { a = JSON.parse(to); } catch (e) { return out; }
+  if (!Array.isArray(a)) return out;
+  for (const x of a.slice(0, 200)) {
+    if (!Array.isArray(x)) continue;
+    const [i, s, e, k] = x.map(Number);
+    if (!Number.isInteger(i) || i < 0 || !(s >= 0) || !(e > s) || e - s > 30) continue;
+    out[i] = { s, e, k: Math.max(-1, Math.min(1, Number.isFinite(k) ? k : 0)) };
+  }
+  return out;
+}
+
 export function applyOverrides(lines, overrides) {
   if (!overrides || !overrides.length) return lines;
   const byId = new Map(lines.map((l, i) => [l.id, i]));
   const text = new Map(); // line index -> corrected text
   const tr = new Map(); // line index -> { lang: text }
+  const time = new Map(); // line index -> { word index: { s, e, k } }, set by the listener's ear (see pinsOf)
   const ordered = overrides.map((o, k) => [o, k]).sort((x, y) => (Number(x[0].updatedAt) || 0) - (Number(y[0].updatedAt) || 0) || x[1] - y[1]);
   for (const [o] of ordered) {
     const i = targetOf(lines, o, byId);
     if (i < 0) continue;
     if (o.field === "text") text.set(i, o.to);
+    else if (o.field === "time") time.set(i, pinsOf(o.to));
     else tr.set(i, { ...(tr.get(i) || {}), [o.field.slice(3)]: o.to });
   }
   const out = [];
@@ -243,6 +262,10 @@ export function applyOverrides(lines, overrides) {
       n = { ...l, words: layOver(ws, l.words), fixed: true, text: joinWords(ws) };
       // a translation aligned word by word no longer lines up once the words change in number
       if (!same && Array.isArray(l.english)) n.english = l.english.map((w) => ({ w: w.w, s: [] }));
+    }
+    if (time.has(i)) {
+      const p = time.get(i);
+      n = { ...n, words: n.words.map((w, k) => (p[k] ? { ...w, tm: p[k] } : w)) };
     }
     if (tr.has(i)) {
       const t = tr.get(i);
@@ -354,7 +377,7 @@ export function present(lines, shift = 0) {
         text: l.fixed ? l.text : joinWords(l.words.map((w) => w.t)),
         en: en && en.length ? joinWords(en.map((w) => w.w)) : "",
         // a word's language (Recense's, when it wrote one) names its script's letters and fonts on the page
-        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e), ...(w.h ? { h: w.h } : {}), ...(w.lang ? { lang: w.lang } : {}) })),
+        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e), ...(w.h ? { h: w.h } : {}), ...(w.lang ? { lang: w.lang } : {}), ...(w.tm ? { tm: { s: r(w.tm.s), e: r(w.tm.e), k: w.tm.k } } : {}) })),
         // Learn mode: the English words, each with the original words (by index) it translates; null = not translated yet
         enw: en ? en.map((w) => ({ w: w.w, s: Array.isArray(w.s) ? w.s.filter(Number.isInteger) : [] })) : null,
       };

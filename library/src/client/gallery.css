@@ -1889,6 +1889,16 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 .txbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .txtrl{color:rgba(255,255,255,.42);font-size:.92em}
 .txrow.cur .txtrl{color:rgba(255,255,255,.7)}
+.txtime{margin-top:.5em}
+.txchips{display:flex;flex-wrap:wrap;gap:.3em}
+.txchip{font:inherit;font-size:.85em;padding:.2em .6em;border-radius:1em;border:1px solid rgba(255,255,255,.25);background:none;color:rgba(255,255,255,.75)}
+.txchip.set{border-color:rgba(255,214,51,.7);color:#ffd633}
+.txchip.on{background:rgba(255,255,255,.14)}
+.txpanel{margin-top:.5em;display:grid;gap:.35em}
+.txslide{display:grid;grid-template-columns:4.2em 1fr 6.5em;align-items:center;gap:.5em;font-size:.85em;color:rgba(255,255,255,.75)}
+.txslide input{width:100%;min-width:0;accent-color:#ffd633}
+.txsval{font-variant-numeric:tabular-nums;text-align:right}
+.txsbtns{display:flex;gap:1em}
 .txrow .txin.txtr{font-weight:400;color:rgba(255,255,255,.85)}
 .txlist{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 16px 40vh}
 .txrow{display:flex;gap:12px;align-items:baseline;max-width:720px;margin:0 auto;padding:6px 0}

@@ -28,7 +28,7 @@
 // first); langs the translations the media has a file of: the page shows the native language's, else the English.
 
 import { jsonResponse } from "./common.js";
-import { applyNative, baseLines, cleanText, correctedLines, emptyDoc, HISTORY, joinWords, mergeOverrides, normalizeDoc, present, teach } from "./corrections.js";
+import { applyNative, baseLines, cleanText, correctedLines, emptyDoc, HISTORY, joinWords, mergeOverrides, normalizeDoc, pinsOf, present, teach } from "./corrections.js";
 import { asrName, changesName, corrName, entryFor, histName, join, LANGS, oldCorrName, oldTranscriptName, split, srcOf, trName } from "./layout.js";
 
 export const LOCK_TTL = 15 * 60 * 1000;
@@ -234,7 +234,7 @@ export async function transcriptFor(env, path) {
   const run = runState((await readLock(env, r.own)).lock);
   if (!r.c) return { pending: true, run };
   const { doc } = await readDoc(env, r.key);
-  const out = { lines: shape(r, doc), lang: spokenOf(r), langs: langsOf(r), complete: !!r.c.complete, version: doc.version };
+  const out = { lines: shape(r, doc), lang: spokenOf(r), langs: langsOf(r), complete: !!r.c.complete, version: doc.version, shift: r.shift || 0 };
   if (run) out.run = run;
   return out;
 }
@@ -310,10 +310,11 @@ export async function transcriptSave(req, env, path, src) {
   const clean = [];
   for (const e of edits) {
     const segId = e && (typeof e.segId === "string" || Number.isInteger(e.segId)) ? String(e.segId) : "";
-    const field = e && typeof e.field === "string" && /^(text|tr\.[a-z]{2,3})$/.test(e.field) ? e.field : "";
+    const field = e && typeof e.field === "string" && /^(text|time|tr\.[a-z]{2,3})$/.test(e.field) ? e.field : "";
     const to = e && typeof e.to === "string" ? cleanText(e.to) : null;
     if (!segId || segId.length > 64 || !field) return new Response("Bad edit", { status: 400 });
     if (to === null) return new Response("Text too long", { status: 400 });
+    if (field === "time" && to && JSON.stringify(Object.entries(pinsOf(to)).map(([i, p]) => [+i, p.s, p.e, p.k])) !== to) return new Response("Bad timing", { status: 400 });
     const u = Number(e.updatedAt);
     clean.push({ segId, field, to, updatedAt: Number.isFinite(u) && u <= now && u > now - 7 * 86400000 ? u : now });
   }
@@ -341,7 +342,7 @@ export async function transcriptSave(req, env, path, src) {
     const had = doc.overrides.find((x) => x.segId === o.segId && x.field === o.field);
     if (had && (Number(had.updatedAt) || 0) > o.updatedAt) continue; // a later correction of it is already saved
     const s = shown.get(o.segId);
-    const from = o.field === "text" ? (s ? wasText(s) : joinWords(line.words.map((w) => w.t))) : (had ? had.to : (s && s.tr && s.tr[o.field.slice(3)]) || "");
+    const from = o.field === "time" ? (had ? had.to : "") : o.field === "text" ? (s ? wasText(s) : joinWords(line.words.map((w) => w.t))) : (had ? had.to : (s && s.tr && s.tr[o.field.slice(3)]) || "");
     if (o.field === "text") teach(doc.glossary, from, o.to);
     if (from !== o.to) logged.push({ segId: o.segId, field: o.field, from, to: o.to, src, at: o.updatedAt });
     doc.overrides = mergeOverrides(doc.overrides, [o]);

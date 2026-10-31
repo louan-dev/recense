@@ -491,7 +491,53 @@
     return { off, why: dense ? "dense" : "sparse", dense, lyric: fromLyrics, song, rate: Math.round(rate * 10) / 10 };
   }
 
-  const api = { fit, confidence, syllables, units: (F) => (F && Array.isArray(F.db) ? unitsOf(voiceOf(F)) : []) };
+  // The listener's own timing (a word's `tm` { s, e, k }: corrections field "time", set with the word's sliders while
+  // listening, notes 20261029 row 35) over whatever was worked out: the word is lit from s to e, its light shaped by k
+  // (fillOf), and the words beside it give way so none runs into it. Times in the lines' own time.
+  function pin(lines) {
+    if (!Array.isArray(lines)) return lines;
+    return lines.map((l) => {
+      const ws = l.words || [];
+      if (!ws.some((w) => w.tm)) return l;
+      const words = ws.map((w) => {
+        if (!w.tm) return w;
+        const { syl: _, un: __, ...o } = w;
+        return { ...o, s: w.tm.s, e: w.tm.e, k: w.tm.k };
+      });
+      for (let i = 0; i < words.length; i++) {
+        if (!words[i].tm) continue;
+        const p = words[i - 1], q = words[i + 1];
+        if (p && !p.tm && p.e > words[i].s) words[i - 1] = trim(p, Math.min(p.s, words[i].s), words[i].s);
+        if (q && !q.tm && q.s < words[i].e) words[i + 1] = trim(q, words[i].e, Math.max(q.e, words[i].e + 0.05));
+      }
+      return { ...l, words, s: Math.min(...words.map((w) => w.s)), e: Math.max(...words.map((w) => w.e)) };
+    });
+  }
+  // a word moved to [s, e], its syllables kept inside it
+  const trim = (w, s, e) => ({ ...w, s, e, ...(w.syl ? { syl: w.syl.map((y) => ({ c: y.c, s: Math.min(Math.max(y.s, s), e), e: Math.min(Math.max(y.e, s), e) })) } : {}) });
+
+  // How far the light has crossed a word at t, 0 … 1: the one rule for the captions (gallery.js fillOf), the notation
+  // lane (prosogram-mount.js) and Sill (Cadence.progress), so the word and the line under it are lit to the same point.
+  // `n`: the word's letters. Timed by the listener (k): one sweep shaped by k. Else syllable by syllable, each one's
+  // letters spread over the time it is sung, up to the next one (or 0.25 s past its end); else even across the word.
+  function fill(w, t, n) {
+    if (w.un) return 0;
+    if (w.k !== undefined) {
+      const u = Math.max(0, Math.min(1, (t - w.s) / Math.max(0.05, w.e - w.s)));
+      return Math.pow(u, Math.pow(2, -1.5 * w.k));
+    }
+    if (!(w.syl && w.syl.length && n)) return t >= w.e ? 1 : Math.max(0, Math.min(1, (t - w.s) / Math.max(0.05, w.e - w.s)));
+    let c0 = 0;
+    for (let k = 0; k < w.syl.length; k++) {
+      const y = w.syl[k], end = k + 1 < w.syl.length ? Math.min(w.syl[k + 1].s, y.e + 0.25) : y.e;
+      if (t < y.s) return c0 / n;
+      if (t < end) return Math.min(1, (c0 + (y.c - c0) * (t - y.s) / Math.max(0.05, end - y.s)) / n);
+      c0 = y.c;
+    }
+    return 1;
+  }
+
+  const api = { fit, pin, fill, confidence, syllables, units: (F) => (F && Array.isArray(F.db) ? unitsOf(voiceOf(F)) : []) };
   if (typeof globalThis !== "undefined") globalThis.Cadence = api;
   if (typeof module !== "undefined") module.exports = api;
 })();

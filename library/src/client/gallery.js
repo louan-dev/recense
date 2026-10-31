@@ -1572,6 +1572,9 @@
       if (el.paused) {
         // at the end, play starts the track over: some engines leave a finished element stuck there (notes 42)
         if (el.ended || (el.duration && el.currentTime >= el.duration - 0.05)) el.currentTime = 0;
+        // the context is woken here, inside the tap: Safari lets it start only on a gesture, and
+        // `play` arrives after it (notes 20261029 item 10)
+        unlockAudio();
         el.play().catch(() => {});
       } else el.pause();
     };
@@ -1727,7 +1730,10 @@
       nowEl = el;
       nowMeta();
 
-      nowAct("play", () => el.play().catch(() => {}));
+      nowAct("play", () => {
+        unlockAudio(); // the lock screen's Play is a gesture too
+        el.play().catch(() => {});
+      });
       nowAct("pause", () => el.pause());
       nowAct("seekto", (e) => {
         if (typeof e.seekTime !== "number") return;
@@ -2169,7 +2175,24 @@
           }, 1000);
         }
 
-        if (DECK) startDeck();
+        if (DECK) {
+          startDeck();
+
+          // The element plays on while a context iOS stopped stays down, its sound silenced with it: the
+          // scrubber moved with nothing heard. After three seconds of that it pauses, so the player and the
+          // lock screen say so, and the next Play (a gesture) starts the context again.
+          const n = nodes;
+          let down = 0;
+          const watch = setInterval(() => {
+            if (nodes !== n || !audioCtx) return clearInterval(watch);
+            if (el.paused || el.ended || audioCtx.state === "running") return void (down = 0);
+            audioCtx.resume().catch(() => {});
+            if (++down < 3) return;
+            down = 0;
+            el.pause();
+            if (!document.hidden) say("Sound was stopped by the system: press play");
+          }, 1000);
+        }
 
         // a later player picks Key and Space up where you left them
         if (prefs.key) applyKey();
@@ -4177,7 +4200,7 @@
       const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
       // a short pause before the next word is bridged, so the light never drops out between words
       const e = next - w.e < 0.6 ? next : w.e;
-      return { t: w.t, s: w.s, e: Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl, un: w.un };
+      return { t: w.t, s: w.s, e: w.k !== undefined ? w.e : Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl, un: w.un, k: w.k, tm: w.tm };
     });
 
   // the original words an English word translates; one claiming most of a long line is a misread alignment
@@ -4376,18 +4399,9 @@
   // ends in the letters) sweeps through its letters without stopping: each syllable's letters are spread over the time
   // it's sung, up to where the next one comes in (or a quarter second past its end, so a breath isn't swept through),
   // so the light slows on a held "on" and hurries through a quick var-i-a. Else evenly.
-  const fillOf = (b, t, sp) => {
-    const n = b.syl && b.syl.length ? Array.from(b.t || sp.textContent || "").length : 0;
-    if (!n) return t >= b.e ? 1 : Math.min(1, (t - b.s) / Math.max(0.05, b.e - b.s));
-    let c0 = 0;
-    for (let k = 0; k < b.syl.length; k++) {
-      const y = b.syl[k], end = k + 1 < b.syl.length ? Math.min(b.syl[k + 1].s, y.e + 0.25) : y.e;
-      if (t < y.s) return c0 / n;
-      if (t < end) return Math.min(1, (c0 + (y.c - c0) * (t - y.s) / Math.max(0.05, end - y.s)) / n);
-      c0 = y.c;
-    }
-    return 1;
-  };
+  const fillOf = (b, t, sp) =>
+    globalThis.Cadence ? globalThis.Cadence.fill(b, t, b.syl && b.syl.length ? Array.from(b.t || sp.textContent || "").length : 0) : t >= b.e ? 1 : Math.min(1, Math.max(0, (t - b.s) / Math.max(0.05, b.e - b.s)));
+
 
   const paintWord = (sp, b, t) => {
     const st = sp.style;
@@ -4523,13 +4537,14 @@
     // same word lights at the same moment in Sill, here and in the iOS app). Always from the server's lines.
     let voice = null;
     const timed = (ls) => {
-      if (!voice || !globalThis.Cadence) return ls;
+      if (!globalThis.Cadence) return ls;
       try {
-        return globalThis.Cadence.fit(ls, voice.f, voice.shift);
+        return globalThis.Cadence.pin(voice ? globalThis.Cadence.fit(ls, voice.f, voice.shift) : ls);
       } catch (e) {
         return ls;
       }
     };
+    lines = timed(lines); // (the listener's own timing, before the voice is here)
     const voiceWait = voiceLoad(f, txUrl(f));
     if (f.txv === undefined || (t.version || 0) > f.txv) f.txv = t.version || 0;
     const w = txWrite(f);
@@ -4811,6 +4826,121 @@
         fits.clear();
         queueEdit(f, { segId: l.id, field: "tr." + lang, to: text, updatedAt: Date.now() }).onLines = onLines;
       };
+      // Timing by ear (notes 20261029 row 35): the voice can't always tell how a word is sung, the listener can. Pick a
+      // word, then set where its light starts and ends and how it sweeps (lingering on the start, even, or hurrying
+      // through it first) while that stretch plays round; Auto gives it back to the voice's measure (cadence.js pin).
+      const sec = (x) => Math.floor(x / 60) + ":" + (x % 60).toFixed(2).padStart(5, "0");
+      let looping = null;
+      const unloop = () => {
+        if (looping) el.removeEventListener("timeupdate", looping);
+        looping = null;
+      };
+      const timer = (l) => {
+        const wrap = mkEl("div", "txtime");
+        const chips = mkEl("div", "txchips");
+        const panel = mkEl("div", "txpanel");
+        panel.hidden = true;
+        wrap.append(chips, panel);
+        wrap.onclick = (e) => e.stopPropagation();
+        const shift = Number(t.shift) || 0;
+        const r3 = (x) => Math.round(x * 1000) / 1000;
+        const savePins = () => {
+          const pins = l.words.map((w, i) => (w.tm ? [i, r3(w.tm.s - shift), r3(w.tm.e - shift), Math.round(w.tm.k * 100) / 100 || 0] : null)).filter(Boolean);
+          queueEdit(f, { segId: l.id, field: "time", to: pins.length ? JSON.stringify(pins) : "", updatedAt: Date.now() }).onLines = onLines;
+        };
+        const relight = () => {
+          l.words = globalThis.Cadence ? globalThis.Cadence.pin([l])[0].words : l.words;
+          delete l._learn;
+          fits.clear();
+          places.forEach((pl) => (pl.line = -1));
+        };
+        const open = (i, chip) => {
+          chips.querySelectorAll(".on").forEach((c) => c.classList.remove("on"));
+          chip.classList.add("on");
+          const w = l.words[i];
+          const s0 = w.s, e0 = Math.max(w.e, w.s + 0.05);
+          const tm = w.tm ? { ...w.tm } : { s: s0, e: e0, k: 0 };
+          panel.hidden = false;
+          panel.replaceChildren();
+          const slide = (label, min, max, step, val, show, set) => {
+            const r = mkEl("label", "txslide");
+            const name = mkEl("span", "txsname");
+            name.textContent = label;
+            const inp = document.createElement("input");
+            inp.type = "range";
+            inp.min = min;
+            inp.max = max;
+            inp.step = step;
+            inp.value = val;
+            const out = mkEl("span", "txsval");
+            out.textContent = show(val);
+            inp.oninput = () => {
+              set(Number(inp.value));
+              out.textContent = show(Number(inp.value));
+              w.tm = { ...tm };
+              chip.classList.add("set");
+              relight();
+            };
+            inp.onchange = savePins;
+            r.append(name, inp, out);
+            panel.appendChild(r);
+            return inp;
+          };
+          const startIn = slide("Starts", r3(s0 - 1.5), r3(s0 + 1.5), 0.01, tm.s, sec, (v) => {
+            tm.s = Math.min(v, tm.e - 0.05);
+          });
+          slide("Ends", r3(e0 - 1.5), r3(e0 + 3), 0.01, tm.e, sec, (v) => {
+            tm.e = Math.max(v, tm.s + 0.05);
+          });
+          slide("Sweep", -1, 1, 0.05, tm.k, (v) => (v < -0.05 ? "lingers first" : v > 0.05 ? "hurries first" : "even"), (v) => {
+            tm.k = v;
+          });
+          const btns = mkEl("div", "txsbtns");
+          const hear = mkEl("button", "lnk txbtn");
+          hear.type = "button";
+          hear.textContent = looping ? "Stop" : "Hear it";
+          hear.onclick = () => {
+            if (looping) {
+              unloop();
+              el.pause();
+              hear.textContent = "Hear it";
+              return;
+            }
+            looping = () => {
+              const x = w.tm || tm;
+              if (el.currentTime > x.e + 0.5 || el.currentTime < x.s - 1.5) el.currentTime = Math.max(0, x.s - 0.8);
+            };
+            el.addEventListener("timeupdate", looping);
+            el.currentTime = Math.max(0, tm.s - 0.8);
+            el.play().catch(() => {});
+            hear.textContent = "Stop";
+          };
+          const auto = mkEl("button", "lnk txbtn");
+          auto.type = "button";
+          auto.textContent = "Auto";
+          auto.onclick = () => {
+            delete w.tm;
+            delete w.k;
+            chip.classList.remove("set");
+            savePins();
+            panel.hidden = true;
+            chip.classList.remove("on");
+          };
+          btns.append(hear, auto);
+          panel.appendChild(btns);
+          startIn.focus({ preventScroll: true });
+        };
+        l.words.forEach((w, i) => {
+          if (w.un && !w.tm) return;
+          const c = mkEl("button", "txchip" + (w.tm ? " set" : ""));
+          c.type = "button";
+          c.textContent = w.t;
+          c.onpointerdown = (e) => e.preventDefault();
+          c.onclick = () => open(i, c);
+          chips.appendChild(c);
+        });
+        return wrap;
+      };
       const row = (l, i) => {
         const r = mkEl("div", "txrow" + (i === cur ? " cur" : ""));
         const time = mkEl("span", "txt");
@@ -4869,6 +4999,7 @@
           ta.onclick = (e) => e.stopPropagation();
           field = ta;
           body.append(ta, trField());
+          if (l.words.length) body.appendChild(timer(l));
         } else {
           const b = mkEl("button", "txline");
           b.type = "button";
@@ -5003,6 +5134,7 @@
       const close = () => {
         if (!sheet.isConnected) return;
         if (field && document.activeElement === field) field.blur();
+        unloop();
         sheet.remove();
         box.hidden = false;
         places.forEach((pl) => (pl.line = -1));
