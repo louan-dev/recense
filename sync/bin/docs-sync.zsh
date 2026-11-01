@@ -65,6 +65,8 @@ for s in $SOURCES; do
   name=${s%%|*} rest=${s#*|} src=${rest%|*} mode=${rest##*|}
   [[ -n $ONLY && $ONLY != $name ]] && continue
   [[ -d $src ]] || { log "$name: no folder, skipped"; continue; }
+  # Voice Memos lives in another app's container: macOS blocks it until Disks Helper has Full Disk Access
+  ls "$src" >/dev/null 2>&1 || { log "$name: macOS blocks reading $src"; failed+="$name (give Disks Helper Full Disk Access)"; continue; }
   filters=$CONF/docs-sync.filters; [[ $name == Obsidian ]] && filters=$CONF/docs-sync-obsidian.filters
   fhash=$(md5 -q $filters)
   if [[ $mode == one-way ]]; then
