@@ -71,6 +71,8 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   repeats" gives a chorus or ad-lib sung again the same timing. Auto hands the word back to the voice.
 - The editor is quiet: Changes · a grabber · Done; the tools fold under the grabber (tap, or rest the pointer on it).
   Paused with no line up, a grabber where the lines show opens the editor.
+  A word being timed keeps its marks up when the phone is turned or the server's lines come back; on a short
+  landscape screen the editor ends above the strip, comment field and home-bar grabber.
 - Notation as a vocal score: prosody ribbon preloaded as a ghost with a gold sweep, turquoise liaison ties, fermatas,
   pp…ff, chords and sung notes; Chinese tones in Chao numbers, Arabic syllables from vowels and harakat.
 - Every script laid out correctly, each word tagged with its own `lang=`:

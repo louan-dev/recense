@@ -4977,13 +4977,16 @@
         return k ? lines.filter((x) => x !== l && x.words && x.words.length === l.words.length && sameText(x.text) === k) : [];
       };
       const timer = (l) => {
+      // the word being timed, kept across redraws (turned, resized, the server's lines back) so its marks stay up
+      let timing = null;
         const wrap = mkEl("div", "txtime");
         const chips = mkEl("div", "txchips");
         const panel = mkEl("div", "txpanel");
         panel.hidden = true;
         wrap.append(chips, panel);
         wrap.onclick = (e) => e.stopPropagation();
-        const open = (i, chip) => {
+        const open = (i, chip, again) => {
+          timing = { id: l.id, i };
           chips.querySelectorAll(".on").forEach((c) => c.classList.remove("on"));
           chip.classList.add("on");
           // (by index: each relight gives the line new words)
@@ -5092,6 +5095,7 @@
             panel.hidden = true;
             chip.classList.remove("on");
           });
+            timing = null;
           const reps = repeatsOf(l);
           const same = b("txsame", "", (x) => {
             const d0 = l.s;
@@ -5113,6 +5117,7 @@
           panel.append(marks, btns);
           paints.forEach((p) => p());
           unloop();
+          if (again && looping) return;
           hearIt();
           marks.firstChild.focus({ preventScroll: true });
         };
@@ -5125,6 +5130,7 @@
           c.onclick = () => open(i, c);
           chips.appendChild(c);
         });
+          if (timing && timing.id === l.id && timing.i === i) open(i, c, true);
         return wrap;
       };
       const row = (l, i) => {
