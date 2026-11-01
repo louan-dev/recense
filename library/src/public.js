@@ -436,6 +436,9 @@ function applyComment(v, b, by, participant, vid = null) {
   const text = String((b && b.text) || "").trim().slice(0, COMMENT_MAX);
   const list = thread(v);
   const likes = likesOf(v);
+  // the owner may say whose words they are posting (notes 47): stored as "as", "by" stays the owner's so edit/delete still work
+  const as = !participant && !vid && by === OWNER ? String((b && b.as) || "").trim().slice(0, 80) : "";
+  const labelled = (c) => (as ? { ...c, as } : c);
 
   if (b.op === "like") {
     const i = likes.findIndex((l) => (vid ? l.vid === vid : l.by === by && !l.vid));
@@ -445,7 +448,15 @@ function applyComment(v, b, by, participant, vid = null) {
     if (!text) return "Empty comment";
     if (list.length >= THREAD_MAX) return "Too many comments";
     const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    list.push(vid ? { id, text, at: Date.now(), by, vid } : { id, text, at: Date.now(), by });
+    list.push(vid ? { id, text, at: Date.now(), by, vid } : labelled({ id, text, at: Date.now(), by }));
+  } else if (b.op === "label") {
+    // owner only, on the owner's own comments; an empty "as" gives the comment back to the owner's name
+    if (participant || vid || by !== OWNER) return "Not allowed";
+    const c = list.find((c) => c.id === String(b.cid || "") && (c.by || OWNER) === OWNER && !c.vid);
+    if (!c) return "Comment not found";
+    const name = String(b.as || "").trim().slice(0, 80);
+    if (name) c.as = name;
+    else delete c.as;
   } else if (b.op === "edit") {
     // only the comment's own author changes it (the owner too: never someone else's words)
     if (!text) return "Empty comment";
@@ -460,7 +471,7 @@ function applyComment(v, b, by, participant, vid = null) {
     list.splice(i, 1);
   } else {
     list.length = 0;
-    if (text) list.push({ id: "c" + Date.now().toString(36), text, at: Date.now(), by });
+    if (text) list.push(labelled({ id: "c" + Date.now().toString(36), text, at: Date.now(), by }));
   }
 
   if (!list.length && !likes.length) return null;
@@ -519,7 +530,8 @@ export async function renameComment(env, rel, to) {
 }
 
 // PUT /main/api/caption   body: { kind: "main", path, ... }  or  { kind: "link", id, key, ... }
-//   plus { op: "add", text } to append, { op: "edit", cid, text } to rewrite your own, { op: "del", cid } to remove one, or { text } to replace
+//   plus { op: "add", text, as? } to append (as: the owner names who said it),
+//   { op: "label", cid, as } (owner only; empty as clears it), { op: "edit", cid, text } to rewrite your own, { op: "del", cid } to remove one, or { text } to replace
 //   the whole thread (empty text clears it).  -> { ok, text, at, comments }
 // by: who is writing (the owner, or an invited participant's name).
 export async function commentApi(req, env, by = OWNER, participant = false, vid = null) {
@@ -541,13 +553,13 @@ export async function commentApi(req, env, by = OWNER, participant = false, vid 
     const liked = b.op === "like" && f.likes.some((l) => (vid ? l.vid === vid : l.by === by));
     if (b.op === "add" || liked) {
       const c = f.comments[f.comments.length - 1];
-      await logActivity(env, { type: liked ? "like" : "comment", by, vid, ...where, text: liked || !c ? "" : c.text }).catch(() => {});
+      await logActivity(env, { type: liked ? "like" : "comment", by: (!liked && c && c.as) || by, vid, ...where, text: liked || !c ? "" : c.text }).catch(() => {});
     } else if (b.op === "like") {
       await unlogLike(env, { by, vid, ...where }).catch(() => {}); // a like taken back leaves the feed too
     }
     return jsonResponse({ ok: true, ...f, text: f.caption, at: f.capAt });
   };
-  const bad = (e) => new Response(e, { status: e === "Comment not found" ? 404 : 400 });
+  const bad = (e) => new Response(e, { status: e === "Comment not found" ? 404 : e === "Not allowed" ? 403 : 400 });
 
   if (b.kind === "main") {
     const rel = cleanPath(b.path);

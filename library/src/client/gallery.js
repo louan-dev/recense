@@ -855,7 +855,8 @@
   // read by prosogram-mount.js every frame: the mode, the chords heard so far on this item (time → name), and a
   // note's name in the notation the chords are spelled in (English: C/do, as the Key label; else the language's)
   const notation = (globalThis.GalleryNotation = {
-    mode: () => prefs.notationMode,
+    // chords and notes are Learn's alone (item 31): Follow moves on too fast for them to keep up
+    mode: () => (prefs.view === "follow" ? prefs.notationMode.replace(/[cn]/g, "") : prefs.notationMode),
     chords: [],
     media: null,
     noteName: (midi) => {
@@ -3579,7 +3580,7 @@
   const canWrite = () => (G.invite ? !!(G.invite.perms && G.invite.perms.comment) : owner || guest());
   const listOf = (f) => (f && Array.isArray(f.comments) ? f.comments : f && f.caption ? [{ id: "c0", text: f.caption, at: f.capAt, by: G.owner }] : []);
   const mine = isMe;
-  const nameOf = (c) => (mine(c) ? "You" : c.by === G.owner || !c.by ? ownerName : c.by);
+  const nameOf = (c) => (c.as ? c.as : mine(c) ? "You" : c.by === G.owner || !c.by ? ownerName : c.by);
   const postedAt = (t) => D(t, { day: "numeric", month: "short", year: "numeric" }) + " at " + T(t);
   const isOpen = () => document.body.classList.contains("comments-open");
 
@@ -3872,6 +3873,23 @@
       b.textContent = nameOf(c);
       by.append(b, " " + (c.at ? postedAt(c.at) : "") + (c.edited ? " · Edited" : ""));
       row.append(p, by);
+
+      // the owner taps the name to say who said it (notes 47); an empty answer puts their own name back
+      if (owner && !G.invite && mine(c) && c.id) {
+        b.classList.add("clabel");
+        b.title = "Who said this?";
+        b.onclick = async (e) => {
+          e.stopPropagation();
+          const n = prompt("Who said this? Leave empty for your own name", c.as || "");
+          if (n === null) return;
+          try {
+            await send(f, { op: "label", cid: c.id, as: n.trim() });
+            paintComment();
+          } catch (err) {
+            tell(err.message || "Couldn’t change the name", true);
+          }
+        };
+      }
 
       // your own comments can be edited or deleted, any of them, at any time; Delete is revealed by
       // a swipe to the left (spec §7)
@@ -4319,7 +4337,7 @@
       const next = i + 1 < l.words.length ? l.words[i + 1].s : Infinity;
       // a short pause before the next word is bridged, so the light never drops out between words
       const e = next - w.e < 0.6 ? next : w.e;
-      return { t: w.t, s: w.s, e: w.k !== undefined ? w.e : Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl, un: w.un, k: w.k, tm: w.tm };
+      return { t: w.t, s: w.s, e: w.k !== undefined || w.c ? w.e : Math.max(w.s + 0.05, Math.min(e, next)), h: w.h, syl: w.syl, un: w.un, k: w.k, c: w.c, tm: w.tm };
     });
 
   // the original words an English word translates; one claiming most of a long line is a misread alignment
@@ -4967,7 +4985,7 @@
       const shift = Number(t.shift) || 0;
       const r3 = (x) => Math.round(x * 1000) / 1000;
       const savePins = (l) => {
-        const pins = l.words.map((w, i) => (w.tm ? [i, r3(w.tm.s - shift), r3(w.tm.e - shift), Math.round(w.tm.k * 100) / 100 || 0] : null)).filter(Boolean);
+        const pins = l.words.map((w, i) => (w.tm ? [i, r3(w.tm.s - shift), r3(w.tm.e - shift), Math.round(w.tm.k * 100) / 100 || 0, ...(w.tm.c ? [w.tm.c] : [])] : null)).filter(Boolean);
         queueEdit(f, { segId: l.id, field: "time", to: pins.length ? JSON.stringify(pins) : "", updatedAt: Date.now() }).onLines = onLines;
       };
       const relight = (l) => {
@@ -4996,7 +5014,7 @@
           chip.classList.add("on");
           // (by index: each relight gives the line new words)
           const w = l.words[i];
-          const tm = w.tm ? { ...w.tm, k: 0 } : { s: w.s, e: Math.max(w.e, w.s + 0.05), k: 0 };
+          const tm = w.tm ? { k: 0, ...w.tm } : { s: w.s, e: Math.max(w.e, w.s + 0.05), k: 0 };
           panel.hidden = false;
           panel.replaceChildren();
           const marks = mkEl("div", "txmarks");
@@ -5075,6 +5093,150 @@
             marks.appendChild(m);
             return m;
           };
+          // The light between Start and End (notes 20261029 rows 40, 44): drawn as it fills the word from A to B, the
+          // word's moment playing as a line across it. It follows the voice until told otherwise: drag up or down
+          // for its speed (faster or slower at first), or slide along it as the word is sung and it copies the
+          // finger (paused, draw the path: across is time, up is lit). Double-tap: back to the voice.
+          const light = mkEl("div", "txlightw");
+          const pad = mkEl("canvas", "txlight");
+          pad.tabIndex = 0;
+          pad.setAttribute("role", "slider");
+          pad.setAttribute("aria-label", "Light: drag up or down for its speed, slide along as it is sung to trace it, double-tap to follow the voice");
+          const cap = mkEl("span", "txlcap");
+          light.append(pad, cap);
+          const curveAt = (u) => {
+            const lw = l.words[i];
+            const t = tm.s + u * (tm.e - tm.s);
+            return globalThis.Cadence ? globalThis.Cadence.fill(lw, t, lw.syl && lw.syl.length ? Array.from(lw.t || "").length : 0) : u;
+          };
+          const drawLight = (trail) => {
+            if (!pad.isConnected) return;
+            const dpr = devicePixelRatio || 1, W = pad.clientWidth, H = pad.clientHeight;
+            if (!W || !H) return;
+            if (pad.width !== Math.round(W * dpr)) pad.width = Math.round(W * dpr);
+            if (pad.height !== Math.round(H * dpr)) pad.height = Math.round(H * dpr);
+            const g = pad.getContext("2d");
+            g.setTransform(dpr, 0, 0, dpr, 0, 0);
+            g.clearRect(0, 0, W, H);
+            const X = (u) => 10 + u * (W - 20), Y = (p) => H - 8 - p * (H - 16);
+            g.strokeStyle = "rgba(255,255,255,.12)";
+            g.lineWidth = 1;
+            g.beginPath();
+            g.moveTo(X(0), Y(0));
+            g.lineTo(X(1), Y(1));
+            g.stroke();
+            g.strokeStyle = "#ffd633";
+            g.lineWidth = 2.5;
+            g.lineJoin = g.lineCap = "round";
+            g.beginPath();
+            for (let j = 0; j <= 48; j++) g[j ? "lineTo" : "moveTo"](X(j / 48), Y(curveAt(j / 48)));
+            g.stroke();
+            if (trail && trail.length > 1) {
+              g.strokeStyle = "rgba(127,188,255,.9)";
+              g.beginPath();
+              trail.forEach((q, j) => g[j ? "lineTo" : "moveTo"](X(q.u), Y(q.p)));
+              g.stroke();
+            }
+            const u = (el.currentTime - tm.s) / Math.max(0.05, tm.e - tm.s);
+            if (u >= 0 && u <= 1) {
+              g.strokeStyle = "rgba(255,255,255,.7)";
+              g.lineWidth = 1.5;
+              g.beginPath();
+              g.moveTo(X(u), 4);
+              g.lineTo(X(u), H - 4);
+              g.stroke();
+            }
+          };
+          const capLight = () => {
+            cap.textContent = tm.c ? "Traced" : Math.abs(tm.k || 0) <= 0.05 ? "Follows the voice" : tm.k > 0 ? "Faster at first" : "Slower at first";
+            pad.setAttribute("aria-valuetext", cap.textContent);
+          };
+          paints.push(capLight, () => drawLight());
+          let trace = null;
+          const tick = () => {
+            if (!pad.isConnected) return;
+            drawLight(trace && trace.mode === "trace" ? trace.pts : null);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+          const toVoice = () => {
+            delete tm.c;
+            tm.k = 0;
+            set();
+            savePins(l);
+          };
+          pad.onpointerdown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            pad.setPointerCapture(e.pointerId);
+            trace = { x: e.clientX, y: e.clientY, k: tm.k || 0, mode: null, pts: [] };
+          };
+          const at = (e) => {
+            const r = pad.getBoundingClientRect();
+            const fx = Math.max(0, Math.min(1, (e.clientX - r.left - 10) / Math.max(1, r.width - 20)));
+            const fy = Math.max(0, Math.min(1, (r.bottom - 8 - e.clientY) / Math.max(1, r.height - 16)));
+            // played: when it was heard and how far along the finger was; paused: across is time, up is lit
+            return el.paused ? { u: fx, p: fy } : { u: (el.currentTime - tm.s) / Math.max(0.05, tm.e - tm.s), p: fx };
+          };
+          pad.onpointermove = (e) => {
+            if (!trace) return;
+            const dx = e.clientX - trace.x, dy = e.clientY - trace.y;
+            if (!trace.mode) {
+              if (Math.max(Math.abs(dx), Math.abs(dy)) < 6) return;
+              trace.mode = Math.abs(dy) > Math.abs(dx) ? "bend" : "trace";
+            }
+            if (trace.mode === "bend") {
+              delete tm.c;
+              tm.k = Math.max(-1, Math.min(1, Math.round((trace.k - dy / 60) * 20) / 20));
+              set();
+            } else {
+              const q = at(e);
+              if (q.u >= -0.05 && q.u <= 1.05) trace.pts.push({ u: Math.max(0, Math.min(1, q.u)), p: q.p });
+            }
+          };
+          pad.onpointerup = (e) => {
+            e.stopPropagation();
+            const t = trace;
+            trace = null;
+            if (!t || !t.mode) return;
+            if (t.mode === "bend") return savePins(l);
+            const pts = [{ u: 0, p: 0 }, ...t.pts.sort((a, b) => a.u - b.u), { u: 1, p: 1 }];
+            if (t.pts.length < 3) return drawLight();
+            // sixteen moments of the word, each lit as far as the finger was then, never going back
+            const c = [];
+            let m = 0;
+            for (let j = 0; j < 16; j++) {
+              const u = j / 15;
+              let k = 1;
+              while (k < pts.length - 1 && pts[k].u < u) k++;
+              const a = pts[k - 1], b = pts[k];
+              const p = b.u > a.u ? a.p + ((b.p - a.p) * (u - a.u)) / (b.u - a.u) : b.p;
+              m = Math.max(m, Math.min(1, p));
+              c.push(Math.round(m * 100) / 100);
+            }
+            c[15] = 1;
+            tm.c = c;
+            tm.k = 0;
+            set();
+            savePins(l);
+          };
+          pad.onpointercancel = () => (trace = null);
+          pad.ondblclick = (e) => {
+            e.stopPropagation();
+            toVoice();
+          };
+          pad.onclick = (e) => e.stopPropagation();
+          pad.onkeydown = (e) => {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              delete tm.c;
+              tm.k = Math.max(-1, Math.min(1, Math.round(((tm.k || 0) + (e.key === "ArrowUp" ? 0.1 : -0.1)) * 20) / 20));
+              set();
+              savePins(l);
+            } else if (e.key === "Backspace" || e.key === "Delete") toVoice();
+            else return;
+            e.preventDefault();
+            e.stopPropagation();
+          };
           const hearIt = () => {
             looping = () => {
               if (el.currentTime > tm.e + 0.5 || el.currentTime < tm.s - 1.5) el.currentTime = Math.max(0, tm.s - 0.8);
@@ -5106,7 +5268,7 @@
             const d0 = l.s;
             reps.forEach((r) => {
               l.words.forEach((lw, j) => {
-                if (lw.tm) r.words[j].tm = { s: r3(lw.tm.s - d0 + r.s), e: r3(lw.tm.e - d0 + r.s), k: lw.tm.k || 0 };
+                if (lw.tm) r.words[j].tm = { s: r3(lw.tm.s - d0 + r.s), e: r3(lw.tm.e - d0 + r.s), k: lw.tm.k || 0, ...(lw.tm.c ? { c: lw.tm.c } : {}) };
               });
               relight(r);
               savePins(r);
@@ -5119,7 +5281,7 @@
           mark("Start", "s");
           mark("End", "e");
           btns.append(hear, auto, same);
-          panel.append(marks, btns);
+          panel.append(marks, light, btns);
           paints.forEach((p) => p());
           if (again && looping) return;
           unloop();
