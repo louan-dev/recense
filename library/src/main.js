@@ -332,9 +332,9 @@ export async function mainFolder(env, url) {
     .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${esc(x)}</a>`)
     .join("");
 
-  // Shared Albums, its own module under Collections as in iOS Photos: every live share link as a square
+  // Exhibits (was Shared Albums; the header and the front card open the Activity feed), its own module under Collections as in iOS Photos: every live share link as a square
   // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
-  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared">Shared Albums</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar"></div></section>
+  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared#activity">Exhibits</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar"></div></section>
 <script>(function(){
   // about 3 cards in view, the next one peeking; a swipe glides card by card (scroll snap) and wraps around: the cards
   // are laid out three times and, once a scroll settles in the first or last copy, it moves to the middle one unseen
@@ -350,6 +350,8 @@ export async function mainFolder(env, url) {
   fetch("/main/api/shares",{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
     var l=(d&&d.shares)||[];
     if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';return}
+    // the front card, before the row: the newest share's cover; it and the header open the feed (notes item 16)
+    var f=card(l[0]);f.className="al fr";f.href="/main/shared#activity";f.querySelector("b").textContent="Activity";ar.appendChild(f);
     var tr=document.createElement("div");tr.className="tr";ar.appendChild(tr);
     var wrap=l.length>3,copies=wrap?3:1;
     for(var c=0;c<copies;c++)l.forEach(function(s){var e=card(s);if(c!==1&&wrap){e.tabIndex=-1;e.setAttribute("aria-hidden","true")}tr.appendChild(e)});
@@ -386,8 +388,11 @@ export async function mainFolder(env, url) {
 .mainnav .sa header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .mainnav .sa h2{margin:0;flex:1;min-width:0}
 .mainnav .sa h2 a{color:#fff;text-decoration:none}
+.mainnav .sa h2 a:hover,.mainnav .sa h2 a:active{color:#0a84ff}
+.mainnav .sa .al.fr{width:calc(100% - 32px);aspect-ratio:16/9;margin:0 16px 12px;box-sizing:border-box}
 .mainnav .sa h2 a::after{content:"\u203a";color:#8e8e93;margin-left:6px}
-.mainnav .sa .ac{border:0;border-radius:999px;background:#1c1c1e;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
+.mainnav .sa .ac{border:0;border-radius:999px;background:#1c1c1e;color:#fff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
+.mainnav .sa .ac:hover,.mainnav .sa .ac:active{color:#0a84ff}
 .mainnav .sa .ar{user-select:none;-webkit-user-select:none;margin:0 -16px}
 .mainnav .sa .tr{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;padding:0 16px;scrollbar-width:none;overscroll-behavior-x:contain}
 .mainnav .sa .tr::-webkit-scrollbar{display:none}

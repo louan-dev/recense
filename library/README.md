@@ -17,6 +17,15 @@ meet English as a barrier, for English speakers exploring other cultures and cit
 people with disabilities who deserve learning that meets them where they are. It is a small, humble attempt to make
 technology a little more accessible and a little more humane, built from what has worked for me, and offered freely.
 
+English works like the shared tuning of modern instruments, which divides the octave into twelve equal steps. It lets
+players from many traditions perform together, and it softens some of the colour that belongs to each key. Fluency in
+it is distributed by region and privilege, and by curricula that governments choose for reasons of their own, while
+the tools that turn speech into text learned mostly from English and a handful of powerful languages. So spoken wisdom
+in English and in other languages face each other through glass, visible in outline while the words go unheard.
+Gallery and Recense try, in a small way, to open that window: the original keeps its colour, a translation supplies
+the common tuning, and a link carries both to someone who goes looking. The longer essay is in Sill's
+[preface](https://github.com/louan-dev/sill/blob/main/docs/recense-preface.md).
+
 ## Long-term outcomes
 - Every file usable with no connection on Mac, iPhone and iPad, in each device's native place (Finder, Files).
 - Edits flow both ways when a connection appears; nothing runs 24/7; R2 is the storage, the Worker the sync engine.

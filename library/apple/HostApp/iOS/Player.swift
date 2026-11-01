@@ -95,6 +95,7 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
     config.allowsInlineMediaPlayback = true
     config.userContentController.addUserScript(WKUserScript(source: RouteLatency.script(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.userContentController.add(Exporter.shared, name: "galleryExport")
+    config.userContentController.add(LinkHandler.shared, name: "galleryLink")
     let web = WKWebView(frame: .zero, configuration: config)
     RouteLatency.watch(web)
     return web
@@ -129,6 +130,17 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
 /// The page's Export as MD and Export as M4B (gallery.js exportMd / exportM4b). A blob link saves nothing in WebKit
 /// here, so the page hands the file over and the app offers Save to Files. The M4B is made on the iPhone: the file
 /// from the archive, re-encoded to AAC with its title and the transcript (the same note as Export as MD) as lyrics.
+/// A share's Copy Link / Open: the page runs on gallery://, so the app turns its path into the site's https link,
+/// puts it on the clipboard or opens it in Safari (notes 20261029 item 16)
+@MainActor final class LinkHandler: NSObject, WKScriptMessageHandler {
+    static let shared = LinkHandler()
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        guard let b = m.body as? [String: Any], let path = b["path"] as? String,
+              let url = URL(string: "https://\(Gallery.base.host ?? "")" + path) else { return }
+        if b["op"] as? String == "open" { UIApplication.shared.open(url) } else { UIPasteboard.general.url = url }
+    }
+}
+
 @MainActor final class Exporter: NSObject, WKScriptMessageHandler {
     static let shared = Exporter()
 

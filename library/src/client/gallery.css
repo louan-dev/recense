@@ -1650,13 +1650,13 @@ body.comments-open #next{display:none}
 .mbtn{
   display:grid;place-items:center;
   width:34px;height:34px;border-radius:50%;
-  color:var(--blue);
+  color:#fff;
   background:transparent;
   transition:background .15s ease
 }
 .mbtn svg{width:20px;height:20px}
-.mbtn:hover{background:transparent}
-.mbtn:active,.mbtn[aria-expanded="true"]{background:rgba(10,132,255,.28)}
+.mbtn:hover{background:transparent;color:var(--blue)}
+.mbtn:active,.mbtn[aria-expanded="true"]{background:rgba(10,132,255,.28);color:var(--blue)}
 
 /* the menu: opens under the button, right edge level with Select.
    Near-opaque on purpose: the header row already has a backdrop blur, and a blur
@@ -2171,3 +2171,7 @@ body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
 /* a share whose owner turned downloads off (notes 20261029 item 16): view and comment only */
 body.nodl #dl,body.nodl .mdl{display:none!important}
 .txediting #strip,.txediting .cmshare{visibility:hidden;pointer-events:none}
+
+/* Ask is only the lightbulb, white, blue when hovered or open (notes 20261029 item 16) */
+.mbtn.aibulb{color:#fff}
+.mbtn.aibulb:hover,.mbtn.aibulb:active,.mbtn.aibulb[aria-expanded="true"]{color:#0a84ff}

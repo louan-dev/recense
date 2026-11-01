@@ -12,17 +12,19 @@ main{max-width:860px;margin:0 auto;padding:0 0 calc(32px + env(safe-area-inset-b
 .top h1{margin:0;font-size:17px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .top .l{justify-self:start;display:flex;align-items:center}
 .top .r{justify-self:end;display:flex;align-items:center;gap:6px}
-.ic{width:44px;height:44px;display:grid;place-items:center;color:var(--blue)}
+.ic{width:44px;height:44px;display:grid;place-items:center;color:var(--text)}
 .ic svg{width:24px;height:24px}
-.back{display:flex;align-items:center;gap:2px;color:var(--blue);min-height:44px}
+.back{display:flex;align-items:center;gap:2px;color:var(--text);min-height:44px}
 .back svg{width:22px;height:22px}
-.circ{width:44px;height:44px;border-radius:50%;background:var(--surface-1);display:grid;place-items:center;color:var(--blue)}
+.circ{width:44px;height:44px;border-radius:50%;background:var(--surface-1);display:grid;place-items:center;color:var(--text)}
 .circ svg{width:20px;height:20px}
 
 /* Personal | Shared | Activity: flat --surface-1 capsule, active segment on a lighter flat pill */
 .seg{display:grid;grid-template-columns:repeat(3,1fr);margin:4px 24px 16px;padding:2px;border-radius:99px;background:var(--surface-1)}
-.seg button{color:var(--blue);font-size:15px;min-height:32px;border-radius:99px}
-.seg button[aria-selected="true"]{background:var(--seg-on);font-weight:600}
+.seg button{color:var(--text);font-size:15px;min-height:32px;border-radius:99px}
+.seg button[aria-selected="true"]{background:var(--seg-on);font-weight:600;color:var(--blue)}
+/* the top bar's controls are white and light up blue when hovered or pressed (notes 20261029 item 16) */
+.ic:hover,.ic:active,.back:hover,.back:active,.circ:hover,.circ:active,.circ[aria-expanded="true"],.seg button:hover,.seg button:active{color:var(--blue)}
 
 /* album tiles: 2 columns of squares, 24 pt margins, 12 pt gutter (more columns on wide screens) */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;padding:0 24px}

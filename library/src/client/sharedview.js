@@ -285,12 +285,17 @@
       const acts = el("div", "acts");
       const copy = el("button", "lnk", "Copy Link");
       copy.type = "button";
+      // in the iPhone/iPad app the page is on the gallery:// scheme, where the clipboard API is missing and a
+      // new-window link goes nowhere: the app copies and opens the real https link (notes 20261029 item 16)
+      const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.galleryLink;
+      const full = () => (/^https?:$/.test(location.protocol) ? location.origin : "") + s.url;
       copy.onclick = async () => {
+        if (native) return native.postMessage({ op: "copy", path: s.url }), toast("Link copied");
         try {
-          await navigator.clipboard.writeText((S.origin || location.origin) + s.url);
+          await navigator.clipboard.writeText(full());
           toast("Link copied");
         } catch (e) {
-          toast((S.origin || location.origin) + s.url);
+          toast(full());
         }
       };
       const open = el("a", "lnk", "Open");
@@ -298,6 +303,7 @@
       open.target = "_blank";
       open.rel = "noopener";
       open.style.textDecoration = "none";
+      if (native) open.onclick = (e) => { e.preventDefault(); native.postMessage({ op: "open", path: s.url }); };
       acts.append(copy, open);
       head.appendChild(acts);
     }

@@ -119,7 +119,7 @@ struct MainView: View {
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }
+                    Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.labelStyle(.iconOnly).foregroundStyle(.white)
                         .keyboardShortcut("k")
                 }
             }
@@ -196,7 +196,7 @@ struct FolderView: View {
         .toolbar {
             // the assistant, on this folder ("This folder"; it has an All switch)
             ToolbarItem(placement: .primaryAction) {
-                Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }
+                Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.labelStyle(.iconOnly).foregroundStyle(.white)
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
