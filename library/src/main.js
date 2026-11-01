@@ -350,7 +350,7 @@ export async function mainFolder(env, url) {
       var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
       ar.appendChild(a);
     });
-  }).catch(function(){sa.remove()});
+  }).catch(function(){ar.style.display="none"});
 })();</script>`;
 
   const empty =
