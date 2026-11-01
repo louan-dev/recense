@@ -5006,7 +5006,7 @@
           slide("Ends", r3(e0 - 1.5), r3(e0 + 3), 0.01, tm.e, sec, (v) => {
             tm.e = Math.max(v, tm.s + 0.05);
           });
-          slide("Sweep", -1, 1, 0.05, tm.k, (v) => (v < -0.05 ? "lingers first" : v > 0.05 ? "hurries first" : "even"), (v) => {
+          slide("Sweep", -1, 1, 0.05, tm.k, (v) => (v < -0.05 ? "lingers first" : v > 0.05 ? "hurries first" : "follows the voice"), (v) => {
             tm.k = v;
           });
           const btns = mkEl("div", "txsbtns");

@@ -125,3 +125,13 @@ test("a word timed by the listener (corrections field \"time\") is lit where the
   assert.equal(l.words[0].e, 84.08);
   assert.equal(l.words[0].syl[0].e, 84.08);
 });
+
+test("a word timed by the listener with Sweep at 0 keeps the voice's syllables, stretched onto the listener's start and end", () => {
+  const w = { t: "dream", s: 10, e: 12, syl: [{ c: 2, s: 10, e: 10.5 }, { c: 5, s: 10.5, e: 12 }], tm: { s: 11, e: 15, k: 0 } };
+  const [l] = globalThis.Cadence.pin([{ id: 1, words: [w] }]);
+  const x = l.words[0];
+  assert.equal(x.k, undefined);
+  assert.deepEqual([x.s, x.e], [11, 15]);
+  assert.deepEqual(x.syl.map((y) => [y.s, y.e]), [[11, 12], [12, 15]]);
+  assert.equal(globalThis.Cadence.fill(x, 12, 5), 2 / 5);
+});

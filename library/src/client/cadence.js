@@ -501,6 +501,9 @@
       if (!ws.some((w) => w.tm)) return l;
       const words = ws.map((w) => {
         if (!w.tm) return w;
+        // Sweep left at 0 (and syllables heard): the ear sets where the word starts and ends, the voice still shapes it
+        // inside, each syllable kept in its share of the word's time. Else one sweep shaped by k.
+        if (Math.abs(w.tm.k || 0) <= 0.05 && w.syl && w.syl.length) return { ...rescale(w, w.tm.s, w.tm.e), un: undefined };
         const { syl: _, un: __, ...o } = w;
         return { ...o, s: w.tm.s, e: w.tm.e, k: w.tm.k };
       });
@@ -513,6 +516,11 @@
       return { ...l, words, s: Math.min(...words.map((w) => w.s)), e: Math.max(...words.map((w) => w.e)) };
     });
   }
+  // a word stretched onto [s, e], its syllables moved with it in proportion
+  const rescale = (w, s, e) => {
+    const f = (x) => s + ((x - w.s) * (e - s)) / Math.max(0.05, w.e - w.s);
+    return { ...w, s, e, syl: w.syl.map((y) => ({ c: y.c, s: f(y.s), e: f(y.e) })) };
+  };
   // a word moved to [s, e], its syllables kept inside it
   const trim = (w, s, e) => ({ ...w, s, e, ...(w.syl ? { syl: w.syl.map((y) => ({ c: y.c, s: Math.min(Math.max(y.s, s), e), e: Math.min(Math.max(y.e, s), e) })) } : {}) });
 
