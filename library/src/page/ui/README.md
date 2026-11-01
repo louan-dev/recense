@@ -142,7 +142,7 @@ Action row (§3.2) under the media: `Like` shows a filled thumbs-up glyph when l
 - `Cancel`: removes the draft.
 - **`Delete` and `Cancel` both return to COLLAPSED view**: media 428→926, thread hides, strip returns, time and audio bars re-anchor (§3).
 - Geometry while composing: the field row grows by 44 pt, the thread scrolls to keep the field visible, the media stays 428×428, and the playback bar gives way to the keyboard.
-- Who sees it: Main shows it to participants allowed to comment. Public shows it **only to the owner**, who can post consecutive comments; visitors see no field and no options.
+- Who sees it: Main shows it to participants allowed to comment. Public shows it **only to me**, and I can post consecutive comments; visitors see no field and no options.
 
 `thread.jpg` (1284×1687 px) shows the scrolled thread:
 - Each comment is a row: body 17 pt white, then a meta line `**Author** Mon D, YYYY at HH:MM` (self shows as `You`). Left padding 16 pt, wrap limit about 20 pt from the right.
@@ -153,7 +153,7 @@ Action row (§3.2) under the media: `Like` shows a filled thumbs-up glyph when l
 `[i]` Open question: `expand.PNG` shows a comment row and input but no `Posted by` or `liked` rows. Recommended rule: `Posted by` always shows first; the `liked` row shows only when likes ≥ 1.
 
 ### 4.5 `main/panel dim.png` (585×44 px) and `main/panel vibrant.png` (585×65 px)
-The **Presented-by panel**: a `#302f33` bar docked at the bottom of a shared collection, naming the owner and offering Download.
+The **Presented-by panel**: a `#302f33` bar docked at the bottom of a shared collection, naming me and offering Download.
 | | dim | vibrant |
 |---|---|---|
 | Height | 44 px | 65 px |
@@ -177,7 +177,7 @@ Album screen with the overflow menu open. Top: back chevron (left) and `Select` 
 **Menu** (solid `--surface-1` sheet, not glass; x=70→316, width 246, height about 273, radius about 34): header row with 40 pt rounded thumbnail, album name bold 17, `1 Participant` gray with people icon, edit-square icon right; hairline; `Share` (share icon) and `Add Photos` (plus), both blue `--ctl`; hairline; `Delete Shared Album` in `--ctl` blue with a trash icon (wraps to two lines). Tap outside to close.
 
 ### 5.3 Participant menu: `common/leave.jpg` (1284×1190 px)
-Same menu, participant variant: header shows `2 Participants`; destructive row is **`Unsubscribe`** (blue, ⊖ icon) instead of Delete. **Rule `[i]`:** the owner's destructive action deletes the album; a participant's action only leaves it. Background is the blurred album behind. Top bar uses plain blue `--ctl` as in 5.2.
+Same menu, participant variant: header shows `2 Participants`; destructive row is **`Unsubscribe`** (blue, ⊖ icon) instead of Delete. **Rule `[i]`:** my destructive action deletes the album; a participant's action only leaves it. Background is the blurred album behind. Top bar uses plain blue `--ctl` as in 5.2.
 
 ### 5.4 `common/select.png` (632×64 px) and `common/deselect.png` (633×66 px)
 Crops of the selection toolbar (§4.1). `Select All` flips to `Deselect All` once everything is selected. Background `#1c1c1e`; texts and ⋯ in blue.
@@ -229,7 +229,7 @@ See §3. Top row: back, date/time label (`June 1, 2022` / `16:21`, plain text), 
 
 ## 7. Public side (no references supplied)
 
-`ui/public/` is empty. The following is **derived from the directive, not from images** `[i]`: public visitors see the Presented-by panel with Download, the viewer in both states, and **owner-authored comments only**: visitors get no comment field, no like, no `Post`/`Delete`/`Cancel`, no trash or ⋯, no `Main Gallery` breadcrumb; the owner sees the §4.4 composer and can post consecutive comments. Main shows the full two-way set. Enforce this on the server; hiding controls is not access control.
+`ui/public/` is empty. The following is **derived from the directive, not from images** `[i]`: public visitors see the Presented-by panel with Download, the viewer in both states, and **comments I wrote only**: visitors get no comment field, no like, no `Post`/`Delete`/`Cancel`, no trash or ⋯, no `Main Gallery` breadcrumb; I see the §4.4 composer and can post consecutive comments. Main shows the full two-way set. Enforce this on the server; hiding controls is not access control.
 
 ## 8. Open items in the reference set
 1. `public/` has no screenshots; public-side visuals are unspecified.
