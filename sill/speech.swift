@@ -329,19 +329,29 @@ import Speech
             h = open
             if let c = anchored(open) {
                 h = c
-            } else if open.lang != "und", let (m, loc) = await module(open.lang), await prepare(m, loc) {
-                var cands: [(String, Module, Locale)] = [(open.lang, m, loc)]
+            } else {
+                // the language they named, and the listener's own beside it: the open ears name a language by its
+                // letters, and a lesson mostly in English, heard by them as Arabic (0.54) or as none, came out empty
+                // (notes 20261029 item 33: 100 % of four minutes of English lost, which Apple's English ears hear)
+                var cands: [(String, Module, Locale)] = []
                 // one spoken language, two written ones: Hindustani heard as Urdu may be Hindi, and the other way round
                 let sibling = ["ur": "hi", "hi": "ur"][open.lang]
-                for l in [sibling, prefer].compactMap({ $0 }) where !cands.contains(where: { $0.0 == l }) {
+                for l in [open.lang == "und" ? nil : open.lang, sibling, prefer].compactMap({ $0 }) + languages
+                    where !cands.contains(where: { $0.0 == l }) {
                     if let (pm, pl) = await module(l), await prepare(pm, pl) { cands.append((l, pm, pl)) }
                 }
-                h = try await best(samples, cands, prefer: prefer)
-                // Apple's answer in another script than its language's (Urdu written in Latin letters) isn't the
-                // original: the open ears' hearing, in the language's own letters, stands instead
-                if !inOwnScript(h), inOwnScript(open) { h = open }
-                // what Apple's ears left unheard the open ears may have heard (a verse in a language they lack)
-                else if unheard(h, samples) >= 1.5 { h = merge(h, open, among: [h.lang, open.lang]) }
+                let named = cands.contains { $0.0 == open.lang }
+                if !cands.isEmpty, let a = try? await best(samples, cands, prefer: prefer),
+                   named || quality(a) >= 0.75 && a.words.count > open.words.count {
+                    // a language Apple's ears lack (Amharic) keeps the open ears' hearing, unless one of the listener's
+                    // own heard the stretch surely and more of it
+                    h = a
+                    // Apple's answer in another script than its language's (Urdu written in Latin letters) isn't the
+                    // original: the open ears' hearing, in the language's own letters, stands instead
+                    if !inOwnScript(h), inOwnScript(open) { h = open }
+                    // what Apple's ears left unheard the open ears may have heard (a verse in a language they lack)
+                    else if unheard(h, samples) >= 1.5 { h = merge(h, open, among: [h.lang, open.lang]) }
+                }
             }
             log("speech: heard as \(h.lang) by \(h.module.rawValue) (open ears named \(open.lang))")
         } else {

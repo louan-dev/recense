@@ -65,6 +65,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   (Omnilingual ASR) for the rest, and the canon for recited texts. A song is heard in one script (Amharic in Ge'ez,
   not the Arabic letters the open ears drift into), and lines heard again keep the song's language.
   A corrected line keeps a typed space before `! ? ; :` (French writes `fini !`); the same rule as Gallery.
+  When the open ears name a recording's language, Apple's ears for the listener's own languages hear it too and the
+  surest is kept (an English lesson they named Arabic came out empty); a correction leaves unchanged words on the voice.
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
