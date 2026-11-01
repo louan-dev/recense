@@ -1583,7 +1583,7 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await MAIN.put("files/Fair/two.jpg", "y", { httpMetadata: { contentType: "image/jpeg" } });
   // Main's root has the Shared Albums row (under Collections), to Shared and its Activity (notes item 16)
   await pg.goto(base + "/main");
-  assert.equal(await pg.getAttribute("#sa h2 a", "href"), "/main/shared");
+  assert.equal(await pg.getAttribute("#sa h2 a", "href"), "/main/shared#activity");
   assert.equal(await pg.getAttribute("#sa a.ac", "href"), "/main/shared#activity");
   await pg.goto(base + "/main?p=Fair");
   // the owner likes a file from the viewer's expanded action row (Like left of Hide Comments)
