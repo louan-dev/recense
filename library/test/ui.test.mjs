@@ -1521,10 +1521,11 @@ await test("assistant sidebar: owner opens it, asks in this folder or everywhere
 await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's files, Delete expires the link; Like in the viewer feeds Activity", true, async (pg) => {
   await MAIN.put("files/Fair/one.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
   await MAIN.put("files/Fair/two.jpg", "y", { httpMetadata: { contentType: "image/jpeg" } });
-  await pg.goto(base + "/main?p=Fair");
-  // Main's Shared Albums row (under Collections) leads to Shared and its Activity (notes item 16)
+  // Main's root has the Shared Albums row (under Collections), to Shared and its Activity (notes item 16)
+  await pg.goto(base + "/main");
   assert.equal(await pg.getAttribute("#sa h2 a", "href"), "/main/shared");
   assert.equal(await pg.getAttribute("#sa a.ac", "href"), "/main/shared#activity");
+  await pg.goto(base + "/main?p=Fair");
   // the owner likes a file from the viewer's expanded action row (Like left of Hide Comments)
   await pg.keyboard.press("Escape");
   await pg.click('.tile[data-n="00000"]');
