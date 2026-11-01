@@ -1,9 +1,9 @@
 #!/bin/zsh
 # docs-sync.zsh: every readable or editable document on this Mac, in one place: Gallery Main › Docs (gallery notes
 # 20261029 item 42). Seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and the website.
-#   Two-way (rclone bisync): Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary, Developer,
+#   Two-way (rclone bisync): Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary,
 #     Google Drive. An edit on either side reaches the other at the next pass; same file edited on both → both kept.
-#   One-way (copy, never deletes): Voice Memos → Docs/Recordings, Notability's PDF backups → Docs/Notability.
+#   One-way (copy, never deletes): Voice Memos → Docs/Recordings, Developer → Docs/Developer, Notability's PDF backups → Docs/Notability.
 #   Docs/INDEX.md lists everything, by source.
 # Writes go through the Worker's WebDAV with this Mac's Access token (Keychain gallery-access), so every file Gallery
 # replaces or deletes goes to Gallery's trash; files a pass would delete on the Mac are kept in ~/.docs-sync/kept.
@@ -54,7 +54,7 @@ SOURCES=(
   "Desktop|$HOME/Desktop|two-way"
   "Downloads|$HOME/Downloads|two-way"
   "Temporary|$HOME/Temporary|two-way"
-  "Developer|$HOME/Developer|two-way"
+  "Developer|$HOME/Developer|one-way"   # git repos + live notes: two-way split notes into .conflict copies
   "Google Drive|$HOME/Library/CloudStorage/GoogleDrive-clphan7@gmail.com/My Drive|two-way"
   "Recordings|$HOME/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings|one-way"
 )
@@ -70,7 +70,7 @@ for s in $SOURCES; do
   filters=$CONF/docs-sync.filters; [[ $name == Obsidian ]] && filters=$CONF/docs-sync-obsidian.filters
   fhash=$(md5 -q $filters)
   if [[ $mode == one-way ]]; then
-    # recordings are made here and never edited elsewhere: copy new ones, never delete
+    # made here, never edited elsewhere (recordings, code and its notes): copy new ones, never delete
     rclone copy "$src" "$G/$name" --filter-from $filters $COMMON $DRY || failed+=$name
     continue
   fi
