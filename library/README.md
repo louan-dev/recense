@@ -26,10 +26,10 @@ technology a little more accessible and a little more humane, built from what ha
 
 | Address | What | Bucket |
 |---|---|---|
-| `/` | Make a new link from files on this device (owner only) | `gallery-public` |
+| `/` | Make a new link from files on this device (only you) | `gallery-public` |
 | `/s/<id>` | A link: anyone who has it can view, download, comment and like | `gallery-public` |
 | `/m/<token>` | A participant link to one folder (view / download / upload / comment) | `gallery-main` |
-| `/main` | The library: browse, play, upload, rename, delete (owner only) | `gallery-main` |
+| `/main` | The library: browse, play, upload, rename, delete (only you) | `gallery-main` |
 | `/main/archive` | The archive's page and player, read-only | `gallery-archive` |
 | `/main/shared` | Every live share link as an album, with Activity | `gallery-public` |
 | `/main/dav-tmp/`, `/main/dav-archive/`, `/main/nc-archive/` | WebDAV for rclone mounts | `gallery-tmp`, `gallery-archive` |
@@ -110,7 +110,7 @@ Arabic and Ethiopic stops is dropped. Sill joins words by the same rule. Pushing
 
 ### Assistant
 Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans searches, cites sources, keeps memories;
-published references are trusted, my own writing once checked. Calendar: reads my events and the
+published references are trusted, your own writing once checked. Calendar: reads your events and the
 iCloud backup, creates and edits events, invites with a texted link. Indexing runs in bounded steps from a one-minute
 cron.
 
@@ -150,7 +150,7 @@ gallery/
   wrangler.toml         Worker config (no secrets)
   src/                  the Worker
     worker.js           routes
-    access.js           owner check (Cloudflare Access token, verified here)
+    access.js           checks it is you (Cloudflare Access token, verified here)
     public.js           links, uploads, comments, preview cards, the nightly cleanup
     main.js             the library
     invite.js           participant links (/m/<token>)
@@ -193,7 +193,7 @@ gallery/
 ```
 
 ## Routes (worker.js)
-- `/`, `/s/<id>`: public links (`public.js`). `upload` takes my files into `gallery-public/folders/<id>/`;
+- `/`, `/s/<id>`: public links (`public.js`). `upload` takes your files into `gallery-public/folders/<id>/`;
   `gallery` and `galleryApi` render a link and list its items; `file` serves one item (ranges, inline); `cleanup`
   (cron 03:00) deletes expired links and sweeps comments of deleted files. `GET /api/og-image/<id>` serves the preview
   picture.
@@ -206,7 +206,7 @@ gallery/
   blue Like; an album opens on its cover with ▶ for a slideshow. Every file in a share is its own thread (comments, likes). People with an
   upload link can add files (`POST /api/upload?action=reserve`, then multipart parts, `guestUploadApi`); they expire
   with the link and show in Activity. Invite (Main) uploads stay until deleted. Links made from the archive are
-  view-and-comment only (no posting, no `?dl=1`) until I turn on Subscribers Can Post / Allow Downloads on
+  view-and-comment only (no posting, no `?dl=1`) until you turn on Subscribers Can Post / Allow Downloads on
   the share's page (`PATCH /main/api/shares/<kind>/<id>`).
 - Data: `/main/archive?p=Data` (first at the archive's root; iOS Locations › Data) shows the Mac's offsite disks in
   `gallery-archive/.disks/` with their sizes (counted daily into `cache/disks.json`); exports land in
@@ -232,12 +232,12 @@ Secrets (set once with `npx wrangler secret put <NAME>`):
 | Name | Value |
 |---|---|
 | `ACCESS_AUD` | The Application Audience tag of the Access application "Gallery Main" |
-| `OWNER_EMAIL` | The email allowed into Main |
+| `OWNER_EMAIL` | Your email, the only one allowed into Main |
 | `SERVICE_CLIENT_ID` | The client IDs of the Access service tokens (one per device) |
 
 Cloudflare settings outside this folder:
 
-- Access application **Gallery Main**: `gallery.improvdiplomat.workers.dev/main`; allow my email; Service Auth
+- Access application **Gallery Main**: `gallery.improvdiplomat.workers.dev/main`; allow your email; Service Auth
   for each device's token.
 - R2 API tokens: Object Read & Write, one bucket each.
 - Lifecycle rules: `r2/lifecycle.md`.

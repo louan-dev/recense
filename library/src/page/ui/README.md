@@ -47,7 +47,7 @@
 
 ```
 Collections feed ──tap card──▶ Album (hero + 3-col grid)
-      │                          │  ├─ overflow menu (owner / participant)
+      │                          │  ├─ overflow menu (yours / participant)
       │                          │  ├─ Select mode ─▶ Download / Upload bar, Delete bar
       │                          │  └─ tap thumbnail ─▶ Viewer
       └─ Shared Albums row       └──────────────────────  Viewer: COLLAPSED ⇄ EXPANDED (comments)
@@ -117,7 +117,7 @@ const Breadcrumb = ({ currentFolder }) => (
 - **Top:** back circle (left), centered title `Albums` (semibold 17), right side `+` and `⋯` as blue glyphs (no capsule).
 - **Segmented control** below: `Personal | Shared | Activity`, three equal segments in a `--surface-1` capsule; labels blue; active segment marked by a lighter flat pill behind it.
 - **Grid:** 2 columns of **184×184 square cards**, x = 24→208 and 220→404, so 24 pt side margins and a 12 pt gutter; rows start at y=161 with 12 pt row gap `[m]`.
-- **Card:** photo cover, title bottom-left in white with a dark scrim, circular owner badge top-right (about 30 pt, 2 pt white ring, avatar photo or initials on gray, e.g. `DP`). A card with no title shows a people glyph bottom-left (shared indicator).
+- **Card:** photo cover, title bottom-left in white with a dark scrim, circular badge of whoever shared it top-right (about 30 pt, 2 pt white ring, avatar photo or initials on gray, e.g. `DP`). A card with no title shows a people glyph bottom-left (shared indicator).
 - **Floating bottom controls:** a flat `--surface-1` tab capsule `Library | Collections` bottom-left (about 189×58; blue labels, active tab on a lighter flat pill) and a 62 pt flat `--surface-1` circle with a blue search glyph bottom-right `[e]`.
 
 ### 4.3 `main/row.jpg`: "Shared Albums" row (1284×588 px)
@@ -138,11 +138,11 @@ Action row (§3.2) under the media: `Like` shows a filled thumbs-up glyph when l
 
 **Composer `[d]`.** A text field in exactly the style of `thread.jpg` (no box or border, 16 pt left padding, hairline above, 17 pt) sits **directly under the newest comment** at all times, so it moves down as comments are added. Placeholder `Add a comment…` in `--ctl` blue; typed text white. Focusing it shows `Post`, `Delete`, `Cancel` (all `--ctl` blue) right-aligned in an extra 44 pt row under the input.
 - `Post`: submits and **stays expanded**; a fresh empty field appears under the new comment, so you can post consecutive comments without limit. Disabled (40%) while the draft is empty. The count becomes `X comment`.
-- `Delete`: removes a comment **I posted**: my most recent one in the thread, the one directly above the field. Disabled (40%) if I have posted none.
+- `Delete`: removes a comment **you posted**: your most recent one in the thread, the one directly above the field. Disabled (40%) if you have posted none.
 - `Cancel`: removes the draft.
 - **`Delete` and `Cancel` both return to COLLAPSED view**: media 428→926, thread hides, strip returns, time and audio bars re-anchor (§3).
 - Geometry while composing: the field row grows by 44 pt, the thread scrolls to keep the field visible, the media stays 428×428, and the playback bar gives way to the keyboard.
-- Who sees it: Main shows it to participants allowed to comment. Public shows it **only to me**, and I can post consecutive comments; visitors see no field and no options.
+- Who sees it: Main shows it to participants allowed to comment. Public shows it **only to you**, and you can post consecutive comments; visitors see no field and no options.
 
 `thread.jpg` (1284×1687 px) shows the scrolled thread:
 - Each comment is a row: body 17 pt white, then a meta line `**Author** Mon D, YYYY at HH:MM` (self shows as `You`). Left padding 16 pt, wrap limit about 20 pt from the right.
@@ -153,11 +153,11 @@ Action row (§3.2) under the media: `Like` shows a filled thumbs-up glyph when l
 `[i]` Open question: `expand.PNG` shows a comment row and input but no `Posted by` or `liked` rows. Recommended rule: `Posted by` always shows first; the `liked` row shows only when likes ≥ 1.
 
 ### 4.5 `main/panel dim.png` (585×44 px) and `main/panel vibrant.png` (585×65 px)
-The **Presented-by panel**: a `#302f33` bar docked at the bottom of a shared collection, naming me and offering Download.
+The **Presented-by panel**: a `#302f33` bar docked at the bottom of a shared collection, naming you and offering Download.
 | | dim | vibrant |
 |---|---|---|
 | Height | 44 px | 65 px |
-| Left label | `Presented by {Owner}` regular white about 13 pt, one line | same text bold, larger, top-left, room for a second line |
+| Left label | `Presented by {your name}` regular white about 13 pt, one line | same text bold, larger, top-left, room for a second line |
 | Pill | **104×29 px**, fill `#384453`, gray text | **146×38 px**, fill about `#4193f2`, white semibold text |
 | Meaning | nothing selected, Download disabled | at least one item selected, Download enabled |
 
@@ -172,12 +172,12 @@ Album hero. Full-bleed cover image. Bottom-left: title (`Food Updates`, bold abo
 Item-count rule from the directive: **hide the count at root level**; the count styling is bold white (the "creepy cute Halloween nail art" reference *is* this image).
 **Geometry:** the hero is about 519 pt tall in the Album screen; the grid begins directly below it.
 
-### 5.2 Album with owner menu: `common/close.PNG`
+### 5.2 Album with your menu: `common/close.PNG`
 Album screen with the overflow menu open. Top: back chevron (left) and `Select` (right), both `--ctl` with no badge. Hero as in 5.1. Below: **3-column grid of square tiles about 142 pt, 1 pt gutters, edge to edge** (y about 519–665), last tile is a `#1c1c1e` tile with a blue `+` (add media). Bottom-left: blue sort/filter glyph on a flat `--surface-1` circle.
 **Menu** (solid `--surface-1` sheet, not glass; x=70→316, width 246, height about 273, radius about 34): header row with 40 pt rounded thumbnail, album name bold 17, `1 Participant` gray with people icon, edit-square icon right; hairline; `Share` (share icon) and `Add Photos` (plus), both blue `--ctl`; hairline; `Delete Shared Album` in `--ctl` blue with a trash icon (wraps to two lines). Tap outside to close.
 
 ### 5.3 Participant menu: `common/leave.jpg` (1284×1190 px)
-Same menu, participant variant: header shows `2 Participants`; destructive row is **`Unsubscribe`** (blue, ⊖ icon) instead of Delete. **Rule `[i]`:** my destructive action deletes the album; a participant's action only leaves it. Background is the blurred album behind. Top bar uses plain blue `--ctl` as in 5.2.
+Same menu, participant variant: header shows `2 Participants`; destructive row is **`Unsubscribe`** (blue, ⊖ icon) instead of Delete. **Rule `[i]`:** your destructive action deletes the album; a participant's action only leaves it. Background is the blurred album behind. Top bar uses plain blue `--ctl` as in 5.2.
 
 ### 5.4 `common/select.png` (632×64 px) and `common/deselect.png` (633×66 px)
 Crops of the selection toolbar (§4.1). `Select All` flips to `Deselect All` once everything is selected. Background `#1c1c1e`; texts and ⋯ in blue.
@@ -213,7 +213,7 @@ See §3. Top row: back, date/time label (`June 1, 2022` / `16:21`, plain text), 
 | Trigger | Shows | Hides / disables | Geometry effect |
 |---|---|---|---|
 | Tap card | Album | feed | hero + grid |
-| Tap title / (i) / ⋯ | overflow menu (owner or participant variant) | | overlay only |
+| Tap title / (i) / ⋯ | overflow menu (your or participant variant) | | overlay only |
 | `Select` | selection toolbar, tile checkmarks | `Select` pill | content shifts down one bar |
 | ≥1 selected | delete bar, Download pill vibrant | dim pill | panel 44→65 px |
 | `Cancel` | restores browse mode | selection bar, delete bar | content returns up |
@@ -229,7 +229,7 @@ See §3. Top row: back, date/time label (`June 1, 2022` / `16:21`, plain text), 
 
 ## 7. Public side (no references supplied)
 
-`ui/public/` is empty. The following is **derived from the directive, not from images** `[i]`: public visitors see the Presented-by panel with Download, the viewer in both states, and **comments I wrote only**: visitors get no comment field, no like, no `Post`/`Delete`/`Cancel`, no trash or ⋯, no `Main Gallery` breadcrumb; I see the §4.4 composer and can post consecutive comments. Main shows the full two-way set. Enforce this on the server; hiding controls is not access control.
+`ui/public/` is empty. The following is **derived from the directive, not from images** `[i]`: public visitors see the Presented-by panel with Download, the viewer in both states, and **comments you wrote only**: visitors get no comment field, no like, no `Post`/`Delete`/`Cancel`, no trash or ⋯, no `Main Gallery` breadcrumb; I see the §4.4 composer and can post consecutive comments. Main shows the full two-way set. Enforce this on the server; hiding controls is not access control.
 
 ## 8. Open items in the reference set
 1. `public/` has no screenshots; public-side visuals are unspecified.
