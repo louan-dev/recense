@@ -63,6 +63,7 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   transcript shows as a see-through strip below the menu bar and notch, or in its own window.
 - **Hears** on this Mac: Apple SpeechAnalyzer for each system language (corrections teach it), the open ears
   (Omnilingual ASR) for the rest, and the canon for recited texts.
+  A corrected line keeps a typed space before `! ? ; :` (French writes `fini !`); the same rule as Gallery.
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.

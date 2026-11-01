@@ -6128,7 +6128,7 @@ func unspaced(_ a: String, _ b: String) -> Bool {
 func joinWords(_ ws: [String]) -> String {
     var s = ""
     for w in ws { s += s.isEmpty || unspaced(s, w) ? w : " " + w }
-    return s.replacingOccurrences(of: #"\s+([,.;:!?…،؛؟።፣፤፥፦፧])"#, with: "$1", options: .regularExpression)
+    return s.replacingOccurrences(of: #"\s+([,.…،؛؟።፣፤፥፦፧])"#, with: "$1", options: .regularExpression)
 }
 /// A run in one of those scripts cut into words, each keeping what follows it up to the next (a stop, a tsheg): nothing
 /// written is dropped.
