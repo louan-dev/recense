@@ -336,11 +336,66 @@
       page.querySelectorAll("script, iframe, object, embed").forEach((e) => e.remove());
       page.querySelectorAll("*").forEach((e) => [...e.attributes].forEach((a) => /^on/i.test(a.name) && e.removeAttribute(a.name)));
       scroller.tabIndex = 0;
+      if (editable(f)) col.appendChild(editBar(f, page));
       col.appendChild(page);
       scroller.appendChild(col);
       wrap.replaceChildren(scroller);
     })().catch(() => wrap.replaceChildren(docView(f)));
     return wrap;
+  };
+
+  // Main's Markdown and plain-text files can be edited in place (notes 20261029 item 42: write on the iPhone/iPad
+  // too). Saved through Main's WebDAV with If-Match, so the version it replaces goes to the trash, and a file
+  // changed elsewhere since it was opened is refused rather than overwritten; the Mac's docs-sync brings it home.
+  const editable = (f) => G.main && f.path && !DOCX_RE.test(f.name) && !/\.rtf$/i.test(f.name) &&
+    (MD_RE.test(f.name) || TEXT_RE.test(f.name) || f.type === "text/markdown" || f.type === "text/plain");
+  const davUrl = (f) => "/main/dav/" + f.path.split("/").map(encodeURIComponent).join("/");
+  const editBar = (f, page) => {
+    const bar = mkEl("div", "txtedit-bar");
+    const btn = (label) => Object.assign(mkEl("button", "lnk"), { type: "button", textContent: label });
+    const edit = btn("Edit"), save = btn("Save"), cancel = btn("Cancel"), note = mkEl("span", "txtedit-note");
+    save.hidden = cancel.hidden = true;
+    let etag = "", area = null;
+    const close = () => {
+      area.remove();
+      area = null;
+      page.hidden = false;
+      edit.hidden = false;
+      save.hidden = cancel.hidden = true;
+    };
+    edit.onclick = async () => {
+      note.textContent = "";
+      const r = await fetch(davUrl(f), { cache: "no-store" }).catch(() => null);
+      if (!r || !r.ok) return (note.textContent = "Couldn’t open it for editing.");
+      etag = r.headers.get("etag") || "";
+      area = Object.assign(mkEl("textarea", "pdfp txtdoc txtedit"), { value: await r.text(), spellcheck: true });
+      page.hidden = true;
+      page.after(area);
+      area.focus();
+      edit.hidden = true;
+      save.hidden = cancel.hidden = false;
+    };
+    cancel.onclick = close;
+    save.onclick = async () => {
+      save.disabled = true;
+      note.textContent = "Saving…";
+      const text = area.value;
+      const r = await fetch(davUrl(f), {
+        method: "PUT",
+        headers: { "content-type": f.type || (MD_RE.test(f.name) ? "text/markdown" : "text/plain"), ...(etag ? { "if-match": etag } : {}) },
+        body: text,
+      }).catch(() => null);
+      save.disabled = false;
+      if (r && r.status === 412) return (note.textContent = "Changed somewhere else since you opened it. Copy your text, then Cancel to see the newer one.");
+      if (!r || !r.ok) return (note.textContent = "Couldn’t save. Your text is still here.");
+      etag = r.headers.get("etag") || "";
+      page.innerHTML = MD_RE.test(f.name) || f.type === "text/markdown" ? mdHtml(text) : "<pre>" + escHtml(text) + "</pre>";
+      delete thumbCache[f.n];
+      note.textContent = "Saved.";
+      close();
+    };
+    bar.append(edit, save, cancel, note);
+    return bar;
   };
 
   // SPEC 14: a text document's tile shows its first page, like a PDF's: the opening text drawn on a white

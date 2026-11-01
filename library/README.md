@@ -52,6 +52,12 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   Maqam¼, Cents). A file with no stored key has it detected on first open.
 - Downloads of audio with Key, EQ or Space on are rendered as heard.
 - Comments under each item: Post / Delete / Cancel; swipe your own comment for Delete.
+- Documents open as pages: PDF, Markdown, Word (.docx), plain text. In Main, Markdown and plain-text files have
+  **Edit** / **Save** / **Cancel** on the page (iPhone and iPad too): the save is refused if the file changed elsewhere
+  since it was opened, and the version it replaces goes to the trash.
+- **Docs** in Main holds every document from the Mac (Obsidian, iCloud Drive, Documents, Downloads, Developer,
+  Google Drive, Voice Memos, Notability's PDFs), kept in step both ways by Sync's `bin/docs-sync.zsh`; `Docs/INDEX.md`
+  lists them by source.
 
 ### Learn mode, karaoke light and notation
 - The transcript centred in the player; each word lights as it is heard and its translation (Vietnamese, French or

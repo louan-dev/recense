@@ -1133,6 +1133,23 @@ await test("Documents: Markdown and plain text open as pages in the PDF viewer's
   assert.equal(await pg.evaluate(() => window.__x), undefined, "nothing in a document runs");
   await pg.keyboard.press("ArrowRight");
   await pg.waitForFunction(() => /line one\nline two/.test((document.querySelector(".txtdoc pre") || {}).textContent || ""));
+  // item 42: a Main text file is edited in place; the save is conditional, the old text goes to the trash
+  await pg.click(".txtedit-bar button:text('Edit')");
+  await pg.waitForSelector("textarea.txtedit");
+  assert.equal(await pg.$eval("textarea.txtedit", (e) => e.value), "line one\nline two");
+  await pg.fill("textarea.txtedit", "line one\nedited on the iPad");
+  await pg.click(".txtedit-bar button:text('Save')");
+  await pg.waitForFunction(() => /edited on the iPad/.test((document.querySelector(".txtdoc pre") || {}).textContent || ""));
+  assert.equal(await (await MAIN.get("files/Docs/plain.txt")).text(), "line one\nedited on the iPad");
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.includes("/Docs/plain.txt@")), "old text kept in the trash");
+  // changed elsewhere while open: refused, the newer text stays
+  await pg.click(".txtedit-bar button:text('Edit')");
+  await pg.waitForSelector("textarea.txtedit");
+  await MAIN.put("files/Docs/plain.txt", "from the Mac", { httpMetadata: { contentType: "text/plain" } });
+  await pg.fill("textarea.txtedit", "stale");
+  await pg.click(".txtedit-bar button:text('Save')");
+  await pg.waitForFunction(() => /Changed somewhere else/.test(document.querySelector(".txtedit-note").textContent));
+  assert.equal(await (await MAIN.get("files/Docs/plain.txt")).text(), "from the Mac");
   // Word, through mammoth from cdnjs (skipped offline)
   if (process.env.DOCX) {
     await MAIN.put("files/Docs/w.docx", (await import("node:fs")).readFileSync(process.env.DOCX));
@@ -1158,7 +1175,7 @@ await test("SPEC 57: a tap on the lyrics opens the editor with its tools; Follow
   assert.deepEqual(await pg.$$eval(".p-slide", (a) => a.map((x) => x.dataset.slide)), ["size", "item", "loop", "speed"]);
   await pg.mouse.move(1, 1);
   await openTools(pg);
-  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["clear", "download", "share", "transpose", "retranscribe", "md", "m4b"]);
+  assert.deepEqual(await pg.$$eval(".txall .p-ticon:not([hidden])", (a) => a.map((x) => x.dataset.id)), ["timing", "clear", "download", "share", "transpose", "retranscribe", "md", "m4b"]);
   // the chosen language trails each line in the editor
   await pg.click('.txall .p-tlang .p-ti:text("Vietnamese")');
   await pg.waitForFunction(() => [...document.querySelectorAll(".txall .txtrl")].map((x) => x.textContent).join("|") === "Trời đẹp|Đi thôi");
@@ -1507,7 +1524,7 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await pg.goto(base + "/main?p=Fair");
   // Main's menu leads to Shared
   await pg.click("#mbtn");
-  assert.equal(await pg.getAttribute("#m-shared", "href"), "/main/shared");
+  assert.equal(await pg.getAttribute(".mainnav a.sh", "href"), "/main/shared");
   // the owner likes a file from the viewer's expanded action row (Like left of Hide Comments)
   await pg.keyboard.press("Escape");
   await pg.click('.tile[data-n="00000"]');
