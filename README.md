@@ -62,7 +62,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **Follows what plays** in QuickTime, Music, Safari, Chrome, Firefox and Gallery pages, or opens local files; the
   transcript shows as a see-through strip below the menu bar and notch, or in its own window.
 - **Hears** on this Mac: Apple SpeechAnalyzer for each system language (corrections teach it), the open ears
-  (Omnilingual ASR) for the rest, and the canon for recited texts.
+  (Omnilingual ASR) for the rest, and the canon for recited texts. A song is heard in one script (Amharic in Ge'ez,
+  not the Arabic letters the open ears drift into), and lines heard again keep the song's language.
   A corrected line keeps a typed space before `! ? ; :` (French writes `fini !`); the same rule as Gallery.
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
@@ -87,7 +88,7 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **Sound tray:** a native process tap → EQ / Key / Space → limiter chain for each player; vocal / instrumental
   extraction, so the voice can be heard alone or sung over; chord detection.
 - Idle backfill separates and measures songs under 15 minutes. Transcripts cache locally and mirror to Gallery's
-  `keep/<key>/` when available.
+  `keep/<key>/` when available. A file asked for from Gallery (opened there, or Retranscribe) goes before the backfill.
 
 ## Layout
 
