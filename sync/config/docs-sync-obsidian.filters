@@ -12,6 +12,9 @@
 - *.app/**
 - *-handoff.zip
 - ~$*
+# names the Worker refuses (leading or trailing space): one would abort the whole folder
+- {{(^|/) [^/]*$}}
+- {{[^/]* $}}
 - sandisk-rescue/to-archive/**
 - auto_avsr/**
 - Photos Library.photoslibrary/**
