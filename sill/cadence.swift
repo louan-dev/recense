@@ -269,7 +269,14 @@ extension Cadence {
             guard l.words.contains(where: { $0.tm != nil }) else { return l }
             var ws = l.words.map { w -> Word in
                 guard let p = w.tm else { return w }
-                var x = w.timed(p.s, p.e); x.syl = nil; x.un = nil; return x
+                var x = w.timed(p.s, p.e); x.un = nil
+                // Sweep left at 0 (and syllables heard): the ear sets where the word starts and ends, the voice still
+                // shapes it inside, each syllable kept in its share of the word's time (cadence.js `rescale`)
+                if abs(p.k) <= 0.05, let syl = w.syl, !syl.isEmpty {
+                    let f = { (t: Double) in p.s + (t - w.start) * (p.e - p.s) / max(0.05, w.end - w.start) }
+                    x.syl = syl.map { Syl(c: $0.c, s: f($0.s), e: f($0.e)) }
+                } else { x.syl = nil }
+                return x
             }
             func trim(_ w: Word, _ s: Double, _ e: Double) -> Word {
                 var x = w.timed(s, e)

@@ -2606,7 +2606,7 @@ struct Beat { let text: String; let start: Double; let end: Double; var syl: [Sy
 func sourceBeats(_ line: Line) -> [Beat] {
     line.words.enumerated().map { i, w in
         let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm?.k)
+        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm.flatMap { abs($0.k) <= 0.05 && w.syl?.isEmpty == false ? nil : $0.k })
     }
 }
 
@@ -6526,6 +6526,9 @@ final class NativeSources {
         log("gallery: \(todo.count) file(s) to transcribe")
         for (path, size) in todo {
             guard idle() else { log("gallery: paused (something is playing)"); return }
+            // a file someone asked for (Retranscribe, or opened in Gallery) goes before the rest: it waited behind
+            // 353 voice memos for hours
+            guard !asked else { log("gallery: paused for a file asked for"); return }
             if await transcribe(path, idle: idle) == false { skipped.insert("\(path)|\(size)") }
         }
     }
@@ -6536,6 +6539,7 @@ final class NativeSources {
     // minute: taken while nothing plays here (kept alive meanwhile), beaten with the progress while transcribing,
     // deleted once <key>.v2.json is in keep/, marked failed (nothing partial written) when it can't be done.
     static var serving = false
+    static var asked = false             // a request waits for the backfill (run) to step aside
     static var current: String?          // the file being transcribed
 
     static func lock(_ own: String) async -> [String: Any]? {
@@ -6558,6 +6562,7 @@ final class NativeSources {
     static func serve(idle: @escaping @MainActor () -> Bool) async {
         guard Store.r2, !serving else { return }
         serving = true; defer { serving = false }
+        asked = false                    // set again below while a request still waits
         guard let names = await Store.list("keep/locks/")?.keys, !names.isEmpty else { return }
         for name in names.sorted() {
             let own = String(name.dropFirst("keep/locks/".count))
@@ -6586,9 +6591,9 @@ final class NativeSources {
                 continue
             }
             if l["state"] as? String == "running" && now - last < 15 * 60_000 { continue }     // another Mac has it
-            guard !running && idle() else { await beat(own, state: "queued"); continue }        // waits, kept alive
+            guard !running && idle() else { asked = running; await beat(own, state: "queued"); continue }   // waits, kept alive
             log("gallery: asked for \(path)\(l["redo"] as? Bool == true ? " (retranscribe)" : "")")
-            running = true
+            running = true; asked = false
             let ok = await transcribe(path, redo: l["redo"] as? Bool == true, asked: true, idle: idle, lang: l["lang"] as? String)
             if ok == true { await setLock(own, nil) }                                          // an older viewer's lock by path
             running = false
@@ -8291,7 +8296,7 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         let p = pinOf(cur)
         func t(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
         startL.stringValue = t(p.s); endL.stringValue = t(p.e)
-        sweepL.stringValue = p.k < -0.05 ? "lingers first" : p.k > 0.05 ? "hurries first" : "even"
+        sweepL.stringValue = p.k < -0.05 ? "lingers first" : p.k > 0.05 ? "hurries first" : "follows the voice"
     }
     @objc private func pick() { load(words.selectedTag()) }
     @objc private func slid(_ s: NSSlider) {
