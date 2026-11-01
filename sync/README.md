@@ -31,7 +31,7 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
   the shared event-log format, mirrored to R2. Audit, backup status (Arq to R2), quota and freeing proposals (never
   deletes), verify, restore and health (`views/health.json`). Zero dependencies.
 - **Canary** (`src/canary.mjs`): a note's round trip Mac → iPhone → iPad → Mac, with an upload-status probe.
-- **CalDAV Worker** (`worker/`): my own calendar server; calendar backup through EventKit (`tools/cal-export`).
+- **CalDAV Worker** (`worker/`): your own calendar server; calendar backup through EventKit (`tools/cal-export`).
 - **Messenger ingest** (`src/messenger.mjs`).
 - **Always-on archive mount**: `gallery-archive/chauphan` over Gallery's `/main/nc-archive/`, kept alive by launchd with
   a 2 GB cache.
@@ -62,9 +62,9 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
 - `launchd/` plist templates (`__HOME__` placeholders)
 - `docs/specs` what is being built, `docs/research` reports, `docs/runbooks` step-by-step (Arq, overflow, offsite
   disks, recovery, SanDisk evacuation, Obsidian images and integration, Gallery drive), `docs/proposals` decisions
-  waiting on me
-- `decisions/` my recorded decisions
-- `requests/` inbox for files I upload (contents are git-ignored)
+  waiting on you
+- `decisions/` your recorded decisions
+- `requests/` inbox for files you upload (contents are git-ignored)
 
 ## Commands
 

@@ -1,6 +1,6 @@
 # requests/
 
-Inbox for files I upload because a task asked for them
+Inbox for files you upload because a task asked for them
 (for example the iCloud storage breakdown screenshots for A1).
 
 Everything here except this README is git-ignored. Read the newest files when a task
