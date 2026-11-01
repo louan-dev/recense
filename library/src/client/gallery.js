@@ -4617,10 +4617,18 @@
     host.appendChild(a);
     // [Ambient Sounds] only ever sits on black: the cover goes to the thumbnail strip (mode 2), as with lyrics
     if (host.classList.contains("aw")) host.classList.add("lyrics");
+    // Paused between lines (or with none at all) nothing is heard to tap, so the label gives way to a grabber
+    // where the lines show (notes 20261029 row 40): the editor is always one tap away, never asking for it.
     const tick = () => {
       if (!a.isConnected) return;
-      const on = (always || (!el.paused && !el.ended)) && gap();
-      if (a.hidden === on) a.hidden = !on;
+      const g = gap();
+      const on = (always || (!el.paused && !el.ended)) && g;
+      const grab = !on && g && !!onTap;
+      if (a.hidden === (on || grab)) a.hidden = !(on || grab);
+      if (a.classList.contains("grab") !== grab) {
+        a.classList.toggle("grab", grab);
+        a.setAttribute("aria-label", grab ? "Open the transcript editor" : "");
+      }
       setTimeout(tick, 250);
     };
     tick();
@@ -4939,15 +4947,34 @@
         fits.clear();
         queueEdit(f, { segId: l.id, field: "tr." + lang, to: text, updatedAt: Date.now() }).onLines = onLines;
       };
-      // Timing by ear (notes 20261029 row 35): the voice can't always tell how a word is sung, the listener can. Pick a
-      // word, then set where its light starts and ends and how it sweeps (lingering on the start, even, or hurrying
-      // through it first) while that stretch plays round; Auto gives it back to the voice's measure (cadence.js pin).
+      // Timing by ear (notes 20261029 rows 35, 40): the voice can't always tell how a word is sung, the listener can.
+      // Pick a word and its stretch plays round; tap Start as the voice reaches it and End as it lets go, as A and
+      // B are set on the loop. A mark's time drags (or ← →) by a hundredth for the last touch. The light then
+      // follows the voice inside that span (Cadence.pin); it never lingers behind it or rushes ahead (row 40).
+      // Repeats: a chorus or an ad-lib sung again is most likely the same recording, so its timing is too.
       const sec = (x) => Math.floor(x / 60) + ":" + (x % 60).toFixed(2).padStart(5, "0");
       let looping = null;
-      let timingOn = false; // the toolbar's Timing shows the current line's words to time
+      let timingOn = false; // the tools' Timing shows the current line's words to time
       const unloop = () => {
         if (looping) el.removeEventListener("timeupdate", looping);
         looping = null;
+      };
+      const shift = Number(t.shift) || 0;
+      const r3 = (x) => Math.round(x * 1000) / 1000;
+      const savePins = (l) => {
+        const pins = l.words.map((w, i) => (w.tm ? [i, r3(w.tm.s - shift), r3(w.tm.e - shift), Math.round(w.tm.k * 100) / 100 || 0] : null)).filter(Boolean);
+        queueEdit(f, { segId: l.id, field: "time", to: pins.length ? JSON.stringify(pins) : "", updatedAt: Date.now() }).onLines = onLines;
+      };
+      const relight = (l) => {
+        l.words = globalThis.Cadence ? globalThis.Cadence.pin([l])[0].words : l.words;
+        delete l._learn;
+        fits.clear();
+        places.forEach((pl) => (pl.line = -1));
+      };
+      const sameText = (x) => String(x || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const repeatsOf = (l) => {
+        const k = sameText(l.text);
+        return k ? lines.filter((x) => x !== l && x.words && x.words.length === l.words.length && sameText(x.text) === k) : [];
       };
       const timer = (l) => {
         const wrap = mkEl("div", "txtime");
@@ -4956,93 +4983,138 @@
         panel.hidden = true;
         wrap.append(chips, panel);
         wrap.onclick = (e) => e.stopPropagation();
-        const shift = Number(t.shift) || 0;
-        const r3 = (x) => Math.round(x * 1000) / 1000;
-        const savePins = () => {
-          const pins = l.words.map((w, i) => (w.tm ? [i, r3(w.tm.s - shift), r3(w.tm.e - shift), Math.round(w.tm.k * 100) / 100 || 0] : null)).filter(Boolean);
-          queueEdit(f, { segId: l.id, field: "time", to: pins.length ? JSON.stringify(pins) : "", updatedAt: Date.now() }).onLines = onLines;
-        };
-        const relight = () => {
-          l.words = globalThis.Cadence ? globalThis.Cadence.pin([l])[0].words : l.words;
-          delete l._learn;
-          fits.clear();
-          places.forEach((pl) => (pl.line = -1));
-        };
         const open = (i, chip) => {
           chips.querySelectorAll(".on").forEach((c) => c.classList.remove("on"));
           chip.classList.add("on");
+          // (by index: each relight gives the line new words)
           const w = l.words[i];
-          const s0 = w.s, e0 = Math.max(w.e, w.s + 0.05);
-          const tm = w.tm ? { ...w.tm } : { s: s0, e: e0, k: 0 };
+          const tm = w.tm ? { ...w.tm, k: 0 } : { s: w.s, e: Math.max(w.e, w.s + 0.05), k: 0 };
           panel.hidden = false;
           panel.replaceChildren();
-          const slide = (label, min, max, step, val, show, set) => {
-            const r = mkEl("label", "txslide");
-            const name = mkEl("span", "txsname");
-            name.textContent = label;
-            const inp = document.createElement("input");
-            inp.type = "range";
-            inp.min = min;
-            inp.max = max;
-            inp.step = step;
-            inp.value = val;
-            const out = mkEl("span", "txsval");
-            out.textContent = show(val);
-            inp.oninput = () => {
-              set(Number(inp.value));
-              out.textContent = show(Number(inp.value));
-              w.tm = { ...tm };
-              chip.classList.add("set");
-              relight();
-            };
-            inp.onchange = savePins;
-            r.append(name, inp, out);
-            panel.appendChild(r);
-            return inp;
-          };
-          const startIn = slide("Starts", r3(s0 - 1.5), r3(s0 + 1.5), 0.01, tm.s, sec, (v) => {
-            tm.s = Math.min(v, tm.e - 0.05);
-          });
-          slide("Ends", r3(e0 - 1.5), r3(e0 + 3), 0.01, tm.e, sec, (v) => {
-            tm.e = Math.max(v, tm.s + 0.05);
-          });
-          slide("Sweep", -1, 1, 0.05, tm.k, (v) => (v < -0.05 ? "lingers first" : v > 0.05 ? "hurries first" : "follows the voice"), (v) => {
-            tm.k = v;
-          });
+          const marks = mkEl("div", "txmarks");
           const btns = mkEl("div", "txsbtns");
-          const hear = mkEl("button", "lnk txbtn");
-          hear.type = "button";
-          hear.textContent = looping ? "Stop" : "Hear it";
-          hear.onclick = () => {
-            if (looping) {
-              unloop();
-              el.pause();
-              hear.textContent = "Hear it";
-              return;
-            }
+          const b = (cls, label, fn) => {
+            const x = mkEl("button", "lnk txbtn " + cls);
+            x.type = "button";
+            x.textContent = label;
+            x.onpointerdown = (e) => e.preventDefault();
+            x.onclick = (e) => {
+              e.stopPropagation();
+              fn(x);
+            };
+            return x;
+          };
+          const paints = [];
+          const set = () => {
+            l.words[i].tm = { ...tm };
+            chip.classList.add("set");
+            relight(l);
+            paints.forEach((p) => p());
+          };
+          const mark = (name, key) => {
+            const m = mkEl("button", "txmark");
+            m.type = "button";
+            m.setAttribute("aria-label", name + ": tap as it is sung; drag or ← → to fine-tune");
+            const n = mkEl("span", "txmname");
+            n.textContent = name;
+            const v = mkEl("span", "txmval");
+            m.append(n, v);
+            const put = (x) => {
+              if (key === "s") {
+                tm.s = Math.max(0, x);
+                if (tm.e < tm.s + 0.05) tm.e = tm.s + 0.05;
+              } else tm.e = Math.max(x, tm.s + 0.05);
+              set();
+            };
+            paints.push(() => (v.textContent = sec(tm[key])));
+            // a tap marks what is heard now; a drag along it moves the mark a hundredth per few pixels
+            let drag = null;
+            m.onpointerdown = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              drag = { x: e.clientX, v: tm[key], moved: false };
+              m.setPointerCapture(e.pointerId);
+            };
+            m.onpointermove = (e) => {
+              if (!drag) return;
+              const dx = e.clientX - drag.x;
+              if (!drag.moved && Math.abs(dx) < 6) return;
+              drag.moved = true;
+              put(r3(drag.v + Math.round(dx / 4) / 100));
+            };
+            m.onpointerup = (e) => {
+              e.stopPropagation();
+              if (drag && !drag.moved) {
+                put(r3(el.currentTime));
+                m.classList.remove("hit");
+                void m.offsetWidth;
+                m.classList.add("hit");
+              }
+              if (drag) savePins(l);
+              drag = null;
+            };
+            m.onpointercancel = () => (drag = null);
+            m.onclick = (e) => e.stopPropagation();
+            m.onkeydown = (e) => {
+              const d = e.key === "ArrowLeft" ? -0.01 : e.key === "ArrowRight" ? 0.01 : 0;
+              if (e.key === "Enter" || e.key === " ") put(r3(el.currentTime));
+              else if (d) put(r3(tm[key] + d));
+              else return;
+              e.preventDefault();
+              e.stopPropagation();
+              savePins(l);
+            };
+            marks.appendChild(m);
+            return m;
+          };
+          const hearIt = () => {
             looping = () => {
-              const x = w.tm || tm;
-              if (el.currentTime > x.e + 0.5 || el.currentTime < x.s - 1.5) el.currentTime = Math.max(0, x.s - 0.8);
+              if (el.currentTime > tm.e + 0.5 || el.currentTime < tm.s - 1.5) el.currentTime = Math.max(0, tm.s - 0.8);
             };
             el.addEventListener("timeupdate", looping);
             el.currentTime = Math.max(0, tm.s - 0.8);
             el.play().catch(() => {});
-            hear.textContent = "Stop";
           };
-          const auto = mkEl("button", "lnk txbtn");
-          auto.type = "button";
-          auto.textContent = "Auto";
-          auto.onclick = () => {
-            delete w.tm;
-            delete w.k;
+          const hear = b("", "Stop", (x) => {
+            if (looping) {
+              unloop();
+              el.pause();
+            } else hearIt();
+            x.textContent = looping ? "Stop" : "Hear it";
+          });
+          const auto = b("", "Auto", () => {
+            delete l.words[i].tm;
+            delete l.words[i].k;
             chip.classList.remove("set");
-            savePins();
+            relight(l);
+            savePins(l);
+            unloop();
             panel.hidden = true;
             chip.classList.remove("on");
-          };
-          btns.append(hear, auto);
-          panel.appendChild(btns);
-          startIn.focus({ preventScroll: true });
+          });
+          const reps = repeatsOf(l);
+          const same = b("txsame", "", (x) => {
+            const d0 = l.s;
+            reps.forEach((r) => {
+              l.words.forEach((lw, j) => {
+                if (lw.tm) r.words[j].tm = { s: r3(lw.tm.s - d0 + r.s), e: r3(lw.tm.e - d0 + r.s), k: lw.tm.k || 0 };
+              });
+              relight(r);
+              savePins(r);
+            });
+            x.textContent = "Repeats timed";
+            say("This line's timing now in its " + reps.length + (reps.length === 1 ? " repeat" : " repeats"));
+          });
+          same.textContent = "Same in " + reps.length + (reps.length === 1 ? " repeat" : " repeats");
+          same.hidden = !reps.length;
+          mark("Start", "s");
+          mark("End", "e");
+          btns.append(hear, auto, same);
+          panel.append(marks, btns);
+          paints.forEach((p) => p());
+          unloop();
+          hearIt();
+          marks.firstChild.focus({ preventScroll: true });
         };
         l.words.forEach((w, i) => {
           if (w.un && !w.tm) return;
@@ -5243,17 +5315,21 @@
         },
         clear: wipe,
         redo,
-        timing: () => {
-          timingOn = !timingOn;
-          if (!timingOn) unloop();
-          if (cur < 0 || !rows[cur]) return void (timingOn && say("Tap a line, then a word, to time it"));
-          const r = row(lines[cur], cur);
-          rows[cur].replaceWith(r);
-          rows[cur] = r;
-          r.scrollIntoView({ block: "center", behavior: "smooth" });
+        timing: {
+          on: () => timingOn,
+          act: () => {
+            timingOn = !timingOn;
+            tray.show(false); // the words to time take the room
+            if (!timingOn) unloop();
+            if (cur < 0 || !rows[cur]) return void (timingOn && say("Tap a line, then a word, to time it"));
+            const r = row(lines[cur], cur);
+            rows[cur].replaceWith(r);
+            rows[cur] = r;
+            r.scrollIntoView({ block: "center", behavior: "smooth" });
+          },
         },
       });
-      bar.prepend(tools.el);
+      const tray = toolTray(sheet, bar, tools.el, false);
       const close = () => {
         if (!sheet.isConnected) return;
         if (field && document.activeElement === field) field.blur();
@@ -5275,7 +5351,7 @@
       document.addEventListener("keydown", onKey, true);
       btn("Done", close);
       sheet.onclick = (e) => e.stopPropagation();
-      sheet.append(bar, list);
+      sheet.append(bar, tray.el, list);
       host.appendChild(sheet);
       let heardAt = lineAt(clock(), true);
       cur = Number.isInteger(at) && lines[at] ? at : heardAt;
@@ -6424,7 +6500,7 @@
       },
       view: { get: () => prefs.view, set: (v) => setView(v) },
       items: [
-        w && hooks.timing ? { id: "timing", label: "Timing by ear: set each word's light", icon: I.timing, act: hooks.timing } : null,
+        w && hooks.timing ? { id: "timing", label: "Timing by ear: tap where each word's light starts and ends", icon: I.timing, act: hooks.timing.act, on: hooks.timing.on } : null,
         w && hooks.clear ? { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: hooks.clear } : null,
         { id: "download", label: "Download", icon: I.download, act: (b) => download(b) },
         own && window.galleryInvite ? { id: "share", label: "Share", icon: I.share, act: () => window.galleryInvite([f]) } : null,
@@ -6434,6 +6510,36 @@
         G.main && hooks.lines ? { id: "m4b", label: "Export as M4B", icon: I.book, act: () => exportM4b(f) } : null,
       ],
     });
+  };
+
+  // The editor's tools fold away behind a grabber at the top, the way the home bar folds into its stroke (notes
+  // 20261029 row 40): the lines get the room, and the tools come when reached for: a tap, or the pointer resting
+  // on it. Changes stays to the left of it and Done to the right, never under a thumb reaching for a tool.
+  const toolTray = (sheet, bar, toolsEl, open) => {
+    const grab = mkEl("button", "txgrab");
+    grab.type = "button";
+    grab.setAttribute("aria-label", "Tools");
+    const el = mkEl("div", "txtray");
+    const inner = mkEl("div", "txtrayin");
+    inner.appendChild(toolsEl);
+    el.appendChild(inner);
+    let rest = 0;
+    const show = (on) => {
+      sheet.classList.toggle("tools", on);
+      grab.setAttribute("aria-expanded", String(on));
+      el.inert = !on;
+    };
+    grab.onpointerdown = (e) => e.preventDefault();
+    grab.onclick = (e) => {
+      e.stopPropagation();
+      clearTimeout(rest);
+      show(!sheet.classList.contains("tools"));
+    };
+    grab.onpointerenter = (e) => e.pointerType === "mouse" && (rest = setTimeout(() => show(true), 220));
+    grab.onpointerleave = () => clearTimeout(rest);
+    bar.prepend(grab);
+    show(open);
+    return { el, show };
   };
 
   // No lines to open the editor from (an instrumental's [Ambient Sounds], a transcript on its way): a tap
@@ -6473,9 +6579,10 @@
       e.stopPropagation();
       close();
     };
-    bar.append(editorToolsFor(f, { redo: w ? redo : null }).el, done);
+    const tray = toolTray(sheet, bar, editorToolsFor(f, { redo: w ? redo : null }).el, true); // the tools are why it opened
+    bar.append(done);
     sheet.onclick = (e) => e.stopPropagation();
-    sheet.append(bar, list);
+    sheet.append(bar, tray.el, list);
     host.appendChild(sheet);
     document.addEventListener("keydown", onKey, true);
   };

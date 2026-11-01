@@ -115,11 +115,15 @@ const holdBar = async (pg) => {
   await pg.mouse.move(1, 1);
 };
 // the transcript editor's tools (SPEC 57): a tap on the lyrics, or on the transcription's progress when there are none
+// (they fold under the editor's grabber, notes 20261029 row 40: a tap on it unfolds them)
 const openTools = async (pg) => {
-  if (await pg.$(".txall .p-tools")) return;
-  const lyrics = await pg.$(".tx.learn .txp:not([hidden])");
-  await pg.click(lyrics ? ".tx.learn .txp:not([hidden])" : ".txst");
-  await pg.waitForSelector(".txall .p-tools");
+  if (!(await pg.$(".txall .p-tools"))) {
+    const lyrics = await pg.$(".tx.learn .txp:not([hidden])");
+    await pg.click(lyrics ? ".tx.learn .txp:not([hidden])" : ".txst");
+    await pg.waitForSelector(".txall .p-tools");
+  }
+  if (!(await pg.$(".txall.tools"))) await pg.click(".txall .txgrab");
+  await pg.waitForFunction(() => document.querySelector(".txall .txtray").getBoundingClientRect().height > 40);
 };
 const closeTools = async (pg) => {
   await pg.click('.txall .txbtn:text("Done")');
@@ -1157,6 +1161,46 @@ await test("Documents: Markdown and plain text open as pages in the PDF viewer's
     await pg.click('.tile[data-n="00002"]');
     await pg.waitForFunction(() => /Hello from Word/.test((document.querySelector(".txtdoc") || {}).textContent || ""), null, { timeout: 15000 });
   }
+});
+
+await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no sliders, no sweep), and a repeated line takes the same timing", true, async (pg) => {
+  const KEEP = await mf.getR2Bucket("KEEP");
+  await MAIN.put("files/Tm/s.wav", wavOf(9), { httpMetadata: { contentType: "audio/wav" } });
+  const k = await keepKey("Tm/s.wav");
+  const seg = (id, s, text) => ({ id, start: s, end: s + 1, text, words: text.split(" ").map((w, i) => ({ text: w, start: s + i * 0.4, end: s + i * 0.4 + 0.3 })) });
+  await KEEP.put(`keep/${k}/asr.json`, JSON.stringify({ format: 1, complete: true, duration: 9, segments: [seg(0, 0, "Oh la la"), seg(1, 3, "Il fait beau"), seg(2, 6, "Oh la la!")] }));
+  await pg.goto(base + "/main?p=Tm");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".tx.learn .txp:not([hidden])");
+  await openTools(pg);
+  await pg.click('.txall .p-ticon[data-id="timing"]');
+  assert.ok(!(await pg.$(".txall.tools")), "the tools fold away for the words");
+  await pg.click('.txall .txrow.cur .txchip:text("la")');
+  await pg.waitForSelector(".txall .txmark");
+  assert.equal(await pg.$$eval(".txall .txpanel input", (a) => a.length), 0, "no sliders");
+  assert.deepEqual(await pg.$$eval(".txall .txmname", (a) => a.map((x) => x.textContent)), ["Start", "End"]);
+  assert.ok(!(await pg.content()).includes("hurries first"), "no lingering or rushing");
+  await pg.$eval("audio", (a) => (a.pause(), (a.currentTime = 0.5)));
+  await pg.click('.txall .txmark:has(.txmname:text("Start"))');
+  assert.equal(await pg.textContent('.txall .txmark:has(.txmname:text("Start")) .txmval'), "0:00.50");
+  await pg.$eval("audio", (a) => (a.currentTime = 1.1));
+  await pg.click('.txall .txmark:has(.txmname:text("End"))');
+  assert.equal(await pg.textContent('.txall .txmark:has(.txmname:text("End")) .txmval'), "0:01.10");
+  await pg.click('.txall .txsame:text("Same in 1 repeat")');
+  let pins = null;
+  for (let i = 0; i < 60; i++) {
+    await pg.waitForTimeout(100);
+    const o = await KEEP.get("keep/" + k + "/corrections.json");
+    const d = o && (await o.json());
+    const t = d ? d.overrides.filter((x) => x.field === "time") : [];
+    if (t.length === 2) {
+      pins = Object.fromEntries(t.map((x) => [x.segId, JSON.parse(x.to)]));
+      break;
+    }
+  }
+  assert.ok(pins, "both lines saved");
+  assert.deepEqual(pins[0], [[1, 0.5, 1.1, 0]]);
+  assert.deepEqual(pins[2], [[1, 6.5, 7.1, 0]], "the repeat, at the same place in its line");
 });
 
 await test("SPEC 57: a tap on the lyrics opens the editor with its tools; Follow shows the line with its language under it; MD export; Clear leaves [Ambient Sounds]", true, async (pg) => {

@@ -65,9 +65,12 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   a glossary, and keep the voice's timing.
 - The light follows the voice: syllables from the vocal stem, words hung on them, unsung words never lit, held notes
   held, each syllable swept at its sung speed. On iOS Safari it follows what the speakers play.
-- Word timing by ear in the transcript editor: where a word's light starts, ends and how it sweeps (lingers first,
-  follows the voice, hurries first), or Auto. At "follows the voice" the ear anchors the word and the voice's
-  syllables are stretched onto it, so held notes and quick syllables keep their shape.
+- Word timing by ear in the transcript editor: pick a word and its stretch loops; tap Start as the voice reaches it
+  and End as it lets go, the way A and B are set (drag a mark or ← → for a hundredth). The ear anchors the word and
+  the voice's syllables are stretched onto it, so the light follows the voice, never lagging or rushing. "Same in N
+  repeats" gives a chorus or ad-lib sung again the same timing. Auto hands the word back to the voice.
+- The editor is quiet: Changes · a grabber · Done; the tools fold under the grabber (tap, or rest the pointer on it).
+  Paused with no line up, a grabber where the lines show opens the editor.
 - Notation as a vocal score: prosody ribbon preloaded as a ghost with a gold sweep, turquoise liaison ties, fermatas,
   pp…ff, chords and sung notes; Chinese tones in Chao numbers, Arabic syllables from vowels and harakat.
 - Every script laid out correctly, each word tagged with its own `lang=`:
