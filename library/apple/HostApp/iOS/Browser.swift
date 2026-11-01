@@ -81,7 +81,7 @@ struct Browser: View {
                 Section("Locations") {
                     Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
                     Label("Archive", systemImage: "icloud").tag(Gallery.rootPath)
-                    Label("Assistant", systemImage: "lightbulb").tag(Browser.assistant)
+                    Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                 }
             }
@@ -92,7 +92,7 @@ struct Browser: View {
                     MainView()
                 } else if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
-                        .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                        .navigationTitle("Ask").navigationBarTitleDisplayMode(.inline)
                 } else if picked == Browser.listen {
                     ListenView()
                 } else if picked == Browser.shared {
@@ -113,14 +113,14 @@ struct MainView: View {
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { asking = true } label: { Label("Assistant", systemImage: "lightbulb") }
+                    Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }
                         .keyboardShortcut("k")
                 }
             }
             .sheet(isPresented: $asking) {
                 NavigationStack {
                     PlayerView(url: galleryURL("/main", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
-                        .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                        .navigationTitle("Ask").navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { asking = false } } }
                 }
                 .presentationDetents([.medium, .large])
@@ -190,7 +190,7 @@ struct FolderView: View {
         .toolbar {
             // the assistant, on this folder ("This folder"; it has an All switch)
             ToolbarItem(placement: .primaryAction) {
-                Button { asking = true } label: { Label("Assistant", systemImage: "lightbulb") }
+                Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
@@ -237,7 +237,7 @@ struct FolderView: View {
             NavigationStack {
                 PlayerView(url: galleryURL("/main/archive", ["p": folder.path == Gallery.rootPath ? nil : String(folder.path.dropFirst(Gallery.rootPath.count + 1)), "ask": "1"]))
                     .ignoresSafeArea(edges: .bottom)
-                    .navigationTitle("Assistant").navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle("Ask").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { asking = false } } }
             }
             .presentationDetents([.medium, .large])

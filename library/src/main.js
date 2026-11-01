@@ -334,22 +334,35 @@ export async function mainFolder(env, url) {
 
   // Shared Albums, its own module under Collections as in iOS Photos: every live share link as a square
   // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
-  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared">Shared Albums</a></h2><a class="ac" href="/main/shared#activity">Activity</a><button class="cv" aria-label="Show or hide Shared Albums"><svg viewBox="0 0 14 14"><path d="M2 5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></header><div class="ar"></div></section>
+  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared">Shared Albums</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar"></div></section>
 <script>(function(){
+  // 3 cards a page; a swipe pages left or right and wraps around: past the last page is the first, before the first is the last
   var sa=document.getElementById("sa"),ar=sa.querySelector(".ar");
-  try{if(localStorage.getItem("sa-shut")==="1")sa.classList.add("shut")}catch(e){}
-  sa.querySelector(".cv").onclick=function(){var s=sa.classList.toggle("shut");try{localStorage.setItem("sa-shut",s?"1":"0")}catch(e){}};
   var ini=function(n){return String(n||"").trim().split(/\\s+/).slice(0,2).map(function(w){return w[0]||""}).join("").toUpperCase()};
+  var card=function(s){
+    var a=document.createElement("a");a.className="al";a.href="/main/shared#s/"+s.kind+"/"+s.id;a.draggable=false;
+    if(s.cover&&!s.coverVideo){var im=document.createElement("img");im.loading="lazy";im.src=s.cover;im.alt="";a.appendChild(im)}
+    var i=document.createElement("i");i.textContent=s.who?ini(s.who):"\u{1F517}";a.appendChild(i);
+    var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
+    return a;
+  };
   fetch("/main/api/shares",{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
     var l=(d&&d.shares)||[];
-    if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';ar.style.display="block";return}
-    l.forEach(function(s){
-      var a=document.createElement("a");a.className="al";a.href="/main/shared#s/"+s.kind+"/"+s.id;
-      if(s.cover&&!s.coverVideo){var im=document.createElement("img");im.loading="lazy";im.src=s.cover;a.appendChild(im)}
-      var i=document.createElement("i");i.textContent=s.who?ini(s.who):"\u{1F517}";a.appendChild(i);
-      var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
-      ar.appendChild(a);
-    });
+    if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';return}
+    var tr=document.createElement("div");tr.className="tr";ar.appendChild(tr);
+    for(var k=0;k<l.length;k+=3){var pg=document.createElement("div");pg.className="pg";l.slice(k,k+3).forEach(function(s){pg.appendChild(card(s))});tr.appendChild(pg)}
+    var n=tr.children.length,at=0,x0=null,dx=0,moved=false;
+    var show=function(anim){tr.style.transition=anim?"transform .35s cubic-bezier(.2,.8,.2,1)":"none";tr.style.transform="translateX("+(-at*ar.clientWidth+dx)+"px)"};
+    ar.addEventListener("pointerdown",function(e){if(n<2&&l.length<2)return;x0=e.clientX;dx=0;moved=false;try{ar.setPointerCapture(e.pointerId)}catch(_){}});
+    ar.addEventListener("pointermove",function(e){if(x0===null)return;dx=e.clientX-x0;if(Math.abs(dx)>6)moved=true;show(false)});
+    var up=function(){if(x0===null)return;x0=null;
+      var w=ar.clientWidth*.18;
+      if(dx<-w)at=(at+1)%n;else if(dx>w)at=(at-1+n)%n;
+      dx=0;show(true)};
+    ar.addEventListener("pointerup",up);ar.addEventListener("pointercancel",up);
+    ar.addEventListener("click",function(e){if(moved){e.preventDefault();moved=false}},true);
+    addEventListener("resize",function(){show(false)});
+    show(false);
   }).catch(function(){ar.style.display="none"});
 })();</script>`;
 
@@ -372,13 +385,12 @@ export async function mainFolder(env, url) {
 .mainnav .sa h2{margin:0;flex:1;min-width:0}
 .mainnav .sa h2 a{color:#fff;text-decoration:none}
 .mainnav .sa h2 a::after{content:"\u203a";color:#8e8e93;margin-left:8px}
-.mainnav .sa .ac,.mainnav .sa .cv{border:0;border-radius:999px;background:#1c1c1e;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
-.mainnav .sa .cv{width:36px;height:36px;padding:0;display:grid;place-items:center}
-.mainnav .sa .cv svg{width:14px;height:14px;transition:transform .2s}
-.mainnav .sa.shut .cv svg{transform:rotate(-90deg)}
-.mainnav .sa.shut .ar{display:none}
-.mainnav .sa .ar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(140px,calc((100% - 24px)/3.2));gap:12px;overflow-x:auto;scrollbar-width:none}
-.mainnav .sa .ar::-webkit-scrollbar{display:none}
+.mainnav .sa .ac{border:0;border-radius:999px;background:#1c1c1e;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
+.mainnav .sa .ar{overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.mainnav .sa .tr{display:flex;will-change:transform}
+.mainnav .sa .pg{flex:0 0 100%;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;box-sizing:border-box;padding-right:12px}
+.mainnav .sa .al{-webkit-user-drag:none}
+.mainnav .sa .al img{pointer-events:none}
 .mainnav .sa .al{position:relative;aspect-ratio:1;border-radius:18px;overflow:hidden;background:#1c1c1e;display:block;color:#fff;text-decoration:none}
 .mainnav .sa .al img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .mainnav .sa .al::after{content:"";position:absolute;inset:auto 0 0 0;height:50%;background:linear-gradient(transparent,rgba(0,0,0,.6))}

@@ -213,8 +213,8 @@ const G=${data};
   </div>
 </div>
 <div class="mtoast" id="mtoast" role="status"></div>
-${live.main ? `<aside id="aip" aria-label="Assistant" hidden>
-  <div class="aihead"><b>Assistant</b><button class="lnk" id="ainew" type="button">New</button><button class="lnk" id="aidone" type="button">Done</button></div>
+${live.main ? `<aside id="aip" aria-label="Ask" hidden>
+  <div class="aihead"><b>Ask</b><button class="lnk" id="ainew" type="button">New</button><button class="lnk" id="aidone" type="button">Done</button></div>
   <div class="aiseg" role="group" aria-label="Search in"><button id="aihere" type="button">This folder</button><button id="aimain" type="button">Main</button><button id="aiarch" type="button">Archive</button><button id="aiall" type="button">All</button></div>
   <p id="aistat" hidden></p>
   <div id="aim" aria-live="polite"></div>

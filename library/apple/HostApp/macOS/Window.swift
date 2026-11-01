@@ -189,7 +189,7 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         case "back": item.label = "Back"; item.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Back"); item.action = #selector(back)
         case "forward": item.label = "Forward"; item.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Forward"); item.action = #selector(forward)
         case "shared": item.label = "Shared"; item.toolTip = "Shared links and Activity (⌘3)"; item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Shared"); item.action = #selector(shared)
-        case "ask": item.label = "Assistant"; item.toolTip = "Ask about what’s open (⌘K)"; item.image = NSImage(systemSymbolName: "lightbulb", accessibilityDescription: "Assistant")?.withSymbolConfiguration(.init(paletteColors: [.controlAccentColor])); item.action = #selector(ask)
+        case "ask": item.label = "Ask"; item.toolTip = "Ask about what’s open (⌘K)"; item.image = NSImage(systemSymbolName: "lightbulb", accessibilityDescription: "Ask")?.withSymbolConfiguration(.init(paletteColors: [.controlAccentColor])); item.action = #selector(ask)
         default: return nil
         }
         item.isBordered = true
@@ -249,7 +249,7 @@ final class GalleryWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         add("Edit", [item("Undo", Selector(("undo:")), "z"), item("Redo", Selector(("redo:")), "z", [.command, .shift]), .separator(),
                      item("Cut", #selector(NSText.cut(_:)), "x"), item("Copy", #selector(NSText.copy(_:)), "c"),
                      item("Paste", #selector(NSText.paste(_:)), "v"), item("Select All", #selector(NSText.selectAll(_:)), "a")])
-        add("View", [item("Assistant", #selector(ask), "k", target: self), .separator(),
+        add("View", [item("Ask", #selector(ask), "k", target: self), .separator(),
                      item("Main", #selector(home), "1", target: self), item("Archive", #selector(archive), "2", target: self),
                      item("Shared", #selector(shared), "3", target: self), .separator(),
                      item("Back", #selector(back), "[", target: self), item("Forward", #selector(forward), "]", target: self),
