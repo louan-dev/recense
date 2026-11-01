@@ -264,6 +264,23 @@
     const head = el("div", "dhead");
     const meta = [items(s.count), expiry(s.exp), s.who ? "With " + s.who : "Anyone with the link"].join(" · ");
     head.append(el("h2", "", s.title), el("div", "m", meta));
+    // iOS Photos' album top: the cover full bleed with the title over it, and ▶ for a slideshow of the pictures
+    const shows = s.items.filter((f) => !f.pending && f.type.startsWith("image/"));
+    if (s.cover && !s.coverVideo) {
+      const hero = el("div", "hero");
+      const im = el("img");
+      im.src = s.cover;
+      im.alt = "";
+      hero.appendChild(im);
+      if (shows.length > 1) {
+        const play = iconBtn('<path d="M8 5v14l11-7z"/>', "Slideshow", () => viewer(shows, 0, true), true);
+        play.classList.add("play");
+        hero.appendChild(play);
+      }
+      head.classList.add("on");
+      hero.appendChild(head);
+      app.appendChild(hero);
+    }
     if (s.url) {
       const acts = el("div", "acts");
       const copy = el("button", "lnk", "Copy Link");
@@ -284,7 +301,7 @@
       acts.append(copy, open);
       head.appendChild(acts);
     }
-    app.appendChild(head);
+    if (!head.classList.contains("on")) app.appendChild(head);
     if (s.perms) app.appendChild(permsBox(s));
 
     if (!s.items.length) {
@@ -342,7 +359,7 @@
   }
 
   // a plain viewer for the share's files; arrows and swipes move through them
-  function viewer(list, at) {
+  function viewer(list, at, slideshow) {
     if (!list.length) return;
     const v = el("div", "view");
     v.setAttribute("role", "dialog");
@@ -409,7 +426,18 @@
       else if (e.key === "ArrowLeft") go(-1);
       else if (e.key === "ArrowRight") go(1);
     };
+    // ▶ on the album: pictures every 3 seconds, round and round, until Done or a touch
+    let tick = slideshow ? setInterval(() => {
+      at = (at + 1) % list.length;
+      show();
+    }, 3000) : null;
+    const stop = () => {
+      clearInterval(tick);
+      tick = null;
+    };
+    v.addEventListener("pointerdown", stop);
     const close = () => {
+      stop();
       v.remove();
       removeEventListener("keydown", key);
     };
@@ -445,12 +473,57 @@
     const what = (n, noun) => (n === 1 ? "a " + noun : n + " " + noun + "s");
     const kind = (f) => (f && f.type ? (f.type.startsWith("video/") ? "video" : f.type.startsWith("audio/") ? "recording" : f.type.startsWith("image/") ? "photo" : "file") : "item");
     if (e.type === "comment") {
-      x.append(" commented: ");
+      x.append(" said, ");
       x.appendChild(el("q", "", e.text));
-    } else if (e.type === "like") x.append(" liked " + what(1, kind(e.items[0])));
+      x.append(".");
+    } else if (e.type === "like") x.append(" liked this");
     else if (e.type === "upload") x.append(" added " + what(e.count, e.count === 1 ? kind(e.items[0]) : "item"));
     else x.append(" shared " + what(e.count, "item") + (e.who ? " with " + e.who : ""));
     return x;
+  }
+
+  // "X shared N photos / Album ›" as iOS Photos posts it: the pictures large (one, or one over a row with +N),
+  // the date, and a blue thumbs-up that likes the first of them (the same like as in the viewer)
+  function post(e) {
+    const li = el("li", "post");
+    const hd = el("a", "ev");
+    hd.href = "#s/" + e.share.kind + "/" + e.share.id;
+    const x = el("span", "x");
+    x.appendChild(said(e));
+    const s = el("span", "s");
+    s.append(el("span", "hl", e.share.title + " ›"));
+    x.appendChild(s);
+    hd.append(el("span", "av", initials(e.mine ? S.owner : e.by)), x);
+    const pics = e.items.filter((f) => f.thumb || f.video);
+    const mo = el("a", "mosaic n" + Math.min(pics.length, 4));
+    mo.href = hd.href;
+    pics.slice(0, 4).forEach((f, i) => {
+      const b = el("span");
+      b.appendChild(media(f));
+      if (i === 3 && e.count > 4) b.appendChild(el("span", "more", "+" + (e.count - 4)));
+      mo.appendChild(b);
+    });
+    const ft = el("div", "pf");
+    ft.appendChild(el("span", "d", new Date(e.at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })));
+    const f0 = pics[0];
+    const like = el("button", "like");
+    like.type = "button";
+    like.setAttribute("aria-label", "Like");
+    like.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 11v9H4v-9zM7 11l4-8a2 2 0 0 1 2 2v4h6a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 17.8 20H7"/></svg>';
+    like.onclick = async () => {
+      const body = e.share.kind === "link" ? { kind: "link", id: e.share.id, key: f0.ref, op: "like" } : { kind: "main", path: f0.ref, op: "like" };
+      like.disabled = true;
+      try {
+        const r = await api("/main/api/caption", { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+        like.classList.toggle("on", (r.likes || []).some((l) => !l.vid && (!l.by || l.by === S.owner)));
+      } catch (err) {
+        toast(err.message);
+      }
+      like.disabled = false;
+    };
+    ft.appendChild(like);
+    li.append(hd, mo, ft);
+    return li;
   }
 
   async function activityView() {
@@ -462,6 +535,10 @@
     }
     const ul = el("ul", "feed");
     for (const e of events) {
+      if ((e.type === "share" || e.type === "upload") && e.items.some((f) => f.thumb || f.video)) {
+        ul.appendChild(post(e));
+        continue;
+      }
       const li = el("li");
       const row = el("a", "ev");
       row.href = "#s/" + e.share.kind + "/" + e.share.id;
@@ -481,6 +558,7 @@
         th.appendChild(b);
       });
       if (e.count > shown.length && shown.length) th.appendChild(el("span", "more", "+" + (e.count - shown.length)));
+      if (e.type === "like") th.appendChild(el("span", "lk", "👍"));
       row.append(av, x, th);
       li.appendChild(row);
       ul.appendChild(li);

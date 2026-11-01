@@ -336,7 +336,8 @@ export async function mainFolder(env, url) {
   // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
   const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared">Shared Albums</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar"></div></section>
 <script>(function(){
-  // 3 cards a page; a swipe pages left or right and wraps around: past the last page is the first, before the first is the last
+  // about 3 cards in view, the next one peeking; a swipe glides card by card (scroll snap) and wraps around: the cards
+  // are laid out three times and, once a scroll settles in the first or last copy, it moves to the middle one unseen
   var sa=document.getElementById("sa"),ar=sa.querySelector(".ar");
   var ini=function(n){return String(n||"").trim().split(/\\s+/).slice(0,2).map(function(w){return w[0]||""}).join("").toUpperCase()};
   var card=function(s){
@@ -350,19 +351,20 @@ export async function mainFolder(env, url) {
     var l=(d&&d.shares)||[];
     if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';return}
     var tr=document.createElement("div");tr.className="tr";ar.appendChild(tr);
-    for(var k=0;k<l.length;k+=3){var pg=document.createElement("div");pg.className="pg";l.slice(k,k+3).forEach(function(s){pg.appendChild(card(s))});tr.appendChild(pg)}
-    var n=tr.children.length,at=0,x0=null,dx=0,moved=false;
-    var show=function(anim){tr.style.transition=anim?"transform .35s cubic-bezier(.2,.8,.2,1)":"none";tr.style.transform="translateX("+(-at*ar.clientWidth+dx)+"px)"};
-    ar.addEventListener("pointerdown",function(e){if(n<2&&l.length<2)return;x0=e.clientX;dx=0;moved=false;try{ar.setPointerCapture(e.pointerId)}catch(_){}});
-    ar.addEventListener("pointermove",function(e){if(x0===null)return;dx=e.clientX-x0;if(Math.abs(dx)>6)moved=true;show(false)});
-    var up=function(){if(x0===null)return;x0=null;
-      var w=ar.clientWidth*.18;
-      if(dx<-w)at=(at+1)%n;else if(dx>w)at=(at-1+n)%n;
-      dx=0;show(true)};
-    ar.addEventListener("pointerup",up);ar.addEventListener("pointercancel",up);
-    ar.addEventListener("click",function(e){if(moved){e.preventDefault();moved=false}},true);
-    addEventListener("resize",function(){show(false)});
-    show(false);
+    var wrap=l.length>3,copies=wrap?3:1;
+    for(var c=0;c<copies;c++)l.forEach(function(s){var e=card(s);if(c!==1&&wrap){e.tabIndex=-1;e.setAttribute("aria-hidden","true")}tr.appendChild(e)});
+    if(!wrap)return;
+    var span=function(){return tr.children[l.length].offsetLeft-tr.children[0].offsetLeft};
+    var home=function(){tr.scrollLeft+=0;var w=span();if(tr.scrollLeft<w*.5)tr.scrollLeft+=w;else if(tr.scrollLeft>=w*1.5)tr.scrollLeft-=w};
+    tr.scrollLeft=span();
+    var t=null;tr.addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(home,140)},{passive:true});
+    addEventListener("resize",function(){tr.scrollLeft=span()});
+    // a mouse drags it like a finger (touch and trackpads scroll natively)
+    var x0=null,s0=0,moved=false;
+    tr.addEventListener("pointerdown",function(e){if(e.pointerType!=="mouse")return;x0=e.clientX;s0=tr.scrollLeft;moved=false;tr.classList.add("drag")});
+    addEventListener("pointermove",function(e){if(x0===null)return;var dx=e.clientX-x0;if(Math.abs(dx)>6)moved=true;tr.scrollLeft=s0-dx});
+    addEventListener("pointerup",function(){if(x0===null)return;x0=null;tr.classList.remove("drag");var w=tr.children[1].offsetLeft-tr.children[0].offsetLeft;var k=Math.round((tr.scrollLeft-s0)/w);tr.scrollTo({left:s0+Math.max(-1,Math.min(1,k))*w,behavior:"smooth"})});
+    tr.addEventListener("click",function(e){if(moved){e.preventDefault();moved=false}},true);
   }).catch(function(){ar.style.display="none"});
 })();</script>`;
 
@@ -384,11 +386,13 @@ export async function mainFolder(env, url) {
 .mainnav .sa header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .mainnav .sa h2{margin:0;flex:1;min-width:0}
 .mainnav .sa h2 a{color:#fff;text-decoration:none}
-.mainnav .sa h2 a::after{content:"\u203a";color:#8e8e93;margin-left:8px}
+.mainnav .sa h2 a::after{content:"\u203a";color:#8e8e93;margin-left:6px}
 .mainnav .sa .ac{border:0;border-radius:999px;background:#1c1c1e;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
-.mainnav .sa .ar{overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
-.mainnav .sa .tr{display:flex;will-change:transform}
-.mainnav .sa .pg{flex:0 0 100%;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;box-sizing:border-box;padding-right:12px}
+.mainnav .sa .ar{user-select:none;-webkit-user-select:none;margin:0 -16px}
+.mainnav .sa .tr{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;padding:0 16px;scrollbar-width:none;overscroll-behavior-x:contain}
+.mainnav .sa .tr::-webkit-scrollbar{display:none}
+.mainnav .sa .tr.drag{scroll-snap-type:none;cursor:grabbing}
+.mainnav .sa .tr>.al{flex:0 0 calc((100% - 32px - 20px)/3.25);scroll-snap-align:start;scroll-snap-stop:always}
 .mainnav .sa .al{-webkit-user-drag:none}
 .mainnav .sa .al img{pointer-events:none}
 .mainnav .sa .al{position:relative;aspect-ratio:1;border-radius:18px;overflow:hidden;background:#1c1c1e;display:block;color:#fff;text-decoration:none}

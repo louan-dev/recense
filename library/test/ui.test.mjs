@@ -1600,7 +1600,7 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await pg.waitForSelector(".ev");
   assert.equal(await pg.getAttribute('.seg button:text("Activity")', "aria-selected"), "true");
   const rows = await pg.$$eval(".ev", (r) => r.map((x) => x.querySelector(".x").textContent));
-  assert.ok(rows.some((r) => /^You liked a photoFair · /.test(r)), rows.join(" | "));
+  assert.ok(rows.some((r) => /^You liked thisFair · /.test(r)), rows.join(" | "));
   assert.ok(rows.some((r) => /^You shared 2 items with Bo KimFair/.test(r)), rows.join(" | "));
   assert.ok(await pg.$('.ev[href="#s/invite/' + id + '"] .th img'));
   await pg.click('.ev[href="#s/invite/' + id + '"]');

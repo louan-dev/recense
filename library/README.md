@@ -197,7 +197,9 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
-- Shared Albums (notes 20261029 item 16): every file in a share is its own thread (comments, likes). People with an
+- Shared Albums (notes 20261029 item 16), laid out like iOS Photos: on Main's root the row glides card by card
+  (about 3 in view, the next peeking, wrapping both ways); Activity posts show the shared pictures large with a
+  blue Like; an album opens on its cover with ▶ for a slideshow. Every file in a share is its own thread (comments, likes). People with an
   upload link can add files (`POST /api/upload?action=reserve`, then multipart parts, `guestUploadApi`); they expire
   with the link and show in Activity. Invite (Main) uploads stay until deleted. Links made from the archive are
   view-and-comment only (no posting, no `?dl=1`) until the owner turns on Subscribers Can Post / Allow Downloads on

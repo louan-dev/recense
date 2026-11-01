@@ -102,4 +102,32 @@ main{max-width:860px;margin:0 auto;padding:0 0 calc(32px + env(safe-area-inset-b
 .perms input:checked+i{background:#30d158}
 .perms input:checked+i::after{transform:translateX(20px)}
 .perms input:disabled+i{opacity:.4}
-.files .tile .who{position:absolute;top:6px;right:6px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;background:rgba(60,60,67,.75);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font:600 10px/22px -apple-system,system-ui,sans-serif;text-align:center;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)}
+.files .tile .who{position:absolute;top:6px;right:6px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;background:#636366;color:#fff;font:600 10px/22px -apple-system,system-ui,sans-serif;text-align:center;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)}
+
+/* Activity posts, as iOS Photos shows "shared N photos": pictures large, the date, a blue Like (notes 20261029 item 16) */
+.feed .post{display:block;padding:14px 0 18px}
+.feed .post .ev{color:inherit;text-decoration:none}
+.mosaic{display:grid;gap:2px;margin:10px 0 8px;border-radius:4px;overflow:hidden;grid-template-columns:repeat(3,1fr)}
+.mosaic span{position:relative;display:block;aspect-ratio:1;background:var(--surface-1);overflow:hidden}
+.mosaic span:first-child{grid-column:1/-1;aspect-ratio:4/3}
+.mosaic.n2{grid-template-columns:1fr}
+.mosaic.n2 span:last-child{display:none}
+.mosaic.n2 span:first-child{aspect-ratio:1}
+.mosaic img,.mosaic video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mosaic .more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;font:600 17px -apple-system,system-ui,sans-serif;aspect-ratio:auto}
+.pf{display:flex;align-items:center;justify-content:space-between;color:#8e8e93;font-size:13px}
+.pf .like{background:none;border:0;padding:4px;color:#0a84ff;cursor:pointer}
+.pf .like svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
+.pf .like.on svg{fill:currentColor}
+.feed .th{position:relative}
+.feed .th .lk{position:absolute;right:-4px;bottom:-4px;width:20px;height:20px;border-radius:50%;background:#0a84ff;display:grid;place-items:center;font-size:11px}
+
+/* an album's cover hero (iOS Photos): full bleed, the title and count over its foot, ▶ for a slideshow */
+.hero{position:relative;margin:0 0 12px;aspect-ratio:4/3;max-height:62vh;width:100%;overflow:hidden;background:var(--surface-1)}
+.hero>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero::after{content:"";position:absolute;inset:auto 0 0 0;height:55%;background:linear-gradient(transparent,rgba(0,0,0,.75));pointer-events:none}
+.hero .dhead.on{position:absolute;left:0;right:0;bottom:0;z-index:1;margin:0;padding:0 16px 14px}
+.hero .dhead.on h2{font-size:30px;font-weight:700;color:#fff}
+.hero .dhead.on .m{color:rgba(255,255,255,.8)}
+.hero .play{position:absolute;right:16px;bottom:18px;z-index:2;width:40px;height:40px;border-radius:50%;background:rgba(60,60,67,.8);color:#fff;display:grid;place-items:center}
+.hero .play svg{width:18px;height:18px}
