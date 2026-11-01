@@ -8253,7 +8253,7 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     var repeats: [Line] = [] { didSet { sameB.title = "Same in \(repeats.count) repeat" + (repeats.count == 1 ? "" : "s"); sameB.isHidden = repeats.isEmpty } }
     var toRepeats: (([Int: Pin]) -> Void)?
     private let win: NSPanel
-    private let words = NSPopUpButton()
+    private var chips: [Chip] = []
     private let startB = Mark(), endB = Mark()
     private let hearB = NSButton(title: "Stop", target: nil, action: nil), autoB = NSButton(title: "Auto", target: nil, action: nil)
     private let sameB = NSButton(title: "", target: nil, action: nil)
@@ -8262,11 +8262,50 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     /// The stretch being heard round: the chosen word as it's now set.
     var span: (Double, Double)? { let p = pinOf(cur); return (p.s, p.e) }
 
-    /// A mark: a tap sets it to what is heard; two fingers along it (or ← →) move it a hundredth at a time.
+    /// A word of the line as Gallery draws it (.txchip): a capsule, yellow once timed by ear, lit while it is picked.
+    final class Chip: NSButton {
+        var timed = false { didSet { paint() } }
+        var picked = false { didSet { paint() } }
+        convenience init(_ t: String) {
+            self.init(frame: .zero)
+            title = t; isBordered = false; wantsLayer = true
+            font = .systemFont(ofSize: 12); paint()
+        }
+        override var intrinsicContentSize: NSSize { let s = super.intrinsicContentSize; return NSSize(width: s.width + 18, height: 22) }
+        override func layout() { super.layout(); layer?.cornerRadius = bounds.height / 2 }
+        private func paint() {
+            let gold = NSColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)
+            layer?.borderWidth = 1
+            layer?.borderColor = (timed ? gold.withAlphaComponent(0.7) : NSColor(white: 1, alpha: 0.25)).cgColor
+            layer?.backgroundColor = picked ? NSColor(white: 1, alpha: 0.14).cgColor : nil
+            attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: timed ? gold : NSColor(white: 1, alpha: 0.75), .font: font ?? .systemFont(ofSize: 12)])
+        }
+    }
+
+    /// A mark: a tap sets it to what is heard; two fingers along it (or ← →) move it a hundredth at a time. Drawn as
+    /// Gallery's .txmark: a soft card, its name in blue above the time.
     final class Mark: NSButton {
         var nudge: ((Double) -> Void)?, done: (() -> Void)?
+        var name = ""
+        var value = "" { didSet { needsDisplay = true } }
         private var acc: CGFloat = 0
         override var acceptsFirstResponder: Bool { true }
+        override func draw(_ r: NSRect) {
+            let b = bounds.insetBy(dx: 1, dy: 1)
+            NSColor(white: 1, alpha: isHighlighted ? 0.16 : 0.08).setFill()
+            NSBezierPath(roundedRect: b, xRadius: 12, yRadius: 12).fill()
+            if window?.firstResponder === self {
+                NSColor(red: 0.04, green: 0.52, blue: 1, alpha: 0.8).setStroke()
+                let o = NSBezierPath(roundedRect: b.insetBy(dx: 1, dy: 1), xRadius: 11, yRadius: 11); o.lineWidth = 2; o.stroke()
+            }
+            let n = NSAttributedString(string: name, attributes: [.font: NSFont.systemFont(ofSize: 10.5, weight: .semibold), .foregroundColor: NSColor(red: 0.5, green: 0.74, blue: 1, alpha: 1)])
+            let v = NSAttributedString(string: value, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular), .foregroundColor: NSColor(white: 1, alpha: 0.85)])
+            let h = n.size().height + 1 + v.size().height, y0 = (bounds.height - h) / 2
+            v.draw(at: NSPoint(x: (bounds.width - v.size().width) / 2, y: y0))
+            n.draw(at: NSPoint(x: (bounds.width - n.size().width) / 2, y: y0 + v.size().height + 1))
+        }
+        override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
+        override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
         override func scrollWheel(with e: NSEvent) {
             acc += e.scrollingDeltaX != 0 ? e.scrollingDeltaX : -e.scrollingDeltaY
             let step = e.hasPreciseScrollingDeltas ? 4 : 1
@@ -8290,27 +8329,52 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         win = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 150), styleMask: [.titled, .closable, .utilityWindow, .hudWindow],
                       backing: .buffered, defer: false)
         super.init()
-        win.title = "Timing by ear"; win.isFloatingPanel = true; win.hidesOnDeactivate = false; win.delegate = self
+        // Gallery's editor at the Mac's scale (row 40): the line, its words as chips, Start and End as cards, then the
+        // blue words Stop · Auto · Same in N repeats; no title, the same dark glass
+        win.title = "Timing by ear"; win.titleVisibility = .hidden; win.titlebarAppearsTransparent = true
+        win.styleMask.insert(.fullSizeContentView)
+        win.appearance = NSAppearance(named: .darkAqua); win.backgroundColor = NSColor(white: 0, alpha: 0.84); win.isOpaque = false
+        win.isFloatingPanel = true; win.hidesOnDeactivate = false; win.delegate = self
         win.isReleasedWhenClosed = false
-        for (i, w) in line.words.enumerated() { words.addItem(withTitle: "\(i + 1). \(w.text)"); words.lastItem?.tag = i }
-        words.target = self; words.action = #selector(pick)
+        let text = NSTextField(wrappingLabelWithString: line.words.map(\.text).joined(separator: " "))
+        text.font = .systemFont(ofSize: 15, weight: .semibold); text.textColor = .white
+        text.preferredMaxLayoutWidth = 328
+        let field = NSView(); field.wantsLayer = true; field.layer?.cornerRadius = 10
+        field.layer?.backgroundColor = NSColor(white: 1, alpha: 0.1).cgColor
+        text.translatesAutoresizingMaskIntoConstraints = false; field.addSubview(text)
+        NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo: field.leadingAnchor, constant: 10), text.trailingAnchor.constraint(equalTo: field.trailingAnchor, constant: -10),
+                                     text.topAnchor.constraint(equalTo: field.topAnchor, constant: 6), text.bottomAnchor.constraint(equalTo: field.bottomAnchor, constant: -6),
+                                     field.widthAnchor.constraint(equalToConstant: 348)])
+        for (i, w) in line.words.enumerated() {
+            let c = Chip(w.text); c.tag = i; c.target = self; c.action = #selector(pick(_:)); chips.append(c)
+        }
+        // the chips wrap like Gallery's, a row at a time
+        var rows: [NSStackView] = [], width: CGFloat = 0
+        for c in chips {
+            let cw = c.intrinsicContentSize.width
+            if rows.isEmpty || width + cw > 348 { rows.append(NSStackView()); rows.last!.spacing = 4; width = 0 }
+            rows.last!.addArrangedSubview(c); width += cw + 4
+        }
+        let words = NSStackView(views: rows); words.orientation = .vertical; words.alignment = .leading; words.spacing = 4
         for (m, key) in [(startB, true), (endB, false)] {
-            m.bezelStyle = .regularSquare; m.isBordered = true; m.setButtonType(.momentaryPushIn)
-            m.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+            m.isBordered = false; m.setButtonType(.momentaryPushIn); m.title = ""
+            m.name = key ? "Start" : "End"
             m.target = self; m.action = key ? #selector(markStart) : #selector(markEnd)
             m.nudge = { [weak self] d in self?.move(start: key, by: d) }
             m.done = { [weak self] in guard let self else { return }; self.changed(self.pins, true) }
-            m.heightAnchor.constraint(equalToConstant: 44).isActive = true
-            m.widthAnchor.constraint(equalToConstant: 150).isActive = true
+            m.heightAnchor.constraint(equalToConstant: 46).isActive = true
+            m.widthAnchor.constraint(equalToConstant: 160).isActive = true
         }
         hearB.target = self; hearB.action = #selector(hearPressed); autoB.target = self; autoB.action = #selector(autoPressed)
         sameB.target = self; sameB.action = #selector(samePressed); sameB.isHidden = true
         for b in [hearB, autoB, sameB] { b.isBordered = false; b.contentTintColor = .linkColor }
-        let marks = NSStackView(views: [startB, endB]); marks.spacing = 16
+        let marks = NSStackView(views: [startB, endB]); marks.spacing = 12
         let buttons = NSStackView(views: [hearB, autoB, sameB]); buttons.spacing = 14
-        let stack = NSStackView(views: [words, marks, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        let stack = NSStackView(views: [field, words, marks, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        stack.setCustomSpacing(10, after: words)
+        stack.edgeInsets = NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16)
         win.contentView = stack
+        win.setContentSize(stack.fittingSize)
         load(0)
     }
 
@@ -8327,14 +8391,14 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private func pinOf(_ i: Int) -> Pin { pins[i] ?? auto(i) }
     private func load(_ i: Int) {
         cur = i
-        words.selectItem(withTag: i)
         labels()
         win.makeFirstResponder(startB)
     }
     private func labels() {
         let p = pinOf(cur)
         func t(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
-        startB.title = "Start  " + t(p.s); endB.title = "End  " + t(p.e)
+        startB.value = t(p.s); endB.value = t(p.e)
+        for c in chips { c.picked = c.tag == cur; c.timed = pins[c.tag] != nil }
     }
     /// The word's span with one end moved (the other kept 50 ms clear of it); the light follows the voice (k 0).
     private func set(start: Bool, _ x: Double, push: Bool) {
@@ -8348,7 +8412,7 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private func move(start: Bool, by d: Double) { let p = pinOf(cur); set(start: start, (start ? p.s : p.e) + d, push: false) }
     @objc private func markStart() { if let n = now?() { set(start: true, n, push: true) } }
     @objc private func markEnd() { if let n = now?() { set(start: false, n, push: true) } }
-    @objc private func pick() { load(words.selectedTag()); startLoop() }
+    @objc private func pick(_ c: NSButton) { load(c.tag); startLoop() }
     private func startLoop() {
         looping = true; hearB.title = "Stop"
         let p = pinOf(cur); hear?(p.s, p.e)

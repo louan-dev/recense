@@ -72,6 +72,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
   Word timing by ear in the editor's toolbar: the word loops, Start and End are tapped as it is sung (two fingers on a
   mark fine-tune it), the light follows the voice's syllables inside them, and Same in repeats times a chorus at once.
+  The panel is drawn as Gallery's editor at the Mac's scale: the line, its words as chips (yellow once timed), Start
+  and End as cards, then Stop · Auto · Same in N repeats in blue.
 - **Draws the prosody** over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes;
   the shape of the sentence becomes visible, which helps where the written word and the spoken one part ways.
 - **Reads each script as its readers do:**
