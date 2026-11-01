@@ -73,7 +73,6 @@ struct Browser: View {
     static let shared = "\u{0}shared"
     static let main = "\u{0}main"
     static let listen = "\u{0}listen"
-    @StateObject private var top = Folder(Gallery.rootPath)
     @State private var picked: String? = Gallery.rootPath
 
     var body: some View {
@@ -85,14 +84,8 @@ struct Browser: View {
                     Label("Assistant", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                 }
-                Section("Folders") {
-                    ForEach(top.items.filter(\.dir), id: \.id) { f in
-                        Label(f.name, systemImage: "folder").tag(f.path)
-                    }
-                }
             }
             .navigationTitle("Gallery")
-            .task { top.load() }
         } detail: {
             NavigationStack {
                 if picked == Browser.main {

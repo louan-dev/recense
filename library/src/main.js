@@ -332,6 +332,27 @@ export async function mainFolder(env, url) {
     .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${esc(x)}</a>`)
     .join("");
 
+  // Shared Albums, its own module under Collections as in iOS Photos: every live share link as a square
+  // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
+  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared">Shared Albums</a></h2><a class="ac" href="/main/shared#activity">Activity</a><button class="cv" aria-label="Show or hide Shared Albums"><svg viewBox="0 0 14 14"><path d="M2 5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></header><div class="ar"></div></section>
+<script>(function(){
+  var sa=document.getElementById("sa"),ar=sa.querySelector(".ar");
+  try{if(localStorage.getItem("sa-shut")==="1")sa.classList.add("shut")}catch(e){}
+  sa.querySelector(".cv").onclick=function(){var s=sa.classList.toggle("shut");try{localStorage.setItem("sa-shut",s?"1":"0")}catch(e){}};
+  var ini=function(n){return String(n||"").trim().split(/\\s+/).slice(0,2).map(function(w){return w[0]||""}).join("").toUpperCase()};
+  fetch("/main/api/shares",{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+    var l=(d&&d.shares)||[];
+    if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';ar.style.display="block";return}
+    l.forEach(function(s){
+      var a=document.createElement("a");a.className="al";a.href="/main/shared#s/"+s.kind+"/"+s.id;
+      if(s.cover&&!s.coverVideo){var im=document.createElement("img");im.loading="lazy";im.src=s.cover;a.appendChild(im)}
+      var i=document.createElement("i");i.textContent=s.who?ini(s.who):"\u{1F517}";a.appendChild(i);
+      var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
+      ar.appendChild(a);
+    });
+  }).catch(function(){sa.remove()});
+})();</script>`;
+
   const empty =
     !items.length && !subs.length
       ? `<p class="none">${rel ? "This folder is empty." : "Nothing in Main yet."}</p>`
@@ -346,14 +367,31 @@ export async function mainFolder(env, url) {
 .mainnav h2{margin:0 0 10px;font:700 22px -apple-system,BlinkMacSystemFont,sans-serif;color:#fff}
 .mainnav .fs{display:grid;grid-template-rows:repeat(3,auto);grid-auto-flow:column;grid-auto-columns:minmax(150px,calc((100% - 16px)/2.3));gap:8px;overflow-x:auto;scrollbar-width:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .mainnav .fs::-webkit-scrollbar{display:none}
-.mainnav .sh{display:block;color:#0a84ff;font:600 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:12px 14px;border-radius:12px;background:#1c1c1e;margin-bottom:8px}
+.mainnav .sa{margin-top:22px}
+.mainnav .sa header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mainnav .sa h2{margin:0;flex:1;min-width:0}
+.mainnav .sa h2 a{color:#fff;text-decoration:none}
+.mainnav .sa h2 a::after{content:"\u203a";color:#8e8e93;margin-left:8px}
+.mainnav .sa .ac,.mainnav .sa .cv{border:0;border-radius:999px;background:#1c1c1e;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 14px;text-decoration:none;cursor:pointer}
+.mainnav .sa .cv{width:36px;height:36px;padding:0;display:grid;place-items:center}
+.mainnav .sa .cv svg{width:14px;height:14px;transition:transform .2s}
+.mainnav .sa.shut .cv svg{transform:rotate(-90deg)}
+.mainnav .sa.shut .ar{display:none}
+.mainnav .sa .ar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(140px,calc((100% - 24px)/3.2));gap:12px;overflow-x:auto;scrollbar-width:none}
+.mainnav .sa .ar::-webkit-scrollbar{display:none}
+.mainnav .sa .al{position:relative;aspect-ratio:1;border-radius:18px;overflow:hidden;background:#1c1c1e;display:block;color:#fff;text-decoration:none}
+.mainnav .sa .al img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mainnav .sa .al::after{content:"";position:absolute;inset:auto 0 0 0;height:50%;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.mainnav .sa .al b{position:absolute;left:12px;right:12px;bottom:10px;z-index:1;font:600 16px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mainnav .sa .al i{position:absolute;top:8px;right:8px;z-index:1;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:#636366;font:600 11px -apple-system,sans-serif;font-style:normal;display:grid;place-items:center;box-sizing:border-box}
+.mainnav .sa .no{color:#8e8e93;font:15px -apple-system,sans-serif;padding:8px 0}
 body.selecting .mainnav .fd{position:relative;padding-right:40px}
 body.selecting .mainnav .fd::after{content:"";position:absolute;right:12px;top:50%;width:18px;height:18px;margin-top:-10px;border:1.5px solid #0a84ff;border-radius:50%}
 body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 3px #1c1c1e}
 .mainnav .fs.dragging{cursor:grabbing}
 .mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${links || !rel ? `<h2>Collections</h2>${rel ? "" : `<a class="sh" href="/main/shared">Shared</a>`}<div class="fs">${links}</div>` : ""}${empty}</nav>
+<nav class="mainnav">${links || !rel ? `<h2>Collections</h2><div class="fs">${links}</div>` : ""}${empty}${rel ? "" : shareRow}</nav>
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}
