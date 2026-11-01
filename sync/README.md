@@ -39,6 +39,15 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
   mount per disk plus a watchdog; Messages mounts at `~/Library/Messages` (the Disks Helper needs Full Disk Access).
 - **Move Offsite**: a Finder Quick Action and an iPhone Shortcut that move files into R2, naming the macOS privacy
   permission when one blocks a read.
+- **Docs sync** (`bin/docs-sync.zsh`, launchd `com.chauphan.docs-sync`): every readable or editable document on the
+  Mac in one place, Gallery Main › **Docs**, seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and
+  the website. Two-way (rclone bisync) for the Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary,
+  Developer and Google Drive; one-way for Voice Memos (`Docs/Recordings`) and Notability's PDF backups
+  (`Docs/Notability`); `Docs/INDEX.md` lists everything by source. Documents only (`config/docs-sync.filters`: writing,
+  PDFs, Office/iWork, ebooks, recordings; no code, app data or hidden files; the vault also takes its pictures). Writes
+  go through the Worker with this Mac's Access token, so Gallery keeps what it replaces in its trash; files a pass
+  removes on the Mac are kept in `~/.docs-sync/kept/`. The same file edited on both sides → both kept
+  (`name.conflict1.md`, `name.conflict2.md`). Every 10 minutes, at login and when the vault changes.
 - **resign-ios**: a daily check that re-signs Gallery on the iPad and iPhone when 2 days or less are left.
 
 ## Layout
@@ -46,9 +55,10 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
 - `src/` ledger, canary, Messenger ingest
 - `worker/` the CalDAV Worker (`src/caldav.js`, `src/index.js`, tests)
 - `bin/` launchd jobs and mount scripts: `archive-mount.zsh`, `disks-mount.zsh`, `gallery-main-over-dav.zsh`,
-  `add-gallery-archive-remote.zsh`, `add-gallery-tmp-remote.zsh`, `cal-job.sh`, `caldav-passwd.sh`, `ledger-job.sh`,
+  `add-gallery-archive-remote.zsh`, `add-gallery-tmp-remote.zsh`, `cal-job.sh`, `docs-sync.zsh`, `caldav-passwd.sh`, `ledger-job.sh`,
   `messenger-job.sh`, `move-ledger-sinks.zsh`, `offsite-image.zsh`, `resign-ios.zsh`
 - `tools/` `cal-export.swift`, `upload-status.swift`, `disks-helper`, `quick-actions/`, `shortcuts/`, `hetzner-check.py`
+- `config/` docs-sync filter lists
 - `launchd/` plist templates (`__HOME__` placeholders)
 - `docs/specs` what is being built, `docs/research` reports, `docs/runbooks` step-by-step (Arq, overflow, offsite
   disks, recovery, SanDisk evacuation, Obsidian images and integration, Gallery drive), `docs/proposals` decisions
@@ -63,8 +73,12 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
     node src/canary.mjs start|check
     zsh bin/archive-mount.zsh         # the always-on archive mount (launchd: com.chauphan.archive-mount)
     zsh bin/disks-mount.zsh           # the offsite disks (launchd: com.chauphan.disks-mount)
+    zsh bin/docs-sync.zsh             # one Docs pass now; --dry-run, --resync, --only "Obsidian"
 
 ## launchd
+
+    cp launchd/com.chauphan.docs-sync.plist ~/Library/LaunchAgents/ &&
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.docs-sync.plist
 
     sed "s#__HOME__#$HOME#g" launchd/com.chauphan.ledger.obsidian.plist.example \
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
