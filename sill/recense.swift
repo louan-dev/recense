@@ -7922,9 +7922,8 @@ final class NativeSources {
             if resume { self.setPlaying(true) }
         }
     }
-    /// Timing by ear (notes 20261029 row 35): the voice can't always tell how a word is sung, the listener can. A word
-    /// of the line, then where its light starts and ends and how it sweeps, while that stretch plays round; Auto gives it
-    /// back to Cadence. Saved as a corrections override (field "time", Gallery's own), so Gallery shows it too.
+    /// Timing by ear (notes 20261029 rows 35, 40): the voice can't always tell how a word is sung, the listener can. A word
+    /// of the line, then Start and End tapped as it is sung while that stretch plays round; Auto gives it back to Cadence. Saved as a corrections override (field "time", Gallery's own), so Gallery shows it too.
     var timing: TimingPanel?
     func timeLine(_ line: Line) {
         guard let ep = episode, let l = ep.sung.first(where: { $0.id == line.id }), !l.words.isEmpty else { return }
@@ -7946,6 +7945,19 @@ final class NativeSources {
                     if now > b + 0.5 || now < a - 1.5 { self.command(.seek(max(0, a - 0.8) - cfg.syncOffset * self.pos.rate + ep.shift)) }
                 }
             }
+        }
+        t.now = { [weak self] in guard let self, let ep = self.episode else { return 0 }; return self.mediaTime - ep.shift }
+        // the lines sung again with the same words (a chorus, an ad-lib): this line's timing, at the same place in each
+        let same = { (x: Line) in x.words.map { $0.text.lowercased().filter { $0.isLetter || $0.isNumber } }.filter { !$0.isEmpty } }
+        t.repeats = ep.sung.filter { $0.id != l.id && $0.words.count == l.words.count && same($0) == same(l) && !same(l).isEmpty }
+        t.toRepeats = { [weak self, weak ep] pins in
+            guard let self, let ep, self.episode === ep else { return }
+            for r in ep.sung where r.id != l.id && r.words.count == l.words.count && same(r) == same(l) {
+                let d = r.start - l.start
+                ep.setTiming(r, pins.mapValues { Pin(s: (($0.s + d) * 1000).rounded() / 1000, e: (($0.e + d) * 1000).rounded() / 1000, k: $0.k) }, push: true)
+            }
+            self.overlay.lastKey = ""
+            self.overlay.toast.say("Timed the same in its repeats")
         }
         t.onClose = { [weak self] in self?.loopTimer?.invalidate(); self?.loopTimer = nil; self?.timing = nil }
         timing = t
@@ -8224,50 +8236,79 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     }
 }
 
-/// A line's words timed by ear (notes 20261029 row 35): pick a word, then set where its light starts and ends and how
-/// it sweeps (lingering first, even, or hurrying first) while that stretch plays round (`hear`); Auto gives the word
-/// back to Cadence. Every change shows at once (`changed` without push), and is saved for Gallery when a slider is let go.
+/// A line's words timed by ear (notes 20261029 rows 35, 40): pick a word and its stretch plays round; tap Start as the
+/// voice reaches it and End as it lets go, as A and B are set on the loop (`now`: the time heard). A two-finger swipe
+/// over a mark (or ← →) moves it a hundredth for the last touch. The light follows the voice inside that span
+/// (Cadence.pin): it never lingers behind it or rushes ahead (row 40). Same in repeats: a chorus or an ad-lib sung
+/// again is most likely the same recording, so it takes this line's timing (`repeats`). Auto gives the word back to
+/// Cadence. Every change shows at once (`changed` without push), and is saved for Gallery as the mark is let go.
 @MainActor final class TimingPanel: NSObject, NSWindowDelegate {
     private let line: Line
     private var pins: [Int: Pin]
     private let changed: ([Int: Pin], Bool) -> Void
     var hear: ((Double?, Double?) -> Void)?
+    var now: (() -> Double)?
     var onClose: (() -> Void)?
+    /// The lines sung again with these words, and what to do when this line's timing goes to them.
+    var repeats: [Line] = [] { didSet { sameB.title = "Same in \(repeats.count) repeat" + (repeats.count == 1 ? "" : "s"); sameB.isHidden = repeats.isEmpty } }
+    var toRepeats: (([Int: Pin]) -> Void)?
     private let win: NSPanel
     private let words = NSPopUpButton()
-    private let start = NSSlider(), end = NSSlider(), sweep = NSSlider()
-    private let startL = NSTextField(labelWithString: ""), endL = NSTextField(labelWithString: ""), sweepL = NSTextField(labelWithString: "")
-    private let hearB = NSButton(title: "Hear it", target: nil, action: nil), autoB = NSButton(title: "Auto", target: nil, action: nil)
+    private let startB = Mark(), endB = Mark()
+    private let hearB = NSButton(title: "Stop", target: nil, action: nil), autoB = NSButton(title: "Auto", target: nil, action: nil)
+    private let sameB = NSButton(title: "", target: nil, action: nil)
     private var cur = 0
     private var looping = false
     /// The stretch being heard round: the chosen word as it's now set.
     var span: (Double, Double)? { let p = pinOf(cur); return (p.s, p.e) }
+
+    /// A mark: a tap sets it to what is heard; two fingers along it (or ← →) move it a hundredth at a time.
+    final class Mark: NSButton {
+        var nudge: ((Double) -> Void)?, done: (() -> Void)?
+        private var acc: CGFloat = 0
+        override var acceptsFirstResponder: Bool { true }
+        override func scrollWheel(with e: NSEvent) {
+            acc += e.scrollingDeltaX != 0 ? e.scrollingDeltaX : -e.scrollingDeltaY
+            let step = e.hasPreciseScrollingDeltas ? 4 : 1
+            while abs(acc) >= CGFloat(step) { nudge?(acc > 0 ? -0.01 : 0.01); acc -= acc > 0 ? CGFloat(step) : -CGFloat(step) }
+            if e.phase == .ended || e.momentumPhase == .ended || !e.hasPreciseScrollingDeltas { done?() }
+        }
+        override func keyDown(with e: NSEvent) {
+            switch e.keyCode {
+            case 123: nudge?(-0.01); done?()
+            case 124: nudge?(0.01); done?()
+            default: super.keyDown(with: e)
+            }
+        }
+    }
 
     init(_ line: Line, changed: @escaping ([Int: Pin], Bool) -> Void) {
         self.line = line; self.changed = changed
         var p: [Int: Pin] = [:]
         for (i, w) in line.words.enumerated() { if let t = w.tm { p[i] = t } }
         pins = p
-        win = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled, .closable, .utilityWindow, .hudWindow],
+        win = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 150), styleMask: [.titled, .closable, .utilityWindow, .hudWindow],
                       backing: .buffered, defer: false)
         super.init()
         win.title = "Timing by ear"; win.isFloatingPanel = true; win.hidesOnDeactivate = false; win.delegate = self
         win.isReleasedWhenClosed = false
         for (i, w) in line.words.enumerated() { words.addItem(withTitle: "\(i + 1). \(w.text)"); words.lastItem?.tag = i }
         words.target = self; words.action = #selector(pick)
-        let grid = NSGridView(views: [
-            [NSTextField(labelWithString: "Word"), words, NSView()],
-            [NSTextField(labelWithString: "Starts"), start, startL],
-            [NSTextField(labelWithString: "Ends"), end, endL],
-            [NSTextField(labelWithString: "Sweep"), sweep, sweepL],
-        ])
-        grid.column(at: 1).width = 240; grid.rowSpacing = 8; grid.columnSpacing = 10
-        for s in [start, end, sweep] { s.target = self; s.action = #selector(slid(_:)); s.isContinuous = true }
-        sweep.minValue = -1; sweep.maxValue = 1
-        for l in [startL, endL, sweepL] { l.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular) }
+        for (m, key) in [(startB, true), (endB, false)] {
+            m.bezelStyle = .regularSquare; m.isBordered = true; m.setButtonType(.momentaryPushIn)
+            m.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+            m.target = self; m.action = key ? #selector(markStart) : #selector(markEnd)
+            m.nudge = { [weak self] d in self?.move(start: key, by: d) }
+            m.done = { [weak self] in guard let self else { return }; self.changed(self.pins, true) }
+            m.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            m.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        }
         hearB.target = self; hearB.action = #selector(hearPressed); autoB.target = self; autoB.action = #selector(autoPressed)
-        let buttons = NSStackView(views: [hearB, autoB]); buttons.spacing = 12
-        let stack = NSStackView(views: [grid, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
+        sameB.target = self; sameB.action = #selector(samePressed); sameB.isHidden = true
+        for b in [hearB, autoB, sameB] { b.isBordered = false; b.contentTintColor = .linkColor }
+        let marks = NSStackView(views: [startB, endB]); marks.spacing = 16
+        let buttons = NSStackView(views: [hearB, autoB, sameB]); buttons.spacing = 14
+        let stack = NSStackView(views: [words, marks, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
         win.contentView = stack
         load(0)
@@ -8277,6 +8318,7 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         let f = w.frame
         win.setFrameOrigin(NSPoint(x: f.midX - win.frame.width / 2, y: max(40, f.minY - win.frame.height - 8)))
         win.orderFront(nil); win.makeKey()
+        startLoop()
     }
     func close() { win.close() }
     func windowWillClose(_ n: Notification) { if looping { hear?(nil, nil) }; onClose?() }
@@ -8285,37 +8327,42 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private func pinOf(_ i: Int) -> Pin { pins[i] ?? auto(i) }
     private func load(_ i: Int) {
         cur = i
-        let p = pinOf(i), a = line.words[i].tm.map { _ in p } ?? auto(i)
-        start.minValue = a.s - 1.5; start.maxValue = a.s + 1.5
-        end.minValue = a.e - 1.5; end.maxValue = a.e + 3
-        start.doubleValue = p.s; end.doubleValue = p.e; sweep.doubleValue = p.k
         words.selectItem(withTag: i)
         labels()
+        win.makeFirstResponder(startB)
     }
     private func labels() {
         let p = pinOf(cur)
         func t(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
-        startL.stringValue = t(p.s); endL.stringValue = t(p.e)
-        sweepL.stringValue = p.k < -0.05 ? "lingers first" : p.k > 0.05 ? "hurries first" : "follows the voice"
+        startB.title = "Start  " + t(p.s); endB.title = "End  " + t(p.e)
     }
-    @objc private func pick() { load(words.selectedTag()) }
-    @objc private func slid(_ s: NSSlider) {
-        var a = start.doubleValue, b = end.doubleValue
-        if s === start { a = min(a, b - 0.05) } else if s === end { b = max(b, a + 0.05) }
-        pins[cur] = Pin(s: a, e: b, k: (sweep.doubleValue * 20).rounded() / 20)
+    /// The word's span with one end moved (the other kept 50 ms clear of it); the light follows the voice (k 0).
+    private func set(start: Bool, _ x: Double, push: Bool) {
+        let p = pinOf(cur)
+        var a = p.s, b = p.e
+        if start { a = max(0, x); b = max(b, a + 0.05) } else { b = max(x, a + 0.05) }
+        pins[cur] = Pin(s: (a * 1000).rounded() / 1000, e: (b * 1000).rounded() / 1000, k: 0)
         labels()
-        let up = NSApp.currentEvent?.type == .leftMouseUp
-        changed(pins, up)
+        changed(pins, push)
+    }
+    private func move(start: Bool, by d: Double) { let p = pinOf(cur); set(start: start, (start ? p.s : p.e) + d, push: false) }
+    @objc private func markStart() { if let n = now?() { set(start: true, n, push: true) } }
+    @objc private func markEnd() { if let n = now?() { set(start: false, n, push: true) } }
+    @objc private func pick() { load(words.selectedTag()); startLoop() }
+    private func startLoop() {
+        looping = true; hearB.title = "Stop"
+        let p = pinOf(cur); hear?(p.s, p.e)
     }
     @objc private func hearPressed() {
-        looping.toggle()
-        hearB.title = looping ? "Stop" : "Hear it"
-        let p = pinOf(cur)
-        hear?(looping ? p.s : nil, looping ? p.e : nil)
+        if looping { looping = false; hearB.title = "Hear it"; hear?(nil, nil) } else { startLoop() }
     }
     @objc private func autoPressed() {
         pins[cur] = nil
         changed(pins, true)
         load(cur)
+    }
+    @objc private func samePressed() {
+        toRepeats?(pins)
+        sameB.title = "Repeats timed"
     }
 }

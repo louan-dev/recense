@@ -68,7 +68,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
-  Word timing by ear in the editor's toolbar: Starts and Ends set by ear; Sweep at 0 follows the voice's syllables inside them.
+  Word timing by ear in the editor's toolbar: the word loops, Start and End are tapped as it is sung (two fingers on a
+  mark fine-tune it), the light follows the voice's syllables inside them, and Same in repeats times a chorus at once.
 - **Draws the prosody** over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes;
   the shape of the sentence becomes visible, which helps where the written word and the spoken one part ways.
 - **Reads each script as its readers do:**
