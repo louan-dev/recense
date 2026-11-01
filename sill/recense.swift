@@ -8301,8 +8301,9 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
             let n = NSAttributedString(string: name, attributes: [.font: NSFont.systemFont(ofSize: 10.5, weight: .semibold), .foregroundColor: NSColor(red: 0.5, green: 0.74, blue: 1, alpha: 1)])
             let v = NSAttributedString(string: value, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular), .foregroundColor: NSColor(white: 1, alpha: 0.85)])
             let h = n.size().height + 1 + v.size().height, y0 = (bounds.height - h) / 2
-            v.draw(at: NSPoint(x: (bounds.width - v.size().width) / 2, y: y0))
-            n.draw(at: NSPoint(x: (bounds.width - n.size().width) / 2, y: y0 + v.size().height + 1))
+            // a button's y runs downward: the name first, the time under it
+            n.draw(at: NSPoint(x: (bounds.width - n.size().width) / 2, y: y0))
+            v.draw(at: NSPoint(x: (bounds.width - v.size().width) / 2, y: y0 + n.size().height + 1))
         }
         override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
         override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
