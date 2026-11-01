@@ -1,4 +1,4 @@
-"""Build Datasets/French/hello-pronunciation/index.json from the Hello Pronunciation PDF + Wix track list.
+"""Build datasets/French/hello-pronunciation/index.json from the Hello Pronunciation PDF + Wix track list.
 usage: python -I hp_build.py <pdf> <tracks.tsv> <out index.json> <out diagrams-plan.json>
 Media are referenced as r2://recense-tmp/hello-pronunciation/...; uploading is done by separate scripts."""
 import json, re, sys, unicodedata

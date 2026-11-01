@@ -61,7 +61,7 @@ U+0303, NFC. `audio_scope: "row"` means one clip reads both words on that table 
 
 ### (a) `prosody.hello.test.js`: her examples as known answers (≈ ½ day)
 
-Same style as `.handoff/prototypes/_shared/prosody.test.js`; it reads `../../../Datasets/French/hello-pronunciation/index.json`.
+Same style as `.handoff/prototypes/_shared/prosody.test.js`; it reads `../../../datasets/French/hello-pronunciation/index.json`.
 
 1. **Links (frLink / frInner)** from the IPA, done automatically: in each multi-word example, a missing space at a word boundary means a link. The consonant at the
    join is the expected `sound`: `vous allez [vuzale]` → z, `un autre [œ̃notʀ]` → n, `des huîtres [dezɥitʀ]` → z. A kept space means no link:

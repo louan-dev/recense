@@ -20,6 +20,43 @@ curious about a culture or a city they don't yet know, and people whose bodies o
 one sense. I didn't find a tool like that without a company in the middle, so I am building one, slowly, and handing
 it on. Everyday media is full of quiet lessons; Sill tries to catch them in the moment they pass by.
 
+## A score for the verbal world
+Recense began in a conversation about conversation, held with someone who teaches it as a craft. Verbal exchange and
+improvisation suffer from the same misunderstanding. Both are imagined as pure spontaneity, a gift that settles on the
+fortunate at birth, and so both are left to chance. To improvise is to compose and perform in a single act, and
+impromptu speech does exactly this: a reply is shaped in the very act of giving it, and a verbal exchange is a
+succession of such replies, each formed from what the previous voice offered. In principle the two are one practice.
+In practice they have separate names and separate teachers, and they are studied in separate buildings.
+
+A transcript resembles a page that carries only the tune and its chords. The words are present, and the phrasing is
+left to whoever reads them; the pause before an answer disappears, along with the voice that rises as conviction
+gathers and the softening that invites a reply. Those who write sound down for others to perform met this difficulty
+long ago, and the score is their answer. A score is multimodal. The eye reads it, the inner ear hears it, and the
+hands and breath of the players carry it into the room. Recense gives speech a little of that depth: each word lit as
+it is voiced, the melody and liaison drawn over the line, and the translation beside it.
+
+**Learning in concert.** Speech reaches us through the ear, yet it is shaped by the face and the breath, and it is
+understood best when more of those channels are open. Seeing a speaker makes speech in noise far easier to follow.
+Training that engages several senses tends to produce faster and more effective learning than training through one.
+Words spoken aloud are remembered better than words read silently, and subtitles in the language being sung have
+helped television audiences improve their reading. This is how I learned to play: a piece entered through my eyes and
+my ears and came to rest at last in my hands. Recense offers the same route into a language. The ear follows the
+voice, the eye follows the light across each word, and the learner's own voice joins them.
+
+<sub>Sumby and Pollack (1954) studied seeing speech in noise, and McGurk and MacDonald (1976) showed sight changing
+what is heard. Shams and Seitz (2008) reviewed the benefits of training through several senses. MacLeod and colleagues
+(2010) studied memory for words read aloud, and Kothari and colleagues (2004) studied same-language subtitles on
+Indian television.</sub>
+
+**Kinship.** Recense belongs to a long line of attempts to hear speech as melody. Aniruddh Patel's research suggests
+that language and melody draw on overlapping resources in the brain for making sense of structure as it unfolds. The
+Brazilian composer and bandleader Hermeto Pascoal spent years transcribing recorded speech and setting it to harmony,
+treating a voice on the radio as a melody waiting for its chords. Recense carries the same intuition into the
+learning of languages.
+
+The longer essay, on improvisation, talent and a shared tuning for the world's ideas, is
+[the preface](docs/recense-preface.md).
+
 ## Long-term goals
 Each goal comes from one design philosophy, zero friction: nothing stands between a thought, a sound or a glance and
 what it's for. Each project meets a different kind of friction, so each carries its own part of that philosophy.
@@ -68,6 +105,17 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   When the open ears name a recording's language, Apple's ears for the listener's own languages hear it too and the
   surest is kept (an English lesson they named Arabic came out empty); a correction leaves unchanged words on the voice.
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
+- **Two ways of reading** (M switches). Follow puts the original above and the translation below; a band of light
+  crosses each word as it is spoken and the matching translated word at the same moment, so the light keeps its
+  direction even where word order doubles back. Learn keeps the original ahead to read and say along with, and lets
+  a phrase turn into its translation once it has been heard.
+- **Learns from being corrected:** a word a correction introduces joins that language's glossary, which shapes what
+  is heard afterward; Reset Line to Auto restores the automatic version.
+- **Songs:** published lyrics (LRCLIB, then Genius) are chosen by what was actually sung and fitted to the voice; when
+  none match, the screen shows what was heard, since an honest transcript serves a learner better than a confident
+  mistake. A track with no voice shows ♪ INSTRUMENTAL.
+- **Knows a recording it has heard:** the same piece from a video site, a podcast feed or a file on disk is recognised
+  by an acoustic fingerprint and reuses its transcript.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
   Word timing by ear in the editor's toolbar: the word loops, Start and End are tapped as it is sung (two fingers on a
@@ -115,7 +163,7 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
-  Datasets/French/   hello-pronunciation: the Hello Pronunciation set (media stay private on R2)
+  datasets/French/   hello-pronunciation: the Hello Pronunciation set (media stay private on R2)
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions
