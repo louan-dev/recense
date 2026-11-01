@@ -179,6 +179,15 @@ public final class Feed {
         try check(response, nil)
     }
 
+    // a file deleted in Finder or Files: the Worker moves it to the trash (src/fp.js); already gone is fine
+    public func delete(_ path: String) async throws {
+        var r = try request("item", ["path": path])
+        r.httpMethod = "DELETE"
+        r.setValue("1", forHTTPHeaderField: "x-gallery")
+        let (_, response) = try await session.data(for: r)
+        do { try check(response, nil) } catch FeedError.notFound {}
+    }
+
     // the file's bytes, downloaded to a temporary file, keeping its name (for Download and AirDrop)
     public func download(_ path: String) async throws -> URL {
         let tmp: URL = try await withCheckedThrowingContinuation { k in _ = content(path) { k.resume(with: $0) } }

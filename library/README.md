@@ -119,7 +119,9 @@ cron.
 ### Gallery for the Mac (apple/macos, apple/HostApp/macOS)
 - The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and
   Select, Download to Downloads and native AirDrop.
-- Gallery as a location in Finder (File Provider extension).
+- Gallery as a location in Finder (File Provider extension). Deletes go both ways: what Gallery deletes leaves
+  Finder, and a file deleted in Finder or Files goes to Gallery's trash for 30 days (`DELETE /main/api/fp/<root>/item`);
+  folders are deleted in Gallery.
 
 ### The feed (fp.js)
 Catalog and event log over Main and the archive: stable ids, md5 from R2 etags, one junk/churn list shared with Sync's

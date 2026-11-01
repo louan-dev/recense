@@ -29,6 +29,8 @@
 // x-gallery header (no Origin) and never replace anything; the reconciler logs them like any other write:
 //   PUT  /main/api/fp/<root>/file?path=<file>[&mtime=<s>]  the body is the file, into a folder that exists (409: taken)
 //   POST /main/api/fp/<root>/folder?path=<folder>          an empty folder (Gallery's .folder- marker)
+// and deletes from Finder or Files (notes 20261029 item 41), a file only, into the trash like the site's Delete:
+//   DELETE /main/api/fp/<root>/item?path=<file>           Main: trash/<day>/<path>; archive: .trash/<day>/<path>@<time>
 
 import { cleanPath, jsonResponse, serveObject, MIME_BY_EXT, IMG_BY_EXT } from "./common.js";
 import { sameSite, signedInAs } from "./access.js";
@@ -105,12 +107,13 @@ const mtimeOf = (o) => Math.floor(Number(o.customMetadata && o.customMetadata.mt
 const parentOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 
 export async function fp(req, env, url, path) {
-  const m = path.match(/^\/main\/api\/fp\/([a-z]+)\/(items|changes|content|confirm|file|folder)$/);
+  const m = path.match(/^\/main\/api\/fp\/([a-z]+)\/(items|changes|content|confirm|file|folder|item)$/);
   const root = m && FP_ROOTS[m[1]];
   if (!root) return bad(404, "Not found");
   const b = env[root.bucket];
   if (m[2] === "confirm") return confirm(req, env, url, b, root);
   if (m[2] === "file" || m[2] === "folder") return write(req, b, root, url, m[2]);
+  if (m[2] === "item") return remove(req, env, b, root, url);
   if (req.method !== "GET" && req.method !== "HEAD") return bad(405, "Read-only for now");
   if (m[2] === "items") return items(b, root, url);
   if (m[2] === "changes") return changes(b, root, url);
@@ -147,6 +150,29 @@ async function write(req, b, root, url, what) {
   });
   if (!done) return bad(409, "Something with that name is already here");
   return jsonResponse({ ok: true, path: rel, id: await fileId(rel, done.customMetadata), size: done.size });
+}
+
+// a file deleted on a device goes to the trash, never for good; folders are refused (as on the site and WebDAV)
+async function remove(req, env, b, root, url) {
+  if (req.method !== "DELETE") return bad(405, "DELETE only");
+  if (!sameSite(req, url)) return bad(403, "Forbidden");
+  const rel = cleanPath(url.searchParams.get("path") || "");
+  if (!rel || !visible(rel, root) || rel.split("/").some((s) => s.startsWith("."))) return bad(400, "Bad path");
+  const key = root.prefix + rel;
+  const obj = await b.get(key);
+  if (!obj) return (await b.list({ prefix: key + "/", limit: 1 })).objects.length ? bad(403, "Folders are deleted in Gallery") : bad(404, "Not found");
+  if (root.bucket === "MAIN") {
+    obj.body.cancel();
+    const { trashFile } = await import("./main.js"); // lazily: main.js pulls in the page, which plain node can't load
+    return (await trashFile(env, rel)) ? jsonResponse({ ok: true, path: rel }) : bad(404, "Not found");
+  }
+  const now = new Date().toISOString();
+  const { readable, writable } = new FixedLengthStream(obj.size);
+  const copied = obj.body.pipeTo(writable);
+  await b.put(".trash/" + now.slice(0, 10) + "/" + rel + "@" + now.replace(/[:.]/g, "-"), readable, { httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata });
+  await copied;
+  await b.delete(key);
+  return jsonResponse({ ok: true, path: rel });
 }
 
 async function items(b, root, url) {

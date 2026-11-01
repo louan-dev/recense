@@ -1295,6 +1295,30 @@ await test("fp: the owner's devices add files and folders (Add Media, New Folder
   await AR.delete((await AR.list({ prefix: "archive/Adds/" })).objects.map((o) => o.key));
 });
 
+await test("fp: a file deleted in Finder or Files goes to the trash, never for good (item 41)", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const MAIN = await mf.getR2Bucket("MAIN");
+  const at = (p) => "?path=" + encodeURIComponent(p);
+  await AR.put("archive/Dels/x.txt", "X");
+  await MAIN.put("files/Dels/y.txt", "Y");
+  const del = (root, p, as = "mac") => call(`/main/api/fp/${root}/item` + at(p), { as, method: "DELETE" });
+  assert.equal((await del("archive", "archive/Dels/x.txt", "stranger")).status, 404);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/fp/archive/item" + at("archive/Dels/x.txt"), { method: "DELETE", headers: { "cf-access-jwt-assertion": serviceJwt } })).status, 403);
+  assert.equal((await call("/main/api/fp/archive/item" + at("archive/Dels/x.txt"), { as: "mac" })).status, 405);
+  assert.equal((await del("archive", "archive/Dels")).status, 403); // a folder
+  assert.equal((await del("archive", ".trash/x")).status, 400);
+  assert.equal((await del("archive", "archive/Dels/x.txt")).status, 200);
+  assert.equal(await AR.head("archive/Dels/x.txt"), null);
+  const kept = (await AR.list({ prefix: ".trash/" })).objects.filter((o) => o.key.includes("/archive/Dels/x.txt@"));
+  assert.equal(kept.length, 1);
+  assert.equal(await (await AR.get(kept[0].key)).text(), "X");
+  assert.equal((await del("archive", "archive/Dels/x.txt")).status, 404);
+  assert.equal((await del("main", "Dels/y.txt")).status, 200);
+  assert.equal(await MAIN.head("files/Dels/y.txt"), null);
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.endsWith("/Dels/y.txt")));
+  await AR.delete(kept.map((o) => o.key));
+});
+
 await test("fp: the File Provider's read-only feed over gallery-archive (ids, items, content, changes)", async () => {
   const AR = await mf.getR2Bucket("ARCHIVE");
   const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });

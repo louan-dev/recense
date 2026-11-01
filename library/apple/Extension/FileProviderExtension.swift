@@ -1,6 +1,6 @@
 // The File Provider extension (NSFileProviderReplicatedExtension): the system keeps the files and placeholders on
-// disk; this answers what is in a folder, what changed, and the bytes of one file. Slice 1 is read-only: creates,
-// edits and deletes are refused (docs/architecture.md §9). Same source for macOS and iOS.
+// disk; this answers what is in a folder, what changed, and the bytes of one file. Creates and edits are
+// refused; a file deleted here goes to Gallery's trash (docs/architecture.md §9). Same source for macOS and iOS.
 import FileProvider
 import UniformTypeIdentifiers
 
@@ -20,7 +20,7 @@ final class Item: NSObject, NSFileProviderItem {
         return UTType(filenameExtension: (r.name as NSString).pathExtension) ?? .data
     }
     var capabilities: NSFileProviderItemCapabilities {
-        (r?.dir ?? true) ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading]
+        (r?.dir ?? true) ? [.allowsReading, .allowsContentEnumerating] : [.allowsReading, .allowsDeleting]
     }
     var documentSize: NSNumber? { r?.size.map { NSNumber(value: $0) } }
     var contentModificationDate: Date? { r?.mtime.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
@@ -94,7 +94,15 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func deleteItem(identifier: NSFileProviderItemIdentifier, baseVersion version: NSFileProviderItemVersion,
                     options: NSFileProviderDeleteItemOptions = [], request: NSFileProviderRequest,
                     completionHandler: @escaping (Error?) -> Void) -> Progress {
-        completionHandler(NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError))
+        // a file deleted here leaves Gallery too (into its trash for 30 days); folders are deleted in Gallery
+        guard let r = store[identifier.rawValue], !r.dir else {
+            completionHandler(NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError))
+            return Progress()
+        }
+        Task {
+            do { try await feed.delete(r.path); completionHandler(nil) }
+            catch { completionHandler(providerError(error)) }
+        }
         return Progress()
     }
 
