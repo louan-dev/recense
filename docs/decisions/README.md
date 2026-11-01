@@ -5,7 +5,7 @@ My decisions. Each file here is a copy of an output Claude generated (a proposal
 ## How it works
 
 1. Claude writes an output in its usual place, for example `docs/proposals/A3-PROPOSAL.md`.
-2. The owner copies it here and records a decision on every row.
+2. I copy it here and records a decision on every row.
 3. The original stays untouched. This folder holds the decided copy only.
 
 ## Copy naming
@@ -24,7 +24,7 @@ The copy is identical to the original except for one change: a **Decision** colu
 
 ## Rules for Claude
 
-- Read the newest file for an item before acting on it. A filled Decision cell is the owner's final call and overrides the proposed action.
+- Read the newest file for an item before acting on it. A filled Decision cell is my final call and overrides the proposed action.
 - Never edit, move, rename or delete files here. Never fill in a Decision cell.
 - If a Decision cell is empty, the row is still undecided. Do not act on it.
 - Never infer a decision from the Proposed action column.
