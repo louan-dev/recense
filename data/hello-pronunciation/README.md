@@ -1,7 +1,7 @@
 # Hello Pronunciation reference set
 
 Cécilia Jourdan & Marie-Lola Sendra, *Hello Pronunciation: Mastering the Sounds of Spoken French* (Hello French NYC), and
-her 253 recordings. Used with Cécilia's consent (owner confirmed 2026-10-27). Media stay in the **private** R2 bucket; only
+her 253 recordings. Used with Cécilia's consent (I confirmed 2026-10-27). Media stay in the **private** R2 bucket; only
 this index is in git.
 
 ## Where things are
@@ -45,7 +45,7 @@ U+0303, NFC. `audio_scope: "row"` means one clip reads both words on that table 
 - Diagrams reviewed on a contact sheet; 4 decorative pictures excluded (p37 cheese, p40 bicycle, p44 two “Bonjour” graphics).
 - Visually checked pages 30, 33 and 38 against the index.
 
-## Owner spot-check list
+## My spot-check list
 
 1. **[ɔ] note, “Southern accent” clip** (p32): the site files it as `T7 - The Sound [ɛ] - Attention - Southern accent`, but the text is in the [ɔ] note. Attached there; listen to confirm.
 2. **Letter S notes** (p42): `Attention - 1` / `- 2` attached by order (1 → “final s silent: les fraises”, 2 → “sc, t, x: scène, patience, dix”). Listen.
