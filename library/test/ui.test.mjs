@@ -1522,9 +1522,9 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await MAIN.put("files/Fair/one.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
   await MAIN.put("files/Fair/two.jpg", "y", { httpMetadata: { contentType: "image/jpeg" } });
   await pg.goto(base + "/main?p=Fair");
-  // Main's menu leads to Shared
-  await pg.click("#mbtn");
-  assert.equal(await pg.getAttribute(".mainnav a.sh", "href"), "/main/shared");
+  // Main's Shared Albums row (under Collections) leads to Shared and its Activity (notes item 16)
+  assert.equal(await pg.getAttribute("#sa h2 a", "href"), "/main/shared");
+  assert.equal(await pg.getAttribute("#sa a.ac", "href"), "/main/shared#activity");
   // the owner likes a file from the viewer's expanded action row (Like left of Hide Comments)
   await pg.keyboard.press("Escape");
   await pg.click('.tile[data-n="00000"]');
