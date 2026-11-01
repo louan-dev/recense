@@ -74,6 +74,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   mark fine-tune it), the light follows the voice's syllables inside them, and Same in repeats times a chorus at once.
   The panel is drawn as Gallery's editor at the Mac's scale: the line, its words as chips (yellow once timed), Start
   and End as cards (the name in blue above the time), then Stop · Auto · Same in N repeats in blue.
+  While a line is edited the window stretches down: the lines playing keep the top, the editor is a pane under
+  them, and the home bar stays at the foot with all it does (as in Gallery's player).
 - **Draws the prosody** over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes;
   the shape of the sentence becomes visible, which helps where the written word and the spoken one part ways.
 - **Reads each script as its readers do:**

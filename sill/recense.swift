@@ -1580,6 +1580,14 @@ final class Overlay: NSObject, NSWindowDelegate {
     lazy var barFoot = homeBar.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor)
     /// The lines' foot: clear of the stroke; in the strip, clear of the whole open bar (barZone).
     lazy var wordsFoot = words.bottomAnchor.constraint(equalTo: area.bottomAnchor, constant: -(RecenseHomeBar.line + 10))
+    /// Editing (gallery notes 20261029 row 40): the window stretches down; what plays keeps the top, the editor is a
+    /// pane under it, and the home bar stays at the foot with all it does, as Gallery's player does.
+    lazy var editorTop = editor.topAnchor.constraint(equalTo: words.bottomAnchor, constant: 8)
+    lazy var editorFoot: NSLayoutConstraint = {
+        // (gives way while not editing, when the lines reach the foot and the editor is hidden)
+        let c = editor.bottomAnchor.constraint(equalTo: area.bottomAnchor, constant: -(RecenseHomeBar.line + 30)); c.priority = .defaultHigh; return c
+    }()
+    static let editorPane: CGFloat = 300
 
     func host(in container: NSView?, frame: NSRect = .zero) {
         if let c = container {
@@ -1686,10 +1694,9 @@ final class Overlay: NSObject, NSWindowDelegate {
             area.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             area.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             areaFoot,
-            editor.topAnchor.constraint(equalTo: area.topAnchor),
+            editorTop, editorFoot,
             editor.leadingAnchor.constraint(equalTo: area.leadingAnchor),
             editor.trailingAnchor.constraint(equalTo: area.trailingAnchor),
-            editor.bottomAnchor.constraint(equalTo: words.bottomAnchor),
             words.topAnchor.constraint(equalTo: area.topAnchor),
             wordsFoot,
             words.leadingAnchor.constraint(equalTo: area.leadingAnchor, constant: 28),
@@ -1831,12 +1838,26 @@ final class Overlay: NSObject, NSWindowDelegate {
     // ----- correcting the line on screen -----
     /// The editor (SPEC 57): the line's own field where the lines were, and the transcript's tools (language, Follow ·
     /// Learn, Clear, Download, Share, Retranscribe, Export as MD and M4B, bookmarks) where the home bar was.
-    private var editSession: (barHidden: Bool, frame: NSRect)?
+    private var editSession: (barHidden: Bool, frame: NSRect, foot: CGFloat)?
     func beginEdit(_ text: String, edited: Bool, above: [String] = [], below: [String] = [],
                    done: @escaping (LineEditor.Result) -> Void) {
-        words.isHidden = true
-        if editSession == nil { editSession = (homeBar.isHidden, panel.frame) }  // notes 19: Return restores this size
-        let (barHidden, frame) = editSession!
+        let first = editSession == nil
+        if first { editSession = (homeBar.isHidden, panel.frame, wordsFoot.constant) }  // notes 19: Return restores this size
+        let (barHidden, frame, foot) = editSession!
+        if first {
+            // the lines playing keep the band they had; the editor's pane goes under them, the window growing down
+            // for it (within the screen); inside Sill's page, the pane takes what it can of the lower part
+            let pane = Overlay.editorPane
+            if hostedRoot == nil, let vf = (panel.screen ?? NSScreen.main)?.visibleFrame {
+                let grow = min(pane, max(0, frame.minY - vf.minY))
+                if grow > 0 { panel.setFrame(NSRect(x: frame.minX, y: frame.minY - grow, width: frame.width, height: frame.height + grow), display: true) }
+                wordsFoot.constant = foot - (grow < pane ? max(grow, min(pane, area.bounds.height * 0.55)) : pane)
+            } else { wordsFoot.constant = foot - area.bounds.height * 0.55 }
+            editor.wantsLayer = true
+            editor.layer?.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 0.94).cgColor
+            editor.layer?.cornerRadius = 14
+            lastKey = ""; fit.key = ""   // the lines fit again to their smaller band
+        }
         homeBar.isHidden = false
         pushBar(force: true)
         homeBar.editor(true)
@@ -1845,9 +1866,11 @@ final class Overlay: NSObject, NSWindowDelegate {
             var handled = false
             if case .move = r { done(r); handled = true; if self.editor.editing { return } }   // the barrel turned: still editing
             self.editSession = nil
+            self.wordsFoot.constant = foot
+            self.editor.layer?.backgroundColor = nil
             self.homeBar.editor(false)
             self.homeBar.isHidden = barHidden && !self.browserControls
-            self.words.isHidden = false; self.lastKey = ""; self.fit.key = ""
+            self.lastKey = ""; self.fit.key = ""
             if !handled { done(r) }   // a move past the last line was already saved and resumed
             if self.hostedRoot == nil {
                 let sc = NSScreen.main
