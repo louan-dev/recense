@@ -122,7 +122,13 @@ cd ~/Developer/sill/sill
 zsh build.sh                              # builds /Applications/Sill.app and ./sill
 ./sill &                                  # opens the time view
 zsh scripts/install-launchagent.sh        # start at login (status | remove)
+zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to main (status | remove)
 ```
+
+**Deploy from anywhere.** A push to `main` (from a phone or cloud session) reaches this Mac on its own:
+`scripts/autoupdate.sh` runs every 5 minutes, fast-forwards sill and gallery when they have new commits (never over
+local edits), runs `build.sh` here so the app keeps this Mac's signature and its permissions, and relaunches Sill if it
+was running. Log: `~/Library/Logs/sill-autoupdate.log`.
 
 `build.sh` copies Gallery's shared client code (`homebar.js`, `homebar.css`, `keylabel.js`, `room.js`, `prosody.js`,
 `prosogram.js`) into the bundle. With Apple's Command Line Tools 27.2 unpacked in `../.toolchain` it builds against the
