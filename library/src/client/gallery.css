@@ -2155,3 +2155,4 @@ body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
 
 /* a share whose owner turned downloads off (notes 20261029 item 16): view and comment only */
 body.nodl #dl,body.nodl .mdl{display:none!important}
+.txediting #strip,.txediting .cmshare{visibility:hidden;pointer-events:none}

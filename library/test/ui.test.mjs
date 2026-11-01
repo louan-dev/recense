@@ -1173,6 +1173,9 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   await pg.click('.tile[data-n="00000"]');
   await pg.waitForSelector(".tx.learn .txp:not([hidden])");
   await openTools(pg);
+  const vis = () => pg.$eval("#strip", (e) => getComputedStyle(e).visibility);
+  assert.equal(await vis(), "hidden", "the strip steps aside while editing");
+  assert.equal(await pg.$$eval(".cmshare", (a) => a.every((e) => getComputedStyle(e).visibility === "hidden")), true, "and so does Share");
   await pg.click('.txall .p-ticon[data-id="timing"]');
   assert.ok(!(await pg.$(".txall.tools")), "the tools fold away for the words");
   await pg.click('.txall .txrow.cur .txchip:text("la")');
@@ -1201,6 +1204,9 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   assert.ok(pins, "both lines saved");
   assert.deepEqual(pins[0], [[1, 0.5, 1.1, 0]]);
   assert.deepEqual(pins[2], [[1, 6.5, 7.1, 0]], "the repeat, at the same place in its line");
+  await pg.click('.txallbar .txbtn:text("Done")');
+  await pg.waitForFunction(() => !document.querySelector(".txall"));
+  assert.equal(await pg.$eval("#strip", (e) => getComputedStyle(e).visibility), "visible", "Done brings the strip back");
 });
 
 await test("SPEC 57: a tap on the lyrics opens the editor with its tools; Follow shows the line with its language under it; MD export; Clear leaves [Ambient Sounds]", true, async (pg) => {

@@ -3679,6 +3679,8 @@
     );
   };
 
+  // while the transcript editor is open the strip and Share step aside; Done brings them back (row 40)
+  const txEditing = (on) => document.documentElement.classList.toggle("txediting", on);
   // "Share" in the home bar: Create a Share Link, AirDrop, Invite for the item on screen
   let cmShare = false;
   const shareMenu = (f, at) => {
@@ -5341,6 +5343,8 @@
         if (field && document.activeElement === field) field.blur();
         unloop();
         sheet.remove();
+      txEditing(false);
+        txEditing(false);
         box.hidden = false;
         places.forEach((pl) => (pl.line = -1));
         editing = null;
@@ -5359,6 +5363,8 @@
       sheet.onclick = (e) => e.stopPropagation();
       sheet.append(bar, tray.el, list);
       host.appendChild(sheet);
+    txEditing(true);
+      txEditing(true);
       let heardAt = lineAt(clock(), true);
       cur = Number.isInteger(at) && lines[at] ? at : heardAt;
       render();
