@@ -6427,7 +6427,10 @@
     if (lang === "en") return [tr.en, l.en].find(ok) || "";
     return "";
   };
+  // In the iPhone app a blob link saves nothing, so the app takes the file and offers Save to Files
+  const iosExport = globalThis.webkit?.messageHandlers?.galleryExport;
   const saveFile = (name, text, type) => {
+    if (iosExport) return iosExport.postMessage({ kind: "file", name, text });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([text], { type }));
     a.download = name;
@@ -6446,11 +6449,11 @@
 
   // Export as MD: the same note Recense writes (front matter, then each line at its time with the trailing
   // language under it as a quote), in the language chosen in the editor.
-  const exportMd = (f, lines) => {
+  const mdOf = (f, lines) => {
     const lang = nativeLang();
     const title = fileTitle(f);
     const shown = lines.filter((l) => (l.text || "").trim());
-    if (!shown.length) return tell("Nothing to export yet");
+    if (!shown.length) return "";
     const d = shown[shown.length - 1].e || 0;
     let md = "---\ntitle: \"" + title.replace(/"/g, "'") + "\"\nsource: \"" + location.origin + "/main?open=" + encodeURIComponent(f.path || f.name) + "\"\n";
     md += "duration: " + clockOf(d) + "\nlanguage: " + lang + "\nexported: " + new Date().toISOString() + "\n---\n\n# " + title + "\n\n";
@@ -6460,6 +6463,12 @@
       if (tr && tr !== l.text.trim()) md += "> " + tr + "\n";
       md += "\n";
     }
+    return md;
+  };
+  const exportMd = (f, lines) => {
+    const title = fileTitle(f);
+    const md = mdOf(f, lines);
+    if (!md) return tell("Nothing to export yet");
     saveFile(title + ".md", md, "text/markdown");
     tell("Exported " + title + ".md");
   };
@@ -6467,7 +6476,12 @@
   // Export as M4B: one audiobook file is the endpoint. Building it (AAC, chapters, the transcript inside)
   // needs Recense's ffmpeg, so on the Mac the request goes to Recense (127.0.0.1:47123/export), which
   // fetches this file from the bucket and saves the .m4b; anywhere else it says so.
-  const exportM4b = async (f) => {
+  // In the iPhone app the app builds it itself (AAC, the transcript as its lyrics) and offers Save to Files.
+  const exportM4b = async (f, lines) => {
+    if (iosExport) {
+      tell("Making " + fileTitle(f) + ".m4b…");
+      return iosExport.postMessage({ kind: "m4b", path: f.path, title: fileTitle(f), md: lines ? mdOf(f, lines) : "" });
+    }
     tell("Asking Recense for the audiobook…");
     try {
       const r = await fetch("http://127.0.0.1:47123/export", {
@@ -6507,7 +6521,7 @@
         own ? { id: "transpose", label: "Transpose: set the starting key", icon: I.transpose, act: () => setKeyOf(f) } : null,
         G.main && w && hooks.redo ? { id: "retranscribe", label: "Retranscribe and retranslate", icon: I.retranscribe, act: hooks.redo } : null,
         hooks.lines ? { id: "md", label: "Export as MD", icon: I.markdown, act: () => exportMd(f, hooks.lines()) } : null,
-        G.main && hooks.lines ? { id: "m4b", label: "Export as M4B", icon: I.book, act: () => exportM4b(f) } : null,
+        G.main && hooks.lines ? { id: "m4b", label: "Export as M4B", icon: I.book, act: () => exportM4b(f, hooks.lines()) } : null,
       ],
     });
   };

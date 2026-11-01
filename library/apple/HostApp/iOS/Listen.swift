@@ -135,7 +135,7 @@ final class Listener: NSObject, ObservableObject {
                 if floats { startPiP() } else { keepAwake(true) }
             } else {
                 save(); Task { await upload() }
-                pip?.stopPictureInPicture(); keepAwake(false)
+                Listener.held = false; pip?.stopPictureInPicture(); keepAwake(false)
             }
         }
     }
@@ -484,7 +484,7 @@ final class Listener: NSObject, ObservableObject {
         return last.map { $0.lowerBound..<text.endIndex } ?? text.range(of: #"\S+$"#, options: .regularExpression)
     }
 
-    static let lit = UIColor(red: 1, green: 0.84, blue: 0.04, alpha: 1)  // the word being heard, Recense's yellow
+    static let lit = UIColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)  // the word being heard, Sill's yellow (Overlay.current)
 
     // the sentence with its newest word lit, as Recense's light follows the voice
     static func karaoke(_ text: String, size: CGFloat, weight: UIFont.Weight, color: UIColor, lit on: Bool, alpha: CGFloat = 1, center: Bool = true) -> NSAttributedString {
@@ -494,10 +494,19 @@ final class Listener: NSObject, ObservableObject {
         return a
     }
 
+    // the floating window's middle button: holds the words where they are (Listen keeps hearing; play shows the newest)
+    nonisolated(unsafe) static var held = false
+    func hold(_ on: Bool) {
+        Listener.held = on
+        pip?.invalidatePlaybackState()
+        if !on { draw() }
+    }
+
     func draw() {
+        if Listener.held { return }
         let size = CGSize(width: 640, height: 300), w = size.width - 40
         let img = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { c in
-            UIColor.black.setFill(); c.fill(CGRect(origin: .zero, size: size))
+            UIColor(white: 0.04, alpha: 1).setFill(); c.fill(CGRect(origin: .zero, size: size))  // Sill's panel
             // draws s so its last line sits on box's bottom (older lines go up and off the top) or centred in box
             func put(_ s: NSAttributedString, in box: CGRect, bottom: Bool = true) {
                 let h = ceil(s.boundingRect(with: CGSize(width: w, height: 5000), options: .usesLineFragmentOrigin, context: nil).height)
@@ -524,16 +533,17 @@ final class Listener: NSObject, ObservableObject {
                     // the was-sentence leaving had been heard; the current one turns once heard, if there is a translation
                     let turned: CGFloat = !two || s.said.isEmpty || s.id == cur.id ? 0
                         : old ? 1 : min(1, Date().timeIntervalSince(slots[k].heard ?? Date()) / 0.3)
-                    if turned < 1 { put(Self.karaoke(s.heard, size: 28, weight: .bold, color: .white, lit: s.id == cur.id, alpha: a * (1 - turned)), in: box, bottom: false) }
-                    if turned > 0 { put(Self.karaoke(s.said, size: 28, weight: .bold, color: .white, lit: false, alpha: a * turned), in: box, bottom: false) }
+                    if turned < 1 { put(Self.karaoke(s.heard, size: 28, weight: .semibold, color: .white, lit: s.id == cur.id, alpha: a * (1 - turned)), in: box, bottom: false) }
+                    if turned > 0 { put(Self.karaoke(s.said, size: 28, weight: .regular, color: UIColor(white: 1, alpha: 0.8), lit: false, alpha: a * turned), in: box, bottom: false) }
                 }
             } else {
                 // Follow: the sentence being heard on top, what it says below, both with the newest word lit
                 if two {
-                    put(Self.karaoke(cur.heard, size: 27, weight: .bold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: 126))
-                    put(Self.karaoke(cur.said.isEmpty ? "…" : cur.said, size: 27, weight: .semibold, color: UIColor(white: 0.85, alpha: 1), lit: true), in: CGRect(x: 20, y: 152, width: w, height: 136))
+                    // as Sill: the heard words semibold white, what they say a step quieter (regular, 80 %)
+                    put(Self.karaoke(cur.heard, size: 27, weight: .semibold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: 126))
+                    put(Self.karaoke(cur.said.isEmpty ? "…" : cur.said, size: 24, weight: .regular, color: UIColor(white: 1, alpha: 0.8), lit: true), in: CGRect(x: 20, y: 152, width: w, height: 136))
                 } else {
-                    put(Self.karaoke(cur.heard, size: 32, weight: .bold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: size.height - 24))
+                    put(Self.karaoke(cur.heard, size: 32, weight: .semibold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: size.height - 24))
                 }
             }
         }
@@ -573,11 +583,13 @@ extension Listener: AVPictureInPictureControllerDelegate {
 }
 
 extension Listener: AVPictureInPictureSampleBufferPlaybackDelegate {
-    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, setPlaying playing: Bool) {}
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, setPlaying playing: Bool) {
+        Task { @MainActor in Listener.shared.hold(!playing) }
+    }
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ c: AVPictureInPictureController) -> CMTimeRange {
         CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)  // live: no scrubber
     }
-    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ c: AVPictureInPictureController) -> Bool { false }
+    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ c: AVPictureInPictureController) -> Bool { Listener.held }
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, didTransitionToRenderSize s: CMVideoDimensions) {}
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval i: CMTime) async {}
 }
@@ -801,10 +813,19 @@ struct ReadAlong: View {
                                     Text(Self.clock(s.time)).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.white.opacity(0.7))
                                 }
                                 // heard (up to where the user is) in white, the rest of the episode dimmer, as Spotify does
-                                Self.lit(two ? (s.said.isEmpty ? "…" : s.said) : s.heard, on: live && i == place, after: i > (place ?? Int.max))
-                                    .font(.title3.weight(.bold))
-                                if two && showOriginal {
-                                    Text(s.heard).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(i > (place ?? Int.max) ? 0.35 : 0.6))
+                                // the sentence being heard shows only its words that have stopped changing (Settle)
+                                let hot = live && i == place
+                                TimelineView(.periodic(from: .now, by: hot ? 0.25 : 3600)) { tl in
+                                    let heard = hot ? Settle.text(s.heard, id: s.id, at: tl.date) : s.heard
+                                    let said = hot ? Settle.text(s.said, id: s.id + ".said", at: tl.date) : s.said
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Self.lit(two ? (said.isEmpty ? "…" : said) : heard, on: hot, after: i > (place ?? Int.max))
+                                            .font(.title3.weight(.semibold))
+                                        if two && showOriginal {
+                                            Text(heard).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(i > (place ?? Int.max) ? 0.35 : 0.6))
+                                        }
+                                    }
+                                    .animation(.easeOut(duration: 0.35), value: heard)
                                 }
                             }
                             .textSelection(.enabled)
@@ -865,3 +886,26 @@ private struct Listening: ViewModifier {
             .translationTask(l.config) { await l.serve($0) }
     }
 }
+
+/// Live speech recognition rewrites its last words again and again as it hears more. Read along shows a word only
+/// once it has stayed the same for a moment, so the sentence grows calmly instead of flickering (a word that
+/// changes goes back to waiting, with every word after it). The floating window keeps the live text.
+@MainActor enum Settle {
+    static let wait: TimeInterval = 0.9
+    private static var seen: [String: (words: [Substring], since: [Date])] = [:]
+
+    static func text(_ t: String, id: String, at now: Date) -> String {
+        let words = t.split(separator: " ", omittingEmptySubsequences: false)
+        var old = seen[id] ?? ([], [])
+        var keep = 0
+        while keep < min(words.count, old.words.count), words[keep] == old.words[keep] { keep += 1 }
+        if keep < words.count || keep < old.words.count {
+            old = (words, Array(old.since.prefix(keep)) + Array(repeating: now, count: words.count - keep))
+            seen[id] = old
+            if seen.count > 64 { seen = [id: old] }
+        }
+        let shown = old.since.prefix { now.timeIntervalSince($0) >= wait }.count
+        return words.prefix(shown).joined(separator: " ")
+    }
+}
+

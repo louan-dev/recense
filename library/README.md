@@ -119,6 +119,12 @@ cron.
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
   in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, Read along
   with Copy, Clear and full screen. What's heard is kept per episode in the same transcript store as the Mac.
+  The floating window draws as Sill's overlay does (same yellow, semibold words, the translation a step quieter);
+  its middle button holds the words where they are and play shows the newest. Read along shows a word only once
+  speech recognition has stopped rewriting it (Settle), so sentences grow calmly.
+- **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
+  the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
+  no chapters yet).
 
 ### Gallery for the Mac (apple/macos, apple/HostApp/macOS)
 - The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and

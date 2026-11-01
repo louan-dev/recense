@@ -94,6 +94,7 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
     #if os(iOS)
     config.allowsInlineMediaPlayback = true
     config.userContentController.addUserScript(WKUserScript(source: RouteLatency.script(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    config.userContentController.add(Exporter.shared, name: "galleryExport")
     let web = WKWebView(frame: .zero, configuration: config)
     RouteLatency.watch(web)
     return web
@@ -125,6 +126,67 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
 #endif
 
 #if os(iOS)
+/// The page's Export as MD and Export as M4B (gallery.js exportMd / exportM4b). A blob link saves nothing in WebKit
+/// here, so the page hands the file over and the app offers Save to Files. The M4B is made on the iPhone: the file
+/// from the archive, re-encoded to AAC with its title and the transcript (the same note as Export as MD) as lyrics.
+@MainActor final class Exporter: NSObject, WKScriptMessageHandler {
+    static let shared = Exporter()
+
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        guard let b = m.body as? [String: Any] else { return }
+        Task {
+            do {
+                switch b["kind"] as? String {
+                case "file":
+                    let name = (b["name"] as? String ?? "Export.md").replacingOccurrences(of: "/", with: "-")
+                    let url = try Self.dir().appendingPathComponent(name)
+                    try (b["text"] as? String ?? "").write(to: url, atomically: true, encoding: .utf8)
+                    present(url)
+                case "m4b":
+                    guard let path = b["path"] as? String else { return }
+                    present(try await Self.m4b(path, title: b["title"] as? String ?? "Audiobook", lyrics: b["md"] as? String ?? ""))
+                default: return
+                }
+            } catch { alert("Couldn’t export: \(error.localizedDescription)") }
+        }
+    }
+
+    private static func dir() throws -> URL {
+        let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    static func m4b(_ path: String, title: String, lyrics: String) async throws -> URL {
+        let src = try await Feed().download(path)
+        defer { try? FileManager.default.removeItem(at: src.deletingLastPathComponent()) }
+        let asset = AVURLAsset(url: src)
+        guard let s = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else { throw URLError(.cannotDecodeContentData) }
+        let d = try dir(), m4a = d.appendingPathComponent("audio.m4a")
+        func item(_ id: AVMetadataIdentifier, _ v: String) -> AVMetadataItem {
+            let i = AVMutableMetadataItem(); i.identifier = id; i.value = v as NSString; return i
+        }
+        s.metadata = [item(.commonIdentifierTitle, title), item(.iTunesMetadataSongName, title)]
+            + (lyrics.isEmpty ? [] : [item(.iTunesMetadataLyrics, lyrics)])
+        try await s.export(to: m4a, as: .m4a)
+        let out = d.appendingPathComponent(title.replacingOccurrences(of: "/", with: "-") + ".m4b")
+        try FileManager.default.moveItem(at: m4a, to: out)
+        return out
+    }
+
+    private func top() -> UIViewController? {
+        var t = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+        while let p = t?.presentedViewController { t = p }
+        return t
+    }
+    private func present(_ url: URL) { top()?.present(UIDocumentPickerViewController(forExporting: [url], asCopy: true), animated: true) }
+    private func alert(_ text: String) {
+        let a = UIAlertController(title: nil, message: text, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "OK", style: .default))
+        top()?.present(a, animated: true)
+    }
+}
+
 // one archive folder in Gallery's page, opened straight onto a file when there is one; or any page (the Assistant)
 struct PlayerView: UIViewRepresentable {
     let url: URL
