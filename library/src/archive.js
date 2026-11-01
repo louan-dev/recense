@@ -12,6 +12,51 @@ import { OWNER, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, cleanPath, urlPath, e
 import { galleryPage } from "./page/gallery.js";
 
 const ROOT = "archive/";
+// Data (notes 20261029 item 16): the Mac's offsite disks (Photos, Messages, Mail: APFS sparse bundles in .disks/,
+// mounted on the Mac by Disks Helper) shown as one place in the archive. Their bytes are disk bands, not files, so the
+// page shows each disk and its size; what is exported out of them lands in archive/Data/<disk>/ and shows as files.
+const DATA = "Data";
+const DISKS = ".disks/";
+const DISK_CACHE = "cache/disks.json"; // in MAIN: [{ name, size, bands, at }], the daily sweep's count
+
+export async function diskSweep(env) {
+  const top = await env.ARCHIVE.list({ prefix: DISKS, delimiter: "/" });
+  const out = [];
+  for (const p of top.delimitedPrefixes || []) {
+    let size = 0;
+    let bands = 0;
+    let cursor;
+    do {
+      const r = await env.ARCHIVE.list({ prefix: p, cursor });
+      for (const o of r.objects) {
+        size += o.size;
+        bands++;
+      }
+      cursor = r.truncated ? r.cursor : undefined;
+    } while (cursor);
+    out.push({ name: p.slice(DISKS.length).replace(/\/$/, "").replace(/\.sparsebundle$/, ""), size, bands, at: Date.now() });
+  }
+  await env.MAIN.put(DISK_CACHE, JSON.stringify(out), { httpMetadata: { contentType: "application/json" } });
+  return out;
+}
+
+async function disks(env) {
+  try {
+    const o = await env.MAIN.get(DISK_CACHE);
+    if (o) return await o.json();
+  } catch (e) {}
+  return diskSweep(env).catch(() => []);
+}
+
+const bytes = (n) => {
+  const u = ["bytes", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1000 && i < u.length - 1) {
+    n /= 1000;
+    i++;
+  }
+  return (i ? n.toFixed(n < 10 ? 1 : 0) : n) + " " + u[i];
+};
 const MARK = ".folder-";
 
 export async function archive(req, env, ctx, url, path) {
@@ -39,6 +84,15 @@ async function archiveFile(req, env, url, encoded) {
   return serveObject(req, url, obj, name, MIME_BY_EXT[ext] || IMG_BY_EXT[ext]);
 }
 
+function diskCards(list) {
+  if (!list.length) return `<p class="dn">No disks yet.</p>`;
+  const icon = `<svg viewBox="0 0 24 24"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M5 13l2.5-8h9L19 13M7 16.5h.01"/></svg>`;
+  const cards = list
+    .map((d) => `<div>${icon}<b>${esc(d.name)}</b><small>${d.size ? bytes(d.size) + " offsite" : "Offsite"}</small></div>`)
+    .join("");
+  return `<div class="dk">${cards}</div><p class="dn">These live offsite in your archive and open on Chau’s MacBook Pro. What’s exported from them shows here as files.</p>`;
+}
+
 async function archiveFolder(env, url) {
   const raw = url.searchParams.get("p") || "";
   const rel = raw ? cleanPath(raw) : "";
@@ -54,7 +108,7 @@ async function archiveFolder(env, url) {
     objs.push(...r.objects);
     cursor = r.truncated && objs.length < FOLDER_MAX ? r.cursor : undefined;
   } while (cursor);
-  if (rel && !folders.length && !objs.length) return notice("Link not found", 404);
+  if (rel && rel !== DATA && !folders.length && !objs.length) return notice("Link not found", 404);
 
   const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   const niceName = (s) => s.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
@@ -75,7 +129,9 @@ async function archiveFolder(env, url) {
     delete f.sortName;
   });
 
-  const subs = folders.map((p) => p.slice(prefix.length).replace(/\/$/, "")).filter((x) => x && !JUNK.test(x)).sort(byName);
+  const subs = folders.map((p) => p.slice(prefix.length).replace(/\/$/, "")).filter((x) => x && !JUNK.test(x) && !(!rel && x === DATA)).sort(byName);
+  // Data comes first at the root, whether or not anything is exported into it yet
+  if (!rel) subs.unshift(DATA);
   const here = rel ? rel.split("/") : [];
   const title = here.length ? here[here.length - 1] : "Chau Phan's Archive";
   const go = (p) => (p ? "/main/archive?p=" + encodeURIComponent(p) : "/main/archive");
@@ -83,14 +139,21 @@ async function archiveFolder(env, url) {
     .concat(here.map((x, i) => `<a href="${go(here.slice(0, i + 1).join("/"))}">${esc(x)}</a>`))
     .join("<i>/</i>");
   const links = subs.map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}">${esc(x)}</a>`).join("");
-  const empty = !items.length && !subs.length ? `<p class="none">This folder is empty.</p>` : "";
+  const shelf = rel === DATA ? diskCards(await disks(env)) : "";
+  const empty = !items.length && !subs.length && !shelf ? `<p class="none">This folder is empty.</p>` : "";
   const nav = `<style>
 .mainnav{padding:0 16px 14px;font:500 15px -apple-system,BlinkMacSystemFont,sans-serif}
 .mainnav .fs{display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;touch-action:pan-x}
 .mainnav .fs::-webkit-scrollbar{display:none}
+.mainnav .dk{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:0 0 14px}
+.mainnav .dk div{background:rgba(255,255,255,.08);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.mainnav .dk svg{width:26px;height:26px;stroke:#0a84ff;fill:none;stroke-width:1.7;margin-bottom:4px}
+.mainnav .dk b{font-weight:600}
+.mainnav .dk small,.mainnav .dn{color:#8e8e93;font-size:13px}
+.mainnav .dn{margin:0 0 14px;line-height:1.35}
 .mainnav .fd{color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.08);flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${links ? `<div class="fs">${links}</div>` : ""}${empty}</nav>`;
+<nav class="mainnav">${shelf}${links ? `<div class="fs">${links}</div>` : ""}${empty}</nav>`;
 
   return galleryPage(
     {

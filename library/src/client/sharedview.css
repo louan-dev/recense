@@ -88,3 +88,18 @@ main{max-width:860px;margin:0 auto;padding:0 0 calc(32px + env(safe-area-inset-b
 .view .vb{display:flex;justify-content:space-between;padding:8px 16px calc(12px + env(safe-area-inset-bottom))}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:40;background:var(--surface-2);color:#fff;padding:10px 18px;border-radius:99px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
+
+/* the owner's overrides for one share, iOS Settings switches */
+.perms{margin:4px 16px 14px;background:#1c1c1e;border-radius:12px;overflow:hidden}
+.perms .sw{display:flex;align-items:center;gap:12px;padding:11px 16px;position:relative;cursor:pointer}
+.perms .sw+.sw{border-top:.5px solid #38383a}
+.perms .t{flex:1;display:flex;flex-direction:column;gap:2px}
+.perms .t b{font-weight:400;font-size:17px}
+.perms .t small{color:#8e8e93;font-size:13px}
+.perms input{position:absolute;opacity:0;pointer-events:none}
+.perms i{width:51px;height:31px;border-radius:16px;background:#39393d;position:relative;transition:background .2s;flex:none}
+.perms i::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s cubic-bezier(.3,1.4,.6,1)}
+.perms input:checked+i{background:#30d158}
+.perms input:checked+i::after{transform:translateX(20px)}
+.perms input:disabled+i{opacity:.4}
+.files .tile .who{position:absolute;top:6px;right:6px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;background:rgba(60,60,67,.75);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font:600 10px/22px -apple-system,system-ui,sans-serif;text-align:center;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)}

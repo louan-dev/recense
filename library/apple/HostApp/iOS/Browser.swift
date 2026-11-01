@@ -73,6 +73,7 @@ struct Browser: View {
     static let shared = "\u{0}shared"
     static let main = "\u{0}main"
     static let listen = "\u{0}listen"
+    static let data = "\u{0}data"
     @State private var picked: String? = Gallery.rootPath
 
     var body: some View {
@@ -81,6 +82,8 @@ struct Browser: View {
                 Section("Locations") {
                     Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
                     Label("Archive", systemImage: "icloud").tag(Gallery.rootPath)
+                    // the Mac's offsite disks (Photos, Messages, Mail), the archive's Data folder (notes 20261029 item 16)
+                    Label("Data", systemImage: "externaldrive").tag(Browser.data)
                     Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                 }
@@ -93,6 +96,9 @@ struct Browser: View {
                 } else if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)
                         .navigationTitle("Ask").navigationBarTitleDisplayMode(.inline)
+                } else if picked == Browser.data {
+                    PlayerView(url: galleryURL("/main/archive", ["p": "Data"])).ignoresSafeArea(edges: .bottom)
+                        .navigationTitle("Data").navigationBarTitleDisplayMode(.inline)
                 } else if picked == Browser.listen {
                     ListenView()
                 } else if picked == Browser.shared {

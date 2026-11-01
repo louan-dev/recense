@@ -19,7 +19,7 @@ import { isOwner, sameSite, signedInAs } from "./access.js";
 import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
-import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, upload, gallery, galleryApi, file, folderFile, ogImage } from "./public.js";
+import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, guestUploadApi, upload, gallery, galleryApi, file, folderFile, ogImage } from "./public.js";
 import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
 import { sharesApi, sharedPage, activitySweep } from "./shared.js";
@@ -27,7 +27,7 @@ import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, r
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
 import { fp } from "./fp.js";
 import { listenApi } from "./listen.js";
-import { archive } from "./archive.js";
+import { archive, diskSweep } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexRun } from "./ai.js";
 import { inviteIcs, warmCalendar } from "./calendar.js";
@@ -56,6 +56,7 @@ export default {
     }
 
     if (path === "/api/caption" && method === "PUT") return guestCommentApi(req, env, url);
+    if (path === "/api/upload" && (method === "POST" || method === "PUT")) return guestUploadApi(req, env, url);
     if (path === "/api/transcript" && method === "PUT") return linkTranscriptWrite(req, env, url, false);
     if (path === "/api/transcript/run" && method === "POST") return linkTranscriptWrite(req, env, url, true);
     if (method !== "GET" && method !== "HEAD") return new Response("Method not allowed", { status: 405 });
@@ -79,7 +80,7 @@ export default {
     async scheduled(event, env, ctx) {
     // every minute: up to ~45 s of the assistant's indexing steps (ai.js), nothing else
     if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch(() => {})); return; }
-    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env),
+    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env), diskSweep(env).catch(() => {}),
       warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },
 };

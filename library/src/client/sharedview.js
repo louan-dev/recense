@@ -285,6 +285,7 @@
       head.appendChild(acts);
     }
     app.appendChild(head);
+    if (s.perms) app.appendChild(permsBox(s));
 
     if (!s.items.length) {
       app.appendChild(el("p", "empty", "No files in this link."));
@@ -297,11 +298,47 @@
       t.setAttribute("aria-label", f.name);
       t.appendChild(media(f));
       if (!f.thumb && !f.video) t.appendChild(el("span", "nm", f.pending ? "Uploading…" : f.name));
+      if (f.by) t.appendChild(el("span", "who", initials(f.by)));
       if (f.comments || f.likes) t.appendChild(el("span", "k", (f.likes ? "♥ " + f.likes + " " : "") + (f.comments ? "💬 " + f.comments : "")));
       t.onclick = () => !f.pending && viewer(s.items.filter((x) => !x.pending), s.items.filter((x) => !x.pending).indexOf(f));
       g.appendChild(t);
     });
     app.appendChild(g);
+  }
+
+  // What the people with this share can do besides view, like and comment: the owner's overrides (shared.js PATCH).
+  // Archive shares start view-and-comment only; a room (an invite to some files) never takes uploads.
+  function permsBox(s) {
+    const box = el("div", "perms");
+    const row = (label, key, note, off) => {
+      const r = el("label", "sw");
+      const c = el("input");
+      c.type = "checkbox";
+      c.setAttribute("role", "switch");
+      c.checked = !!s.perms[key];
+      c.disabled = !!off;
+      c.onchange = async () => {
+        c.disabled = true;
+        try {
+          s.perms = { ...s.perms, ...(await api("/main/api/shares/" + s.kind + "/" + s.id, { method: "PATCH", body: JSON.stringify({ [key]: c.checked }) })).perms };
+          toast(label + (c.checked ? " on" : " off"));
+        } catch (e) {
+          c.checked = !c.checked;
+          toast(e.message);
+        }
+        c.disabled = false;
+      };
+      const t = el("span", "t");
+      t.append(el("b", "", label), el("small", "", note));
+      r.append(t, c, el("i"));
+      return r;
+    };
+    const room = s.perms.room;
+    if (!(s.kind === "link" && s.type === "folder")) {
+      box.appendChild(row("Subscribers Can Post", "upload", room ? "Only for a whole folder" : s.kind === "link" ? "Their files expire with the link" : "Their files stay until you delete them", room));
+    }
+    box.appendChild(row("Allow Downloads", "download", s.perms.archive ? "From the archive: view and comment only until you allow more" : "Save files and Save All"));
+    return box;
   }
 
   // a plain viewer for the share's files; arrows and swipes move through them

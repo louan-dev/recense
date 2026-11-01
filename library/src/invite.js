@@ -122,6 +122,25 @@ export async function inviteApi(req, env, url, path) {
 
   const m = path.match(/^\/main\/api\/invites\/([0-9a-f]+)$/);
 
+  // PATCH /main/api/invites/<id>   body: { upload?, download? }  the owner's overrides -> { ok, perms }
+  if (m && method === "PATCH") {
+    if (!ID_RE.test(m[1])) return new Response("Bad id", { status: 400 });
+    let b;
+    try {
+      b = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+    const r = await env.MAIN.list({ prefix: INVITES + m[1] });
+    const key = r.objects.length === 1 ? r.objects[0].key : null;
+    const inv = key && (await readInvite(env, key));
+    if (!inv) return new Response("Not found", { status: 404 });
+    inv.perms = { download: true, upload: !inv.items, comment: true, ...(inv.perms || {}) };
+    for (const k of ["upload", "download"]) if (typeof b[k] === "boolean") inv.perms[k] = b[k];
+    await env.MAIN.put(key, JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
+    return jsonResponse({ ok: true, perms: inv.perms });
+  }
+
   if (m && method === "DELETE") {
     if (!ID_RE.test(m[1])) return new Response("Bad id", { status: 400 });
 

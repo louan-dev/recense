@@ -5619,6 +5619,56 @@
 
   up.onclick = () => upin.click();
 
+  // ----- guests adding to a share link (notes 20261029 item 16; public.js guestUploadApi) -----
+  // When the owner lets them, whoever has the link adds files like posting to an iCloud Shared Album: each is
+  // reserved (so everyone sees it coming), then sent in 16 MB parts. They expire with the link.
+  const guestPost = () => guest() && !!(G.perms && G.perms.upload);
+  const PART = 16 * 1024 * 1024;
+  const guestAdd = async (files) => {
+    const who = guestName() || askName();
+    if (!who) return;
+    const q = (o) => "/api/upload?" + new URLSearchParams({ id: G.id, ...o });
+    const call = async (o, init) => {
+      const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
+      if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
+      return r;
+    };
+    let done = 0;
+    for (const f of files) {
+      say("Adding " + (files.length > 1 ? done + 1 + " of " + files.length + ": " : "") + f.name + "…");
+      let i = null;
+      let uploadId = "";
+      try {
+        const res = await (await call({ action: "reserve" }, { body: JSON.stringify({ name: f.name, size: f.size, type: f.type, taken: f.lastModified, who }), headers: { "content-type": "application/json" } })).json();
+        i = res.i;
+        if (res.you) G.you = res.you;
+        if (!timer) timer = setInterval(poll, 2000);
+        poll();
+        const total = Math.max(1, Math.ceil(f.size / PART));
+        uploadId = await (await call({ action: "start", i, total })).text();
+        const parts = [];
+        for (let k = 0; k < total; k++) {
+          const etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
+          parts.push({ partNumber: k + 1, etag });
+          say("Adding " + f.name + "… " + Math.round(((k + 1) / total) * 100) + "%");
+        }
+        await call({ action: "complete", i, uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
+        done++;
+      } catch (e) {
+        if (i != null) call({ action: "abort", i, uploadId }).catch(() => {});
+        say("Couldn’t add " + f.name + ": " + (e.message || e), true);
+        return;
+      }
+    }
+    say(done === 1 ? "Added. Everyone with the link can see it." : "Added " + done + " files.");
+    poll();
+  };
+  if (guestPost()) {
+    up.textContent = "Add";
+    up.hidden = false;
+  }
+  if (G.perms && G.perms.download === false) document.body.classList.add("nodl");
+
   upin.onchange = () => {
     const files = Array.from(upin.files || []);
     upin.value = "";
@@ -5628,7 +5678,7 @@
   // Files dropped anywhere on the page, no drop box (notes item 14): the owner on Main, or an
   // invited person allowed to upload. Not while the viewer is open.
   const canDrop = () =>
-    !G.readOnly && lb.hidden && ((G.main && owner) || !!(G.invite && G.invite.perms && G.invite.perms.upload));
+    !G.readOnly && lb.hidden && (guestPost() || (G.main && owner) || !!(G.invite && G.invite.perms && G.invite.perms.upload));
   const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
 
   document.addEventListener("dragover", (e) => {
@@ -5661,6 +5711,7 @@
   // link; no message when it's done, and a failed one keeps its red ring.
   const addFiles = async (files) => {
     if (!files.length) return;
+    if (guestPost()) return guestAdd(files);
 
     const big = files.filter((f) => f.size > G.uploadMax);
 

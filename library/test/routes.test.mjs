@@ -58,6 +58,7 @@ const mf = new Miniflare({
 });
 
 const PUBLIC = await mf.getR2Bucket("PUBLIC");
+const ARCHIVE_B = await mf.getR2Bucket("ARCHIVE");
 const MAIN = await mf.getR2Bucket("MAIN");
 
 const call = (path, { as, write = true, headers = {}, ...init } = {}) => {
@@ -1674,6 +1675,59 @@ await test("guests: whoever opens a share link comments and likes under their na
   // the owner removes any comment
   j = await (await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "link", id: up.id, key: "000", op: "del", cid }) })).json();
   assert.deepEqual(j.comments.map((c) => c.text), ["me too"]);
+});
+
+await test("guests post to a share link when allowed; archive shares are view-and-comment until the owner allows more (item 16)", async () => {
+  const x = { "x-gallery": "1" };
+  const up = await (await call("/main/api/link?action=start&days=7", { as: "owner", method: "POST", body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg" })).json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { name: "dune.jpg", expires: String(up.exp) } });
+  const gu = (q, init = {}, cookie) =>
+    mf.dispatchFetch(ORIGIN + "/api/upload?" + new URLSearchParams({ id: up.id, ...q }), { method: "POST", ...init, headers: { origin: ORIGIN, ...(init.headers || {}), ...(cookie ? { cookie } : {}) } });
+  // another site, no name: refused
+  assert.equal((await gu({ action: "reserve" }, { body: JSON.stringify({ name: "v.mp4", size: 3, who: "Mia" }), headers: { origin: "https://evil.example" } })).status, 403);
+  assert.equal((await gu({ action: "reserve" }, { body: JSON.stringify({ name: "v.mp4", size: 3 }) })).status, 400);
+  // reserve, then send in parts
+  let r = await gu({ action: "reserve" }, { body: JSON.stringify({ name: "vlog.mp4", size: 3, type: "video/mp4", who: "Mia" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  const mia = "gv=" + /gv=([0-9a-f]{32})/.exec(r.headers.get("set-cookie"))[1];
+  const { i, n } = await r.json();
+  assert.equal(n, "001");
+  // pending for everyone, with who sent it
+  let d = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  assert.ok(d.items.some((f) => f.n === "001" && f.pending && f.by === "Mia"));
+  assert.deepEqual([d.perms.upload, d.perms.download], [true, true]);
+  // someone else can't send Mia's file
+  assert.equal((await gu({ action: "start", i, total: 1 }, {})).status, 403);
+  const uploadId = await (await gu({ action: "start", i, total: 1 }, {}, mia)).text();
+  const etag = await (await gu({ action: "part", i, uploadId, part: 1, total: 1 }, { method: "PUT", body: "abc", headers: { "content-length": "3" } }, mia)).text();
+  r = await gu({ action: "complete", i, uploadId }, { body: JSON.stringify([{ partNumber: 1, etag }]) }, mia);
+  assert.equal(r.status, 200, await r.clone().text());
+  d = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  const f = d.items.find((f) => f.n === "001");
+  assert.ok(f && !f.pending && f.by === "Mia" && f.type === "video/mp4");
+  assert.equal(Number((await PUBLIC.head("links/" + up.id + "/001")).customMetadata.expires), up.exp, "expires with the link");
+  // the owner's Activity shows the upload
+  const ev = (await (await call("/main/api/activity", { as: "owner", headers: x })).json()).events;
+  assert.ok(ev.some((e) => e.type === "upload" && e.by === "Mia" && e.share.id === up.id));
+  // the owner turns posting and downloads off: refused, and ?dl=1 too
+  r = await call("/main/api/shares/link/" + up.id, { as: "owner", method: "PATCH", headers: x, body: JSON.stringify({ upload: false, download: false }) });
+  assert.deepEqual((await r.json()).perms, { upload: false, download: false, archive: false });
+  assert.equal((await gu({ action: "reserve" }, { body: JSON.stringify({ name: "b.jpg", size: 3, who: "Mia" }) }, mia)).status, 403);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/f/" + up.id + "/000?dl=1")).status, 403);
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/f/" + up.id + "/000")).status, 200, "viewing still works");
+  const sh = (await (await call("/main/api/shares/link/" + up.id, { as: "owner", headers: x })).json()).share;
+  assert.equal(sh.perms.upload, false);
+  assert.equal(sh.items.find((f) => f.ref === "001").by, "Mia");
+});
+
+await test("archive shares start view-and-comment only (item 16)", async () => {
+  await ARCHIVE_B.put("archive/Old/a.jpg", "J", { httpMetadata: { contentType: "image/jpeg" } });
+  const l = await (await call("/main/api/link?action=fromMain&days=7&from=archive", { as: "owner", method: "POST", body: JSON.stringify({ paths: ["Old/a.jpg"] }) })).json();
+  assert.ok(l.id, JSON.stringify(l));
+  const d = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + l.id)).json();
+  assert.deepEqual(d.perms, { upload: false, download: false, archive: true });
+  const r = await mf.dispatchFetch(ORIGIN + "/api/upload?" + new URLSearchParams({ id: l.id, action: "reserve" }), { method: "POST", headers: { origin: ORIGIN }, body: JSON.stringify({ name: "b.jpg", size: 3, who: "Mia" }) });
+  assert.equal(r.status, 403);
 });
 
 await test("shared: owner-only list of live links and invites, detail, delete expires now, activity feed (item 15)", async () => {

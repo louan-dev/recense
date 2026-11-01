@@ -2152,3 +2152,6 @@ body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
 .txtedit-bar{display:flex;gap:18px;align-items:baseline;justify-content:flex-end;margin:0 0 8px;font-size:15px}
 .txtedit-note{color:#8e8e93;font-size:13px}
 .pdfp.txtdoc.txtedit{display:block;width:100%;min-height:70vh;resize:vertical;border:0;outline:none;font:15px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
+
+/* a share whose owner turned downloads off (notes 20261029 item 16): view and comment only */
+body.nodl #dl,body.nodl .mdl{display:none!important}

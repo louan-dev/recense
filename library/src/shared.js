@@ -9,6 +9,7 @@
 // GET    /main/api/shares                  -> { shares: [{ kind, id, type, title, who, url, created, exp, count, cover, coverVideo }] }
 // GET    /main/api/shares/<kind>/<id>      -> { share: { …, items: [{ ref, name, type, size, taken, src, thumb, video, pending }] } }
 // DELETE /main/api/shares/<kind>/<id>      expires it now -> { ok: true }
+// PATCH  /main/api/shares/<kind>/<id>      body: { upload?, download? } the owner's overrides -> { ok, perms }
 // GET    /main/api/activity                -> { events: [{ type, by, who, at, text, count, share: { kind, id, title }, items }] }
 //
 // Activity events are empty objects under activity/<inverted time>-<rand> in MAIN, their fields in customMetadata, so
@@ -16,8 +17,8 @@
 // participant's upload (invite.js). An event whose share is gone is not shown; the daily sweep drops old ones.
 
 import { OWNER, IMG_BY_EXT, MIME_BY_EXT, jsonResponse, page, esc } from "./common.js";
-import { getGalleryData, liveLinks, expireLink } from "./public.js";
-import { liveInvites, revokeInvite } from "./invite.js";
+import { getGalleryData, liveLinks, expireLink, linkApi } from "./public.js";
+import { liveInvites, revokeInvite, inviteApi } from "./invite.js";
 import { listFolder } from "./main.js";
 import js from "./client/sharedview.js";
 import css from "./client/sharedview.css";
@@ -78,6 +79,7 @@ function item(f, src, ref) {
     pending: !ok,
     comments: Array.isArray(f.comments) ? f.comments.length : 0,
     likes: Array.isArray(f.likes) ? f.likes.length : 0,
+    ...(f.by ? { by: f.by } : {}),
   };
 }
 
@@ -94,7 +96,7 @@ async function linkShare(env, l) {
   const title =
     l.kind === "folder" ? l.folder : !items.length ? "Share Link" : items.length === 1 ? bare(items[0].name) : bare(items[0].name) + " & " + (items.length - 1) + " more";
 
-  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp }, items);
+  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp, perms: d.perms || { upload: false, download: true } }, items);
 }
 
 async function inviteShare(env, inv) {
@@ -104,7 +106,7 @@ async function inviteShare(env, inv) {
     .map((f) => item(f, f.src, f.path));
   const title = inv.items && items.length === 1 ? bare(items[0].name) : inv.folder ? inv.folder.split("/").pop() : "Main";
 
-  const s = shareOf({ kind: "invite", id: inv.id, type: inv.items ? "room" : "invite", title, who: inv.name, url: null, created: inv.created, exp: inv.expires || 0 }, items);
+  const s = shareOf({ kind: "invite", id: inv.id, type: inv.items ? "room" : "invite", title, who: inv.name, url: null, created: inv.created, exp: inv.expires || 0, perms: { upload: !!(inv.perms || {}).upload && !inv.items, download: (inv.perms || {}).download !== false, room: !!inv.items } }, items);
   Object.defineProperty(s, "scope", { value: { folder: inv.folder, items: inv.items }, enumerable: false });
   return s;
 }
@@ -184,6 +186,12 @@ export async function sharesApi(req, env, url, path) {
   if (read) {
     const s = (await gather(env)).find((x) => x.kind === m[1] && x.id === m[2]);
     return s ? jsonResponse({ share: s }) : new Response("Not found", { status: 404 });
+  }
+
+  if (method === "PATCH") {
+    const body = await req.text();
+    const fwd = (u, meth) => new Request(new URL(u, url), { method: meth, body, headers: { "content-type": "application/json" } });
+    return m[1] === "link" ? linkApi(fwd("/main/api/link?action=perms&id=" + m[2], "POST"), env, new URL("/main/api/link?action=perms&id=" + m[2], url)) : inviteApi(fwd("/main/api/invites/" + m[2], "PATCH"), env, url, "/main/api/invites/" + m[2]);
   }
 
   if (method === "DELETE") {

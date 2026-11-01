@@ -72,6 +72,18 @@ function writeManifest(env, manifest) {
   });
 }
 
+// What a link lets the people who open it do besides view, like and comment (notes 20261029 item 16):
+//   upload    add files of their own (they expire with the link, like everything on the public side)
+//   download  save files (?dl=1, Download, Save all)
+// A link made from the archive is view-and-comment only until the owner turns these on (action=perms); any other
+// upload link takes both. Folder links are never uploaded to.
+export function linkPerms(manifest) {
+  if (!manifest) return { upload: false, download: true };
+  const fromArchive = (manifest.items || []).some((it) => it.lib === "archive");
+  const p = manifest.perms || {};
+  return { upload: p.upload ?? !fromArchive, download: p.download ?? !fromArchive, archive: fromArchive };
+}
+
 // POST /main/api/link?action=start&days=7        body: one item per line
 //   "<size>\t<taken-ms>\t<type>\t<name>"  (type and name are encodeURIComponent'd)
 //   -> { ok, id, exp, count, url }               the id is made here, never by the client
@@ -152,6 +164,23 @@ export async function linkApi(req, env, url) {
 
     await writeManifest(env, manifest);
     return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, v: manifest.coverAt || 0 });
+  }
+
+  // POST /main/api/link?action=perms&id=ID   body: { upload?, download? } -> { ok, perms }
+  if (action === "perms") {
+    const manifest = await readManifest(env, id);
+    if (!manifest) return new Response("Link not found", { status: 404 });
+    let b;
+    try {
+      b = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+    const p = { ...(manifest.perms || {}) };
+    for (const k of ["upload", "download"]) if (typeof b[k] === "boolean") p[k] = b[k];
+    manifest.perms = p;
+    await writeManifest(env, manifest);
+    return jsonResponse({ ok: true, perms: linkPerms(manifest) });
   }
 
   if (action === "cancel") {
@@ -1000,8 +1029,7 @@ async function dropProgress(env, t) {
 // action=part     PUT   -> etag     (plain text)       body = one chunk, ?total=N
 // action=complete POST  -> "ok"                        body = [{partNumber, etag}, ...]
 // action=abort    POST  -> "ok"
-async function multipart(req, env, q, action) {
-  const t = target(q, q.get("type"));
+async function multipart(req, env, q, action, t = target(q, q.get("type"))) {
 
   if (!t) return new Response("Bad request", { status: 400 });
 
@@ -1141,6 +1169,10 @@ export async function file(req, env, ctx, url, id, n) {
     return notice("Link expired", 410);
   }
 
+  if (!isArt && url.searchParams.get("dl") === "1" && !linkPerms(await readManifest(env, id)).download) {
+    return new Response("Downloads are off for this link", { status: 403 });
+  }
+
   if (isArt && meta.none === "1") {
     return new Response("No artwork", {
       status: 404,
@@ -1277,10 +1309,12 @@ export async function getGalleryData(env, id) {
   const manifestItems = manifest && Array.isArray(manifest.items) ? manifest.items : [];
   const said = {};
   const keyOf = {};
+  const byOf = {}; // a guest's own uploads: their name and vid
 
   manifestItems.forEach((it) => {
     if (it.comment) said[String(it.i).padStart(3, "0")] = it.comment;
     if (it.key) keyOf[String(it.i).padStart(3, "0")] = it.key;
+    if (it.by) byOf[String(it.i).padStart(3, "0")] = { by: it.by, vid: it.vid };
   });
 
   if (!manifest && !Object.keys(ready).length) {
@@ -1331,6 +1365,7 @@ export async function getGalleryData(env, id) {
       ...cover,
       ...commentFields(said[n]),
       ...(keyOf[n] ? { key: keyOf[n] } : {}),
+      ...(byOf[n] ? { by: byOf[n].by, vid: byOf[n].vid } : {}),
     });
   }
 
@@ -1354,6 +1389,7 @@ export async function getGalleryData(env, id) {
       size: Number(it.size) || 0,
       taken: Number(it.taken) || now,
       ...commentFields(said[n]),
+      ...(it.by ? { by: it.by, vid: it.vid } : {}),
       pending: true,
       progress: total > 0 ? Math.min(1, Number(pm.done) / total) : null,
       stalled: stalled && !failed,
@@ -1385,6 +1421,7 @@ export async function getGalleryData(env, id) {
     ...(manifest && manifest.coverItem ? { coverItem: String(manifest.coverItem) } : {}),
     ...(manifest && manifest.order ? { order: manifest.order } : {}),
     ...(manifest && manifest.coverAt ? { coverAt: manifest.coverAt } : {}),
+    perms: linkPerms(manifest),
   };
 }
 
@@ -1517,6 +1554,108 @@ export async function guestCommentApi(req, env, url) {
   return out;
 }
 
+
+// ---------- guests add to a link (notes 20261029 item 16) ----------
+// Whoever opens an upload link whose perms allow it can add files: a life update, the papers for an errand. A file is
+// reserved in the manifest first (so it shows as uploading to everyone), then sent in parts like the owner's.
+// It expires with the link. Its uploader is the guest's name and vid; the upload shows in the owner's Activity.
+//   POST /api/upload?action=reserve&id=ID   body: { name, size, type, taken?, who }  -> { ok, i, n, you }
+//   /api/upload?action=start|part|complete|abort&id=ID&i=N&uploadId=…&part=…&total=…  as the owner's multipart
+// A reservation is only this guest's (vid), and only until its file lands.
+const GUEST_MAX = 5 * 1024 ** 3;
+
+async function guestVid(req) {
+  let secret = (GUEST_RE.exec(req.headers.get("cookie") || "") || [])[1];
+  const fresh = !secret;
+  if (fresh) secret = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return { secret, fresh, vid: await sha24(secret) };
+}
+
+export async function guestUploadApi(req, env, url) {
+  const origin = req.headers.get("origin");
+  if (origin ? origin !== url.origin : req.headers.get("x-gallery") !== "1") return new Response("Forbidden", { status: 403 });
+  const q = url.searchParams;
+  const action = q.get("action") || "";
+  const id = q.get("id") || "";
+  if (!ID_RE.test(id)) return new Response("Bad request", { status: 400 });
+
+  const g = await guestVid(req);
+  const manifest = await readManifest(env, id);
+  if (!manifest || !(manifest.exp > Date.now())) return new Response("Link expired", { status: 410 });
+  if (!linkPerms(manifest).upload) return new Response("Adding files is off for this link", { status: 403 });
+
+  if (action === "reserve") {
+    let b;
+    try {
+      b = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+    const who = guestName(b.who);
+    if (!who) return new Response("Choose a name first", { status: 400 });
+    const size = Number(b.size) || 0;
+    if (!(size > 0 && size <= GUEST_MAX)) return new Response("Files up to 5 GB", { status: 413 });
+
+    // the manifest is read-modify-write: a write only lands on the version it was read from, else read again
+    for (let tries = 0; tries < 6; tries++) {
+      const mo = await env.PUBLIC.get(manifestKey(id));
+      if (!mo) return new Response("Link not found", { status: 404 });
+      const m = await mo.json();
+      const items = Array.isArray(m.items) ? m.items : [];
+      if (items.length >= 1000) return new Response("This link is full", { status: 409 });
+      const i = items.reduce((x, it) => Math.max(x, Number(it.i) + 1), 0);
+      if (i >= 1000) return new Response("This link is full", { status: 409 });
+      items.push({
+        i,
+        size,
+        taken: Number(b.taken) || Date.now(),
+        type: String(b.type || "").slice(0, 200) || "application/octet-stream",
+        name: Array.from(String(b.name || "file")).slice(0, 120).join(""),
+        by: who,
+        vid: g.vid,
+      });
+      m.items = items;
+      m.count = Math.max(Number(m.count) || 0, items.length);
+      const put = await env.PUBLIC.put(manifestKey(id), JSON.stringify(m), {
+        onlyIf: { etagMatches: mo.etag },
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: { expires: String(Number(m.exp) || Date.now() + 7 * 864e5) },
+      });
+      if (!put) continue;
+      const out = jsonResponse({ ok: true, i, n: String(i).padStart(3, "0"), you: g.vid });
+      if (g.fresh) out.headers.append("set-cookie", `gv=${g.secret}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`);
+      return out;
+    }
+    return new Response("Busy, try again", { status: 503 });
+  }
+
+  if (!["start", "part", "complete", "abort"].includes(action)) return new Response("Bad request", { status: 400 });
+  const i = parseInt(q.get("i") || "", 10);
+  const it = (manifest.items || []).find((x) => Number(x.i) === i);
+  if (!it || it.vid !== g.vid || g.fresh) return new Response("Not your file", { status: 403 });
+  const n = String(i).padStart(3, "0");
+  if (await env.PUBLIC.head(LINKS + id + "/" + n)) return new Response("Already sent", { status: 409 });
+
+  const ext = (it.name.split(".").pop() || "").toLowerCase();
+  const t = {
+    key: LINKS + id + "/" + n,
+    contentType: !it.type || it.type === "application/octet-stream" ? MIME_BY_EXT[ext] || IMG_BY_EXT[ext] || "application/octet-stream" : it.type,
+    metadata: { name: encodeURIComponent(it.name), expires: String(manifest.exp), taken: String(it.taken || Date.now()), hasArt: "0" },
+  };
+  const r = await multipart(req, env, q, action, t);
+  if (action === "complete" && r.ok) {
+    await logActivity(env, { type: "upload", by: it.by, vid: it.vid, kind: "link", ref: id, key: n, name: it.name }).catch(() => {});
+  }
+  if (action === "abort") {
+    // a file that will never come stops showing as uploading
+    const m = await readManifest(env, id);
+    if (m) {
+      m.items = (m.items || []).filter((x) => Number(x.i) !== i);
+      await writeManifest(env, m);
+    }
+  }
+  return r;
+}
 
 // ---------- deleting (owner only) ----------
 

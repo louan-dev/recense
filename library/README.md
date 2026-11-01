@@ -197,6 +197,14 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
+- Shared Albums (notes 20261029 item 16): every file in a share is its own thread (comments, likes). People with an
+  upload link can add files (`POST /api/upload?action=reserve`, then multipart parts, `guestUploadApi`); they expire
+  with the link and show in Activity. Invite (Main) uploads stay until deleted. Links made from the archive are
+  view-and-comment only (no posting, no `?dl=1`) until the owner turns on Subscribers Can Post / Allow Downloads on
+  the share's page (`PATCH /main/api/shares/<kind>/<id>`).
+- Data: `/main/archive?p=Data` (first at the archive's root; iOS Locations › Data) shows the Mac's offsite disks in
+  `gallery-archive/.disks/` with their sizes (counted daily into `cache/disks.json`); exports land in
+  `archive/Data/<disk>/` and show as files.
 - Comments (`commentApi`): JSON per folder in R2.
 - `/main/api/transcript`, `/api/transcript`: a file's transcript, its corrections (conditional on the version), and
   asking Recense for one (a lock in `keep/locks/<key>`).
