@@ -3680,7 +3680,11 @@
   };
 
   // while the transcript editor is open the strip and Share step aside; Done brings them back (row 40)
-  const txEditing = (on) => document.documentElement.classList.toggle("txediting", on);
+  // and the player gives the top of the screen to what plays, the editor the room under it, above the home bars
+  const txEditing = (on, host) => {
+    document.documentElement.classList.toggle("txediting", on);
+    if (host) host.classList.toggle("txon", on);
+  };
   // "Share" in the home bar: Create a Share Link, AirDrop, Invite for the item on screen
   let cmShare = false;
   const shareMenu = (f, at) => {
@@ -4906,7 +4910,6 @@
     const openAll = (at) => {
       if (editing) return;
       editing = true;
-      box.hidden = true;
       const sheet = mkEl("div", "txall");
       const bar = mkEl("div", "txbar txallbar");
       const list = mkEl("div", "txlist");
@@ -4978,9 +4981,9 @@
         const k = sameText(l.text);
         return k ? lines.filter((x) => x !== l && x.words && x.words.length === l.words.length && sameText(x.text) === k) : [];
       };
-      const timer = (l) => {
       // the word being timed, kept across redraws (turned, resized, the server's lines back) so its marks stay up
       let timing = null;
+      const timer = (l) => {
         const wrap = mkEl("div", "txtime");
         const chips = mkEl("div", "txchips");
         const panel = mkEl("div", "txpanel");
@@ -5096,8 +5099,8 @@
             unloop();
             panel.hidden = true;
             chip.classList.remove("on");
-          });
             timing = null;
+          });
           const reps = repeatsOf(l);
           const same = b("txsame", "", (x) => {
             const d0 = l.s;
@@ -5118,8 +5121,8 @@
           btns.append(hear, auto, same);
           panel.append(marks, btns);
           paints.forEach((p) => p());
-          unloop();
           if (again && looping) return;
+          unloop();
           hearIt();
           marks.firstChild.focus({ preventScroll: true });
         };
@@ -5131,8 +5134,8 @@
           c.onpointerdown = (e) => e.preventDefault();
           c.onclick = () => open(i, c);
           chips.appendChild(c);
-        });
           if (timing && timing.id === l.id && timing.i === i) open(i, c, true);
+        });
         return wrap;
       };
       const row = (l, i) => {
@@ -5343,9 +5346,9 @@
         if (field && document.activeElement === field) field.blur();
         unloop();
         sheet.remove();
-      txEditing(false);
-        txEditing(false);
+        txEditing(false, host);
         box.hidden = false;
+        fits.clear();
         places.forEach((pl) => (pl.line = -1));
         editing = null;
         reRender = null;
@@ -5363,8 +5366,10 @@
       sheet.onclick = (e) => e.stopPropagation();
       sheet.append(bar, tray.el, list);
       host.appendChild(sheet);
-    txEditing(true);
-      txEditing(true);
+      txEditing(true, host);
+      // what plays stays in sight above the editor, its lines sized again for the smaller band
+      fits.clear();
+      places.forEach((pl) => (pl.line = -1));
       let heardAt = lineAt(clock(), true);
       cur = Number.isInteger(at) && lines[at] ? at : heardAt;
       render();
@@ -6637,6 +6642,7 @@
     };
     const close = () => {
       sheet.remove();
+      txEditing(false, host);
       document.removeEventListener("keydown", onKey, true);
     };
     const w = txWrite(f);
@@ -6661,6 +6667,7 @@
     sheet.onclick = (e) => e.stopPropagation();
     sheet.append(bar, tray.el, list);
     host.appendChild(sheet);
+    txEditing(true, host);
     document.addEventListener("keydown", onKey, true);
   };
 

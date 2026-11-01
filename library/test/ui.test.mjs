@@ -1175,6 +1175,16 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   await openTools(pg);
   const vis = () => pg.$eval("#strip", (e) => getComputedStyle(e).visibility);
   assert.equal(await vis(), "hidden", "the strip steps aside while editing");
+  // what plays keeps the top, the editor sits under it and ends above the home bars, which still take a touch
+  const lay = await pg.evaluate(() => {
+    const r = (q) => document.querySelector(q).getBoundingClientRect();
+    const hl = r(".p-hline");
+    const at = document.elementFromPoint(hl.x + hl.width / 2, hl.y + hl.height / 2);
+    return { pane: r(".txall"), tx: r(".tx.learn"), hb: r(".p-hb"), hit: !!(at && at.closest(".p-hb")) };
+  });
+  assert.ok(lay.pane.top >= lay.tx.bottom - 1, "the lines playing stay above the editor");
+  assert.ok(lay.pane.bottom <= lay.hb.top + 1, "the editor ends above the home bars");
+  assert.ok(lay.hit, "the home bar still takes a touch");
   assert.equal(await pg.$$eval(".cmshare", (a) => a.every((e) => getComputedStyle(e).visibility === "hidden")), true, "and so does Share");
   await pg.click('.txall .p-ticon[data-id="timing"]');
   assert.ok(!(await pg.$(".txall.tools")), "the tools fold away for the words");

@@ -1882,8 +1882,23 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 .txbar{display:flex;justify-content:center;gap:4px}
 .txbtn{pointer-events:auto;border:0;background:rgba(0,0,0,.5);font:inherit;font-size:17px;cursor:pointer}
 .txall{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;background:rgba(0,0,0,.84);color:#fff;font:calc(17px * var(--txs,1))/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
-/* a short landscape screen lays the strip, comment and home bar over the media: the editor ends above them and the grabber (row 40) */
-@media (orientation:landscape) and (max-height:540px){.txall{bottom:calc(var(--botH,0px) + 40px)}}
+/* Editing (notes 20261029 row 40): what plays keeps the top of the screen (--txv), the editor is a pane under it
+   that ends above the home bars, which stay where they are with all they do */
+.txon{--txv:clamp(150px,34dvh,420px);--txe:calc(var(--bb0) + var(--cl) + 36px)}
+.vw.txon{padding-bottom:calc(100dvh - var(--tb) - var(--txv))}
+.aw.txon img{padding-bottom:calc(100dvh - var(--tb) - var(--txv))}
+.txon>.tx.learn{bottom:calc(100dvh - var(--tb) - var(--txv))}
+.txon>.txall{top:calc(var(--tb) + var(--txv));bottom:var(--txe);border-radius:16px 16px 0 0;background:rgba(18,18,20,.94)}
+.txon>.txall>.txallbar{padding-top:6px}
+.txon>.txall{overflow:clip}
+.txon>.txall>.txlist{min-height:0}
+/* a short landscape screen: what plays on the left, the editor beside it */
+@media (orientation:landscape) and (max-height:540px){
+  .vw.txon{padding:var(--tb) 55% var(--txe) 0}
+  .aw.txon img{padding:var(--tb) 55% var(--txe) 0}
+  .txon>.tx.learn{left:22.5%;width:42%;bottom:var(--txe)}
+  .txon>.txall{top:var(--tb);left:45%;right:max(8px,env(safe-area-inset-right));border-radius:16px}
+}
 /* the editor's bar (notes 20261029 row 40): Changes · the grabber · Done, and the tools (homebar.js tools, SPEC 57)
    folded under the grabber, opening as the home bar does */
 .txallbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:0 10px;padding:calc(var(--tb,0px) + 6px) 12px 2px}
