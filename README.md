@@ -115,6 +115,7 @@ sill/
     homebar/           the home-bar host page
     Sources/sill/      links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
+  Datasets/French/   hello-pronunciation: the Hello Pronunciation set (media stay private on R2)
   reference/         read-only sources (draftpad, pomo)
   docs/              architecture, decisions, design renders
   export/            project description, north star, decisions

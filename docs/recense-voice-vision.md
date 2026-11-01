@@ -52,7 +52,7 @@ Personal use inside Sill first; later its own app so the others can use it.
 - `.handoff/prototypes/prosogram/index.html`: the prosogram view (staff = reference ±4 st, segments, glides, liaison ties, tones).
 - Clips: `_shared/clips/` has fr-speech, vi-speech, soro (music). **No en-speech, en-music, fr-music or vi-music here yet**
   (the owner has these on localhost: copy them in).
-- *Hello Pronunciation* dataset: `data/hello-pronunciation/` (index.json: 23 sounds, 117 examples, 253 clips on R2 private
+- *Hello Pronunciation* dataset: `Datasets/French/hello-pronunciation/` (index.json: 23 sounds, 117 examples, 253 clips on R2 private
   bucket recense-tmp). Phases 1–3 done; Phase 4 plan in its README. Author consented; never publish the data.
 - A headless entry point exists as a pattern (`--corrections-selftest`, `--match` … in main.swift ~6367); no `--features` yet.
 
