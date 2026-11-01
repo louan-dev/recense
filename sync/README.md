@@ -41,8 +41,8 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
   permission when one blocks a read.
 - **Docs sync** (`bin/docs-sync.zsh`, launchd `com.chauphan.docs-sync`): every readable or editable document on the
   Mac in one place, Gallery Main › **Docs**, seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and
-  the website. Two-way (rclone bisync) for the Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary
-  and Google Drive; one-way for Developer (its live notes split into `.conflict` copies when synced both ways), Voice Memos (`Docs/Recordings`; macOS lets the job read it only once Disks Helper has Full Disk Access) and Notability's PDF backups
+  the website. Two-way (rclone bisync) for the Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary;
+  one-way for Developer (its live notes split into `.conflict` copies when synced both ways), Voice Memos (`Docs/Recordings`; macOS lets the job read it only once Disks Helper has Full Disk Access) and Notability's PDF backups
   (`Docs/Notability`); `Docs/INDEX.md` lists everything by source. Documents only (`config/docs-sync.filters`: writing,
   PDFs, Office/iWork, ebooks, recordings; no code, app data or hidden files; the vault also takes its pictures). Writes
   go through the Worker with this Mac's Access token, so Gallery keeps what it replaces in its trash; files a pass

@@ -1,8 +1,8 @@
 #!/bin/zsh
 # docs-sync.zsh: every readable or editable document on this Mac, in one place: Gallery Main › Docs (gallery notes
 # 20261029 item 42). Seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and the website.
-#   Two-way (rclone bisync): Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary,
-#     Google Drive. An edit on either side reaches the other at the next pass; same file edited on both → both kept.
+#   Two-way (rclone bisync): Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary.
+#     An edit on either side reaches the other at the next pass; same file edited on both → both kept.
 #   One-way (copy, never deletes): Voice Memos → Docs/Recordings, Developer → Docs/Developer, Notability's PDF backups → Docs/Notability.
 #   Docs/INDEX.md lists everything, by source.
 # Writes go through the Worker's WebDAV with this Mac's Access token (Keychain gallery-access), so every file Gallery
@@ -55,7 +55,6 @@ SOURCES=(
   "Downloads|$HOME/Downloads|two-way"
   "Temporary|$HOME/Temporary|two-way"
   "Developer|$HOME/Developer|one-way"   # git repos + live notes: two-way split notes into .conflict copies
-  "Google Drive|$HOME/Library/CloudStorage/GoogleDrive-clphan7@gmail.com/My Drive|two-way"
   "Recordings|$HOME/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings|one-way"
 )
 COMMON=(--local-unicode-normalization --webdav-nextcloud-chunk-size 50M --transfers 4 --checkers 8 --stats 0 -q)
