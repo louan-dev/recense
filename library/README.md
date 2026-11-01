@@ -210,6 +210,11 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
+- Exhibits (was Shared Albums; notes 20261029 item 16): the header and a front card (the newest share's cover) open
+  the Activity feed; top-bar controls (Personal/Shared/Activity, back, +, ⋯, lightbulb) are white and turn blue on
+  hover or press; Ask beside ⋯ is now just the lightbulb. In the iPhone/iPad app Exhibits is its own place under
+  Locations (`/main?exhibits=1`) and Main leaves it out; Copy Link / Open on a share go through the app
+  (clipboard, Safari) since the page runs on gallery://.
 - Shared Albums (notes 20261029 item 16), laid out like iOS Photos: on Main's root the row glides card by card
   (about 3 in view, the next peeking, wrapping both ways); Activity posts show the shared pictures large with a
   blue Like; an album opens on its cover with ▶ for a slideshow. Every file in a share is its own thread (comments, likes). People with an

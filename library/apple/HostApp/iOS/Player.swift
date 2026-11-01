@@ -96,6 +96,8 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
     config.userContentController.addUserScript(WKUserScript(source: RouteLatency.script(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.userContentController.add(Exporter.shared, name: "galleryExport")
     config.userContentController.add(LinkHandler.shared, name: "galleryLink")
+    // Exhibits is its own place under Locations in the app, so Main leaves its row out (notes 20261029 item 16)
+    config.userContentController.addUserScript(WKUserScript(source: "if(!/[?&]exhibits=1/.test(location.search)){var s=document.createElement('style');s.textContent='#sa{display:none!important}';document.documentElement.appendChild(s)}", injectionTime: .atDocumentEnd, forMainFrameOnly: true))
     let web = WKWebView(frame: .zero, configuration: config)
     RouteLatency.watch(web)
     return web
