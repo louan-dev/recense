@@ -1228,17 +1228,22 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
     return null;
   };
   assert.equal(await pg.textContent(".txall .txlcap"), "Follows the voice");
-  const box = await pg.$eval(".txall .txlight", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
-  await pg.$eval("audio", (a) => a.pause());
-  await pg.mouse.move(box.x + box.w / 2, box.y + box.h - 10);
-  await pg.mouse.down();
-  await pg.mouse.move(box.x + box.w / 2, box.y + box.h - 30, { steps: 4 });
-  await pg.mouse.up();
+  // (item 40 bug report) the pad is the word in white, no graph; ↑ is faster at first
+  assert.equal(await pg.$$eval(".txall .txtrace canvas", (c) => c.length), 0, "no graph on the pad");
+  await pg.focus(".txall .txtrace");
+  await pg.keyboard.press("ArrowUp");
   assert.equal(await pg.textContent(".txall .txlcap"), "Faster at first");
   assert.ok((await pinOf((v) => v[3] > 0)) !== null, "the speed is saved");
-  await pg.mouse.move(box.x + 10, box.y + box.h - 8);
+  // touched, the word plays round; slid along it as it is sung (anywhere in the pad's height), the light copies it
+  const wb = await pg.$eval(".txall .txtrace span", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, w: r.width }; });
+  const pb = await pg.$eval(".txall .txtrace", (c) => { const r = c.getBoundingClientRect(); return { y: r.y, h: r.height }; });
+  await pg.mouse.move(wb.x + 1, pb.y + pb.h - 6);
   await pg.mouse.down();
-  for (const [fx, fy] of [[0.2, 0.6], [0.4, 0.8], [0.7, 0.85], [1, 1]]) await pg.mouse.move(box.x + 10 + fx * (box.w - 20), box.y + box.h - 8 - fy * (box.h - 16), { steps: 3 });
+  assert.equal(await pg.$eval("audio", (a) => a.paused), false, "the word plays round while it is traced");
+  for (const [t, fx] of [[0.55, 0.3], [0.65, 0.6], [0.8, 0.8], [1.05, 1]]) {
+    await pg.$eval("audio", (a, t) => (a.currentTime = t), t);
+    await pg.mouse.move(wb.x + fx * wb.w, pb.y + pb.h - 6, { steps: 2 });
+  }
   await pg.mouse.up();
   assert.equal(await pg.textContent(".txall .txlcap"), "Traced");
   const tr = await pinOf((v) => Array.isArray(v[4]));
@@ -1248,7 +1253,7 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   assert.equal(tr[4][15], 1);
   assert.ok(tr[4].every((x, j) => !j || x >= tr[4][j - 1]), "never going back");
   assert.ok(tr[4][3] > 0.4, "early on it is lit as far as the path went: " + tr[4]);
-  await pg.dblclick(".txall .txlight");
+  await pg.dblclick(".txall .txtrace");
   assert.equal(await pg.textContent(".txall .txlcap"), "Follows the voice");
   assert.ok(await pinOf((v) => v.length === 4 && v[3] === 0), "back to the voice");
   // a stanza by ear (row 40, 2026-11-01): Whole line loops it; first beat, last beat, Use this cadence → its words
@@ -1277,12 +1282,12 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   assert.equal(auto[0][1], 0.2, "the first word on the first beat");
   assert.equal(auto[2][2], 1.4, "the last word ends on the last beat");
   await pg.click('.txall .txbtn:text("Trace it")');
-  const lb = await pg.$eval(".txall .txpanel .txlight", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
-  await pg.mouse.move(lb.x + 10, lb.y + lb.h / 2);
+  const lb = await pg.$eval(".txall .txpanel .txtrace .txtrt", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await pg.mouse.move(lb.x + 1, lb.y + lb.h + 10);
   await pg.mouse.down();
   for (const [t, fx] of [[0.3, 0.1], [0.6, 0.4], [0.9, 0.6], [1.2, 0.9], [1.35, 1]]) {
     await pg.$eval("audio", (a, t) => (a.currentTime = t), t);
-    await pg.mouse.move(lb.x + 10 + fx * (lb.w - 20), lb.y + lb.h / 2, { steps: 2 });
+    await pg.mouse.move(lb.x + fx * lb.w, lb.y + lb.h + 10, { steps: 2 });
   }
   await pg.mouse.up();
   const traced = await linePins((v) => v.length === 3 && v.every((x) => Array.isArray(x[4])));
@@ -1691,6 +1696,10 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
     return (await r.json()).id;
   });
 
+  // with a share made, the Exhibits row shows its front card under the header (it asks with x-gallery, notes item 16)
+  await pg.goto(base + "/main");
+  await pg.waitForSelector("#sa .al.fr", { state: "visible" });
+  assert.equal(await pg.getAttribute("#sa .al.fr", "href"), "/main/shared#activity");
   await pg.goto(base + "/main/shared");
   const tile = '.card[data-id="' + id + '"]';
   await pg.waitForSelector(tile);

@@ -374,7 +374,7 @@ export async function mainFolder(env, url) {
     var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
     return a;
   };
-  fetch("/main/api/shares",{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+  fetch("/main/api/shares",{credentials:"same-origin",headers:{"x-gallery":"1"}}).then(function(r){return r.json()}).then(function(d){
     var l=(d&&d.shares)||[];
     if(!l.length){ar.innerHTML='<div class="no">Nothing shared yet. Select files or folders, then Create Share Link.</div>';return}
     // the front card, before the row: the newest share's cover; it and the header open the feed (notes item 16)
