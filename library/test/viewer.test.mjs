@@ -287,6 +287,8 @@ await test("G3: B framed by default; tap A ⇄ B; drag up follows the finger to 
   assert.equal(v.st, "A");
   assert.ok(v.vs > 0.99 && v.vr < 0.5 && v.vc < 0.01, JSON.stringify(v));
   assert.equal(await pg.$eval("#lb .top", (e) => getComputedStyle(e).pointerEvents), "none");
+  const hbBox = await pg.$(".p-hbbox"); // (a picture has no home bar)
+  if (hbBox) assert.notEqual(await hbBox.evaluate((e) => getComputedStyle(e).pointerEvents), "none", "the home bar is the player's: never blocked by the shell");
   await shot(pg, m, "A-fullbleed");
   await tapAt(pg, m, c.x, c.y);
   await settle(pg);
@@ -304,9 +306,10 @@ await test("G3: B framed by default; tap A ⇄ B; drag up follows the finger to 
     const r = document.querySelector(".stage-container").getBoundingClientRect();
     return { h: r.height / innerHeight, w: r.width / innerWidth, short: matchMedia("(max-height: 500px)").matches };
   });
-  // a phone on its side keeps the media beside the sheet (gallery.css), everything else docks it to the top 38%
+  // a phone on its side keeps the media beside the sheet, everything else docks it above (the viewer's own --mh, gallery.css)
   if (dock.short) assert.ok(dock.w < 0.7, "beside the sheet: " + dock.w);
-  else assert.ok(Math.abs(dock.h - 0.38) < 0.02, "docked to the top 38%: " + dock.h);
+  else assert.ok(dock.h < 0.55 && dock.h > 0.2, "docked above the sheet: " + dock.h);
+  assert.equal(await pg.$eval(".bot", (e) => getComputedStyle(e).opacity), "0", "the bottom row steps aside for the sheet");
   assert.ok(await pg.isVisible("#thread"));
   await shot(pg, m, "C-docked");
   // B again: Hide Comments
@@ -315,30 +318,27 @@ await test("G3: B framed by default; tap A ⇄ B; drag up follows the finger to 
   assert.equal((await vars(pg)).st, "B");
 });
 
-await test("G3: top bar is round back, two lines, •••; Go to File only on purpose; nothing downloads on open", async (pg, m) => {
+await test("G3: the top bar and the home bars are the viewer's own; nothing downloads on open", async (pg, m) => {
   const downloads = [];
   pg.on("download", (d) => downloads.push(d.suggestedFilename()));
-  await pg.goto(base + "/main?p=Words");
+  await pg.goto(base + "/main?p=Tracks");
   await pg.click('.tile[data-n="00000"]');
   await pg.waitForSelector("#lb:not([hidden])");
-  const t = await pg.evaluate(() => {
-    const r = (q) => document.querySelector(q).getBoundingClientRect();
-    const top = document.querySelector("#lb .top");
-    const texts = [...top.querySelectorAll("button, a")].filter((b) => b.offsetParent).map((b) => (b.getAttribute("aria-label") || b.textContent).trim());
-    return { back: getComputedStyle(document.querySelector(".vback")).borderRadius, backLeft: r(".vback").left, moreRight: innerWidth - r(".vmore").right, fold: r(".vfold"), t1: r("#t1"), folder: document.querySelector(".vfold").textContent, texts };
-  });
-  assert.equal(t.back, "50%");
-  assert.ok(t.backLeft < 40 && t.moreRight < 40, "back left, ••• right");
-  assert.ok(t.fold.bottom <= t.t1.top + 1, "two lines: the folder over the date");
-  assert.equal(t.folder, "Words");
-  assert.ok(!t.texts.some((x) => /^(Done|Gallery|‹ Gallery|< Gallery)$/.test(x)), "no second back or Done: " + t.texts);
-  await pg.click(".vmore");
-  assert.ok(await pg.isVisible('.vmenu button:has-text("Go to File")'));
-  await pg.click(".vmore");
+  await settle(pg);
+  const t = await pg.evaluate(() => ({
+    shell: ["vback", "vmore", "vfold", "vscrub", "vcap", "vmenu"].filter((c) => document.querySelector("." + c)),
+    top: document.querySelector("#lb .top").getBoundingClientRect().height > 0,
+    t1: document.getElementById("t1").textContent,
+    hb: [".p-hb", ".p-ctrl"].map((q) => { const e = document.querySelector(q); return e ? getComputedStyle(e).opacity : null; }),
+  }));
+  assert.deepEqual(t.shell, [], "none of the shell's own bars: " + t.shell);
+  assert.ok(t.top && t.t1, "the viewer's own title");
+  assert.ok(t.hb[0] !== null, "an audio item has its home bar");
+  assert.ok(t.hb.every((o) => o === null || o === "1"), "the home bars are not faded by the shell: " + t.hb);
   assert.deepEqual(downloads, []);
 });
 
-await test("G3: one active item: stage, filmstrip and title never disagree; the active thumb is centred and larger", async (pg, m) => {
+await test("G3: one active item: stage, filmstrip and title never disagree", async (pg, m) => {
   await pg.goto(base + "/main?p=Tracks");
   await pg.click('.tile[data-n="00000"]');
   await pg.waitForSelector("#lb:not([hidden])");
@@ -355,72 +355,11 @@ await test("G3: one active item: stage, filmstrip and title never disagree; the 
   assert.equal(s.cur, 6);
   assert.equal(s.ons, 1);
   assert.equal(s.active, "Tracks/t06.wav");
-  assert.ok(s.off <= s.w, "centred: " + s.off);
-  assert.ok(s.scale > 1.1, "enlarged: " + s.scale);
   // a tap on a thumbnail moves the stage to it, and the strip with it
   await pg.click("#strip .th:nth-child(3)");
   await settle(pg);
   assert.equal(await pg.evaluate(() => window.__galleryViewerStats().cur), 2);
   assert.equal(await pg.evaluate(() => document.getElementById("lb").dataset.active), "Tracks/t02.wav");
-});
-
-await test("G3: the 2D scrubber: dx scrubs, up is fine, down coarse again; it keeps the pointer and never moves the sheet", async (pg, m) => {
-  await pg.goto(base + "/main?p=Tracks");
-  await pg.click('.tile[data-n="00000"]');
-  await pg.waitForSelector("#lb:not([hidden])");
-  await pg.waitForFunction(() => { const a = window.__galleryViewer.media(); return a && a.duration > 0; });
-  if (await pg.evaluate(() => matchMedia("(max-height: 500px)").matches)) {
-    assert.equal(await pg.$eval(".vscrub", (e) => getComputedStyle(e).display), "none", "short landscape: the home bar scrubs");
-    return;
-  }
-  assert.equal(await pg.$eval(".vrail", (e) => getComputedStyle(e).touchAction), "none");
-  const r = await pg.$eval(".vrail", (e) => { const b = e.getBoundingClientRect(); return { l: b.left, w: b.width, y: b.top + b.height / 2 }; });
-  let mid = {};
-  await drag(pg, m, { x: r.l + r.w * 0.1, y: r.y }, { x: r.l + r.w * 0.6, y: r.y }, {
-    mid: async () => (mid = await pg.evaluate(() => ({ cap: document.querySelector(".vscrub.held") !== null, t: window.__galleryViewer.media().currentTime / window.__galleryViewer.media().duration }))),
-  });
-  assert.ok(mid.cap, "held while dragging");
-  assert.ok(Math.abs(mid.t - 0.6) < 0.08, "coarse: the rail is the track: " + mid.t);
-  // up past the step: fine (a tenth as fast), then far up and down: the sheet and the viewer stay as they were
-  // straight up first (fine), then 40% of the rail to the right: a tenth of what coarse would move
-  let fine = {};
-  await drag(pg, m, { x: r.l + r.w * 0.5, y: r.y }, { x: r.l + r.w * 0.9, y: r.y - 60 }, {
-    steps: 6,
-    via: { x: r.l + r.w * 0.5, y: r.y - 60 },
-    mid: async () => (fine = await pg.evaluate(() => ({ fine: !!document.querySelector(".vscrub.fine"), t: window.__galleryViewer.media().currentTime / window.__galleryViewer.media().duration }))),
-  });
-  assert.ok(fine.fine, "drag up: fine");
-  assert.ok(fine.t > 0.5 && fine.t < 0.56, "fine moves a tenth as far: " + fine.t);
-  await drag(pg, m, { x: r.l + r.w * 0.5, y: r.y }, { x: r.l + r.w * 0.5, y: r.y + 200 }, { steps: 6 });
-  assert.equal(await pg.evaluate(() => document.body.classList.contains("comments-open")), false, "vertical drift never pulls the sheet");
-  assert.ok(await pg.isVisible("#lb"), "nor closes the viewer");
-});
-
-await test("G3: the capsule: Share, Favorite, Info, Audio/EQ and Delete apart; only the three playback controls are glass", async (pg, m) => {
-  await pg.goto(base + "/main?p=Tracks");
-  await pg.click('.tile[data-n="00000"]');
-  await pg.waitForSelector("#lb:not([hidden])");
-  await settle(pg);
-  await shot(pg, m, "B-audio-capsule");
-  const c = await pg.evaluate(() => {
-    const vis = (q) => [...document.querySelectorAll(q)].filter((e) => e.offsetParent && getComputedStyle(e).display !== "none");
-    // glass = a backdrop blur on something you can see and press
-    const glass = vis("#lb .bot *").filter((e) => getComputedStyle(e).backdropFilter !== "none" && getComputedStyle(e).opacity === "1" && e.getBoundingClientRect().width >= 40);
-    return {
-      acts: vis(".vcap .vic").map((e) => e.getAttribute("aria-label")),
-      glass: glass.map((e) => e.getAttribute("aria-label")),
-      blue: vis(".vcap .vic").every((e) => getComputedStyle(e).color === "rgb(10, 132, 255)"),
-      delApart: !document.querySelector(".vdel").closest(".vpill"),
-    };
-  });
-  assert.deepEqual(c.acts, ["Share", "Favorite", "Info and transcript", "Audio and EQ", "Delete"]);
-  assert.deepEqual(c.glass, ["Back 10 seconds", "Play", "Forward 10 seconds"]);
-  assert.ok(c.blue, "everything else is blue");
-  assert.ok(c.delApart, "Delete stands apart");
-  // Info opens the sheet (C), the same way as a swipe up
-  await pg.click(".vinfo");
-  await pg.waitForFunction(() => document.body.classList.contains("comments-open"));
-  assert.equal(await pg.evaluate(() => document.getElementById("lb").dataset.vstate), "C");
 });
 
 // each context starts from the files' own values (the overrides an earlier context left are revoked)
@@ -442,6 +381,28 @@ const openC = async (pg, dir, n) => {
   await pg.waitForFunction(() => document.getElementById("lb").dataset.vstate === "C");
 };
 const BLUE = "rgb(10, 132, 255)";
+
+await test("G3: in C nothing of the bottom row lies over the sheet", async (pg, m) => {
+  await openC(pg, "Geo", "00000");
+  await pg.waitForSelector(".vsheet .vmeta");
+  await settle(pg);
+  const over = await pg.evaluate(() => {
+    const bad = [];
+    for (const q of [".vinsp", ".vmeta"]) {
+      const r = document.querySelector(q).getBoundingClientRect();
+      for (const [fx, fy] of [[0.5, 0.2], [0.5, 0.8]]) {
+        const x = r.left + r.width * fx;
+        const y = Math.min(r.top + r.height * fy, innerHeight - 2);
+        if (y < 0 || y > innerHeight || r.bottom < 0) continue;
+        const e = document.elementFromPoint(x, y);
+        if (e && !e.closest(".vsheet, #thread")) bad.push(q + " covered by " + e.className);
+      }
+    }
+    return bad;
+  });
+  assert.deepEqual(over, []);
+  await shot(pg, m, "C-sheet-clear");
+});
 
 await test("G5: a comment shows three lines and a blue more; a tap on a word opens it with the caret there", async (pg, m) => {
   await openC(pg, "Long", "00000");
@@ -496,8 +457,10 @@ await test("G5: the inspector (Transcript | Info) and the metadata card: Adjust,
   const when = () => pg.textContent(".vwhen");
   const before = await when();
   assert.match(before, /^\w+ • .+ • .+$/, "Day • Date • Time: " + before);
-  assert.match(await pg.textContent(".vsp1"), /a-tower\.jpg\s*JPEG/);
-  assert.match(await pg.textContent(".vsp2"), /4032 × 3024/);
+  assert.equal(await pg.$$eval(".vmeta .vspecs", (a) => a.length), 0, "the date line stands alone on the card");
+  assert.match(await pg.textContent(".vexif"), /Name\s*a-tower\.jpg/);
+  assert.match(await pg.textContent(".vexif"), /Type\s*JPEG/);
+  assert.match(await pg.textContent(".vexif"), /4032 × 3024/);
   assert.equal(await pg.$eval(".vadj", (b) => getComputedStyle(b).color), BLUE);
   await shot(pg, m, "C-sheet-card");
   // Adjust the time: an override, shown edited

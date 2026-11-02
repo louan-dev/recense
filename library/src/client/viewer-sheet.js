@@ -113,10 +113,15 @@
     const o = (m && m.original) || {};
     const dl = el("dl", "vexif");
     const add = (k, v) => v && dl.append(el("dt", null, k), el("dd", null, v));
-    add("Camera", [o.make, o.model].filter(Boolean).join(" "));
-    add("Taken", o.taken ? date(o.taken) + " " + time(o.taken) : "");
+    const ext = (o.name || f.name || "").split(".").pop().toUpperCase();
+    add("Name", o.name || f.name);
+    add("Type", (o.type || "").split("/")[1]?.toUpperCase() || ext);
     add("Size", o.width && o.height ? o.width + " × " + o.height : "");
     add("File", o.size ? size(o.size) : "");
+    const a = V.media();
+    add("Length", a && Number.isFinite(a.duration) ? fmtT(a.duration) : "");
+    add("Camera", [o.make, o.model].filter(Boolean).join(" "));
+    add("Taken", o.taken ? date(o.taken) + " " + time(o.taken) : "");
     add("Place", o.lat != null ? o.lat.toFixed(5) + ", " + o.lon.toFixed(5) : "");
     if (!dl.children.length) dl.append(el("dd", "vmuted", "Nothing more in this file."));
     return dl;
@@ -203,16 +208,7 @@
     head.append(when);
     if ("time" in ov || "location" in ov) head.append(el("span", "vbadge", "edited"));
     if (V.canAdjust()) head.append(btn("lnk vadj", "Adjust", () => adjustPanel(f, m, box)));
-    const specs = el("div", "vspecs");
-    const ext = (o.name || f.name || "").split(".").pop().toUpperCase();
-    const t1 = el("div", "vsp1");
-    t1.append(el("span", "vsptitle", o.name || f.name), el("span", "vcodec", (o.type || "").split("/")[1]?.toUpperCase() || ext));
-    specs.append(t1);
-    const dims = [o.width && o.height ? o.width + " × " + o.height : "", o.size ? size(o.size) : ""].filter(Boolean).join(" • ");
-    if (dims) specs.append(el("div", "vsp2", dims));
-    const a = V.media();
-    if (a && Number.isFinite(a.duration)) specs.append(el("div", "vsp3", fmtT(a.duration)));
-    box.append(head, specs);
+    box.append(head);
     return box;
   };
 

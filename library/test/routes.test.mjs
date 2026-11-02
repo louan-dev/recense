@@ -2258,6 +2258,11 @@ await test("G5: metadata overrides are non-destructive; revoke falls back; clear
   assert.equal(m.original.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
   assert.deepEqual(m.overrides, {});
   assert.equal((await call("/main/api/meta?path=Geo%2Fparis.jpg")).status, 404, "owner only");
+  // a modified time stored in seconds is still a date this century, not January 1970
+  await MAIN.put("files/Geo/secs.mp4", "x", { httpMetadata: { contentType: "video/mp4" }, customMetadata: { mtime: "1776897722" } });
+  await MAIN.put("files/Geo/millis.mp4", "x", { httpMetadata: { contentType: "video/mp4" }, customMetadata: { mtime: "1776897722000" } });
+  assert.equal((await (await own("/main/api/meta?path=Geo%2Fsecs.mp4")).json()).original.taken, 1776897722000);
+  assert.equal((await (await own("/main/api/meta?path=Geo%2Fmillis.mp4")).json()).original.taken, 1776897722000);
 
   // adjust: an override, an "edited" value, the file untouched
   const t2 = Date.UTC(2024, 4, 7, 12, 0, 0);

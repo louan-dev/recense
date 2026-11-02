@@ -151,7 +151,7 @@ function originalOf(head, ex, rel) {
     name: rel.split("/").pop(),
     type: (head && head.httpMetadata && head.httpMetadata.contentType) || "",
     size: head ? head.size : 0,
-    taken: ex.taken || Number((head && head.customMetadata && head.customMetadata.mtime) || 0) || (head ? head.uploaded.getTime() : 0),
+    taken: ex.taken || ms(Number((head && head.customMetadata && head.customMetadata.mtime) || 0)) || (head ? head.uploaded.getTime() : 0),
     lat: ex.lat ?? null,
     lon: ex.lon ?? null,
     make: ex.make || "",
@@ -160,6 +160,9 @@ function originalOf(head, ex, rel) {
     height: ex.height || 0,
   };
 }
+
+// a modified time is milliseconds, but some clients store seconds (read as milliseconds that is January 1970)
+const ms = (t) => (t > 0 && t < 1e11 ? t * 1000 : t);
 
 const effectiveOf = (orig, ov) => {
   const e = { taken: orig.taken, lat: orig.lat, lon: orig.lon, place: "" };

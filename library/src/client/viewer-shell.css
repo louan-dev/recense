@@ -1,9 +1,10 @@
-/* The viewer shell (G3, viewer-shell.js). The spring writes four values on #lb, once a frame:
+/* The viewer shell (G3, viewer-shell.js): the framing states only. The spring writes four values on #lb, once a frame:
    --vs the media's scale, --vr its corner radius, --vc how present the chrome is (0 = A … 1 = B), --vy the
    media's offset while dragged. Only the media layer moves (translate3d + scale): the player's own controls
-   (home bar, sound stroke, the three glass buttons) keep their anchors. */
+   (home bar, sound stroke, the three glass buttons) are not touched and keep their anchors. The top bar, strip and bottom row are
+   the viewer's own (gallery.css). */
 
-#lb[data-shell]{--vs:.82;--vr:24px;--vc:1;--vy:0px;--mh:38dvh;background:#000}
+#lb[data-shell]{--vs:.82;--vr:24px;--vc:1;--vy:0px;background:#000}
 
 #lb[data-shell] #stage>img,
 #lb[data-shell] #stage .aw>img,
@@ -23,55 +24,15 @@
 body.comments-open #lb[data-shell]{--vs:1;--vr:0px}
 body.comments-open #lb[data-shell] #stage>img{object-fit:contain;object-position:center}
 
-/* A: the chrome fades with the spring and stops taking taps */
+/* A: the top bar and the bottom row fade with the spring and stop taking taps. The home bar and the sound stroke
+   are the player's own and are never touched here. */
 #lb[data-shell] .top,
-#lb[data-shell] .bot,
-#lb[data-shell] .p-hb,
-#lb[data-shell] .p-ctrl{opacity:var(--vc)}
+#lb[data-shell] .bot{opacity:var(--vc)}
 #lb[data-shell][data-vstate="A"] .top,
-#lb[data-shell][data-vstate="A"] .bot,
-#lb[data-shell][data-vstate="A"] .p-hb,
-#lb[data-shell][data-vstate="A"] .p-ctrl{pointer-events:none}
+#lb[data-shell][data-vstate="A"] .bot{pointer-events:none}
 
-/* top bar: round "<" left, two lines centred, "•••" right. No other back or Done. */
-#lb[data-shell] .top{grid-template-columns:44px 1fr 44px;column-gap:8px}
-#lb[data-shell] .top .vback,
-#lb[data-shell] .top .vmore{
-  width:44px;height:44px;border-radius:50%;border:0;padding:0;
-  display:grid;place-items:center;
-  color:var(--blue);background:rgba(255,255,255,.08);cursor:pointer
-}
-#lb[data-shell] .top .vback{grid-column:1;grid-row:1}
-#lb[data-shell] .top .ttl{grid-column:2;grid-row:1;min-width:0;line-height:1.2}
-#lb[data-shell] .top #topr{grid-column:3;grid-row:1;justify-self:end}
-#lb[data-shell] .top .vmore{grid-column:3;grid-row:1;justify-self:end}
-#lb[data-shell] .ttl .vfold{display:block;font:600 15px -apple-system,BlinkMacSystemFont,sans-serif;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#lb[data-shell] .ttl #t1,
-#lb[data-shell] .ttl #t2{display:inline;font:400 12px -apple-system,BlinkMacSystemFont,sans-serif;color:rgba(235,235,245,.6)}
-#lb[data-shell] .ttl #t2:not(:empty)::before{content:" \2022 "}
-
-.vmenu{
-  position:absolute;z-index:8;top:calc(var(--tb) + 4px);right:max(12px,env(safe-area-inset-right));
-  min-width:200px;padding:6px 0;border-radius:18px;background:#1c1c1e;
-  box-shadow:0 12px 40px rgba(0,0,0,.5);display:flex;flex-direction:column
-}
-.vmenu[hidden]{display:none}
-.vmenu .vrow{display:block;width:100%;min-height:44px;padding:0 18px;text-align:left;border:0;background:none;color:var(--blue);font:400 17px -apple-system,BlinkMacSystemFont,sans-serif}
-
-/* bottom: scrubber, filmstrip, (the legacy Info/comments/Share row), capsule */
-#lb[data-shell] .bot{grid-template-areas:"scr scr scr" ". strp ." "inf cm sav" "cap cap cap"}
-#lb[data-shell] .vscrub{grid-area:scr;position:relative;height:28px;padding:0 8px;touch-action:none}
-#lb[data-shell] .vscrub[hidden]{display:none}
-.vrail{position:relative;height:28px;touch-action:none;cursor:pointer}
-.vrail::before{content:"";position:absolute;left:0;right:0;top:12px;height:4px;border-radius:2px;background:rgba(255,255,255,.35)}
-.vfill{position:absolute;left:0;right:0;top:12px;height:4px;border-radius:2px;background:var(--blue);transform-origin:0 50%;transform:scaleX(0)}
-.vthumb{position:absolute;left:-6px;top:8px;width:12px;height:12px;border-radius:50%;background:#fff}
-.vscrub.held .vthumb{width:16px;height:16px;left:-8px;top:6px}
-.vscrub.fine .vrail::before{background:rgba(10,132,255,.35)}
-.vpills{position:absolute;left:0;bottom:30px;display:flex;gap:6px;transform:translate3d(0,0,0);translate:-50% 0;pointer-events:none}
-.vpills[hidden]{display:none}
-.vword{padding:4px 10px;border-radius:999px;background:#2c2c2e;color:#fff;font:500 15px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
-.vword.on{background:var(--blue)}
+/* C: the bottom bar steps aside for the sheet, as it always did (gallery.css), whatever the spring says */
+body.comments-open #lb[data-shell] .bot{opacity:0;pointer-events:none}
 
 /* the media takes one-finger drags itself (pointer events, 1:1); a pinch is still the browser's */
 #lb[data-shell] #stage>img,
@@ -79,53 +40,18 @@ body.comments-open #lb[data-shell] #stage>img{object-fit:contain;object-position
 #lb[data-shell] #stage .mbox,
 #lb[data-shell] #stage .peek{touch-action:pinch-zoom}
 
-/* the filmstrip: the active thumbnail centred and a little larger; half a strip of room at each end lets the
-   first and last ones reach the middle too */
-#lb[data-shell] #strip::before,
-#lb[data-shell] #strip::after{flex:0 0 calc(50% - 18px);margin:0}
-#lb[data-shell] #strip .th{transition:transform .2s cubic-bezier(.2,.8,.2,1)}
-#lb[data-shell] #strip .th.on{transform:scale(1.18);z-index:1}
+/* Text size (a⁻ 100% A⁺): three buttons that touch. iPhone Safari draws a button's own gradient and border unless every
+   one is reset, and the three then read as one grey slab; the wedges draw themselves. */
+#lb .p-slide button.p-tseg{-webkit-appearance:none;appearance:none;background:none;border:0;border-radius:0;box-shadow:none;-webkit-tap-highlight-color:transparent}
+#lb .p-tsz{min-height:var(--rowh);overflow:visible}
 
-/* the capsule: blue controls on a flat surface; the three playback buttons are the only glass */
-#lb[data-shell] .vcap{grid-area:cap;display:flex;align-items:center;justify-content:center;gap:10px;padding-top:6px}
-.vpill{display:flex;align-items:center;border-radius:999px;background:rgba(118,118,128,.24)}
-.vic{width:44px;height:44px;display:grid;place-items:center;border:0;background:none;color:var(--blue);padding:0;cursor:pointer}
-.vic[hidden],.vtrio[hidden]{display:none}
-.vfav.on{--fill:currentColor}
-.vdel{border-radius:50%;background:rgba(118,118,128,.24);margin-left:6px}
-.vtrio{display:flex;align-items:center;gap:8px}
-.vglass{
-  width:48px;height:48px;border-radius:999px;border:0;color:#fff;display:grid;place-items:center;padding:0;cursor:pointer;
-  background:var(--glass-fill),rgba(18,18,20,.36);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-edge)
+/* the glow: the artwork, blurred, under the framed media (B), fading as the media fills the screen (A) or docks (C) */
+#lb[data-shell]::before{
+  content:"";position:absolute;inset:-12%;z-index:0;pointer-events:none;
+  background:var(--vart,none) center/cover no-repeat;
+  filter:blur(64px) saturate(1.5);-webkit-filter:blur(64px) saturate(1.5);
+  opacity:calc(var(--vc,0) * .42 * var(--vglow,0));
+  transition:opacity .6s ease
 }
-.vglass.vpp{width:64px}
-.vic:disabled{opacity:.4}
-
-@media (max-height:500px){
-  /* a phone on its side: no row to spare, the capsule shares the Info/comments/Share row and the home bar scrubs */
-  #lb[data-shell] .bot{grid-template-columns:44px minmax(0,1fr) auto 44px;grid-template-areas:". strp strp ." "inf cm cap sav"}
-  #lb[data-shell] .vscrub{display:none}
-  #lb[data-shell] .vcap{padding-top:0;gap:6px}
-  #lb[data-shell] .vglass{width:40px;height:40px}
-  #lb[data-shell] .vglass.vpp{width:52px}
-}
-@media (prefers-reduced-motion:reduce){
-  #lb[data-shell] #strip .th{transition:none}
-}
-
-/* the transcript editor has the room above the home bars (row 40): the shell's rows step aside with the strip */
-.txediting #lb[data-shell] .vscrub,
-.txediting #lb[data-shell] .vcap{display:none}
-
-/* the legacy Info and Share buttons follow the blue rule too: glass is for the three playback controls only */
-#lb[data-shell] .bot .ic{background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--blue)}
-
-/* a phone held upright: the capsule fits its width */
-@media (max-width:440px){
-  #lb[data-shell] .vcap{gap:6px}
-  #lb[data-shell] .vtrio{gap:6px}
-  #lb[data-shell] .vglass{width:44px;height:44px}
-  #lb[data-shell] .vglass.vpp{width:54px}
-  #lb[data-shell] .vic{width:42px}
-  #lb[data-shell] .vdel{margin-left:0}
-}
+body.comments-open #lb[data-shell]::before{opacity:0}
+@media (prefers-reduced-motion:reduce){#lb[data-shell]::before{transition:none}}

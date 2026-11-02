@@ -1,15 +1,13 @@
-// The viewer shell (G3): one shell for every item (audio, video, image, document) over gallery.js's viewer.
+// The viewer shell (G3): the framing states of the viewer, over gallery.js's viewer.
 //
-//   A  Full-bleed   tap the stage from B. Media 100%, radius 0, all chrome faded out.
+//   A  Full-bleed   tap the media from B. Media 100%, radius 0, the chrome faded out.
 //   B  Framed       the default; tap from A, or swipe down from C. Media scale .82, radius 24px, black around.
-//                   Top: a round "<" back, the folder over the date • time, "•••". Bottom: scrubber,
-//                   thumbnail filmstrip, the action capsule (Share, Favorite, Info, Audio/EQ; Delete apart).
-//   C  Docked       swipe up, or Info/Transcript. The media docks to the top 38% (body.comments-open, --mh),
-//                   the sheet (#thread) slides up beneath it.
+//   C  Docked       swipe up, or Info / Add a comment. The media docks above the sheet (body.comments-open).
 //
-// Moves follow the finger 1:1 (requestAnimationFrame, translate3d and scale only), then a spring settles them
-// (stiffness 320, damping 32, mass 1). Everything goes through window.__galleryViewer, whose onShow is the one
-// active item every surface follows. Only the three playback controls are glass (.vglass); the rest are blue.
+// The top bar, the filmstrip, the Info / comment / Share row and the home bar are the viewer's own (gallery.js,
+// homebar.js): this file does not draw them. Moves follow the finger 1:1 (requestAnimationFrame, translate3d and
+// scale only), then a spring settles them (stiffness 320, damping 32, mass 1). Everything goes through
+// window.__galleryViewer, whose onShow is the one active item every surface follows.
 (() => {
   const V = window.__galleryViewer;
   const lb = document.getElementById("lb");
@@ -17,31 +15,6 @@
 
   const SPRING = { k: 320, c: 32, m: 1 };
   const FRAMED = { scale: 0.82, radius: 24 };
-  const el = (tag, cls, html) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (html != null) e.innerHTML = html;
-    return e;
-  };
-  const btn = (cls, label, html) => {
-    const b = el("button", cls, html);
-    b.type = "button";
-    b.setAttribute("aria-label", label);
-    return b;
-  };
-  const ICON = {
-    back: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    more: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>',
-    share: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 15V3m0 0L8 7m4-4l4 4M5 11v9h14v-9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    fav: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="var(--fill,none)" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
-    info: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
-    eq: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 4v16M12 4v16M18 4v16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor"/></svg>',
-    del: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    rew: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M11 6L4 12l7 6zM20 6l-7 6 7 6z" fill="currentColor"/></svg>',
-    fwd: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M13 6l7 6-7 6zM4 6l7 6-7 6z" fill="currentColor"/></svg>',
-    play: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>',
-    pause: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>',
-  };
 
   lb.dataset.shell = "1";
 
@@ -96,225 +69,6 @@
     if (lb.dataset.vstate !== st) lb.dataset.vstate = st;
   }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
-  // ---------- top bar: "<" · folder over date • time · "•••" ----------
-  const top = lb.querySelector(".top");
-  const ttl = lb.querySelector(".ttl");
-  const back = btn("vback", "Back", ICON.back);
-  back.onclick = () => history.back();
-  const fold = el("b", "vfold");
-  ttl.prepend(fold);
-  const more = btn("vmore", "More", ICON.more);
-  top.prepend(back);
-  top.append(more);
-
-  const menu = el("div", "vmenu");
-  menu.hidden = true;
-  menu.setAttribute("role", "menu");
-  lb.append(menu);
-  const row = (label, fn) => {
-    const b = el("button", "lnk vrow");
-    b.type = "button";
-    b.setAttribute("role", "menuitem");
-    b.textContent = label;
-    b.onclick = () => {
-      menu.hidden = true;
-      fn();
-    };
-    menu.append(b);
-  };
-  // a click views or plays; the file itself is only ever reached on purpose
-  more.onclick = (e) => {
-    e.stopPropagation();
-    if (!menu.hidden) return (menu.hidden = true);
-    const f = V.item();
-    if (!f) return;
-    menu.replaceChildren();
-    row("Go to File", () => window.open(V.src(f), "_blank", "noopener"));
-    if (V.canDownload()) row("Download", () => (location.href = V.src(f) + (V.src(f).includes("?") ? "&" : "?") + "dl=1"));
-    row(V.isOpen() ? "Hide Info" : "Info", () => setState(V.isOpen() ? "B" : "C"));
-    menu.hidden = false;
-  };
-  document.addEventListener("pointerdown", (e) => !menu.hidden && !menu.contains(e.target) && e.target !== more && (menu.hidden = true));
-
-  // ---------- bottom: scrubber · filmstrip · capsule ----------
-  const bot = lb.querySelector(".bot");
-  const scrub = el("div", "vscrub");
-  scrub.innerHTML = '<div class="vrail"><div class="vfill"></div><div class="vthumb"></div></div><div class="vpills" hidden></div>';
-  const rail = scrub.querySelector(".vrail");
-  const fill = scrub.querySelector(".vfill");
-  const thumb = scrub.querySelector(".vthumb");
-  const pills = scrub.querySelector(".vpills");
-  bot.prepend(scrub);
-
-  const cap = el("div", "vcap");
-  const share = btn("lnk vic vshare2", "Share", ICON.share);
-  const fav = btn("lnk vic vfav", "Favorite", ICON.fav);
-  const trio = el("div", "vtrio");
-  const rew = btn("vglass vrew", "Back 10 seconds", ICON.rew);
-  const pp = btn("vglass vpp", "Play", ICON.play);
-  const fwd = btn("vglass vfwd", "Forward 10 seconds", ICON.fwd);
-  trio.append(rew, pp, fwd);
-  const info = btn("lnk vic vinfo", "Info and transcript", ICON.info);
-  const eq = btn("lnk vic veq", "Audio and EQ", ICON.eq);
-  const pillL = el("div", "vpill");
-  const pillR = el("div", "vpill");
-  pillL.append(share, fav);
-  pillR.append(info, eq);
-  const del = btn("lnk vic vdel", "Delete", ICON.del);
-  cap.append(pillL, trio, pillR, del);
-  bot.append(cap);
-
-  share.onclick = () => V.share();
-  fav.onclick = async () => {
-    fav.disabled = true;
-    try {
-      await V.like();
-    } catch (e) {}
-    fav.disabled = false;
-    paintCap();
-  };
-  info.onclick = () => setState(V.isOpen() ? "B" : "C");
-  eq.onclick = () => {
-    const b = lb.querySelector(".p-eqbtn");
-    if (b) b.click();
-  };
-  del.onclick = () => V.del();
-  const media = () => V.media();
-  const seekBy = (d) => {
-    const m = media();
-    if (m && Number.isFinite(m.duration)) m.currentTime = Math.max(0, Math.min(m.duration, m.currentTime + d));
-  };
-  rew.onclick = () => seekBy(-10);
-  fwd.onclick = () => seekBy(10);
-  pp.onclick = () => {
-    V.toggle();
-    setTimeout(paintPlay, 50);
-  };
-  const paintPlay = () => {
-    const m = media();
-    const on = !!(m && !m.paused);
-    if (pp.dataset.on === String(on)) return;
-    pp.dataset.on = String(on);
-    pp.innerHTML = on ? ICON.pause : ICON.play;
-    pp.setAttribute("aria-label", on ? "Pause" : "Play");
-  };
-  const paintCap = () => {
-    const f = V.item();
-    const av = !!f && !f.pending && ["aud", "vid"].includes(V.kind(f));
-    lb.classList.toggle("vav", av);
-    scrub.hidden = !av;
-    trio.hidden = !av;
-    eq.hidden = !av;
-    share.hidden = !V.canShare();
-    fav.hidden = !V.canLike();
-    fav.classList.toggle("on", V.liked());
-    fav.setAttribute("aria-pressed", String(V.liked()));
-    del.hidden = !V.canDelete();
-    paintPlay();
-  };
-
-  // ---------- the 2D scrubber ----------
-  // dx scrubs the timeline (coarse: the rail is the whole track). Drag up past a step: fine, a word at a time,
-  // the words showing as pills over the thumb; back down: coarse again. The rail keeps the pointer
-  // (setPointerCapture, touch-action: none), so drifting up or down never moves the sheet or the stage.
-  let words = [];
-  let wordsFor = null;
-  const loadWords = async (f) => {
-    wordsFor = f;
-    words = [];
-    const ls = await V.lines(f);
-    if (wordsFor !== f) return;
-    for (const l of ls) for (const w of l.words || []) if (Number.isFinite(w.s)) words.push({ t: String(w.t || w.w || ""), s: w.s, e: w.e });
-    if (!words.length) for (const l of ls) if (Number.isFinite(l.s)) words.push({ t: String(l.text || l.t || ""), s: l.s, e: l.e });
-  };
-  const paintRail = () => {
-    const m = media();
-    const p = m && m.duration ? m.currentTime / m.duration : 0;
-    fill.style.transform = `scaleX(${p})`;
-    thumb.style.transform = `translate3d(${(p * rail.clientWidth).toFixed(1)}px,0,0)`;
-  };
-  const wordAt = (t) => {
-    let best = -1;
-    for (let i = 0; i < words.length; i++) if (words[i].s <= t + 1e-3) best = i;
-    return best;
-  };
-  const showPills = (t) => {
-    const i = Math.max(0, wordAt(t));
-    pills.replaceChildren(
-      ...words.slice(Math.max(0, i - 2), i + 3).map((w) => {
-        const b = el("span", "vword" + (w === words[i] ? " on" : ""));
-        b.textContent = w.t;
-        return b;
-      })
-    );
-    pills.style.transform = `translate3d(${thumb.style.transform.match(/[-\d.]+/)?.[0] || 0}px,0,0)`;
-  };
-  let sc = null;
-  rail.addEventListener("pointerdown", (e) => {
-    const m = media();
-    if (!m || !Number.isFinite(m.duration) || !m.duration) return;
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      rail.setPointerCapture(e.pointerId);
-    } catch (x) {}
-    const r = rail.getBoundingClientRect();
-    const t = ((e.clientX - r.left) / r.width) * m.duration;
-    m.currentTime = Math.max(0, Math.min(m.duration, t));
-    sc = { id: e.pointerId, x: e.clientX, y0: e.clientY, t: m.currentTime, fine: false, w: r.width };
-    scrub.classList.add("held");
-    paintRail();
-  });
-  rail.addEventListener("pointermove", (e) => {
-    if (!sc || e.pointerId !== sc.id) return;
-    e.stopPropagation();
-    const m = media();
-    const up = sc.y0 - e.clientY;
-    const fine = up > 28; // up: fine; back down below the step: coarse
-    if (fine !== sc.fine) {
-      sc.fine = fine;
-      sc.x = e.clientX;
-      sc.t = m.currentTime;
-      scrub.classList.toggle("fine", fine);
-      pills.hidden = !fine || !words.length;
-    }
-    const dx = e.clientX - sc.x;
-    let t;
-    if (fine && words.length) {
-      // a word per 24px, from the word under the thumb when fine began
-      const i0 = Math.max(0, wordAt(sc.t));
-      const i = Math.max(0, Math.min(words.length - 1, i0 + Math.round(dx / 24)));
-      t = words[i].s;
-    } else {
-      t = sc.t + (dx / sc.w) * m.duration * (fine ? 0.1 : 1);
-    }
-    m.currentTime = Math.max(0, Math.min(m.duration, t));
-    paintRail();
-    if (fine && words.length) showPills(m.currentTime);
-  });
-  const endScrub = (e) => {
-    if (!sc || e.pointerId !== sc.id) return;
-    sc = null;
-    scrub.classList.remove("held", "fine");
-    pills.hidden = true;
-  };
-  rail.addEventListener("pointerup", endScrub);
-  rail.addEventListener("pointercancel", endScrub);
-  // the rail's touches are its own: not a swipe of the stage, not a pull of the sheet
-  for (const t of ["touchstart", "touchmove", "touchend"]) scrub.addEventListener(t, (e) => e.stopPropagation(), { passive: true });
-
-  let tick = 0;
-  // the element lives in a shadow root, whose events never reach the document: read it five times a second
-  // (a drag on the rail paints at once, on its own)
-  const follow = () => {
-    if (lb.hidden) return stopFollow();
-    if (!sc) paintRail();
-    paintPlay();
-  };
-  const stopFollow = () => {
-    clearInterval(tick);
-    tick = 0;
-  };
 
   // ---------- the stage: tap A ⇄ B, drag up toward C (1:1), down from C to B ----------
   const stage = document.getElementById("stage");
@@ -370,26 +124,22 @@
   stage.addEventListener("pointerup", release);
   stage.addEventListener("pointercancel", release);
 
+
   // ---------- every surface follows the one active item ----------
   V.onShow((f) => {
-    menu.hidden = true;
     if (!f) {
-      stopFollow();
       S.f.x = S.f.to = 1;
       S.y.x = S.y.to = 0;
       paint();
       delete lb.dataset.vstate;
       return;
     }
-    fold.textContent = V.folder();
     if (!lb.dataset.vstate) setState("B");
     else lb.dataset.vstate = stateOf();
-    paintCap();
-    if (["aud", "vid"].includes(V.kind(f))) loadWords(f);
-    if (!tick) tick = setInterval(follow, 200);
-    // the active thumbnail, centred
-    const on = document.querySelector("#strip .th.on");
-    if (on) on.scrollIntoView({ block: "nearest", inline: "center" });
+    // the glow takes its colours from the item's own art
+    const art = V.thumbOf(f);
+    lb.style.setProperty("--vart", art ? 'url("' + art.replace(/"/g, "%22") + '")' : "none");
+    lb.style.setProperty("--vglow", art ? "1" : "0");
   });
   paint();
 })();
