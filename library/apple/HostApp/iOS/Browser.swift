@@ -4,6 +4,8 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import Vision
+import CoreImage
 
 @MainActor
 final class Folder: ObservableObject {
@@ -186,6 +188,8 @@ struct FolderView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var covers: [String: UIImage] = [:]
+    @State private var shownCovers: [String: UIImage] = [:]  // covers with their text blurred at coverBlur
+    @AppStorage("coverBlur") private var coverBlur = "medium"
     private let feed = Feed()
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
@@ -219,6 +223,7 @@ struct FolderView: View {
                     .padding(16)
                 }
                 .task { await loadCovers() }
+                .onChange(of: coverBlur) { _, lv in for (k, im) in covers { shownCovers[k] = blurText(im, lv) } }
             } else if asList {
                 List(shown, id: \.id) { r in row(r) }.listStyle(.plain)
             } else {
@@ -240,6 +245,17 @@ struct FolderView: View {
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
+            // the Archive's front page: how much the covers' text is blurred (notes 20261029 item 16)
+            if folder.path == Gallery.rootPath {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Cover Blur", selection: $coverBlur) {
+                            Text("Off").tag("off"); Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
+                        }
+                    } label: { Label("Cover Blur", systemImage: "drop.halffull") }
+                    .foregroundStyle(.white)
+                }
+            }
             // Select sits right of the … menu, as on the site; Cancel leaves Select mode
             ToolbarItem(placement: .primaryAction) {
                 Button(selecting ? "Cancel" : "Select") { selecting.toggle(); if !selecting { picked = [] } }
@@ -504,7 +520,7 @@ struct FolderView: View {
         open(r) {
             ZStack(alignment: .bottomLeading) {
                 Color(.secondarySystemBackground)
-                if let im = covers[r.name] {
+                if let im = shownCovers[r.name] ?? covers[r.name] {
                     Image(uiImage: im).resizable().scaledToFill()
                 } else {
                     Image(systemName: r.symbol).font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
@@ -537,7 +553,7 @@ struct FolderView: View {
         struct Covers: Decodable { let covers: [String: Cover] }
         guard let j = await get("/main/archive?covers=1"), let c = try? JSONDecoder().decode(Covers.self, from: j) else { return }
         for (name, cv) in c.covers where cv.video != true {
-            if let data = await get(cv.src), let im = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 400, height: 400)) { covers[name] = im }
+            if let data = await get(cv.src), let im = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 400, height: 400)) { covers[name] = im; shownCovers[name] = blurText(im, coverBlur) }
         }
     }
 
@@ -631,4 +647,29 @@ extension Folder {
         } while cursor != nil
         return out
     }
+}
+
+/// A cover's text blurred, its art and colours kept (notes 20261029 item 16): Vision finds the lines of text,
+/// only those boxes take the blur, so you can tell there is writing without reading it.
+func blurText(_ im: UIImage, _ level: String) -> UIImage {
+    let radius: Double = ["low": 3, "medium": 6, "high": 11][level] ?? 0
+    guard radius > 0, let cg = im.cgImage else { return im }
+    let req = VNRecognizeTextRequest()
+    req.recognitionLevel = .fast
+    req.usesLanguageCorrection = false
+    try? VNImageRequestHandler(cgImage: cg, orientation: .up).perform([req])
+    let boxes = (req.results ?? []).map(\.boundingBox)
+    guard !boxes.isEmpty else { return im }
+    let base = CIImage(cgImage: cg), ext = base.extent
+    let blurred = base.clampedToExtent().applyingGaussianBlur(sigma: radius).cropped(to: ext)
+    // the mask: white where text is, a little larger than each line, softened at its edge
+    var mask = CIImage(color: .black).cropped(to: ext)
+    for b in boxes {
+        let r = VNImageRectForNormalizedRect(b, Int(ext.width), Int(ext.height)).insetBy(dx: -6, dy: -4)
+        mask = CIImage(color: .white).cropped(to: r).composited(over: mask)
+    }
+    mask = mask.clampedToExtent().applyingGaussianBlur(sigma: 3).cropped(to: ext)
+    let out = blurred.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: base, kCIInputMaskImageKey: mask])
+    guard let done = CIContext().createCGImage(out, from: ext) else { return im }
+    return UIImage(cgImage: done)
 }

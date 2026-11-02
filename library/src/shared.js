@@ -83,8 +83,10 @@ function item(f, src, ref) {
   };
 }
 
-function shareOf(base, items) {
-  const first = items.find((f) => f.thumb || f.video);
+// the cover: the picture the owner pinned (Choose Cover, notes 20261029 item 16), else the first picture or video
+function shareOf(base, items, pinned) {
+  const pin = pinned != null ? items.find((f) => f.n === String(pinned) && (f.thumb || f.video)) : null;
+  const first = pin || items.find((f) => f.thumb || f.video);
   return { ...base, count: items.length, cover: first ? first.thumb || first.src : null, coverVideo: !!(first && !first.thumb), items };
 }
 
@@ -92,11 +94,11 @@ async function linkShare(env, l) {
   const d = await getGalleryData(env, l.id);
   if (!d || d.missing || d.expired) return null;
 
-  const items = (d.items || []).map((f) => item(f, f.src || "/f/" + l.id + "/" + f.n, l.kind === "folder" ? f.path : f.n));
+  const items = (d.items || []).map((f) => ({ ...item(f, f.src || "/f/" + l.id + "/" + f.n, l.kind === "folder" ? f.path : f.n), n: String(f.n) }));
   const title =
     l.kind === "folder" ? l.folder : !items.length ? "Share Link" : items.length === 1 ? bare(items[0].name) : bare(items[0].name) + " & " + (items.length - 1) + " more";
 
-  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp, perms: d.perms || { upload: false, download: true } }, items);
+  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp, perms: d.perms || { upload: false, download: true }, coverItem: d.coverItem || null }, items, d.coverItem);
 }
 
 async function inviteShare(env, inv) {

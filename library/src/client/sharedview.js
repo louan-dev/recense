@@ -305,6 +305,18 @@
       open.style.textDecoration = "none";
       if (native) open.onclick = (e) => { e.preventDefault(); native.postMessage({ op: "open", path: s.url }); };
       acts.append(copy, open);
+      // Choose Cover: the next file tapped becomes the card's cover (a share link's own pinned cover; notes item 16)
+      if (s.kind === "link" && s.type !== "folder") {
+        const pick = el("button", "lnk", "Choose Cover");
+        pick.type = "button";
+        pick.onclick = () => {
+          const on = !app.classList.contains("picking");
+          app.classList.toggle("picking", on);
+          pick.textContent = on ? "Cancel" : "Choose Cover";
+          if (on) toast("Tap a picture or video");
+        };
+        acts.appendChild(pick);
+      }
       head.appendChild(acts);
     }
     if (!head.classList.contains("on")) app.appendChild(head);
@@ -323,7 +335,19 @@
       if (!f.thumb && !f.video) t.appendChild(el("span", "nm", f.pending ? "Uploading…" : f.name));
       if (f.by) t.appendChild(el("span", "who", initials(f.by)));
       if (f.comments || f.likes) t.appendChild(el("span", "k", (f.likes ? "♥ " + f.likes + " " : "") + (f.comments ? "💬 " + f.comments : "")));
-      t.onclick = () => !f.pending && viewer(s.items.filter((x) => !x.pending), s.items.filter((x) => !x.pending).indexOf(f));
+      if (s.coverItem && f.n === String(s.coverItem)) t.classList.add("cov");
+      t.onclick = async () => {
+        if (!app.classList.contains("picking")) return !f.pending && viewer(s.items.filter((x) => !x.pending), s.items.filter((x) => !x.pending).indexOf(f));
+        if (!f.thumb && !f.video) return toast("Pick a picture or video");
+        try {
+          const r = await api("/main/api/link?action=arrange&id=" + encodeURIComponent(s.id), { method: "POST", body: JSON.stringify({ cover: f.n }) });
+          if (!r.coverItem) throw new Error();
+          toast("Cover set");
+          route();
+        } catch (e) {
+          toast("Couldn't set the cover");
+        }
+      };
       g.appendChild(t);
     });
     app.appendChild(g);

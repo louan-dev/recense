@@ -213,6 +213,11 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
+- Cover blur (notes 20261029 item 16): covers on the front pages keep their art and colours but text in them is
+  blurred (lines show, words don't), Medium by default; the site's Blur control next to Collections steps
+  Off/Low/Medium/High (`src/client/coverblur.js`, finds text by dense colourless edges), the app's Archive uses
+  Vision's text boxes with the same levels (toolbar drop icon). Inside a folder nothing is blurred. A share link's
+  Choose Cover makes the next tapped picture its card's cover (link arrange API; Exhibits honours it).
 - Front pages (notes 20261029 item 16): on the site's Main root each collection is a rounded square card wearing
   its first picture or video, 2 columns scrolling down; the app's Archive root does the same (covers from
   `/main/archive?covers=1`). The app's home is Galleries: Ask and Listen on top, then Main, Archive and Data as

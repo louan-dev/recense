@@ -9,6 +9,7 @@
 
 import { OWNER, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, esc, notice, jsonResponse, serveObject } from "./common.js";
 import { extractArt } from "./art.js";
+import coverBlur from "./client/coverblur.js";
 import { mainComments, dropMainComment, renameComment, commentFields, syncLinkCovers } from "./public.js";
 import { newHead, picType } from "./tagwrite.js";
 import { renameInInvites } from "./invite.js";
@@ -355,7 +356,7 @@ export async function mainFolder(env, url) {
   const exOnly = !rel && url.searchParams.get("exhibits") === "1";
   // Exhibits (was Shared Albums; the header and the front card open the Activity feed), its own module under Collections as in iOS Photos: every live share link as a square
   // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
-  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared#activity">Exhibits</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar"></div></section>
+  const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared#activity">Exhibits</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar" data-blur></div></section>
 <script>(function(){
   // about 3 cards in view, the next one peeking; a swipe glides card by card (scroll snap) and wraps around: the cards
   // are laid out three times and, once a scroll settles in the first or last copy, it moves to the middle one unseen
@@ -376,6 +377,7 @@ export async function mainFolder(env, url) {
     var tr=document.createElement("div");tr.className="tr";ar.appendChild(tr);
     var wrap=l.length>3,copies=wrap?3:1;
     for(var c=0;c<copies;c++)l.forEach(function(s){var e=card(s);if(c!==1&&wrap){e.tabIndex=-1;e.setAttribute("aria-hidden","true")}tr.appendChild(e)});
+    if(window.coverBlur)coverBlur.apply(sa);
     if(!wrap)return;
     var span=function(){return tr.children[l.length].offsetLeft-tr.children[0].offsetLeft};
     var home=function(){tr.scrollLeft+=0;var w=span();if(tr.scrollLeft<w*.5)tr.scrollLeft+=w;else if(tr.scrollLeft>=w*1.5)tr.scrollLeft-=w};
@@ -433,10 +435,15 @@ body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 
 .mainnav .fs.dragging{cursor:grabbing}
 .mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2>Collections</h2><div class="fs${rel ? "" : " cards"}">${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>
+<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2 class="ch">Collections<span id="cbslot"></span></h2><div class="fs${rel ? "" : " cards"}"${rel ? "" : " data-blur"}>${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>${rel ? "" : `<script>${coverBlur}</script><script>(function(){var s=document.getElementById("cbslot");if(s&&window.coverBlur)s.appendChild(coverBlur.control());coverBlur.apply(document)})()</script>`}
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}
+.mainnav canvas.cb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.mainnav .sa .al canvas.cb{z-index:0}
+.mainnav h2.ch{display:flex;align-items:baseline;gap:10px}
+.mainnav .cbctl{margin-left:auto;border:0;background:none;color:#fff;font:400 15px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;padding:4px 0}
+.mainnav .cbctl:hover,.mainnav .cbctl:active{color:#0a84ff}
 .mainnav .fs.cards{grid-template-rows:none;grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-columns:auto;gap:12px;overflow:visible;cursor:default;touch-action:pan-y}
 .mainnav .fs.cards .fd{position:relative;aspect-ratio:1;padding:0;border-radius:24px;overflow:hidden;display:block;background:#1c1c1e}
 .mainnav .fs.cards .cv{position:absolute;inset:0}
