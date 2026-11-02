@@ -855,8 +855,7 @@
   // read by prosogram-mount.js every frame: the mode, the chords heard so far on this item (time → name), and a
   // note's name in the notation the chords are spelled in (English: C/do, as the Key label; else the language's)
   const notation = (globalThis.GalleryNotation = {
-    // chords and notes are Learn's alone (item 31): Follow moves on too fast for them to keep up
-    mode: () => (prefs.view === "follow" ? prefs.notationMode.replace(/[cn]/g, "") : prefs.notationMode),
+    mode: () => prefs.notationMode,
     chords: [],
     media: null,
     noteName: (midi) => {
@@ -5290,6 +5289,243 @@
           hearIt();
           marks.firstChild.focus({ preventScroll: true });
         };
+        // A stanza by ear (notes 20261029 row 40, owner 2026-11-01): the line plays round; tap its first beat, then its
+        // last, and it loops between the two until Use this cadence (or Retry). Its words then follow the voice inside
+        // those anchors (auto); if that still isn't it, trace the line with a finger as it is sung.
+        const openLine = (chip, again) => {
+          const kept = again && timing && timing.i === "line" ? timing : null;
+          timing = kept || { id: l.id, i: "line" };
+          chips.querySelectorAll(".on").forEach((c) => c.classList.remove("on"));
+          chip.classList.add("on");
+          panel.hidden = false;
+          panel.replaceChildren();
+          const sung = l.words.filter((w) => !w.un || w.tm);
+          if (!sung.length) return;
+          let w0 = Math.min(...sung.map((w) => w.s)), w1 = Math.max(...sung.map((w) => w.e));
+          // (measured again on each try: a cadence already used has moved the words)
+          const span = () => {
+            const ws = l.words.filter((w) => !w.un || w.tm);
+            w0 = Math.min(...ws.map((w) => w.s));
+            w1 = Math.max(...ws.map((w) => w.e));
+          };
+          let A = null, B = null, lo = Math.max(0, w0 - 0.8), hi = w1 + 0.5;
+          const say1 = mkEl("div", "txlsay");
+          const tap = mkEl("button", "txmark txltap");
+          tap.type = "button";
+          const btns = mkEl("div", "txsbtns");
+          const bt = (label, fn) => {
+            const x = mkEl("button", "lnk txbtn");
+            x.type = "button";
+            x.textContent = label;
+            x.onpointerdown = (e) => e.preventDefault();
+            x.onclick = (e) => {
+              e.stopPropagation();
+              fn(x);
+            };
+            return x;
+          };
+          const loop = () => {
+            unloop();
+            looping = () => {
+              if (el.currentTime > hi || el.currentTime < lo - 0.2) el.currentTime = lo;
+            };
+            el.addEventListener("timeupdate", looping);
+            el.currentTime = lo;
+            el.play().catch(() => {});
+          };
+          const use = bt("Use this cadence", () => applyAuto());
+          const retry = bt("Retry", () => start());
+          const traceB = bt("Trace it", () => traceLine());
+          const voiceB = bt("Back to the voice", () => {
+            l.words.forEach((w) => delete w.tm);
+            chip.classList.remove("set");
+            relight(l);
+            savePins(l);
+            say("This line follows the voice again");
+            start();
+          });
+          btns.append(use, retry, traceB, voiceB);
+          const show = (step) => {
+            timing.step = step;
+            timing.A = A;
+            timing.B = B;
+            timing.say = say1.textContent;
+            tap.hidden = step !== "a" && step !== "b";
+            use.hidden = step !== "check";
+            retry.hidden = step === "a";
+            traceB.hidden = step !== "auto";
+            voiceB.hidden = !l.words.some((w) => w.tm);
+          };
+          const start = () => {
+            A = B = null;
+            span();
+            lo = Math.max(0, w0 - 0.8);
+            hi = w1 + 0.5;
+            say1.textContent = "Tap on the first beat";
+            tap.textContent = "First beat";
+            show("a");
+            loop();
+            tap.focus({ preventScroll: true });
+          };
+          tap.onpointerdown = (e) => e.preventDefault();
+          tap.onclick = (e) => {
+            e.stopPropagation();
+            const now = r3(el.currentTime);
+            tap.classList.remove("hit");
+            void tap.offsetWidth;
+            tap.classList.add("hit");
+            if (A == null) {
+              A = now;
+              say1.textContent = "Tap on the last beat";
+              tap.textContent = "Last beat";
+              show("b");
+            } else {
+              if (now <= A + 0.1) return say("The last beat comes after the first");
+              B = now;
+              lo = A;
+              hi = B;
+              loop();
+              say1.textContent = sec(A) + " – " + sec(B) + ": playing between your two beats. Good?";
+              show("check");
+            }
+          };
+          // auto: the words keep the voice's shape, set inside the listener's two anchors
+          const applyAuto = () => {
+            const k = (B - A) / Math.max(0.05, w1 - w0);
+            l.words.forEach((w) => {
+              if (w.un && !w.tm) return;
+              w.tm = { s: r3(A + (w.s - w0) * k), e: r3(A + (w.e - w0) * k), k: 0 };
+            });
+            chip.classList.add("set");
+            relight(l);
+            savePins(l);
+            say1.textContent = "The light follows the voice between your beats. Not quite? Trace it.";
+            show("auto");
+          };
+          // trace: as it loops, slide a finger along the pad as the line is sung (left to right, the whole line)
+          const traceLine = () => {
+            say1.textContent = "Slide along as it is sung, from its first word to its last";
+            show("trace");
+            panel.querySelectorAll(".txlight").forEach((x) => x.remove()); // (pressed again: one pad)
+            const pad = mkEl("canvas", "txlight");
+            pad.setAttribute("aria-label", "Trace the line: slide along as it is sung");
+            panel.insertBefore(pad, btns);
+            let pts = null;
+            const pos = (e) => {
+              const r = pad.getBoundingClientRect();
+              return Math.max(0, Math.min(1, (e.clientX - r.left - 10) / Math.max(1, r.width - 20)));
+            };
+            const draw = () => {
+              if (!pad.isConnected) return;
+              const dpr = devicePixelRatio || 1, W = pad.clientWidth, H = pad.clientHeight;
+              if (W && H) {
+                pad.width = Math.round(W * dpr);
+                pad.height = Math.round(H * dpr);
+                const g = pad.getContext("2d");
+                g.setTransform(dpr, 0, 0, dpr, 0, 0);
+                const X = (u) => 10 + u * (W - 20), Y = (p) => H - 8 - p * (H - 16);
+                g.strokeStyle = "#ffd633";
+                g.lineWidth = 2.5;
+                g.lineCap = "round";
+                if (pts && pts.length > 1) {
+                  g.beginPath();
+                  pts.forEach((q, j) => g[j ? "lineTo" : "moveTo"](X(q.u), Y(q.p)));
+                  g.stroke();
+                }
+                const u = (el.currentTime - A) / Math.max(0.05, B - A);
+                if (u >= 0 && u <= 1) {
+                  g.strokeStyle = "rgba(255,255,255,.7)";
+                  g.lineWidth = 1.5;
+                  g.beginPath();
+                  g.moveTo(X(u), 4);
+                  g.lineTo(X(u), H - 4);
+                  g.stroke();
+                }
+              }
+              requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+            pad.onpointerdown = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              pad.setPointerCapture(e.pointerId);
+              pts = [];
+            };
+            pad.onpointermove = (e) => {
+              if (!pts) return;
+              const u = (el.currentTime - A) / Math.max(0.05, B - A);
+              if (u >= 0 && u <= 1) pts.push({ u, p: pos(e) });
+            };
+            pad.onpointerup = (e) => {
+              e.stopPropagation();
+              const p = pts;
+              pts = null;
+              if (!p || p.length < 3) return say("Slide along the whole line as it plays");
+              fromTrace(p);
+              pad.remove();
+              say1.textContent = "Traced. Trace again or go back to the voice.";
+              show("auto");
+            };
+            pad.onpointercancel = () => (pts = null);
+          };
+          // the finger's path (time → how far along the line's letters) → each word's start, end and fill
+          const fromTrace = (p) => {
+            const q = [{ u: 0, p: 0 }, ...p.sort((a, b) => a.u - b.u), { u: 1, p: 1 }];
+            let m = 0;
+            q.forEach((x) => (x.p = m = Math.max(m, x.p)));
+            const when = (f) => {
+              let j = 1;
+              while (j < q.length - 1 && q[j].p < f) j++;
+              const a = q[j - 1], b = q[j];
+              const u = b.p > a.p ? a.u + ((b.u - a.u) * (f - a.p)) / (b.p - a.p) : b.u;
+              return A + u * (B - A);
+            };
+            const at = (t) => {
+              const u = (t - A) / (B - A);
+              let j = 1;
+              while (j < q.length - 1 && q[j].u < u) j++;
+              const a = q[j - 1], b = q[j];
+              return b.u > a.u ? a.p + ((b.p - a.p) * (u - a.u)) / (b.u - a.u) : b.p;
+            };
+            const len = sung.reduce((n, w) => n + Math.max(1, Array.from(w.t || "").length), 0);
+            let c0 = 0;
+            l.words.forEach((w) => {
+              if (w.un && !w.tm) return;
+              const n = Math.max(1, Array.from(w.t || "").length);
+              const f0 = c0 / len, f1 = (c0 + n) / len;
+              c0 += n;
+              const s = when(f0), e = Math.max(when(f1), s + 0.05);
+              const c = [];
+              for (let j = 0; j < 16; j++) c.push(Math.round(Math.max(0, Math.min(1, (at(s + ((e - s) * j) / 15) - f0) / (f1 - f0))) * 100) / 100);
+              for (let j = 1; j < 16; j++) c[j] = Math.max(c[j], c[j - 1]);
+              c[15] = 1;
+              w.tm = { s: r3(s), e: r3(e), k: 0, c };
+            });
+            chip.classList.add("set");
+            relight(l);
+            savePins(l);
+          };
+          panel.append(say1, tap, btns);
+          // a redraw (the saved pins back, the phone turned) keeps the step it was on
+          if (kept && kept.step && kept.step !== "a" && kept.step !== "trace") {
+            A = kept.A;
+            B = kept.B;
+            if (A != null && B != null) (lo = A), (hi = B);
+            say1.textContent = kept.say;
+            tap.textContent = "Last beat";
+            show(kept.step);
+            if (!looping) loop();
+          } else start();
+        };
+        if (l.words.length > 1) {
+          const lc = mkEl("button", "txchip txstanza" + (l.words.some((w) => w.tm) ? " set" : ""));
+          lc.type = "button";
+          lc.textContent = "Whole line";
+          lc.onpointerdown = (e) => e.preventDefault();
+          lc.onclick = () => openLine(lc);
+          chips.appendChild(lc);
+          if (timing && timing.id === l.id && timing.i === "line") openLine(lc, true);
+        }
         l.words.forEach((w, i) => {
           if (w.un && !w.tm) return;
           const c = mkEl("button", "txchip" + (w.tm ? " set" : ""));

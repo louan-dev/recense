@@ -1920,6 +1920,10 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 .txchip{font:inherit;font-size:.85em;padding:.2em .6em;border-radius:1em;border:1px solid rgba(255,255,255,.25);background:none;color:rgba(255,255,255,.75)}
 .txchip.set{border-color:rgba(255,214,51,.7);color:#ffd633}
 .txchip.on{background:rgba(255,255,255,.14)}
+.txchip.txstanza{border-style:dashed}
+.txlsay{font-size:.85em;color:#7fbcff}
+.txltap{max-width:454px;padding:16px 8px;font-size:1em}
+.txltap[hidden]{display:none}
 .txpanel{margin-top:.6em;display:grid;gap:.5em}
 /* Start · End, tapped as it is sung (as A and B are): two wide marks, apart, so a thumb never lands on the other */
 .txmarks{display:flex;gap:14px}
@@ -1930,6 +1934,10 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 .txmark.hit{animation:txhit .35s cubic-bezier(.3,1.4,.5,1)}
 @keyframes txhit{40%{transform:scale(.95);background:rgba(10,132,255,.32)}}
 .txsbtns{display:flex;flex-wrap:wrap;gap:.2em 1.2em}
+.txlightw{display:flex;flex-direction:column;gap:2px;max-width:454px}
+.txlight{display:block;width:100%;height:60px;border-radius:14px;background:rgba(255,255,255,.08);touch-action:none;cursor:crosshair;outline:0}
+.txlight:focus-visible{box-shadow:0 0 0 2px rgba(10,132,255,.8)}
+.txlcap{font-size:.72em;color:#7fbcff;text-align:center}
 .txsbtns .txbtn{background:none;padding:4px 0}
 .txsbtns .txbtn[hidden]{display:none}
 .txrow .txin.txtr{font-weight:400;color:rgba(255,255,255,.85)}

@@ -503,6 +503,11 @@
         if (!w.tm) return w;
         // Sweep left at 0 (and syllables heard): the ear sets where the word starts and ends, the voice still shapes it
         // inside, each syllable kept in its share of the word's time. Else one sweep shaped by k.
+        // A traced light (tm.c): the word lit as the finger moved while it was sung (row 40/44)
+        if (w.tm.c) {
+          const { syl: _, un: __, ...o } = w;
+          return { ...o, s: w.tm.s, e: w.tm.e, c: w.tm.c };
+        }
         if (Math.abs(w.tm.k || 0) <= 0.05 && w.syl && w.syl.length) return { ...rescale(w, w.tm.s, w.tm.e), un: undefined };
         const { syl: _, un: __, ...o } = w;
         return { ...o, s: w.tm.s, e: w.tm.e, k: w.tm.k };
@@ -530,6 +535,12 @@
   // letters spread over the time it is sung, up to the next one (or 0.25 s past its end); else even across the word.
   function fill(w, t, n) {
     if (w.un) return 0;
+    if (w.c && w.c.length > 1) {
+      // the traced light: how much is lit at evenly spaced moments of the word, joined straight between them
+      const u = Math.max(0, Math.min(1, (t - w.s) / Math.max(0.05, w.e - w.s))) * (w.c.length - 1);
+      const j = Math.min(w.c.length - 2, Math.floor(u));
+      return w.c[j] + (w.c[j + 1] - w.c[j]) * (u - j);
+    }
     if (w.k !== undefined) {
       const u = Math.max(0, Math.min(1, (t - w.s) / Math.max(0.05, w.e - w.s)));
       return Math.pow(u, Math.pow(2, -1.5 * w.k));

@@ -126,6 +126,21 @@ test("a word timed by the listener (corrections field \"time\") is lit where the
   assert.equal(l.words[0].syl[0].e, 84.08);
 });
 
+test("a traced light (row 40/44): kept, cleaned (never going back, 0 … 1), and the word lit as the finger moved", async () => {
+  const { pinsOf } = await import("../src/corrections.js");
+  const c = [0, 0.1, 0.05, 0.6, 1.4];
+  assert.deepEqual(pinsOf(JSON.stringify([[0, 10, 12, 0, c]]))[0], { s: 10, e: 12, k: 0, c: [0, 0.1, 0.1, 0.6, 1] });
+  assert.equal(pinsOf(JSON.stringify([[0, 10, 12, 0, [1]]]))[0].c, undefined, "one value is no trace");
+  const w = { t: "dream", s: 9, e: 13, syl: [{ c: 5, s: 9, e: 13 }], tm: { s: 10, e: 12, k: 0, c: [0, 0.8, 1] } };
+  const [l] = globalThis.Cadence.pin([{ id: 1, words: [w] }]);
+  const x = l.words[0];
+  assert.deepEqual([x.s, x.e, x.syl], [10, 12, undefined]);
+  assert.equal(globalThis.Cadence.fill(x, 10, 5), 0);
+  assert.ok(Math.abs(globalThis.Cadence.fill(x, 11, 5) - 0.8) < 1e-9, "half way through, lit as far as the finger was");
+  assert.ok(Math.abs(globalThis.Cadence.fill(x, 11.5, 5) - 0.9) < 1e-9);
+  assert.equal(globalThis.Cadence.fill(x, 12.5, 5), 1);
+});
+
 test("a word timed by the listener with Sweep at 0 keeps the voice's syllables, stretched onto the listener's start and end", () => {
   const w = { t: "dream", s: 10, e: 12, syl: [{ c: 2, s: 10, e: 10.5 }, { c: 5, s: 10.5, e: 12 }], tm: { s: 11, e: 15, k: 0 } };
   const [l] = globalThis.Cadence.pin([{ id: 1, words: [w] }]);

@@ -81,6 +81,11 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   and End as it lets go, the way A and B are set (drag a mark or ← → for a hundredth). The ear anchors the word and
   the voice's syllables are stretched onto it, so the light follows the voice, never lagging or rushing. "Same in N
   repeats" gives a chorus or ad-lib sung again the same timing. Auto hands the word back to the voice.
+- A whole stanza by ear: Whole line loops the line; tap its first beat, then its last, and it loops between them
+  until Use this cadence (or Retry). The words then follow the voice inside those two beats; if that still isn't it,
+  Trace it: slide a finger along the line as it is sung and each word takes its start, end and fill from the path.
+  Back to the voice undoes it. One word at a time, the Light under Start and End draws how the word fills: drag it
+  up or down for faster or slower at first, slide along it as the word plays to trace it, double-tap for the voice.
 - The editor is quiet: Changes · a grabber · Done; the tools fold under the grabber (tap, or rest the pointer on it).
   Paused with no line up, a grabber where the lines show opens the editor.
   A word being timed keeps its marks up when the phone is turned or the server's lines come back; on a short
@@ -113,6 +118,11 @@ same way on the Mac, so one recording has one transcript wherever it plays, rena
 `keep/library.json` aliases a recording heard from another source, with its time shift.
 A corrected line keeps the space typed before `! ? ; :` (French writes `fini !`); a space before `, . …` and the
 Arabic and Ethiopic stops is dropped. Sill joins words by the same rule. Pushing to `main` deploys: GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
+
+### Storage
+- Buckets: `gallery-public` (Public) and `gallery-main` (Main), plus the read-only archive; on the Mac they mount at
+  `~/Gallery` through `Gallery.app`. Transcripts and their timing live under `keep/<key>/` (asr.json, tr/<lang>.json,
+  corrections.json, features.json). Comments, captions and folder order are JSON objects in R2; no database yet.
 
 ### Sharing
 - Share links from Main, the archive or the apps; each draws a large preview card in iMessage, Messenger and Telegram.

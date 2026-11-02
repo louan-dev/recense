@@ -314,7 +314,7 @@ export async function transcriptSave(req, env, path, src) {
     const to = e && typeof e.to === "string" ? cleanText(e.to) : null;
     if (!segId || segId.length > 64 || !field) return new Response("Bad edit", { status: 400 });
     if (to === null) return new Response("Text too long", { status: 400 });
-    if (field === "time" && to && JSON.stringify(Object.entries(pinsOf(to)).map(([i, p]) => [+i, p.s, p.e, p.k])) !== to) return new Response("Bad timing", { status: 400 });
+    if (field === "time" && to && JSON.stringify(Object.entries(pinsOf(to)).map(([i, p]) => (p.c ? [+i, p.s, p.e, p.k, p.c] : [+i, p.s, p.e, p.k]))) !== to) return new Response("Bad timing", { status: 400 });
     const u = Number(e.updatedAt);
     clean.push({ segId, field, to, updatedAt: Number.isFinite(u) && u <= now && u > now - 7 * 86400000 ? u : now });
   }

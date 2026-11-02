@@ -224,6 +224,8 @@ export function targetOf(lines, o, byId) {
 // A line's words timed by the listener (field "time", notes 20261029 row 35: the ear sets what the voice can't tell):
 // `to` is JSON [[word index, start, end, sweep], …] in transcript time; sweep −1 … 1 shapes the light across the word
 // (−1 lingers at its start and hurries at the end, 1 the reverse, 0 even). Words left out keep Cadence's timing.
+// A fifth entry, when there, is the light traced by a finger as the word was sung (row 40/44): how much of the word
+// is lit at evenly spaced moments from start to end (2–32 values, 0 … 1, never going back); it outranks the sweep.
 export function pinsOf(to) {
   const out = {};
   let a;
@@ -234,6 +236,21 @@ export function pinsOf(to) {
     const [i, s, e, k] = x.map(Number);
     if (!Number.isInteger(i) || i < 0 || !(s >= 0) || !(e > s) || e - s > 30) continue;
     out[i] = { s, e, k: Math.max(-1, Math.min(1, Number.isFinite(k) ? k : 0)) };
+    const c = traceOf(x[4]);
+    if (c) out[i].c = c;
+  }
+  return out;
+}
+
+export function traceOf(c) {
+  if (!Array.isArray(c) || c.length < 2 || c.length > 32) return null;
+  let m = 0;
+  const out = [];
+  for (const v of c) {
+    const x = Number(v);
+    if (!Number.isFinite(x)) return null;
+    m = Math.max(m, Math.min(1, Math.max(0, x)));
+    out.push(Math.round(m * 100) / 100);
   }
   return out;
 }
@@ -377,7 +394,7 @@ export function present(lines, shift = 0) {
         text: l.fixed ? l.text : joinWords(l.words.map((w) => w.t)),
         en: en && en.length ? joinWords(en.map((w) => w.w)) : "",
         // a word's language (Recense's, when it wrote one) names its script's letters and fonts on the page
-        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e), ...(w.h ? { h: w.h } : {}), ...(w.lang ? { lang: w.lang } : {}), ...(w.tm ? { tm: { s: r(w.tm.s), e: r(w.tm.e), k: w.tm.k } } : {}) })),
+        words: l.words.map((w) => ({ t: w.t, s: r(w.s), e: r(w.e), ...(w.h ? { h: w.h } : {}), ...(w.lang ? { lang: w.lang } : {}), ...(w.tm ? { tm: { s: r(w.tm.s), e: r(w.tm.e), k: w.tm.k, ...(w.tm.c ? { c: w.tm.c } : {}) } } : {}) })),
         // Learn mode: the English words, each with the original words (by index) it translates; null = not translated yet
         enw: en ? en.map((w) => ({ w: w.w, s: Array.isArray(w.s) ? w.s.filter(Number.isInteger) : [] })) : null,
       };
