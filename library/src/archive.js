@@ -132,6 +132,19 @@ async function archiveFolder(env, url) {
   const subs = folders.map((p) => p.slice(prefix.length).replace(/\/$/, "")).filter((x) => x && !JUNK.test(x) && !(!rel && x === DATA)).sort(byName);
   // Data comes first at the root, whether or not anything is exported into it yet
   if (!rel) subs.unshift(DATA);
+  // GET /main/archive?covers=1  each top folder's first picture or video, for the app's Archive cards (notes 20261029 item 16)
+  if (!rel && url.searchParams.get("covers") === "1") {
+    const covers = {};
+    await Promise.all(
+      subs.filter((x) => x !== DATA).slice(0, 60).map(async (x) => {
+        const r = await env.ARCHIVE.list({ prefix: ROOT + x + "/", limit: 100 }).catch(() => null);
+        const pick = (re) => ((r && r.objects) || []).find((o) => re.test(o.key) && !JUNK.test(o.key.split("/").pop()));
+        const o = pick(/\.(jpe?g|png|gif|webp|heic|avif)$/i) || pick(/\.(mp4|mov|m4v|webm)$/i);
+        if (o) covers[x] = { src: "/main/archive/f/" + urlPath(o.key.slice(ROOT.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key) };
+      }),
+    );
+    return jsonResponse({ covers });
+  }
   const here = rel ? rel.split("/") : [];
   const title = here.length ? here[here.length - 1] : "Chau Phan's Archive";
   const go = (p) => (p ? "/main/archive?p=" + encodeURIComponent(p) : "/main/archive");

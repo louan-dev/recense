@@ -328,8 +328,27 @@ export async function mainFolder(env, url) {
     .concat(here.map((x, i) => `<a href="${go(here.slice(0, i + 1).join("/"))}">${esc(x)}</a>`))
     .join("<i>/</i>");
 
+  // on the front page each collection is a rounded square card wearing its first picture or video, in a 2-column
+  // grid that scrolls down (notes 20261029 item 16); inside a folder the chips stay as they are
+  const covers = new Map();
+  if (!rel)
+    await Promise.all(
+      subs.slice(0, 60).map(async (x) => {
+        const r = await env.MAIN.list({ prefix: FILES + x + "/", limit: 100 }).catch(() => null);
+        const pick = (re) => ((r && r.objects) || []).find((o) => re.test(o.key) && !JUNK.test(o.key.split("/").pop()));
+        const o = pick(/\.(jpe?g|png|gif|webp|heic|avif)$/i) || pick(/\.(mp4|mov|m4v|webm)$/i);
+        if (o) covers.set(x, { src: "/main/f/" + urlPath(o.key.slice(FILES.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key) });
+      }),
+    );
+  const cover = (x) => {
+    const c = covers.get(x);
+    if (!c) return `<span class="cv"></span>`;
+    return c.video
+      ? `<span class="cv"><video src="${esc(c.src)}#t=0.1" preload="metadata" muted playsinline></video></span>`
+      : `<span class="cv"><img src="${esc(c.src)}" loading="lazy" alt=""></span>`;
+  };
   const links = subs
-    .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${esc(x)}</a>`)
+    .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${rel ? esc(x) : `${cover(x)}<b>${esc(x)}</b>`}</a>`)
     .join("");
 
   // /main?exhibits=1 is only the Exhibits suite: the apps show it as its own place under Locations (notes item 16)
@@ -414,10 +433,18 @@ body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 
 .mainnav .fs.dragging{cursor:grabbing}
 .mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2>Collections</h2><div class="fs">${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>
+<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2>Collections</h2><div class="fs${rel ? "" : " cards"}">${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}
+.mainnav .fs.cards{grid-template-rows:none;grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-columns:auto;gap:12px;overflow:visible;cursor:default;touch-action:pan-y}
+.mainnav .fs.cards .fd{position:relative;aspect-ratio:1;padding:0;border-radius:24px;overflow:hidden;display:block;background:#1c1c1e}
+.mainnav .fs.cards .cv{position:absolute;inset:0}
+.mainnav .fs.cards .cv img,.mainnav .fs.cards .cv video{width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}
+.mainnav .fs.cards .fd::before{content:"";position:absolute;inset:auto 0 0 0;height:45%;background:linear-gradient(transparent,rgba(0,0,0,.65));z-index:1;pointer-events:none}
+.mainnav .fs.cards b{position:absolute;left:12px;right:12px;bottom:10px;z-index:2;font:600 16px -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.selecting .mainnav .fs.cards .fd{padding-right:0}
+body.selecting .mainnav .fs.cards .fd::after{top:12px;margin-top:0;z-index:3;background:rgba(0,0,0,.3)}
 .mainnav .fd.lift{position:relative;z-index:5;background:rgba(255,255,255,.22);transition:none}
 </style>
 <script>

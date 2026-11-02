@@ -1581,7 +1581,7 @@ await test("assistant sidebar: owner opens it, asks in this folder or everywhere
 await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's files, Delete expires the link; Like in the viewer feeds Activity", true, async (pg) => {
   await MAIN.put("files/Fair/one.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
   await MAIN.put("files/Fair/two.jpg", "y", { httpMetadata: { contentType: "image/jpeg" } });
-  // Main's root has the Shared Albums row (under Collections), to Shared and its Activity (notes item 16)
+  // Main's root has the Exhibits row (under Collections), to Shared and its Activity (notes item 16)
   await pg.goto(base + "/main");
   assert.equal(await pg.getAttribute("#sa h2 a", "href"), "/main/shared#activity");
   assert.equal(await pg.getAttribute("#sa a.ac", "href"), "/main/shared#activity");
@@ -1602,7 +1602,7 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await pg.goto(base + "/main/shared");
   const tile = '.card[data-id="' + id + '"]';
   await pg.waitForSelector(tile);
-  assert.deepEqual(await pg.$$eval(".seg button", (b) => b.map((x) => x.textContent + ":" + x.getAttribute("aria-selected"))), ["Personal:false", "Shared:true", "Activity:false"]);
+  assert.deepEqual(await pg.$$eval(".seg button", (b) => b.map((x) => x.textContent + ":" + x.getAttribute("aria-selected"))), ["Main:false", "Shared:true", "Activity:false"]);
   assert.equal(await pg.textContent(".top h1"), "Shared");
   assert.equal(await pg.textContent(tile + " .badge"), "BK");
   assert.match(await pg.textContent(tile + " .t"), /^Fair2 items/);
@@ -1638,7 +1638,7 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   assert.equal(left, 0);
 
   // Personal goes back to Main
-  await pg.click('.seg button:text("Personal")');
+  await pg.click('.seg button:text("Main")');
   await pg.waitForURL(/\/main\/$/);
 });
 

@@ -213,6 +213,10 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
+- Front pages (notes 20261029 item 16): on the site's Main root each collection is a rounded square card wearing
+  its first picture or video, 2 columns scrolling down; the app's Archive root does the same (covers from
+  `/main/archive?covers=1`). The app's home is Galleries: Ask and Listen on top, then Main, Archive and Data as
+  cards, then Exhibits. The Activity tab's Personal is now Main. Inside folders nothing changed.
 - Exhibits (was Shared Albums; notes 20261029 item 16): the header and a front card (the newest share's cover) open
   the Activity feed; top-bar controls (Personal/Shared/Activity, back, +, ⋯, lightbulb) are white and turn blue on
   hover or press; Ask beside ⋯ is now just the lightbulb. In the iPhone/iPad app Exhibits is its own place under

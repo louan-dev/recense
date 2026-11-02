@@ -102,7 +102,7 @@
   function seg(on) {
     const s = el("div", "seg");
     s.setAttribute("role", "tablist");
-    for (const [name, go] of [["Personal", () => (location.href = "/main/")], ["Shared", () => nav("")], ["Activity", () => nav("#activity")]]) {
+    for (const [name, go] of [["Main", () => (location.href = "/main/")], ["Shared", () => nav("")], ["Activity", () => nav("#activity")]]) {
       const b = el("button", "", name);
       b.type = "button";
       b.setAttribute("role", "tab");

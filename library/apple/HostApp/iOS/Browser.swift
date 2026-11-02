@@ -77,21 +77,44 @@ struct Browser: View {
     static let exhibits = "\u{0}exhibits"
     @State private var picked: String? = Gallery.rootPath
 
+    // a rounded square card for a place; tapping it opens the place
+    private func place(_ name: String, _ symbol: String, _ tag: String) -> some View {
+        Button { picked = tag } label: {
+            VStack(alignment: .leading) {
+                Image(systemName: symbol).font(.system(size: 28, weight: .light))
+                Spacer()
+                Text(name).font(.headline)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .aspectRatio(1, contentMode: .fit)
+            .foregroundStyle(picked == tag ? Color.accentColor : .primary)
+            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemBackground)))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(picked == tag ? Color.accentColor : .clear, lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+    }
+
     var body: some View {
         NavigationSplitView {
+            // Ask and Listen on top, then Main, Archive and Data as cards in a 2-column grid, then Exhibits (notes 20261029 item 16)
             List(selection: $picked) {
                 Section("Locations") {
-                    Label("Main", systemImage: "square.grid.2x2").tag(Browser.main)
-                    Label("Archive", systemImage: "icloud").tag(Gallery.rootPath)
-                    // the Mac's offsite disks (Photos, Messages, Mail), the archive's Data folder (notes 20261029 item 16)
-                    Label("Data", systemImage: "externaldrive").tag(Browser.data)
-                    // the Exhibits suite (header, front card, carousel), moved here out of Main (notes 20261029 item 16)
-                    Label("Exhibits", systemImage: "rectangle.stack").tag(Browser.exhibits)
                     Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        place("Main", "square.grid.2x2", Browser.main)
+                        place("Archive", "icloud", Gallery.rootPath)
+                        // the Mac's offsite disks (Photos, Messages, Mail), the archive's Data folder
+                        place("Data", "externaldrive", Browser.data)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    .listRowBackground(Color.clear)
+                    // the Exhibits suite (header, front card, carousel), moved here out of Main
+                    Label("Exhibits", systemImage: "rectangle.stack").tag(Browser.exhibits)
                 }
             }
-            .navigationTitle("Gallery")
+            .navigationTitle("Galleries")
         } detail: {
             NavigationStack {
                 if picked == Browser.main {
@@ -162,6 +185,7 @@ struct FolderView: View {
     @State private var photos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var importing = false
+    @State private var covers: [String: UIImage] = [:]
     private let feed = Feed()
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
@@ -185,6 +209,16 @@ struct FolderView: View {
                 ContentUnavailableView(error, systemImage: "icloud.slash", description: Text("Pull to try again."))
             } else if folder.loading && folder.items.isEmpty {
                 ProgressView()
+            } else if folder.path == Gallery.rootPath && !asList {
+                // the Archive's front page: each folder a rounded square card wearing its first picture, 2 columns
+                // that scroll down (notes 20261029 item 16); inside a folder the grid stays as it is
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(shown, id: \.id) { r in r.dir ? AnyView(card(r)) : AnyView(tile(r)) }
+                    }
+                    .padding(16)
+                }
+                .task { await loadCovers() }
             } else if asList {
                 List(shown, id: \.id) { r in row(r) }.listStyle(.plain)
             } else {
@@ -463,6 +497,47 @@ struct FolderView: View {
                 linking = nil
                 failed = (error as? FeedError) == .notFound ? "There are no files in this folder." : "Check the connection and try again."
             }
+        }
+    }
+
+    private func card(_ r: Record) -> some View {
+        open(r) {
+            ZStack(alignment: .bottomLeading) {
+                Color(.secondarySystemBackground)
+                if let im = covers[r.name] {
+                    Image(uiImage: im).resizable().scaledToFill()
+                } else {
+                    Image(systemName: r.symbol).font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+                Text(r.name).font(.headline).foregroundStyle(.white).lineLimit(1).padding(12)
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if selecting { Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(.white, Color.accentColor).padding(10) }
+            }
+            .contentShape(Rectangle())
+        }
+    }
+
+    // each top folder's first picture, from /main/archive?covers=1 (a video folder keeps its icon)
+    private func loadCovers() async {
+        guard covers.isEmpty, let d = Token.read(), let t = try? JSONDecoder().decode([String: String].self, from: d),
+              let id = t["id"], let secret = t["secret"], let host = Gallery.base.host else { return }
+        func get(_ path: String) async -> Data? {
+            guard let u = URL(string: "https://\(host)\(path)") else { return nil }
+            var r = URLRequest(url: u)
+            r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+            r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+            return try? await URLSession.shared.data(for: r).0
+        }
+        struct Cover: Decodable { let src: String; let video: Bool? }
+        struct Covers: Decodable { let covers: [String: Cover] }
+        guard let j = await get("/main/archive?covers=1"), let c = try? JSONDecoder().decode(Covers.self, from: j) else { return }
+        for (name, cv) in c.covers where cv.video != true {
+            if let data = await get(cv.src), let im = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 400, height: 400)) { covers[name] = im }
         }
     }
 
