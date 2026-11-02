@@ -13,6 +13,7 @@ import coverBlur from "./client/coverblur.js";
 import { mainComments, dropMainComment, renameComment, renameInLinks, commentFields, syncLinkCovers } from "./public.js";
 import { newHead, picType } from "./tagwrite.js";
 import { renameInInvites } from "./invite.js";
+import { moveAnnotations } from "./annotations.js";
 import { galleryPage } from "./page/gallery.js";
 
 const FILES = "files/";
@@ -899,6 +900,7 @@ export async function mainRename(req, env) {
   await copyObject(env, ART + rel, ART + to).catch(() => {});
   await env.MAIN.delete(ART + rel).catch(() => {});
   await renameComment(env, rel, to).catch(() => {});
+  await moveAnnotations(env, rel, to).catch(() => {});
   await renameInLinks(env, rel, to).catch(() => {});
   await moveMainKey(env, rel, to).catch(() => {});
   await renameInInvites(env, dir, rel.split("/").pop(), name).catch(() => {});
@@ -1003,6 +1005,7 @@ export async function moveFile(env, rel, to) {
   const name = rel.split("/").pop();
   if (await copyObject(env, ART + rel, ART + to).catch(() => null)) await env.MAIN.delete(ART + rel).catch(() => {});
   await renameComment(env, rel, to).catch(() => {});
+  await moveAnnotations(env, rel, to).catch(() => {});
   await moveMainKey(env, rel, to).catch(() => {});
   await renameInInvites(env, dir, name, toDir === dir ? to.split("/").pop() : null).catch(() => {});
   return null;

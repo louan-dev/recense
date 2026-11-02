@@ -1971,5 +1971,136 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
   assert.ok(!after.some((e) => [up.id, fl.id, inv.id].includes(e.share.id)));
 });
 
+// ---------- C0: the participant surface, every check in the Worker ----------
+
+await test("C0: unauthenticated, expired, revoked, direct URL, cross-folder, public/main separation, never delete the owner's", async () => {
+  await MAIN.put("files/C0/a.jpg", "A", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/C0/b.mp3", "B", { httpMetadata: { contentType: "audio/mpeg" } });
+  await MAIN.put("files/C0/doc.zip", "Z", { httpMetadata: { contentType: "application/zip" } });
+  await MAIN.put("files/C0Other/x.jpg", "X", { httpMetadata: { contentType: "image/jpeg" } });
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const made = await (await own("/main/api/invites", { method: "POST", body: JSON.stringify({ name: "Cee", ttl: 0, dir: "C0" }) })).json();
+  const token = made.url.split("/m/")[1];
+  const at = "/m/" + token;
+  assert.deepEqual(made.perms, { view: true, download: true, upload: true, comment: true, react: true, annotate: false });
+  assert.equal(made.expires, 0, "no expiry by default");
+
+  let ck = "";
+  const w = async (path, init = {}) => {
+    const r = await call(at + path, { ...init, headers: { "x-gallery": "1", ...(ck ? { cookie: ck } : {}), ...(init.headers || {}) } });
+    const sc = /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "");
+    if (sc) ck = "gs=" + sc[1];
+    return r;
+  };
+  const cap = (b) => w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", ...b }) });
+  const ann = (b) => w("/api/annotations", { method: "PUT", body: JSON.stringify(b) });
+
+  // unauthenticated: no token, a malformed one, a well-formed unknown one, the hash itself: one 404
+  for (const p of ["/m/", "/m/x", "/m/" + "A".repeat(43), "/m/" + made.id, "/m/" + token.slice(0, 42)]) assert.equal((await call(p)).status, 404, p);
+  // direct URL: the same file through /main, without Access, is the owner's 404
+  assert.equal((await call("/main/f/C0/a.jpg")).status, 404);
+  assert.equal((await call("/main/api/invites?dir=C0", { headers: { cookie: "gs=x" } })).status, 404);
+
+  // cross-folder: names with a path, other folders' paths in bodies
+  assert.equal((await call(at + "/f/..%2FC0Other%2Fx.jpg")).status, 404);
+  assert.equal((await cap({ path: "C0Other/x.jpg", op: "add", text: "x" })).status, 403);
+  assert.equal((await ann({ name: "../C0Other/x.jpg", op: "add", text: "x" })).status, 400);
+  assert.equal((await call(at + "/api/transcript?name=..%2FC0Other%2Fx.jpg", { headers: { "x-gallery": "1" } })).status, 400);
+  assert.equal((await w("/api/file?name=..%2FC0Other%2Fy.jpg", { method: "PUT", body: "Y", headers: { "content-length": "1" } })).status, 400);
+
+  // public/main separation: an invite token is no share-link id, and a share-link id is no invite
+  assert.equal((await call("/s/" + token)).status, 404);
+  assert.equal((await call("/api/gallery?id=" + token)).status, 404);
+  const pubLink = await (await own("/main/api/link?action=fromMain&days=7", { method: "POST", body: JSON.stringify({ paths: ["C0/a.jpg"] }) })).json();
+  assert.equal((await call("/m/" + pubLink.id)).status, 404);
+  assert.equal(pubLink.href, ORIGIN + pubLink.url, "a share link answers with an absolute link too");
+  // a participant's comment never lands on the public side, nor the public's on Main
+  assert.equal((await cap({ kind: "link", id: pubLink.id, key: "000", op: "add", text: "x" })).status, 403);
+
+  // participants can never delete the owner's content: files, comments, annotations
+  const ownerC = (await (await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "C0/a.jpg", op: "add", text: "mine" }) })).json()).comments[0].id;
+  const ownerA = (await (await own("/main/api/annotations", { method: "PUT", body: JSON.stringify({ path: "C0/a.jpg", op: "add", text: "owner pin", x: 0.5, y: 0.5 }) })).json()).items[0].id;
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "guest" })).status, 200); // accepts the invitation
+  for (const method of ["DELETE", "PUT", "POST", "PATCH", "MOVE"]) {
+    const r = await w("/f/a.jpg", { method, body: method === "DELETE" ? undefined : "X" });
+    assert.ok([403, 404].includes(r.status), method + " " + r.status);
+  }
+  assert.ok([403, 404].includes((await cap({ path: "C0/a.jpg", op: "del", cid: ownerC })).status));
+  assert.ok([403, 404].includes((await cap({ path: "C0/a.jpg", op: "edit", cid: ownerC, text: "hacked" })).status));
+  assert.equal((await w("/api/file?name=a.jpg", { method: "PUT", body: "X", headers: { "content-length": "1" } })).status, 409);
+  assert.equal(await (await MAIN.get("files/C0/a.jpg")).text(), "A");
+  // annotate is off by default; turned on, a guest can't remove the owner's pin
+  assert.equal((await ann({ name: "a.jpg", op: "add", text: "g" })).status, 403);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ annotate: true }) })).status, 200);
+  const ga = await ann({ name: "a.jpg", op: "add", text: "guest pin", t: 1200 });
+  assert.equal(ga.status, 200, await ga.clone().text());
+  const items = (await ga.json()).items;
+  assert.deepEqual(items.map((a) => [a.text, a.mine]), [["owner pin", false], ["guest pin", true]]);
+  assert.ok(!JSON.stringify(items).includes(made.id), "the invitation id is never shown");
+  assert.equal((await ann({ name: "a.jpg", op: "del", aid: ownerA })).status, 404);
+  assert.equal((await ann({ name: "a.jpg", op: "del", aid: items[1].id })).status, 200);
+  const caps = (await (await own("/main/api/annotations?path=C0%2Fa.jpg")).json()).items;
+  assert.deepEqual(caps.map((a) => a.text), ["owner pin"]);
+
+  // download off: media still plays, ?dl and non-playable files are refused
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ download: false }) });
+  assert.equal((await call(at + "/f/a.jpg", { headers: { cookie: ck } })).status, 200);
+  assert.equal((await call(at + "/f/a.jpg?dl=1", { headers: { cookie: ck } })).status, 403);
+  assert.equal((await call(at + "/f/doc.zip", { headers: { cookie: ck } })).status, 403);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ download: true }) });
+
+  // react: a like needs it, a comment doesn't
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ react: false }) });
+  assert.equal((await cap({ path: "C0/a.jpg", op: "like" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "still talking" })).status, 200);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ react: true }) });
+
+  // per-media overrides: one file hidden, another without comments; null goes back to the invite's
+  let r = await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": { view: false }, "a.jpg": { comment: false } } }) });
+  assert.deepEqual((await r.json()).overrides, { "b.mp3": { view: false }, "a.jpg": { comment: false } });
+  let html = await (await call(at, { headers: { cookie: ck } })).text();
+  assert.ok(!html.includes("b.mp3") && !html.includes("b.MP3"));
+  assert.equal((await call(at + "/f/b.mp3", { headers: { cookie: ck } })).status, 404);
+  assert.equal((await call(at + "/api/transcript?name=b.mp3", { headers: { cookie: ck, "x-gallery": "1" } })).status, 403);
+  assert.equal((await cap({ path: "C0/b.mp3", op: "add", text: "x" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "x" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "like" })).status, 200);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": "x" } }) })).status, 400);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "../b.mp3": {} } }) })).status, 400);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": null, "a.jpg": { comment: null } } }) });
+  assert.equal((await call(at + "/f/b.mp3", { headers: { cookie: ck } })).status, 200);
+
+  // the invitation's view-only lock, then the owner's lock on the whole folder: reads stay, every write goes
+  const writes = async () => [
+    (await cap({ path: "C0/a.jpg", op: "add", text: "w" })).status,
+    (await cap({ path: "C0/a.jpg", op: "like" })).status,
+    (await ann({ name: "a.jpg", op: "add", text: "w" })).status,
+    (await w("/api/file?name=new" + Math.random().toString(36).slice(2) + ".jpg", { method: "PUT", body: "N", headers: { "content-type": "image/jpeg", "content-length": "1" } })).status,
+  ];
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ viewOnly: true }) });
+  assert.deepEqual(await writes(), [403, 403, 403, 403]);
+  assert.equal((await call(at + "/f/a.jpg", { headers: { cookie: ck } })).status, 200);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ viewOnly: false }) });
+  assert.equal((await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: true }) })).status, 200);
+  assert.equal((await call("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: false }) })).status, 404, "only the owner unlocks");
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), { C0: true });
+  assert.deepEqual(await writes(), [403, 403, 403, 403]);
+  html = await (await call(at, { headers: { cookie: ck } })).text();
+  assert.match(html, /"locked":true/);
+  await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: false }) });
+  assert.deepEqual(await writes(), [200, 200, 200, 200]);
+
+  // expired, then revoked: the same 404 as never existing, for the page, files and every API
+  const k = (await MAIN.list({ prefix: "invites/" + made.id })).objects[0].key;
+  const rec = await (await MAIN.get(k)).json();
+  await MAIN.put(k, JSON.stringify({ ...rec, expires: Date.now() - 1 }));
+  for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "expired " + p);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
+  await MAIN.put(k, JSON.stringify(rec));
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "DELETE" })).status, 200);
+  for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "revoked " + p);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
+});
+
 console.log(`\n${passed} passed`);
 await mf.dispose();

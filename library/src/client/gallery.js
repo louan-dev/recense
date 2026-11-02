@@ -6146,7 +6146,7 @@
     up.textContent = "Add";
     up.hidden = false;
   }
-  if (G.perms && G.perms.download === false) document.body.classList.add("nodl");
+  if ((G.perms && G.perms.download === false) || (G.invite && G.invite.perms && G.invite.perms.download === false)) document.body.classList.add("nodl");
 
   upin.onchange = () => {
     const files = Array.from(upin.files || []);

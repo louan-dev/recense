@@ -91,7 +91,17 @@ export function linkPerms(manifest) {
 //   -> { ok, id, exp, count, url }               the id is made here, never by the client
 // POST /main/api/link?action=cancel&id=ID        marks unfinished items failed
 // POST /main/api/link?action=folder&name=<folder in Public>&days=7
+// Every answer that names a link also carries href, the absolute link (C0): url stays relative
+// for the page, which prefixes its own origin, while a share sheet or the apps get one that works.
 export async function linkApi(req, env, url) {
+  const r = await linkAction(req, env, url);
+  if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) return r;
+  const j = await r.clone().json().catch(() => null);
+  if (!j || typeof j.url !== "string" || !j.url.startsWith("/s/")) return r;
+  return jsonResponse({ ...j, href: url.origin + j.url });
+}
+
+async function linkAction(req, env, url) {
   const q = url.searchParams;
   const action = q.get("action") || "";
 
