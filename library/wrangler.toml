@@ -89,5 +89,5 @@ bucket_name = "sync"
 [[d1_databases]]
 binding = "DB"
 database_name = "gallery"
-database_id = "7a7972b724b508c99a42844632b8a44c"
+database_id = "faa79d1c-8076-410b-bdf0-6ab2054cc803"
 migrations_dir = "migrations"
