@@ -2188,3 +2188,13 @@ body.nodl #dl,body.nodl .mdl{display:none!important}
 /* Ask is only the lightbulb, white, blue when hovered or open (notes 20261029 item 16) */
 .mbtn.aibulb{color:#fff}
 .mbtn.aibulb:hover,.mbtn.aibulb:active,.mbtn.aibulb[aria-expanded="true"]{color:#0a84ff}
+/* an invitee's Devices sheet (notes 47): system-blue text rows on a dark card, nothing louder */
+#thread .cdev{margin-left:auto;background:none;border:0;color:#0a84ff;font:inherit;padding:0 4px}
+.devs{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.devbox{width:min(320px,calc(100vw - 32px));display:grid;gap:2px;padding:14px;border-radius:14px;background:#1c1c1e;color:#fff;font:15px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
+.devbox>b{font-size:17px;margin-bottom:6px}
+.devb{background:none;border:0;color:#0a84ff;font:inherit;padding:10px;border-radius:10px}
+.devb:active{background:#2c2c2e}
+.devem{display:flex;gap:6px;margin:4px 0}
+.devem input{flex:1;min-width:0;border:0;border-radius:10px;padding:9px 10px;background:#2c2c2e;color:#fff;font:inherit}
+.devmsg{margin:4px 0 0;font-size:13px;color:#ebebf599;min-height:1em}

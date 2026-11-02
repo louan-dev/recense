@@ -17,6 +17,7 @@ import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
 import { logActivity } from "./shared.js";
+import { identityApi, authRoute, signInPage, sessionGuest, claim, revokeGuest, guestStatus, endSessions, inviteIcs, emailOn } from "./identity.js";
 
 const INVITES = "invites/";
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -61,7 +62,7 @@ export async function inviteApi(req, env, url, path) {
 
       for (const o of r.objects) {
         const inv = await readInvite(env, o.key);
-        if (inv && (dir === null || inv.folder === dir)) out.push(pub(o.key.slice(INVITES.length, -5), inv));
+        if (inv && (dir === null || inv.folder === dir)) out.push({ ...pub(o.key.slice(INVITES.length, -5), inv), guest: await guestStatus(env, inv) });
       }
 
       cursor = r.truncated ? r.cursor : undefined;
@@ -146,6 +147,16 @@ export async function inviteApi(req, env, url, path) {
     return jsonResponse({ ok: true, perms: inv.perms });
   }
 
+  // DELETE /main/api/invites/<id>/sessions   signs the guest out on every device (the invitation stays)
+  const ms = path.match(/^\/main\/api\/invites\/([0-9a-f]{16})\/sessions$/);
+  if (ms && method === "DELETE") {
+    const r = await env.MAIN.list({ prefix: INVITES + ms[1] });
+    const inv = r.objects.length === 1 && (await readInvite(env, r.objects[0].key));
+    if (!inv) return new Response("Not found", { status: 404 });
+    if (inv.guest) await endSessions(env, inv.guest);
+    return jsonResponse({ ok: true });
+  }
+
   if (m && method === "DELETE") {
     if (!ID_RE.test(m[1])) return new Response("Bad id", { status: 400 });
 
@@ -161,6 +172,11 @@ export async function revokeInvite(env, id) {
   if (!ID_RE.test(id)) return false;
   const r = await env.MAIN.list({ prefix: INVITES + id });
   if (!r.objects.length) return false;
+  // the guest goes with it: every session ends and no email or passkey signs them back in
+  for (const o of r.objects) {
+    const inv = await readInvite(env, o.key);
+    if (inv && inv.guest) await revokeGuest(env, inv.guest);
+  }
   await env.MAIN.delete(r.objects.map((o) => o.key));
   return true;
 }
@@ -218,6 +234,26 @@ export async function participantRoute(req, env, ctx, url, path) {
   const method = req.method;
   const read = method === "GET" || method === "HEAD";
   const base = "/m/" + token;
+  const invKey = INVITES + (await hashOf(token)) + ".json";
+  const me = await sessionGuest(req, env, inv);
+
+  // the calendar event: made from the invitation itself, so it ends exactly when access does
+  if (rest === "/invite.ics" && read) {
+    if (!inv.expires) return new Response("This invitation doesn’t expire", { status: 404 });
+    return new Response(inviteIcs(inv, invKey.slice(INVITES.length, INVITES.length + 16), url.origin + base), {
+      headers: { "content-type": "text/calendar; charset=utf-8", "content-disposition": 'attachment; filename="Gallery access.ics"', "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  const am = rest.match(/^\/auth\/([A-Za-z0-9_-]+)$/);
+  if (am) return authRoute(req, env, url, am[1], inv, base);
+  if (rest.startsWith("/api/id/")) {
+    if (!sameSite(req, url)) return new Response("Forbidden", { status: 403 });
+    return identityApi(req, env, url, rest, inv, invKey, base, me);
+  }
+
+  // once someone has accepted the invitation, it opens only for them (signed in on any of their devices)
+  if (inv.guest && !me) return read && !rest.startsWith("/api/") ? signInPage(inv, env) : new Response("Sign in first", { status: 401 });
   const inFolder = (name) => (inv.folder ? inv.folder + "/" : "") + name;
   const allowed = (name) => !inv.items || inv.items.includes(name);
 
@@ -236,7 +272,7 @@ export async function participantRoute(req, env, ctx, url, path) {
 
     return galleryPage({
       id: "invite",
-      invite: { name: inv.name, perms: inv.perms, expires: inv.expires || 0, room: !!inv.items },
+      invite: { name: inv.name, perms: inv.perms, expires: inv.expires || 0, room: !!inv.items, you: !!me, emailOn: emailOn(env), email: (me && me.email) || "", passkeys: me ? (me.passkeys || []).length : 0 },
       start: inv.items && items.length === 1 ? 0 : null,
       view: inv.view || null,
       api: base + "/api",
@@ -294,18 +330,12 @@ export async function participantRoute(req, env, ctx, url, path) {
       }
       if (b.op !== "add" && b.op !== "del" && b.op !== "edit" && b.op !== "like") return new Response("Not allowed", { status: 403 });
 
-      // a forwarded link can still be viewed, but only the first device that writes with it speaks as its invitee
-      const sec = (/(?:^|;\s*)gd=([0-9a-f]{32})(?:;|$)/.exec(req.headers.get("cookie") || "") || [])[1];
-      const dev = sec ? await hashOf("device:" + sec) : null;
+      // the first to write accepts the invitation and becomes its guest; after that only they (signed in) can
       let setCookie = "";
-      if (inv.device ? inv.device !== dev : false) {
-        return new Response("This invitation is already in use on another device. Ask for your own link.", { status: 403 });
-      }
-      if (!inv.device) {
-        const fresh = sec || [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
-        inv.device = await hashOf("device:" + fresh);
-        await env.MAIN.put(INVITES + (await hashOf(token)) + ".json", JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
-        if (!sec) setCookie = `gd=${fresh}; Path=${base}; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`;
+      if (!me) {
+        const c = await claim(env, invKey, base);
+        if (!c) return new Response("This invitation has already been accepted. Sign in instead.", { status: 401 });
+        setCookie = c.cookie;
       }
       const r = await commentApi(req, env, inv.name, true, null, countryOf(req));
       if (setCookie && r.ok) r.headers.append("set-cookie", setCookie);
@@ -315,6 +345,12 @@ export async function participantRoute(req, env, ctx, url, path) {
     // PUT /m/<token>/api/file?name=<file>&mtime=<ms>   a new file only; nothing is ever replaced
     if (rest === "/api/file" && method === "PUT") {
       if (!inv.perms.upload || inv.items) return new Response("Not allowed", { status: 403 });
+      let setCookie = "";
+      if (!me) {
+        const c = await claim(env, invKey, base);
+        if (!c) return new Response("This invitation has already been accepted. Sign in instead.", { status: 401 });
+        setCookie = c.cookie;
+      }
 
       const name = cleanPath(url.searchParams.get("name") || "");
       if (!name || name.includes("/") || name.startsWith(".")) return new Response("Bad file name", { status: 400 });
@@ -326,6 +362,7 @@ export async function participantRoute(req, env, ctx, url, path) {
       u.search = new URLSearchParams({ key, mtime: url.searchParams.get("mtime") || "" }).toString();
       const res = await mainUpload(req, env, u);
       if (res.ok) await logActivity(env, { type: "upload", by: inv.name, kind: "main", ref: key }).catch(() => {});
+      if (setCookie && res.ok) res.headers.append("set-cookie", setCookie);
       return res;
     }
 

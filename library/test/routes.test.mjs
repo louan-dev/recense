@@ -405,7 +405,13 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
   assert.equal((await call("/m/" + "A".repeat(43))).status, 404);
 
   // writes: same-site only; upload new files, never replace; no deletes
-  const w = (path, init) => call(at + path, { ...init, headers: { "x-gallery": "1", cookie: "gd=00000000000000000000000000000001", ...(init.headers || {}) } }); // one device
+  let ck = ""; // the guest's session, from their first write (notes 47)
+  const w = async (path, init) => {
+    const r = await call(at + path, { ...init, headers: { "x-gallery": "1", ...(ck ? { cookie: ck } : {}), ...(init.headers || {}) } });
+    const sc = /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "");
+    if (sc) ck = "gs=" + sc[1];
+    return r;
+  };
   assert.equal((await call(at + "/api/file?name=n.jpg", { method: "PUT", body: "N" })).status, 403);
   r = await w("/api/file?name=n.jpg", { method: "PUT", body: "N", headers: { "content-type": "image/jpeg", "content-length": "1" } });
   assert.equal(r.status, 200, await r.clone().text());
@@ -615,19 +621,117 @@ await test("comments: the owner labels who said it (notes 47)", async () => {
   assert.equal((await m({ op: "label", cid, as: "Lee" })).status, 403);
   let r = await m({ op: "add", text: "hi", as: "Jo", cc: "ZZ" });
   assert.equal(r.status, 200, await r.clone().text());
-  const dev = /gd=([0-9a-f]{32})/.exec(r.headers.get("set-cookie") || "");
-  assert.ok(dev, "the first device gets its cookie");
+  const dev = /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "");
+  assert.ok(dev, "the first write accepts the invitation and gets a session");
   j = await r.json();
   assert.equal(j.comments[1].by, "Lee");
   assert.equal(j.comments[1].as, undefined);
   assert.notEqual(j.comments[1].cc, "ZZ");
-  // the same device goes on; a forwarded copy of the link can't speak as Lee
-  assert.equal((await m({ op: "add", text: "again" }, "gd=" + dev[1])).status, 200);
-  assert.equal((await m({ op: "add", text: "forwarded" })).status, 403);
+  // the guest goes on; a forwarded copy of the link can't speak as Lee, nor even open it
+  assert.equal((await m({ op: "add", text: "again" }, "gs=" + dev[1])).status, 200);
+  assert.equal((await m({ op: "add", text: "forwarded" })).status, 401);
+  assert.equal((await m({ op: "add", text: "forged" }, "gs=" + dev[1].slice(0, 33) + "A".repeat(43))).status, 401);
+  r = await call("/m/" + tok);
+  assert.equal(r.status, 401);
+  assert.match(await r.text(), /Sign in with a passkey/);
+  assert.equal((await call("/m/" + tok, { headers: { cookie: "gs=" + dev[1] } })).status, 200);
   // names: one invitation per name, never the owner's
   const mk = (name) => call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name, ttl: 0, dir: "Lb" }) });
   assert.equal((await mk("lee")).status, 409);
   assert.equal((await mk("Chau")).status, 400);
+});
+
+await test("invite identity (notes 47): one guest per invitation, any device, revoked for good; the calendar event ends with access", async () => {
+  await MAIN.put("files/Id/a.jpg", "x");
+  const made = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Ivy", ttl: 7 * 86400, dir: "Id" }) })).json();
+  const base = "/m/" + made.url.split("/m/")[1];
+  const x = { "x-gallery": "1" };
+  const post = (path, body, cookie) => call(base + "/api/id/" + path, { method: "POST", headers: { ...x, "content-type": "application/json", ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body || {}) });
+  const cookieOf = (r) => "gs=" + /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "")[1];
+
+  // ICS: the invitation's own times, neutral title, CRLF, the link as location, a reminder a day before the end
+  let r = await call(base + "/invite.ics");
+  assert.equal(r.headers.get("content-type"), "text/calendar; charset=utf-8");
+  const ics = await r.text();
+  assert.ok(ics.split("\n").every((l) => l === "" || l.endsWith("\r")));
+  const t = (k) => new RegExp("^" + k + ":(\\d{8}T\\d{6}Z)\\r$", "m").exec(ics)[1];
+  const ms = (v) => Date.UTC(+v.slice(0, 4), +v.slice(4, 6) - 1, +v.slice(6, 8), +v.slice(9, 11), +v.slice(11, 13), +v.slice(13, 15));
+  assert.ok(Math.abs(ms(t("DTSTART")) - made.created) < 1000 && Math.abs(ms(t("DTEND")) - made.expires) < 1000);
+  assert.match(ics, /SUMMARY:Gallery access\r/);
+  assert.match(ics, /TRIGGER;RELATED=END:-P1D/);
+  assert.ok(!ics.includes("Id/") && !ics.includes("Ivy"));
+  assert.ok(ics.replace(/\r\n /g, "").includes("LOCATION:" + ORIGIN + base));
+
+  // claim once: the second claimant (another browser with the forwarded link) is refused
+  assert.equal((await (await call(base + "/api/id/me", { headers: x })).json()).state, "unclaimed");
+  r = await post("claim");
+  assert.equal(r.status, 200);
+  const phone = cookieOf(r);
+  assert.equal((await post("claim")).status, 409);
+  assert.equal((await (await call(base + "/api/id/me", { headers: { ...x, cookie: phone } })).json()).state, "you");
+
+  // another device signs in with a one-time link from the phone; it works once
+  const link = (await (await post("device", {}, phone)).json()).url;
+  assert.equal((await post("device")).status, 401);
+  const code = new URL(link).pathname;
+  assert.equal((await call(code)).status, 200); // a page with a button, so link scanners don't spend it
+  r = await call(code, { method: "POST", redirect: "manual", headers: { origin: ORIGIN } });
+  assert.equal(r.status, 303);
+  const ipad = cookieOf(r);
+  assert.equal((await call(code, { method: "POST", redirect: "manual", headers: { origin: ORIGIN } })).status, 410);
+  assert.equal((await call(base, { headers: { cookie: ipad } })).status, 200);
+
+  // a passkey: registered on the iPad, used on a MacBook (as iCloud Keychain would carry it)
+  const enc = new TextEncoder();
+  const b64 = (b) => Buffer.from(b).toString("base64url");
+  const sha = async (s) => new Uint8Array(await crypto.subtle.digest("SHA-256", typeof s === "string" ? enc.encode(s) : s));
+  const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const jwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+  const cbor = (v) => {
+    const head = (mt, n) => (n < 24 ? [(mt << 5) | n] : n < 256 ? [(mt << 5) | 24, n] : [(mt << 5) | 25, n >> 8, n & 255]);
+    if (typeof v === "number") return v >= 0 ? head(0, v) : head(1, -1 - v);
+    if (typeof v === "string") return [...head(3, enc.encode(v).length), ...enc.encode(v)];
+    if (v instanceof Uint8Array) return [...head(2, v.length), ...v];
+    if (v instanceof Map) return [...head(5, v.size), ...[...v].flatMap(([k, w]) => [...cbor(k), ...cbor(w)])];
+  };
+  const host = new URL(ORIGIN).hostname;
+  const credId = crypto.getRandomValues(new Uint8Array(16));
+  const cose = new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, "base64url")], [-3, Buffer.from(jwk.y, "base64url")]]);
+  const authData = (flags, counter, extra = []) => new Uint8Array([...(globalThis.__rp), flags, 0, 0, 0, counter, ...extra]);
+  globalThis.__rp = await sha(host);
+  let o = await (await post("passkey/options", { mode: "register" }, ipad)).json();
+  let cd = enc.encode(JSON.stringify({ type: "webauthn.create", challenge: o.challenge, origin: ORIGIN }));
+  const ad = authData(0x45, 1, [...new Uint8Array(16), 0, 16, ...credId, ...cbor(cose)]);
+  r = await post("passkey/register", { id: b64(credId), clientDataJSON: b64(cd), attestationObject: b64(new Uint8Array(cbor(new Map([["fmt", "none"], ["attStmt", new Map()], ["authData", ad]])))) }, ipad);
+  assert.equal(r.status, 200, await r.clone().text());
+  const login = async (counter, tamper) => {
+    const o2 = await (await post("passkey/options", { mode: "login" })).json();
+    const cd2 = enc.encode(JSON.stringify({ type: "webauthn.get", challenge: o2.challenge, origin: ORIGIN }));
+    const ad2 = authData(0x05, counter);
+    const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, kp.privateKey, new Uint8Array([...ad2, ...(await sha(cd2))])));
+    const int = (b) => { let v = [...b]; while (v[0] === 0) v.shift(); if (v[0] & 0x80) v.unshift(0); return [2, v.length, ...v]; };
+    const der = [...int(raw.slice(0, 32)), ...int(raw.slice(32))];
+    if (tamper) der[der.length - 1] ^= 1;
+    return post("passkey/login", { id: b64(credId), clientDataJSON: b64(cd2), authenticatorData: b64(ad2), signature: b64(new Uint8Array([0x30, der.length, ...der])) });
+  };
+  r = await login(2);
+  assert.equal(r.status, 200, await r.clone().text());
+  const mac = cookieOf(r);
+  assert.equal((await login(3, true)).status, 403);
+  assert.equal((await login(2)).status, 403, "a replayed counter is refused");
+
+  // the same guest everywhere; the owner sees them; revoking ends every device and no passkey brings them back
+  const c = (cookie, text) => call(base + "/api/caption", { method: "PUT", headers: { ...x, cookie }, body: JSON.stringify({ kind: "main", path: "Id/a.jpg", op: "add", text }) });
+  let j = await (await c(phone, "from phone")).json();
+  j = await (await c(mac, "from mac")).json();
+  assert.deepEqual(j.comments.map((k) => k.by), ["Ivy", "Ivy"]);
+  const list = await (await call("/main/api/invites?dir=Id", { as: "owner", headers: x })).json();
+  assert.equal(list[0].guest.devices, 3);
+  assert.equal(list[0].guest.passkeys, 1);
+  assert.equal((await call("/main/api/invites/" + made.id, { as: "owner", method: "DELETE" })).status, 200);
+  for (const k of [phone, ipad, mac]) assert.equal((await call(base, { headers: { cookie: k } })).status, 404);
+  assert.equal((await post("passkey/options", { mode: "login" })).status, 404);
+  assert.equal((await call(base + "/invite.ics")).status, 404);
 });
 
 await test("rooms: an invite to some items sees only those, never uploads", async () => {
@@ -1815,7 +1919,13 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
 
   // activity: a participant's upload, comment and like, and the owner's like, newest first, with the file
   const at = "/m/" + inv.url.split("/m/")[1];
-  const w = (path, init) => call(at + path, { ...init, headers: { ...x, cookie: "gd=00000000000000000000000000000001", ...(init.headers || {}) } }); // one device
+  let ck = "";
+  const w = async (path, init) => {
+    const r = await call(at + path, { ...init, headers: { ...x, ...(ck ? { cookie: ck } : {}), ...(init.headers || {}) } });
+    const sc = /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "");
+    if (sc) ck = "gs=" + sc[1];
+    return r;
+  };
   let r = await w("/api/file?name=f2.jpg", { method: "PUT", body: "G", headers: { "content-type": "image/jpeg", "content-length": "1" } });
   assert.equal(r.status, 200, await r.clone().text());
   r = await w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "add", text: "so good" }) });

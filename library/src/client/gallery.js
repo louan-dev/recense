@@ -3590,6 +3590,70 @@
     s.setAttribute("aria-label", s.title);
     return s;
   };
+  // Devices: passkey, a confirmed email, a one-time link for another device, the calendar event, sign out
+  const devicesSheet = () => {
+    const ID = API.replace(/\/api$/, "") + "/api/id/";
+    const H = { "content-type": "application/json", "x-gallery": "1" };
+    const u8 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const wrap = mkEl("div", "devs");
+    const box = mkEl("div", "devbox");
+    const h = mkEl("b");
+    h.textContent = G.invite.name;
+    const msg = mkEl("p", "devmsg");
+    msg.setAttribute("role", "status");
+    const row = (label, fn) => {
+      const b = mkEl("button", "devb");
+      b.type = "button";
+      b.textContent = label;
+      b.onclick = async () => {
+        try { await fn(); } catch (e) { msg.textContent = (e && e.message) || "Didn’t work"; }
+      };
+      box.append(b);
+    };
+    const post = async (path, body) => {
+      const r = await fetch(ID + path, { method: "POST", headers: H, body: JSON.stringify(body || {}) });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    };
+    box.append(h);
+    row(G.invite.passkeys ? "Add another passkey" : "Add a passkey", async () => {
+      const o = await post("passkey/options", { mode: "register" });
+      const c = await navigator.credentials.create({
+        publicKey: { ...o, challenge: u8(o.challenge), user: { ...o.user, id: u8(o.user.id) }, excludeCredentials: o.excludeCredentials.map((x) => ({ ...x, id: u8(x.id) })) },
+      });
+      const j = await post("passkey/register", { id: c.id, clientDataJSON: b64(c.response.clientDataJSON), attestationObject: b64(c.response.attestationObject) });
+      G.invite.passkeys = j.passkeys;
+      msg.textContent = "Passkey added. Use it to sign in on your other devices.";
+    });
+    if (G.invite.emailOn) {
+      const f = mkEl("form", "devem");
+      const i = mkEl("input");
+      i.type = "email";
+      i.placeholder = G.invite.email || "Email, to sign in elsewhere";
+      i.autocomplete = "email";
+      const b = mkEl("button", "devb");
+      b.textContent = G.invite.email ? "Change" : "Confirm";
+      f.append(i, b);
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        try { await post("email", { email: i.value }); msg.textContent = "Check your inbox to confirm."; } catch (er) { msg.textContent = er.message; }
+      };
+      box.append(f);
+    }
+    row("Sign in another device", async () => {
+      const j = await post("device");
+      try { await navigator.clipboard.writeText(j.url); msg.textContent = "One-time link copied. It works once, for 15 minutes."; } catch (_) { prompt("Open this on your other device (once, 15 minutes)", j.url); }
+    });
+    if (G.invite.expires) row("Add to Calendar", () => { location.href = ID.replace(/api\/id\/$/, "invite.ics"); });
+    row("Sign out", async () => { await post("signout"); location.reload(); });
+    row("Sign out everywhere", async () => { await post("signout", { everywhere: true }); location.reload(); });
+    box.append(msg);
+    row("Done", () => wrap.remove());
+    wrap.append(box);
+    wrap.onclick = (e) => e.target === wrap && wrap.remove();
+    document.body.append(wrap);
+  };
   const postedAt = (t) => D(t, { day: "numeric", month: "short", year: "numeric" }) + " at " + T(t);
   const isOpen = () => document.body.classList.contains("comments-open");
 
@@ -4033,6 +4097,14 @@
       nm.autocomplete = "name";
       nm.setAttribute("aria-label", "Your name, shown with your comments");
       field.append(nm);
+    }
+    // an invitee's own identity: the name is the invitation's, the rest is how they sign in elsewhere (notes 47)
+    if (G.invite && G.invite.you) {
+      const dv = mkEl("button", "cdev");
+      dv.type = "button";
+      dv.textContent = "Devices";
+      dv.onclick = () => devicesSheet();
+      btns.append(dv);
     }
     field.append(ta, btns);
     thread.appendChild(field);

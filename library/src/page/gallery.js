@@ -547,10 +547,21 @@ function renderInvites(){
       ? 'Expires ' + new Date(i.expires).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
       : 'Never expires';
     if (!scope && i.items) s.textContent += ' · ' + (i.items.length === 1 ? i.items[0] : i.items.length + ' items');
+    // who accepted it (notes 47): the guest's sign-in methods and devices, never more
+    const g = i.guest || {};
+    if (g.revoked) s.textContent += ' · Revoked';
+    else if (g.claimed) s.textContent += ' · Accepted' + (g.devices ? ' · ' + g.devices + (g.devices === 1 ? ' device' : ' devices') : '') + (g.passkeys ? ' · passkey' : '') + (g.email ? ' · ' + g.email : '');
+    else s.textContent += ' · Not opened yet';
     w.append(b, s);
     li.append(w);
     // the link itself is only known right after it is made (the server keeps a hash, not the link)
     if (i.url) li.append(mk('Copy', 'invb', () => copyLink(i)));
+    // the calendar event comes from the invitation's own link, so it can only be made while the link is known
+    if (i.url && i.expires) li.append(mk('Calendar', 'invb', () => { location.href = i.url + '/invite.ics'; }));
+    if (g.devices) li.append(mk('Sign Out', 'invb', async () => {
+      const r = await fetch('/main/api/invites/' + i.id + '/sessions', { method: 'DELETE', headers: H });
+      if (r.ok) { g.devices = 0; renderInvites(); toast('Signed out on every device'); } else toast('Couldn’t sign them out');
+    }));
     li.append(mk('Revoke', 'invb rev', () => revoke(i.id)));
     list.append(li);
   });
