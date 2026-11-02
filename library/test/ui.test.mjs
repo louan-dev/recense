@@ -390,10 +390,12 @@ await test("invite page: no menu, no delete, comment as the participant", false,
   await pg.click('.tile[data-n="00000"]');
   await pg.click(".cmlabel");
   await pg.fill("#thread textarea", "from Ana");
+  pg.removeAllListeners("dialog");
+  pg.once("dialog", (d) => d.accept("Ana's sister")); // invitees name themselves before posting (notes 47)
   await pg.press("#thread textarea", "Enter");
   await pg.waitForFunction(() => [...document.querySelectorAll("#thread .ctext")].some((e) => e.textContent === "from Ana"));
   const notes = JSON.parse(await (await MAIN.get("notes/Pics/.comments.json")).text());
-  assert.ok(notes["p.jpg"].list.some((c) => c.by === "Ana" && c.text === "from Ana"));
+  assert.ok(notes["p.jpg"].list.some((c) => c.by === "Ana" && c.as === "Ana's sister" && c.text === "from Ana"));
 });
 
 await test("invite page: a 1-hour link says when today it ends, not just the date", false, async (pg) => {
@@ -456,10 +458,10 @@ await test("a Recense transcript shows in Learn mode: original first, then its E
   await pg.waitForFunction(() => [...document.querySelectorAll(".tx .txw")].every((w) => w.style.color === "rgb(255, 255, 255)" || w.style.color === "rgba(255, 255, 255, 1)"));
 });
 
-await test("item 20: the notation toggle under the vertical bar cycles Prosody, Chords, Notes, the pairs, All Off, and is kept", true, async (pg) => {
+await test("item 20: the notation toggle (beside Chords) cycles Prosody, Chords, Notes, the pairs, All Off, and is kept", true, async (pg) => {
   await pg.goto(base + "/main?p=Songs");
   await pg.click('.tile[data-n="00000"]');
-  await pg.waitForSelector(".p-nmode");
+  await pg.waitForSelector(".p-nmode", { state: "attached" }); // on the EQ's music page now (item 31)
   const label = () => pg.$eval(".p-nmode", (e) => e.title);
   assert.equal(await label(), "Prosody");
   const seen = [];
@@ -1214,6 +1216,80 @@ await test("Notes 20261029 row 40: timing by ear is tapped like A and B (no slid
   assert.ok(pins, "both lines saved");
   assert.deepEqual(pins[0], [[1, 0.5, 1.1, 0]]);
   assert.deepEqual(pins[2], [[1, 6.5, 7.1, 0]], "the repeat, at the same place in its line");
+  // the light between Start and End (rows 40, 44): follows the voice; drag up for faster at first; paused, a path
+  // drawn across it is copied; a double-tap gives it back to the voice
+  const pinOf = async (n) => {
+    for (let j = 0; j < 60; j++) {
+      await pg.waitForTimeout(100);
+      const o = await KEEP.get("keep/" + k + "/corrections.json");
+      const d = o && (await o.json());
+      const t = d ? d.overrides.filter((x) => x.field === "time" && x.segId == 0) : [];
+      const v = t.length && JSON.parse(t[t.length - 1].to)[0];
+      if (v && n(v)) return v;
+    }
+    return null;
+  };
+  assert.equal(await pg.textContent(".txall .txlcap"), "Follows the voice");
+  const box = await pg.$eval(".txall .txlight", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await pg.$eval("audio", (a) => a.pause());
+  await pg.mouse.move(box.x + box.w / 2, box.y + box.h - 10);
+  await pg.mouse.down();
+  await pg.mouse.move(box.x + box.w / 2, box.y + box.h - 30, { steps: 4 });
+  await pg.mouse.up();
+  assert.equal(await pg.textContent(".txall .txlcap"), "Faster at first");
+  assert.ok((await pinOf((v) => v[3] > 0)) !== null, "the speed is saved");
+  await pg.mouse.move(box.x + 10, box.y + box.h - 8);
+  await pg.mouse.down();
+  for (const [fx, fy] of [[0.2, 0.6], [0.4, 0.8], [0.7, 0.85], [1, 1]]) await pg.mouse.move(box.x + 10 + fx * (box.w - 20), box.y + box.h - 8 - fy * (box.h - 16), { steps: 3 });
+  await pg.mouse.up();
+  assert.equal(await pg.textContent(".txall .txlcap"), "Traced");
+  const tr = await pinOf((v) => Array.isArray(v[4]));
+  assert.ok(tr, "the trace is saved");
+  assert.equal(tr[4].length, 16);
+  assert.equal(tr[4][0], 0);
+  assert.equal(tr[4][15], 1);
+  assert.ok(tr[4].every((x, j) => !j || x >= tr[4][j - 1]), "never going back");
+  assert.ok(tr[4][3] > 0.4, "early on it is lit as far as the path went: " + tr[4]);
+  await pg.dblclick(".txall .txlight");
+  assert.equal(await pg.textContent(".txall .txlcap"), "Follows the voice");
+  assert.ok(await pinOf((v) => v.length === 4 && v[3] === 0), "back to the voice");
+  // a stanza by ear (row 40, 2026-11-01): Whole line loops it; first beat, last beat, Use this cadence → its words
+  // set inside the two beats, in the voice's shape; Trace it then copies a finger along the whole line
+  const linePins = async (n) => {
+    for (let j = 0; j < 60; j++) {
+      await pg.waitForTimeout(100);
+      const o = await KEEP.get("keep/" + k + "/corrections.json");
+      const d = o && (await o.json());
+      const t = d ? d.overrides.filter((x) => x.field === "time" && x.segId == 0) : [];
+      const v = t.length && t[t.length - 1].to && JSON.parse(t[t.length - 1].to);
+      if (v && n(v)) return v;
+    }
+    return null;
+  };
+  await pg.click('.txall .txrow.cur .txstanza');
+  assert.equal(await pg.textContent(".txall .txlsay"), "Tap on the first beat");
+  await pg.$eval("audio", (a) => (a.pause(), (a.currentTime = 0.2)));
+  await pg.click(".txall .txltap");
+  await pg.$eval("audio", (a) => (a.pause(), (a.currentTime = 1.4)));
+  await pg.click(".txall .txltap");
+  assert.ok((await pg.textContent(".txall .txlsay")).includes("Good?"));
+  await pg.click('.txall .txbtn:text("Use this cadence")');
+  const auto = await linePins((v) => v.length === 3 && !v[0][4]);
+  assert.ok(auto, "every word pinned");
+  assert.equal(auto[0][1], 0.2, "the first word on the first beat");
+  assert.equal(auto[2][2], 1.4, "the last word ends on the last beat");
+  await pg.click('.txall .txbtn:text("Trace it")');
+  const lb = await pg.$eval(".txall .txpanel .txlight", (c) => { const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await pg.mouse.move(lb.x + 10, lb.y + lb.h / 2);
+  await pg.mouse.down();
+  for (const [t, fx] of [[0.3, 0.1], [0.6, 0.4], [0.9, 0.6], [1.2, 0.9], [1.35, 1]]) {
+    await pg.$eval("audio", (a, t) => (a.currentTime = t), t);
+    await pg.mouse.move(lb.x + 10 + fx * (lb.w - 20), lb.y + lb.h / 2, { steps: 2 });
+  }
+  await pg.mouse.up();
+  const traced = await linePins((v) => v.length === 3 && v.every((x) => Array.isArray(x[4])));
+  assert.ok(traced, "the trace sets every word, each with its fill");
+  assert.ok(traced.every((x, j) => !j || x[1] >= traced[j - 1][1]), "in order");
   await pg.click('.txallbar .txbtn:text("Done")');
   await pg.waitForFunction(() => !document.querySelector(".txall"));
   assert.equal(await pg.$eval("#strip", (e) => getComputedStyle(e).visibility), "visible", "Done brings the strip back");
@@ -1408,11 +1484,29 @@ await test("Notes 35: on a MacBook, two fingers swiped along the bar then held k
   assert.ok(!(await a.evaluate((el) => el.paused)), "the media plays on");
   await pg.mouse.move(at.x + 40, at.y - 60); // a hand on the trackpad again: let go
   await pg.waitForFunction(() => !document.querySelector(".p-hb.seeking"));
-  // a flick that dies away in a momentum tail was let go: no hold
+  // a hand slowing to a stop is still a hand: held
+  await pg.waitForTimeout(400);
   await pg.mouse.move(at.x, at.y);
-  for (const d of [40, 30, 20, 12, 7, 4, 2, 1, 1]) await pg.mouse.wheel(d, 0), await pg.waitForTimeout(16);
+  for (const d of [30, 30, 24, 16, 9, 4]) await pg.mouse.wheel(d, 0), await pg.waitForTimeout(16);
+  await pg.waitForTimeout(700);
+  assert.ok(await pg.$(".p-hb.seeking"), "slowing down then resting is held");
+  await pg.mouse.move(at.x + 40, at.y - 60);
+  await pg.waitForFunction(() => !document.querySelector(".p-hb.seeking"));
+  // a flick let go while moving glides away (momentum): over by itself, landing where the fingers lifted, not
+  // where the glide would have carried it
+  await pg.waitForTimeout(400);
+  await a.evaluate((el) => {
+    el.pause();
+    el.currentTime = 2;
+  });
+  await pg.mouse.move(at.x, at.y);
+  for (let i = 0; i < 4; i++) await pg.mouse.wheel(30, 0), await pg.waitForTimeout(16);
+  const lifted = await a.evaluate((el) => el.currentTime);
+  for (let d = 40; d >= 1; d *= 0.8) await pg.mouse.wheel(d, 0), await pg.waitForTimeout(16);
   await pg.waitForTimeout(500);
-  assert.equal(await pg.$(".p-hb.seeking"), null, "a momentum tail ends the swipe by itself");
+  assert.equal(await pg.$(".p-hb.seeking"), null, "a momentum glide ends the swipe by itself");
+  const landed = await a.evaluate((el) => el.currentTime);
+  assert.ok(Math.abs(landed - lifted) < 3, "landed where the fingers lifted: " + lifted.toFixed(1) + " → " + landed.toFixed(1));
 });
 
 await test("Notes 25/26: over the speeds a light swipe turns the slide, never the speed or the time; only a tap sets the speed", true, async (pg) => {
