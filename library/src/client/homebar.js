@@ -2251,6 +2251,10 @@ globalThis.Homebar = (() => {
     // the chord detector: while on, the host's live chroma every 250 ms, a chord named once it has
     // held two readings (no flicker), spelled in the notation chordState() picks; the host places it
     // above the transcript, or where the transcript would be when there is none
+    // item 31: the notation toggle (ribbon · chords · notes) sat alone under the stroke, in the way of the stroke's
+    // own hit area; it lives on the music page now, beside Chords, where what it draws is chosen
+    const nmode = vbar.el.querySelector(".p-nmode");
+    if (nmode) nmode.classList.add("p-eqflat"), chordPage.appendChild(nmode);
     let chordsOn = false;
     let chordT = 0;
     let chordLast = null;
@@ -2264,11 +2268,15 @@ globalThis.Homebar = (() => {
     };
     const chordTick = () => {
       const v = host.chroma && host.chroma();
-      const c = v ? GalleryKey.chordOf(v) : null;
+      if (v) chromaAvg = chromaAvg ? chromaAvg.map((x, i) => x * 0.6 + v[i] * 0.4) : v.slice();
+      const c = chromaAvg ? GalleryKey.chordOf(chromaAvg) : null;
       const same = (a, b) => (!a && !b) || (a && b && a.pc === b.pc && a.minor === b.minor);
       chordSeen = same(c, chordLast) ? chordSeen + 1 : 0;
       chordLast = c;
-      if (chordSeen >= 1 && c) showChord(chordText(c)); // a chord holds until the next one
+      if (chordSeen >= 3 && c) {
+        const t = chordText(c);
+        if (t !== chordShown) showChord(t); // a chord holds until the next one
+      }
     };
     const setChords = (on) => {
       if (on && !host.chroma) return say("Chords aren’t available here");
@@ -2278,7 +2286,7 @@ globalThis.Homebar = (() => {
       chordBtn.setAttribute("aria-pressed", String(on));
       if (on) chordT = setInterval(chordTick, 250);
       showChord(on ? chordShown : "");
-      if (!on) chordLast = null;
+      if (!on) chordLast = chromaAvg = null;
     };
     chordBtn.hidden = !host.chroma;
     chordBtn.addEventListener("click", (e) => {
@@ -2290,6 +2298,9 @@ globalThis.Homebar = (() => {
     const paintChord = () => chordsOn && chordLast && showChord(chordText(chordLast));
 
     // swiping the menu: a finger (or mouse) up or down 36 px inside it, or two fingers on a trackpad
+    // item 31: the readout flickered (a new chord after two 250 ms reads). The chroma is now smoothed over ~1 s and
+    // a chord shows only once it has held for 1 s; the same text is never rewritten.
+    let chromaAvg = null;
     const inMenu = (t) => t && t.closest && !t.closest(".p-band, .kpop, button, input");
     let pg = null;
     eq.addEventListener("pointerdown", (e) => {

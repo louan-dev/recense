@@ -1187,6 +1187,7 @@
   cursor:pointer
 }
 .p-nmode.off{opacity:.7}
+.p-chordpage .p-nmode{display:inline-block;margin:0 0 0 6px;width:auto;min-width:44px}
 
 .p-vlist{
   position:absolute;

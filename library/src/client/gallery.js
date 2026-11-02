@@ -855,7 +855,8 @@
   // read by prosogram-mount.js every frame: the mode, the chords heard so far on this item (time → name), and a
   // note's name in the notation the chords are spelled in (English: C/do, as the Key label; else the language's)
   const notation = (globalThis.GalleryNotation = {
-    mode: () => prefs.notationMode,
+    // chords and notes are Learn's alone (item 31): Follow moves on too fast for them to keep up
+    mode: () => (prefs.view === "follow" ? prefs.notationMode.replace(/[cn]/g, "") : prefs.notationMode),
     chords: [],
     media: null,
     noteName: (midi) => {

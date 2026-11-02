@@ -398,6 +398,27 @@
       for (let k = 2; k < n - 2; k++) { let s = 0, c = 0; for (let j = k - 2; j <= k + 2; j++) if (!isNaN(m[j])) { s += m[j]; c++ } if (!isNaN(m[k]) && c) st[k] = s / c }
     }
     const semi = t => st[fr(t)]
+    // the sung note of a stretch (item 31): the smoothed track's median smeared two notes into one (or a glide into
+    // the semitone between), and a syllable window cut by letters often straddles two notes. A note is the longest
+    // steady run of raw pitched frames in the window (≥ 50 ms), read against the recording's own tuning (a track a
+    // quarter tone sharp no longer flips D to E♭).
+    const tune = (() => {
+      let sx = 0, sy = 0
+      for (let k = 0; k < n; k++) if (pitched(k)) { const a = 2 * Math.PI * (F.pitch[k] / 100); sx += Math.cos(a); sy += Math.sin(a) }
+      return sx || sy ? Math.atan2(sy, sx) / (2 * Math.PI) : 0           // −0.5 … 0.5 semitone
+    })()
+    const noteIn = (k0, k1) => {
+      let best = null, run = null
+      for (let k = k0; k < k1; k++) {
+        if (!pitched(k)) { if (run && k - run.last > 2) run = null; continue }
+        const p = F.pitch[k] / 100 - tune, q = Math.round(p)
+        if (run && run.q === q && k - run.last <= 3) { run.ps.push(p); run.last = k }
+        else run = { q, ps: [p], last: k }
+        if (!best || run.ps.length > best.ps.length) best = run
+      }
+      if (!best || best.ps.length * hop < 0.05) return NaN
+      return pctl(best.ps.slice(), 0.5) + tune
+    }
     const dB = k => F.db[k] / 10
 
     // words → syllables (letters)
@@ -479,6 +500,7 @@
         }
         s.loud = ec ? e / ec : (v ? F.floor : NaN)                 // loudness over the vowel (pitched voiced frames) only
         s.pitch = ps.length ? pctl(ps, 0.5) : NaN
+        s.note = noteIn(k0, k1)                                      // the notated note (NaN: none steady enough)
         s.rel = clamp(ps.length / Math.max(1, k1 - k0) * 1.3)        // how much of it has a pitch to trust
         s.dur = s.t1 - s.t0; s.attack = att; s.voicedFrac = v / Math.max(1, k1 - k0)
         // first / last voiced frame, for gaps

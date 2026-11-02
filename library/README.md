@@ -104,6 +104,9 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   its words; an editor field saves only text typed into it, onto the line it was opened on, and Restore only onto
   the line the change was made on (one line's words had landed on another's).
   The Prosody / Chords / Notes toggle lives on the EQ's music page, beside Chords.
+  Item 31: chords and notes show in Learn only (not Follow); the chord readout smooths the chroma over ~1 s and shows a
+  chord only once it has held for 1 s; a notated note is the longest steady pitch run in the syllable, read against the
+  track's own tuning.
 - The editor is quiet: Changes · a grabber · Done; the tools fold under the grabber (tap, or rest the pointer on it).
   Paused with no line up, a grabber where the lines show opens the editor.
   A word being timed keeps its marks up when the phone is turned or the server's lines come back; on a short

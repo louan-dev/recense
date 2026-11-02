@@ -352,9 +352,9 @@ function labelsAbove(ctx, f, ln, light) {
     for (const c of cells) {
       const x = pro.word[c.w.flat]; if (!x || x.punct || x.un || !x.syl) continue
       for (const sy of x.syl) {
-        if (!Number.isFinite(sy.pitch) || !(sy.rel >= 0.4) || sy.un == null) continue
+        if (!Number.isFinite(sy.note) || sy.un == null) continue   // a steady sung note only (item 31)
         const px = c.x + sy.un * c.width
-        put('n' + c.row, px, f.noteName(sy.pitch), rowTop(c) + (f.chords ? fs * 1.15 : 0), 'rgb(236,226,200)', (light.get(c.row) ?? -Infinity) >= px)
+        put('n' + c.row, px, f.noteName(sy.note), rowTop(c) + (f.chords ? fs * 1.15 : 0), 'rgb(236,226,200)', (light.get(c.row) ?? -Infinity) >= px)
       }
     }
   }
