@@ -8307,8 +8307,24 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private var padTimer: Timer?
     private var cur = 0
     private var looping = false
-    /// The stretch being heard round: the chosen word as it's now set.
-    var span: (Double, Double)? { let p = pinOf(cur); return (p.s, p.e) }
+    /// The stretch being heard round: the chosen word as it's now set; for the whole line, the stretch between its
+    /// beats (the caller plays from 0.8 s before a span to 0.5 s past it, so the loop is exactly lo … hi).
+    var span: (Double, Double)? {
+        if lineMode { return (lo + 0.8, hi - 0.5) }
+        let p = pinOf(cur); return (p.s, p.e)
+    }
+    // A stanza by ear (gallery notes 20261029 row 40, owner 2026-11-01; Gallery's `openLine`): Whole line plays the
+    // line round; tap its first beat, then its last, and it loops between them until Use this cadence (or Retry). Its
+    // words then follow the voice inside those beats; if that still isn't it, Trace it: slide along the pad as it is sung.
+    private var lineMode = false
+    private var beatA: Double?, beatB: Double?, lo = 0.0, hi = 0.0
+    private let lineChip = Chip("Whole line")
+    private let lineSay = NSTextField(wrappingLabelWithString: "")
+    private let beat = Mark()
+    private let useB = NSButton(title: "Use this cadence", target: nil, action: nil), retryB = NSButton(title: "Retry", target: nil, action: nil)
+    private let traceB = NSButton(title: "Trace it", target: nil, action: nil), voiceB = NSButton(title: "Back to the voice", target: nil, action: nil)
+    private let linePad = LightPad()
+    private var wordViews: [NSView] = [], lineViews: [NSView] = []
 
     /// A word of the line as Gallery draws it (.txchip): a capsule, yellow once timed by ear, lit while it is picked.
     final class Chip: NSButton {
@@ -8489,7 +8505,8 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         }
         // the chips wrap like Gallery's, a row at a time
         var rows: [NSStackView] = [], width: CGFloat = 0
-        for c in chips {
+        lineChip.tag = -1; lineChip.target = self; lineChip.action = #selector(pickLine)
+        for c in [lineChip] + chips {
             let cw = c.intrinsicContentSize.width
             if rows.isEmpty || width + cw > 348 { rows.append(NSStackView()); rows.last!.spacing = 4; width = 0 }
             rows.last!.addArrangedSubview(c); width += cw + 4
@@ -8524,7 +8541,27 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         pad.bend = { [weak self] k, push in self?.shape(k: k, c: nil, push: push) }
         pad.traced = { [weak self] c in self?.shape(k: 0, c: c, push: true) }
         pad.toVoice = { [weak self] in self?.shape(k: 0, c: nil, push: true) }
-        let stack = NSStackView(views: [field, words, marks, light, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        lineSay.font = .systemFont(ofSize: 12); lineSay.textColor = NSColor(red: 0.5, green: 0.74, blue: 1, alpha: 1)
+        lineSay.preferredMaxLayoutWidth = 332
+        beat.isBordered = false; beat.setButtonType(.momentaryPushIn); beat.title = ""
+        beat.target = self; beat.action = #selector(beatPressed)
+        beat.heightAnchor.constraint(equalToConstant: 52).isActive = true
+        beat.widthAnchor.constraint(equalToConstant: 332).isActive = true
+        useB.target = self; useB.action = #selector(usePressed); retryB.target = self; retryB.action = #selector(retryPressed)
+        traceB.target = self; traceB.action = #selector(tracePressed); voiceB.target = self; voiceB.action = #selector(voicePressed)
+        for b in [useB, retryB, traceB, voiceB] { b.isBordered = false; b.contentTintColor = .linkColor }
+        let lineBtns = NSStackView(views: [useB, retryB, traceB, voiceB]); lineBtns.spacing = 14
+        linePad.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        linePad.widthAnchor.constraint(equalToConstant: 332).isActive = true
+        linePad.playing = { true }
+        linePad.playhead = { [weak self] in
+            guard let self, let a = self.beatA, let b = self.beatB, let n = self.now?() else { return nil }
+            return (n - a) / max(0.05, b - a)
+        }
+        linePad.traced = { [weak self] c in self?.fromTrace(c) }
+        wordViews = [marks, light, buttons]; lineViews = [lineSay, beat, linePad, lineBtns]
+        for v in lineViews { v.isHidden = true }
+        let stack = NSStackView(views: [field, words, marks, light, buttons] + lineViews); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
         stack.setCustomSpacing(10, after: words)
         stack.edgeInsets = NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16)
         win.contentView = stack
@@ -8573,7 +8610,7 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         startB.value = t(p.s); endB.value = t(p.e)
         padCap.stringValue = p.c != nil ? "Traced" : abs(p.k) <= 0.05 ? "Follows the voice" : p.k > 0 ? "Faster at first" : "Slower at first"
         pad.needsDisplay = true
-        for c in chips { c.picked = c.tag == cur; c.timed = pins[c.tag] != nil }
+        for c in chips { c.picked = !lineMode && c.tag == cur; c.timed = pins[c.tag] != nil }
     }
     /// The word's span with one end moved (the other kept 50 ms clear of it); its light keeps its shape.
     private func set(start: Bool, _ x: Double, push: Bool) {
@@ -8587,7 +8624,103 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private func move(start: Bool, by d: Double) { let p = pinOf(cur); set(start: start, (start ? p.s : p.e) + d, push: false) }
     @objc private func markStart() { if let n = now?() { set(start: true, n, push: true) } }
     @objc private func markEnd() { if let n = now?() { set(start: false, n, push: true) } }
-    @objc private func pick(_ c: NSButton) { load(c.tag); startLoop() }
+    @objc private func pick(_ c: NSButton) { setLineMode(false); load(c.tag); startLoop() }
+
+    private func setLineMode(_ on: Bool) {
+        lineMode = on
+        for v in wordViews { v.isHidden = on }
+        for v in lineViews { v.isHidden = !on }
+        lineChip.picked = on
+        if on { for c in chips { c.picked = false } }
+        if let st = win.contentView { win.setContentSize(st.fittingSize) }
+    }
+    /// The line's sung stretch as it is now (a cadence already used has moved its words).
+    private var sungSpan: (Double, Double)? {
+        let ws = line.words.enumerated().filter { $0.element.un != true || pins[$0.offset] != nil }
+        guard !ws.isEmpty else { return nil }
+        return (ws.map { pins[$0.offset]?.s ?? $0.element.start }.min()!, ws.map { pins[$0.offset]?.e ?? $0.element.end }.max()!)
+    }
+    private func lineStep(_ step: String, _ say: String) {
+        lineSay.stringValue = say
+        beat.isHidden = step != "a" && step != "b"
+        beat.name = step == "a" ? "First beat" : "Last beat"; beat.value = "tap as it is sung"
+        useB.isHidden = step != "check"; retryB.isHidden = step == "a"
+        traceB.isHidden = step != "auto"; voiceB.isHidden = pins.isEmpty
+        linePad.isHidden = step != "trace"
+        if let st = win.contentView { win.setContentSize(st.fittingSize) }
+    }
+    private func loopLine() { looping = true; hearB.title = "Stop"; hear?(lo + 0.8, hi - 0.5) }
+    @objc private func pickLine() {
+        guard let (w0, w1) = sungSpan else { return }
+        setLineMode(true)
+        beatA = nil; beatB = nil; lo = max(0, w0 - 0.8); hi = w1 + 0.5
+        lineStep("a", "Tap on the first beat")
+        loopLine()
+        win.makeFirstResponder(beat)
+    }
+    @objc private func beatPressed() {
+        guard let n = now?() else { return }
+        let t = (n * 1000).rounded() / 1000
+        if beatA == nil { beatA = t; lineStep("b", "Tap on the last beat"); return }
+        guard let a = beatA, t > a + 0.1 else { lineSay.stringValue = "The last beat comes after the first"; return }
+        beatB = t; lo = a; hi = t
+        loopLine()
+        func m(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
+        lineStep("check", "\(m(a)) – \(m(t)): playing between your two beats. Good?")
+    }
+    @objc private func retryPressed() { pickLine() }
+    /// Auto: the words keep the voice's shape, set inside the listener's two beats.
+    @objc private func usePressed() {
+        guard let a = beatA, let b = beatB, let (w0, w1) = sungSpan else { return }
+        let k = (b - a) / max(0.05, w1 - w0)
+        let r3 = { (x: Double) in (x * 1000).rounded() / 1000 }
+        for (i, w) in line.words.enumerated() where w.un != true || pins[i] != nil {
+            let s0 = pins[i]?.s ?? w.start, e0 = pins[i]?.e ?? w.end
+            pins[i] = Pin(s: r3(a + (s0 - w0) * k), e: r3(a + (e0 - w0) * k), k: 0)
+        }
+        changed(pins, true); labels()
+        lineStep("auto", "The light follows the voice between your beats. Not quite? Trace it.")
+    }
+    @objc private func tracePressed() { lineStep("trace", "Slide along as it is sung, from its first word to its last") }
+    @objc private func voicePressed() {
+        pins = [:]; changed(pins, true); labels()
+        pickLine()
+    }
+    /// The line traced (c: how much of the line was passed at 16 moments from the first beat to the last): each word
+    /// takes its start, end and fill from where the finger was over its letters (Gallery's `fromTrace`).
+    private func fromTrace(_ c: [Double]) {
+        guard let a = beatA, let b = beatB else { return }
+        let q = c.enumerated().map { (u: Double($0.offset) / Double(c.count - 1), p: $0.element) }
+        func when(_ f: Double) -> Double {
+            var j = 1
+            while j < q.count - 1 && q[j].p < f { j += 1 }
+            let x = q[j - 1], y = q[j]
+            let u = y.p > x.p ? x.u + (y.u - x.u) * (f - x.p) / (y.p - x.p) : y.u
+            return a + u * (b - a)
+        }
+        func at(_ t: Double) -> Double {
+            let u = (t - a) / (b - a)
+            var j = 1
+            while j < q.count - 1 && q[j].u < u { j += 1 }
+            let x = q[j - 1], y = q[j]
+            return y.u > x.u ? x.p + (y.p - x.p) * (u - x.u) / (y.u - x.u) : y.p
+        }
+        let sung = line.words.enumerated().filter { $0.element.un != true || pins[$0.offset] != nil }
+        let len = Double(sung.reduce(0) { $0 + max(1, $1.element.text.count) })
+        var c0 = 0.0
+        let r3 = { (x: Double) in (x * 1000).rounded() / 1000 }
+        for (i, w) in sung {
+            let n = Double(max(1, w.text.count)), f0 = c0 / len, f1 = (c0 + n) / len
+            c0 += n
+            let s = when(f0), e = max(when(f1), s + 0.05)
+            var cw = (0..<16).map { j in ((max(0, min(1, (at(s + (e - s) * Double(j) / 15) - f0) / (f1 - f0)))) * 100).rounded() / 100 }
+            for j in 1..<16 { cw[j] = max(cw[j], cw[j - 1]) }
+            cw[15] = 1
+            pins[i] = Pin(s: r3(s), e: r3(e), k: 0, c: cw)
+        }
+        changed(pins, true); labels()
+        lineStep("auto", "Traced. Trace again or go back to the voice.")
+    }
     private func startLoop() {
         looping = true; hearB.title = "Stop"
         let p = pinOf(cur); hear?(p.s, p.e)

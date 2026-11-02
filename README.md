@@ -127,6 +127,9 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   Under Start and End, the Light draws how the word fills: drag it up or down for faster or slower at first, slide
   along it as the word plays (or draw it, stopped) to trace it, double-click for the voice; a trace made in Gallery
   plays the same here.
+  A whole stanza by ear, as in Gallery: Whole line loops it, tap its first beat and its last, and it loops between them
+  until Use this cadence (or Retry); the words then follow the voice between the beats; Trace it gives each word its
+  start, end and fill from the pointer slid along as it is sung; Back to the voice undoes it.
 - **Draws the prosody** over the lines: a ghost score with a gold sweep, turquoise liaison ties, chords and sung notes;
   the shape of the sentence becomes visible, which helps where the written word and the spoken one part ways.
 - **Reads each script as its readers do:**
