@@ -147,7 +147,7 @@ Arabic and Ethiopic stops is dropped. Sill joins words by the same rule. Pushing
   `~/Gallery` through `Gallery.app`. Transcripts and their timing live under `keep/<key>/` (asr.json, tr/<lang>.json,
   corrections.json, features.json). Comments, captions and folder order are JSON objects in R2 (Main comments move to D1 once it is bound, below).
 
-- D1 (C1, `src/d1.js`, `gallery/migrations/`): invitations, folder locks, Main comments and likes, annotations, metadata overrides and their revisions. Used once the `DB` binding exists; R2 JSON is copied in lazily on first read and kept as a backup. Until then everything stays in R2 as before. Create it: `npx wrangler d1 create gallery`, paste the id into `wrangler.toml`, `npx wrangler d1 migrations apply gallery --remote`.
+- D1 (C1, `src/d1.js`, `gallery/migrations/`): invitations, folder locks, Main comments and likes, annotations, metadata overrides and their revisions. Used once the `DB` binding exists; R2 JSON is copied in lazily on first read and kept as a backup. Until then everything stays in R2 as before. The database `gallery` exists (id in `gallery/wrangler.toml`); apply the schema with `npx wrangler d1 migrations apply gallery --remote` before the first deploy that uses it.
 
 ### Sharing
 - Share links from Main, the archive or the apps; each draws a large preview card in iMessage, Messenger and Telegram.

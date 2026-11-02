@@ -6,7 +6,7 @@ the owner creates the database). Tested in Miniflare: `GALLERY_D1=1 node test/ro
 
 Owner actions, once:
 
-    npx wrangler d1 create gallery            # paste the printed database_id into wrangler.toml
+    npx wrangler d1 create gallery            # done: database_id is in wrangler.toml
     npx wrangler d1 migrations apply gallery --remote
 
 ## How the move from R2 works (`src/d1.js`)

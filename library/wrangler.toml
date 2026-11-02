@@ -83,12 +83,11 @@ binding = "CALENDAR"
 bucket_name = "sync"
 
 # C1: who may do what, and the conversation around items (src/d1.js; schema in migrations/). Blobs stay in R2.
-# Without this database the Worker keeps everything in R2 JSON as before. The id below is a PLACEHOLDER:
-# `wrangler deploy` fails on it until the owner runs, then pastes the printed database_id here:
-#   npx wrangler d1 create gallery
+# Without this database the Worker keeps everything in R2 JSON as before. Created with
+# `npx wrangler d1 create gallery`; the schema is applied with (once, and after each new migration):
 #   npx wrangler d1 migrations apply gallery --remote
 [[d1_databases]]
 binding = "DB"
 database_name = "gallery"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "7a7972b724b508c99a42844632b8a44c"
 migrations_dir = "migrations"
