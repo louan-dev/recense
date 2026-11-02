@@ -82,6 +82,9 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   Google Drive, Voice Memos, Notability's PDFs), kept in step both ways by Sync's `bin/docs-sync.zsh`; `Docs/INDEX.md`
   lists them by source.
 
+- Swiping (P0): only the item on stage is live; its neighbours are at most a decoded picture. Leaving an item pauses and empties its media, revokes its blob: URLs, shrinks its canvases and aborts its key detection, which now starts only after 1.5 s on one track; the AudioContext is suspended while nothing plays. A swipe within 280 ms of the last shows the cover and mounts the player once swiping stops. Back to the folder always draws (the grid is rebuilt if empty and repainted; also on `pageshow`).
+- Editing your comment: the caret lands on the character you tapped (found on pointerdown, before the keyboard moves the page); the field takes the comment's typography and the thread holds still until the viewport settles.
+- Tests: `node test/viewer.test.mjs` (in `npm test`) runs each viewer regression on iPad Air 13", MacBook Pro 13" and iPhone 12 Pro Max, portrait and landscape, touch and pointer; failures leave screenshots in `gallery/test/.shots/viewer/`.
 ### Learn mode, karaoke light and notation
 - The transcript centred in the player; each word lights as it is heard and its translation (Vietnamese, French or
   English) takes its place once read. Tap a line to go there and correct it; corrections save after a second and teach
