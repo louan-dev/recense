@@ -3530,8 +3530,9 @@
 
     if (thumbs) {
       thumbs.forEach((t, j) => t.classList.toggle("on", j === cur));
-      strip.scrollLeft = thumbs[cur].offsetLeft - (strip.clientWidth - 30) / 2;
+      strip.scrollLeft = thumbs[cur].offsetLeft + thumbs[cur].offsetWidth / 2 - strip.clientWidth / 2;
     }
+    tellShell(f);
   };
 
   // The open item is in the address (?open=<n>, which a load opens onto), so a refresh stays on it instead of
@@ -3577,6 +3578,7 @@
     document.body.style.overflow = "";
     document.body.classList.remove("lbopen", "comments-open");
     thread.hidden = true;
+    tellShell(null);
     healMain();
   };
 
@@ -3600,6 +3602,75 @@
     else healMain();
   });
   document.addEventListener("visibilitychange", () => !document.hidden && healMain());
+
+  // ----- what the viewer shell (viewer-shell.js, G3) sees of this viewer -----
+  // One active item: show() is the only place it changes, and every surface (stage, filmstrip, title, sheet)
+  // hears it through onShow, so they can never disagree. #lb carries it as data-active.
+  const shellHooks = [];
+  const tellShell = (f) => {
+    lb.dataset.active = f ? f.path || f.n || "" : "";
+    for (const fn of shellHooks) {
+      try {
+        fn(f);
+      } catch (e) {}
+    }
+  };
+  window.__galleryViewer = {
+    item: () => (lb.hidden ? null : items[cur] || null),
+    index: () => cur,
+    count: () => items.length,
+    show: (i) => show(i),
+    kind: (f) => kind(f),
+    src: (f) => src(f),
+    art: (f) => artSrc(f),
+    media: () => stageMedia(),
+    toggle: () => {
+      if (activePlayer) activePlayer.toggle();
+      else {
+        const el = stageMedia();
+        if (el) el.paused ? el.play().catch(() => {}) : el.pause();
+      }
+    },
+    isOpen: () => document.body.classList.contains("comments-open"),
+    setOpen: (o) => setOpen(o),
+    liked: () => {
+      const f = items[cur];
+      return !!(f && Array.isArray(f.likes) && f.likes.some(isMe));
+    },
+    canLike: () => canWrite() && !(G.invite && G.invite.perms && G.invite.perms.react === false),
+    like: async () => {
+      const f = items[cur];
+      await send(f, { op: "like" });
+      paintComment();
+    },
+    canShare: () => !!(G.main && window.galleryInvite),
+    share: () => {
+      const f = items[cur];
+      if (f && !f.pending && window.galleryInvite) window.galleryInvite([f]);
+    },
+    canDownload: () => !document.body.classList.contains("nodl"),
+    canDelete: () => !!(G.main && !G.invite && owner && items[cur] && !items[cur].pending),
+    del: async () => {
+      const f = items[cur];
+      if (!f || !confirm("Delete “" + f.name + "”? Deleted files stay in the trash for 30 days.")) return false;
+      const r = await fetch(MAIN_API + "/file?" + new URLSearchParams({ key: f.path }), { method: "DELETE" });
+      if (!r.ok) {
+        tell((await r.text()) || "Delete failed", true);
+        return false;
+      }
+      items.splice(items.indexOf(f), 1);
+      rebuildGrid();
+      if (items.length) show(Math.min(cur, items.length - 1));
+      else history.back();
+      return true;
+    },
+    lines: async (f) => {
+      const t = f && !f.pending ? await txFetch(f) : null;
+      return (t && Array.isArray(t.lines) && t.lines) || [];
+    },
+    folder: () => (G.dir ? G.dir.split("/").pop() : G.title || "Gallery"),
+    onShow: (fn) => shellHooks.push(fn),
+  };
 
   $("sel").onclick = () => {
     selecting = !selecting;

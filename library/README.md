@@ -53,6 +53,7 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 ## Features
 
 ### The viewer
+- Viewer shell (G3, `src/client/viewer-shell.js` + `.css`, over gallery.js through `window.__galleryViewer`): three states with a spring (stiffness 320, damping 32, mass 1) that follows the finger 1:1, translate3d and scale only, on the media layer. **A Full-bleed** (tap the media from B: 100%, no radius, chrome faded and untappable), **B Framed** (default: scale .82, radius 24px, black around; top bar with a round "<", the folder over date • time, and "•••"; bottom: scrubber, filmstrip with the active thumb centred and larger, the capsule), **C Docked** (swipe up or Info: the media docks to the top 38% with the sheet beneath; a phone on its side keeps the media beside the sheet). One active item (`#lb[data-active]`) drives stage, filmstrip, title and sheet. A click views or plays; "•••" › Go to File / Download are the only ways to the file. The 2D scrubber keeps the pointer (`touch-action:none`): sideways scrubs the track, up is fine (a word at a time with word pills when there is a transcript), down coarse again; it never moves the sheet. Capsule: Share, Favorite, Info/Transcript, Audio/EQ, Delete apart; rewind · play/pause · forward are the only glass.
 - Grid, strip and viewer; click views or plays, never downloads. Info holds Download, Rename, Change Cover, Key, native
   language and New Window.
 - Player: rewind / play / forward, time bar, Loop and A–B, Speed 0.5×…2× (pitch kept), volume. EQ panel: Low, Mid,
