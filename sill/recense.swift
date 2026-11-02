@@ -332,7 +332,21 @@ struct Word: Codable {
 }
 /// A word as the listener timed it (notes 20261029 row 35; Gallery's corrections.js `pinsOf`): lit from s to e, its light
 /// shaped by k (−1 lingers at the start and hurries at the end, 1 the reverse, 0 even).
-struct Pin: Codable, Equatable { let s: Double; let e: Double; let k: Double }
+struct Pin: Codable, Equatable {
+    let s: Double; let e: Double; let k: Double
+    /// The light traced by a finger as the word was sung (rows 40, 44): how much is lit at evenly spaced moments from
+    /// s to e (0 … 1, never going back); it outranks k (Gallery's corrections.js `traceOf`).
+    var c: [Double]? = nil
+    static func trace(_ v: Any?) -> [Double]? {
+        guard let a = v as? [Any], (2...32).contains(a.count) else { return nil }
+        var m = 0.0, out: [Double] = []
+        for x in a {
+            guard let d = (x as? NSNumber)?.doubleValue, d.isFinite else { return nil }
+            m = max(m, min(1, max(0, d))); out.append((m * 100).rounded() / 100)
+        }
+        return out
+    }
+}
 /// A syllable of a sung word: where it ends in the word's letters (code points), and when its note is sung.
 struct Syl: Codable { let c: Int; let s: Double; let e: Double }
 struct EnWord: Codable { let w: String; let s: [Int] }
@@ -668,14 +682,16 @@ struct Override: Codable, Equatable {
         return best
     }
 
-    /// A "time" override's words: JSON [[word index, start, end, sweep], …] (Gallery's corrections.js `pinsOf`, same checks).
+    /// A "time" override's words: JSON [[word index, start, end, sweep, trace?], …] (Gallery's corrections.js `pinsOf`,
+    /// same checks).
     nonisolated static func pins(_ to: String) -> [Int: Pin] {
-        guard let a = try? JSONSerialization.jsonObject(with: Data(to.utf8)) as? [[Double]] else { return [:] }
+        guard let a = try? JSONSerialization.jsonObject(with: Data(to.utf8)) as? [[Any]] else { return [:] }
         var out: [Int: Pin] = [:]
-        for x in a.prefix(200) where x.count >= 3 {
-            let i = Int(x[0]), s = x[1], e = x[2], k = x.count > 3 ? x[3] : 0
-            guard Double(i) == x[0], i >= 0, s >= 0, e > s, e - s <= 30 else { continue }
-            out[i] = Pin(s: s, e: e, k: max(-1, min(1, k)))
+        for y in a.prefix(200) where y.count >= 3 {
+            let x = y.prefix(4).map { ($0 as? NSNumber)?.doubleValue ?? .nan }
+            let i = Int(exactly: x[0]) ?? -1, s = x[1], e = x[2], k = x.count > 3 && x[3].isFinite ? x[3] : 0
+            guard i >= 0, s >= 0, e > s, e - s <= 30 else { continue }
+            out[i] = Pin(s: s, e: e, k: max(-1, min(1, k)), c: Pin.trace(y.count > 4 ? y[4] : nil))
         }
         return out
     }
@@ -2624,12 +2640,12 @@ func mix(_ a: NSColor, _ b: NSColor, _ f: Double) -> NSColor {
 }
 
 /// A word and the stretch of media time in which it's spoken.
-struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil; var un = false; var k: Double? = nil }
+struct Beat { let text: String; let start: Double; let end: Double; var syl: [Syl]? = nil; var un = false; var k: Double? = nil; var c: [Double]? = nil }
 
 func sourceBeats(_ line: Line) -> [Beat] {
     line.words.enumerated().map { i, w in
         let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm.flatMap { abs($0.k) <= 0.05 && w.syl?.isEmpty == false ? nil : $0.k })
+        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm.flatMap { $0.c != nil || abs($0.k) <= 0.05 && w.syl?.isEmpty == false ? nil : $0.k }, c: w.tm?.c)
     }
 }
 
@@ -3169,7 +3185,8 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let r3 = { (x: Double) in (x * 1000).rounded() / 1000 }
         let a = pins.keys.sorted().map { i -> String in
             let p = pins[i]!
-            return "[\(i),\(fmt(r3(p.s))),\(fmt(r3(p.e))),\(fmt((p.k * 100).rounded() / 100))]"
+            let c = p.c.map { ",[" + $0.map(fmt).joined(separator: ",") + "]" } ?? ""
+            return "[\(i),\(fmt(r3(p.s))),\(fmt(r3(p.e))),\(fmt((p.k * 100).rounded() / 100))\(c)]"
         }
         let to = a.isEmpty ? "" : "[" + a.joined(separator: ",") + "]"
         var o = edits.overrides ?? []
@@ -5281,6 +5298,11 @@ enum Cadence {
     /// spread over the time it's sung, up to where the next comes in (or 0.25 s past its end, so a breath isn't swept
     /// through), so the light slows on a held "on" and hurries through a quick var-i-a (gallery.js `fillOf`).
     static func progress(_ b: Beat, _ t: Double) -> Double {
+        if let c = b.c, c.count > 1 {        // traced by a finger: joined straight between its moments (cadence.js `fill`)
+            let u = max(0, min(1, (t - b.start) / max(0.05, b.end - b.start))) * Double(c.count - 1)
+            let j = min(c.count - 2, Int(u))
+            return c[j] + (c[j + 1] - c[j]) * (u - Double(j))
+        }
         if let k = b.k {                     // timed by the listener: one sweep shaped by k (cadence.js `fill`)
             let u = max(0, min(1, (t - b.start) / max(0.05, b.end - b.start)))
             return pow(u, pow(2, -1.5 * k))
@@ -7977,7 +7999,7 @@ final class NativeSources {
             guard let self, let ep, self.episode === ep else { return }
             for r in ep.sung where r.id != l.id && r.words.count == l.words.count && same(r) == same(l) {
                 let d = r.start - l.start
-                ep.setTiming(r, pins.mapValues { Pin(s: (($0.s + d) * 1000).rounded() / 1000, e: (($0.e + d) * 1000).rounded() / 1000, k: $0.k) }, push: true)
+                ep.setTiming(r, pins.mapValues { Pin(s: (($0.s + d) * 1000).rounded() / 1000, e: (($0.e + d) * 1000).rounded() / 1000, k: $0.k, c: $0.c) }, push: true)
             }
             self.overlay.lastKey = ""
             self.overlay.toast.say("Timed the same in its repeats")
@@ -8280,6 +8302,9 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
     private let startB = Mark(), endB = Mark()
     private let hearB = NSButton(title: "Stop", target: nil, action: nil), autoB = NSButton(title: "Auto", target: nil, action: nil)
     private let sameB = NSButton(title: "", target: nil, action: nil)
+    private let pad = LightPad()
+    private let padCap = NSTextField(labelWithString: "")
+    private var padTimer: Timer?
     private var cur = 0
     private var looping = false
     /// The stretch being heard round: the chosen word as it's now set.
@@ -8303,6 +8328,96 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
             layer?.backgroundColor = picked ? NSColor(white: 1, alpha: 0.14).cgColor : nil
             attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: timed ? gold : NSColor(white: 1, alpha: 0.75), .font: font ?? .systemFont(ofSize: 12)])
         }
+    }
+
+    /// The light between Start and End (gallery notes 20261029 rows 40, 44), as Gallery's .txlight: drawn as it fills the
+    /// word from A to B, the moment playing as a line across it. Drag up or down for its speed (faster or slower at
+    /// first); slide along it as the word is sung and it copies the pointer (stopped: draw the path, across is time,
+    /// up is lit); double-click (or ⌫) gives it back to the voice; ↑ ↓ change the speed.
+    final class LightPad: NSView {
+        var curve: (Double) -> Double = { $0 }
+        var playhead: () -> Double? = { nil }
+        var playing: () -> Bool = { false }
+        var bend: ((Double, Bool) -> Void)?, traced: (([Double]) -> Void)?, toVoice: (() -> Void)?
+        private var drag: (p: NSPoint, k0: Double, mode: Int, pts: [(u: Double, p: Double)])?
+        var k0: () -> Double = { 0 }
+        override var acceptsFirstResponder: Bool { true }
+        override var isFlipped: Bool { false }
+        private func X(_ u: Double) -> CGFloat { 10 + CGFloat(u) * (bounds.width - 20) }
+        private func Y(_ p: Double) -> CGFloat { 8 + CGFloat(p) * (bounds.height - 16) }
+        override func draw(_ r: NSRect) {
+            NSColor(white: 1, alpha: 0.08).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12).fill()
+            let d = NSBezierPath(); d.move(to: NSPoint(x: X(0), y: Y(0))); d.line(to: NSPoint(x: X(1), y: Y(1)))
+            NSColor(white: 1, alpha: 0.12).setStroke(); d.lineWidth = 1; d.stroke()
+            let c = NSBezierPath()
+            for j in 0...48 { let u = Double(j) / 48, q = NSPoint(x: X(u), y: Y(curve(u))); j == 0 ? c.move(to: q) : c.line(to: q) }
+            NSColor(red: 1, green: 0.84, blue: 0.2, alpha: 1).setStroke(); c.lineWidth = 2.5; c.lineJoinStyle = .round; c.lineCapStyle = .round; c.stroke()
+            if let g = drag, g.mode == 2, g.pts.count > 1 {
+                let t = NSBezierPath()
+                for (j, q) in g.pts.enumerated() { let n = NSPoint(x: X(q.u), y: Y(q.p)); j == 0 ? t.move(to: n) : t.line(to: n) }
+                NSColor(red: 0.5, green: 0.74, blue: 1, alpha: 0.9).setStroke(); t.lineWidth = 2.5; t.stroke()
+            }
+            if let u = playhead(), u >= 0, u <= 1 {
+                let h = NSBezierPath(); h.move(to: NSPoint(x: X(u), y: 4)); h.line(to: NSPoint(x: X(u), y: bounds.height - 4))
+                NSColor(white: 1, alpha: 0.7).setStroke(); h.lineWidth = 1.5; h.stroke()
+            }
+            if window?.firstResponder === self {
+                NSColor(red: 0.04, green: 0.52, blue: 1, alpha: 0.8).setStroke()
+                let o = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 11, yRadius: 11); o.lineWidth = 2; o.stroke()
+            }
+        }
+        private func at(_ e: NSEvent) -> (u: Double, p: Double) {
+            let q = convert(e.locationInWindow, from: nil)
+            let fx = Double(max(0, min(1, (q.x - 10) / max(1, bounds.width - 20))))
+            let fy = Double(max(0, min(1, (q.y - 8) / max(1, bounds.height - 16))))
+            if playing(), let u = playhead() { return (u, fx) }
+            return (fx, fy)
+        }
+        override func mouseDown(with e: NSEvent) {
+            window?.makeFirstResponder(self)
+            if e.clickCount == 2 { drag = nil; toVoice?(); return }
+            drag = (convert(e.locationInWindow, from: nil), k0(), 0, [])
+        }
+        override func mouseDragged(with e: NSEvent) {
+            guard var g = drag else { return }
+            let q = convert(e.locationInWindow, from: nil), dx = q.x - g.p.x, dy = q.y - g.p.y
+            if g.mode == 0 {
+                guard max(abs(dx), abs(dy)) >= 6 else { return }
+                g.mode = abs(dy) > abs(dx) ? 1 : 2
+            }
+            if g.mode == 1 { drag = g; bend?(max(-1, min(1, ((g.k0 + Double(dy) / 60) * 20).rounded() / 20)), false); return }
+            let a = at(e)
+            if a.u >= -0.05, a.u <= 1.05 { g.pts.append((max(0, min(1, a.u)), a.p)) }
+            drag = g; needsDisplay = true
+        }
+        override func mouseUp(with e: NSEvent) {
+            guard let g = drag else { return }
+            drag = nil
+            if g.mode == 1 { bend?(k0(), true); return }
+            guard g.mode == 2, g.pts.count >= 3 else { needsDisplay = true; return }
+            // sixteen moments of the word, each lit as far as the pointer was then, never going back (as Gallery)
+            let pts = [(u: 0.0, p: 0.0)] + g.pts.sorted { $0.u < $1.u } + [(u: 1.0, p: 1.0)]
+            var c: [Double] = [], m = 0.0, k = 1
+            for j in 0..<16 {
+                let u = Double(j) / 15
+                while k < pts.count - 1 && pts[k].u < u { k += 1 }
+                let a = pts[k - 1], b = pts[k]
+                let p = b.u > a.u ? a.p + (b.p - a.p) * (u - a.u) / (b.u - a.u) : b.p
+                m = max(m, min(1, p)); c.append((m * 100).rounded() / 100)
+            }
+            c[15] = 1
+            traced?(c)
+        }
+        override func keyDown(with e: NSEvent) {
+            switch e.keyCode {
+            case 126, 125: bend?(max(-1, min(1, ((k0() + (e.keyCode == 126 ? 0.1 : -0.1)) * 20).rounded() / 20)), true)
+            case 51, 117: toVoice?()
+            default: super.keyDown(with: e)
+            }
+        }
+        override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
+        override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
     }
 
     /// A mark: a tap sets it to what is heard; two fingers along it (or ← →) move it a hundredth at a time. Drawn as
@@ -8394,7 +8509,22 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         for b in [hearB, autoB, sameB] { b.isBordered = false; b.contentTintColor = .linkColor }
         let marks = NSStackView(views: [startB, endB]); marks.spacing = 12
         let buttons = NSStackView(views: [hearB, autoB, sameB]); buttons.spacing = 14
-        let stack = NSStackView(views: [field, words, marks, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        pad.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        pad.widthAnchor.constraint(equalToConstant: 332).isActive = true
+        padCap.font = .systemFont(ofSize: 10.5, weight: .medium); padCap.textColor = NSColor(red: 0.5, green: 0.74, blue: 1, alpha: 1)
+        padCap.alignment = .center
+        let light = NSStackView(views: [pad, padCap]); light.orientation = .vertical; light.spacing = 2
+        pad.k0 = { [weak self] in guard let self else { return 0 }; return self.pinOf(self.cur).k }
+        pad.playing = { [weak self] in self?.looping ?? false }
+        pad.playhead = { [weak self] in
+            guard let self, let n = self.now?() else { return nil }
+            let p = self.pinOf(self.cur); return (n - p.s) / max(0.05, p.e - p.s)
+        }
+        pad.curve = { [weak self] u in self?.lightAt(u) ?? u }
+        pad.bend = { [weak self] k, push in self?.shape(k: k, c: nil, push: push) }
+        pad.traced = { [weak self] c in self?.shape(k: 0, c: c, push: true) }
+        pad.toVoice = { [weak self] in self?.shape(k: 0, c: nil, push: true) }
+        let stack = NSStackView(views: [field, words, marks, light, buttons]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
         stack.setCustomSpacing(10, after: words)
         stack.edgeInsets = NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16)
         win.contentView = stack
@@ -8407,9 +8537,28 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         win.setFrameOrigin(NSPoint(x: f.midX - win.frame.width / 2, y: max(40, f.minY - win.frame.height - 8)))
         win.orderFront(nil); win.makeKey()
         startLoop()
+        padTimer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pad.needsDisplay = true }
+        }
     }
     func close() { win.close() }
-    func windowWillClose(_ n: Notification) { if looping { hear?(nil, nil) }; onClose?() }
+    func windowWillClose(_ n: Notification) { padTimer?.invalidate(); padTimer = nil; if looping { hear?(nil, nil) }; onClose?() }
+
+    /// How much of the chosen word is lit u of the way from its start to its end, as the light will draw it.
+    private func lightAt(_ u: Double) -> Double {
+        var w = line.words[cur]; w.tm = pinOf(cur)
+        let ln = Cadence.pin([Line(id: line.id, words: [w], english: nil)])
+        guard let b = ln.first.map(sourceBeats)?.first else { return u }
+        let p = pinOf(cur)
+        return Cadence.progress(b, p.s + u * (p.e - p.s))
+    }
+    /// The chosen word's light reshaped: a speed (k), a trace (c), or neither (the voice).
+    private func shape(k: Double, c: [Double]?, push: Bool) {
+        let p = pinOf(cur)
+        pins[cur] = Pin(s: p.s, e: p.e, k: c == nil ? k : 0, c: c)
+        labels()
+        changed(pins, push)
+    }
 
     private func auto(_ i: Int) -> Pin { let w = line.words[i]; return Pin(s: w.start, e: max(w.end, w.start + 0.05), k: 0) }
     private func pinOf(_ i: Int) -> Pin { pins[i] ?? auto(i) }
@@ -8422,14 +8571,16 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         let p = pinOf(cur)
         func t(_ x: Double) -> String { String(format: "%d:%05.2f", Int(x) / 60, x.truncatingRemainder(dividingBy: 60)) }
         startB.value = t(p.s); endB.value = t(p.e)
+        padCap.stringValue = p.c != nil ? "Traced" : abs(p.k) <= 0.05 ? "Follows the voice" : p.k > 0 ? "Faster at first" : "Slower at first"
+        pad.needsDisplay = true
         for c in chips { c.picked = c.tag == cur; c.timed = pins[c.tag] != nil }
     }
-    /// The word's span with one end moved (the other kept 50 ms clear of it); the light follows the voice (k 0).
+    /// The word's span with one end moved (the other kept 50 ms clear of it); its light keeps its shape.
     private func set(start: Bool, _ x: Double, push: Bool) {
         let p = pinOf(cur)
         var a = p.s, b = p.e
         if start { a = max(0, x); b = max(b, a + 0.05) } else { b = max(x, a + 0.05) }
-        pins[cur] = Pin(s: (a * 1000).rounded() / 1000, e: (b * 1000).rounded() / 1000, k: 0)
+        pins[cur] = Pin(s: (a * 1000).rounded() / 1000, e: (b * 1000).rounded() / 1000, k: p.k, c: p.c)
         labels()
         changed(pins, push)
     }

@@ -272,7 +272,7 @@ extension Cadence {
                 var x = w.timed(p.s, p.e); x.un = nil
                 // Sweep left at 0 (and syllables heard): the ear sets where the word starts and ends, the voice still
                 // shapes it inside, each syllable kept in its share of the word's time (cadence.js `rescale`)
-                if abs(p.k) <= 0.05, let syl = w.syl, !syl.isEmpty {
+                if p.c == nil, abs(p.k) <= 0.05, let syl = w.syl, !syl.isEmpty {
                     let f = { (t: Double) in p.s + (t - w.start) * (p.e - p.s) / max(0.05, w.end - w.start) }
                     x.syl = syl.map { Syl(c: $0.c, s: f($0.s), e: f($0.e)) }
                 } else { x.syl = nil }
