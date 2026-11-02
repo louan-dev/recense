@@ -188,8 +188,9 @@ struct FolderView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var covers: [String: UIImage] = [:]
-    @State private var shownCovers: [String: UIImage] = [:]  // covers with their text blurred at coverBlur
-    @AppStorage("coverBlur") private var coverBlur = "medium"
+    @State private var shownCovers: [String: UIImage] = [:]  // covers with their text blurred at each card's level
+    @State private var coverLevels: [String: String] = [:]
+    @State private var editingCover: CoverTarget?  // Edit Cover: which card's cover and blur (notes 20261029 item 16)
     private let feed = Feed()
 
     init(path: String) { _folder = StateObject(wrappedValue: Folder(path)) }
@@ -223,7 +224,6 @@ struct FolderView: View {
                     .padding(16)
                 }
                 .task { await loadCovers() }
-                .onChange(of: coverBlur) { _, lv in for (k, im) in covers { shownCovers[k] = blurText(im, lv) } }
             } else if asList {
                 List(shown, id: \.id) { r in row(r) }.listStyle(.plain)
             } else {
@@ -245,17 +245,6 @@ struct FolderView: View {
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
-            // the Archive's front page: how much the covers' text is blurred (notes 20261029 item 16)
-            if folder.path == Gallery.rootPath {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Picker("Cover Blur", selection: $coverBlur) {
-                            Text("Off").tag("off"); Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
-                        }
-                    } label: { Label("Cover Blur", systemImage: "drop.halffull") }
-                    .foregroundStyle(.white)
-                }
-            }
             // Select sits right of the … menu, as on the site; Cancel leaves Select mode
             ToolbarItem(placement: .primaryAction) {
                 Button(selecting ? "Cancel" : "Select") { selecting.toggle(); if !selecting { picked = [] } }
@@ -284,6 +273,12 @@ struct FolderView: View {
         }
         .sheet(item: $sending) { ActivityView(items: $0.urls).presentationDetents([.medium, .large]) }
         .sheet(item: $saving) { ExportView(urls: $0.urls) }
+        .sheet(item: $editingCover) { t in
+            CoverEditor(folders: shown.filter { $0.dir && $0.name != "Data" }.map(\.name), folder: t.folder) {
+                covers = [:]; shownCovers = [:]
+                Task { await loadCovers() }
+            }
+        }
         .task { folder.load() }
         .overlay(alignment: .bottom) {
             if let l = linking {
@@ -343,6 +338,9 @@ struct FolderView: View {
                 Button { linkFor = .invite } label: { Label("Invite", systemImage: "person.badge.plus") }
             }
             .disabled(chosen.isEmpty)
+            if folder.path == Gallery.rootPath, let first = (shown.first { $0.dir && picked.contains($0.id) } ?? shown.first { $0.dir && $0.name != "Data" }) {
+                Button { editingCover = CoverTarget(folder: first.name) } label: { Label("Edit Cover", systemImage: "photo.on.rectangle") }
+            }
             Section {
                 Menu {
                     Button { photos = true } label: { Label("Photos", systemImage: "photo.on.rectangle") }
@@ -493,6 +491,9 @@ struct FolderView: View {
                     Button(name) { share(r, days: days) }
                 }
             } label: { Label(r.dir ? "Share Folder Link" : "Share Link", systemImage: "square.and.arrow.up") }
+            if r.dir && folder.path == Gallery.rootPath && r.name != "Data" {
+                Button { editingCover = CoverTarget(folder: r.name) } label: { Label("Edit Cover", systemImage: "photo.on.rectangle") }
+            }
         }
     }
 
@@ -538,22 +539,17 @@ struct FolderView: View {
         }
     }
 
-    // each top folder's first picture, from /main/archive?covers=1 (a video folder keeps its icon)
+    // each top folder's cover (the one chosen in Edit Cover, else its first picture) and its blur level, from
+    // /main/archive?covers=1 (a video folder keeps its icon)
     private func loadCovers() async {
-        guard covers.isEmpty, let d = Token.read(), let t = try? JSONDecoder().decode([String: String].self, from: d),
-              let id = t["id"], let secret = t["secret"], let host = Gallery.base.host else { return }
-        func get(_ path: String) async -> Data? {
-            guard let u = URL(string: "https://\(host)\(path)") else { return nil }
-            var r = URLRequest(url: u)
-            r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
-            r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
-            return try? await URLSession.shared.data(for: r).0
-        }
-        struct Cover: Decodable { let src: String; let video: Bool? }
+        guard covers.isEmpty else { return }
+        struct Cover: Decodable { let src: String; let video: Bool?; let blur: String? }
         struct Covers: Decodable { let covers: [String: Cover] }
-        guard let j = await get("/main/archive?covers=1"), let c = try? JSONDecoder().decode(Covers.self, from: j) else { return }
+        guard let j = await siteData("/main/archive?covers=1"), let c = try? JSONDecoder().decode(Covers.self, from: j) else { return }
         for (name, cv) in c.covers where cv.video != true {
-            if let data = await get(cv.src), let im = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 400, height: 400)) { covers[name] = im; shownCovers[name] = blurText(im, coverBlur) }
+            if let data = await siteData(cv.src), let im = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 400, height: 400)) {
+                covers[name] = im; coverLevels[name] = cv.blur ?? "medium"; shownCovers[name] = blurText(im, cv.blur ?? "medium")
+            }
         }
     }
 
@@ -646,6 +642,113 @@ extension Folder {
             cursor = next
         } while cursor != nil
         return out
+    }
+}
+
+/// A request to the site with the app's access token (GET, or POST with a JSON body)
+func siteData(_ path: String, post body: [String: Any]? = nil) async -> Data? {
+    guard let d = Token.read(), let t = try? JSONDecoder().decode([String: String].self, from: d),
+          let id = t["id"], let secret = t["secret"], let host = Gallery.base.host,
+          let u = URL(string: "https://\(host)\(path)") else { return nil }
+    var r = URLRequest(url: u)
+    r.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+    r.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+    if let body {
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    }
+    guard let (data, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+    return data
+}
+
+struct CoverTarget: Identifiable { let folder: String; var id: String { folder } }
+
+/// Edit Cover (notes 20261029 item 16): pick the picture an Archive card wears and how much its text is blurred,
+/// as the site's panel does; saved to /main/api/cards for the app and the site alike.
+struct CoverEditor: View {
+    let folders: [String]
+    @State var folder: String
+    var saved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    struct Pic: Decodable, Identifiable { let path: String; let name: String; let src: String; let video: Bool?; var id: String { path } }
+    struct Card: Decodable { let file: String?; let blur: String? }
+    struct Listing: Decodable { let card: Card; let files: [Pic] }
+    @State private var pics: [Pic] = []
+    @State private var thumbs: [String: UIImage] = [:]
+    @State private var file: String?
+    @State private var original: String?
+    @State private var blur = "medium"
+    @State private var preview: UIImage?
+    @State private var saving = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    if folders.count > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack { ForEach(folders, id: \.self) { f in
+                                Button(f) { folder = f }.buttonStyle(.bordered).tint(f == folder ? .accentColor : .gray)
+                            } }.padding(.horizontal)
+                        }
+                    }
+                    ZStack {
+                        Color(.secondarySystemBackground)
+                        if let preview { Image(uiImage: preview).resizable().scaledToFill() }
+                    }
+                    .frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    Picker("Blur", selection: $blur) {
+                        Text("Off").tag("off"); Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
+                    }
+                    .pickerStyle(.segmented).padding(.horizontal)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
+                        ForEach(pics.filter { $0.video != true }) { p in
+                            Button { file = p.path } label: {
+                                ZStack { Color(.secondarySystemBackground); if let im = thumbs[p.path] { Image(uiImage: im).resizable().scaledToFill() } }
+                                    .aspectRatio(1, contentMode: .fit).clipped()
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: (file ?? pics.first?.path) == p.path ? 3 : 0))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                            .task { if thumbs[p.path] == nil, let d = await siteData(p.src), let im = UIImage(data: d)?.preparingThumbnail(of: CGSize(width: 300, height: 300)) { thumbs[p.path] = im; redraw() } }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle("Edit Cover").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { save() }.disabled(saving) }
+            }
+            .task(id: folder) { await load() }
+            .onChange(of: blur) { redraw() }
+            .onChange(of: file) { redraw() }
+        }
+    }
+
+    private func load() async {
+        pics = []; preview = nil
+        var q = URLComponents(); q.queryItems = [.init(name: "place", value: "archive"), .init(name: "folder", value: folder)]
+        guard let d = await siteData("/main/api/cards?" + (q.percentEncodedQuery ?? "")), let l = try? JSONDecoder().decode(Listing.self, from: d) else { return }
+        pics = l.files; file = l.card.file; original = l.card.file; blur = l.card.blur ?? "medium"
+    }
+
+    private func redraw() {
+        let p = file ?? pics.first { $0.video != true }?.path
+        preview = p.flatMap { thumbs[$0] }.map { blurText($0, blur) }
+    }
+
+    private func save() {
+        saving = true
+        var body: [String: Any] = ["place": "archive", "folder": folder, "blur": blur]
+        if let file, file != original { body["file"] = file }
+        Task {
+            _ = await siteData("/main/api/cards", post: body)
+            saved(); dismiss()
+        }
     }
 }
 

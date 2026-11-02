@@ -21,6 +21,7 @@ import { getGalleryData, liveLinks, expireLink, linkApi } from "./public.js";
 import { liveInvites, revokeInvite, inviteApi } from "./invite.js";
 import { listFolder } from "./main.js";
 import js from "./client/sharedview.js";
+import coverBlur from "./client/coverblur.js";
 import css from "./client/sharedview.css";
 
 const ACTIVITY = "activity/";
@@ -98,7 +99,7 @@ async function linkShare(env, l) {
   const title =
     l.kind === "folder" ? l.folder : !items.length ? "Share Link" : items.length === 1 ? bare(items[0].name) : bare(items[0].name) + " & " + (items.length - 1) + " more";
 
-  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp, perms: d.perms || { upload: false, download: true }, coverItem: d.coverItem || null }, items, d.coverItem);
+  return shareOf({ kind: "link", id: l.id, type: l.kind, title, who: "", url: "/s/" + l.id, created: l.created, exp: l.exp, perms: d.perms || { upload: false, download: true }, coverItem: d.coverItem || null, blur: d.coverBlur || "medium" }, items, d.coverItem);
 }
 
 async function inviteShare(env, inv) {
@@ -220,6 +221,7 @@ export function sharedPage(url) {
 <body>
 <main id="app" aria-live="polite"></main>
 <script>window.SHARED=${data};</script>
+<script>${coverBlur}</script>
 <script>${js}</script>
 </body>
 </html>`);

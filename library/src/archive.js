@@ -9,6 +9,7 @@
 // Paths are inside archive/; the bucket's dot folders (.catalog, .trash, .uploads) are never reachable.
 
 import { OWNER, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, cleanPath, urlPath, esc, notice, jsonResponse, serveObject } from "./common.js";
+import { cardCovers } from "./main.js";
 import { galleryPage } from "./page/gallery.js";
 
 const ROOT = "archive/";
@@ -135,12 +136,17 @@ async function archiveFolder(env, url) {
   // GET /main/archive?covers=1  each top folder's first picture or video, for the app's Archive cards (notes 20261029 item 16)
   if (!rel && url.searchParams.get("covers") === "1") {
     const covers = {};
+    const cards = await cardCovers(env);
     await Promise.all(
       subs.filter((x) => x !== DATA).slice(0, 60).map(async (x) => {
+        // the cover chosen in Edit Cover, at its blur level (notes 20261029 item 16)
+        const c = cards["archive/" + x] || {};
+        if (c.file && (await env.ARCHIVE.head(ROOT + c.file).catch(() => null)))
+          return (covers[x] = { src: "/main/archive/f/" + urlPath(c.file), video: /\.(mp4|mov|m4v|webm)$/i.test(c.file), blur: c.blur || "medium" });
         const r = await env.ARCHIVE.list({ prefix: ROOT + x + "/", limit: 100 }).catch(() => null);
         const pick = (re) => ((r && r.objects) || []).find((o) => re.test(o.key) && !JUNK.test(o.key.split("/").pop()));
         const o = pick(/\.(jpe?g|png|gif|webp|heic|avif)$/i) || pick(/\.(mp4|mov|m4v|webm)$/i);
-        if (o) covers[x] = { src: "/main/archive/f/" + urlPath(o.key.slice(ROOT.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key) };
+        if (o) covers[x] = { src: "/main/archive/f/" + urlPath(o.key.slice(ROOT.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key), blur: c.blur || "medium" };
       }),
     );
     return jsonResponse({ covers });

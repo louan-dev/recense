@@ -82,6 +82,10 @@ ${css}${live.main ? "\n" + assistantCss : ""}</style>
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
         Add Media
       </button>
+      <button class="mi" role="menuitem" id="m-cov" type="button" hidden>
+        <svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 16l5-5 4 4 2-2 5 5M15 9h.01"/></svg>
+        Edit Cover
+      </button>
       <button class="mi" role="menuitem" id="m-dir" type="button" hidden>
         <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v6M9 13h6"/></svg>
         New Folder
@@ -287,6 +291,7 @@ const ownerMenu = () => {
   qs('#m-del').hidden = !!G.main;       // Main folders are deleted on the Mac, not here
   qs('#m-add').hidden = !G.main;
   qs('#m-dir').hidden = !G.main;
+  qs('#m-cov').hidden = !(G.main && window.coverEditor && document.querySelector('.mainnav .fs.cards .fd'));
   if (G.main) loadInvites();
 };
 
@@ -301,6 +306,24 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { setMenu(fa
 qs('#m-add').addEventListener('click', () => { setMenu(false); qs('#up').click(); });
 
 /* New Folder (Main): made in R2 inside this folder; it shows as a chip after the reload */
+/* Edit Cover (notes 20261029 item 16): the front page's card covers, which file each wears and how much its text
+   is blurred; starts on the selected card, else the first */
+qs('#m-cov').addEventListener('click', () => {
+  setMenu(false);
+  const cards = [...document.querySelectorAll('.mainnav .fs.cards .fd[data-p]')];
+  const on = cards.find(a => a.classList.contains('on')) || cards[0];
+  if (!on) return;
+  coverEditor.open({
+    folders: cards.map(a => a.dataset.p),
+    folder: on.dataset.p,
+    load: folder => fetch('/main/api/cards?' + new URLSearchParams({ place: 'main', folder }), { headers: H, cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => ({ files: (d.files || []).map(f => ({ ...f, value: f.path })), file: d.card.file || null, blur: d.card.blur })),
+    save: (folder, ch) => fetch('/main/api/cards', { method: 'POST', headers: { ...H, 'content-type': 'application/json' }, body: JSON.stringify({ place: 'main', folder, ...ch }) })
+      .then(r => { if (!r.ok) throw new Error(); location.reload(); }),
+  });
+});
+
 qs('#m-dir').addEventListener('click', async () => {
   setMenu(false);
   const name = (prompt('New Folder', '') || '').trim();

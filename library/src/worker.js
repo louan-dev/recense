@@ -20,7 +20,7 @@ import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
 import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTranscriptWrite, linkApi, deleteFromLink, commentApi, guestCommentApi, guestUploadApi, upload, gallery, galleryApi, file, folderFile, ogImage } from "./public.js";
-import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
+import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, cardsApi, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
 import { sharesApi, sharedPage, activitySweep } from "./shared.js";
 import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, rateSweep } from "./transcript.js";
@@ -112,6 +112,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     if (path === "/main/api/folders" && read) return mainFolders(env, url);
     if (path === "/main/api/folder" && method === "POST") return mainNewFolder(req, env);
     if (path === "/main/api/move" && method === "POST") return mainMove(req, env);
+    if (path === "/main/api/cards" && (read || method === "POST")) return cardsApi(req, env);
     if (path === "/main/api/cover" && method === "PUT") return mainCover(req, env, url);
     if (path === "/main/api/cover" && method === "DELETE") return mainCoverDelete(env, url);
     if (path === "/main/api/key" && method === "PUT") return mainKey(req, env);

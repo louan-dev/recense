@@ -14,6 +14,7 @@ import { logActivity, unlogLike } from "./shared.js";
 import { liveInvites } from "./invite.js";
 
 const LINKS = "links/";
+const BLURS = ["off", "low", "medium", "high"];
 
 // An upload that has shown no sign of life for this long is shown as "paused".
 const STALL_MS = 15 * 60 * 1000;
@@ -162,9 +163,10 @@ export async function linkApi(req, env, url) {
     if (b.cover === null) delete manifest.coverItem;
     else if (b.cover != null && known.has(String(b.cover))) manifest.coverItem = String(b.cover);
     if ("cover" in b) manifest.coverAt = Number(b.v) || Date.now();
+    if (BLURS.includes(b.blur)) manifest.coverBlur = b.blur;
 
     await writeManifest(env, manifest);
-    return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, v: manifest.coverAt || 0 });
+    return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, blur: manifest.coverBlur || "medium", v: manifest.coverAt || 0 });
   }
 
   // POST /main/api/link?action=perms&id=ID   body: { upload?, download? } -> { ok, perms }
@@ -340,6 +342,27 @@ async function putLinkCover(env, key, pic) {
 
 // A Main file's cover changed (pic) or was deleted (null): every live upload link made from that
 // file gets the same, so its grid matches Main's. Folder links show the Public bucket, not Main.
+// a Main file renamed (or moved): links made from it show the new name everywhere, Activity included (notes item 16)
+export async function renameInLinks(env, rel, to) {
+  const now = Date.now();
+  let cursor;
+  do {
+    const r = await env.PUBLIC.list({ prefix: LINKS, delimiter: "/", cursor });
+    await Promise.all(
+      (r.delimitedPrefixes || []).map(async (p) => {
+        const id = p.slice(LINKS.length, -1);
+        if (!ID_RE.test(id)) return;
+        const manifest = await readManifest(env, id);
+        if (!manifest || !(Number(manifest.exp) > now)) return;
+        let hit = false;
+        for (const it of manifest.items || []) if (it.src === rel) { it.src = to; it.name = to.split("/").pop().slice(0, 120); hit = true; }
+        if (hit) await writeManifest(env, manifest);
+      })
+    );
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+}
+
 export async function syncLinkCovers(env, rel, pic) {
   const now = Date.now();
   let cursor;
@@ -1360,6 +1383,9 @@ export async function getGalleryData(env, id) {
     try {
       rawName = decodeURIComponent(meta.name || "file");
     } catch (e) {}
+    // a Main file renamed after it was shared: the manifest carries the new name (renameInLinks, notes item 16)
+    const mi = manifestItems.find((it) => String(it.i).padStart(3, "0") === n);
+    if (mi && mi.name) rawName = mi.name;
 
     const ctype =
       (o.httpMetadata && o.httpMetadata.contentType) || "application/octet-stream";
@@ -1441,6 +1467,7 @@ export async function getGalleryData(env, id) {
     items: items.map(({ exp, ...f }) => f),
     ...(manifest && manifest.view ? { view: manifest.view } : {}),
     ...(manifest && manifest.coverItem ? { coverItem: String(manifest.coverItem) } : {}),
+    ...(manifest && manifest.coverBlur ? { coverBlur: manifest.coverBlur } : {}),
     ...(manifest && manifest.order ? { order: manifest.order } : {}),
     ...(manifest && manifest.coverAt ? { coverAt: manifest.coverAt } : {}),
     perms: linkPerms(manifest),

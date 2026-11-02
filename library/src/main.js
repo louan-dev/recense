@@ -10,7 +10,7 @@
 import { OWNER, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, esc, notice, jsonResponse, serveObject } from "./common.js";
 import { extractArt } from "./art.js";
 import coverBlur from "./client/coverblur.js";
-import { mainComments, dropMainComment, renameComment, commentFields, syncLinkCovers } from "./public.js";
+import { mainComments, dropMainComment, renameComment, renameInLinks, commentFields, syncLinkCovers } from "./public.js";
 import { newHead, picType } from "./tagwrite.js";
 import { renameInInvites } from "./invite.js";
 import { galleryPage } from "./page/gallery.js";
@@ -332,21 +332,26 @@ export async function mainFolder(env, url) {
   // on the front page each collection is a rounded square card wearing its first picture or video, in a 2-column
   // grid that scrolls down (notes 20261029 item 16); inside a folder the chips stay as they are
   const covers = new Map();
+  const cards = rel ? {} : await cardCovers(env);
   if (!rel)
     await Promise.all(
       subs.slice(0, 60).map(async (x) => {
+        const c = cards["main/" + x] || {};
+        if (c.file && (await env.MAIN.head(FILES + c.file).catch(() => null)))
+          return covers.set(x, { src: "/main/f/" + urlPath(c.file), video: /\.(mp4|mov|m4v|webm)$/i.test(c.file), blur: c.blur });
         const r = await env.MAIN.list({ prefix: FILES + x + "/", limit: 100 }).catch(() => null);
         const pick = (re) => ((r && r.objects) || []).find((o) => re.test(o.key) && !JUNK.test(o.key.split("/").pop()));
         const o = pick(/\.(jpe?g|png|gif|webp|heic|avif)$/i) || pick(/\.(mp4|mov|m4v|webm)$/i);
-        if (o) covers.set(x, { src: "/main/f/" + urlPath(o.key.slice(FILES.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key) });
+        if (o) covers.set(x, { src: "/main/f/" + urlPath(o.key.slice(FILES.length)), video: /\.(mp4|mov|m4v|webm)$/i.test(o.key), blur: c.blur });
       }),
     );
   const cover = (x) => {
     const c = covers.get(x);
     if (!c) return `<span class="cv"></span>`;
+    const lv = ` data-lv="${esc(c.blur || "medium")}"`;
     return c.video
-      ? `<span class="cv"><video src="${esc(c.src)}#t=0.1" preload="metadata" muted playsinline></video></span>`
-      : `<span class="cv"><img src="${esc(c.src)}" loading="lazy" alt=""></span>`;
+      ? `<span class="cv"${lv}><video src="${esc(c.src)}#t=0.1" preload="metadata" muted playsinline></video></span>`
+      : `<span class="cv"${lv}><img src="${esc(c.src)}" loading="lazy" alt=""></span>`;
   };
   const links = subs
     .map((x) => `<a class="fd" href="${go((rel ? rel + "/" : "") + x)}" data-p="${esc((rel ? rel + "/" : "") + x)}" data-k="${encodeURIComponent(keyOf(x))}">${rel ? esc(x) : `${cover(x)}<b>${esc(x)}</b>`}</a>`)
@@ -364,7 +369,7 @@ export async function mainFolder(env, url) {
   var ini=function(n){return String(n||"").trim().split(/\\s+/).slice(0,2).map(function(w){return w[0]||""}).join("").toUpperCase()};
   var card=function(s){
     var a=document.createElement("a");a.className="al";a.href="/main/shared#s/"+s.kind+"/"+s.id;a.draggable=false;
-    if(s.cover&&!s.coverVideo){var im=document.createElement("img");im.loading="lazy";im.src=s.cover;im.alt="";a.appendChild(im)}
+    if(s.cover&&!s.coverVideo){var im=document.createElement("img");im.loading="lazy";im.src=s.cover;im.alt="";a.dataset.lv=s.blur||"medium";a.appendChild(im)}
     var i=document.createElement("i");i.textContent=s.who?ini(s.who):"\u{1F517}";a.appendChild(i);
     var b=document.createElement("b");b.textContent=s.title;a.appendChild(b);
     return a;
@@ -435,15 +440,12 @@ body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 
 .mainnav .fs.dragging{cursor:grabbing}
 .mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2 class="ch">Collections<span id="cbslot"></span></h2><div class="fs${rel ? "" : " cards"}"${rel ? "" : " data-blur"}>${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>${rel ? "" : `<script>${coverBlur}</script><script>(function(){var s=document.getElementById("cbslot");if(s&&window.coverBlur)s.appendChild(coverBlur.control());coverBlur.apply(document)})()</script>`}
+<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2 class="ch">Collections</h2><div class="fs${rel ? "" : " cards"}"${rel ? "" : " data-blur"}>${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>${rel ? "" : `<script>${coverBlur}</script><script>coverBlur.apply(document)</script>`}
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}
 .mainnav canvas.cb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
 .mainnav .sa .al canvas.cb{z-index:0}
-.mainnav h2.ch{display:flex;align-items:baseline;gap:10px}
-.mainnav .cbctl{margin-left:auto;border:0;background:none;color:#fff;font:400 15px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;padding:4px 0}
-.mainnav .cbctl:hover,.mainnav .cbctl:active{color:#0a84ff}
 .mainnav .fs.cards{grid-template-rows:none;grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-columns:auto;gap:12px;overflow:visible;cursor:default;touch-action:pan-y}
 .mainnav .fs.cards .fd{position:relative;aspect-ratio:1;padding:0;border-radius:24px;overflow:hidden;display:block;background:#1c1c1e}
 .mainnav .fs.cards .cv{position:absolute;inset:0}
@@ -897,6 +899,7 @@ export async function mainRename(req, env) {
   await copyObject(env, ART + rel, ART + to).catch(() => {});
   await env.MAIN.delete(ART + rel).catch(() => {});
   await renameComment(env, rel, to).catch(() => {});
+  await renameInLinks(env, rel, to).catch(() => {});
   await moveMainKey(env, rel, to).catch(() => {});
   await renameInInvites(env, dir, rel.split("/").pop(), name).catch(() => {});
 
@@ -1088,6 +1091,63 @@ async function retag(env, rel, head, pic, why) {
   // the file as it was stays in the trash for 30 days; nothing to keep when nothing was written
   if (!put) await env.MAIN.delete(backup).catch(() => {});
   return !!put;
+}
+
+// Front-page cards' covers (notes 20261029 item 16): which file a folder card wears and how much its text is
+// blurred, chosen in the Edit Cover panel. One small object for Main's and the Archive's top folders:
+//   cards.json  { "main/<folder>": { file?: "<folder>/…", blur?: "off"|"low"|"medium"|"high" }, "archive/<folder>": … }
+const CARDS = "cards.json";
+const BLURS = ["off", "low", "medium", "high"];
+export async function cardCovers(env) {
+  try {
+    const o = await env.MAIN.get(CARDS);
+    return o ? await o.json() : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// GET /main/api/cards -> { cards }   POST /main/api/cards  body: { place: "main"|"archive", folder, file?: path | null, blur? }
+export async function cardsApi(req, env) {
+  const cards = await cardCovers(env);
+  if (req.method !== "POST") {
+    // ?place=&folder= also lists the folder's pictures and videos, for the panel to pick from
+    const q = new URL(req.url).searchParams, place = q.get("place"), folder = cleanPath(q.get("folder") || "");
+    if (!folder || !["main", "archive"].includes(place)) return jsonResponse({ cards });
+    const bucket = place === "main" ? env.MAIN : env.ARCHIVE, root = place === "main" ? FILES : "archive/";
+    const files = [];
+    let cursor;
+    do {
+      const r = await bucket.list({ prefix: root + folder + "/", cursor });
+      for (const o of r.objects) {
+        const f = o.key.slice(root.length), name = f.split("/").pop();
+        if (JUNK.test(name) || name.startsWith(".") || !/\.(jpe?g|png|gif|webp|heic|avif|mp4|mov|m4v|webm)$/i.test(name)) continue;
+        files.push({ path: f, name: name.replace(/\.[^.]+$/, ""), video: /\.(mp4|mov|m4v|webm)$/i.test(name), src: (place === "main" ? "/main/f/" : "/main/archive/f/") + urlPath(f) });
+      }
+      cursor = r.truncated && files.length < 300 ? r.cursor : undefined;
+    } while (cursor);
+    return jsonResponse({ card: cards[place + "/" + folder] || {}, files });
+  }
+  let b;
+  try {
+    b = await req.json();
+  } catch (e) {
+    return new Response("Bad request", { status: 400 });
+  }
+  const folder = cleanPath(String(b.folder || ""));
+  if (!["main", "archive"].includes(b.place) || !folder || folder.includes("/")) return new Response("Bad folder", { status: 400 });
+  const k = b.place + "/" + folder, c = { ...(cards[k] || {}) };
+  if (b.file === null) delete c.file;
+  else if (b.file != null) {
+    const f = cleanPath(String(b.file));
+    if (!f || !f.startsWith(folder + "/")) return new Response("Pick a file in this folder", { status: 400 });
+    c.file = f;
+  }
+  if (BLURS.includes(b.blur)) c.blur = b.blur;
+  if (Object.keys(c).length) cards[k] = c;
+  else delete cards[k];
+  await env.MAIN.put(CARDS, JSON.stringify(cards), { httpMetadata: { contentType: "application/json" } });
+  return jsonResponse({ ok: true, card: cards[k] || {} });
 }
 
 // PUT /main/api/cover?path=<file>   body: a JPEG or PNG. The page shows it at once (art/), and an

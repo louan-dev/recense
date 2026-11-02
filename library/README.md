@@ -227,11 +227,15 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
-- Cover blur (notes 20261029 item 16): covers on the front pages keep their art and colours but text in them is
-  blurred (lines show, words don't), Medium by default; the site's Blur control next to Collections steps
-  Off/Low/Medium/High (`src/client/coverblur.js`, finds text by dense colourless edges), the app's Archive uses
-  Vision's text boxes with the same levels (toolbar drop icon). Inside a folder nothing is blurred. A share link's
-  Choose Cover makes the next tapped picture its card's cover (link arrange API; Exhibits honours it).
+- Cover blur and Edit Cover (notes 20261029 item 16): covers on the front pages keep their art and colours but text
+  in them is blurred (lines show, words don't), Medium by default. Each card has its own cover and level, set in the
+  Edit Cover panel: on the site ⋯ › Edit Cover on Main's front page (starts on the selected card; chips switch card)
+  and Edit Cover on a share link's page in Exhibits; in the app ⋯ › Edit Cover or long-press an Archive card. Pick
+  any picture in the folder, then Off/Low/Medium/High. Saved in `cards.json` (`/main/api/cards`, place main or
+  archive) and a link's manifest (`coverBlur`, link arrange API). Site: `src/client/coverblur.js` (finds text by
+  dense colourless edges); app: Vision's text boxes. Inside a folder nothing is blurred. Exhibits list cards blur too.
+- Renames reach share links: renaming a Main file updates the links made from it (`renameInLinks`), so Exhibits and
+  Activity ("Visionary & 7 more") show the new name.
 - Front pages (notes 20261029 item 16): on the site's Main root each collection is a rounded square card wearing
   its first picture or video, 2 columns scrolling down; the app's Archive root does the same (covers from
   `/main/archive?covers=1`). The app's home is Galleries: Ask and Listen on top, then Main, Archive and Data as

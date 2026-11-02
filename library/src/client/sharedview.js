@@ -195,7 +195,12 @@
     const c = el("a", "card");
     c.href = "#s/" + s.kind + "/" + s.id;
     c.dataset.id = s.id;
-    if (s.cover) c.appendChild(media({ thumb: s.coverVideo ? null : s.cover, src: s.cover, video: s.coverVideo }));
+    if (s.cover) {
+      c.appendChild(media({ thumb: s.coverVideo ? null : s.cover, src: s.cover, video: s.coverVideo }));
+      // the cover's text blurred at the link's level, outside the link only (notes item 16)
+      const m = c.lastChild;
+      if (window.coverBlur && m && m.tagName) coverBlur.one(m, s.blur || "medium");
+    }
     else {
       const ph = el("div", "ph");
       ph.appendChild(svg(I.people));
@@ -305,16 +310,26 @@
       open.style.textDecoration = "none";
       if (native) open.onclick = (e) => { e.preventDefault(); native.postMessage({ op: "open", path: s.url }); };
       acts.append(copy, open);
-      // Choose Cover: the next file tapped becomes the card's cover (a share link's own pinned cover; notes item 16)
-      if (s.kind === "link" && s.type !== "folder") {
-        const pick = el("button", "lnk", "Choose Cover");
+      // Edit Cover: which file the link's card wears and how much its text is blurred (notes item 16)
+      if (s.kind === "link" && s.type !== "folder" && window.coverEditor) {
+        const pick = el("button", "lnk", "Edit Cover");
         pick.type = "button";
-        pick.onclick = () => {
-          const on = !app.classList.contains("picking");
-          app.classList.toggle("picking", on);
-          pick.textContent = on ? "Cancel" : "Choose Cover";
-          if (on) toast("Tap a picture or video");
-        };
+        pick.onclick = () =>
+          coverEditor.open({
+            load: () => ({
+              files: s.items.filter((f) => !f.pending && (f.thumb || f.video)).map((f) => ({ value: f.n, src: f.thumb || f.src, video: !f.thumb && f.video, name: f.name })),
+              file: s.coverItem ? String(s.coverItem) : null,
+              blur: s.blur,
+            }),
+            save: async (_, ch) => {
+              const b = { blur: ch.blur };
+              if (ch.file != null) b.cover = ch.file;
+              await api("/main/api/link?action=arrange&id=" + encodeURIComponent(s.id), { method: "POST", body: JSON.stringify(b) });
+              shares = null;
+              toast("Cover saved");
+              route();
+            },
+          });
         acts.appendChild(pick);
       }
       head.appendChild(acts);
@@ -336,18 +351,7 @@
       if (f.by) t.appendChild(el("span", "who", initials(f.by)));
       if (f.comments || f.likes) t.appendChild(el("span", "k", (f.likes ? "♥ " + f.likes + " " : "") + (f.comments ? "💬 " + f.comments : "")));
       if (s.coverItem && f.n === String(s.coverItem)) t.classList.add("cov");
-      t.onclick = async () => {
-        if (!app.classList.contains("picking")) return !f.pending && viewer(s.items.filter((x) => !x.pending), s.items.filter((x) => !x.pending).indexOf(f));
-        if (!f.thumb && !f.video) return toast("Pick a picture or video");
-        try {
-          const r = await api("/main/api/link?action=arrange&id=" + encodeURIComponent(s.id), { method: "POST", body: JSON.stringify({ cover: f.n }) });
-          if (!r.coverItem) throw new Error();
-          toast("Cover set");
-          route();
-        } catch (e) {
-          toast("Couldn't set the cover");
-        }
-      };
+      t.onclick = () => !f.pending && viewer(s.items.filter((x) => !x.pending), s.items.filter((x) => !x.pending).indexOf(f));
       g.appendChild(t);
     });
     app.appendChild(g);
