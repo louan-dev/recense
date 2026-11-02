@@ -7,6 +7,7 @@ import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
 import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS, reconcile } from "../src/fp.js";
 import { createHash } from "node:crypto";
+import { jpegWithExif } from "./exif-fixture.mjs";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const TEAM = "team.cloudflareaccess.com";
@@ -2234,6 +2235,77 @@ if (DB) await test("C1 (D1): invites, locks, comments, likes and annotations mov
   await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "Mig", locked: false }) });
   assert.deepEqual(await (await own("/main/api/invites/locks")).json(), {});
   assert.ok(await MAIN.head("invites/_locks.json"), "R2 locks kept");
+});
+
+// ---------- G5: metadata overrides, revisions, the map ----------
+
+// A JPEG with EXIF (big-endian): DateTimeOriginal, Make, GPS lat/lon, pixel size. Enough for exifOf.
+
+await test("G5: metadata overrides are non-destructive; revoke falls back; clear writes a revision first; restore; the map's bounds", async () => {
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const put = (b) => own("/main/api/meta", { method: "PUT", body: JSON.stringify({ path: "Geo/paris.jpg", ...b }) });
+  const paris = jpegWithExif({ lat: 48.8584, lon: 2.2945 });
+  await MAIN.put("files/Geo/paris.jpg", paris, { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/sydney.jpg", jpegWithExif({ lat: -33.8568, lon: 151.2153 }), { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/plain.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/song.mp3", "x", { httpMetadata: { contentType: "audio/mpeg" } });
+
+  // the file's own values
+  let m = await (await own("/main/api/meta?path=Geo%2Fparis.jpg")).json();
+  assert.equal(m.original.make, "Apple");
+  assert.equal(m.original.width, 4032);
+  assert.ok(Math.abs(m.original.lat - 48.8584) < 1e-3 && Math.abs(m.original.lon - 2.2945) < 1e-3, JSON.stringify(m.original));
+  assert.equal(m.original.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.deepEqual(m.overrides, {});
+  assert.equal((await call("/main/api/meta?path=Geo%2Fparis.jpg")).status, 404, "owner only");
+
+  // adjust: an override, an "edited" value, the file untouched
+  const t2 = Date.UTC(2024, 4, 7, 12, 0, 0);
+  m = await (await put({ field: "time", action: "adjust", value: t2 })).json();
+  assert.equal(m.effective.taken, t2);
+  assert.equal(m.original.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.deepEqual(Buffer.from(await (await MAIN.get("files/Geo/paris.jpg")).arrayBuffer()), paris, "never re-encoded");
+  assert.equal((await put({ field: "time", action: "adjust", value: "soon" })).status, 400);
+  assert.equal((await put({ field: "colour", action: "adjust", value: 1 })).status, 400);
+  // revoke: the file's own value again
+  m = await (await put({ field: "time", action: "revoke" })).json();
+  assert.equal(m.effective.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.ok(!("time" in m.overrides));
+  assert.equal((await put({ field: "time", action: "revoke" })).status, 409);
+  // clear: blank, with a revision holding what showed, so it can be restored
+  m = await (await put({ field: "location", action: "clear" })).json();
+  assert.equal(m.effective.lat, null);
+  assert.equal(m.revisions[0].action, "clear");
+  assert.ok(Math.abs(m.revisions[0].before.lat - 48.8584) < 1e-3);
+  m = await (await put({ field: "location", action: "restore", rev: m.revisions[0].id })).json();
+  assert.ok(Math.abs(m.effective.lat - 48.8584) < 1e-3);
+  assert.deepEqual(m.revisions.map((r) => r.action), ["restore", "clear", "revoke", "adjust"]);
+  // a transcript line, and a moved pin
+  m = await (await put({ field: "line:3", action: "adjust", value: "the words, fixed" })).json();
+  assert.equal(m.overrides["line:3"], "the words, fixed");
+  m = await (await put({ field: "location", action: "adjust", value: { lat: 51.5007, lon: -0.1246, name: "London" } })).json();
+  assert.equal(m.effective.place, "London");
+  if (DB) assert.equal((await DB.prepare("SELECT count(*) n FROM revisions WHERE path = 'Geo/paris.jpg'").first()).n, 6);
+
+  // the map: the folder's items with a place, the moved pin where it was moved, only inside the bounds
+  let g = await (await own("/main/api/geo?dir=Geo")).json();
+  assert.deepEqual(g.items.map((i) => i.name).sort(), ["paris.jpg", "sydney.jpg"]);
+  assert.ok(Math.abs(g.items.find((i) => i.name === "paris.jpg").lat - 51.5007) < 1e-3, "the moved pin");
+  g = await (await own("/main/api/geo?dir=Geo&s=-40&w=140&n=-30&e=160")).json();
+  assert.deepEqual(g.items.map((i) => i.name), ["sydney.jpg"]);
+  assert.equal((await call("/main/api/geo?dir=Geo")).status, 404, "owner only");
+
+  // an invitee: read-only, same folder and permission scope, no history
+  const inv = await (await own("/main/api/invites", { method: "POST", body: JSON.stringify({ name: "Geo guest", ttl: 0, dir: "Geo" }) })).json();
+  const at = "/m/" + inv.url.split("/m/")[1];
+  await own("/main/api/invites/" + inv.id, { method: "PATCH", body: JSON.stringify({ overrides: { "sydney.jpg": { view: false } } }) });
+  g = await (await call(at + "/api/geo", { headers: { "x-gallery": "1" } })).json();
+  assert.deepEqual(g.items.map((i) => i.path), ["paris.jpg"], "a hidden item is not on their map");
+  m = await (await call(at + "/api/meta?name=paris.jpg", { headers: { "x-gallery": "1" } })).json();
+  assert.equal(m.effective.place, "London");
+  assert.deepEqual(m.revisions, []);
+  assert.equal((await call(at + "/api/meta?name=sydney.jpg", { headers: { "x-gallery": "1" } })).status, 404);
+  assert.equal((await call(at + "/api/meta", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ path: "Geo/paris.jpg", field: "time", action: "revoke" }) })).status, 404, "never writes");
 });
 
 console.log(`\n${passed} passed`);

@@ -23,6 +23,7 @@ import { cleanup, sweepFolders, linkTranscript, linkTranscriptChanges, linkTrans
 import { mainFolder, mainFile, mainUpload, mainDelete, mainRename, mainFolders, mainNewFolder, mainMove, mainCover, cardsApi, mainCoverDelete, mainKey, orderSweep, artSweep } from "./main.js";
 import { inviteApi, participantRoute } from "./invite.js";
 import { ownerAnnotationApi } from "./annotations.js";
+import { metaApi, geoApi } from "./meta.js";
 import { sharesApi, sharedPage, activitySweep } from "./shared.js";
 import { transcriptChanges, transcriptResponse, transcriptSave, transcriptRun, rateSweep } from "./transcript.js";
 import { tmpPut, tmpGet, tmpSweep } from "./tmp.js";
@@ -133,6 +134,8 @@ async function mainRoute(req, env, ctx, url, path, method) {
     }
     if (path === "/main/api/caption" && method === "PUT") return commentApi(req, env);
     if (path === "/main/api/annotations") return ownerAnnotationApi(req, env, url);
+    if (path === "/main/api/meta") return metaApi(req, env, url);
+    if (path === "/main/api/geo" && method === "GET") return geoApi(env, url);
     if (path === "/main/api/invites" || path.startsWith("/main/api/invites/")) return inviteApi(req, env, url, path);
     if (path === "/main/api/activity" || path === "/main/api/shares" || path.startsWith("/main/api/shares/")) return sharesApi(req, env, url, path);
     if (path === "/main/api/link" && method === "POST") return linkApi(req, env, url);

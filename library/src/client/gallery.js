@@ -3669,6 +3669,23 @@
       return (t && Array.isArray(t.lines) && t.lines) || [];
     },
     folder: () => (G.dir ? G.dir.split("/").pop() : G.title || "Gallery"),
+    at: (i) => items[i] || null,
+    indexOf: (key) => items.findIndex((x) => x.path === key || x.n === key || x.name === key),
+    thumbOf: (f) => (f ? artSrc(f) || (kind(f) === "img" ? src(f) : null) : null),
+    // the sheet's metadata and map: Main's own routes for the owner, the link's for an invitee; none on a public link
+    where: () => (G.main && !G.invite ? "owner" : G.invite ? "invite" : null),
+    metaUrl: (f) => (!f || f.pending ? null : G.main && !G.invite ? MAIN_API + "/meta?path=" + encodeURIComponent(f.path) : G.invite ? API + "/meta?name=" + encodeURIComponent(f.path.split("/").pop()) : null),
+    geoUrl: (b) => {
+      const q = new URLSearchParams(b || {});
+      if (G.main && !G.invite) return MAIN_API + "/geo?" + (q.set("dir", G.dir || ""), q);
+      return G.invite ? API + "/geo?" + q : null;
+    },
+    canAdjust: () => !!(G.main && !G.invite && owner),
+    adjust: async (f, body) => {
+      const r = await fetch(MAIN_API + "/meta", { method: "PUT", headers: { "content-type": "application/json", "x-gallery": "1" }, body: JSON.stringify({ path: f.path, ...body }) });
+      if (!r.ok) throw new Error((await r.text()) || "Couldn’t save that");
+      return r.json();
+    },
     onShow: (fn) => shellHooks.push(fn),
   };
 

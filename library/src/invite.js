@@ -22,6 +22,7 @@ import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
 import { logActivity } from "./shared.js";
 import { hasDB, shareGet, sharePut, shareList, shareById, shareRevoke, locksGet, lockSet } from "./d1.js";
+import { metaOf, folderGeo, inBounds } from "./meta.js";
 import { annotationChange, readAnnotations, pubOf as annotationOf } from "./annotations.js";
 import { identityApi, authRoute, signInPage, sessionGuest, claim, revokeGuest, guestStatus, endSessions, inviteIcs, emailOn } from "./identity.js";
 
@@ -462,6 +463,22 @@ export async function participantRoute(req, env, ctx, url, path) {
       if (read) return jsonResponse({ items: (await readAnnotations(env, inFolder(name))).map((a) => annotationOf(a, hashId)) });
       if (!P(name).annotate) return new Response("Not allowed", { status: 403 });
       return annotationChange(env, inFolder(name), b, { by: inv.name, inv: hashId });
+    }
+
+    // GET /m/<token>/api/meta?name=<file>   the item's metadata, as the owner set it (read-only here)
+    if (rest === "/api/meta" && read) {
+      const name = cleanPath(url.searchParams.get("name") || "");
+      if (!name || name.includes("/") || !allowed(name)) return new Response("Not found", { status: 404 });
+      const m = await metaOf(env, inFolder(name));
+      if (!m) return new Response("Not found", { status: 404 });
+      // the history of changes is the owner's
+      return jsonResponse({ ...m, path: name, revisions: [] });
+    }
+
+    // GET /m/<token>/api/geo?s=&w=&n=&e=   the folder's items with a place, only those this link may see
+    if (rest === "/api/geo" && read) {
+      const g = await folderGeo(env, inv.folder, allowed);
+      return jsonResponse({ items: inBounds(g.items, url.searchParams).map((i) => ({ ...i, path: i.name })), pending: g.pending });
     }
 
     // PUT /m/<token>/api/file?name=<file>&mtime=<ms>   a new file only; nothing is ever replaced

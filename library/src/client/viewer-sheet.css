@@ -1,0 +1,59 @@
+/* The State C sheet (G5, viewer-sheet.js): under the comments, the inspector, the metadata card, the map.
+   Every control is the blue "Select All" link; none is glass, none is red. */
+
+/* comments: three lines, then a blue "more" (viewer-sheet.js adds it only when the words run over) */
+#thread .ctext[data-clamp]:not(.full){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+#thread .cmore{display:inline-block;margin:0 0 2px;padding:0;min-height:0}
+
+.vsheet{display:flex;flex-direction:column;gap:12px;padding:12px 16px calc(16px + env(safe-area-inset-bottom))}
+.vsheet:empty{display:none}
+.vcard{border-radius:18px;background:#1c1c1e;padding:12px 14px;color:#fff;font:400 15px/1.35 -apple-system,BlinkMacSystemFont,sans-serif}
+.vmuted{color:#8e8e93;margin:0}
+.vbadge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:rgba(10,132,255,.18);color:var(--blue);font-size:12px;line-height:18px;vertical-align:middle}
+
+/* inspector: a segmented pill, Transcript | Info */
+.vseg{display:flex;padding:2px;border-radius:999px;background:rgba(118,118,128,.24);margin-bottom:10px}
+.vseg:has(> :only-child){display:none}
+.vsegb{flex:1;min-height:32px;border-radius:999px;text-align:center}
+.vsegb[aria-selected="true"]{background:#3a3a3c}
+.vlines{list-style:none;margin:0;padding:0;max-height:40dvh;overflow:auto;overscroll-behavior:contain}
+.vline{display:grid;grid-template-columns:52px 1fr auto;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #2c2c2e}
+.vline:last-child{border-bottom:0}
+.vline.looping{background:rgba(10,132,255,.1);border-radius:10px}
+.vts{font-variant-numeric:tabular-nums;text-align:left}
+.vltext{min-width:0;overflow-wrap:anywhere}
+.vledit{grid-column:2/4;width:100%;min-height:64px;box-sizing:border-box;border-radius:10px;border:1px solid #3a3a3c;background:#000;color:#fff;font:inherit;padding:8px}
+.vbtns{grid-column:2/4;display:flex;gap:16px}
+.vexif{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}
+.vexif dt{color:#8e8e93}
+.vexif dd{margin:0;overflow-wrap:anywhere}
+
+/* metadata card: "Day • Date • Time", Adjust on the right; then the specs */
+.vmhead{display:flex;align-items:center;gap:6px}
+.vwhen{flex:1;min-width:0;font-weight:600}
+.vadj{margin-left:auto}
+.vspecs{margin-top:6px;color:#c7c7cc;font-size:14px}
+.vsp1{display:flex;align-items:center;gap:8px;min-width:0}
+.vsptitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
+.vcodec{flex:none;padding:0 6px;border:1px solid #48484a;border-radius:6px;font-size:11px;line-height:18px;letter-spacing:.04em}
+.vadjp{margin-top:10px;display:flex;flex-direction:column;gap:10px;border-top:1px solid #2c2c2e;padding-top:10px}
+.vrow2{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.vlab{width:70px;color:#8e8e93}
+.vin{min-height:36px;border-radius:10px;border:1px solid #3a3a3c;background:#000;color:#fff;font:inherit;padding:0 10px;color-scheme:dark}
+.vnum{width:110px}
+.vchanges ul{list-style:none;margin:6px 0 0;padding:0}
+.vchg{display:flex;justify-content:space-between;gap:10px;padding:4px 0;color:#c7c7cc;font-size:14px}
+
+/* the map: dark tiles, its own gestures */
+.vmap{padding:0;overflow:hidden}
+.vmapc{height:220px;background:#111;touch-action:none}
+.vmapc .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}
+.vmapc .leaflet-control-attribution{background:rgba(0,0,0,.55);color:#8e8e93}
+.vmapc .leaflet-control-attribution a{color:var(--blue)}
+.vmapc.moving{cursor:crosshair;outline:2px solid var(--blue);outline-offset:-2px}
+.vmapbar{display:flex;align-items:center;gap:12px;padding:10px 14px}
+.vplace{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vpin{position:relative}
+.vpin img,.vpin i{display:block;width:100%;height:100%;box-sizing:border-box;border-radius:10px;border:2px solid #fff;object-fit:cover;background:#3a3a3c;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.vpin.on img,.vpin.on i{border-color:var(--blue);border-radius:12px}
+.vpin b{position:absolute;top:-8px;right:-8px;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:10px;background:var(--blue);color:#fff;font:600 12px/20px -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}

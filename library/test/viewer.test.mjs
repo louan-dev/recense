@@ -7,6 +7,8 @@ import { chromium } from "playwright";
 import { readdirSync, mkdirSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { jpegWithExif } from "./exif-fixture.mjs";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const SHOTS = new URL("./.shots/viewer/", import.meta.url).pathname;
@@ -60,6 +62,37 @@ await mf.dispatchFetch(base + "/main/api/caption", {
   headers: { "cf-access-jwt-assertion": ownerJwt, origin: base, "content-type": "application/json" },
   body: JSON.stringify({ kind: "main", path: "Words/p.jpg", op: "add", text: TEXT }),
 });
+
+// G5: pictures with a place (two a few metres apart, one across Paris, one in Sydney, one with none), a song with a
+// transcript, a long comment of the owner's
+const KEEP = await mf.getR2Bucket("KEEP");
+for (const [n, lat, lon] of [["a-tower", 48.8584, 2.2945], ["b-tower", 48.8586, 2.2947], ["c-louvre", 48.8606, 2.3376], ["d-sydney", -33.8568, 151.2153]])
+  await MAIN.put(`files/Geo/${n}.jpg`, jpegWithExif({ lat, lon }), { httpMetadata: { contentType: "image/jpeg" } });
+await MAIN.put("files/Geo/e-plain.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
+await MAIN.put("files/Song/s.wav", wav, { httpMetadata: { contentType: "audio/wav" } });
+const LINES = [
+  { id: 0, words: [{ text: "one", start: 0, end: 0.3 }, { text: "two", start: 0.3, end: 0.5 }] },
+  { id: 1, words: [{ text: "three", start: 0.5, end: 0.8 }, { text: "four", start: 0.8, end: 0.95 }] },
+];
+await KEEP.put("keep/" + createHash("sha256").update("gallery:files/Song/s.wav").digest("hex").slice(0, 24) + ".v2.json", JSON.stringify({ complete: true, lines: LINES }));
+const LONG = Array.from({ length: 160 }, (_, i) => "word" + i).join(" ");
+await MAIN.put("files/Long/q.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
+await mf.dispatchFetch(base + "/main/api/caption", {
+  method: "PUT",
+  headers: { "cf-access-jwt-assertion": ownerJwt, origin: base, "content-type": "application/json" },
+  body: JSON.stringify({ kind: "main", path: "Long/q.jpg", op: "add", text: LONG }),
+});
+// Leaflet once, served to every page from memory; map tiles are a blank square (no request leaves the machine)
+const LEAFLET = await Promise.all(["leaflet.js", "leaflet.css"].map((f) => fetch("https://unpkg.com/leaflet@1.9.4/dist/" + f).then((r) => (r.ok ? r.text() : null)).catch(() => null)));
+const TILE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+const offline = async (pg) => {
+  await pg.route("https://unpkg.com/leaflet@1.9.4/dist/*", (r) => {
+    const css = r.request().url().endsWith(".css");
+    const body = LEAFLET[css ? 1 : 0];
+    return body ? r.fulfill({ body, contentType: css ? "text/css" : "text/javascript" }) : r.abort();
+  });
+  await pg.route("https://tile.openstreetmap.org/**", (r) => r.fulfill({ body: TILE, contentType: "image/png" }));
+};
 
 // the owner's devices, each held both ways, each with a finger and with a pointer
 export const DEVICES = [
@@ -388,6 +421,154 @@ await test("G3: the capsule: Share, Favorite, Info, Audio/EQ and Delete apart; o
   await pg.click(".vinfo");
   await pg.waitForFunction(() => document.body.classList.contains("comments-open"));
   assert.equal(await pg.evaluate(() => document.getElementById("lb").dataset.vstate), "C");
+});
+
+// each context starts from the files' own values (the overrides an earlier context left are revoked)
+const reset = async () => {
+  for (const [path, field] of [["Geo/a-tower.jpg", "time"], ["Geo/a-tower.jpg", "location"], ["Song/s.wav", "line:1"]])
+    await mf.dispatchFetch(base + "/main/api/meta", {
+      method: "PUT",
+      headers: { "cf-access-jwt-assertion": ownerJwt, origin: base, "content-type": "application/json", "x-gallery": "1" },
+      body: JSON.stringify({ path, field, action: "revoke" }),
+    });
+};
+const openC = async (pg, dir, n) => {
+  await reset();
+  await offline(pg);
+  await pg.goto(base + "/main?p=" + dir);
+  await pg.click(`.tile[data-n="${n}"]`);
+  await pg.waitForSelector("#lb:not([hidden])");
+  await pg.evaluate(() => window.__galleryViewer.setOpen(true));
+  await pg.waitForFunction(() => document.getElementById("lb").dataset.vstate === "C");
+};
+const BLUE = "rgb(10, 132, 255)";
+
+await test("G5: a comment shows three lines and a blue more; a tap on a word opens it with the caret there", async (pg, m) => {
+  await openC(pg, "Long", "00000");
+  await pg.waitForSelector("#thread .ctext.cmine");
+  await pg.waitForTimeout(700);
+  const c = await pg.$eval("#thread .ctext.cmine", (p) => ({ h: p.clientHeight, lh: parseFloat(getComputedStyle(p).lineHeight) || 20, more: !!p.parentElement.querySelector(".cmore") }));
+  assert.ok(c.more, "a more link");
+  assert.ok(c.h <= c.lh * 3 + 2, "three lines: " + c.h + " vs " + c.lh);
+  assert.equal(await pg.$eval("#thread .cmore", (b) => getComputedStyle(b).color), BLUE);
+  await shot(pg, m, "C-comment-collapsed");
+  // a word on the second line
+  const word = "word9";
+  const pt = await pg.evaluate((word) => {
+    const p = document.querySelector("#thread .ctext.cmine");
+    const at = p.textContent.indexOf(word + " ");
+    const r = document.createRange();
+    r.setStart(p.firstChild, at + 1);
+    r.setEnd(p.firstChild, at + word.length - 1);
+    const b = r.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, at };
+  }, word);
+  if (m.touch) await pg.touchscreen.tap(pt.x, pt.y);
+  else await pg.mouse.click(pt.x, pt.y, { delay: 40 });
+  await pg.waitForSelector("#thread textarea.cedit", { timeout: 3000 });
+  await pg.waitForTimeout(1000);
+  const caret = await pg.$eval("#thread textarea.cedit", (t) => t.selectionStart);
+  assert.ok(caret >= pt.at && caret <= pt.at + word.length, `caret ${caret} on "${word}" at ${pt.at}`);
+  // Post, Delete, Cancel: blue, under the comment
+  const btns = await pg.$$eval("#thread .crow button, #thread .cbtns button", (a) => a.filter((b) => b.offsetParent && /^(Post|Save|Delete|Cancel)$/.test(b.textContent.trim())).map((b) => getComputedStyle(b).color));
+  assert.ok(btns.length >= 2 && btns.every((c) => c === BLUE), "blue: " + btns);
+});
+
+await test("G5: the inspector (Transcript | Info) and the metadata card: Adjust, edited, Revoke, Clear, Changes, Restore", async (pg, m) => {
+  // a song: Transcript first, each line with its time; editing a line loops it
+  await openC(pg, "Song", "00000");
+  await pg.waitForSelector(".vsheet .vinsp .vline");
+  assert.deepEqual(await pg.$$eval(".vseg .vsegb", (a) => a.map((b) => b.textContent)), ["Transcript", "Info"]);
+  assert.deepEqual(await pg.$$eval(".vline", (a) => a.map((l) => l.querySelector(".vts").textContent + " " + l.querySelector(".vltext").textContent)), ["0:00 one two", "0:00 three four"]);
+  await pg.click(".vline:nth-child(2) .vltext");
+  await pg.waitForSelector(".vline.looping textarea.vledit");
+  await pg.waitForFunction(() => { const a = window.__galleryViewer.media(); return a && a.currentTime >= 0.5 && a.currentTime <= 1; });
+  await pg.fill(".vledit", "three for");
+  await pg.click(".vline.looping .vbtns button:first-child");
+  await pg.waitForFunction(() => [...document.querySelectorAll(".vline")].some((l) => l.textContent.includes("three for") && l.querySelector(".vbadge")));
+  assert.equal(await pg.$$eval(".vline.looping", (a) => a.length), 0, "the loop stops with Save");
+
+  // a picture: Info only (the file's EXIF), then the card
+  await pg.evaluate(() => window.__galleryViewer.setOpen(false));
+  await openC(pg, "Geo", "00000");
+  await pg.waitForSelector(".vsheet .vmeta");
+  assert.match(await pg.textContent(".vexif"), /Camera\s*Apple/);
+  const when = () => pg.textContent(".vwhen");
+  const before = await when();
+  assert.match(before, /^\w+ • .+ • .+$/, "Day • Date • Time: " + before);
+  assert.match(await pg.textContent(".vsp1"), /a-tower\.jpg\s*JPEG/);
+  assert.match(await pg.textContent(".vsp2"), /4032 × 3024/);
+  assert.equal(await pg.$eval(".vadj", (b) => getComputedStyle(b).color), BLUE);
+  await shot(pg, m, "C-sheet-card");
+  // Adjust the time: an override, shown edited
+  await pg.click(".vadj");
+  await pg.fill(".vadjp input[type=datetime-local]", "2020-01-02T03:04");
+  await pg.click(".vtsave");
+  await pg.waitForSelector(".vmhead .vbadge");
+  assert.notEqual(await when(), before);
+  assert.match(await when(), /2020/);
+  // Revoke: the file's own time again
+  await pg.click(".vadj");
+  await pg.click(".vtrev");
+  await pg.waitForFunction(() => !document.querySelector(".vmhead .vbadge"));
+  assert.equal(await when(), before);
+  // Clear: no date, a revision first; Restore brings it back
+  await pg.click(".vadj");
+  await pg.click(".vtclr");
+  await pg.waitForFunction(() => document.querySelector(".vwhen")?.textContent === "No date");
+  await pg.click(".vadj");
+  const changes = await pg.$$eval(".vchg span", (a) => a.slice(0, 3).map((x) => x.textContent.split(" · ").slice(0, 2).join(" ")));
+  assert.deepEqual(changes, ["time clear", "time revoke", "time adjust"]);
+  assert.ok(await pg.$$eval(".vrestore", (a) => a.every((b) => getComputedStyle(b).color === "rgb(10, 132, 255)")), "Restore is blue");
+  await pg.click(".vchg:first-child .vrestore");
+  await pg.waitForFunction((b) => document.querySelector(".vwhen")?.textContent === b, before);
+});
+
+await test("G5: the map: the item's thumbnail pin, clusters with counts, the view's items only, a tap opens one; the map keeps its own drags", async (pg, m) => {
+  if (!LEAFLET[0]) return console.log("     (no Leaflet: offline, map skipped)");
+  const geo = [];
+  pg.on("request", (r) => /\/main\/api\/geo\?/.test(r.url()) && geo.push(new URL(r.url()).searchParams));
+  await openC(pg, "Geo", "00000");
+  await pg.waitForSelector(".vmapc[data-ready]");
+  await pg.waitForFunction(() => +document.querySelector(".vmapc").dataset.pins > 0);
+  await pg.$eval(".vmap", (e) => e.scrollIntoView({ block: "center" }));
+  await pg.waitForTimeout(300);
+  const q = geo.at(-1);
+  assert.equal(q.get("dir"), "Geo");
+  assert.ok(["s", "w", "n", "e"].every((k) => q.get(k) !== null && isFinite(+q.get(k))), "asks for the view only");
+  const pins = () => pg.$$eval(".vmapc .vpin", (a) => a.map((p) => ({ on: p.classList.contains("on"), n: p.querySelector("b")?.textContent || "1", img: !!p.querySelector("img") })));
+  let ps = await pins();
+  assert.ok(ps.some((p) => p.on && p.img), "the item itself: a thumbnail pin");
+  assert.ok(ps.some((p) => p.n === "2"), "the two towers, one pin with a count: " + JSON.stringify(ps));
+  assert.ok(ps.length <= 4, "Sydney is not in the view");
+  assert.equal(await pg.textContent(".vplace"), "48.8584, 2.2945");
+  await shot(pg, m, "C-map");
+  // a drag inside the map moves the map, not the sheet or the viewer
+  const c = await center(pg, ".vmapc");
+  const n0 = geo.length;
+  await drag(pg, m, { x: c.x + 60, y: c.y }, { x: c.x - 140, y: c.y + 30 }, { steps: 8 });
+  // the new view's pins: asked of the Worker once the map stops
+  for (let t = 0; t < 30 && geo.length <= n0; t++) await pg.waitForTimeout(100);
+  await pg.waitForFunction(() => [...document.querySelectorAll(".vmapc .vpin img")].some((p) => p.src.endsWith("c-louvre.jpg")), null, { timeout: 3000 }).catch(() => {});
+  assert.equal(await pg.evaluate(() => window.__galleryViewer.index()), 0, "no swipe to another item");
+  assert.equal(await pg.evaluate(() => document.getElementById("lb").dataset.vstate), "C", "the sheet stays");
+  assert.ok(geo.length > n0, "a move asks for the new view");
+  // a tap on the Louvre's pin opens it
+  const louvre = await pg.evaluate(() => {
+    const i = window.__galleryViewer.indexOf("Geo/c-louvre.jpg");
+    const pin = [...document.querySelectorAll(".vmapc .vpin img")].find((p) => p.src.endsWith("c-louvre.jpg"));
+    if (!pin) return null;
+    const r = pin.getBoundingClientRect();
+    return { i, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  assert.ok(louvre, "a pin for the Louvre");
+  await tapAt(pg, m, louvre.x, louvre.y);
+  await pg.waitForFunction((i) => window.__galleryViewer.index() === i, louvre.i, { timeout: 3000 });
+  // no place, no map
+  await pg.evaluate(() => window.__galleryViewer.show(window.__galleryViewer.indexOf("Geo/e-plain.jpg")));
+  await pg.waitForFunction(() => window.__galleryViewer.item()?.path === "Geo/e-plain.jpg");
+  await pg.waitForTimeout(500);
+  assert.equal(await pg.$$eval(".vsheet .vmap", (a) => a.length), 0);
 });
 
 console.log(`\n${passed} passed${failed ? ", " + failed + " failed" : ""}`);
