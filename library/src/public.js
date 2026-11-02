@@ -437,7 +437,9 @@ function applyComment(v, b, by, participant, vid = null) {
   const list = thread(v);
   const likes = likesOf(v);
   // the owner may say whose words they are posting (notes 47): stored as "as", "by" stays the owner's so edit/delete still work
-  const as = !participant && !vid && by === OWNER ? String((b && b.as) || "").trim().slice(0, 80) : "";
+  // an invitee says who they are before posting (one invite link may be passed around); never the owner's name
+  let as = !vid && (participant || by === OWNER) ? String((b && b.as) || "").trim().slice(0, 80) : "";
+  if (participant && ["you", "owner", OWNER.toLowerCase(), OWNER.split(" ")[0].toLowerCase()].includes(as.toLowerCase())) as = "";
   const labelled = (c) => (as ? { ...c, as } : c);
 
   if (b.op === "like") {

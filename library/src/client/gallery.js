@@ -3586,8 +3586,10 @@
 
   const send = async (f, body) => {
     const asGuest = guest();
-    const name = asGuest ? guestName() || askName() : "";
-    if (asGuest && !name) throw new Error("Add your name to comment");
+    const asInvitee = !!G.invite && body.op === "add"; // invitees name themselves too (one link may reach several people)
+    const name = asGuest || asInvitee ? guestName() || askName() : "";
+    if ((asGuest || asInvitee) && !name) throw new Error("Add your name to comment");
+    if (asInvitee) body = { ...body, as: name };
     const r = await fetch(asGuest ? "/api/caption" : API + "/caption", {
       method: "PUT",
       headers: { "content-type": "application/json", "x-gallery": "1" },

@@ -608,13 +608,15 @@ await test("comments: the owner labels who said it (notes 47)", async () => {
   assert.equal(j.comments[0].as, "Dad");
   j = await (await put({ op: "label", cid, as: "" })).json();
   assert.equal(j.comments[0].as, undefined);
-  // an invited person can't label, nor post as someone else
+  // an invited person can't relabel, but names themselves when posting (never as the owner)
   const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Pat", ttl: 0, dir: "Lb" }) })).json();
   const m = (body) => call("/m/" + inv.url.split("/m/")[1] + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Lb/a.jpg", ...body }) });
   assert.equal((await m({ op: "label", cid, as: "Pat" })).status, 403);
-  j = await (await m({ op: "add", text: "hi", as: "Mom" })).json();
+  j = await (await m({ op: "add", text: "hi", as: "Jo" })).json();
   assert.equal(j.comments[1].by, "Pat");
-  assert.equal(j.comments[1].as, undefined);
+  assert.equal(j.comments[1].as, "Jo");
+  j = await (await m({ op: "add", text: "hey", as: "Chau" })).json();
+  assert.equal(j.comments[2].as, undefined);
 });
 
 await test("rooms: an invite to some items sees only those, never uploads", async () => {
