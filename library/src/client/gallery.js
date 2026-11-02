@@ -5050,8 +5050,15 @@
       let cur = -1;
       let field = null;
       let rows = [];
-      const save = (l, ta) => {
+      // A field saves only what was typed into it, onto the line it was opened on (bug report, item 40: a field left
+      // open across a Restore or a refresh of the lines wrote its old text back, and one line's words landed on
+      // another's, "When love's a different view All my life"): the line is looked up again by its id, and a field
+      // whose text wasn't changed by hand writes nothing.
+      const save = (l0, ta) => {
         const text = ta.value.replace(/\s+/g, " ").trim();
+        if (text === ta.defaultValue.replace(/\s+/g, " ").trim()) return;
+        const l = lines.find((x) => String(x.id) === ta.dataset.seg);
+        if (!l || l !== l0 && String(l0.id) !== ta.dataset.seg) return;
         if (text === l.text) return;
         l.text = text;
         l.words = spreadWords(text, l);
@@ -5085,6 +5092,51 @@
       const unloop = () => {
         if (looping) el.removeEventListener("timeupdate", looping);
         looping = null;
+      };
+      // The trace pad (item 40 bug report): the word or the line itself in plain white on one line, nothing moving
+      // through it. Slide along it as it is sung and the light copies the finger. The finger counts anywhere in the
+      // pad's height (under the letters, so they stay in sight); how far along is read from the letters drawn, each
+      // word its share by its letters, so "blue" is where "blue" is. A long line shrinks to fit, never wraps.
+      const tracePad = (texts, label) => {
+        const pad = mkEl("div", "txtrace");
+        pad.tabIndex = 0;
+        pad.setAttribute("role", "slider");
+        pad.setAttribute("aria-label", label);
+        const row = mkEl("div", "txtrt");
+        const spans = texts.map((x) => {
+          const sp = mkEl("span", "");
+          sp.textContent = x;
+          return sp;
+        });
+        spans.forEach((sp, k) => row.append(...(k ? [" ", sp] : [sp])));
+        row.dir = dirOf(texts.join(" "));
+        pad.appendChild(row);
+        const n = texts.map((x) => Math.max(1, Array.from(x || "").length)), len = n.reduce((a, b) => a + b, 0);
+        const fit = () => {
+          if (!pad.isConnected) return;
+          row.style.fontSize = "";
+          const W = pad.clientWidth - 24, w = row.scrollWidth;
+          if (W > 0 && w > W) row.style.fontSize = Math.max(11, (parseFloat(getComputedStyle(row).fontSize) * W) / w) + "px";
+        };
+        requestAnimationFrame(fit);
+        let last = -1;
+        // 0 … 1 through the letters at the finger's x
+        const along = (e) => {
+          const rtl = row.dir === "rtl";
+          let c0 = 0, p = 0;
+          for (let k = 0; k < spans.length; k++) {
+            const r = spans[k].getBoundingClientRect();
+            const f = Math.max(0, Math.min(1, rtl ? (r.right - e.clientX) / Math.max(1, r.width) : (e.clientX - r.left) / Math.max(1, r.width)));
+            if (f > 0) p = (c0 + f * n[k]) / len;
+            if (f > 0 && k !== last && f < 1) {
+              last = k;
+              if (navigator.vibrate) navigator.vibrate(4); // a tick as the finger crosses into a word
+            }
+            c0 += n[k];
+          }
+          return p;
+        };
+        return { pad, along, fit, reset: () => (last = -1) };
       };
       const shift = Number(t.shift) || 0;
       const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -5197,72 +5249,20 @@
             marks.appendChild(m);
             return m;
           };
-          // The light between Start and End (notes 20261029 rows 40, 44): drawn as it fills the word from A to B, the
-          // word's moment playing as a line across it. It follows the voice until told otherwise: drag up or down
-          // for its speed (faster or slower at first), or slide along it as the word is sung and it copies the
-          // finger (paused, draw the path: across is time, up is lit). Double-tap: back to the voice.
+          // The light between Start and End (notes 20261029 rows 40, 44, item 40 bug report): the word in white on a
+          // trace pad. Touch it and the word plays round (a breath before it); slide along it as it is sung and the light
+          // copies the finger, never going back. Double-tap: back to the voice. ↑ ↓: faster or slower at first.
           const light = mkEl("div", "txlightw");
-          const pad = mkEl("canvas", "txlight");
-          pad.tabIndex = 0;
-          pad.setAttribute("role", "slider");
-          pad.setAttribute("aria-label", "Light: drag up or down for its speed, slide along as it is sung to trace it, double-tap to follow the voice");
+          const tp = tracePad([l.words[i].t || ""], "Trace the word: slide along it as it is sung; double-tap to follow the voice");
+          const pad = tp.pad;
           const cap = mkEl("span", "txlcap");
           light.append(pad, cap);
-          const curveAt = (u) => {
-            const lw = l.words[i];
-            const t = tm.s + u * (tm.e - tm.s);
-            return globalThis.Cadence ? globalThis.Cadence.fill(lw, t, lw.syl && lw.syl.length ? Array.from(lw.t || "").length : 0) : u;
-          };
-          const drawLight = (trail) => {
-            if (!pad.isConnected) return;
-            const dpr = devicePixelRatio || 1, W = pad.clientWidth, H = pad.clientHeight;
-            if (!W || !H) return;
-            if (pad.width !== Math.round(W * dpr)) pad.width = Math.round(W * dpr);
-            if (pad.height !== Math.round(H * dpr)) pad.height = Math.round(H * dpr);
-            const g = pad.getContext("2d");
-            g.setTransform(dpr, 0, 0, dpr, 0, 0);
-            g.clearRect(0, 0, W, H);
-            const X = (u) => 10 + u * (W - 20), Y = (p) => H - 8 - p * (H - 16);
-            g.strokeStyle = "rgba(255,255,255,.12)";
-            g.lineWidth = 1;
-            g.beginPath();
-            g.moveTo(X(0), Y(0));
-            g.lineTo(X(1), Y(1));
-            g.stroke();
-            g.strokeStyle = "#ffd633";
-            g.lineWidth = 2.5;
-            g.lineJoin = g.lineCap = "round";
-            g.beginPath();
-            for (let j = 0; j <= 48; j++) g[j ? "lineTo" : "moveTo"](X(j / 48), Y(curveAt(j / 48)));
-            g.stroke();
-            if (trail && trail.length > 1) {
-              g.strokeStyle = "rgba(127,188,255,.9)";
-              g.beginPath();
-              trail.forEach((q, j) => g[j ? "lineTo" : "moveTo"](X(q.u), Y(q.p)));
-              g.stroke();
-            }
-            const u = (el.currentTime - tm.s) / Math.max(0.05, tm.e - tm.s);
-            if (u >= 0 && u <= 1) {
-              g.strokeStyle = "rgba(255,255,255,.7)";
-              g.lineWidth = 1.5;
-              g.beginPath();
-              g.moveTo(X(u), 4);
-              g.lineTo(X(u), H - 4);
-              g.stroke();
-            }
-          };
           const capLight = () => {
             cap.textContent = tm.c ? "Traced" : Math.abs(tm.k || 0) <= 0.05 ? "Follows the voice" : tm.k > 0 ? "Faster at first" : "Slower at first";
             pad.setAttribute("aria-valuetext", cap.textContent);
           };
-          paints.push(capLight, () => drawLight());
+          paints.push(capLight, tp.fit);
           let trace = null;
-          const tick = () => {
-            if (!pad.isConnected) return;
-            drawLight(trace && trace.mode === "trace" ? trace.pts : null);
-            requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
           const toVoice = () => {
             delete tm.c;
             tm.k = 0;
@@ -5273,39 +5273,26 @@
             e.preventDefault();
             e.stopPropagation();
             pad.setPointerCapture(e.pointerId);
-            trace = { x: e.clientX, y: e.clientY, k: tm.k || 0, mode: null, pts: [] };
-          };
-          const at = (e) => {
-            const r = pad.getBoundingClientRect();
-            const fx = Math.max(0, Math.min(1, (e.clientX - r.left - 10) / Math.max(1, r.width - 20)));
-            const fy = Math.max(0, Math.min(1, (r.bottom - 8 - e.clientY) / Math.max(1, r.height - 16)));
-            // played: when it was heard and how far along the finger was; paused: across is time, up is lit
-            return el.paused ? { u: fx, p: fy } : { u: (el.currentTime - tm.s) / Math.max(0.05, tm.e - tm.s), p: fx };
+            tp.reset();
+            trace = [];
+            // the word plays round while it is traced, so the finger always has the voice to follow
+            if (!looping || el.paused) {
+              unloop();
+              hearIt(1.5);
+              hear.textContent = "Stop";
+            }
           };
           pad.onpointermove = (e) => {
-            if (!trace) return;
-            const dx = e.clientX - trace.x, dy = e.clientY - trace.y;
-            if (!trace.mode) {
-              if (Math.max(Math.abs(dx), Math.abs(dy)) < 6) return;
-              trace.mode = Math.abs(dy) > Math.abs(dx) ? "bend" : "trace";
-            }
-            if (trace.mode === "bend") {
-              delete tm.c;
-              tm.k = Math.max(-1, Math.min(1, Math.round((trace.k - dy / 60) * 20) / 20));
-              set();
-            } else {
-              const q = at(e);
-              if (q.u >= -0.05 && q.u <= 1.05) trace.pts.push({ u: Math.max(0, Math.min(1, q.u)), p: q.p });
-            }
+            if (!trace || el.paused) return;
+            const u = (el.currentTime - tm.s) / Math.max(0.05, tm.e - tm.s);
+            if (u >= 0 && u <= 1) trace.push({ u, p: tp.along(e) });
           };
           pad.onpointerup = (e) => {
             e.stopPropagation();
             const t = trace;
             trace = null;
-            if (!t || !t.mode) return;
-            if (t.mode === "bend") return savePins(l);
-            const pts = [{ u: 0, p: 0 }, ...t.pts.sort((a, b) => a.u - b.u), { u: 1, p: 1 }];
-            if (t.pts.length < 3) return drawLight();
+            if (!t || t.length < 3) return;
+            const pts = [{ u: 0, p: 0 }, ...t.sort((a, b) => a.u - b.u), { u: 1, p: 1 }];
             // sixteen moments of the word, each lit as far as the finger was then, never going back
             const c = [];
             let m = 0;
@@ -5341,12 +5328,12 @@
             e.preventDefault();
             e.stopPropagation();
           };
-          const hearIt = () => {
+          const hearIt = (pre = 0.8) => {
             looping = () => {
-              if (el.currentTime > tm.e + 0.5 || el.currentTime < tm.s - 1.5) el.currentTime = Math.max(0, tm.s - 0.8);
+              if (el.currentTime > tm.e + 0.5 || el.currentTime < tm.s - 1.6) el.currentTime = Math.max(0, tm.s - pre);
             };
             el.addEventListener("timeupdate", looping);
-            el.currentTime = Math.max(0, tm.s - 0.8);
+            el.currentTime = Math.max(0, tm.s - pre);
             el.play().catch(() => {});
           };
           const hear = b("", "Stop", (x) => {
@@ -5507,57 +5494,31 @@
           };
           // trace: as it loops, slide a finger along the pad as the line is sung (left to right, the whole line)
           const traceLine = () => {
-            say1.textContent = "Slide along as it is sung, from its first word to its last";
+            say1.textContent = "Slide along the line as it is sung, from its first word to its last";
             show("trace");
-            panel.querySelectorAll(".txlight").forEach((x) => x.remove()); // (pressed again: one pad)
-            const pad = mkEl("canvas", "txlight");
-            pad.setAttribute("aria-label", "Trace the line: slide along as it is sung");
+            panel.querySelectorAll(".txtrace").forEach((x) => x.remove()); // (pressed again: one pad)
+            const ws = l.words.filter((w) => !w.un || w.tm);
+            const tp = tracePad(ws.map((w) => w.t || ""), "Trace the line: slide along it as it is sung");
+            const pad = tp.pad;
             panel.insertBefore(pad, btns);
+            // the line alone plays round while it is traced, a breath before its first beat (the player's Follow
+            // can't move on to another line meanwhile)
+            lo = Math.max(0, A - 1.5);
+            hi = B + 0.3;
+            loop();
             let pts = null;
-            const pos = (e) => {
-              const r = pad.getBoundingClientRect();
-              return Math.max(0, Math.min(1, (e.clientX - r.left - 10) / Math.max(1, r.width - 20)));
-            };
-            const draw = () => {
-              if (!pad.isConnected) return;
-              const dpr = devicePixelRatio || 1, W = pad.clientWidth, H = pad.clientHeight;
-              if (W && H) {
-                pad.width = Math.round(W * dpr);
-                pad.height = Math.round(H * dpr);
-                const g = pad.getContext("2d");
-                g.setTransform(dpr, 0, 0, dpr, 0, 0);
-                const X = (u) => 10 + u * (W - 20), Y = (p) => H - 8 - p * (H - 16);
-                g.strokeStyle = "#ffd633";
-                g.lineWidth = 2.5;
-                g.lineCap = "round";
-                if (pts && pts.length > 1) {
-                  g.beginPath();
-                  pts.forEach((q, j) => g[j ? "lineTo" : "moveTo"](X(q.u), Y(q.p)));
-                  g.stroke();
-                }
-                const u = (el.currentTime - A) / Math.max(0.05, B - A);
-                if (u >= 0 && u <= 1) {
-                  g.strokeStyle = "rgba(255,255,255,.7)";
-                  g.lineWidth = 1.5;
-                  g.beginPath();
-                  g.moveTo(X(u), 4);
-                  g.lineTo(X(u), H - 4);
-                  g.stroke();
-                }
-              }
-              requestAnimationFrame(draw);
-            };
-            requestAnimationFrame(draw);
             pad.onpointerdown = (e) => {
               e.preventDefault();
               e.stopPropagation();
               pad.setPointerCapture(e.pointerId);
+              tp.reset();
               pts = [];
+              if (el.paused) loop();
             };
             pad.onpointermove = (e) => {
               if (!pts) return;
               const u = (el.currentTime - A) / Math.max(0.05, B - A);
-              if (u >= 0 && u <= 1) pts.push({ u, p: pos(e) });
+              if (u >= 0 && u <= 1) pts.push({ u, p: tp.along(e) });
             };
             pad.onpointerup = (e) => {
               e.stopPropagation();
@@ -5566,6 +5527,8 @@
               if (!p || p.length < 3) return say("Slide along the whole line as it plays");
               fromTrace(p);
               pad.remove();
+              lo = A;
+              hi = B;
               say1.textContent = "Traced. Trace again or go back to the voice.";
               show("auto");
             };
@@ -5677,7 +5640,8 @@
         };
         if (i === cur && w) {
           const ta = mkEl("textarea", "txin");
-          ta.value = l.text;
+          ta.value = ta.defaultValue = l.text;
+          ta.dataset.seg = String(l.id);
           ta.dir = "auto"; // typed in Arabic, it runs right to left
           ta.lang = langOf(l.words);
           ta.rows = 2;
@@ -5772,7 +5736,8 @@
             body.append(was, now);
             r.append(meta, body);
             const live = l ? l.text : "";
-            if (live !== c.from) {
+            // only onto the very line it was made on (a line gone or renumbered has nothing to restore into)
+            if (l && live !== c.from) {
               const b = mkEl("button", "lnk txbtn");
               b.type = "button";
               b.textContent = "Restore";

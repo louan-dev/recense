@@ -95,8 +95,15 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 - A whole stanza by ear: Whole line loops the line; tap its first beat, then its last, and it loops between them
   until Use this cadence (or Retry). The words then follow the voice inside those two beats; if that still isn't it,
   Trace it: slide a finger along the line as it is sung and each word takes its start, end and fill from the path.
-  Back to the voice undoes it. One word at a time, the Light under Start and End draws how the word fills: drag it
-  up or down for faster or slower at first, slide along it as the word plays to trace it, double-tap for the voice.
+  Back to the voice undoes it. One word at a time, the trace pad under Start and End shows the word itself in white
+  (no graph, nothing moving through it): touch it and the word loops with a breath before it, slide along it as it
+  is sung and the light copies the finger, never going back; ↑ ↓ for faster or slower at first, double-tap for the
+  voice. The finger counts anywhere in the pad's height, so it can slide under the letters without hiding them, and
+  a long line shrinks onto one row. Tracing the line loops that line alone (1.5 s pre-roll).
+- Fixes (item 40 bug report): a word's light always reaches its last letter; the notation under a line fades with
+  its words; an editor field saves only text typed into it, onto the line it was opened on, and Restore only onto
+  the line the change was made on (one line's words had landed on another's).
+  The Prosody / Chords / Notes toggle lives on the EQ's music page, beside Chords.
 - The editor is quiet: Changes · a grabber · Done; the tools fold under the grabber (tap, or rest the pointer on it).
   Paused with no line up, a grabber where the lines show opens the editor.
   A word being timed keeps its marks up when the phone is turned or the server's lines come back; on a short

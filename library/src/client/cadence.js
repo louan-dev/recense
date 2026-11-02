@@ -546,12 +546,15 @@
       return Math.pow(u, Math.pow(2, -1.5 * w.k));
     }
     if (!(w.syl && w.syl.length && n)) return t >= w.e ? 1 : Math.max(0, Math.min(1, (t - w.s) / Math.max(0.05, w.e - w.s)));
+    // the last syllable always reaches the word's last letter (its count can fall short of the letters drawn: the
+    // light stopped at "Variations on a dr|eam" until the word was over, item 40 bug report)
     let c0 = 0;
     for (let k = 0; k < w.syl.length; k++) {
-      const y = w.syl[k], end = k + 1 < w.syl.length ? Math.min(w.syl[k + 1].s, y.e + 0.25) : y.e;
+      const y = w.syl[k], last = k + 1 === w.syl.length, end = last ? y.e : Math.min(w.syl[k + 1].s, y.e + 0.25);
+      const c1 = last ? n : Math.min(n, y.c);
       if (t < y.s) return c0 / n;
-      if (t < end) return Math.min(1, (c0 + (y.c - c0) * (t - y.s) / Math.max(0.05, end - y.s)) / n);
-      c0 = y.c;
+      if (t < end) return Math.min(1, (c0 + (c1 - c0) * (t - y.s) / Math.max(0.05, end - y.s)) / n);
+      c0 = c1;
     }
     return 1;
   }

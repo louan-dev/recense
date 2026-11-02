@@ -318,6 +318,17 @@
       const nt = notationNow();
       const built = nt.ribbon || nt.chords || nt.notes ? blockFor(src, next, size, nt) : null;
       const cv = laneIn(src);
+      // the figure is as visible as the words over it, so a line leaving takes its contour and dynamics with it at
+      // once (item 40 bug report: "mf" stayed while the words had faded)
+      let a = 0;
+      for (const sp of src.querySelectorAll(".txw")) {
+        const c = sp._c;
+        const m = typeof c === "string" && /rgba\([^)]*,\s*([\d.]+)\)/.exec(c);
+        a = Math.max(a, m ? Number(m[1]) : 1);
+        if (a >= 1) break;
+      }
+      const op = src.querySelector(".txw") ? String(Math.round(a * 100) / 100) : "";
+      if (cv.style.opacity !== op) cv.style.opacity = op;
       if (!built) { cv.width = 0; cv.height = 0; cv.style.height = "0px"; return; }
       const w = Math.max(1, Math.round(src.getBoundingClientRect().width));
       const h = Math.max(1, Math.round(built.rows * built.laneH));

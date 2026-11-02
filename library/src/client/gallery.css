@@ -1940,8 +1940,9 @@ body.comments-open .tx{top:calc(var(--tb) + 4px)}
 @keyframes txhit{40%{transform:scale(.95);background:rgba(10,132,255,.32)}}
 .txsbtns{display:flex;flex-wrap:wrap;gap:.2em 1.2em}
 .txlightw{display:flex;flex-direction:column;gap:2px;max-width:454px}
-.txlight{display:block;width:100%;height:60px;border-radius:14px;background:rgba(255,255,255,.08);touch-action:none;cursor:crosshair;outline:0}
-.txlight:focus-visible{box-shadow:0 0 0 2px rgba(10,132,255,.8)}
+.txtrace{display:flex;align-items:flex-start;justify-content:center;box-sizing:border-box;width:100%;max-width:454px;height:72px;padding:12px 12px 0;border-radius:14px;background:rgba(255,255,255,.08);touch-action:none;cursor:ew-resize;outline:0;overflow:hidden;-webkit-user-select:none;user-select:none}
+.txtrace:focus-visible{box-shadow:0 0 0 2px rgba(10,132,255,.8)}
+.txtrt{white-space:nowrap;color:#fff;font:600 22px/1.2 system-ui,-apple-system,sans-serif;pointer-events:none}
 .txlcap{font-size:.72em;color:#7fbcff;text-align:center}
 .txsbtns .txbtn{background:none;padding:4px 0}
 .txsbtns .txbtn[hidden]{display:none}
