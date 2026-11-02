@@ -3580,15 +3580,23 @@
   const listOf = (f) => (f && Array.isArray(f.comments) ? f.comments : f && f.caption ? [{ id: "c0", text: f.caption, at: f.capAt, by: G.owner }] : []);
   const mine = isMe;
   const nameOf = (c) => (c.as ? c.as : mine(c) ? "You" : c.by === G.owner || !c.by ? ownerName : c.by);
+  // a tiny flag after the name: the connection's apparent country, set by the server (notes 47)
+  let regions = null;
+  const flagOf = (cc) => {
+    const s = mkEl("span", "cflag");
+    s.textContent = String.fromCodePoint(...[...cc].map((ch) => 0x1f1a5 + ch.charCodeAt(0)));
+    try { regions = regions || new Intl.DisplayNames([navigator.language || "en"], { type: "region" }); } catch (_) {}
+    s.title = "Posted from " + ((regions && regions.of(cc)) || cc) + ", as the connection shows (a VPN can change it)";
+    s.setAttribute("aria-label", s.title);
+    return s;
+  };
   const postedAt = (t) => D(t, { day: "numeric", month: "short", year: "numeric" }) + " at " + T(t);
   const isOpen = () => document.body.classList.contains("comments-open");
 
   const send = async (f, body) => {
     const asGuest = guest();
-    const asInvitee = !!G.invite && body.op === "add"; // invitees name themselves too (one link may reach several people)
-    const name = asGuest || asInvitee ? guestName() || askName() : "";
-    if ((asGuest || asInvitee) && !name) throw new Error("Add your name to comment");
-    if (asInvitee) body = { ...body, as: name };
+    // a guest's name comes from the field under the comment (or what they gave before); invitees post as their invitation
+    const name = asGuest ? guestName() : "";
     const r = await fetch(asGuest ? "/api/caption" : API + "/caption", {
       method: "PUT",
       headers: { "content-type": "application/json", "x-gallery": "1" },
@@ -3603,6 +3611,7 @@
 
     const j = await r.json();
     if (j.you) G.you = j.you;
+    if (j.youName) try { localStorage.setItem(GUEST_NAME, j.youName); } catch (_) {}
     f.comments = j.comments || [];
     f.caption = j.caption || "";
     f.capAt = j.capAt || 0;
@@ -3872,7 +3881,9 @@
 
       p.textContent = c.text;
       b.textContent = nameOf(c);
-      by.append(b, " " + (c.at ? postedAt(c.at) : "") + (c.edited ? " · Edited" : ""));
+      by.append(b);
+      if (c.cc) by.append(flagOf(c.cc));
+      by.append(" " + (c.at ? postedAt(c.at) : "") + (c.edited ? " · Edited" : ""));
       row.append(p, by);
 
       // the owner taps the name to say who said it (notes 47); an empty answer puts their own name back
@@ -4013,6 +4024,16 @@
     btns.append(post, del, cancel);
     // always shown: after a post iPhone won't focus the new field by itself, which used to leave
     // no way to delete or cancel
+    // a guest names themselves once, right here, before their first comment (never after)
+    const nm = guest() && !guestName() ? mkEl("input", "cname") : null;
+    if (nm) {
+      nm.type = "text";
+      nm.maxLength = 40;
+      nm.placeholder = "Your name";
+      nm.autocomplete = "name";
+      nm.setAttribute("aria-label", "Your name, shown with your comments");
+      field.append(nm);
+    }
     field.append(ta, btns);
     thread.appendChild(field);
 
@@ -4035,6 +4056,16 @@
     const doPost = async () => {
       const text = ta.value.trim();
       if (!text) return;
+      if (nm) {
+        const n = nm.value.trim();
+        if (!n) {
+          nm.classList.add("need");
+          nm.placeholder = "Your name, to post";
+          nm.focus();
+          return;
+        }
+        try { localStorage.setItem(GUEST_NAME, n); } catch (_) {}
+      }
 
       busy(true);
 

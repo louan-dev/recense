@@ -390,12 +390,10 @@ await test("invite page: no menu, no delete, comment as the participant", false,
   await pg.click('.tile[data-n="00000"]');
   await pg.click(".cmlabel");
   await pg.fill("#thread textarea", "from Ana");
-  pg.removeAllListeners("dialog");
-  pg.once("dialog", (d) => d.accept("Ana's sister")); // invitees name themselves before posting (notes 47)
   await pg.press("#thread textarea", "Enter");
   await pg.waitForFunction(() => [...document.querySelectorAll("#thread .ctext")].some((e) => e.textContent === "from Ana"));
   const notes = JSON.parse(await (await MAIN.get("notes/Pics/.comments.json")).text());
-  assert.ok(notes["p.jpg"].list.some((c) => c.by === "Ana" && c.as === "Ana's sister" && c.text === "from Ana"));
+  assert.ok(notes["p.jpg"].list.some((c) => c.by === "Ana" && !c.as && c.text === "from Ana"));
 });
 
 await test("invite page: a 1-hour link says when today it ends, not just the date", false, async (pg) => {

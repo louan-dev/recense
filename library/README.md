@@ -63,7 +63,11 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 - Comments under each item: Post / Delete / Cancel; swipe your own comment for Delete.
 - Posting someone else's words: tap your name on your comment and type who said it (empty puts your name back).
   API: `PUT /main/api/caption` with `{ op: "add", text, as }` or `{ op: "label", cid, as }`; owner only, edit/delete stay yours.
-- Invitees give their name before their first post (remembered in their browser); it shows on their comments, never the owner's name.
+- Who said it: an invitee posts as the name on their invitation (one invitation per name, never the owner's); the first
+  device that writes with an invite link keeps it, so a forwarded copy can view but not post as them. A guest on a share
+  link types a name once, in the field above their first comment; the server keeps it with their cookie, so it can't be
+  changed or be an invitee's. Each comment carries a tiny flag: the country Cloudflare sees the connection from
+  (`request.cf.country`, set by the server only; a VPN moves it). All of it lives in the Worker and R2; WebDAV has no part.
 - Documents open as pages: PDF, Markdown, Word (.docx), plain text. In Main, Markdown and plain-text files have
   **Edit** / **Save** / **Cancel** on the page (iPhone and iPad too): the save is refused if the file changed elsewhere
   since it was opened, and the version it replaces goes to the trash.

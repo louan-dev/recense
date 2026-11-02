@@ -12,7 +12,7 @@
 
 import { OWNER, cleanPath, urlPath, notice, jsonResponse, viewOf } from "./common.js";
 import { listFolder, mainFile, mainUpload } from "./main.js";
-import { commentApi } from "./public.js";
+import { commentApi, countryOf, guestName } from "./public.js";
 import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
@@ -85,6 +85,11 @@ export async function inviteApi(req, env, url, path) {
     const ttl = Number(b && b.ttl);
 
     if (!name) return new Response("Name needed", { status: 400 });
+    // each invitee's name is theirs alone (notes 47), and never the owner's
+    if (!guestName(name)) return new Response("That name is reserved", { status: 400 });
+    if ((await liveInvites(env)).some((i) => String(i.name).toLowerCase() === name.toLowerCase())) {
+      return new Response("Someone already has an invitation under that name", { status: 409 });
+    }
     if (folder === null) return new Response("Bad folder", { status: 400 });
     if (!Number.isFinite(ttl) || ttl < 0 || ttl > TTL_MAX) return new Response("Bad expiry", { status: 400 });
 
@@ -289,7 +294,22 @@ export async function participantRoute(req, env, ctx, url, path) {
       }
       if (b.op !== "add" && b.op !== "del" && b.op !== "edit" && b.op !== "like") return new Response("Not allowed", { status: 403 });
 
-      return commentApi(req, env, inv.name, true);
+      // a forwarded link can still be viewed, but only the first device that writes with it speaks as its invitee
+      const sec = (/(?:^|;\s*)gd=([0-9a-f]{32})(?:;|$)/.exec(req.headers.get("cookie") || "") || [])[1];
+      const dev = sec ? await hashOf("device:" + sec) : null;
+      let setCookie = "";
+      if (inv.device ? inv.device !== dev : false) {
+        return new Response("This invitation is already in use on another device. Ask for your own link.", { status: 403 });
+      }
+      if (!inv.device) {
+        const fresh = sec || [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
+        inv.device = await hashOf("device:" + fresh);
+        await env.MAIN.put(INVITES + (await hashOf(token)) + ".json", JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
+        if (!sec) setCookie = `gd=${fresh}; Path=${base}; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`;
+      }
+      const r = await commentApi(req, env, inv.name, true, null, countryOf(req));
+      if (setCookie && r.ok) r.headers.append("set-cookie", setCookie);
+      return r;
     }
 
     // PUT /m/<token>/api/file?name=<file>&mtime=<ms>   a new file only; nothing is ever replaced

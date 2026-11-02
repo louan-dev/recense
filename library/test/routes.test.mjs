@@ -405,7 +405,7 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
   assert.equal((await call("/m/" + "A".repeat(43))).status, 404);
 
   // writes: same-site only; upload new files, never replace; no deletes
-  const w = (path, init) => call(at + path, { ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const w = (path, init) => call(at + path, { ...init, headers: { "x-gallery": "1", cookie: "gd=00000000000000000000000000000001", ...(init.headers || {}) } }); // one device
   assert.equal((await call(at + "/api/file?name=n.jpg", { method: "PUT", body: "N" })).status, 403);
   r = await w("/api/file?name=n.jpg", { method: "PUT", body: "N", headers: { "content-type": "image/jpeg", "content-length": "1" } });
   assert.equal(r.status, 200, await r.clone().text());
@@ -608,20 +608,32 @@ await test("comments: the owner labels who said it (notes 47)", async () => {
   assert.equal(j.comments[0].as, "Dad");
   j = await (await put({ op: "label", cid, as: "" })).json();
   assert.equal(j.comments[0].as, undefined);
-  // an invited person can't relabel, but names themselves when posting (never as the owner)
-  const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Pat", ttl: 0, dir: "Lb" }) })).json();
-  const m = (body) => call("/m/" + inv.url.split("/m/")[1] + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Lb/a.jpg", ...body }) });
-  assert.equal((await m({ op: "label", cid, as: "Pat" })).status, 403);
-  j = await (await m({ op: "add", text: "hi", as: "Jo" })).json();
-  assert.equal(j.comments[1].by, "Pat");
-  assert.equal(j.comments[1].as, "Jo");
-  j = await (await m({ op: "add", text: "hey", as: "Chau" })).json();
-  assert.equal(j.comments[2].as, undefined);
+  // an invited person can't relabel, nor post under another name, nor send a country
+  const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Lee", ttl: 0, dir: "Lb" }) })).json();
+  const tok = inv.url.split("/m/")[1];
+  const m = (body, cookie) => call("/m/" + tok + "/api/caption", { method: "PUT", headers: { "x-gallery": "1", ...(cookie ? { cookie } : {}) }, body: JSON.stringify({ kind: "main", path: "Lb/a.jpg", ...body }) });
+  assert.equal((await m({ op: "label", cid, as: "Lee" })).status, 403);
+  let r = await m({ op: "add", text: "hi", as: "Jo", cc: "ZZ" });
+  assert.equal(r.status, 200, await r.clone().text());
+  const dev = /gd=([0-9a-f]{32})/.exec(r.headers.get("set-cookie") || "");
+  assert.ok(dev, "the first device gets its cookie");
+  j = await r.json();
+  assert.equal(j.comments[1].by, "Lee");
+  assert.equal(j.comments[1].as, undefined);
+  assert.notEqual(j.comments[1].cc, "ZZ");
+  // the same device goes on; a forwarded copy of the link can't speak as Lee
+  assert.equal((await m({ op: "add", text: "again" }, "gd=" + dev[1])).status, 200);
+  assert.equal((await m({ op: "add", text: "forwarded" })).status, 403);
+  // names: one invitation per name, never the owner's
+  const mk = (name) => call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name, ttl: 0, dir: "Lb" }) });
+  assert.equal((await mk("lee")).status, 409);
+  assert.equal((await mk("Chau")).status, 400);
 });
 
 await test("rooms: an invite to some items sees only those, never uploads", async () => {
   for (const n of ["a.jpg", "b.jpg", "c.jpg"]) await MAIN.put("files/Rm/" + n, "x" + n);
-  const mk = (body) => call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Sam", ttl: 3600, dir: "Rm", ...body }) });
+  let rooms = 0; // each invitation has its own name (notes 47)
+  const mk = (body) => call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Sam" + ++rooms, ttl: 3600, dir: "Rm", ...body }) });
   assert.equal((await mk({ items: ["nope.jpg"] })).status, 404);
   assert.equal((await mk({ items: ["../x"] })).status, 400);
   const inv = await (await mk({ items: ["b.jpg"] })).json();
@@ -892,7 +904,7 @@ await test("move: carries the file, its art, comments and key into an existing f
   await post("/main/api/folder", { dir: "Mv", name: "In" });
   await call("/main/api/caption", { as: "owner", method: "PUT", body: JSON.stringify({ kind: "main", path: "Mv/s.mp3", op: "add", text: "moved note" }) });
   await call("/main/api/key", { as: "owner", method: "PUT", body: JSON.stringify({ path: "Mv/s.mp3", key: "Am", src: "manual" }) });
-  const room = await (await post("/main/api/invites", { name: "R", ttl: 0, dir: "Mv", items: ["s.mp3"] })).json();
+  const room = await (await post("/main/api/invites", { name: "R2", ttl: 0, dir: "Mv", items: ["s.mp3"] })).json();
   assert.equal((await post("/main/api/move", { paths: ["Mv/s.mp3"], to: "Mv/In" }, "stranger")).status, 404);
   const j = await (await post("/main/api/move", { paths: ["Mv/s.mp3"], to: "Mv/In" })).json();
   assert.deepEqual(j, { ok: true, moved: [{ from: "Mv/s.mp3", to: "Mv/In/s.mp3" }], failed: [] });
@@ -1803,7 +1815,7 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
 
   // activity: a participant's upload, comment and like, and the owner's like, newest first, with the file
   const at = "/m/" + inv.url.split("/m/")[1];
-  const w = (path, init) => call(at + path, { ...init, headers: { ...x, ...(init.headers || {}) } });
+  const w = (path, init) => call(at + path, { ...init, headers: { ...x, cookie: "gd=00000000000000000000000000000001", ...(init.headers || {}) } }); // one device
   let r = await w("/api/file?name=f2.jpg", { method: "PUT", body: "G", headers: { "content-type": "image/jpeg", "content-length": "1" } });
   assert.equal(r.status, 200, await r.clone().text());
   r = await w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Fest/f1.jpg", op: "add", text: "so good" }) });

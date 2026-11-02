@@ -11,6 +11,7 @@ import { galleryPage } from "./page/gallery.js";
 import { transcriptChanges, transcriptResponse, transcriptRun, transcriptSave } from "./transcript.js";
 import { mainKeys, keyFields } from "./main.js";
 import { logActivity, unlogLike } from "./shared.js";
+import { liveInvites } from "./invite.js";
 
 const LINKS = "links/";
 
@@ -432,15 +433,22 @@ const likesOf = (v) => (v && Array.isArray(v.likes) ? v.likes.filter((l) => l &&
 // on or off, no op replaces the thread with one comment (or none).
 // Returns the new stored value (null = nothing left) or a string error.
 // vid: a share link's guest (guestCommentApi); their comments and likes are theirs by vid, never by the name they typed
-function applyComment(v, b, by, participant, vid = null) {
+// cc: the connection's apparent country, from Cloudflare's edge (req.cf.country), never from the client. A VPN or proxy
+// moves it, so it says where the comment came from, not who someone is.
+export const countryOf = (req) => {
+  const c = String((req && req.cf && req.cf.country) || "").toUpperCase();
+  return /^[A-Z]{2}$/.test(c) && c !== "XX" && c !== "T1" ? c : "";
+};
+
+function applyComment(v, b, by, participant, vid = null, cc = "") {
   const text = String((b && b.text) || "").trim().slice(0, COMMENT_MAX);
   const list = thread(v);
   const likes = likesOf(v);
   // the owner may say whose words they are posting (notes 47): stored as "as", "by" stays the owner's so edit/delete still work
   // an invitee says who they are before posting (one invite link may be passed around); never the owner's name
-  let as = !vid && (participant || by === OWNER) ? String((b && b.as) || "").trim().slice(0, 80) : "";
-  if (participant && ["you", "owner", OWNER.toLowerCase(), OWNER.split(" ")[0].toLowerCase()].includes(as.toLowerCase())) as = "";
-  const labelled = (c) => (as ? { ...c, as } : c);
+  // invitees and guests post as who their link or cookie says, never a typed label
+  const as = !participant && !vid && by === OWNER ? String((b && b.as) || "").trim().slice(0, 80) : "";
+  const labelled = (c) => ({ ...c, ...(as ? { as } : {}), ...(cc ? { cc } : {}) });
 
   if (b.op === "like") {
     const i = likes.findIndex((l) => (vid ? l.vid === vid : l.by === by && !l.vid));
@@ -450,7 +458,7 @@ function applyComment(v, b, by, participant, vid = null) {
     if (!text) return "Empty comment";
     if (list.length >= THREAD_MAX) return "Too many comments";
     const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    list.push(vid ? { id, text, at: Date.now(), by, vid } : labelled({ id, text, at: Date.now(), by }));
+    list.push(labelled(vid ? { id, text, at: Date.now(), by, vid } : { id, text, at: Date.now(), by }));
   } else if (b.op === "label") {
     // owner only, on the owner's own comments; an empty "as" gives the comment back to the owner's name
     if (participant || vid || by !== OWNER) return "Not allowed";
@@ -536,7 +544,7 @@ export async function renameComment(env, rel, to) {
 //   { op: "label", cid, as } (owner only; empty as clears it), { op: "edit", cid, text } to rewrite your own, { op: "del", cid } to remove one, or { text } to replace
 //   the whole thread (empty text clears it).  -> { ok, text, at, comments }
 // by: who is writing (the owner, or an invited participant's name).
-export async function commentApi(req, env, by = OWNER, participant = false, vid = null) {
+export async function commentApi(req, env, by = OWNER, participant = false, vid = null, cc = countryOf(req)) {
   let b;
 
   try {
@@ -548,7 +556,7 @@ export async function commentApi(req, env, by = OWNER, participant = false, vid 
   if (!b || typeof b !== "object") return new Response("Bad request", { status: 400 });
 
   // the stored value goes in, the new one comes out; null means remove
-  const change = (v) => applyComment(v, b, by, participant, vid);
+  const change = (v) => applyComment(v, b, by, participant, vid, cc);
   const done = async (v, where) => {
     const f = commentFields(v);
     // the Shared section's Activity: new comments, and likes turned on
@@ -1547,9 +1555,6 @@ export async function guestCommentApi(req, env, url) {
     return new Response("Bad request", { status: 400 });
   }
   if (!b || b.kind !== "link" || !["add", "edit", "del", "like"].includes(b.op)) return new Response("Bad request", { status: 400 });
-  const name = guestName(b.name);
-  if (!name) return new Response("Choose a name to comment with", { status: 400 });
-
   // only a live link takes comments
   const id = String(b.id || "");
   const manifest = ID_RE.test(id) ? await readManifest(env, id) : null;
@@ -1561,9 +1566,21 @@ export async function guestCommentApi(req, env, url) {
   if (fresh) secret = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
   const vid = await sha24(secret);
 
+  // the first name a guest gives is theirs for good: later ones are ignored, and nobody takes an invitee's name
+  const nameKey = "guests/" + vid + ".json";
+  const kept = fresh ? null : await env.MAIN.get(nameKey).then((o) => (o ? o.json() : null)).catch(() => null);
+  let name = kept && kept.name;
+  if (!name) {
+    name = guestName(b.name);
+    if (!name) return new Response("Choose a name to comment with", { status: 400 });
+    const l = name.toLowerCase();
+    if ((await liveInvites(env)).some((i) => String(i.name).toLowerCase() === l)) return new Response("That name is taken, choose another", { status: 409 });
+    await env.MAIN.put(nameKey, JSON.stringify({ name, at: Date.now() }), { httpMetadata: { contentType: "application/json" } });
+  }
+
   const inner = new Request(url, { method: "PUT", body: JSON.stringify(b), headers: { "content-type": "application/json" } });
-  const r = await commentApi(inner, env, name, true, vid);
-  const out = r.ok ? jsonResponse({ ...(await r.json()), you: vid }) : r;
+  const r = await commentApi(inner, env, name, true, vid, countryOf(req));
+  const out = r.ok ? jsonResponse({ ...(await r.json()), you: vid, youName: name }) : r;
   if (fresh && r.ok) out.headers.append("set-cookie", `gv=${secret}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`);
   return out;
 }

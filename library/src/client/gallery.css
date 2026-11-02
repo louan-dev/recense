@@ -1497,6 +1497,11 @@ body.lbopen main{
 }
 
 #thread .cmeta b{color:#fff;font-weight:600}
+/* the flag after a name: small, squared off, a hairline edge, like a system glyph (notes 47) */
+#thread .cmeta .cflag{display:inline-block;margin-left:5px;font-size:11px;line-height:1;vertical-align:1px;border-radius:2px;overflow:hidden;box-shadow:0 0 0 .5px rgba(255,255,255,.18);filter:saturate(.9)}
+#thread .cname{display:block;width:100%;box-sizing:border-box;background:none;border:0;border-bottom:1px solid #2a2a2c;color:#fff;font:inherit;font-size:15px;padding:8px 0;margin-bottom:6px;outline:none}
+#thread .cname::placeholder{color:#939297}
+#thread .cname.need::placeholder{color:#0a84ff}
 #thread .cops{float:right;display:inline-flex;gap:16px}
 #thread .cops .lnk{min-height:18px;font-size:13px;padding:13px 0;margin:-13px 0}
 #thread .crow textarea.cedit{border-bottom:1px solid #2a2a2c}
