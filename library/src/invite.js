@@ -21,6 +21,7 @@ import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
 import { logActivity } from "./shared.js";
+import { hasDB, shareGet, sharePut, shareList, shareById, shareRevoke, locksGet, lockSet } from "./d1.js";
 import { annotationChange, readAnnotations, pubOf as annotationOf } from "./annotations.js";
 import { identityApi, authRoute, signInPage, sessionGuest, claim, revokeGuest, guestStatus, endSessions, inviteIcs, emailOn } from "./identity.js";
 
@@ -51,6 +52,7 @@ export function permsFor(inv, name, locked = false) {
 }
 
 async function readLocks(env) {
+  if (hasDB(env)) return locksGet(env);
   try {
     const o = await env.MAIN.get(LOCKS);
     const j = o ? await o.json() : null;
@@ -92,18 +94,9 @@ export async function inviteApi(req, env, url, path) {
   if (path === "/main/api/invites" && method === "GET") {
     const dir = cleanPath(url.searchParams.get("dir") || "");
     const out = [];
-    let cursor;
-
-    do {
-      const r = await env.MAIN.list({ prefix: INVITES, cursor });
-
-      for (const o of r.objects) {
-        const inv = await readInvite(env, o.key);
-        if (inv && (dir === null || inv.folder === dir)) out.push({ ...pub(o.key.slice(INVITES.length, -5), inv), guest: await guestStatus(env, inv) });
-      }
-
-      cursor = r.truncated ? r.cursor : undefined;
-    } while (cursor);
+    for (const { hash, inv } of await allInvites(env)) {
+      if (dir === null || inv.folder === dir) out.push({ ...pub(hash, inv), guest: await guestStatus(env, inv) });
+    }
 
     out.sort((a, b) => a.created - b.created);
     return jsonResponse(out);
@@ -160,9 +153,7 @@ export async function inviteApi(req, env, url, path) {
     const view = viewOf(b);
     if (view) inv.view = view;
 
-    await env.MAIN.put(INVITES + hash + ".json", JSON.stringify(inv), {
-      httpMetadata: { contentType: "application/json" },
-    });
+    await saveInvite(env, hash, inv);
 
     return jsonResponse({ ...pub(hash, inv), url: url.origin + "/m/" + token });
   }
@@ -179,10 +170,15 @@ export async function inviteApi(req, env, url, path) {
     }
     const dir = cleanPath(String((b && b.dir) || ""));
     if (dir === null || typeof b.locked !== "boolean") return new Response("Bad request", { status: 400 });
-    const locks = await readLocks(env);
-    if (b.locked) locks[dir] = true;
-    else delete locks[dir];
-    await env.MAIN.put(LOCKS, JSON.stringify(locks), { httpMetadata: { contentType: "application/json" } });
+    if (hasDB(env)) {
+      await locksGet(env); // copies the R2 locks in first, so the change lands on top of them
+      await lockSet(env, dir, b.locked);
+    } else {
+      const locks = await readLocks(env);
+      if (b.locked) locks[dir] = true;
+      else delete locks[dir];
+      await env.MAIN.put(LOCKS, JSON.stringify(locks), { httpMetadata: { contentType: "application/json" } });
+    }
     return jsonResponse({ ok: true, locked: b.locked });
   }
 
@@ -198,10 +194,9 @@ export async function inviteApi(req, env, url, path) {
     } catch (e) {
       return new Response("Bad request", { status: 400 });
     }
-    const r = await env.MAIN.list({ prefix: INVITES + m[1] });
-    const key = r.objects.length === 1 ? r.objects[0].key : null;
-    const inv = key && (await readInvite(env, key));
-    if (!inv) return new Response("Not found", { status: 404 });
+    const found = await inviteById(env, m[1]);
+    if (!found) return new Response("Not found", { status: 404 });
+    const { hash, inv } = found;
     inv.perms = basePerms(inv);
     for (const k of PERMS) if (typeof b[k] === "boolean") inv.perms[k] = b[k];
     if (inv.items) inv.perms.upload = false;
@@ -227,15 +222,15 @@ export async function inviteApi(req, env, url, path) {
       if (Object.keys(ov).length > ITEMS_MAX) return new Response("Too many overrides", { status: 400 });
       inv.overrides = ov;
     }
-    await env.MAIN.put(key, JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
+    await saveInvite(env, hash, inv);
     return jsonResponse({ ok: true, perms: inv.perms, viewOnly: !!inv.viewOnly, overrides: inv.overrides || {} });
   }
 
   // DELETE /main/api/invites/<id>/sessions   signs the guest out on every device (the invitation stays)
   const ms = path.match(/^\/main\/api\/invites\/([0-9a-f]{16})\/sessions$/);
   if (ms && method === "DELETE") {
-    const r = await env.MAIN.list({ prefix: INVITES + ms[1] });
-    const inv = r.objects.length === 1 && (await readInvite(env, r.objects[0].key));
+    const found = await inviteById(env, ms[1]);
+    const inv = found && found.inv;
     if (!inv) return new Response("Not found", { status: 404 });
     if (inv.guest) await endSessions(env, inv.guest);
     return jsonResponse({ ok: true });
@@ -254,6 +249,11 @@ export async function inviteApi(req, env, url, path) {
 // Revokes an invite by its public id: the link is the same 404 as any unknown one from now on.
 export async function revokeInvite(env, id) {
   if (!ID_RE.test(id)) return false;
+  if (hasDB(env)) {
+    const inv = await shareRevoke(env, id);
+    if (inv && inv.guest) await revokeGuest(env, inv.guest);
+    return !!inv;
+  }
   const r = await env.MAIN.list({ prefix: INVITES + id });
   if (!r.objects.length) return false;
   // the guest goes with it: every session ends and no email or passkey signs them back in
@@ -268,20 +268,36 @@ export async function revokeInvite(env, id) {
 // Every invite still alive, for the Shared section (shared.js): [{ id, name, folder, items, created, expires, perms }]
 export async function liveInvites(env) {
   const now = Date.now();
+  return (await allInvites(env)).filter(({ inv }) => !(inv.expires && inv.expires <= now)).map(({ hash, inv }) => pub(hash, inv));
+}
+
+// ---------- storage: D1 when bound (C1), else invites/<hash>.json in MAIN ----------
+
+// Every invitation (expired ones too) as [{ hash, inv }].
+async function allInvites(env) {
+  if (hasDB(env)) return shareList(env);
   const out = [];
   let cursor;
-
   do {
     const r = await env.MAIN.list({ prefix: INVITES, cursor });
     for (const o of r.objects) {
       const inv = await readInvite(env, o.key);
-      if (inv && !(inv.expires && inv.expires <= now)) out.push(pub(o.key.slice(INVITES.length, -5), inv));
+      if (inv) out.push({ hash: o.key.slice(INVITES.length, -5), inv });
     }
     cursor = r.truncated ? r.cursor : undefined;
   } while (cursor);
-
   return out;
 }
+
+async function inviteById(env, id) {
+  if (hasDB(env)) return shareById(env, id);
+  const r = await env.MAIN.list({ prefix: INVITES + id });
+  const inv = r.objects.length === 1 && (await readInvite(env, r.objects[0].key));
+  return inv ? { hash: r.objects[0].key.slice(INVITES.length, -5), inv } : null;
+}
+
+const saveInvite = (env, hash, inv) =>
+  hasDB(env) ? sharePut(env, hash, inv) : env.MAIN.put(INVITES + hash + ".json", JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
 
 async function readInvite(env, key) {
   try {
@@ -297,7 +313,8 @@ async function readInvite(env, key) {
 async function lookup(env, token) {
   if (!TOKEN_RE.test(token)) return null;
 
-  const inv = await readInvite(env, INVITES + (await hashOf(token)) + ".json");
+  const hash = await hashOf(token);
+  const inv = hasDB(env) ? await shareGet(env, hash) : await readInvite(env, INVITES + hash + ".json");
   if (!inv || (inv.expires && inv.expires <= Date.now())) return null;
 
   return inv;
@@ -481,16 +498,10 @@ export async function participantRoute(req, env, ctx, url, path) {
 
 // A file in a folder was renamed: rooms that hold it keep holding it.
 export async function renameInInvites(env, folder, from, to) {
-  let cursor;
-  do {
-    const r = await env.MAIN.list({ prefix: INVITES, cursor });
-    for (const o of r.objects) {
-      const inv = await readInvite(env, o.key);
-      if (inv && inv.folder === folder && Array.isArray(inv.items) && inv.items.includes(from)) {
-        inv.items = to == null ? inv.items.filter((x) => x !== from) : inv.items.map((x) => (x === from ? to : x));
-        await env.MAIN.put(o.key, JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
-      }
+  for (const { hash, inv } of await allInvites(env)) {
+    if (inv.folder === folder && Array.isArray(inv.items) && inv.items.includes(from)) {
+      inv.items = to == null ? inv.items.filter((x) => x !== from) : inv.items.map((x) => (x === from ? to : x));
+      await saveInvite(env, hash, inv);
     }
-    cursor = r.truncated ? r.cursor : undefined;
-  } while (cursor);
+  }
 }

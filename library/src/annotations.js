@@ -6,6 +6,7 @@
 // Stored per item under annotations/<path>.json in MAIN: { items: [{ id, by, inv, at, text, t?, x?, y? }] }.
 
 import { OWNER, cleanPath, jsonResponse } from "./common.js";
+import { hasDB, annotationsGet, annotationsSave, annotationsMove } from "./d1.js";
 
 const PREFIX = "annotations/";
 const TEXT_MAX = 2000;
@@ -14,6 +15,7 @@ const ITEMS_MAX = 500;
 const keyOf = (rel) => PREFIX + rel + ".json";
 
 export async function readAnnotations(env, rel) {
+  if (hasDB(env)) return annotationsGet(env, rel);
   try {
     const o = await env.MAIN.get(keyOf(rel));
     const j = o ? await o.json() : null;
@@ -24,7 +26,9 @@ export async function readAnnotations(env, rel) {
 }
 
 const save = (env, rel, items) =>
-  items.length
+  hasDB(env)
+    ? annotationsSave(env, rel, items)
+    : items.length
     ? env.MAIN.put(keyOf(rel), JSON.stringify({ items }), { httpMetadata: { contentType: "application/json" } })
     : env.MAIN.delete(keyOf(rel));
 
@@ -84,6 +88,7 @@ export async function ownerAnnotationApi(req, env, url) {
 
 // A file was renamed or deleted (to = null): its annotations follow it.
 export async function moveAnnotations(env, from, to) {
+  if (hasDB(env)) return annotationsMove(env, from, to);
   const items = await readAnnotations(env, from);
   if (!items.length) return;
   if (to) await save(env, to, items);

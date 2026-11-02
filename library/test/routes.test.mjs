@@ -2,7 +2,7 @@
 // by a throwaway key. Run with `npm test` (it builds first).
 
 import { Miniflare } from "miniflare";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
 import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS, reconcile } from "../src/fp.js";
@@ -43,12 +43,16 @@ const serviceJwt = await jwt({ common_name: CLIENT });
 
 const textModules = readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js");
 
+// GALLERY_D1=1: the same tests with the DB binding (C1), the schema from migrations/ applied first
+const WITH_D1 = !!process.env.GALLERY_D1;
+
 const mf = new Miniflare({
   modules: [
     { type: "ESModule", path: BUILD + "worker.js" },
     ...textModules.map((f) => ({ type: "Text", path: BUILD + f })),
   ],
   compatibilityDate: "2026-08-01",
+  ...(WITH_D1 ? { d1Databases: { DB: "gallery-d1-test" } } : {}),
   r2Buckets: { PUBLIC: "gallery-public-test", MAIN: "gallery-main-test", KEEP: "recense-keep-test", TMP: "gallery-tmp-test", ARCHIVE: "gallery-archive-test" },
   bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: CLIENT + ", phone-id.access", NOTABILITY_DAV_HASH: NOTE_HASH },
   outboundService: (req) =>
@@ -60,6 +64,37 @@ const mf = new Miniflare({
 const PUBLIC = await mf.getR2Bucket("PUBLIC");
 const ARCHIVE_B = await mf.getR2Bucket("ARCHIVE");
 const MAIN = await mf.getR2Bucket("MAIN");
+const DB = WITH_D1 ? await mf.getD1Database("DB") : null;
+if (DB) await applyMigrations(DB);
+
+// Every migration file, statement by statement (what `wrangler d1 migrations apply` runs).
+async function applyMigrations(db) {
+  const dir = new URL("../migrations/", import.meta.url).pathname;
+  for (const f of readdirSync(dir).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort()) {
+    const sql = readFileSync(dir + f, "utf8").replace(/--.*$/gm, "");
+    for (const st of sql.split(/;\s*$/m).map((x) => x.trim()).filter(Boolean)) await db.prepare(st).run();
+  }
+}
+
+// An invitation as stored (D1 row or R2 object), changed by fn: for expiry tests.
+async function patchInvite(id, fn) {
+  if (DB) {
+    const row = await DB.prepare("SELECT doc FROM shares WHERE id = ?").bind(id).first();
+    const v = fn(JSON.parse(row.doc));
+    await DB.prepare("UPDATE shares SET doc = ?, expires_at = ? WHERE id = ?").bind(JSON.stringify(v), v.expires || 0, id).run();
+    return;
+  }
+  const k = (await MAIN.list({ prefix: "invites/" + id })).objects[0].key;
+  await MAIN.put(k, JSON.stringify(fn(await (await MAIN.get(k)).json())));
+}
+
+// What is stored for invitations, as [{ key, raw }]: never the token
+async function storedInvites() {
+  if (DB) return (await DB.prepare("SELECT token_hash, doc FROM shares").all()).results.map((r) => ({ key: "invites/" + r.token_hash + ".json", raw: r.doc }));
+  const out = [];
+  for (const o of (await MAIN.list({ prefix: "invites/" })).objects) out.push({ key: o.key, raw: await (await MAIN.get(o.key)).text() });
+  return out;
+}
 
 const call = (path, { as, write = true, headers = {}, ...init } = {}) => {
   const h = { ...headers };
@@ -385,9 +420,9 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
   const at = "/m/" + token;
 
   // the token itself is never stored, only its hash
-  const keys = (await MAIN.list({ prefix: "invites/" })).objects.map((o) => o.key);
-  assert.equal(keys.length, 1);
-  assert.ok(!keys[0].includes(token) && keys[0].startsWith("invites/" + inv.id));
+  const stored = await storedInvites();
+  assert.equal(stored.length, 1);
+  assert.ok(!stored[0].key.includes(token) && !stored[0].raw.includes(token) && stored[0].key.startsWith("invites/" + inv.id));
   const list = await (await call("/main/api/invites?dir=Party", { as: "owner", headers: { "x-gallery": "1" } })).json();
   assert.equal(list.length, 1);
   assert.equal(list[0].url, undefined);
@@ -445,9 +480,7 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
 
   // expiry
   const short = await (await mk({ name: "Brief", ttl: 3600, dir: "Party" })).json();
-  const k = (await MAIN.list({ prefix: "invites/" + short.id })).objects[0].key;
-  const rec = await (await MAIN.get(k)).json();
-  await MAIN.put(k, JSON.stringify({ ...rec, expires: Date.now() - 1 }));
+  await patchInvite(short.id, (v) => ({ ...v, expires: Date.now() - 1 }));
   assert.equal((await call("/m/" + short.url.split("/m/")[1])).status, 404);
 });
 
@@ -1894,9 +1927,7 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
   await MAIN.put("files/Fest/f1.jpg", "F", { httpMetadata: { contentType: "image/jpeg" } });
   const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Ana Lee", ttl: 0, dir: "Fest" }) })).json();
   const gone = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Old", ttl: 1, dir: "Fest" }) })).json();
-  const gk = (await MAIN.list({ prefix: "invites/" + gone.id })).objects[0].key;
-  const gv = await (await MAIN.get(gk)).json();
-  await MAIN.put(gk, JSON.stringify({ ...gv, expires: Date.now() - 1 }));
+  await patchInvite(gone.id, (v) => ({ ...v, expires: Date.now() - 1 }));
 
   let { shares } = await (await own("/main/api/shares")).json();
   const find = (kind, id) => shares.find((s) => s.kind === kind && s.id === id);
@@ -2091,15 +2122,118 @@ await test("C0: unauthenticated, expired, revoked, direct URL, cross-folder, pub
   assert.deepEqual(await writes(), [200, 200, 200, 200]);
 
   // expired, then revoked: the same 404 as never existing, for the page, files and every API
-  const k = (await MAIN.list({ prefix: "invites/" + made.id })).objects[0].key;
-  const rec = await (await MAIN.get(k)).json();
-  await MAIN.put(k, JSON.stringify({ ...rec, expires: Date.now() - 1 }));
+  await patchInvite(made.id, (v) => ({ ...v, expires: Date.now() - 1 }));
   for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "expired " + p);
   assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
-  await MAIN.put(k, JSON.stringify(rec));
+  await patchInvite(made.id, (v) => ({ ...v, expires: 0 }));
   assert.equal((await own("/main/api/invites/" + made.id, { method: "DELETE" })).status, 200);
   for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "revoked " + p);
   assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
+});
+
+// ---------- C1: D1, with the R2 JSON copied in lazily and kept ----------
+
+if (DB) await test("C1 (D1): invites, locks, comments, likes and annotations move in on first read; R2 JSON is never deleted", async () => {
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+  await MAIN.put("files/Mig/a.jpg", "A", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Mig/b.jpg", "B", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Mig/Sub/c.jpg", "C", { httpMetadata: { contentType: "image/jpeg" } });
+
+  // an invitation an older Worker wrote to R2 opens, is copied once, and its R2 object stays
+  const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  const hash = sha(token);
+  const old = { name: "Legacy", folder: "Mig", created: 1, expires: 0, perms: { download: true, upload: true, comment: true } };
+  await MAIN.put("invites/" + hash + ".json", JSON.stringify(old));
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares WHERE token_hash = ?").bind(hash).first()).n, 0);
+  assert.equal((await call("/m/" + token)).status, 200);
+  let row = await DB.prepare("SELECT * FROM shares WHERE token_hash = ?").bind(hash).first();
+  assert.equal(row.migrated_from, "r2:invites/" + hash + ".json");
+  assert.equal(row.can_react, 1, "old invitations keep likes");
+  assert.equal(row.can_annotate, 0);
+  assert.ok(await MAIN.head("invites/" + hash + ".json"), "R2 copy kept");
+  assert.equal((await call("/m/" + token)).status, 200);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares").first()).n >= 1, true);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares WHERE token_hash = ?").bind(hash).first()).n, 1);
+  // writes land in D1, not in the R2 copy
+  await own("/main/api/invites/" + hash.slice(0, 16), { method: "PATCH", body: JSON.stringify({ annotate: true, overrides: { "b.jpg": { comment: false } } }) });
+  row = await DB.prepare("SELECT can_annotate FROM shares WHERE id = ?").bind(hash.slice(0, 16)).first();
+  assert.equal(row.can_annotate, 1);
+  assert.deepEqual((await DB.prepare("SELECT name, can_comment, can_view FROM overrides WHERE share_id = ?").bind(hash.slice(0, 16)).all()).results, [{ name: "b.jpg", can_comment: 0, can_view: null }]);
+  assert.deepEqual(await (await MAIN.get("invites/" + hash + ".json")).json(), old);
+  // the first write claims it in D1, exactly once
+  let r = await call("/m/" + token + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Mig/a.jpg", op: "add", text: "from legacy" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  const ck = "gs=" + /gs=([^;]+)/.exec(r.headers.get("set-cookie"))[1];
+  assert.ok(JSON.parse((await DB.prepare("SELECT doc FROM shares WHERE token_hash = ?").bind(hash).first()).doc).guest);
+  r = await call("/m/" + token + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Mig/a.jpg", op: "add", text: "someone else" }) });
+  assert.equal(r.status, 401, "a second device can't claim it again");
+  // revoked: 404 even when an older Worker puts the R2 copy back
+  assert.equal((await own("/main/api/invites/" + hash.slice(0, 16), { method: "DELETE" })).status, 200);
+  assert.ok((await DB.prepare("SELECT revoked_at FROM shares WHERE token_hash = ?").bind(hash).first()).revoked_at > 0);
+  assert.equal(await MAIN.head("invites/" + hash + ".json"), null);
+  await MAIN.put("invites/" + hash + ".json", JSON.stringify(old));
+  assert.equal((await call("/m/" + token, { headers: { cookie: ck } })).status, 404);
+  assert.ok(!(await (await own("/main/api/invites?dir=Mig")).json()).some((i) => i.id === hash.slice(0, 16)));
+  await MAIN.delete("invites/" + hash + ".json");
+
+  // comments: both R2 shapes copy in on the first read of the folder, once; the R2 map is left byte for byte
+  const notes = {
+    "b.jpg": { text: "old single", at: 7 },
+    "Gone.jpg": { list: [{ id: "c1", text: "orphan", at: 8, by: "owner" }] },
+  };
+  const R2KEY = "notes/Mig/Sub/.comments.json";
+  const sub = { "c.jpg": { list: [{ id: "c1", text: "one", at: 1, by: "Pat" }, { id: "c2", text: "two", at: 2, by: "owner", as: "Mum" }], likes: [{ by: "Pat", at: 3 }] } };
+  await MAIN.put(R2KEY, JSON.stringify(sub));
+  const before = await (await MAIN.get(R2KEY)).text();
+  let html = await (await own("/main?p=Mig%2FSub")).text();
+  assert.match(html, /"text":"one"/);
+  assert.match(html, /"as":"Mum"/);
+  const n = async (t, dir) => (await DB.prepare(`SELECT count(*) n FROM ${t} WHERE dir = ?`).bind(dir).first()).n;
+  assert.equal(await n("comments", "Mig/Sub"), 2);
+  assert.equal(await n("reactions", "Mig/Sub"), 1);
+  assert.ok(await DB.prepare("SELECT etag FROM migrated WHERE r2_key = ?").bind(R2KEY).first());
+  await own("/main?p=Mig%2FSub");
+  assert.equal(await n("comments", "Mig/Sub"), 2, "copied once");
+  // a new comment goes to D1 only
+  r = await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/Sub/c.jpg", op: "add", text: "three" }) });
+  assert.deepEqual((await r.json()).comments.map((c) => c.text), ["one", "two", "three"]);
+  assert.equal(await n("comments", "Mig/Sub"), 3);
+  assert.equal(await (await MAIN.get(R2KEY)).text(), before, "R2 backup untouched");
+  // an older Worker writes R2 during the rollout: its new comment is merged in by id, nothing doubles
+  const late = JSON.parse(before);
+  late["c.jpg"].list.push({ id: "c9", text: "late", at: 9, by: "owner" });
+  await MAIN.put(R2KEY, JSON.stringify(late));
+  html = await (await own("/main?p=Mig%2FSub")).text();
+  assert.match(html, /"text":"late"/);
+  assert.equal(await n("comments", "Mig/Sub"), 4);
+  // the old single-comment shape becomes owner comment c0
+  await MAIN.put("notes/Mig/.comments.json", JSON.stringify(notes));
+  r = await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/b.jpg", op: "like" }) });
+  const j = await r.json();
+  assert.deepEqual(j.comments.map((c) => [c.id, c.text]), [["c0", "old single"]]);
+  assert.equal(j.likes.length, 1);
+  // deleting every comment empties D1 for that item; the R2 map is still there
+  await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/b.jpg", text: "" }) });
+  assert.deepEqual(await (await MAIN.get("notes/Mig/.comments.json")).json(), notes);
+  // a rename carries comments and annotations in D1
+  await own("/main/api/annotations", { method: "PUT", body: JSON.stringify({ path: "Mig/Sub/c.jpg", op: "add", text: "pin", t: 5 }) });
+  r = await own("/main/api/rename", { method: "POST", body: JSON.stringify({ path: "Mig/Sub/c.jpg", name: "d.jpg" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  assert.equal((await DB.prepare("SELECT count(*) n FROM comments WHERE dir = 'Mig/Sub' AND name = 'd.jpg'").first()).n, 4);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM comments WHERE dir = 'Mig/Sub' AND name = 'c.jpg'").first()).n, 0);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM annotations WHERE dir = 'Mig/Sub' AND name = 'd.jpg'").first()).n, 1);
+
+  // annotations and folder locks written by R2 code copy in too
+  await MAIN.put("annotations/Mig/a.jpg.json", JSON.stringify({ items: [{ id: "r2a", by: "owner", inv: null, at: 4, text: "from r2", x: 0.1, y: 0.2 }] }));
+  const items = (await (await own("/main/api/annotations?path=Mig%2Fa.jpg")).json()).items;
+  assert.deepEqual(items.map((a) => [a.id, a.text, a.x, a.mine]), [["r2a", "from r2", 0.1, true]]);
+  assert.ok(await MAIN.head("annotations/Mig/a.jpg.json"));
+  await MAIN.put("invites/_locks.json", JSON.stringify({ Mig: true }));
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), { Mig: true });
+  await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "Mig", locked: false }) });
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), {});
+  assert.ok(await MAIN.head("invites/_locks.json"), "R2 locks kept");
 });
 
 console.log(`\n${passed} passed`);

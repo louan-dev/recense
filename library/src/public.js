@@ -5,6 +5,7 @@
 //   - folder links: a folder in Gallery/Public, kept under folders/<name>/
 // Everything here expires and is deleted; nothing here reads or writes MAIN.
 
+import { hasDB, commentMap, commentSave } from "./d1.js";
 import { OWNER, ID_RE, FOLDER_MAX, JUNK, MIME_BY_EXT, IMG_BY_EXT, isAudioish, cleanPath, urlPath, notice, jsonResponse, serveObject, viewOf } from "./common.js";
 import { extractArt } from "./art.js";
 import { galleryPage } from "./page/gallery.js";
@@ -542,7 +543,9 @@ async function saveMap(bucket, key, map) {
 }
 
 // The comments of one Main folder, by file name.
-export const mainComments = (env, dir) => readJson(env.MAIN, mainNotesKey(dir));
+// With D1 bound (C1) they live there, the R2 map copied in on first read and then kept as a backup.
+export const mainComments = (env, dir) => (hasDB(env) ? commentMap(env, dir, OWNER) : readJson(env.MAIN, mainNotesKey(dir)));
+const saveMainMap = (env, dir, map) => (hasDB(env) ? commentSave(env, dir, map, OWNER) : saveMap(env.MAIN, mainNotesKey(dir), map));
 
 // Main: a file went to the trash, so its comment goes too.
 export async function dropMainComment(env, rel) {
@@ -552,7 +555,7 @@ export async function dropMainComment(env, rel) {
 
   if (map[name]) {
     delete map[name];
-    await saveMap(env.MAIN, mainNotesKey(dir), map);
+    await saveMainMap(env, dir, map);
   }
 }
 
@@ -567,8 +570,8 @@ export async function renameComment(env, rel, to) {
     const there = toDir === dir ? map : await mainComments(env, toDir);
     there[to.split("/").pop()] = map[a];
     delete map[a];
-    if (there !== map) await saveMap(env.MAIN, mainNotesKey(toDir), there);
-    await saveMap(env.MAIN, mainNotesKey(dir), map);
+    if (there !== map) await saveMainMap(env, toDir, there);
+    await saveMainMap(env, dir, map);
   }
 }
 
@@ -618,7 +621,7 @@ export async function commentApi(req, env, by = OWNER, participant = false, vid 
     if (v) map[name] = v;
     else delete map[name];
 
-    await saveMap(env.MAIN, mainNotesKey(dir), map);
+    await saveMainMap(env, dir, map);
     return done(v, { kind: "main", ref: rel });
   }
 
