@@ -22,7 +22,7 @@ Security before cosmetics: **C0 server-side authz, then C1 D1 data**, before UI 
 - Liquid-glass badges only on the 3 media-player playback controls (rewind, pause, forward). Everywhere else, buttons and toggles use the same font and blue as "Select All" / "Deselect All", including "Add a comment...".
 - Destructive menu rows are blue, no red. Expanded comment field has three blue options: Post, Delete (removes a comment they posted), Cancel (removes the draft); both return to collapsed view. The comment field sits directly under the latest comment. On public view the owner can post consecutive comments.
 - Time bar and audio bar must realign with each other in expanded and collapsed views. Test iPad Air 13" M3, MacBook Pro 13" M1, iPhone 12 Pro Max, portrait and landscape, touch and pointer.
-- Sill embeds Gallery through `?embed=1` and `views/health.json`: keep that contract, do not merge the projects.
+- Recense embeds Gallery through `?embed=1` and `views/health.json`: keep that contract, do not merge the projects.
 
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation (run the narrowest test, then regressions), next action. Update `../sync/PROGRESS.md` §7 and stop. Label status DONE (verified) / PARTIAL / BLOCKED / PROPOSED.

@@ -1,5 +1,5 @@
 // Gallery's broadcast extension (notes item 31): started from Control Center › Screen Recording › Gallery, it gets
-// the audio of whatever is playing on the iPhone or iPad (any app, any Safari tab), the way Sill's system-audio tap
+// the audio of whatever is playing on the iPhone or iPad (any app, any Safari tab), the way Recense's system-audio tap
 // does on the Mac. Speech is recognised on the device (never sent anywhere) in the language the app says to hear,
 // and each line goes to the app through Captions, which translates it and shows it in the floating window.
 // Video frames are dropped; only .audioApp is used. The extension has a 50 MB limit, so nothing large lives here.

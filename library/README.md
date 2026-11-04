@@ -12,7 +12,7 @@ CalDAV, and confidential things stay mine.
 
 But it is not only a storage story. I learn best through many senses at once, the way a song can teach a language
 faster than a textbook ever did for me, so Gallery plays, shows, lights and translates what I keep, and shares
-transcripts with Recense in Sill. I hope that turns everyday media into a playground for my family, for neighbours who
+transcripts with Recense. I hope that turns everyday media into a playground for my family, for neighbours who
 meet English as a barrier, for English speakers exploring other cultures and cities with a curious mind, and for
 people with disabilities who deserve learning that meets them where they are. It is a small, humble attempt to make
 technology a little more accessible and a little more humane, built from what has worked for me, and offered freely.
@@ -23,8 +23,8 @@ it is distributed by region and privilege, and by curricula that governments cho
 the tools that turn speech into text learned mostly from English and a handful of powerful languages. So spoken wisdom
 in English and in other languages face each other through glass, visible in outline while the words go unheard.
 Gallery and Recense try, in a small way, to open that window: the original keeps its colour, a translation supplies
-the common tuning, and a link carries both to someone who goes looking. The longer essay is in Sill's
-[preface](https://github.com/louan-dev/sill/blob/main/docs/recense-preface.md).
+the common tuning, and a link carries both to someone who goes looking. The longer essay is in Recense's
+[preface](https://github.com/louan-dev/recense/blob/main/docs/recense-preface.md).
 
 ## Long-term outcomes
 - Every file usable with no connection on Mac, iPhone and iPad, in each device's native place (Finder, Files).
@@ -132,13 +132,13 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   - The light reaches marks above and below the letters.
 
 ### Transcripts shared with Recense
-Recense (in Sill, on the Mac) transcribes Main's audio and video while idle and keeps every transcript in R2 under
+Recense (on the Mac) transcribes Main's audio and video while idle and keeps every transcript in R2 under
 `keep/<key>/` (`asr.json`, `tr/en|vi|fr.json`, `corrections.json`, `history/`). The key is the file's **content key**:
 the first 24 hex of SHA-256 of `fp:<bytes>:<sha256 of the first 64 KiB>:<sha256 of the last 64 KiB>`, computed the
 same way on the Mac, so one recording has one transcript wherever it plays, renamed, moved or uploaded twice.
 `keep/library.json` aliases a recording heard from another source, with its time shift.
 A corrected line keeps the space typed before `! ? ; :` (French writes `fini !`); a space before `, . …` and the
-Arabic and Ethiopic stops is dropped. Sill joins words by the same rule. Pushing to `main` deploys: GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
+Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Pushing to `main` deploys: GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
 
 ### Storage
 - Buckets: `gallery-public` (Public) and `gallery-main` (Main), plus the read-only archive; on the Mac they mount at
@@ -168,7 +168,7 @@ cron.
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
   in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, Read along
   with Copy, Clear and full screen. What's heard is kept per episode in the same transcript store as the Mac.
-  The floating window draws as Sill's overlay does (same yellow, semibold words, the translation a step quieter);
+  The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
   its middle button holds the words where they are and play shows the newest. Read along shows a word only once
   speech recognition has stopped rewriting it (Settle), so sentences grow calmly.
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands

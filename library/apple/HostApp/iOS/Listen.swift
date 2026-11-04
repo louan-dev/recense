@@ -484,7 +484,7 @@ final class Listener: NSObject, ObservableObject {
         return last.map { $0.lowerBound..<text.endIndex } ?? text.range(of: #"\S+$"#, options: .regularExpression)
     }
 
-    static let lit = UIColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)  // the word being heard, Sill's yellow (Overlay.current)
+    static let lit = UIColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)  // the word being heard, Recense's yellow (Overlay.current)
 
     // the sentence with its newest word lit, as Recense's light follows the voice
     static func karaoke(_ text: String, size: CGFloat, weight: UIFont.Weight, color: UIColor, lit on: Bool, alpha: CGFloat = 1, center: Bool = true) -> NSAttributedString {
@@ -506,7 +506,7 @@ final class Listener: NSObject, ObservableObject {
         if Listener.held { return }
         let size = CGSize(width: 640, height: 300), w = size.width - 40
         let img = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { c in
-            UIColor(white: 0.04, alpha: 1).setFill(); c.fill(CGRect(origin: .zero, size: size))  // Sill's panel
+            UIColor(white: 0.04, alpha: 1).setFill(); c.fill(CGRect(origin: .zero, size: size))  // Recense's panel
             // draws s so its last line sits on box's bottom (older lines go up and off the top) or centred in box
             func put(_ s: NSAttributedString, in box: CGRect, bottom: Bool = true) {
                 let h = ceil(s.boundingRect(with: CGSize(width: w, height: 5000), options: .usesLineFragmentOrigin, context: nil).height)
@@ -539,7 +539,7 @@ final class Listener: NSObject, ObservableObject {
             } else {
                 // Follow: the sentence being heard on top, what it says below, both with the newest word lit
                 if two {
-                    // as Sill: the heard words semibold white, what they say a step quieter (regular, 80 %)
+                    // as Recense: the heard words semibold white, what they say a step quieter (regular, 80 %)
                     put(Self.karaoke(cur.heard, size: 27, weight: .semibold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: 126))
                     put(Self.karaoke(cur.said.isEmpty ? "…" : cur.said, size: 24, weight: .regular, color: UIColor(white: 1, alpha: 0.8), lit: true), in: CGRect(x: 20, y: 152, width: w, height: 136))
                 } else {

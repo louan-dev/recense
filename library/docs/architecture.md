@@ -147,7 +147,7 @@ Files under "On My iPhone".
    of the iOS domain at first.
 2. Paid account: only needed for push, for other people's devices, and to drop the 7-day re-sign. Not needed for
    slices 1–4 on your own devices.
-3. The "A decision" to keep in `architecture.md`. `sill/docs/architecture.md` has no item called A. Name it and it
+3. The "A decision" to keep in `architecture.md`. `recense/docs/architecture.md` has no item called A. Name it and it
    goes into the right file.
 
 ## 9 · Order of work

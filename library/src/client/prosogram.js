@@ -431,7 +431,7 @@ function drawScore(ctx, f) {
 //   f.colors             palette; this module uses `ahead` and `pale` only
 //   f.playing            whether the source is playing
 // The host calls plugin.draw(ctx, f) each frame and may read `name`, `lineGap`, `slotGap` and `legend` for layout.
-// Hosts: the prototype harness (harness.js), Gallery's /main player, Recense's home bar in Sill.
+// Hosts: the prototype harness (harness.js), Gallery's /main player, Recense's home bar.
 const plugin = {
   name: 'prosogram', lineGap: 2.65, slotGap: 0.9, lights, labelsAbove,
   legend: [

@@ -1,5 +1,5 @@
-// The rooms of Space, Gallery's reverb (and Recense's, through its bridge: sill/recense/extension, which sign.sh
-// copies this file into). Their impulse responses are synthesised (decaying, darkening noise), so nothing is
+// The rooms of Space, Gallery's reverb (and Recense's: its build.sh copies this file into
+// the app bundle). Their impulse responses are synthesised (decaying, darkening noise), so nothing is
 // downloaded, and with a fixed seed: the room heard live and the room baked into a download are the same.
 // Pure functions, no DOM: the page loads this before gallery.js.
 globalThis.GalleryRoom = (() => {

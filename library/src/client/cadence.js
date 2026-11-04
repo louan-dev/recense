@@ -1,5 +1,5 @@
-// Cadence: a song's words timed to its measured voice, by the same rules as Recense's Cadence.fit in Sill
-// (sill/sill/recense.swift, enum Cadence). Kept rule for rule with it, so Gallery, the iOS app and Sill light the same
+// Cadence: a song's words timed to its measured voice, by the same rules as Recense's Cadence.fit
+// (recense/recense/recense.swift, enum Cadence). Kept rule for rule with it, so Gallery, the iOS app and Recense light the same
 // word at the same moment: change one, change the other.
 //
 // A recognizer says roughly where words start and nothing of how they're sung. With the song's features
@@ -443,7 +443,7 @@
   }
 
   // Can a song's words be trusted enough to show them, and the notation drawn from them? (item 22; the same rule as
-// Recense's Cadence.confidence in Sill.) Not where many voices sing at once (a choir) or few words were heard
+// Recense's Cadence.confidence.) Not where many voices sing at once (a choir) or few words were heard
 // surely, unless the song's own lyrics were found and its lines are theirs. A listener can still show them.
   //   dense   from the voice measured on the vocal stem: a single voice holds its notes, so the pitch tracked frame to
   //           frame rarely jumps (≤ 5 % of steps by more than 1.5 semitones in the songs and speech measured) and runs
@@ -530,7 +530,7 @@
   const trim = (w, s, e) => ({ ...w, s, e, ...(w.syl ? { syl: w.syl.map((y) => ({ c: y.c, s: Math.min(Math.max(y.s, s), e), e: Math.min(Math.max(y.e, s), e) })) } : {}) });
 
   // How far the light has crossed a word at t, 0 … 1: the one rule for the captions (gallery.js fillOf), the notation
-  // lane (prosogram-mount.js) and Sill (Cadence.progress), so the word and the line under it are lit to the same point.
+  // lane (prosogram-mount.js) and Recense (Cadence.progress), so the word and the line under it are lit to the same point.
   // `n`: the word's letters. Timed by the listener (k): one sweep shaped by k. Else syllable by syllable, each one's
   // letters spread over the time it is sung, up to the next one (or 0.25 s past its end); else even across the word.
   function fill(w, t, n) {

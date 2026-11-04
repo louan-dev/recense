@@ -4783,8 +4783,8 @@
     if (host.querySelector(".tx.learn")) return;
 
     let lines = t.lines;
-    // The words timed to the singer's voice once it's measured (cadence.js: the rules Sill's light follows, so the
-    // same word lights at the same moment in Sill, here and in the iOS app). Always from the server's lines.
+    // The words timed to the singer's voice once it's measured (cadence.js: the rules Recense's light follows, so the
+    // same word lights at the same moment in Recense, here and in the iOS app). Always from the server's lines.
     let voice = null;
     const timed = (ls) => {
       if (!globalThis.Cadence) return ls;
@@ -4834,7 +4834,7 @@
       openAll();
     };
     // Dense, complex tracks (a choir, few words heard surely): the words and the notation start Off, with Show for
-    // this item, remembered (item 22; Cadence.confidence, the same rule as Sill's). The notation draws only under
+    // this item, remembered (item 22; Cadence.confidence, the same rule as Recense's). The notation draws only under
     // visible caption cells, so hiding the box turns it off too.
     const SHOWN = "gallery.txShown";
     const itemId = txUrl(f) || String(f.path || f.name || "");
