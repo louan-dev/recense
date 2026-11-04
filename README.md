@@ -5,8 +5,6 @@ the listening surface where a recording becomes something to learn from: heard, 
 One app, one process, no Dock icon. It works offline; Gallery's Worker and R2 are an optional cloud side for sharing
 transcripts and files.
 
-Recense was called Sill until 2026-11-03. The app is now `/Applications/Recense.app` (bundle id `local.recense`, terminal command `recense`), the repo folder is `~/Developer/recense`, the project folder inside it is `recense/`, and the strip's entry point is `recense/app.swift` (formerly `sill.swift`). The GitHub repo is now `louan-dev/recense` (the old `louan-dev/sill` URL redirects). Build with `cd ~/Developer/recense/recense && zsh build.sh`; macOS asks again for mic, audio, calendar and Accessibility permissions once, because the bundle id changed.
-
 Its menu-bar hider (Nook) is part of Recense, not an app of its own.
 
 ## Why this exists
