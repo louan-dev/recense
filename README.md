@@ -54,8 +54,8 @@ Brazilian composer and bandleader Hermeto Pascoal spent years transcribing recor
 treating a voice on the radio as a melody waiting for its chords. Recense carries the same intuition into the
 learning of languages.
 
-The longer essay, on improvisation, talent and a shared tuning for the world's ideas, is
-[the preface](docs/recense-preface.md).
+The longer essay, on improvisation, the measure of a gift, a score for speech and a shared tuning for the world's ideas,
+is [the preface](docs/recense-preface.md).
 
 ## Long-term goals
 Each goal comes from one design philosophy, zero friction: nothing stands between a thought, a sound or a glance and
