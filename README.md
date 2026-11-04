@@ -232,3 +232,6 @@ from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/recense/
 ## Roadmap
 Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
 (Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.
+
+## Changes
+- 2026-11-04: [Preface](docs/recense-preface.md), section on ease: cut "ahead of my peers" from the line on an early ear. No build changes.
