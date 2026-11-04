@@ -20,7 +20,7 @@ Impromptu speech possesses structures of its own, and the orator's craft has kep
 
 ## III. The Measure of a Gift
 
-Ease is something we observe and distance from observation to cause is greater than it appears. I was the first in my family to take up an instrument. Even so my ear and my hands matured early, ahead of my peers.
+Ease is something we observe, and the distance from observation to cause is greater than it appears. I was the first in my family to take up an instrument. Even so my ear and my hands matured early, ahead of my peers.
 
 A player who has lost their sight comes to a piece through the ear and the hand, while a sighted player comes to it partly through the page, and each develops strengths the other may lack. A quiet passage in a lullaby and a quiet passage in a stadium anthem ask for different sounds, and talent is equally bound to what it is asked to serve. There are countless ways to measure a person, and convention chooses only a few. Every person carries a gift that some measure would reveal, and convention decides which gifts are heard.
 
@@ -48,7 +48,7 @@ Imagine, then, how a score written for verbal exchange might even help someone l
 
 This is why multimodal learning stands at the center of Recense. Speech reaches us through the ear, yet it is shaped by the face and the breath, and it is understood most fully when more of those channels are open. Sumby and Pollack showed in 1954 that seeing a speaker's face makes speech in noise far easier to follow. When the lips show one syllable while the ear hears another, the mind often perceives a third, so what the eye sees can alter what the ear hears. Training that engages several senses tends to produce faster and more effective learning than training through one. Words spoken aloud are remembered better than words read in silence. Subtitles in the language being sung have helped television audiences in India improve their reading. The findings converge on a single conclusion. The senses learn best in concert.
 
-This is how we learn to play. A piece entered through our eyes and our ears and come to rest at last in our hands. Recense offers the same passage into a language. The ear follows the voice while the eye follows the light across each word, and our voice joins them.
+This is how we learn to play. A piece enters through our eyes and our ears and comes to rest at last in our hands. Recense offers the same passage into a language. The ear follows the voice while the eye follows the light across each word, and our voice joins them.
 
 ## VI. A Shared Tuning
 
