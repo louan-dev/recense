@@ -1,6 +1,6 @@
-# Translation pipeline (Recense in Sill, Gallery)
+# Translation pipeline (Recense, Gallery)
 
-Source of truth: `sill/recense.swift` on `claude/exciting-lumiere-9b0e58` (Recense folded into Sill; `sill/recense/main.swift` is the standalone copy).
+Source of truth: `recense/recense.swift` on `claude/exciting-lumiere-9b0e58` (the standalone Recense copy, then `sill/recense/main.swift`, has since been deleted).
 
 ## Services and endpoints
 | Step | Service | Endpoint / code |

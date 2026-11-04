@@ -14,17 +14,17 @@ Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session
 - **A3** free the quota: propose a list only, delete nothing. Evicting a local copy does not free iCloud quota.
 - **A4** canary note round trip Mac, iPhone, iPad, Mac.
 - **A5** ledger mirror: `selftest`, dry run on a copy, `run --apply` on the Obsidian vault, `verify --deep`, launchd job and `views/health.json`.
-- **A6** overflow lane to R2 (Remotely Save for the vault; Notability WebDAV after A5). **A7** surfaces: the Gallery and Sill parts belong to the other repos; leave a one-line handoff in §7.
-- Then Track B (Desk): Notes in Sill, DEVONthink, Calendar Desk (Switchboard Phases 0-1 first, shadow mode), Apple data via standards. BACKLOG §S1-S6: network exposure, iPhone SE bridge assessment, notes latency, storage ledger, rclone GUI, Arq drills.
+- **A6** overflow lane to R2 (Remotely Save for the vault; Notability WebDAV after A5). **A7** surfaces: the Gallery and Recense parts belong to the other repos; leave a one-line handoff in §7.
+- Then Track B (Desk): Notes in Recense, DEVONthink, Calendar Desk (Switchboard Phases 0-1 first, shadow mode), Apple data via standards. BACKLOG §S1-S6: network exposure, iPhone SE bridge assessment, notes latency, storage ledger, rclone GUI, Arq drills.
 
 ## Rules that matter most here
 Never delete or move user data, overwrite backups, change production access rules or push without explicit confirmation. Never print, log or archive secrets (`.env`, tokens, `rclone.conf`, wrangler secrets). No private iCloud endpoints and no Apple credentials in code; use standards (CalDAV, CardDAV, IMAP, WebDAV), EventKit, FSEvents, Shortcuts. Label status honestly and claim no real-time sync or security without a test.
 
 ## Keep the plan current
 Update `PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3 and BACKLOG SL6, which are now out of date:
-- **Nook is being folded into Sill** (hover-to-peek and an always-hidden tier behind a Sill setting that can be turned off; running Sill hides menu-bar icons automatically). The old `~/Developer/nook` folder is deleted afterwards, only after verification, a recoverable snapshot and the owner's confirmation of the exact path. Work happens in the Sill repo.
-- A new **widget panel** (name undecided; right-edge slide-out on a non-conflicting three-finger gesture, first widget Find My) is built inside Sill as item SL7, not as a standalone app.
-- Repos: `sync`, `sill`, `gallery` are separate local git repos, all private.
+- **Nook is being folded into Recense** (hover-to-peek and an always-hidden tier behind a Recense setting that can be turned off; running Recense hides menu-bar icons automatically). The old `~/Developer/nook` folder is deleted afterwards, only after verification, a recoverable snapshot and the owner's confirmation of the exact path. Work happens in the Recense repo.
+- A new **widget panel** (name undecided; right-edge slide-out on a non-conflicting three-finger gesture, first widget Find My) is built inside Recense as item SL7, not as a standalone app.
+- Repos: `sync`, `recense`, `gallery` are separate local git repos, all private.
 
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation, next action. Running low on context: update §7, write a patch, build `progress.zip` (PROGRESS.md, patch, test output; no secrets, caches or `.env`) and verify it exists.

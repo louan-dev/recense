@@ -24,10 +24,10 @@ iCloud storage is full, so calendar entries made on the iPhone no longer reach t
 
 | Consumer | What it needs | Through |
 |---|---|---|
-| **Sill** (macOS menu-bar panel) | Calendar read/write, invites, share links, a health cue | A CalDAV account in Calendar (native), plus `/api/share` and `/health` |
+| **Recense** (macOS menu-bar panel) | Calendar read/write, invites, share links, a health cue | A CalDAV account in Calendar (native), plus `/api/share` and `/health` |
 | **Shared gallery** | One link that shows several R2 files, Apple-minimalist page | The share module (tokens to objects) and the same page engine |
 | **Private personal cloud lab** | *Not yet specified* | Open: files/WebDAV, or a custom API |
-| **Draftpad / Obsidian vault** | File sync off iCloud Drive (the note path in Sill currently lives there) | The files module (later) |
+| **Draftpad / Obsidian vault** | File sync off iCloud Drive (the note path in Recense currently lives there) | The files module (later) |
 | **Family** | Own accounts, shared calendars, invitations | Multi-user, permissions, scheduling |
 
 Notability is mostly out of scope. Its own **Notability Cloud** sync does not use iCloud storage (check current Mac support), and its Third-Party Backup supports **WebDAV**, but that is a one-way backup, not live sync. This engine can be that backup target later.
@@ -117,7 +117,7 @@ Core (v1), as before:
 | `/dav/calendars/<userId>/<calId>/` | PROPFIND, REPORT, PROPPATCH | `getctag`, `getetag`, `supported-calendar-component-set`, `calendar-color`; REPORT: `calendar-query`, `calendar-multiget`, later `sync-collection` |
 | `.../<resource>.ics` | GET, PUT, DELETE | `If-Match` / `If-None-Match` honored |
 | `/admin/*` | POST | calendar and user provisioning, separate secret |
-| `/health` | HEAD/GET | for Sill and the external monitor |
+| `/health` | HEAD/GET | for Recense and the external monitor |
 
 Later: **scheduling** (RFC 6638: `schedule-inbox`, `schedule-outbox`, `calendar-auto-schedule` in the `DAV:` header), CardDAV, a files module over WebDAV.
 
@@ -126,14 +126,14 @@ Later: **scheduling** (RFC 6638: `schedule-inbox`, `schedule-outbox`, `calendar-
 | Tier | What it does | Needs |
 |---|---|---|
 | **A. Event share link** | A landing page with the details and "Add to calendar" (`.ics` with a built-in alarm, so the recipient's own calendar reminds them). No account | Share module, page template shared with the gallery |
-| **B. Email invite from Sill** | An "Invite" field on Sill's voice draft card makes the engine email the `.ics` | Email Service, `/api/share` |
+| **B. Email invite from Recense** | An "Invite" field on Recense's voice draft card makes the engine email the `.ics` | Email Service, `/api/share` |
 | **C. Inbound events** | Others email an invite to an address on Chau's domain; an Email Worker parses the `.ics` into an **Inbox** calendar as pending; Chau accepts it into the main calendar. No shared credentials | Email Routing, Inbox calendar |
 | **D. Native invite UI** | Chau adds an email to an event in Apple's Calendar and invitations just work: external attendees get an iMIP email (RFC 6047), replies (`METHOD:REPLY`) come back by email and update the attendee status; internal users get the event in their schedule inbox | CalDAV scheduling (RFC 6638) plus iMIP |
 | **E. Shared calendars** | Family accounts with per-calendar permissions | D1 ACLs |
 
 Why D is its own tier: scheduling is the largest single piece (implicit scheduling on PUT, inbox/outbox collections, free/busy, reply handling) and writes touch more than one user's data, which is why D1 transactions matter. A, B and C give most of the value earlier and are not wasted when D arrives. **Phase 0 must check** whether Apple's Calendar shows the invitee field on a plain CalDAV account, and exactly which properties it needs once scheduling is advertised (use a scheduling-capable server such as Baïkal/sabre-dav as the reference; verify).
 
-Sill note: EventKit does not let apps add attendees as far as I know, so Sill's invite path (B) goes through the engine, while Calendar's own UI uses D.
+Recense note: EventKit does not let apps add attendees as far as I know, so Recense's invite path (B) goes through the engine, while Calendar's own UI uses D.
 
 ## 9. Accounts, auth, security
 
@@ -162,7 +162,7 @@ Sill note: EventKit does not let apps add attendees as far as I know, so Sill's 
 |---|---|
 | Workers Free has a 10 ms CPU limit per request (reported; verify) | No RRULE expansion on the server, no XML/iCalendar libraries, string-built XML; Workers Paid if needed (Email Service also needs it) |
 | `MKCALENDAR` reportedly never reaches a Worker (workerd issue #6877; re-test) | Calendars are provisioned by `/admin`; "New Calendar" in that account on a device will fail, which is acceptable |
-| iOS gets no push from third-party CalDAV (as far as I know) | Devices fetch on a schedule and when Calendar opens; Sill nudges a refresh on the Mac |
+| iOS gets no push from third-party CalDAV (as far as I know) | Devices fetch on a schedule and when Calendar opens; Recense nudges a refresh on the Mac |
 | Cloudflare WAF/bot rules may block DAV clients | Skip rule for the hostname; test in phase 0 |
 | R2 and Cloudflare incidents | Section 4: second vendor, replicas, standby |
 | Apple clients are picky about discovery and property names | Golden files captured from Radicale; real iPhone and Mac testing from phase 0 |
@@ -173,7 +173,7 @@ Sill note: EventKit does not let apps add attendees as far as I know, so Sill's 
 ## 12. Migration (nothing is deleted until the end)
 
 1. **Back up first.** Mac Calendar: File, Export, Calendar Archive.
-2. Deploy the Worker, create R2 and D1, create the user and the calendar "Sill".
+2. Deploy the Worker, create R2 and D1, create the user and the calendar "Recense".
 3. Add the CalDAV account on the **Mac** (System Settings, Internet Accounts, Add Other Account, CalDAV) and on the **iPhone** (Settings, Calendar, Accounts, Add Account, Other, CalDAV).
 4. **Rescue unsynced iPhone events:** open each, edit, change its Calendar to the new one. Moving across accounts is allowed and uploads it.
 5. Import the archive into the new calendar on the Mac.
@@ -187,22 +187,22 @@ Sill note: EventKit does not let apps add attendees as far as I know, so Sill's 
 |---|---|---|
 | **0 Spike** | Minimal Worker both Apple clients accept; check the invitee UI; check WAF; capture Radicale/Baïkal reference traffic | Create one event on iPhone and see it on the Mac |
 | **1 Calendar MVP** | Section 7 core, R2 + D1, per-device passwords, trash, `/admin`, golden-file tests | Acceptance tests below pass on a real iPhone and Mac |
-| **2 Sill** | Section 14 edits, health cue | Voice entry saves into the synced calendar |
+| **2 Recense** | Section 14 edits, health cue | Voice entry saves into the synced calendar |
 | **3 Reliability** | 3a nightly copy, backup bucket, D1 export, local mirror, scrub, monitor; 3b event-driven replication; first restore drill | A drill meets the RTO and the scrub is clean |
-| **4 Sharing A to C** | Share links, Sill email invite, Inbox calendar | A friend adds an event from a link and from an email |
+| **4 Sharing A to C** | Share links, Recense email invite, Inbox calendar | A friend adds an event from a link and from an email |
 | **5 Multi-user and native invites (D, E)** | Family accounts, ACLs, CalDAV scheduling, iMIP, reply handling | Invite an outside email from Apple's Calendar and see the reply update |
 | **6 Modules** | Files over WebDAV (Obsidian vault off iCloud Drive), contacts, reminders, gallery on the share module, cloud lab | Per module |
 
 **Acceptance tests (real iPhone and Mac):** create, edit and delete each way; edit offline then reconnect; all-day and multi-day events; a recurring event with one edited occurrence; alarms fire on both devices; an event in another time zone; a 500-event import; two devices editing the same event (the later write wins and nothing is lost silently); a bad password is rejected and a revoked device stops syncing.
 
-## 14. Sill integration (changes to `sill.swift`)
+## 14. Recense integration (changes to `app.swift`)
 
-Reading needs **nothing**: Sill already queries `EKEventStore` across all calendars and observes `.EKEventStoreChanged`. Three small edits:
+Reading needs **nothing**: Recense already queries `EKEventStore` across all calendars and observes `.EKEventStoreChanged`. Three small edits:
 
 ```swift
 // 1) Settings block
-let syncAccountName = "Sill Sync"   // the Description typed when adding the CalDAV account
-let syncCalendarTitle = "Sill"
+let syncAccountName = "Recense Sync"   // the Description typed when adding the CalDAV account
+let syncCalendarTitle = "Recense"
 
 // 2) VoiceEntry.saveTapped(): write to the synced calendar (iCloud also reports as a CalDAV source)
 func syncCalendar(_ store: EKEventStore) -> EKCalendar? {
@@ -216,7 +216,7 @@ func syncCalendar(_ store: EKEventStore) -> EKCalendar? {
 store.refreshSourcesIfNecessary()
 ```
 
-Confirm that `source.title` equals the account description on this macOS. Later: a health cue from `/health`, an Invite field on the draft card (tier B), and an Inbox-pending count. Any new network request should be reflected in the header comment that currently calls weather Sill's only one.
+Confirm that `source.title` equals the account description on this macOS. Later: a health cue from `/health`, an Invite field on the draft card (tier B), and an Inbox-pending count. Any new network request should be reflected in the header comment that currently calls weather Recense's only one.
 
 ## 15. Later modules
 

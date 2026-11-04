@@ -1,5 +1,5 @@
 // sync Worker: standards-based sync foundation (docs/specs/sync.md). Phase 0: CalDAV only.
-//   /.well-known/caldav → /dav/      /dav/…  CalDAV (caldav.js)      /health  liveness for Sill / monitors
+//   /.well-known/caldav → /dav/      /dav/…  CalDAV (caldav.js)      /health  liveness for Recense / monitors
 import { caldav } from "./caldav.js";
 
 export default {

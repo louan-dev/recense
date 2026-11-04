@@ -1,7 +1,7 @@
-# Sync · Gallery · Sill: one organism, three organs
+# Sync · Gallery · Recense: one organism, three organs
 
 **Status: PROPOSED** (written 2026-10-29 18:56 PDT from the owner's brief: "come up with a robust long-term serverless
-backend design that could be used as a guide; decide whether Gallery should be folded into Sync, Gallery and Sill into
+backend design that could be used as a guide; decide whether Gallery should be folded into Sync, Gallery and Recense into
 Sync, or another combination"). Becomes SETTLED when the owner says yes. Recorded as decision 8 in `PROGRESS.md` §8.
 Where this file and an older spec disagree about **which project owns what**, this file wins once settled; it does not
 change any decision about *how* a thing works.
@@ -14,26 +14,26 @@ change any decision about *how* a thing works.
    (`gallery-nervous-system.md` "1 + 2 = the sync engine, in the Worker"; `gallery/src/fp.js`, `dav.js`, `tmp.js`,
    `archive.js`). That's Sync's job. Moving it to Sync gives Sync a clear place and makes Gallery a product again.
 3. **Recense is a capability, not a fourth product.** It's the listening layer (transcribe, translate, measure the
-   voice), shipped as modules: native Swift in Sill, web modules in Gallery, one data contract (`keep/<key>/`) between them.
-4. **Sill doesn't fold into Gallery for iOS.** iOS has no surface for a Sill: no app can draw over other apps or hear
+   voice), shipped as modules: native Swift in Recense, web modules in Gallery, one data contract (`keep/<key>/`) between them.
+4. **Recense doesn't fold into Gallery for iOS.** iOS has no surface for a Recense: no app can draw over other apps or hear
    another app's audio. The "player follows me" you want on iOS is **Gallery's playback leaving the Gallery app**
-   (background audio, Lock Screen, Picture in Picture with the lyrics, a Live Activity), built from Sill's patterns (§6).
+   (background audio, Lock Screen, Picture in Picture with the lyrics, a Live Activity), built from Recense's patterns (§6).
 
 ## 1 · What each one is
 
-| | **Sync** | **Gallery** | **Sill** |
+| | **Sync** | **Gallery** | **Recense** |
 |---|---|---|---|
 | One sentence | Everything I own is accounted for, safe, and reachable from any device. | The place where I and the people I invite experience and share my media. | What is happening right now on my Mac, at the edge of the screen. |
 | Organ | Skeleton, blood and memory: custody and flow | Face and voice: where people meet the content | Senses: ambient perception on the device |
-| Works alone? | **Must.** Never needs Gallery or Sill | Yes, without Sill. Needs Sync for bytes | Yes, offline, with the Worker unreachable (already a rule) |
+| Works alone? | **Must.** Never needs Gallery or Recense | Yes, without Recense. Needs Sync for bytes | Yes, offline, with the Worker unreachable (already a rule) |
 | Change speed | Slow, every change tested | Fast, many UI changes a day | Fast, but it's a daily driver: idle cost matters |
 | A bug means | Data lost or leaked | Something looks or sounds wrong | My Mac is annoying right now |
 | Runs on | Cloudflare (Worker, R2, D1, Queues) + thin Mac/iOS adapters (launchd, mounts, File Provider) | Cloudflare (Worker, D1, Durable Objects) + web client + iOS/Mac app shell | macOS only (one app: strip, Recense, Nook, Draftpad) |
 
 ### Recense (the capability)
 Transcription, translation, word timings, prosody (`features.json`), the vocal extractor, chords. **Produced** on the
-Mac by Sill (it has the compute, the process tap, Groq and on-device ASR). **Stored** through Sync (bucket `recense-tmp`,
-`keep/<key>/`). **Shown and corrected** in Gallery and in Sill's Recense panel. Keyed by content (ContentKey), so a
+Mac by Recense (it has the compute, the process tap, Groq and on-device ASR). **Stored** through Sync (bucket `recense-tmp`,
+`keep/<key>/`). **Shown and corrected** in Gallery and in Recense's transcript panel. Keyed by content (ContentKey), so a
 transcript follows the media to every copy and every device.
 
 ## 2 · What to protect and build on (the investor view)
@@ -64,10 +64,10 @@ transcript follows the media to every copy and every device.
   name, per-invite permission toggles, view-only lock); (3) iOS playback that leaves the app (§6).
 - *Don't spend on:* storage, mounts, sync plumbing. Those are Sync's.
 
-**Sill: presence is the asset.**
+**Recense: presence is the asset.**
 - *Moat:* it hears and shapes **whatever** plays on the Mac (Core Audio process tap on YouTube, QuickTime, Music, any
   app), transcribes it live, and keeps time, calendar, notes and the menu bar at the edge of the screen. Gallery can only
-  play Gallery's files; Sill works on everything.
+  play Gallery's files; Recense works on everything.
 - *Strengths already proven:* daily driver; Recense live with the quota fallback to on-device translation; the
   `Transcriber` seam designed; one app (the Recense.app ghost is understood).
 - *Refine next:* (1) SL1 idle cost (the 1 Hz and 60 Hz timers); (2) the `Transcriber` seam, then offline ASR;
@@ -83,8 +83,8 @@ device. Protect the schema and ContentKey like a database schema.
 | Option | Verdict | Why |
 |---|---|---|
 | **H1** Gallery folds into Sync | No | Sync would absorb the 85+ player items in SPEC.md; custody code would redeploy for every cosmetic change; one bad UI deploy could reach the write path. |
-| **H2** Gallery and Sill fold into Sync | No | A monolith in two languages and three runtimes (Worker, macOS app, iOS app). It's the opposite of "copy this folder and it still works." |
-| **H3** Sill folds into Gallery (Sill = Gallery for Mac and iOS) | No | Sill's unique power is following *any* app's audio and owning the screen's edge; neither is about the library, and Sill must work with Gallery unreachable. On iOS a Sill can't exist (Apple wall), so there is nothing to fold. |
+| **H2** Gallery and Recense fold into Sync | No | A monolith in two languages and three runtimes (Worker, macOS app, iOS app). It's the opposite of "copy this folder and it still works." |
+| **H3** Recense folds into Gallery (Recense = Gallery for Mac and iOS) | No | Recense's unique power is following *any* app's audio and owning the screen's edge; neither is about the library, and Recense must work with Gallery unreachable. On iOS a Recense can't exist (Apple wall), so there is nothing to fold. |
 | **H4** Sync folds into Gallery (where the nervous-system spec drifted) | No | Custody would belong to the project with the most churn; Calendar, Messenger, the ledger and the offsite disks have nothing to do with a gallery. |
 | **H5** Three projects, engine moved to Sync, Recense as a shared capability | **Yes** | Each project gets one job; features combine through contracts (§5), not shared internals. |
 | **H6** One monorepo, three packages | Not now | Repo layout matters less than ownership. Three repos with history and rules already exist; revisit only if shared modules get painful to copy. |
@@ -95,16 +95,16 @@ Ask in order; the first yes wins.
 1. **Would it still matter if nobody ever looked at it?** It decides what is true about data, keeps it safe, moves
    bytes between places, devices or standards → **Sync**.
 2. **Is it about a person experiencing, organizing or sharing something in the library, on any device?** → **Gallery**.
-3. **Is it about this Mac right now, across apps, needing OS-level access?** → **Sill**.
+3. **Is it about this Mac right now, across apps, needing OS-level access?** → **Recense**.
 4. **Is it about understanding audio** (words, timing, language, voice, chords, stems)? → **Recense modules**: the engine
-   where the compute is (Sill), the display where the viewer is (Gallery and Sill).
+   where the compute is (Recense), the display where the viewer is (Gallery and Recense).
 5. **None of these?** It's probably a new product built from the blocks (example: the Calendar Desk scheduler = Sync's
-   CalDAV + Sill's cards + its own decision logic). Give it its own name and folder; don't stuff it into one of the three.
+   CalDAV + Recense's cards + its own decision logic). Give it its own name and folder; don't stuff it into one of the three.
 
-**Dependency direction (one way only):** Sill → Gallery modules (optional) → Sync. Sill → Sync directly is fine
-(health, CalDAV). **Sync never depends on Gallery or Sill. Gallery never depends on Sill.**
+**Dependency direction (one way only):** Recense → Gallery modules (optional) → Sync. Recense → Sync directly is fine
+(health, CalDAV). **Sync never depends on Gallery or Recense. Gallery never depends on Recense.**
 
-**An app bundle can carry modules from any project.** Gallery's iOS app carries Sync's File Provider core; Sill carries
+**An app bundle can carry modules from any project.** Gallery's iOS app carries Sync's File Provider core; Recense carries
 Gallery's home bar. Ownership follows the module, not the icon on the Home Screen.
 
 | Feature (from SPEC/BACKLOG) | Owner | Note |
@@ -116,14 +116,14 @@ Gallery's home bar. Ownership follows the module, not the icon on the Home Scree
 | Downloads → tmp, 14-day expiry | Sync | custody lane |
 | Calendar backup, CalDAV, Messenger, offsite disks, ledger | Sync | |
 | `resign-ios.zsh` (re-signs the Gallery app) | Gallery | build ops for Gallery's app; move from `sync/bin` |
-| Player, home bar, prominence, notation, Learn mode, chords display | Gallery | web modules, hosted by Sill too |
+| Player, home bar, prominence, notation, Learn mode, chords display | Gallery | web modules, hosted by Recense too |
 | Rooms, invites, comments, reactions, annotations, share links | Gallery | D1 tables in `migrations/0001_init.sql` are Gallery's |
 | iOS browser, player, lock-screen playback, PiP lyrics | Gallery | §6 |
 | `/main/ledger/` browsing (A7) | Gallery displays, Sync produces `views/tree.json` | |
-| Process tap, EQ on any app, strip, Nook, Draftpad, widgets, Find My | Sill | |
-| Health chip | Sill displays, Sync produces `views/health.json` | |
-| Transcription, translation, extractor, prosody measurement | Recense (runs in Sill) | |
-| Transcript corrections | Recense contract, edited from Gallery and Sill | conditional writes, merge per field |
+| Process tap, EQ on any app, strip, Nook, Draftpad, widgets, Find My | Recense | |
+| Health chip | Recense displays, Sync produces `views/health.json` | |
+| Transcription, translation, extractor, prosody measurement | Recense | |
+| Transcript corrections | Recense contract, edited from Gallery and Recense | conditional writes, merge per field |
 
 ## 5 · The contracts (the building blocks)
 Projects talk only through these. Each is versioned (`"v": 1` in the payload or `/v1/` in the path); a breaking change
@@ -136,12 +136,12 @@ gets a new version and the old one keeps working until every consumer has moved.
 | Device registry: one Access service token per device, last seen, cursor, budget, pins | Sync | Gallery `/main` (shows it) | tokens done; registry not built |
 | Standards: CalDAV, WebDAV, later CardDAV | Sync | Apple apps, rclone, Notability, Windows | CalDAV Worker, `/dav/notability/` |
 | Event log v2 (`event-log.md`): one format, chain, delete guard, verifier | Sync (ledger + catalog) | devices, `restore`, `verify`, Gallery A7 | ledger writes v2; catalog chained, not deployed |
-| `views/health.json`, `views/tree.json` | Sync | Sill chip, Gallery A7 | one pair per ledger sink (`<sink>/views/`): health on every run, tree on `fold --write`; no combined view yet |
-| `keep/<key>/` (asr, tr/<lang>, corrections, history, features.json, library.json aliases) | Recense | Gallery, Sill | live; write the schema down as `keep/SCHEMA.md` |
-| Sill localhost API (port 47123) | Sill | Gallery pages on the Mac | live |
-| Web modules (`homebar`, `keylabel`, `room`, `prosody`, `prosogram`) with `CONTRACT.md` + `MANIFEST.json` | Gallery | Sill, Gallery iOS, prototypes | planned in `sill/docs/architecture.md` Track W |
-| Sound commands (`cmd`, `fx`, `lang`, `size`, `chord`, …) between home bar and a sound engine | Gallery (home bar) | Sill's native chain; Gallery iOS's native chain (§6) | live in Sill |
-| `?embed=1` | Gallery | Sill | live |
+| `views/health.json`, `views/tree.json` | Sync | Recense chip, Gallery A7 | one pair per ledger sink (`<sink>/views/`): health on every run, tree on `fold --write`; no combined view yet |
+| `keep/<key>/` (asr, tr/<lang>, corrections, history, features.json, library.json aliases) | Recense | Gallery, Recense | live; write the schema down as `keep/SCHEMA.md` |
+| Recense localhost API (port 47123) | Recense | Gallery pages on the Mac | live |
+| Web modules (`homebar`, `keylabel`, `room`, `prosody`, `prosogram`) with `CONTRACT.md` + `MANIFEST.json` | Gallery | Recense, Gallery iOS, prototypes | planned in `recense/docs/architecture.md` Track W |
+| Sound commands (`cmd`, `fx`, `lang`, `size`, `chord`, …) between home bar and a sound engine | Gallery (home bar) | Recense's native chain; Gallery iOS's native chain (§6) | live in Recense |
+| `?embed=1` | Gallery | Recense | live |
 | Rooms API (`/m/<token>`) | Gallery | invitees' browsers | C0 live |
 
 ## 6 · iOS: the player that follows you
@@ -154,7 +154,7 @@ iPhone 12 Pro Max and iPad Air have no Dynamic Island. **What it does allow, for
    Center, headphones and CarPlay show the real title, cover and scrubber (SPEC 69).
 3. **Picture in Picture with custom content** (`AVPictureInPictureController` with an `AVSampleBufferDisplayLayer`
    content source, iOS 15+): a floating window over the Home Screen and other apps that can show **the karaoke lines**,
-   drawn frame by frame. This is the closest thing to Sill's floating Recense panel that iOS allows.
+   drawn frame by frame. This is the closest thing to Recense's floating transcript panel that iOS allows.
 4. **A Live Activity** (ActivityKit, Lock Screen and the notification list): current line, title, progress. Updated by
    the app while it plays in the background; remote push updates need APNs (paid account).
 *Verify on device:* PiP for custom content, and a Live Activity widget extension on the free Personal Team. The
@@ -165,16 +165,16 @@ extension ships inside the Gallery app, but it shares data with the app through 
 `AVAudioSession`, `MPNowPlayingInfoCenter` or PiP code. Web Audio (the EQ and Key worklets) is suspended when the app
 goes to the background. So playback that leaves the app needs a **native sound engine on iOS**.
 
-**The design, reusing what Sill already proved:** keep the web home bar as the UI (one player, rules can't drift), and
-let it drive a native engine through the same command set Sill's home-bar host uses. On iOS the engine is
-`AVAudioEngine` + `AVAudioUnitEQ` + `AVAudioUnitTimePitch` + `AVAudioUnitReverb` playing the app's own files (Sill's
+**The design, reusing what Recense already proved:** keep the web home bar as the UI (one player, rules can't drift), and
+let it drive a native engine through the same command set Recense's home-bar host uses. On iOS the engine is
+`AVAudioEngine` + `AVAudioUnitEQ` + `AVAudioUnitTimePitch` + `AVAudioUnitReverb` playing the app's own files (Recense's
 process tap is macOS-only). Lines for PiP and the Live Activity are drawn with Core Text into pixel buffers, from the
 same `keep/<key>/` transcript. Two consequences:
 - **New shared Swift module `SoundChain`:** one command contract, two backends: `tap` (macOS, any app; today's
   `soundengine.swift`) and `player` (iOS and macOS, own files). Owned by Gallery (it serves the home bar's contract);
-  Sill hosts the tap backend.
+  Recense hosts the tap backend.
 - **The line renderer must not depend on AppKit** (today Recense draws with `NSAttributedString` in AppKit views). A
-  Core Text version is the portable one; Sill can adopt it later, not before it's needed.
+  Core Text version is the portable one; Recense can adopt it later, not before it's needed.
 
 **Order:** (1) native playback + background audio + Now Playing, web UI unchanged except it sends commands instead of
 playing; (2) EQ/Key/Space on the native chain, compared by ear against the web chain; (3) PiP with lines; (4) Live
@@ -186,7 +186,7 @@ Lock Screen controls.
 ```
                  Apple apps, rclone, Notability, Windows        Invitees' browsers
                           │ CalDAV / WebDAV / Nextcloud                 │ /m/<token>, /s/<id>
- Mac (Sill, launchd,      ▼                                             ▼
+ Mac (Recense, launchd,      ▼                                             ▼
  mounts) · iOS (Gallery ┌──────────────────────────────┐  RPC   ┌──────────────────────────────┐
  app + File Provider) ─▶│ SYNC Worker (custody)         │◀──────│ GALLERY Worker (product)      │
    Access token per     │ catalog · change feed ·       │service│ /main pages · player assets · │
@@ -214,7 +214,7 @@ for CalDAV.
 | R2 file objects (main `files/`, public, archive, tmp) | Sync | Sync's write API in the Worker, and Sync's own Mac jobs with scoped keys (Downloads → tmp, folder moves into the archive). The catalog records every write, including the direct ones. Gallery's covers and tag rewrites move onto the write API (today `art.js`/`tagwrite.js` write Main directly) | anyone with a binding, read-only |
 | R2 `.catalog/<root>/` | Sync | the catalog only (`fp.js`, later the Sync Worker) | devices through the catalog API; `ledger.mjs verify` |
 | R2 `gallery-main/ledger/<source>/` | Sync | the ledger jobs only (rclone, scoped key); to move into a Sync bucket on the owner's yes | `restore`, `verify`, Gallery A7 |
-| R2 `recense-tmp/keep/` | Recense | Sill (transcripts), Gallery (corrections), conditional writes with merge | Gallery, Sill |
+| R2 `recense-tmp/keep/` | Recense | Recense (transcripts), Gallery (corrections), conditional writes with merge | Gallery, Recense |
 | D1 `sync` | Sync | Sync | Sync |
 | D1 `gallery` | Gallery | Gallery | Gallery |
 | Durable Objects | Gallery | Gallery | Gallery |
@@ -250,7 +250,7 @@ open: plain files, `.ics`, JSON.
 | 0 | Owner says yes to this file. Update `CLAUDE.md` in all three repos and the nervous-system spec's ownership lines (not its decisions). | the three CLAUDE.md files agree | no |
 | 0b | **One event-log format** (`event-log.md`): ledger v2, chained catalog, one delete guard, one verifier. Also fixed the catalog's false `410` on every incremental check. | ledger selftest 42 ok (was 34); live journals verify unchanged; gallery routes 47 pass; cross-check 0 problems | DONE, live (Gallery 0b0ab499); ledger-sink move waits on one dashboard step |
 | 1 | **Boundary inside the Gallery Worker:** move `fp.js`, `dav.js`, `tmp.js`, `archive.js` and the catalog code into `gallery/src/engine/`; a test fails if `engine/` imports anything outside it. | `npm test` unchanged + the new import test | within one repo |
-| 2 | Write `keep/SCHEMA.md` and `MANIFEST.json` + `CONTRACT.md` for the web modules (already ordered in Sill's architecture). | Sill's no-upward-imports test | no |
+| 2 | Write `keep/SCHEMA.md` and `MANIFEST.json` + `CONTRACT.md` for the web modules (already ordered in Recense's architecture). | Recense's no-upward-imports test | no |
 | 3 | **Extract the engine** into the Sync Worker; Gallery forwards the same URLs through a service binding. Deploy behind the same paths. | every live test in `gallery-nervous-system.md` "Facts" passes again (120 MB hash, 412, trash, kill -9) | yes |
 | 4 | Engine convergence test (invariant 7) in Sync's repo. | 50 seeds pass | — |
 | 5 | iOS native playback (§6 order). | lock screen, other app, PiP | Gallery |
@@ -261,7 +261,7 @@ Steps 1–2 can start now and are reversible. Step 3 needs the owner's deploy ye
 other session's uncommitted C0/D1 work in the Gallery repo is committed.
 
 ## 9 · Enforcement
-- **No upward imports:** a test per repo greps shared modules and the engine for host names (Sill's rule, extended to
+- **No upward imports:** a test per repo greps shared modules and the engine for host names (Recense's rule, extended to
   `engine/`).
 - **Contracts have versions** and a fixture test on both sides (producer emits it, consumer parses it).
 - **Every new backlog item names its owner** using §4. An item that names two owners is two items.

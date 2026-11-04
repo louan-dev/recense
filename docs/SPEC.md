@@ -62,7 +62,7 @@ The Recense player's homebar doesn't have the latest Gallery player changes. Bot
 ### Recense only
 *Items 53, 54 and 57 supersede parts of this section: the vertical bar is Gallery's 1:1 (EQ included, no bookmark list on hover), and language, Download · Retranscribe · Export, and the bookmarks live in the transcript editor.*
 - Embed the **same vertical bar** as Gallery, rescaled to fit the window. ~~It's a stripped-down version that differs in scale: **no EQ curve**.~~ *(item 54)*
-- ~~**Hover over the vertical bar** shows the bookmark locations as a vertical list: no border, no fill, white text on black, as a vertical barrel. Think Bitwarden's transparent carousel in Sill, but front-facing and flat (not sideways or jagged).~~ *(items 53, 54)*
+- ~~**Hover over the vertical bar** shows the bookmark locations as a vertical list: no border, no fill, white text on black, as a vertical barrel. Think Bitwarden's transparent carousel in Recense, but front-facing and flat (not sideways or jagged).~~ *(items 53, 54)*
 - Same opacity slider gesture as Gallery.
 - Horizontal homebar **excludes**: the Rename/Cover trio, Add a comment, and Transpose/Share trio.
 - Horizontal homebar **includes**:
@@ -125,13 +125,13 @@ The Recense player's homebar doesn't have the latest Gallery player changes. Bot
 43. make a quick action from macbook . right click > move to gallery main > select destination 
 44. option to select language, learn/follow view, download, export as mc, export as m4b, should exist inside the transcript editor
 45. downlaod in the download-transpose-share trio should be replaced with retranscribe, in which retranscribe and retranslate are folded into the retranscribe button and wired to the set language.
-46. **Recense icon does nothing** (since Recense was folded into Sill): pressing the Recense icon used to show an opaque window; now nothing happens. Sill commit `f609d0a` (branch `claude/exciting-lumiere-9b0e58`) reports a fix; verify it and finish it if needed. Priority in P3a.
+46. **Recense icon does nothing** (since the Recense app was folded into the strip app, then named Sill): pressing the Recense icon used to show an opaque window; now nothing happens. Recense commit `f609d0a` (branch `claude/exciting-lumiere-9b0e58`) reports a fix; verify it and finish it if needed. Priority in P3a.
 47. for the prominence setting on the vertical bar, at 0% to 50%, i.e., under 50%, the light follows the selected language while the original language is being pronounced. above 50% until 90%, the light follows the original language. above 90% the light doesnt follow any letters, because there are none to display.
-48. **(Sill) Strip date, left of the battery.** *Format and order superseded by item 61* (time, then "Mon, 26 Oct", then battery). The original recipe, for reference: a shared `DateFormatter` just above `final class BatteryRow: NSView {`; a `date` label above `battery` in the strip's properties, set up like the battery (`roundedFont(11, .semibold)`, white at 0.85) and added to `content` between `countdown` and `battery`; in `layoutStatic()` the date takes the battery's old spot and the battery moves right; the tick sets it right after `weather.stringValue = ""`.
+48. **(Recense) Strip date, left of the battery.** *Format and order superseded by item 61* (time, then "Mon, 26 Oct", then battery). The original recipe, for reference: a shared `DateFormatter` just above `final class BatteryRow: NSView {`; a `date` label above `battery` in the strip's properties, set up like the battery (`roundedFont(11, .semibold)`, white at 0.85) and added to `content` between `countdown` and `battery`; in `layoutStatic()` the date takes the battery's old spot and the battery moves right; the tick sets it right after `weather.stringValue = ""`.
 
-49. **(Sill, P3a)** The Recense window doesn't follow the global play/pause button (the keyboard's ⏯, Sill's strip ⏯): its play state and highlighting stay as they were.
-50. **(Sill, P3a)** Swipe and long hold on the Recense window's home bar don't behave like Gallery's horizontal home bar. The time ruler must share the window with the displayed lines without taking over the view: no clipped text, no overlap, no crowding, and the window keeps its shape (no growing or shrinking when the ruler opens).
-51. **(Sill, P3a)** The Recense window doesn't follow volume changes made in QuickTime. Volume must follow the volume controls of any media source. *Owner's decision (2026-10-26): add a volume control to the Recense window that follows and sets the playing source's own volume.*
+49. **(Recense, P3a)** The Recense window doesn't follow the global play/pause button (the keyboard's ⏯, Recense's strip ⏯): its play state and highlighting stay as they were.
+50. **(Recense, P3a)** Swipe and long hold on the Recense window's home bar don't behave like Gallery's horizontal home bar. The time ruler must share the window with the displayed lines without taking over the view: no clipped text, no overlap, no crowding, and the window keeps its shape (no growing or shrinking when the ruler opens).
+51. **(Recense, P3a)** The Recense window doesn't follow volume changes made in QuickTime. Volume must follow the volume controls of any media source. *Owner's decision (2026-10-26): add a volume control to the Recense window that follows and sets the playing source's own volume.*
 
 52. **(Gallery + Recense: the shared vertical bar) Tare must not block the EQ.** Today a tap on the bar while it is blue resets everything, so once the EQ has been changed the tray can't be opened again to keep adjusting it. Adjusting is iterative: the tray must open as many times as wanted. Tare stays on the vertical bar, but it must resist accidents and forgive them. *Decision (owner may overrule):* a tap always opens or closes the tray and never resets; tare is a deliberate **press and hold** on the bar (a ring fills while you hold; let go early and nothing happens); after a tare, a tap on the bar within a few seconds **undoes** it. *Owner confirmed 2026-10-27: a single tap never resets (too easy to trigger by accident); the long press tares/resets to zero.*
 53. **(Recense) Remove the bookmark mark that appears when hovering the player.** It is out of place. Bookmarks move inside the transcript editor (item 57).
@@ -142,7 +142,7 @@ The Recense player's homebar doesn't have the latest Gallery player changes. Bot
 58. **(For an ultracode run) Hi-fi sound throughout audio edits**: EQ, C/Đô, reverb, speed, the extractor, and every download with the sound baked in.
 59. **(Recense) Learn mode: two lines per page, recovered.** The light crosses the bottom line; when it finishes, the bottom line stays and the next line fades in slowly at the top; the light crosses the top line; when it finishes, the next line fades in where the bottom line was, while the top line stays; and so on. Each line is one complete thought. Every line is the **same size**, uniform from the first transcribed line to the last (none bigger or smaller). The selected language trails the original. *Same as items 27 and 33 for Recense; supersedes the one-line barrel (§6).*
 60. **(Recense) Swipe and hold holds the ruler.** The gesture must not only bring up the time ruler: while held, the ruler stays up at the playhead's current position as the audio plays, until you let go. Gallery's home bar already does this; mirror it in the Recense player.
-61. **(Sill) Strip order: time, date, battery.** Left to right: the time as `hh:mm:ss`, then the date as `ddd, ## mmm` (three-letter weekday, a comma, the day, three-letter month: "Mon, 26 Oct"), then the battery. *Supersedes item 48's "Mon 26 Oct".*
+61. **(Recense) Strip order: time, date, battery.** Left to right: the time as `hh:mm:ss`, then the date as `ddd, ## mmm` (three-letter weekday, a comma, the day, three-letter month: "Mon, 26 Oct"), then the battery. *Supersedes item 48's "Mon 26 Oct".*
 
 62. **(Gallery) Semitone labels as note names in every notation mode.** On C/Đô (and every other mode) the Key label shows numbers (`+2`) on some tracks. It must read as a note: C/D/E/F/G/A/B or Do/Ré/Mi…, with m/maj, T/t and accidentals, across ALL notation modes. *Restates item 10.* *Owner 2026-10-27: with no key detected, show `Key: —`, and the offset only when shifted (`Key: — (+2 st)`, `— (−1 st)`); never a made-up root such as C.*
 63. **(Gallery) Changing the key on `anatolia.mp3` (main gallery) in the vertical bar froze the audio and the page; a refresh doesn't recover it.**
@@ -150,7 +150,7 @@ The Recense player's homebar doesn't have the latest Gallery player changes. Bot
 65. **(Gallery + Recense) The slides' swipe hitbox.** Today a swipe changes slides only with the pointer on an icon. The swipe area is the rectangle above the stroke, as wide as the bar (its start to its end) and as tall as the tallest icon: every speed, the gaps between them and the space between A and B included. Two fingers left/right (one finger on mobile) move forward and back; past the last slide comes the first.
 66. **(Recense) Text Size above 100% cuts off the top lines.** The text must wrap inside the viewport at every size; if there is a size past which two lines can't reliably show at once, cap the magnification there.
 67. **(Recense) Return in the transcript editor saves and puts the window back to its size** (it must not stay elongated).
-68. **(Recense) Too much space under the horizontal bar.** Use the centre bottom bar of Sill's essentials window (the one controlling R2) as the model: both the horizontal and the vertical bar very close to the edge, with the same space under them as R2's.
+68. **(Recense) Too much space under the horizontal bar.** Use the centre bottom bar of Recense's essentials window (the one controlling R2) as the model: both the horizontal and the vertical bar very close to the edge, with the same space under them as R2's.
 69. **(Gallery, iOS) Lock screen Now Playing.** On iPhone 12 Pro Max and iPad Air M3, when Gallery media is playing and the screen locks, the Now Playing scrubber keeps working, and the widget shows the media's real title (not "Music" for every file).
 70. **(Recense + Gallery) Videos in Recense.** Video files from Gallery also show in Recense (so far only audio). Reference file in R2: `ScreenRecording_10-24-2026 23-06-12_1.mov` (30 s), to check that the audiovisual embed works inside Recense.
 71. **(Gallery) Notes 23: the home bar fits the black band on a 12 Pro Max** (portrait and landscape, each its own dimensions). Built by another session; test "Notes 23" in ui.test.mjs.
@@ -168,13 +168,13 @@ The Recense player's homebar doesn't have the latest Gallery player changes. Bot
 83. **(Gallery) Notes 35: a held two-finger swipe on a MacBook keeps the ruler's place** while the media plays; the next hand movement lands there.
 84. **(Recense) Notes 36: a⁻ and A⁺ go the right way**: Text Size only grows with A⁺, up to what fits.
 
-85. **(Sill) Notes 37: the strip reads time · date · the four icons (Side Quest, recorder, ⏯, Recense) · batteries**, so the icons never reach the event name.
+85. **(Recense) Notes 37: the strip reads time · date · the four icons (Side Quest, recorder, ⏯, Recense) · batteries**, so the icons never reach the event name.
 
-*Source of 71–84: `~/Developer/sill/notes/20261026 Notes.md` items 23–36 (appended by the owner 2026-10-27 ~05:55).*
+*Source of 71–84: `~/Developer/recense/notes/20261026 Notes.md` items 23–36 (appended by the owner 2026-10-27 ~05:55).*
 
-*Source of 49–70: `~/Developer/sill/notes/20261026 Notes.md` (62–70 added 2026-10-27 from notes the owner appended after 61).*
+*Source of 49–70: `~/Developer/recense/notes/20261026 Notes.md` (62–70 added 2026-10-27 from notes the owner appended after 61).*
 
 *Note: item 45 supersedes P2's folded Download slide in Gallery. The trio becomes Retranscribe · Transpose · Share, so no folding is needed. Item 57 then moves the trio (and Download) into the transcript editor.*
 
 ### P4
-embed recense within sill. it should be a menu within the left vertical bar. the menu becomes its own page similar to clicking the right vertical bar > bitwarden. the page is a viewport embed in sill. fill color of sill = fill color of recense. 
+embed recense within sill. it should be a menu within the left vertical bar. the menu becomes its own page similar to clicking the right vertical bar > bitwarden. the page is a viewport embed in recense. fill color of recense = fill color of recense. 
