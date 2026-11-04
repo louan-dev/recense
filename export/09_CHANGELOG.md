@@ -1,4 +1,4 @@
-# Sill — Knowledge Changelog
+# Recense — Knowledge Changelog
 
 ## 2026-10-06
 
@@ -6,7 +6,7 @@ Project knowledge reorganized from the former large “Nook” product brief int
 
 Major organizational changes:
 
-- “Nook” replaced by the decided product name “Sill.”
+- “Nook” replaced by the decided product name “Recense.”
 - Draftpad explicitly framed as the original foundation and persistent Markdown/memory subsystem.
 - Product vision separated from current implementation.
 - Future ideas separated from architectural requirements.

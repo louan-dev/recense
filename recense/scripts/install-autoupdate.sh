@@ -2,13 +2,13 @@
 # Installs the LaunchAgent that runs scripts/autoupdate.sh every 5 minutes (and at login).
 #   zsh scripts/install-autoupdate.sh            install
 #   zsh scripts/install-autoupdate.sh status     show whether it is loaded and its last lines of log
-#   zsh scripts/install-autoupdate.sh remove     stop updating; Sill itself stays
+#   zsh scripts/install-autoupdate.sh remove     stop updating; Recense itself stays
 set -e
 
-LABEL="local.sill.autoupdate"
+LABEL="local.recense.autoupdate"
 script="${0:A:h}/autoupdate.sh"
 target="$HOME/Library/LaunchAgents/$LABEL.plist"
-log="$HOME/Library/Logs/sill-autoupdate.log"
+log="$HOME/Library/Logs/recense-autoupdate.log"
 domain="gui/$(id -u)"
 
 case "${1:-install}" in
@@ -19,7 +19,7 @@ case "${1:-install}" in
   remove)
     launchctl bootout "$domain/$LABEL" 2>/dev/null || true
     rm -f "$target"
-    echo "Removed; Sill no longer updates itself."
+    echo "Removed; Recense no longer updates itself."
     ;;
   install)
     mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
@@ -43,6 +43,6 @@ EOF
     plutil -lint "$target" >/dev/null
     launchctl bootout "$domain/$LABEL" 2>/dev/null || true
     launchctl bootstrap "$domain" "$target"
-    echo "Installed $target; Sill now rebuilds itself within 5 minutes of a push to main."
+    echo "Installed $target; Recense now rebuilds itself within 5 minutes of a push to main."
     ;;
 esac

@@ -1,4 +1,4 @@
-# Sill — Device & Platform Matrix
+# Recense — Device & Platform Matrix
 
 ## Primary Device
 
@@ -8,7 +8,7 @@ Important hardware characteristic:
 
 - no physical display notch
 
-Sill should optimize for the actual geometry and behavior of this machine rather than imitating a newer notched MacBook.
+Recense should optimize for the actual geometry and behavior of this machine rather than imitating a newer notched MacBook.
 
 ## Current Verified Environment
 
@@ -63,7 +63,7 @@ If native replacement is not feasible, document the constraint instead of creati
 
 The current BTT environment has included gesture behavior while mirroring an iPhone.
 
-Treat this as a separate experimental research problem. Do not let it contaminate the core Sill architecture until feasibility is established.
+Treat this as a separate experimental research problem. Do not let it contaminate the core Recense architecture until feasibility is established.
 
 ## Accessibility / Assistive Technologies
 

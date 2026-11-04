@@ -42,7 +42,7 @@ enum Prosody {
     /// Everything the drawing needs, cached as one object.
     struct Result: Codable {
         /// schema version: bump when the shape changes, so a stale cache is recomputed rather than misread
-        var v: Int = 4
+        var v: Int = 5   // 5: notes are steady runs, tuned (item 31)
         /// which transcript this was computed from — a correction changes it and forces a recompute
         var transcript: String
         var lang: String
@@ -63,7 +63,7 @@ enum Prosody {
     static func cached(_ key: String, transcript stamp: String) -> Result? {
         guard let d = try? Data(contentsOf: url(key)),
               let r = try? JSONDecoder().decode(Result.self, from: d),
-              r.v == 4, r.transcript == stamp else { return nil }
+              r.v == 5, r.transcript == stamp else { return nil }
         return r
     }
 
@@ -166,6 +166,10 @@ enum Prosody {
     nonisolated(unsafe) static var mode: String = UserDefaults.standard.string(forKey: "notationMode") ?? "p" {
         didSet { UserDefaults.standard.set(mode, forKey: "notationMode") }
     }
+    /// Learn is on (item 31): chords and notes are Learn's alone; Follow moves too fast for them to keep up.
+    nonisolated(unsafe) static var learning = UserDefaults.standard.integer(forKey: "viewMode") == 1   // Overlay.Mode.learning
+    /// What is drawn now: the toggle's choice, less chords and notes outside Learn.
+    static var drawn: String { learning ? mode : mode.filter { $0 == "p" } }
     /// the media time heard now (the overlay's clock, set every frame) and the chords heard so far on this recording
     nonisolated(unsafe) static var now: Double = 0
     nonisolated(unsafe) static var chords: [(t: Double, text: String)] = []
@@ -345,7 +349,7 @@ enum Prosody {
                        link: x.link && x.link.next != null ? { next: x.link.next, sound: String(x.link.sound || ''),
                              kind: String(x.link.kind || ''), made: (x.link.realized || 0) >= 0.7 } : null,
                        joins: !(x.breathAfter >= 0.12 || x.cutAfter >= 0.85),
-                       notes: (x.syl || []).filter(sy => Number.isFinite(sy.pitch) && sy.rel >= 0.4 && sy.un != null).map(sy => [sy.un, sy.pitch]) });
+                       notes: (x.syl || []).filter(sy => Number.isFinite(sy.note) && sy.un != null).map(sy => [sy.un, sy.note]) });
           }
           window.__P = { key: IN.key, pro, words, progress };
           return JSON.stringify({ semitone: pro.semitone, reference: pro.reference, span: pro.span, words: out });

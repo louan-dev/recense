@@ -1,7 +1,7 @@
 import Foundation
 
 // Cadence's voice-first pass, rule for rule with Gallery's cadence.js (`syllables`, `unitsOf`, `align`): change one,
-// change the other, so Sill, the web player and the iOS app light the same syllable at the same moment.
+// change the other, so Recense, the web player and the iOS app light the same syllable at the same moment.
 // The audio is the truth and the words are a label on it: the voice's own syllables are found from the stem alone, then
 // a song's words are hung on them over the whole song at once. A word sung is lit syllable by syllable and held for as
 // long as it's sung; a word written but not sung is never lit (owner 2026-10-30: Variations on a Dream at 1:20, 1:52,

@@ -1,4 +1,4 @@
-# Sill: essentials panel and direction model (2026-10-06)
+# Recense: essentials panel and direction model (2026-10-06)
 
 From Chau's design message on 2026-10-06. To be merged into 01_CURRENT_STATE, 04_IDEAS and 06_DECISIONS.
 
@@ -9,14 +9,14 @@ From Chau's design message on 2026-10-06. To be merged into 01_CURRENT_STATE, 04
 - The time is a pyramid: local time top center, Vietnam (Asia/Ho_Chi_Minh) bottom left, US Eastern bottom right. The clocks show for 2.5 s, then each folds into its own bar. Hovering the clocks unfolds them, then shows the Salem, OR weather in °F. Moving away tucks the weather in, then folds the clocks.
 - Local bar color = time until the next timed Apple Calendar event in the next 24 h: red ≤ 1 h, yellow ≤ 6 h, green > 6 h, gray if there's nothing. The 1 h red threshold encodes the "it takes about twice as long" rule (≈30 min of real room). These are a starting point, not a settled hierarchy.
 - The next 4 Calendar events are listed under the clocks.
-- Launcher row: Calendar, Voice Memos, iCloud Drive, and every shortcut in a Shortcuts folder named "Sill".
-- Weather comes from Open-Meteo, Sill's only network call: one request every 30 min with fixed Salem coordinates. Switch: `weatherEnabled`.
-- Permissions: Calendars (full access), and Accessibility for the three-finger scroll filter. The binary is ad-hoc signed as `local.sill`, so every rebuild needs Accessibility turned off and on again.
+- Launcher row: Calendar, Voice Memos, iCloud Drive, and every shortcut in a Shortcuts folder named "Recense".
+- Weather comes from Open-Meteo, Recense's only network call: one request every 30 min with fixed Salem coordinates. Switch: `weatherEnabled`.
+- Permissions: Calendars (full access), and Accessibility for the three-finger scroll filter. The binary is ad-hoc signed as `local.recense`, so every rebuild needs Accessibility turned off and on again.
 
 ## NEXT (selected, not built)
 
-- **Terminal panel**: a third panel, reached by going up to essentials and then swiping left with two fingers. It needs a real terminal emulator (SwiftTerm), which is Sill's first package dependency and means moving from one swiftc file to a Swift package. That's worth doing deliberately, not in passing.
-- **Copy Share Link**: it's a Finder Quick Action (`~/Library/Services/Copy Share Link.workflow`). Quick Actions act on a Finder selection, so the easiest way to use it from Sill is to remake it as a shortcut and put it in the "Sill" folder.
+- **Terminal panel**: a third panel, reached by going up to essentials and then swiping left with two fingers. It needs a real terminal emulator (SwiftTerm), which is Recense's first package dependency and means moving from one swiftc file to a Swift package. That's worth doing deliberately, not in passing.
+- **Copy Share Link**: it's a Finder Quick Action (`~/Library/Services/Copy Share Link.workflow`). Quick Actions act on a Finder selection, so the easiest way to use it from Recense is to remake it as a shortcut and put it in the "Recense" folder.
 - **AirPods battery**: readable from Bluetooth when connected.
 
 ## EXPLORING / constrained
@@ -26,7 +26,7 @@ From Chau's design message on 2026-10-06. To be merged into 01_CURRENT_STATE, 04
 
 ## FUTURE / declined for now
 
-- **Password manager inside Sill**: declined. Bitwarden isn't installed as a Mac app here (it's likely the browser extension). Rebuilding a password manager adds security risk for no gain. A launcher button for the Bitwarden app is fine if it gets installed.
+- **Password manager inside Recense**: declined. Bitwarden isn't installed as a Mac app here (it's likely the browser extension). Rebuilding a password manager adds security risk for no gain. A launcher button for the Bitwarden app is fine if it gets installed.
 - **R2-backed Markdown syncing to Cloud Lab**: FUTURE, a separate conversation. `draftpad.md` stays in the iCloud Obsidian vault.
 - **Right side: clipboard, file drop, file shelf**: FUTURE. The direction is reserved now.
 - **Two-finger swipe right from essentials**: unassigned on purpose.

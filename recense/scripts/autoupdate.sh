@@ -1,16 +1,16 @@
 #!/bin/zsh
-# Keeps /Applications/Sill.app on the latest pushed code, so "deploy sill" from a phone or cloud session needs nothing
-# typed on this Mac. Every few minutes (a LaunchAgent; see install-autoupdate.sh) it fetches sill and gallery; when
+# Keeps /Applications/Recense.app on the latest pushed code, so "deploy recense" from a phone or cloud session needs nothing
+# typed on this Mac. Every few minutes (a LaunchAgent; see install-autoupdate.sh) it fetches recense and gallery; when
 # either has new commits on main it fast-forwards them, rebuilds with build.sh (signed here, so permissions carry over)
-# and relaunches Sill if it was running.
+# and relaunches Recense if it was running.
 #   zsh scripts/install-autoupdate.sh            install
 #   zsh scripts/install-autoupdate.sh status     is it loaded; when did it last build
 #   zsh scripts/install-autoupdate.sh remove     stop updating
 setopt err_return
-sill_dir="${0:A:h:h}"                 # sill/sill (build.sh lives here)
-sill_repo="${sill_dir:h}"              # ~/Developer/sill
+recense_dir="${0:A:h:h}"                 # recense/recense (build.sh lives here)
+recense_repo="${recense_dir:h}"              # ~/Developer/recense
 gallery_repo="$HOME/Developer/gallery" # build.sh copies Gallery's shared client code
-lock="$HOME/Library/Caches/sill-autoupdate.lock"
+lock="$HOME/Library/Caches/recense-autoupdate.lock"
 stamp() { print -r -- "$(date '+%F %T') $*"; }
 
 # One run at a time; a build on a busy Mac can outlast the interval.
@@ -31,14 +31,14 @@ advance() {
   return 0
 }
 
-changed=$(advance "$sill_repo")$(advance "$gallery_repo")
+changed=$(advance "$recense_repo")$(advance "$gallery_repo")
 [[ -n $changed || $1 == now ]] || return 0 2>/dev/null || exit 0
 
-stamp "new code; building $(git -C "$sill_repo" log -1 --format='%h %s' | cut -c1-80)"
-running=0; pgrep -qx sill && running=1
-cd "$sill_dir" && zsh build.sh || { stamp "build failed; see $sill_dir/.build-log.txt"; exit 1; }
+stamp "new code; building $(git -C "$recense_repo" log -1 --format='%h %s' | cut -c1-80)"
+running=0; pgrep -qx recense && running=1
+cd "$recense_dir" && zsh build.sh || { stamp "build failed; see $recense_dir/.build-log.txt"; exit 1; }
 if (( running )); then
-  /Applications/Sill.app/Contents/MacOS/sill quit 2>/dev/null; sleep 2
-  open -a /Applications/Sill.app
+  /Applications/Recense.app/Contents/MacOS/recense quit 2>/dev/null; sleep 2
+  open -a /Applications/Recense.app
 fi
 stamp "installed"

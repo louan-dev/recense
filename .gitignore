@@ -4,7 +4,6 @@ build/
 backups/
 .env
 .DS_Store
-recense/
 .build-sdk27/
 .toolchain/
 .handoff/

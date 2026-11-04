@@ -8,6 +8,8 @@
 <meta name="viewport" content="width=device-width">
 <link rel="stylesheet" href="homebar.css">
 <style>
+  /* item 31: the folded stroke's hover zone, as roomy as the vertical bar's */
+  .p-hb:not([data-open="true"]) .p-hbbox::before{content:"";position:absolute;left:-14px;right:-14px;top:-18px;bottom:-6px}
   /* the page is see-through: the subtitles are drawn under it, and it only takes the pointer where the bar is */
   :root{
     --blue:#0a84ff;
@@ -194,7 +196,7 @@
     post({ k: "fx", eq: { ...sound.eq }, key: sound.key, mix: sound.space.on ? sound.space.mix : 0, room: sound.space.room, vox: sound.vox || 0 });
     return true;
   };
-  // the notation toggle under the vertical bar (item 20): p ribbon, c chords, n notes; "" nothing. Kept here and in Sill.
+  // the notation toggle under the vertical bar (item 20): p ribbon, c chords, n notes; "" nothing. Kept here and in Recense.
   const NOTATION_MODE = "recense.notationMode";
   let notationMode = "p";
   try {
@@ -333,7 +335,7 @@
       }
       return;
     }
-    add(bar.el.querySelector(".p-hbbox"));
+    add(bar.el.querySelector(".p-hbbox"), bar.open ? [0, 0, 0, 0] : [18, 14, 6, 14]); // item 31: a roomier zone (::before)
     if (bar.open) {
       add(bar.el.querySelector(".p-hbbarrel"));
       add(bar.el.querySelector(".p-hbseek"));
@@ -357,6 +359,8 @@
     wake();
     hits();
   });
+
+  let hovEl = null; // where Recense.hover last put the pointer
 
   // ----- what main.swift says -----
   window.Recense = {
@@ -404,6 +408,23 @@
       soundNo = why || null;
     },
     wake,
+    // item 31: the pointer while Recense isn't the key window (WebKit hears nothing then), from main.swift; null = gone.
+    // Fires the same pointer events WebKit would, so the bars unfold on hover and tuck away when it leaves.
+    hover: (x, y) => {
+      const el = x == null ? null : document.elementFromPoint(x, y);
+      const fire = (n, type, bubbles) =>
+        n.dispatchEvent(new PointerEvent(type, { pointerType: "mouse", pointerId: 1, isPrimary: true, clientX: x || 0, clientY: y || 0, bubbles, composed: true }));
+      const chain = (n) => { const a = []; for (; n; n = n.parentElement) a.push(n); return a; };
+      if (el !== hovEl) {
+        const was = hovEl ? chain(hovEl) : [], now = el ? chain(el) : [];
+        if (hovEl) fire(hovEl, "pointerout", true);
+        was.filter((n) => !now.includes(n)).forEach((n) => fire(n, "pointerleave", false));
+        if (el) fire(el, "pointerover", true);
+        now.filter((n) => !was.includes(n)).reverse().forEach((n) => fire(n, "pointerenter", false));
+        hovEl = el;
+      }
+      if (el) fire(el, "pointermove", true);
+    },
     // a line is being edited (true) or no longer (false): the tools take the bar's zone meanwhile
     editor: (on) => {
       document.body.classList.toggle("editing", !!on);

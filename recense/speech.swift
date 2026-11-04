@@ -66,7 +66,7 @@ import Speech
         return r
     }
 
-    /// `defaults write local.sill speechCheck -bool YES`, then Sill started: once, a throwaway custom language model is
+    /// `defaults write local.recense speechCheck -bool YES`, then Recense started: once, a throwaway custom language model is
     /// built (asking for Speech Recognition permission if it hasn't been), and the outcome logged.
     static func startup() {
         guard UserDefaults.standard.bool(forKey: "speechCheck") else { return }
@@ -582,7 +582,7 @@ import Speech
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return "no Speech Recognition permission" }
         let d = dir("_check"), t0 = Date()
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-        let data = SFCustomLanguageModelData(locale: Locale(identifier: "en-US"), identifier: "local.sill.recense", version: "check")
+        let data = SFCustomLanguageModelData(locale: Locale(identifier: "en-US"), identifier: "local.recense.recense", version: "check")
         for p in ["I met Kefaya", "Kefaya told me", "Kefaya"] { data.insert(phraseCount: .init(phrase: p, count: 20)) }
         do {
             try await data.export(to: d.appendingPathComponent("data.bin"))
@@ -611,7 +611,7 @@ import Speech
             guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
                 refused = true; log("speech: no Speech Recognition permission, so no custom language model (the lexicon still applies)"); return
             }
-            let data = SFCustomLanguageModelData(locale: loc, identifier: "local.sill.recense", version: "\(Lexicon.version)")
+            let data = SFCustomLanguageModelData(locale: loc, identifier: "local.recense.recense", version: "\(Lexicon.version)")
             for (phrase, n) in Lexicon.phrases(lang) { data.insert(phraseCount: .init(phrase: phrase, count: n)) }
             let d = dir(lang)
             try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)

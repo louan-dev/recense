@@ -1,8 +1,8 @@
-# Sill — Architecture
+# Recense — Architecture
 
 ## Architectural Direction
 
-Sill should remain a small native macOS system whose visible interface can grow without requiring a monolithic feature architecture.
+Recense should remain a small native macOS system whose visible interface can grow without requiring a monolithic feature architecture.
 
 Prefer native Apple APIs, explicit state, small components, reversible changes, and clear boundaries between the UI layer and system/data services.
 
@@ -18,13 +18,13 @@ Requirements:
 
 - keep the file portable
 - keep it independently usable in Obsidian
-- do not replace it with a proprietary database merely to support Sill
-- treat Sill as a view/editing surface over the file
+- do not replace it with a proprietary database merely to support Recense
+- treat Recense as a view/editing surface over the file
 - avoid unnecessary proprietary metadata
 
 ## Top-Center Environment
 
-The larger Sill interface is envisioned as a floating, top-center environment above the desktop.
+The larger Recense interface is envisioned as a floating, top-center environment above the desktop.
 
 Its purpose is to provide a persistent auxiliary layer where relevant information or actions can surface without forcing the user to search through windows.
 
@@ -55,7 +55,7 @@ Primary/default view. It opens to a time-centered state and may surface concise 
 
 The embedded Markdown workspace backed by the canonical Draftpad file.
 
-Sill should not create a parallel proprietary note store merely to support this page.
+Recense should not create a parallel proprietary note store merely to support this page.
 
 ## Contextual Time Model
 
@@ -74,7 +74,7 @@ These gestures should ultimately feel like OS-level transitions: immediate, pred
 
 ## BetterTouchTool Boundary
 
-Current prototype behavior may depend on BetterTouchTool. Long-term architecture should attempt to replace only the small gesture pathway Sill actually requires rather than recreating BTT generally.
+Current prototype behavior may depend on BetterTouchTool. Long-term architecture should attempt to replace only the small gesture pathway Recense actually requires rather than recreating BTT generally.
 
 Historical shell example:
 
@@ -93,7 +93,7 @@ Do not trade backend reliability for perfect visual behavior.
 
 ## Menu-Bar Integration
 
-A potential Sill direction is deeper visual integration with the macOS menu bar, including reflowing or repositioning icons when the top-center panel descends.
+A potential Recense direction is deeper visual integration with the macOS menu bar, including reflowing or repositioning icons when the top-center panel descends.
 
 Treat this as constrained by macOS APIs and potentially fragile system behavior.
 

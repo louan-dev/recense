@@ -1,29 +1,29 @@
 #!/bin/zsh
-# Starts Sill automatically when you log in, using a per-user LaunchAgent.
+# Starts Recense automatically when you log in, using a per-user LaunchAgent.
 #   zsh scripts/install-launchagent.sh           install (builds the binary first if it is missing)
 #   zsh scripts/install-launchagent.sh status    show whether the login item is installed and loaded
 #   zsh scripts/install-launchagent.sh remove    remove the login item only; the app and your notes stay
 set -e
 
-LABEL="local.sill"
+LABEL="local.recense"
 root="${0:A:h:h}"                                   # the project folder (this script lives in scripts/)
 template="$root/launchagent/$LABEL.plist.template"
 target="$HOME/Library/LaunchAgents/$LABEL.plist"
-bin="/Applications/Sill.app/Contents/MacOS/sill"
-log="$HOME/Library/Logs/sill.log"
+bin="/Applications/Recense.app/Contents/MacOS/recense"
+log="$HOME/Library/Logs/recense.log"
 domain="gui/$(id -u)"
 
 case "${1:-install}" in
   status)
     [[ -f "$target" ]] && echo "plist:  installed at $target" || echo "plist:  not installed"
     if launchctl print "$domain/$LABEL" >/dev/null 2>&1; then echo "agent:  loaded"; else echo "agent:  not loaded"; fi
-    if pgrep -x sill >/dev/null; then echo "app:    running"; else echo "app:    not running"; fi
+    if pgrep -x recense >/dev/null; then echo "app:    running"; else echo "app:    not running"; fi
     ;;
 
   remove)
     launchctl bootout "$domain/$LABEL" 2>/dev/null || true
     rm -f "$target"
-    echo "Removed the login item. Sill itself and your notes are untouched."
+    echo "Removed the login item. Recense itself and your notes are untouched."
     ;;
 
   install)
@@ -34,8 +34,8 @@ case "${1:-install}" in
     mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 
     plist="$(<"$template")"
-    plist="${plist//__SILL_BIN__/$bin}"
-    plist="${plist//__SILL_LOG__/$log}"
+    plist="${plist//__RECENSE_BIN__/$bin}"
+    plist="${plist//__RECENSE_LOG__/$log}"
     print -r -- "$plist" > "$target"
     plutil -lint "$target" >/dev/null
 
@@ -45,7 +45,7 @@ case "${1:-install}" in
     launchctl bootstrap "$domain" "$target"
 
     echo "Installed $target"
-    echo "Sill will now start at every login, hidden until you summon it."
+    echo "Recense will now start at every login, hidden until you summon it."
     echo "Check any time with:  zsh scripts/install-launchagent.sh status"
     ;;
 

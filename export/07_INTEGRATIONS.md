@@ -1,4 +1,4 @@
-# Sill — Integrations
+# Recense — Integrations
 
 Integrations are candidate service boundaries, not commitments to expose every service in the main UI.
 
@@ -13,7 +13,7 @@ Potential/desired role:
 
 Use native macOS Calendar APIs where appropriate.
 
-Sill should complement Calendar rather than become a full Calendar replacement.
+Recense should complement Calendar rather than become a full Calendar replacement.
 
 ## Time Zones
 
@@ -34,13 +34,13 @@ Weather should be contextual and appear when relevant rather than taking permane
 
 Potential selective notification source for high-value communication.
 
-Do not reproduce the full messaging application inside Sill.
+Do not reproduce the full messaging application inside Recense.
 
 ## Telegram / SMS Bridge
 
 The owner has an existing Telegram-based SMS bridge concept.
 
-Potential Sill role:
+Potential Recense role:
 
 - surface important bridged SMS messages
 - provide access when a phone is unavailable
@@ -96,11 +96,11 @@ Treat as an external research direction until a concrete workflow justifies it.
 
 Potential external automation layer.
 
-Any automation should be explicit, auditable, and bounded; avoid turning Sill into a generic automation trigger surface.
+Any automation should be explicit, auditable, and bounded; avoid turning Recense into a generic automation trigger surface.
 
 ## Personal Data Cloud / Media Player
 
-Sill and the separate Personal Data Cloud project may eventually exchange small, well-defined interfaces.
+Recense and the separate Personal Data Cloud project may eventually exchange small, well-defined interfaces.
 
 Potential future use:
 
@@ -112,4 +112,4 @@ Do not merge the projects prematurely.
 
 ## Integration Rule
 
-> If a service does not reduce friction, it does not belong in Sill.
+> If a service does not reduce friction, it does not belong in Recense.

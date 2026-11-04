@@ -1,8 +1,8 @@
-# Sill — Current State
+# Recense — Current State
 
 ## Product State
 
-Sill is the larger product direction. Draftpad is the existing working foundation and intended persistent Markdown/memory subsystem.
+Recense is the larger product direction. Draftpad is the existing working foundation and intended persistent Markdown/memory subsystem.
 
 The current product should still be treated as an evolving system. Do not infer that every concept documented elsewhere is implemented.
 

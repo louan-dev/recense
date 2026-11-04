@@ -1,4 +1,4 @@
-# Sill — Proprietary / Differentiating Directions
+# Recense — Proprietary / Differentiating Directions
 
 This document identifies ideas that may be strategically differentiated or potentially unpublished. It is not a legal opinion about novelty or patentability.
 
@@ -55,7 +55,7 @@ The use of a normal Markdown file as the durable source of truth may support an 
 - data remains portable
 - Obsidian can continue to access it
 - other tools can read it
-- Sill does not need to become the exclusive data owner
+- Recense does not need to become the exclusive data owner
 
 The ecosystem value comes from an open persistence convention rather than a proprietary database.
 

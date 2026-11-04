@@ -1,14 +1,16 @@
-# sill
+# recense
 
-Sill is a quiet strip at the top centre of the Mac's screen; time, date, batteries, a recorder, Draftpad and Recense,
+Recense is a quiet strip at the top centre of the Mac's screen; time, date, batteries, a recorder, Draftpad and its namesake,
 the listening surface where a recording becomes something to learn from: heard, read, seen lit and felt in its rhythm.
 One app, one process, no Dock icon. It works offline; Gallery's Worker and R2 are an optional cloud side for sharing
 transcripts and files.
 
-Its menu-bar hider (Nook) is part of Sill, not an app of its own.
+Recense was called Sill until 2026-11-03. The app is now `/Applications/Recense.app` (bundle id `local.recense`, terminal command `recense`), the repo folder is `~/Developer/recense`, the project folder inside it is `recense/`, and the strip's entry point is `recense/app.swift` (formerly `sill.swift`). The GitHub repo keeps its old name, `louan-dev/sill`. Build with `cd ~/Developer/recense/recense && zsh build.sh`; macOS asks again for mic, audio, calendar and Accessibility permissions once, because the bundle id changed.
+
+Its menu-bar hider (Nook) is part of Recense, not an app of its own.
 
 ## Why this exists
-Sill began as a kindness to an old MacBook: an M1 with 8 GB of memory and a nearly full disk, gasping under files that
+Recense began as a kindness to an old MacBook: an M1 with 8 GB of memory and a nearly full disk, gasping under files that
 only ever grow. Instead of buying a new machine, I wanted to give this one room to breathe again, with one small app
 in place of a handful of always-on ones, and with my words, recordings and drafts kept on hardware I can see.
 
@@ -18,7 +20,7 @@ voice while its words light up as they are sung, seeing the melody drawn over th
 it. If it helps me, I hope it can help the people dear to me, people for whom English is a wall, English speakers
 curious about a culture or a city they don't yet know, and people whose bodies or minds learn better through more than
 one sense. I didn't find a tool like that without a company in the middle, so I am building one, slowly, and handing
-it on. Everyday media is full of quiet lessons; Sill tries to catch them in the moment they pass by.
+it on. Everyday media is full of quiet lessons; Recense tries to catch them in the moment they pass by.
 
 ## A score for the verbal world
 Recense began in a conversation about conversation, held with someone who teaches it as a craft. Verbal exchange and
@@ -67,20 +69,20 @@ what it's for. Each project meets a different kind of friction, so each carries 
   voice you hear, the words in their own script, a light that moves with the syllables as sung, the melody and liaison
   drawn over the line, and a translation beside it. Every recording heard, transcribed and translated on this Mac, in
   its language and its script, so a song or a sermon becomes a lesson without leaving it.
-- **Continuity: friction of place.** The same transcript, corrections and timing wherever a recording plays; in Sill,
+- **Continuity: friction of place.** The same transcript, corrections and timing wherever a recording plays; in Recense,
   in Gallery, on iPhone and iPad. A correction made once teaches every surface.
 - **Draftpad: friction of capture.** One endless `draftpad.md`, reached by a swipe, so a thought lands before it fades;
   topics instead of files, so nothing needs a name first.
 - **Nook and the desk tools: friction of clutter.** Menu-bar icons tucked until wanted; notes (Obsidian, Notability,
-  files), calendar and a right-edge widget panel inside Sill, so the tools come to the work instead of the reverse.
+  files), calendar and a right-edge widget panel inside Recense, so the tools come to the work instead of the reverse.
 
-## Menu-bar hider (Nook, inside Sill)
-`sill/nook.swift`. Sill adds `[ always-hidden ] ┆ [ hidden ] │ ‹›` to the menu bar; ⌘-drag icons left of │ to hide them,
+## Menu-bar hider (Nook, inside Recense)
+`recense/nook.swift`. Recense adds `[ always-hidden ] ┆ [ hidden ] │ ‹›` to the menu bar; ⌘-drag icons left of │ to hide them,
 left of ┆ to always hide them (macOS has no API to move other apps' icons). Click ‹› to show or hide; hovering ‹› peeks
 at the hidden tier only; ⌥-click (or right-click ▸ Reveal Always-Hidden Items) shows both; holding ⌘ shows both dividers
-for arranging. Everything tucks back after the auto-hide delay (3 s). Right-click ‹› (or Sill's app menu ▸ Menu-Bar
+for arranging. Everything tucks back after the auto-hide delay (3 s). Right-click ‹› (or Recense's app menu ▸ Menu-Bar
 Hider) for auto-hide, Peek on Hover, per-app Rules (hide all, show all, show selection) and the off switch; off means no
-status items, monitors or timers. Nook.app is retired; it opens with Sill.
+status items, monitors or timers. Nook.app is retired; it opens with Recense.
 
 ## Features
 
@@ -154,9 +156,9 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 ## Layout
 
 ```
-sill/
-  sill/              the app
-    sill.swift         the strip, panels, gestures, Draftpad
+recense/
+  recense/           the app
+    app.swift          the strip, panels, gestures, Draftpad (formerly sill.swift)
     recense.swift      Recense: players, transcripts, light, editor, export
     soundengine.swift  process tap and EQ/Key/Space chain
     cadence.swift      the karaoke light's timing
@@ -166,8 +168,11 @@ sill/
     canon.swift        recited texts (canon/*.json)
     voiceprint.swift   voice matching
     handoff.swift      Mac ↔ iPhone ↔ iPad handoff
+    nook.swift         the menu-bar hider
+    ears/omni.py       the open ears' worker (Omnilingual ASR)
+    canon/             recited texts (Pali, Sanskrit) and tools/mkcanon.py
     homebar/           the home-bar host page
-    Sources/sill/      links to the files above for the Swift package
+    Sources/recense/   links to the files above for the Swift package
     build.sh, Package.swift, scripts/, launchagent/
   datasets/French/   hello-pronunciation: the Hello Pronunciation set (media stay private on R2)
   reference/         read-only sources (draftpad, pomo)
@@ -180,17 +185,17 @@ sill/
 ## Build and run
 
 ```
-cd ~/Developer/sill/sill
-zsh build.sh                              # builds /Applications/Sill.app and ./sill
-./sill &                                  # opens the time view
+cd ~/Developer/recense/recense
+zsh build.sh                              # builds /Applications/Recense.app and ./recense
+./recense &                               # opens the time view
 zsh scripts/install-launchagent.sh        # start at login (status | remove)
 zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to main (status | remove)
 ```
 
 **Deploy from anywhere.** A push to `main` (from a phone or cloud session) reaches this Mac on its own:
-`scripts/autoupdate.sh` runs every 5 minutes, fast-forwards sill and gallery when they have new commits (never over
-local edits), runs `build.sh` here so the app keeps this Mac's signature and its permissions, and relaunches Sill if it
-was running. Log: `~/Library/Logs/sill-autoupdate.log`.
+`scripts/autoupdate.sh` runs every 5 minutes, fast-forwards recense and gallery when they have new commits (never over
+local edits), runs `build.sh` here so the app keeps this Mac's signature and its permissions, and relaunches Recense if it
+was running. Log: `~/Library/Logs/recense-autoupdate.log`.
 
 `build.sh` copies Gallery's shared client code (`homebar.js`, `homebar.css`, `keylabel.js`, `room.js`, `prosody.js`,
 `prosogram.js`) into the bundle. With Apple's Command Line Tools 27.2 unpacked in `../.toolchain` it builds against the
@@ -198,9 +203,9 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./sill up | down | pad | time | show | hide | toggle | quit | status | background`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background`
 
-`status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Sill if it isn't running;
+`status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).
 
 ## Gestures and controls
@@ -218,15 +223,14 @@ macOS 27 SDK, which on-device hearing needs.
 | Ctrl+Option+Space | Toggle Draftpad |
 | Esc or ⌘W (in Draftpad) | Hide |
 | ⌘] / ⌘[ | Next / previous topic |
-| Swipe up | Summon Sill; dismiss the Recense card |
+| Swipe up | Summon Recense; dismiss the Recense card |
 | Two fingers held still | Time ruler on where the media is |
 
 Three-finger swipes use Apple's private MultitouchSupport framework (no permission prompt; experimental, so a macOS
 update could break it). Turn macOS's own three-finger swipes off in System Settings → Trackpad → More Gestures.
-`SILL_GESTURES=0 ./sill &` disables them. Swipes are logged to `~/Library/Logs/sill.log` when Sill runs from the login
-item. BetterTouchTool fallback: `zsh ~/Developer/sill/sill/scripts/gesture.sh up` (or `down`, `hide`, `quit`).
+`RECENSE_GESTURES=0 ./recense &` disables them. Swipes are logged to `~/Library/Logs/recense.log` when Recense runs
+from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/recense/scripts/gesture.sh up` (or `down`, `hide`, `quit`).
 
 ## Roadmap
-Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Sill
-(Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; Nook folded into Sill (hidden
-and deep tiers, hover to peek, behind a setting); and a right-edge widget panel starting with Find My.
+Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
+(Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.

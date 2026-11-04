@@ -1,6 +1,6 @@
-# Sill — Claude Project Knowledge
+# Recense — Claude Project Knowledge
 
-These files are intended to be uploaded to the **Knowledge** section of the Claude Project for Sill.
+These files are intended to be uploaded to the **Knowledge** section of the Claude Project for Recense.
 
 ## Recommended upload set
 

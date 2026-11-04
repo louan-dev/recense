@@ -1,10 +1,10 @@
 # Recense's open ears: Meta's Omnilingual ASR (CTC 300M, Apache 2.0) on this Mac, for every language Apple's
 # SpeechAnalyzer can't hear (Amharic, Zulu, Yoruba, Tibetan, Gaelic, … 1,600+). Offline once the model is here, no
-# quota. Sill starts it on demand (speech.swift, OpenEars) and talks to it one JSON line at a time:
+# quota. Recense starts it on demand (speech.swift, OpenEars) and talks to it one JSON line at a time:
 #   in   {"id": 1, "f32": "/tmp/x.f32", "script": "Ethi"?}   16 kHz mono float32 samples, raw; the script, when known
 #   out  {"id": 1, "words": [{"w", "s", "e", "c", "t"}], "text": "…", "scripts": ["Ethi"]?}   times from the samples' start
 # The model is language-agnostic (CTC: no language is asked for, none is told); it writes what it hears in the
-# script the language is written in, and Sill tells the language from that text. It leaves after five quiet minutes.
+# script the language is written in, and Recense tells the language from that text. It leaves after five quiet minutes.
 # Setup (once): python3.10 -m venv ~/.local/share/recense/omni && …/bin/pip install omnilingual-asr torchaudio==2.8.0
 #               brew install libsndfile;  the model (1.2 GB) downloads to ~/.cache/fairseq2 on first use.
 import json, os, select, sys, time
@@ -28,7 +28,7 @@ def load():
     from fairseq2.models.hub import load_model
     from fairseq2.data.tokenizers.hub import load_tokenizer
     dev = torch.device("mps" if torch.backends.mps.is_available() and os.environ.get("OMNI_CPU") is None else "cpu")
-    # half precision on the GPU: 0.6 GB in memory instead of 1.2 (this Mac has 8 GB, shared with Demucs and Sill)
+    # half precision on the GPU: 0.6 GB in memory instead of 1.2 (this Mac has 8 GB, shared with Demucs and Recense)
     dtype = torch.float16 if dev.type == "mps" and os.environ.get("OMNI_FP32") is None else torch.float32
     model = load_model(CARD, device=dev, dtype=dtype).eval()
     tok = load_tokenizer(CARD)
@@ -98,7 +98,7 @@ def cuts(x):
 
 def decode(chars, ids, conf, off):
     """Greedy CTC: a letter where the best token changes; words split at the space token. Each letter keeps its time
-    (`t`), so a script written without spaces (Chinese, Thai, Khmer, Tibetan…) can be cut into words by Sill."""
+    (`t`), so a script written without spaces (Chinese, Thai, Khmer, Tibetan…) can be cut into words by Recense."""
     words, cur, prev = [], None, -1
     for t, i in enumerate(ids):
         if i == prev:
@@ -123,7 +123,7 @@ def decode(chars, ids, conf, off):
 
 @torch.no_grad()
 def hear(model, chars, dev, x, hint=None, soft=False):
-    """`hint`: the script the recording's language is written in, when Sill knows it; `soft`: only guessed (the
+    """`hint`: the script the recording's language is written in, when Recense knows it; `soft`: only guessed (the
     language the last stretch was heard in), so it competes with the rest instead of being kept to."""
     from fairseq2.nn.batch_layout import BatchLayout
     global MASKS
@@ -183,7 +183,7 @@ def hear(model, chars, dev, x, hint=None, soft=False):
                 out.append((float(top.sum()), n))
             return out
 
-        # A known script is the recording's (Sill knows its language); otherwise each script the model wrote competes,
+        # A known script is the recording's (Recense knows its language); otherwise each script the model wrote competes,
         # two at a time, on the pieces both write letters in: a script that writes nothing in a piece hasn't lost it
         # (the model hears a sung vowel as an Arabic letter more readily than as a Ge'ez syllable, and summed over a
         # song that outweighed Ge'ez hearing every line both wrote better). The one that beats the most others is kept.

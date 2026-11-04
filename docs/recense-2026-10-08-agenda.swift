@@ -1,19 +1,19 @@
-// sill.swift
-// Sill V0.1: a quiet top-center panel with two surfaces.
+// app.swift
+// Recense V0.1: a quiet top-center panel with two surfaces.
 //   time  — the default: current time and date, small, no focus taken.
 //   pad   — Draftpad: the same one-file Markdown strip as draftpad.swift, same draftpad.md.
 // Built directly on draftpad.swift; the pad code (pages, file sync, cursor memory) is unchanged.
 //
-// Build:  zsh build.sh            (or: swiftc -O sill.swift -o sill)
-// Run:    ./sill &                 opens the time view
+// Build:  zsh build.sh            (or: swiftc -O app.swift -o recense)
+// Run:    ./recense &                 opens the time view
 // Control the running copy (BetterTouchTool, Shortcuts, shell):
-//   ./sill up         open one level: hidden → pad → clock
-//   ./sill down       close one level: clock → pad → hidden
-//   ./sill pad        show the pad          ./sill time      show the time
-//   ./sill show       show the last surface ./sill hide      hide
-//   ./sill toggle     hide if visible, otherwise show the pad (the hotkey does this)
-//   ./sill quit       save and quit         ./sill status    prints time / pad / hidden / not running
-//   ./sill background launch without showing anything (used by the login item)
+//   ./recense up         open one level: hidden → pad → clock
+//   ./recense down       close one level: clock → pad → hidden
+//   ./recense pad        show the pad          ./recense time      show the time
+//   ./recense show       show the last surface ./recense hide      hide
+//   ./recense toggle     hide if visible, otherwise show the pad (the hotkey does this)
+//   ./recense quit       save and quit         ./recense status    prints time / pad / hidden / not running
+//   ./recense background launch without showing anything (used by the login item)
 //   - show-type commands launch the app if it isn't running yet; hide / quit exit 1 if nothing runs.
 //   - any other argument prints usage and exits 64.
 //
@@ -25,7 +25,7 @@
 //   Cmd+] / Cmd+[            = next / previous topic
 //   Esc or Cmd+W             = hide
 //   Ctrl+Option+Space        = toggle the pad
-// Trackpad gestures (three-finger up / down) are NOT handled here. BetterTouchTool runs `sill up` / `sill down`
+// Trackpad gestures (three-finger up / down) are NOT handled here. BetterTouchTool runs `recense up` / `recense down`
 // through scripts/gesture.sh, so there is exactly one gesture source and nothing double-fires.
 //
 // File format: pages are separated by  <!-- page -->  (hidden in Obsidian's reading view).
@@ -43,7 +43,7 @@ import AudioToolbox
 
 // MARK: - Settings (edit these)
 
-// The same canonical note Draftpad uses. Override for one launch with  DRAFTPAD=/path/to/draftpad.md ./sill &
+// The same canonical note Draftpad uses. Override for one launch with  DRAFTPAD=/path/to/draftpad.md ./recense &
 let defaultNotePath = "/Users/chauphan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/draftpad.md"
 let notePath: String = {
     if let p = ProcessInfo.processInfo.environment["DRAFTPAD"], !p.isEmpty {
@@ -70,8 +70,8 @@ let repeatGuard: TimeInterval = 0.3     // a gesture this soon after the last ch
 
 let pageMarker = "<!-- page -->"
 let pageJoiner = "\n\n\(pageMarker)\n\n"
-let commandName = Notification.Name("local.sill.command")
-let statePath = "/tmp/local.sill.state"   // what `sill status` reads: "time", "pad" or "hidden"
+let commandName = Notification.Name("local.recense.command")
+let statePath = "/tmp/local.recense.state"   // what `recense status` reads: "time", "pad" or "hidden"
 
 enum Mode: String { case time, pad, hub, notebook, media }
 
@@ -118,7 +118,7 @@ func readState() -> String? {
 
 // MARK: - Views
 
-final class SillPanel: NSPanel {
+final class RecensePanel: NSPanel {
     /// Only the pad takes keyboard focus. The time view never steals typing from the app you're in.
     var allowsKey = false
     override var canBecomeKey: Bool { allowsKey }
@@ -280,9 +280,9 @@ func registerHotKey(_ action: @escaping () -> Void) {
         hotKeyAction?()
         return noErr
     }, 1, &spec, nil, nil)
-    let id = EventHotKeyID(signature: OSType(0x53494C4C), id: 1)   // 'SILL'
+    let id = EventHotKeyID(signature: OSType(0x53494C4C), id: 1)   // 'RECENSE'
     let err = RegisterEventHotKey(hotKeyCode, hotKeyMods, id, GetApplicationEventTarget(), 0, &hotKeyRef)
-    if err != noErr { NSLog("sill: Ctrl+Option+Space is taken (is draftpad still running?), error \(err)") }
+    if err != noErr { NSLog("recense: Ctrl+Option+Space is taken (is draftpad still running?), error \(err)") }
 }
 
 // MARK: - Native gestures (EXPERIMENTAL)
@@ -291,7 +291,7 @@ func registerHotKey(_ action: @escaping () -> Void) {
 // macOS has no public API for system-wide multi-finger swipes: NSEvent global monitors don't receive them.
 // This uses the private MultitouchSupport framework, the same source BetterTouchTool, Jitouch and MiddleClick
 // use. It only reads touches (it can't block them), needs no permission prompt, and may break in a future
-// macOS release; if it does, the BTT triggers via scripts/gesture.sh still work, and SILL_GESTURES=0 turns this off.
+// macOS release; if it does, the BTT triggers via scripts/gesture.sh still work, and RECENSE_GESTURES=0 turns this off.
 // It assumes macOS's own three-finger swipes (Mission Control, App Exposé, swipe between apps) are off or on
 // four fingers, otherwise both would act on the same swipe.
 
@@ -364,7 +364,7 @@ let frameCallback: MTFrameCallback = { _, data, count, _, _ in
 /// With macOS's own three-finger gestures off, three fingers scroll like two. BetterTouchTool used to swallow
 /// that scroll; this does the same: scroll events are dropped while three fingers are moving together on the
 /// trackpad, and so is the momentum after such a touch. Two-finger scrolling, even with a thumb resting, is untouched.
-/// Needs Accessibility permission (System Settings → Privacy & Security → Accessibility → sill).
+/// Needs Accessibility permission (System Settings → Privacy & Security → Accessibility → recense).
 var scrollTap: CFMachPort?
 let scrollFilter: CGEventTapCallBack = { _, type, event, _ in
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -474,7 +474,7 @@ let clockSpecs = [
     ClockSpec(label: "VN", zone: "Asia/Ho_Chi_Minh", place: "Ho Chi Minh City", lat: 10.8231, lon: 106.6297),
     ClockSpec(label: "ET", zone: "America/New_York", place: "New York", lat: 40.7128, lon: -74.0060),
 ]
-// Weather: Open-Meteo (free, no account). Sill's only network request: one call every 30 minutes carrying the
+// Weather: Open-Meteo (free, no account). Recense's only network request: one call every 30 minutes carrying the
 // three fixed coordinates above and nothing else. Set weatherEnabled = false to turn it off.
 let weatherEnabled = true
 
@@ -1058,7 +1058,7 @@ final class CalendarView: NSView {
 
         guard allowed else {
             show([], signature: "denied", window: nil, heading: "", counts: "", end: nil)
-            empty.stringValue = "Allow Sill in Privacy & Security → Calendars"
+            empty.stringValue = "Allow Recense in Privacy & Security → Calendars"
             return
         }
         let dayFmt = DateFormatter(); dayFmt.setLocalizedDateFormatFromTemplate("EEE")
@@ -1159,12 +1159,12 @@ final class FlippedView: NSView { override var isFlipped: Bool { true } }
 //
 // Microphone audio is AAC (.m4a) in Voice Memos' recordings folder, where Chau expects it (Voice Memos keeps its own
 // index, so these may not show in its list). Screen (display + system audio, ScreenCaptureKit, macOS 15+) and camera
-// (face-to-face video with the chosen microphone) are .mov files in ~/Movies/Sill Recordings. All selected streams
+// (face-to-face video with the chosen microphone) are .mov files in ~/Movies/Recense Recordings. All selected streams
 // start together and stop together. The camera is a separate file for now; a picture-in-picture composite is not
 // built yet. Permissions are asked the first time each source is used.
 
 let recordingsFolder = NSHomeDirectory() + "/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings"
-let screenRecordingsFolder = NSHomeDirectory() + "/Movies/Sill Recordings"
+let screenRecordingsFolder = NSHomeDirectory() + "/Movies/Recense Recordings"
 
 enum CaptureState: Equatable { case ready, settings, recording, paused }
 
@@ -1224,7 +1224,7 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
                 stream = s
                 done(true)
             } catch {
-                NSLog("sill: screen capture couldn't start: \(error.localizedDescription)")
+                NSLog("recense: screen capture couldn't start: \(error.localizedDescription)")
                 done(false)
             }
         }
@@ -1243,14 +1243,14 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
         DispatchQueue.main.async { self.finished?(true); self.finished = nil }
     }
     func recordingOutput(_ o: SCRecordingOutput, didFailWithError error: Error) {
-        NSLog("sill: screen capture failed: \(error.localizedDescription)")
+        NSLog("recense: screen capture failed: \(error.localizedDescription)")
         DispatchQueue.main.async { self.finished?(false); self.finished = nil }
     }
 }
 
 /// Microphone + computer audio, always together, in one .m4a.
 ///
-/// ScreenCaptureKit hands Sill both the system's audio output and the chosen microphone on one clock. They're
+/// ScreenCaptureKit hands Recense both the system's audio output and the chosen microphone on one clock. They're
 /// written as two tracks while recording, then mixed down into a single-track .m4a when you stop (silence where the
 /// computer played nothing), so every audio recording simply includes whatever the Mac was playing. Pausing drops
 /// the samples and closes the gap, so the file has no dead air.
@@ -1265,7 +1265,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
     private var gap = CMTime.zero                  // total paused time, removed from timestamps
     private var pauseStart: CMTime?
     private var lastPTS = CMTime.zero
-    private let queue = DispatchQueue(label: "local.sill.mixed-audio")
+    private let queue = DispatchQueue(label: "local.recense.mixed-audio")
     private var tempURL: URL?
     private var finalURL: URL?
     private(set) var power: Float = -160          // microphone
@@ -1276,7 +1276,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
 
     func start(to url: URL, micID: String?, _ done: @escaping (Bool) -> Void) {
         finalURL = url
-        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("sill-\(UUID().uuidString).m4a")
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("recense-\(UUID().uuidString).m4a")
         tempURL = temp
         Task {
             do {
@@ -1307,7 +1307,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
                 stream = s
                 done(true)
             } catch {
-                NSLog("sill: audio capture couldn't start: \(error.localizedDescription)")
+                NSLog("recense: audio capture couldn't start: \(error.localizedDescription)")
                 done(false)
             }
         }
@@ -1319,7 +1319,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
         if type == .microphone { power = rms(b) } else if let p = floatRMS(b) { systemPower = p }
         if paused { return }
         if !started {
-            guard w.startWriting() else { NSLog("sill: audio writer: \(w.error?.localizedDescription ?? "?")"); return }
+            guard w.startWriting() else { NSLog("recense: audio writer: \(w.error?.localizedDescription ?? "?")"); return }
             w.startSession(atSourceTime: pts)
             started = true
         }
@@ -1364,7 +1364,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
         Task {
             do {
                 let tracks = try await asset.loadTracks(withMediaType: .audio)
-                guard !tracks.isEmpty else { throw NSError(domain: "sill", code: 1) }
+                guard !tracks.isEmpty else { throw NSError(domain: "recense", code: 1) }
                 let reader = try AVAssetReader(asset: asset)
                 let pcm: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
                                           AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false,
@@ -1377,9 +1377,9 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
                                           AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000]
                 let input = AVAssetWriterInput(mediaType: .audio, outputSettings: aac)
                 writer.add(input)
-                guard reader.startReading(), writer.startWriting() else { throw reader.error ?? writer.error ?? NSError(domain: "sill", code: 2) }
+                guard reader.startReading(), writer.startWriting() else { throw reader.error ?? writer.error ?? NSError(domain: "recense", code: 2) }
                 writer.startSession(atSourceTime: .zero)
-                let q = DispatchQueue(label: "local.sill.mixdown")
+                let q = DispatchQueue(label: "local.recense.mixdown")
                 input.requestMediaDataWhenReady(on: q) {
                     _ = reader                                   // keep the reader alive until the mix is done
                     while input.isReadyForMoreMediaData {
@@ -1387,14 +1387,14 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
                         input.markAsFinished()
                         writer.finishWriting {
                             if writer.status == .completed { try? FileManager.default.removeItem(at: temp); done(out) }
-                            else { NSLog("sill: mixdown write failed (\(writer.error?.localizedDescription ?? "?")); keeping the two-track file")
+                            else { NSLog("recense: mixdown write failed (\(writer.error?.localizedDescription ?? "?")); keeping the two-track file")
                                    try? FileManager.default.removeItem(at: out); try? FileManager.default.moveItem(at: temp, to: out); done(out) }
                         }
                         return
                     }
                 }
             } catch {
-                NSLog("sill: mixdown failed (\(error.localizedDescription)); keeping the two-track file")
+                NSLog("recense: mixdown failed (\(error.localizedDescription)); keeping the two-track file")
                 try? FileManager.default.moveItem(at: temp, to: out); done(out)
             }
         }
@@ -1435,7 +1435,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
 @available(macOS 15.0, *)
 final class SystemAudioMeter: NSObject, SCStreamOutput {
     private var stream: SCStream?
-    private let queue = DispatchQueue(label: "local.sill.system-meter")
+    private let queue = DispatchQueue(label: "local.recense.system-meter")
     private(set) var power: Float = -160
     var level: CGFloat { CGFloat(max(0, min(1, (power + 65) / 55))) }
 
@@ -1455,7 +1455,7 @@ final class SystemAudioMeter: NSObject, SCStreamOutput {
                 try s.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
                 try await s.startCapture()
                 stream = s
-            } catch { NSLog("sill: computer-audio meter couldn't start: \(error.localizedDescription)") }
+            } catch { NSLog("recense: computer-audio meter couldn't start: \(error.localizedDescription)") }
         }
     }
     func stop() {
@@ -1504,7 +1504,7 @@ final class DeviceCapture: NSObject, AVCaptureFileOutputRecordingDelegate, AVCap
     let levels = AVCaptureAudioDataOutput()       // receives the live audio so the input level can be read
     private var micInput: AVCaptureDeviceInput?
     private var lastPower: Float = -160
-    private let levelQueue = DispatchQueue(label: "local.sill.levels")
+    private let levelQueue = DispatchQueue(label: "local.recense.levels")
 
     override init() {
         super.init()
@@ -1571,7 +1571,7 @@ final class DeviceCapture: NSObject, AVCaptureFileOutputRecordingDelegate, AVCap
     func stopFiles() { [audioFile, movieFile].forEach { if $0.isRecording { $0.stopRecording() } } }
 
     func fileOutput(_ o: AVCaptureFileOutput, didFinishRecordingTo url: URL, from c: [AVCaptureConnection], error: Error?) {
-        if let e = error { NSLog("sill: recording to \(url.lastPathComponent) ended with: \(e.localizedDescription)") }
+        if let e = error { NSLog("recense: recording to \(url.lastPathComponent) ended with: \(e.localizedDescription)") }
     }
 }
 
@@ -1639,7 +1639,7 @@ final class CameraPreview {
                self.session.canAddInput(i) { self.session.addInput(i) }
             self.session.commitConfiguration()
             // The connection only exists once a camera is attached, so automatic mirroring has to be switched off here,
-            // before setting it (setting it while automatic is on throws, which used to take Sill down).
+            // before setting it (setting it while automatic is on throws, which used to take Recense down).
             if let c = self.layer?.connection, c.isVideoMirroringSupported {
                 c.automaticallyAdjustsVideoMirroring = false
                 c.isVideoMirrored = true
@@ -1831,7 +1831,7 @@ final class PreflightView: NSView {
     func refreshPath() {
         var where_: [String] = []
         if choice.mic { where_.append("~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/") }
-        if choice.screen || choice.camera { where_.append("~/Movies/Sill Recordings/") }
+        if choice.screen || choice.camera { where_.append("~/Movies/Recense Recordings/") }
         path.stringValue = where_.isEmpty ? "Choose at least one source" : where_.joined(separator: "  ·  ")
         start.isEnabled = !where_.isEmpty
         start.alphaValue = where_.isEmpty ? 0.4 : 1
@@ -2038,7 +2038,7 @@ final class RecorderView: NSView {
     func newFile(_ ext: String, in dir: String, _ tag: String) -> URL {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        return URL(fileURLWithPath: dir).appendingPathComponent("Sill \(f.string(from: Date()))\(tag).\(ext)")
+        return URL(fileURLWithPath: dir).appendingPathComponent("Recense \(f.string(from: Date()))\(tag).\(ext)")
     }
 
     /// Starts every selected stream together.
@@ -2056,7 +2056,7 @@ final class RecorderView: NSView {
                 rec.start(to: url, micID: c.micID) { ok in
                     DispatchQueue.main.async {
                         if ok { self.mixed = rec; self.files.append(url) }
-                        else { NSLog("sill: mixed audio didn't start (check Screen Recording / Microphone permission)") }
+                        else { NSLog("recense: mixed audio didn't start (check Screen Recording / Microphone permission)") }
                     }
                 }
             } else { micByCaptureSession = true }
@@ -2079,7 +2079,7 @@ final class RecorderView: NSView {
                 cap.start(to: url, screen: screen, micID: c.micID) { ok in
                     DispatchQueue.main.async {
                         if ok { self.screenCapture = cap; self.files.append(url) }
-                        else { NSLog("sill: screen stream didn't start (check Screen Recording permission)") }
+                        else { NSLog("recense: screen stream didn't start (check Screen Recording permission)") }
                     }
                 }
             }
@@ -2146,17 +2146,17 @@ final class RecorderView: NSView {
 
 // MARK: - Bitwarden
 //
-// Vault search inside Sill, through Bitwarden's official command-line tool (`bw`, installed with Homebrew).
+// Vault search inside Recense, through Bitwarden's official command-line tool (`bw`, installed with Homebrew).
 //
-// Unlocking: the first time, you type your master password into Sill once. Sill keeps it in your login keychain
+// Unlocking: the first time, you type your master password into Recense once. Recense keeps it in your login keychain
 // and from then on unlocks with Touch ID (or your Mac password if Touch ID isn't available). Honest limits:
-// Bitwarden's CLI has no Touch ID or PIN of its own, so this Touch ID check is Sill's, guarding a keychain item that
+// Bitwarden's CLI has no Touch ID or PIN of its own, so this Touch ID check is Recense's, guarding a keychain item that
 // only apps you allow can read; it's the same trade-off password tools like Alfred workflows make.
-// The unlocked session lives only in Sill's memory and is dropped as soon as the vault closes, so every opening
-// asks for Touch ID (and after 10 idle minutes, or when Sill quits).
+// The unlocked session lives only in Recense's memory and is dropped as soon as the vault closes, so every opening
+// asks for Touch ID (and after 10 idle minutes, or when Recense quits).
 // Copied passwords are marked concealed (clipboard managers skip them) and cleared after 30 seconds.
 //
-// One-time setup in Terminal: `bw login` (Sill never handles your email or two-factor code).
+// One-time setup in Terminal: `bw login` (Recense never handles your email or two-factor code).
 
 let bwPath = "/opt/homebrew/bin/bw"
 let bwKeychainService = "local.sill.bitwarden"
@@ -2264,7 +2264,7 @@ final class Bitwarden {
     }
 
     func unlock(with password: String) -> Bool {
-        let (code, d) = run(["unlock", "--raw", "--passwordenv", "SILL_BW_PW"], env: ["SILL_BW_PW": password])
+        let (code, d) = run(["unlock", "--raw", "--passwordenv", "RECENSE_BW_PW"], env: ["RECENSE_BW_PW": password])
         let key = String(data: d, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard code == 0, !key.isEmpty else { return false }
         session = key
@@ -2314,7 +2314,7 @@ final class Bitwarden {
         SecItemDelete(base as CFDictionary)
         var add = base
         add[kSecAttrAccount as String] = "master password"
-        add[kSecAttrLabel as String] = "Sill: Bitwarden unlock"
+        add[kSecAttrLabel as String] = "Recense: Bitwarden unlock"
         add[kSecValueData as String] = Data(password.utf8)
         SecItemAdd(add as CFDictionary, nil)
     }
@@ -2956,7 +2956,7 @@ final class VaultView: NSView, NSTextFieldDelegate {
     func unlock(_ pw: String, remember: Bool) {
         DispatchQueue.global(qos: .userInitiated).async {
             let ok = Bitwarden.shared.unlock(with: pw)
-            NSLog("sill: Bitwarden unlock \(ok ? "succeeded" : "failed")")
+            NSLog("recense: Bitwarden unlock \(ok ? "succeeded" : "failed")")
             DispatchQueue.main.async {
                 guard self.unlocking else { Bitwarden.shared.lockNow(); return }    // closed meanwhile
                 self.pulse(false)
@@ -3838,7 +3838,7 @@ enum Brightness {
 }
 
 /// The menu bar's color on a screen: a small patch of the bar to the right of the strip (clear of app menus and
-/// status icons), read from what lies under Sill's own windows, averaged.
+/// status icons), read from what lies under Recense's own windows, averaged.
 func menuBarColor(on s: NSScreen, below wid: CGWindowID) -> NSColor? {
     let top = NSScreen.screens.first?.frame.maxY ?? s.frame.maxY
     let h = RestStrip.menuBarHeight(s)
@@ -3922,7 +3922,7 @@ func newSpace() {
     DispatchQueue.global(qos: .userInitiated).async {
         var err: NSDictionary?
         NSAppleScript(source: src)?.executeAndReturnError(&err)
-        if let e = err { NSLog("sill: new space didn't work: \(e)") }
+        if let e = err { NSLog("recense: new space didn't work: \(e)") }
     }
 }
 
@@ -4514,7 +4514,7 @@ final class EssentialsView: ClickView {
         let done: (Bool, Error?) -> Void = { [weak self] ok, _ in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                NSLog("sill: Calendar access \(ok ? "granted" : "not granted")")
+                NSLog("recense: Calendar access \(ok ? "granted" : "not granted")")
                 self.calendarAllowed = ok; self.calendar.allowed = ok
                 self.cachedAt = .distantPast; self.refresh(); self.calendar.reload(); self.horizon.reload()
             }
@@ -4574,7 +4574,7 @@ final class EssentialsView: ClickView {
 
 // MARK: - At rest: the strip in the menu bar
 //
-// When the panel is closed, Sill is a strip lying over the menu bar: exactly the menu bar's height, 720 pt wide,
+// When the panel is closed, Recense is a strip lying over the menu bar: exactly the menu bar's height, 720 pt wide,
 // centered, the menu bar's own color (nothing drawn), letting clicks through. At its two ends, like menu-bar items,
 // sit the next event in the coming three days: a blue calendar mark on the left, the time to go on the right (15m,
 // 3h, 1d; it takes the urgency color once the event's own Calendar alert time arrives). Hovering it (no gesture)
@@ -4967,7 +4967,7 @@ class SwipePanel: NSView {
     private var travel: CGFloat = 0
     private var armed = false
     private var monitor: Any?
-    /// Watches Sill's own scroll events over this panel (so it works over text fields and terminals too).
+    /// Watches Recense's own scroll events over this panel (so it works over text fields and terminals too).
     func watchSwipes() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
             guard let self = self, !self.isHidden, e.window === self.window,
@@ -5081,7 +5081,7 @@ final class DevonHub: SwipePanel, NSTextFieldDelegate {
             DispatchQueue.main.async {
                 guard q == self.field.stringValue.trimmingCharacters(in: .whitespaces) else { return }
                 self.recs = r ?? []
-                if r == nil { self.hint.stringValue = "DEVONthink didn't answer (allow Sill to control it?)" }
+                if r == nil { self.hint.stringValue = "DEVONthink didn't answer (allow Recense to control it?)" }
                 else if !q.isEmpty { self.hint.stringValue = "\(self.recs.count) found" }
                 self.layoutRows()
             }
@@ -5145,7 +5145,7 @@ final class NotebookPanel: SwipePanel {
     let title = NSTextField(labelWithString: "Notebook")
     let note = NSTextField(labelWithString: "Obsidian vault · Claude (cloud) reads what you ask about")
     let speak = NSButton()
-    var terminal: SillTerminal?
+    var terminal: RecenseTerminal?
     let synth = AVSpeechSynthesizer()
 
     override init(frame: NSRect) {
@@ -5188,8 +5188,8 @@ final class NotebookPanel: SwipePanel {
 // The last panel in the essentials row. Two drop zones in glass:
 //   Transcribe: drop (or click to pick) an audio or video file, or press Listen to capture what the Mac is playing
 //     (plus your mic) and transcribe it when you stop. Runs Whisper on this Mac (the openai-whisper you have
-//     installed, large-v3-turbo model): nothing is uploaded. Text lands in ~/Documents/Sill Transcripts.
-//   Compress: type the size you need (NotebookLM: 100 MB, Claude: 30 MB) and drop a video or audio file. Sill works
+//     installed, large-v3-turbo model): nothing is uploaded. Text lands in ~/Documents/Recense Transcripts.
+//   Compress: type the size you need (NotebookLM: 100 MB, Claude: 30 MB) and drop a video or audio file. Recense works
 //     out the bitrate that fits, encodes with ffmpeg (two passes for video), checks the result, and tells you the
 //     final size exactly. The compressed copy is saved next to the original.
 
@@ -5223,7 +5223,7 @@ func mb(_ bytes: Int64) -> String { String(format: "%.1f MB", Double(bytes) / 1_
 enum Media {
     /// Transcribes with Whisper on this Mac. Returns the transcript file.
     static func transcribe(_ src: URL) -> URL? {
-        let dir = NSHomeDirectory() + "/Documents/Sill Transcripts"
+        let dir = NSHomeDirectory() + "/Documents/Recense Transcripts"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let ok = runTool(whisperPath, [src.path, "--model", "large-v3-turbo", "--output_format", "txt",
                                        "--output_dir", dir, "--fp16", "False", "--verbose", "False"]).0
@@ -5259,7 +5259,7 @@ enum Media {
                 let audio = min(128_000, budget * 0.15)
                 let video = budget - audio
                 guard video > 60_000 else { return .tooSmall(Double(original) / 1_000_000) }
-                let log = NSTemporaryDirectory() + "sill-2pass-\(UUID().uuidString)"
+                let log = NSTemporaryDirectory() + "recense-2pass-\(UUID().uuidString)"
                 progress(attempt == 0 ? "Compressing… pass 1 of 2" : "A bit smaller… pass 1 of 2")
                 runTool(ffmpegPath, ["-y", "-i", src.path, "-c:v", "libx264", "-preset", "medium", "-b:v", "\(Int(video))",
                                      "-pass", "1", "-passlogfile", log, "-an", "-f", "mp4", "/dev/null"])
@@ -5418,7 +5418,7 @@ final class MediaPanel: SwipePanel, NSTextFieldDelegate {
             let text = out.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
             DispatchQueue.main.async {
                 self.busy = false
-                if let o = out { self.say("Saved to Documents › Sill Transcripts › \(o.lastPathComponent)"); self.show(text) }
+                if let o = out { self.say("Saved to Documents › Recense Transcripts › \(o.lastPathComponent)"); self.show(text) }
                 else { self.say("Couldn't transcribe that file") }
             }
         }
@@ -5473,15 +5473,15 @@ final class MediaPanel: SwipePanel, NSTextFieldDelegate {
 //
 // The third surface: a real terminal (SwiftTerm, a full VT100/xterm emulator) running your login shell in your home
 // folder. Reached from the essentials panel with a two-finger swipe to the right; a two-finger swipe to the left,
-// or three fingers down, goes back. The shell keeps running while Sill is hidden, so you come back to where you were.
+// or three fingers down, goes back. The shell keeps running while Recense is hidden, so you come back to where you were.
 
-final class SillTerminal: LocalProcessTerminalView {
+final class RecenseTerminal: LocalProcessTerminalView {
     var onSwipeBack: (() -> Void)?
     private var travel: CGFloat = 0
     private var monitor: Any?
 
     /// Horizontal two-finger swipes over the terminal leave it; vertical ones scroll its history as usual.
-    /// (SwiftTerm doesn't let its scrolling be overridden, so this watches Sill's own scroll events.)
+    /// (SwiftTerm doesn't let its scrolling be overridden, so this watches Recense's own scroll events.)
     func watchSwipes() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
             guard let self = self, !self.isHidden, e.window === self.window,
@@ -5498,7 +5498,7 @@ final class SillTerminal: LocalProcessTerminalView {
 
 // MARK: - Menu bar icon usage
 //
-// Sill counts which menu bar icons you click and ranks them by recent use (each click's weight halves every three
+// Recense counts which menu bar icons you click and ranks them by recent use (each click's weight halves every three
 // weeks), seeded with TextSniper, Bob and SoundSource. The ranking is meant to decide which icons stay visible and
 // which go past the divider. Hold ⌘ and a thin divider appears in the menu bar; icons ⌘-dragged to its left are tucked
 // away off screen, and holding ⌘ brings them back while you hold it.
@@ -5506,7 +5506,7 @@ final class SillTerminal: LocalProcessTerminalView {
 let shelfSize = 5
 let shelfHalfLife: TimeInterval = 21 * 24 * 3600
 let shelfSeeds = ["com.valerijs.boguckis.TextSniper", "com.hezongyidev.Bob", "com.rogueamoeba.soundsource"]
-let shelfIgnored: Set<String> = ["local.sill", "com.apple.controlcenter", "com.apple.systemuiserver", "com.apple.TextInputMenuAgent",
+let shelfIgnored: Set<String> = ["local.recense", "com.apple.controlcenter", "com.apple.systemuiserver", "com.apple.TextInputMenuAgent",
                                  "com.apple.Spotlight", "com.apple.notificationcenterui"]
 
 /// One menu bar icon as macOS currently has it.
@@ -5563,7 +5563,7 @@ final class ShelfDivider {
     private(set) var collapsed = true
     private var flagMonitors: [Any] = []
     init() {
-        item.autosaveName = "local.sill.divider"
+        item.autosaveName = "local.recense.divider"
         item.button?.title = ""
         item.button?.appearsDisabled = true
         collapse()
@@ -5666,7 +5666,7 @@ final class SpatialController {
 final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProcessTerminalViewDelegate {
     let initialCommand: String
 
-    let panel = SillPanel(
+    let panel = RecensePanel(
         contentRect: NSRect(origin: .zero, size: timeSize),
         styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered, defer: false)
@@ -5704,7 +5704,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     lazy var menuBar = MenuBarUsage()
     lazy var spatial = SpatialController(strip: rest)
     weak var cardRoot: NSView?
-    /// The card wears the menu bar's own color (sampled from the bar just beside the strip, under Sill's windows),
+    /// The card wears the menu bar's own color (sampled from the bar just beside the strip, under Recense's windows),
     /// so the panel reads as the menu bar itself growing down.
     func matchMenuBar(_ screen: NSScreen?) {
         guard let s = screen ?? NSScreen.main, let c = menuBarColor(on: s, below: CGWindowID(rest.window.windowNumber)) else { return }
@@ -5712,7 +5712,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
     lazy var rest = RestStrip(store: timeView.store, allowed: { [weak self] in self?.timeView.calendarAllowed ?? false })
     var hoverWork: DispatchWorkItem?
-    var terminal: SillTerminal?
+    var terminal: RecenseTerminal?
     var terminalStarted = false
     let hubView = DevonHub(frame: .zero)
     let notebookView = NotebookPanel(frame: .zero)
@@ -5735,9 +5735,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         buildMenu()
         buildPanel()
 
-        // Carry over the last page and cursor from earlier builds (domain "sill") or Draftpad, the first time.
+        // Carry over the last page and cursor from earlier builds (domain "recense") or Draftpad, the first time.
         let d = UserDefaults.standard
-        for name in ["sill", "draftpad"] where d.object(forKey: "page") == nil {
+        for name in ["recense", "draftpad"] where d.object(forKey: "page") == nil {
             guard let old = UserDefaults(suiteName: name), old.object(forKey: "page") != nil else { continue }
             d.set(old.integer(forKey: "page"), forKey: "page")
             if old.object(forKey: "cursor") != nil { d.set(old.integer(forKey: "cursor"), forKey: "cursor") }
@@ -5779,27 +5779,27 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
 
     func startGestures() {
-        guard ProcessInfo.processInfo.environment["SILL_GESTURES"] != "0" else {
-            NSLog("sill: native gestures off (SILL_GESTURES=0)"); return
+        guard ProcessInfo.processInfo.environment["RECENSE_GESTURES"] != "0" else {
+            NSLog("recense: native gestures off (RECENSE_GESTURES=0)"); return
         }
         if gestures == nil { gestures = NativeGestures() }
         gestureHandler = { [weak self] cmd in
-            NSLog("sill: three-finger swipe \(cmd)")
+            NSLog("recense: three-finger swipe \(cmd)")
             self?.run(cmd)
         }
         let n = gestures?.begin() ?? 0
-        NSLog("sill: native gestures listening on \(n) trackpad(s)")
+        NSLog("recense: native gestures listening on \(n) trackpad(s)")
         startScrollFilter()
     }
 
     /// Asks for Accessibility once, then keeps trying quietly until it's granted.
     func startScrollFilter() {
-        if installScrollFilter() { NSLog("sill: three-finger scroll filter on"); return }
+        if installScrollFilter() { NSLog("recense: three-finger scroll filter on"); return }
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        NSLog("sill: waiting for Accessibility permission to stop three-finger scrolling")
+        NSLog("recense: waiting for Accessibility permission to stop three-finger scrolling")
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { t in
-            if installScrollFilter() { t.invalidate(); NSLog("sill: three-finger scroll filter on") }
+            if installScrollFilter() { t.invalidate(); NSLog("recense: three-finger scroll filter on") }
         }
     }
 
@@ -5956,7 +5956,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         notebookView.autoresizingMask = [.width, .height]
         notebookView.isHidden = true
         notebookView.onBack = { [weak self] in self?.present(.hub) }
-        let term = SillTerminal(frame: .zero)
+        let term = RecenseTerminal(frame: .zero)
         term.nativeBackgroundColor = .clear
         term.wantsLayer = true
         term.layer?.backgroundColor = NSColor.clear.cgColor
@@ -5989,7 +5989,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "Quit Sill", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Recense", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editItem = NSMenuItem(); main.addItem(editItem)
         let edit = NSMenu(title: "Edit"); editItem.submenu = edit
@@ -6053,25 +6053,25 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         }
     }
 
-    /// Writes what the card currently shows to /tmp/sill-snapshot.png (for checking layouts without a screenshot).
+    /// Writes what the card currently shows to /tmp/recense-snapshot.png (for checking layouts without a screenshot).
     func snapshot() {
         // Also the top of the screen around the strip, exactly as it looks (menu bar included).
         if let scr = NSScreen.main {
             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
-                    .write(to: URL(fileURLWithPath: "/tmp/sill-menubar.png"))
+                    .write(to: URL(fileURLWithPath: "/tmp/recense-menubar.png"))
             }
         }
-        // What's actually on screen (Sill has Screen Recording permission), falling back to an offscreen render.
+        // What's actually on screen (Recense has Screen Recording permission), falling back to an offscreen render.
         if let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
             let rep = NSBitmapImageRep(cgImage: cg)
-            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/recense-snapshot.png"))
             return
         }
-        guard let root = morph.subviews.first, let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { NSLog("sill: snapshot failed"); return }
+        guard let root = morph.subviews.first, let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { NSLog("recense: snapshot failed"); return }
         root.cacheDisplay(in: root.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/sill-snapshot.png"))
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/recense-snapshot.png"))
     }
 
     @objc func toggle() { panel.isVisible ? hide() : present(.pad) }
@@ -6205,7 +6205,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self.lastRowEvent = now
             guard e.hasPreciseScrollingDeltas else { return e }
             // Each gesture picks one axis on its first real movement and keeps it. A sideways gesture is then
-            // entirely Sill's (lists underneath never see a sliver of it, which is what made the lower half lag);
+            // entirely Recense's (lists underneath never see a sliver of it, which is what made the lower half lag);
             // an up/down one is entirely the list's.
             if self.rowAxis == 0 {
                 let dx = abs(e.scrollingDeltaX), dy = abs(e.scrollingDeltaY)
@@ -6481,7 +6481,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         panel.setFrame(frame(for: mode, on: panel.screen ?? targetScreen()), display: true)
     }
 
-    /// Keeps the file behind `sill status` correct even if /tmp is cleaned while the app runs.
+    /// Keeps the file behind `recense status` correct even if /tmp is cleaned while the app runs.
     func restoreState() {
         if !FileManager.default.fileExists(atPath: statePath) {
             writeState(panel.isVisible ? mode.rawValue : "hidden")
@@ -6701,13 +6701,13 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot"]
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
-let lockFD = open("/tmp/local.sill.lock", O_CREAT | O_RDWR, 0o600)
+let lockFD = open("/tmp/local.recense.lock", O_CREAT | O_RDWR, 0o600)
 let holdsLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
 
 var initial = "time"
 if let cmd = CommandLine.arguments.dropFirst().first {
     guard commands.contains(cmd) else {
-        fputs("usage: sill [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot]\n", stderr)
+        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot]\n", stderr)
         exit(64)
     }
     if cmd == "status" {
@@ -6723,7 +6723,7 @@ if let cmd = CommandLine.arguments.dropFirst().first {
         exit(0)
     }
     if cmd == "hide" || cmd == "quit" {
-        fputs("sill is not running\n", stderr)
+        fputs("recense is not running\n", stderr)
         exit(1)
     }
     // Nothing is running: launch, then act on the command. A first "toggle" or "up" opens the pad.
@@ -6737,9 +6737,9 @@ if let cmd = CommandLine.arguments.dropFirst().first {
 
 writeState("hidden")
 
-// However Sill was started (login item, Finder, macOS reopening it after a permission), its log goes to one place.
+// However Recense was started (login item, Finder, macOS reopening it after a permission), its log goes to one place.
 if isatty(STDERR_FILENO) == 0 {
-    freopen(NSHomeDirectory() + "/Library/Logs/sill.log", "a", stderr)
+    freopen(NSHomeDirectory() + "/Library/Logs/recense.log", "a", stderr)
 }
 
 let app = NSApplication.shared

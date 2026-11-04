@@ -1,36 +1,36 @@
-# Sill · architecture and reuse
+# Recense · architecture and reuse
 
 Read this with `.claude/CLAUDE.md` § "One app, three faces". That section settles *what is an app*; this file settles *how code
 is arranged so it can be reused and recombined*. Written 2026-10-28 from the owner's words; changes only when a
 decision does.
 
 ## Names (settled, don't reopen)
-- **The app is SILL.** `CFBundleName` and `CFBundleDisplayName` are already `Sill`, bundle id `local.sill`, executable
-  `sill`. Nothing else ships.
-- **Recense is still called Recense** — it is a *surface inside Sill*, not an app. The strip's `recenseOpen` button
-  (`sill.swift:4304`, tooltip at 4386) summons an in-process `NSPanel` titled "Recense" (`recense.swift:1599`), and Sill
+- **The app is RECENSE.** `CFBundleName` and `CFBundleDisplayName` are already `Recense`, bundle id `local.recense`, executable
+  `recense`. Nothing else ships.
+- **Recense is still called Recense** — it is a *surface inside Recense*, not an app. The strip's `recenseOpen` button
+  (`app.swift:4304`, tooltip at 4386) summons an in-process `NSPanel` titled "Recense" (`recense.swift:1599`), and Recense
   shows Recense's menu in its own menu bar (`recense.swift:6202`). **This is already how it works.** Hitting Return on
-  Recense summons Recense's features integrated in Sill, in Sill's process, with no second app.
+  Recense summons Recense's features integrated in Recense, in Recense's process, with no second app.
 - **There is no Recense.app and there must never be one again.** See "Why Recense.app kept coming back".
 
 ## Why Recense.app kept coming back
 Three separate causes, all now understood. Record them so nobody reintroduces one:
 1. **`recense/build.sh` rebuilds it.** It writes `Recense.app` into its own folder and prints
    `Built Recense.app — launch with: open $PWD/$APP`. Any session following older docs that said
-   "`recense/main.swift` is the real Recense" would run it, and an app would appear and open. **Deleting `sill/recense/`
+   "`recense/main.swift` is the real Recense" would run it, and an app would appear and open. **Deleting `recense/recense/`
    is the permanent fix.** As long as that build script exists, the app can return.
 2. **The bundle was trashed, not deleted.** `~/.Trash/Recense.app` (26 MB) stayed registered with Launch Services as
    `local.recense`, path pointing *into the Trash*. macOS launches apps from the Trash, so any bundle-id open, file
-   association or Apple Event could resurrect it — and it then took port 47123 from Sill.
+   association or Apple Event could resurrect it — and it then took port 47123 from Recense.
 3. **A stale login item.** Enabled, UUID `6D3AF30C-E16B-42F8-A335-EA53ADF3C11E`, identifier `2.Recense`, pointing at a
    Claude Code scratchpad path that no longer exists. Harmless but it kept the name alive in System Settings.
 
 Removal order: `lsregister -u` the trashed bundle → delete the bundle → remove the login item in System Settings →
-delete `sill/recense/` by the Nook procedure in `.claude/CLAUDE.md` (snapshot zip outside the folder first; the only live work
+delete `recense/recense/` by the Nook procedure in `.claude/CLAUDE.md` (snapshot zip outside the folder first; the only live work
 inside it is `recense/homebar/prosogram/`, which must be moved out before deletion).
 
 ## The reuse problem, in the owner's words
-> "the homebar i designed i didn't realize it was gonna be on sill, recense, and gallery … it'd be cool to separate the
+> "the homebar i designed i didn't realize it was gonna be on recense, recense, and gallery … it'd be cool to separate the
 > features from the core of what it does, so it's easier to reuse features, group them together with others, or build new
 > apps by just pointing in the folder, copying the code and combining it in another … not necessarily that I want a new
 > app, but I want it to be easy to reuse code and recombine to make new stuff, so it's not so intertwined that it becomes
@@ -44,18 +44,18 @@ it's running in.
 
 This already exists and already works — twice:
 - `Homebar.tray(host)` in `gallery/src/client/homebar.js`, with the host contract written in the comment above
-  `const tray`. One implementation; Gallery serves it, Sill bundles it into `Resources/homebar/`.
-- `room.js` and `keylabel.js`, same shape, loaded by `src/page/gallery.js` on the web and copied by `sill/build.sh` into
+  `const tray`. One implementation; Gallery serves it, Recense bundles it into `Resources/homebar/`.
+- `room.js` and `keylabel.js`, same shape, loaded by `src/page/gallery.js` on the web and copied by `recense/build.sh` into
   the app.
 
 Everything below is that pattern, made explicit instead of remembered.
 
 ## Two reuse tracks
-Sill's shared code is in two languages with two different delivery mechanisms. Keep them separate in your head.
+Recense's shared code is in two languages with two different delivery mechanisms. Keep them separate in your head.
 
 ### Track W · web modules (JS/CSS)
-**Canonical home: `gallery/gallery/src/client/`.** Gallery's Worker serves them; `sill/build.sh` copies them into
-`Sill.app/Contents/Resources/homebar/`. Consumers today: Gallery's `/main` player, Sill's Recense panel, the prototypes.
+**Canonical home: `gallery/gallery/src/client/`.** Gallery's Worker serves them; `recense/build.sh` copies them into
+`Recense.app/Contents/Resources/homebar/`. Consumers today: Gallery's `/main` player, Recense's Recense panel, the prototypes.
 
 Promote each to a folder with its contract beside it:
 
@@ -64,8 +64,8 @@ gallery/src/client/
   homebar/    homebar.js, homebar.css, CONTRACT.md
   keylabel/   keylabel.js, CONTRACT.md
   room/       room.js, CONTRACT.md
-  prosody/    prosody.js, CONTRACT.md          ← move from sill/.handoff/prototypes/_shared/
-  prosogram/  prosogram.js, CONTRACT.md        ← move from sill/recense/homebar/prosogram/
+  prosody/    prosody.js, CONTRACT.md          ← move from recense/.handoff/prototypes/_shared/
+  prosogram/  prosogram.js, CONTRACT.md        ← move from recense/recense/homebar/prosogram/
   MANIFEST.json
 ```
 
@@ -74,8 +74,8 @@ the manifest instead of carrying a hand-maintained `cp` list** (today: `build.sh
 exact thing that made the homebar's spread invisible).
 
 ### Track S · Swift modules
-Today: one SwiftPM `executableTarget` named `sill`, with `sill.swift`, `recense.swift` and `soundengine.swift`
-**symlinked** into `Sources/sill/` (`main.swift -> ../../sill.swift`, etc.). That symlink trick is good — it keeps a flat
+Today: one SwiftPM `executableTarget` named `recense`, with `app.swift`, `recense.swift` and `soundengine.swift`
+**symlinked** into `Sources/recense/` (`main.swift -> ../../app.swift`, etc.). That symlink trick is good — it keeps a flat
 authoring layout while satisfying SwiftPM. Keep it.
 
 **One big file per area is fine.** For a solo author Swift has no headers, search beats file-hopping, and 7k-line files
@@ -88,7 +88,7 @@ have not slowed this project down. **Do not split for tidiness.** Split only whe
 | `Transcribe` | the ASR and translation provider seam (below) | partly |
 | `RecenseCore` | Episode, transcripts, cache, `keep/` merge, ffmpeg export, the 47123 server | **no** — `Process()`, ffmpeg |
 | `RecenseUI` | panel, overlay, homebar WKWebView host, Recense menu | macOS |
-| `SillUI` | strip, panels, nook, draftpad | macOS |
+| `RecenseUI` | strip, panels, nook, draftpad | macOS |
 
 **Extract `VoiceMeasure` first.** Cleanest boundary, no UI, it is what the prosogram work needs, and it is the only
 piece with any future outside macOS.
@@ -121,7 +121,7 @@ build time that a "shared" module shells out to ffmpeg.
 
 ## Provider seams (the pattern for swapping an engine)
 When an external service can be replaced by something on-device, put a protocol between the callers and the engine.
-**Sill already does this for translation and it is the model to copy.**
+**Recense already does this for translation and it is the model to copy.**
 
 `recense.swift:251` — *"on-device translation (Apple's Translation, macOS 15+): the stand-in when every Groq model is
 out"*. Groq's free quota dies hours into a long podcast; lines about to be heard get translated on the Mac instead, free,
@@ -220,9 +220,9 @@ refactor is verifiable today, and the on-device class becomes an addition rather
   already wired as the quota fallback.
 
 ## Offline ASR (built 2026-10-29; the plan below is kept for its reasoning)
-**What was built** (`sill/speech.swift`, `sill/voiceprint.swift`, wired through `recense.swift`; notes 20261029 item 9):
+**What was built** (`recense/speech.swift`, `recense/voiceprint.swift`, wired through `recense.swift`; notes 20261029 item 9):
 - **Toolchain.** The Mac runs macOS 27.2 but Xcode is 16.4 (SDK 15.5), which can't compile SpeechAnalyzer. Apple's
-  Command Line Tools 27.2 are unpacked (not installed, no admin) in `sill/.toolchain/`; `build.sh` builds with them
+  Command Line Tools 27.2 are unpacked (not installed, no admin) in `recense/.toolchain/`; `build.sh` builds with them
   into `.build-sdk27` when they're there (`--build-system native`: their SwiftPM would compile SwiftTerm's Metal shader
   and the tools have no `metal`), else exactly as before with Groq as the only engine (`#if compiler(>=6.2)`).
 - **Not a protocol but an adapter.** `OnDeviceASR.transcribe` answers a request *the way Whisper answers one*
@@ -245,15 +245,15 @@ refactor is verifiable today, and the on-device class becomes an addition rather
   "unlike"); the recognizer's own alternatives count too. Voiceprints alone only modestly separate one speaker's word
   from others (real speech, same word p50 7.4 vs others 8.75), so sound confirms and vetoes, never decides alone.
 - **Blocked:** `SFSpeechLanguageModel.prepareCustomLanguageModel` fails with SFSpeechErrorDomain 1 for every variant
-  tried (3–400 phrases, with/without weight, vocabulary, clientIdentifier; CLI and inside signed Sill with Speech
+  tried (3–400 phrases, with/without weight, vocabulary, clientIdentifier; CLI and inside signed Recense with Speech
   Recognition allowed). `CustomLM` and the DictationTranscriber second opinion are wired and stay inert until it builds.
-- **Check it:** `curl -s localhost:47123/speech`; `defaults write local.sill speechCheck -bool YES` + relaunch builds a
+- **Check it:** `curl -s localhost:47123/speech`; `defaults write local.recense speechCheck -bool YES` + relaunch builds a
   throwaway model once and logs the result; `recense.log` lines `speech:` and `lexicon:`.
 
 The owner intends to replace Groq/Whisper with an on-device extractor so transcription runs offline. **Before building
 it, four things must be settled, and one is a blocker:**
 
-1. **Target: macOS 26 on this Mac** (owner's plan, 2026-10-28). That is the correct OS — transcription runs in Sill, on
+1. **Target: macOS 26 on this Mac** (owner's plan, 2026-10-28). That is the correct OS — transcription runs in Recense, on
    the Mac, so the Mac's OS is what gates it. Today: **macOS 15.5 (Darwin 24.5.0)**, **Xcode 16.4 / iOS 18.5 SDK**.
    Both need upgrading; Xcode 16.4 cannot compile against 26-generation APIs. Three things to get right:
    - **Keep the deployment floor and use availability guards.** `Package.swift` declares `platforms: [.macOS(.v14)]`.
@@ -286,12 +286,12 @@ being precious — it is currently protected from deletion *because* regeneratin
 moves before upgrading, or the upgrade will stall.
 
 ### What a macOS 26 upgrade puts at risk in this codebase
-Sill is a daily driver that leans on private and permission-gated APIs, so note the state of each **before** upgrading
+Recense is a daily driver that leans on private and permission-gated APIs, so note the state of each **before** upgrading
 and re-check **after**. A major OS release is exactly when these break.
 
 | At risk | Why | Check after |
 |---|---|---|
-| **MultitouchSupport gestures** (`sill.swift`, three-finger swipes) | **private API**, already marked experimental in `.claude/CLAUDE.md` — first casualty of a major upgrade | layers up/down and panel paging still respond |
+| **MultitouchSupport gestures** (`app.swift`, three-finger swipes) | **private API**, already marked experimental in `.claude/CLAUDE.md` — first casualty of a major upgrade | layers up/down and panel paging still respond |
 | **Core Audio process tap** (`soundengine.swift`) | tap and `muteBehavior` semantics have shifted between releases; SoundSource already breaks tap muting | tap a followed player, confirm original audio mutes and returns on quit |
 | **Accessibility and Calendar permissions** | `build.sh` keeps a stable signing identity specifically so these survive *rebuilds*; an OS upgrade commonly still resets them | strip reads events; Recense follows a player |
 | **Apple Events to QuickTime / Music** | `osascript` automation permissions reset on upgrade | exact-sync seek test from the handoffs |
@@ -310,7 +310,7 @@ liaison, stylisation) would create a second implementation of the same logic. Tw
 every accuracy fix in `recense-voice-vision.md` would have to land twice and be scored twice. That is the duplication
 this file forbids, and weakness 8 of the vision doc already asks for one side, not two.
 
-**Why the home bar is the wrong surface.** `sill/sill/homebar/index.html` is a control strip: it posts commands outward
+**Why the home bar is the wrong surface.** `recense/recense/homebar/index.html` is a control strip: it posts commands outward
 (`cmd`, `say`, `lang`, `size`, `fx`, `chroma?`, `chord`, `clear`, `download`) and receives no words, no lines, no
 features and no clock. `RecenseHomeBar` sizes it to `clamp(36px, 100vh-104px, 116px)`. Meanwhile Recense's transcript is
 drawn **natively** (`recense.swift:2170–2352`: `blocks`, `places`, `Row`, `Ink`, `draw(_ r: Row…)`, `draw(_ k: Ink…)`,
@@ -364,12 +364,12 @@ Verified in Chromium against Miniflare with a fixture whose pitch is a deliberat
 ## Enforcement, so this doesn't rot
 Rules in a document decay. These are cheap and mechanical:
 - **No upward imports.** A test greps each shared module for its hosts' names: `prosody.js`, `homebar.js`, `room.js`,
-  `keylabel.js`, `prosogram.js` must not contain `Sill`, `Recense` or `Gallery` outside comments. If one does, it is not
+  `keylabel.js`, `prosogram.js` must not contain `Recense`, `Recense` or `Gallery` outside comments. If one does, it is not
   reusable and the test says so.
 - **Manifest is the only copy list.** `build.sh` reads `MANIFEST.json`; a module not in the manifest is not bundled. No
   hand-typed filenames.
 - **One canonical copy per module.** A duplicate is a bug. `prosody.js` currently exists twice, byte-identical
-  (`sill/.handoff/prototypes/_shared/` and `sill/recense/homebar/prosogram/`), which is how drift starts.
+  (`recense/.handoff/prototypes/_shared/` and `recense/recense/homebar/prosogram/`), which is how drift starts.
 - **Every module header states: what it needs from its host, and its platform reach.**
 
 ## Order of work
@@ -380,7 +380,7 @@ Rules in a document decay. These are cheap and mechanical:
 4. Add the `Transcriber` seam with `GroqTranscriber` as the only implementation — behaviour identical, seam in place.
 5. After the OS and Xcode upgrade: spike on-device word timings against Groq's on one clip (blocker 2). Only then write
    `OnDeviceTranscriber`.
-6. Split `RecenseCore` / `RecenseUI` / `SillUI` if and when a second product actually needs it — not before.
+6. Split `RecenseCore` / `RecenseUI` / `RecenseUI` if and when a second product actually needs it — not before.
 7. **The prosogram in Recense: hidden WebView compute engine, native drawing** (see the section above). Order within it:
    glyph-metrics fix → compute-and-cache into `features.json` → recompute on correction → native draw under the
    existing `Ink`/`Row` lines. Not "mount the web prosogram in the home bar": that surface is a control strip and the

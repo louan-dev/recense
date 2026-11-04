@@ -1,6 +1,6 @@
 # Recense
 
-> Archived draft from October 2026, when Recense was its own app and heard through Groq and Whisper. Today Recense lives inside Sill and hears on this Mac; see the [README](../README.md) for what is current.
+> Archived draft from October 2026, when Recense was its own app and heard through Groq and Whisper. Today Recense lives inside Recense and hears on this Mac; see the [README](../README.md) for what is current.
 
 *A multimodal score for the verbal world*
 

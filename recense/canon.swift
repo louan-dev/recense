@@ -41,7 +41,7 @@ enum Canon {
     static func load() -> [Text] {
         var dirs: [URL] = [cacheDir.appendingPathComponent("canon")]
         if let r = Bundle.main.resourceURL?.appendingPathComponent("canon") { dirs.insert(r, at: 0) }
-        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/sill/sill/canon")
+        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/recense/recense/canon")
         if Bundle.main.resourceURL.map({ !FileManager.default.fileExists(atPath: $0.appendingPathComponent("canon").path) }) ?? true { dirs.append(dev) }
         var out: [Text] = []
         for d in dirs {

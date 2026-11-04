@@ -1,12 +1,12 @@
-# Sill — Decisions
+# Recense — Decisions
 
 This document records meaningful choices so they do not have to be rediscovered in future chats.
 
-## 2026-10-06 — Product Name: Sill
+## 2026-10-06 — Product Name: Recense
 
-**Decision:** The larger native macOS utility is named **Sill**.
+**Decision:** The larger native macOS utility is named **Recense**.
 
-**Relationship:** Draftpad is the original foundation and persistent Markdown/memory subsystem inside Sill.
+**Relationship:** Draftpad is the original foundation and persistent Markdown/memory subsystem inside Recense.
 
 **Supersedes:** The working name “Nook.”
 
@@ -14,7 +14,7 @@ This document records meaningful choices so they do not have to be rediscovered 
 
 ## Draftpad Remains the Memory Subsystem
 
-**Decision:** Draftpad is not being abandoned as Sill expands.
+**Decision:** Draftpad is not being abandoned as Recense expands.
 
 **Rationale:** Its one-file Markdown model, continuity, portability, and low-friction interaction remain central to the product direction.
 
@@ -22,7 +22,7 @@ This document records meaningful choices so they do not have to be rediscovered 
 
 **Decision:** The canonical Draftpad Markdown file remains the durable source of truth for the scratchpad/memory layer.
 
-**Rationale:** Preserve portability and independent usability in Obsidian; avoid making Sill the only access path.
+**Rationale:** Preserve portability and independent usability in Obsidian; avoid making Recense the only access path.
 
 ## BetterTouchTool as Scaffolding
 
@@ -46,7 +46,7 @@ This document records meaningful choices so they do not have to be rediscovered 
 
 **Decision:** The primary design target is the actual 2020 13-inch M1 MacBook Pro, which has no physical display notch.
 
-**Rationale:** Sill should exploit the real hardware rather than forcing a newer MacBook interaction model onto it.
+**Rationale:** Recense should exploit the real hardware rather than forcing a newer MacBook interaction model onto it.
 
 ## Accessibility Claims
 

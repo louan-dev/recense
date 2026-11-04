@@ -1,4 +1,4 @@
-# Sill — Ideas & Explorations
+# Recense — Ideas & Explorations
 
 This file preserves possibilities without making them requirements.
 
@@ -18,7 +18,7 @@ Original framing for the broader idea:
 
 > Bridge raw human intent and continuous thought expression directly into a local, durable Markdown surface, acting as a low-friction layer between the user's cognitive state and the computer's execution capabilities.
 
-This is a conceptual framing, not a requirement that Sill expose no UI at all.
+This is a conceptual framing, not a requirement that Recense expose no UI at all.
 
 ## Voice + Gesture
 
@@ -153,7 +153,7 @@ Do not recreate the full macOS Notification Center.
 
 ## Telegram / SMS Bridge
 
-A future integration may surface an existing Telegram-based SMS bridge in the Sill environment, particularly when the user's phone is unavailable.
+A future integration may surface an existing Telegram-based SMS bridge in the Recense environment, particularly when the user's phone is unavailable.
 
 The purpose is resilience and access to important communication, not social-feed aggregation.
 
@@ -166,12 +166,12 @@ Concept:
 ```text
 active media anywhere on Mac
         ↓
-Sill detects relevant playback
+Recense detects relevant playback
         ↓
 minimal playback controls surface
 ```
 
-This is future/experimental. Do not import another project's entire player UI into Sill.
+This is future/experimental. Do not import another project's entire player UI into Recense.
 
 ## Shared Media Interaction Language
 
@@ -181,7 +181,7 @@ The Personal Data Cloud media player has explored a spatial language in which ho
 - earlier → later
 - A → B
 
-Sill may borrow the conceptual language later, but should not automatically inherit the implementation or visual design.
+Recense may borrow the conceptual language later, but should not automatically inherit the implementation or visual design.
 
 ## Voice / Superwhisper-Like Layer
 
@@ -223,4 +223,4 @@ Potential future capability for clipping or importing useful material into the c
 
 Longer-term possibilities include voice-driven recitation, definitions, explanations, translation, summarization, and iterative brainstorming on the same durable page.
 
-The goal is not to create a generic chatbot inside Sill; the goal is to reduce the friction of continuing a line of thought.
+The goal is not to create a generic chatbot inside Recense; the goal is to reduce the friction of continuing a line of thought.

@@ -28,10 +28,10 @@ Three learners, three directions:
 
 The bar: someone reading the code sees accurate pitch tracking, real syllabic nuclei, perceptual stylization (Mertens'
 glissando thresholds), pitch shown against the speaker's own range, and **numbers that prove it** against known answers.
-Personal use inside Sill first; later its own app so the others can use it.
+Personal use inside Recense first; later its own app so the others can use it.
 
 ## Where things are (verified 2026-10-27, re-verified against the code 2026-10-28)
-- **`sill/sill/recense.swift` (7,378 lines) is Recense.** It is the largest and newest source in the repo, Sill owns the
+- **`recense/recense/recense.swift` (7,378 lines) is Recense.** It is the largest and newest source in the repo, Recense owns the
   window, and `Features.measure` lives there (~3875 in the old numbering). `recense/main.swift` (6,557 lines) is a **dead
   older copy** of the app Recense used to be: not installed, not running, never the source of truth. Do not edit it, do
   not build it, do not cite it. See `.claude/CLAUDE.md` § "One app, three faces".
@@ -161,7 +161,7 @@ notes still resolve.
 
 | # | Step | Effort | Was |
 |---|---|---|---|
-| 0 | `--features <audio> <out.json>` headless flag on `sill/sill/recense.swift` reusing `Features.measure`, **with a versioned schema** carrying candidates, clarity and the measurement parameters. Run it on all clips and the *Hello Pronunciation* clips (Phase 4(b), streamed from R2). | medium | [4] |
+| 0 | `--features <audio> <out.json>` headless flag on `recense/recense/recense.swift` reusing `Features.measure`, **with a versioned schema** carrying candidates, clarity and the measurement parameters. Run it on all clips and the *Hello Pronunciation* clips (Phase 4(b), streamed from R2). | medium | [4] |
 | 1 | Cents-domain octave snap + gate `voiced` on `clarity`. Report octave-error rate before and after. | low | new |
 | 2 | Decouple syllable timing from glyph metrics; prove a headless run and a browser run agree. | medium | new |
 | 3 | Expected-answer files for fr-speech and fr-music **plus a hand-corrected f0 gold set**, and the scoring runner that prints one accuracy line per clip. | medium | [1, fr] |
@@ -177,8 +177,8 @@ notes still resolve.
 | 13 | **The imitation loop**: record, measure, overlay, score. | high | new |
 | 14 | Add English to prosody.js: syllabify from CMUdict phonemes (with a syllabifier and fallback rules), lexical stress, reduced vowels, phrase-final events. Make the en clips' expected.json pass; show them in the prosogram. | high | [3] |
 | 15 | Respelling tables with the *owned / near / fresh* status column. Vietnamese→English for mama and cousins on **Southern** anchors (retroflex `tr`/`s`/`r` owned; /z/, /v/, /θ/, /ð/ and the final /n/–/ŋ/, /t/–/k/ contrasts fresh), checked against L2-ARCTIC Vietnamese speakers' errors; French→English for her (English phoneme → nearest French spelling, flags for th, h, short i, word stress). List the words that need a native check. | medium | [9, 5] |
-| 16 | Plan the split: a shared voice module (Features, prosody, respelling, imitation) used by both Sill and a standalone Recense client. | high | [11] |
-| 17 | Build the client: onboarding by learner language pair **and dialect**, no Sill dependencies. | high | [12] |
+| 16 | Plan the split: a shared voice module (Features, prosody, respelling, imitation) used by both Recense and a standalone Recense client. | high | [11] |
+| 17 | Build the client: onboarding by learner language pair **and dialect**, no Recense dependencies. | high | [12] |
 
 **French is done when:** fr-speech, fr-music and the *Hello Pronunciation* tests all pass with figures recorded before and
 after, the f0 gold set gives an RPA and an octave-error rate, and fr-music looks right in the prosogram.

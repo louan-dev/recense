@@ -193,7 +193,7 @@ func chatJSON(_ system: String, _ user: String, model: String, maxTokens: Int) a
 // A session only exists inside a SwiftUI view's translationTask, so 1-point views host them and the work runs there.
 // One session per language pair, each in a view of its own, kept while it has work and closed a minute after its last
 // job. One session used to be switched from pair to pair (fr>en, en>vi, ja>en… as the lines changed language), and it
-// sat in the subtitle window, which is hidden, shown and moved into Sill's page: each switch and each move had
+// sat in the subtitle window, which is hidden, shown and moved into Recense's page: each switch and each move had
 // Translation host a new remote view, their Mach ports were never all given back, and Recense grew slower until macOS
 // killed it (EXC_RESOURCE, 305,834 ports, after ~20 hours). The views now live in a window of their own that is never
 // hidden or moved. Only languages already downloaded are used: that window can't show the download sheet, and a
@@ -1147,6 +1147,16 @@ func clock(_ t: Double) -> String {
 //
 // The page only takes the pointer where the bar is (it posts those rects); everywhere else the subtitles have it.
 
+/// The owner of RecenseHomeBar's always-on tracking area, so WebKit's own tracking stays untouched.
+final class PointerPass: NSResponder {
+    private weak var bar: RecenseHomeBar?
+    init(_ b: RecenseHomeBar) { bar = b; super.init() }
+    required init?(coder: NSCoder) { fatalError() }
+    override func mouseEntered(with e: NSEvent) { bar?.pass(e) }
+    override func mouseMoved(with e: NSEvent) { bar?.pass(e) }
+    override func mouseExited(with e: NSEvent) { bar?.pass(nil) }
+}
+
 /// A script message handler that doesn't keep its web view alive.
 final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
     weak var target: WKScriptMessageHandler?
@@ -1156,7 +1166,7 @@ final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
 
 final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDelegate {
     /// The control line: the stroke is centred this far above the window's foot (the page's --cl).
-    static let line: CGFloat = 10                // as Sill's R2 home bar: its stroke ~9.5 pt above the foot (SPEC 68)
+    static let line: CGFloat = 10                // as Recense's R2 home bar: its stroke ~9.5 pt above the foot (SPEC 68)
     static var still: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var onCmd: ((Cmd) -> Void)?
@@ -1173,7 +1183,7 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         let cfg = WKWebViewConfiguration()
         super.init(frame: .zero, configuration: cfg)
         cfg.userContentController.add(WeakScriptHandler(self), name: "recense")
-        // Inside Sill both bars sit out at the edges, as Sill's own do: the stroke near the foot, the vertical bar
+        // Inside Recense both bars sit out at the edges, as Recense's own do: the stroke near the foot, the vertical bar
         // at the right edge. In the strip (.strip) the stroke sits a little higher, so A and B's names under it
         // fit, and the time ruler is compact: the open bar stays inside the zone below the lines (Overlay.barZone).
         cfg.userContentController.addUserScript(WKUserScript(source: """
@@ -1203,6 +1213,24 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
         return hits.contains { $0.contains(CGPoint(x: q.x, y: y)) } ? super.hitTest(p) : nil
     }
     override func acceptsFirstMouse(for e: NSEvent?) -> Bool { true }
+
+    // ----- hover while another app has the keyboard (item 31) -----
+    // WebKit only hears the pointer in the key window, so with Obsidian (say) in front the bars never unfolded or
+    // tucked away, and clicking Recense to wake them plays / pauses. An always-on tracking area hands the pointer to
+    // the page itself (Recense.hover) whenever this window isn't key; once it is, WebKit's own events take over.
+    private lazy var hoverPass = PointerPass(self)
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.filter { $0.owner === hoverPass }.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: hoverPass))
+    }
+    fileprivate func pass(_ e: NSEvent?) {
+        guard window?.isKeyWindow != true else { return }
+        guard let e else { run("Recense.hover(null)"); return }
+        let q = convert(e.locationInWindow, from: nil)
+        let y = isFlipped ? q.y : bounds.height - q.y
+        run("Recense.hover(\(Int(q.x)),\(Int(y)))")
+    }
     /// SPEC 19: once the window is clicked, space plays / pauses wherever the pointer is, the bar included: WebKit
     /// would otherwise keep the space it was focused by. Typing in the bar's own fields still gets it.
     override func keyDown(with e: NSEvent) {
@@ -1542,7 +1570,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     let editor = LineEditor()
     var onEdit: ((_ clicked: Bool) -> Void)?             // correct the line on screen (a double-click has played or paused first)
     var onReset: (() -> Void)?                           // the line on screen back to what the pipeline made
-    var onRetranscribe: (() -> Void)?                    // Recense.app's menu commands, now that Recense lives in Sill
+    var onRetranscribe: (() -> Void)?                    // Recense.app's menu commands, now that Recense lives in Recense
     var onExport: (() -> Void)?
     var lineState: (() -> (editable: Bool, edited: Bool))?
     // Learning's barrel (spec §6): one line in view; the lines either side ride a drum out of sight and roll in as the
@@ -1571,8 +1599,8 @@ final class Overlay: NSObject, NSWindowDelegate {
     func hideStrip() { panel.orderOut(nil); onToggle?() }
     func toggleStrip() { panel.isVisible ? hideStrip() : showStrip() }
 
-    /// Opened from Sill: a see-through strip from the top of the screen (over the menu bar) to about the bottom of a
-    /// browser's address bar, as wide as Sill's card; dark enough to read the subtitles, light enough to see behind.
+    /// Opened from Recense: a see-through strip from the top of the screen (over the menu bar) to about the bottom of a
+    /// browser's address bar, as wide as Recense's card; dark enough to read the subtitles, light enough to see behind.
     func showStrip() {
         guard let sc = NSScreen.main else { return }
         let w = timeSize.width, h = Overlay.stripHeight(sc)
@@ -1588,7 +1616,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         lastKey = ""; fits = [:]
     }
 
-    /// Inside Sill: the window's whole interface moves onto Sill's Recense page (nil moves it back to the panel).
+    /// Inside Recense: the window's whole interface moves onto Recense's Recense page (nil moves it back to the panel).
     var hostedRoot: NSView?
     private var panelWasVisible = false
     lazy var areaTop = area.topAnchor.constraint(equalTo: panel.contentView!.topAnchor, constant: 26)
@@ -1726,7 +1754,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         ])
         // (on-device translation has its own window: OnDevice)
         panel.onKey = { [weak self] e in self?.key(e) ?? false }
-        // Inside Sill the strip starts hidden: the strip's Recense icon brings it up, so the icon's first press shows
+        // Inside Recense the strip starts hidden: the strip's Recense icon brings it up, so the icon's first press shows
         // it instead of hiding a panel already up at launch.
     }
 
@@ -1778,6 +1806,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     }
     func setMode(_ m: Mode) {
         mode = m; modeCtl.selectedSegment = m.rawValue
+        Prosody.learning = m == .learning
         drum = -1; drumHold = nil
         UserDefaults.standard.set(m.rawValue, forKey: "viewMode")
         lastKey = ""   // re-render the current line in the new mode
@@ -1862,7 +1891,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let (barHidden, frame, foot) = editSession!
         if first {
             // the lines playing keep the band they had; the editor's pane goes under them, the window growing down
-            // for it (within the screen); inside Sill's page, the pane takes what it can of the lower part
+            // for it (within the screen); inside Recense's page, the pane takes what it can of the lower part
             let pane = Overlay.editorPane
             if hostedRoot == nil, let vf = (panel.screen ?? NSScreen.main)?.visibleFrame {
                 let grow = min(pane, max(0, frame.minY - vf.minY))
@@ -2270,12 +2299,12 @@ final class WordsView: NSView {
     }
     /// Room for one line of chord or note names above the ribbon, and how many lines the toggle asks for.
     static func above(_ f: NSFont) -> CGFloat {
-        let m = Prosody.mode
+        let m = Prosody.drawn
         return CGFloat((m.contains("c") ? 1 : 0) + (m.contains("n") ? 1 : 0)) * ceil(f.pointSize * 0.4)
     }
     /// The room under a row for its notation (the toggle's All Off: none).
     static func lane(_ f: NSFont) -> CGFloat {
-        let m = Prosody.mode
+        let m = Prosody.drawn
         guard !m.isEmpty else { return 0 }
         return (m.contains("p") ? ceil(f.pointSize * 1.9) : ceil(f.pointSize * 0.15)) + above(f)   // the score's lane, as Gallery's
     }
@@ -2289,7 +2318,7 @@ final class WordsView: NSView {
     /// chord began, and each syllable's sung note; ghosted ahead of the light, full once it is reached.
     func drawNames(_ words: [(Ink, NSPoint)]) {
         guard let first = words.first?.0, words.contains(where: { $0.0.figure != nil }) else { return }
-        let m = Prosody.mode, s = first.font.pointSize, f = NSFont.systemFont(ofSize: max(9, s * 0.3), weight: .semibold)
+        let m = Prosody.drawn, s = first.font.pointSize, f = NSFont.systemFont(ofSize: max(9, s * 0.3), weight: .semibold)
         let step = ceil(s * 0.4), top = words[0].1.y + Self.lineHeight(first.font)
         var taken: [Int: [ClosedRange<CGFloat>]] = [:]
         func put(_ text: String, x: CGFloat, line: Int, color: NSColor, lit: Bool) {
@@ -2328,7 +2357,7 @@ final class WordsView: NSView {
     /// this row by prosogram.js in the prosody engine, laid under the words as a 35 % ghost from the moment the line
     /// is on screen; the light sweeps through it with the words, full behind it and gold at its head.
     func drawScore(_ words: [(Ink, NSPoint)]) {
-        guard !Prosody.mode.isEmpty, let g = NSGraphicsContext.current?.cgContext else { return }
+        guard !Prosody.drawn.isEmpty, let g = NSGraphicsContext.current?.cgContext else { return }
         let figs = words.filter { $0.0.figure != nil }
         guard let first = figs.first else { return }
         drawNames(words)
@@ -2926,7 +2955,7 @@ enum ContentKey {
     }
 }
 
-/// Play/pause for whatever is playing anywhere: the same system event as the keyboard's ⏯ key (as Sill's wake strip).
+/// Play/pause for whatever is playing anywhere: the same system event as the keyboard's ⏯ key (as Recense's wake strip).
 func recensePressPlayPause() {
     let NX_KEYTYPE_PLAY: Int32 = 16
     for down in [true, false] {
@@ -3779,7 +3808,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         // This Mac's own ears, always: no quota, no connection. Apple's for every language they have, the open ears
         // (Omnilingual, on this Mac) for every other and to tell which language it is, the canon for recited texts
         // (speech.swift). Never Groq (since 2026-10-30).
-        guard OnDeviceASR.enabled else { throw err("this Mac can't transcribe: Recense needs macOS 26 and Sill built with its SDK") }
+        guard OnDeviceASR.enabled else { throw err("this Mac can't transcribe: Recense needs macOS 26 and Recense built with its SDK") }
         // A stretch asked again (a few seconds a line was misheard in) is too short to tell its language by: it's
         // heard as the song is sung, and what it's heard as doesn't become the song's language
         guard let t = try await OnDeviceASR.transcribe(samples, language: language, languages: hearing(),
@@ -4046,7 +4075,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
 
     /// The languages this song is sung in, with their share of it: from its lyrics' spelling, else from each phrase heard
     /// (phraseLanguage). A language the spelling can't name (Arabic script) is the one Whisper heard in that script.
-    // Recomputing this runs NaturalLanguage over the whole song; inside Sill that stalled the main thread, so it is
+    // Recomputing this runs NaturalLanguage over the whole song; inside Recense that stalled the main thread, so it is
     // kept until the words heard or the lyrics change.
     private var sharesMemo: (heard: Int, lyrics: Int, v: [(code: String, share: Double)])?
     func languageShares() -> [(code: String, share: Double)] {
@@ -5177,7 +5206,7 @@ enum Cadence {
     }
 
     /// The lines with their words timed to the voice. Gallery runs the same rules (gallery/src/client/cadence.js),
-    /// so the web player and the iOS app light the same word at the same moment as Sill: change one, change the other.
+    /// so the web player and the iOS app light the same word at the same moment as Recense: change one, change the other.
     static func fit(_ lines: [Line], _ f: Features) -> [Line] {
         guard f.source == "vocals", f.count > 20 else { return lines }
         // decided on times to the millisecond, as Gallery keeps them (its cadence.js runs these same rules)
@@ -6065,7 +6094,7 @@ final class Server {
         self.handle = handle
     }
 
-    /// The port is Sill's alone. When it's taken (the Sill being replaced still letting go of it, or a standalone
+    /// The port is Recense's alone. When it's taken (the Recense being replaced still letting go of it, or a standalone
     /// Recense.app left running), a new listener tries again every 3 s until it gets it, instead of the extension's
     /// position reports going nowhere until the next launch.
     func start() {
@@ -6987,7 +7016,7 @@ final class NativeSources {
         overlay.onExport = { [weak self] in self?.exportTranscript() }
         overlay.lineState = { [weak self] in (self?.editable != nil, self?.editable.map(Episode.isEdited) ?? false) }
         overlay.setControls(false)
-        // No status item of its own: Sill shows this menu as "Recense" in its menu bar.
+        // No status item of its own: Recense shows this menu as "Recense" in its menu bar.
         let m = NSMenu(title: "Recense")
         // SPEC 32: CC On/Off plays or pauses the player in whatever tab Recense follows (it no longer hides the window).
         let cc = m.addItem(withTitle: "CC Off", action: #selector(toggleCC), keyEquivalent: "m")
@@ -7018,12 +7047,12 @@ final class NativeSources {
         exportItem = m.addItem(withTitle: "Export Transcript…", action: #selector(exportTranscript), keyEquivalent: "e")
         exportItem.target = self
         m.addItem(withTitle: "Bookmarks", action: nil, keyEquivalent: "").submenu = bookmarksMenu
-        // Inside Sill: no Open at Login, Restart or Quit (they would act on Sill), and Sill owns the signals.
+        // Inside Recense: no Open at Login, Restart or Quit (they would act on Recense), and Recense owns the signals.
         m.autoenablesItems = false; m.delegate = self
         menu = m
 
         log(OnDeviceASR.enabled ? "speech: transcribing on this Mac (SpeechAnalyzer\(OpenEars.installed ? " + open ears" : ""), no Groq)"
-                                : "speech: this Mac can't transcribe (needs macOS 26 and Sill built with its SDK): transcripts already made still play")
+                                : "speech: this Mac can't transcribe (needs macOS 26 and Recense built with its SDK): transcripts already made still play")
         OnDeviceASR.startup()
         do {
             let s = try Server(port: 47123) { [weak self] p, q, b in await self?.handle(p, q, b) ?? [:] }
@@ -7063,7 +7092,7 @@ final class NativeSources {
         pollLoop()
     }
 
-    // Inside Sill the idle cost must stay near zero (SL1): players are polled at 20 Hz and the display link runs only
+    // Inside Recense the idle cost must stay near zero (SL1): players are polled at 20 Hz and the display link runs only
     // while something plays or the subtitles are on screen; otherwise one poll a second, enough to notice a player start.
     /// Nothing being transcribed here, so GalleryJob may work: no episode, a finished one, or one that has no audio to
     /// work on (its fetch failed: a YouTube stream yt-dlp couldn't get). That last one used to count as busy for as
@@ -7113,7 +7142,7 @@ final class NativeSources {
     }
     @objc func toggleOverlay() { overlay.toggle() }
 
-    /// One row, Play while paused and Pause while playing. Like Sill's wake strip, it is the system's ⏯ key, so it
+    /// One row, Play while paused and Pause while playing. Like Recense's wake strip, it is the system's ⏯ key, so it
     /// plays or pauses whatever is playing anywhere; a player Recense is following is told directly (and named).
     func menuNeedsUpdate(_ m: NSMenu) {
         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
@@ -7235,8 +7264,8 @@ final class NativeSources {
     }
     @objc func toggleCC() { ccTitle(paused: globalPlayPause()) }
     func ccTitle(paused: Bool) { let t = paused ? "CC On" : "CC Off"; if ccItem?.title != t { ccItem?.title = t } }
-    /// The global ⏯ (Sill's strip button): the player Recense follows is played or paused directly, so the window
-    /// changes with it at once; with none, the system's ⏯ key. Sill used to press the system key itself, which macOS
+    /// The global ⏯ (Recense's strip button): the player Recense follows is played or paused directly, so the window
+    /// changes with it at once; with none, the system's ⏯ key. Recense used to press the system key itself, which macOS
     /// may hand to another app than the one in the window. Returns whether it is paused now.
     @discardableResult func globalPlayPause() -> Bool {
         let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
@@ -7603,7 +7632,7 @@ final class NativeSources {
         }
         switch soundEngine.state {
         case .unsupported: return "reshaping this player's sound needs macOS 14.2 or later"
-        case .denied: return "allow Sill under Privacy & Security › Audio Capture to reshape this player's sound"
+        case .denied: return "allow Recense under Privacy & Security › Audio Capture to reshape this player's sound"
         case .failed: return "this player's sound couldn't be taken (it plays as it is); move a slider to try again"
         case .on, .off: return nil
         }
@@ -7622,8 +7651,8 @@ final class NativeSources {
     func handle(_ path: String, _ q: [String: String], _ body: Data) async -> [String: Any] {
         let j = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any]) ?? [:]
         switch path {
-        // Sill's strip ⏯ asks here first: a player Recense follows is played or paused directly (handled); anything
-        // else is left to Sill's system ⏯ key, and Recense only notes the new state for its menu row.
+        // Recense's strip ⏯ asks here first: a player Recense follows is played or paused directly (handled); anything
+        // else is left to Recense's system ⏯ key, and Recense only notes the new state for its menu row.
         // Gallery's Export as M4B (SPEC 57): made here, where ffmpeg is; the file playing in this window, or any Gallery file.
         case "/export":
             guard j["as"] as? String == "m4b", let g = j["gallery"] as? String, g.hasPrefix("files/"), g.count > 6
@@ -7851,7 +7880,7 @@ final class NativeSources {
             }
             // The offset is heard time (media runs at `rate`); `shift` maps this source's clock onto a transcript
             // made from another source of the same recording.
-            // ... less what Sill's own sound chain (EQ, Key, Space, the extractor) holds back, at the player's speed
+            // ... less what Recense's own sound chain (EQ, Key, Space, the extractor) holds back, at the player's speed
             let t = smoothTime() + (cfg.syncOffset - soundEngine.latency) * pos.rate - ep.shift
             // a dense track (a choir): its words start Off, with Show in the Recense menu (item 22)
             let quiet = !ep.instrumental && lyricsOff(ep)
@@ -8239,17 +8268,17 @@ final class NativeSources {
     return ok
 }
 
-// ---------- inside Sill ----------
-// Recense no longer runs as its own app: Sill starts its delegate once at launch. The command-line self-tests
+// ---------- inside Recense ----------
+// Recense no longer runs as its own app: Recense starts its delegate once at launch. The command-line self-tests
 // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
 @MainActor enum Recense {
     static var delegate: AppDelegate?
-    /// Posted when Recense starts or stops working (userInfo["working"]: Bool), for Sill's strip button (SPEC 20).
+    /// Posted when Recense starts or stops working (userInfo["working"]: Bool), for Recense's strip button (SPEC 20).
     static let workingChanged = Notification.Name("RecenseWorkingChanged")
     static var working: Bool { delegate?.wasWorking ?? false }
-    /// The card, once Recense has started (nil before: Sill can be summoned before Recense finishes launching).
+    /// The card, once Recense has started (nil before: Recense can be summoned before Recense finishes launching).
     static var overlay: Overlay? { delegate.flatMap { $0.overlay as Overlay? } }
-    /// Two fingers held still on the trackpad (Sill's MultitouchSupport reader) and lifted: while the card is up, its
+    /// Two fingers held still on the trackpad (Recense's MultitouchSupport reader) and lifted: while the card is up, its
     /// time ruler shows where the media is and moves on with it, and folds away when they lift (item 21).
     static func hold(_ on: Bool) {
         guard let o = overlay, on ? o.panel.isVisible : true else { return }
@@ -8257,11 +8286,11 @@ final class NativeSources {
     }
     static func start() {
         guard delegate == nil else { return }
-        log("sill: starting Recense")
+        log("recense: starting Recense")
         let d = AppDelegate()
         delegate = d
         d.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
-        // The window is always the strip inside Sill, and starts hidden: shown at launch (empty, see-through, over the
+        // The window is always the strip inside Recense, and starts hidden: shown at launch (empty, see-through, over the
         // menu bar) it went unnoticed, and the strip icon's first press hid it, so the icon seemed to do nothing.
         let mi = NSMenuItem(title: "Recense", action: nil, keyEquivalent: ""); mi.submenu = d.menu
         NSApp.mainMenu?.addItem(mi)

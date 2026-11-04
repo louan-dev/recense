@@ -1,6 +1,6 @@
 # Command autocomplete and date insertion features
 
-Project: Sill
+Project: Recense
 
 Created: 2026-10-03T14:41:29.402Z
 

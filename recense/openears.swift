@@ -6,7 +6,7 @@ import NaturalLanguage
 // Shona, Swahili, Bambara, Persian, Tibetan, Burmese, Khmer, Mongolian, Javanese, Scottish Gaelic, Irish, Kabyle,
 // Uyghur, Tigrinya, … 1,600+ in all — is heard by Meta's Omnilingual ASR (CTC, 300M parameters, Apache 2.0) running
 // on this Mac: offline, no quota, no key. One model for all of them (1.2 GB in ~/.cache/fairseq2, 0.6 GB in memory),
-// in a Python helper (ears/omni.py) Sill starts when it's needed and that leaves after five quiet minutes.
+// in a Python helper (ears/omni.py) Recense starts when it's needed and that leaves after five quiet minutes.
 // The model is told no language: it writes what it hears in the script it's written in, and `Tongue` names the
 // language from that text. That makes it the ears that tell which language a recording is in, too: Apple's need to
 // be told, so a recording Apple can hear is identified here first and then heard by Apple (better timing, the
@@ -21,7 +21,7 @@ import NaturalLanguage
     static var python: String { root.appendingPathComponent("bin/python").path }
     static var script: String? {
         if let p = Bundle.main.path(forResource: "omni", ofType: "py", inDirectory: "ears") { return p }
-        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/sill/sill/ears/omni.py").path
+        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/recense/recense/ears/omni.py").path
         return FileManager.default.fileExists(atPath: dev) ? dev : nil
     }
     /// The helper and its Python are on this Mac (the model itself may still need its one download).
@@ -111,7 +111,7 @@ import NaturalLanguage
             fails = 0
         } catch {
             fails += 1
-            if fails >= 3 { broken = true; log("speech: the open ears failed to start three times; not again until Sill restarts (see \(errLog.path))") }
+            if fails >= 3 { broken = true; log("speech: the open ears failed to start three times; not again until Recense restarts (see \(errLog.path))") }
             throw error
         }
     }

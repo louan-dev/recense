@@ -1,6 +1,6 @@
 # Recense Reference
 
-> Archived draft from October 2026, when Recense was its own app and heard through Groq and Whisper. Today Recense lives inside Sill and hears on this Mac; see the [README](../README.md) for what is current.
+> Archived draft from October 2026, when Recense was its own app and heard through Groq and Whisper. Today Recense lives inside Recense and hears on this Mac; see the [README](../README.md) for what is current.
 
 This page holds the exact workings of Recense along with every key and setting. The story behind it lives in [the preface](recense-preface.md), and the overview lives in [the README](README.md).
 

@@ -1,8 +1,8 @@
-# Sill — Design Philosophy
+# Recense — Design Philosophy
 
 ## 1. Less Visible Interface, More Available Capability
 
-Sill should not constantly expose everything it can do. The default state should be quiet; capabilities should reveal themselves contextually.
+Recense should not constantly expose everything it can do. The default state should be quiet; capabilities should reveal themselves contextually.
 
 ## 2. Reduce Friction, Not Functionality
 
@@ -22,7 +22,7 @@ The user's context should be easy to resume.
 
 ## 5. Context Over Dashboarding
 
-Information should appear because it is relevant to the current context, not merely because Sill has a place to display it.
+Information should appear because it is relevant to the current context, not merely because Recense has a place to display it.
 
 Do not turn the top-center environment into a collection of permanent tiles.
 
@@ -48,7 +48,7 @@ The interface can become prettier later. A fragile foundation multiplies later d
 
 ## 8. Do Not Overbuild
 
-Sill should not become a widget zoo, another notification center, or a configuration-heavy productivity suite.
+Recense should not become a widget zoo, another notification center, or a configuration-heavy productivity suite.
 
 Every feature must earn its place by solving a real problem or removing meaningful friction.
 
