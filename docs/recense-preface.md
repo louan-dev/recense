@@ -20,7 +20,7 @@ Impromptu speech possesses structures of its own, and the orator's craft has kep
 
 ## III. The Measure of a Gift
 
-Ease is something we observe, and the distance from observation to cause is greater than it appears. I was the first in my family to take up an instrument. Even so my ear and my hands matured early.
+Ease is something we observe, and the distance from observation to cause is greater than it appears. I was the first in my family to take up an instrument. Even so my ears and my hands matured early.
 
 A player who has lost their sight comes to a piece through the ear and the hand, while a sighted player comes to it partly through the page, and each develops strengths the other may lack. A quiet passage in a lullaby and a quiet passage in a stadium anthem ask for different sounds, and talent is equally bound to what it is asked to serve. There are countless ways to measure a person, and convention chooses only a few. Every person carries a gift that some measure would reveal, and convention decides which gifts are heard.
 
