@@ -395,8 +395,9 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 - Owner, to switch it on: `wrangler secret put NOTABILITY_DAV_HASH` with `printf %s '<password>' | shasum -a 256`, deploy, then Notability › Auto-Backup › WebDAV `https://<host>/dav/notability/`, PDF + Note. Next: try that, then decide on folder MOVE (Finder renames) and LOCK for a read-write Finder mount.
 - 2026-10-29 15:01 PDT · Google Drive + ~/Sync off the Mac · PARTIAL. rclone check vs gallery-archive/chauphan/{Sync,Google Drive}: Sync 15/15 match (Nichole m4a only in R2). Drive: `Live/2026-09-22 21-01-49.mov` was truncated in R2 (573 MB of 2.36 GB) → re-uploaded, verified with `check --download`; 3 .gmap pointers uploaded; .gdoc → .docx exports already in R2; 7 online-only files size-match R2 (local unreadable, Drive app gone); `School/Untitled document (1)/(2).gdoc` unreadable, live only in the Google account. Moved to ~/.Trash: ~/Sync, ~/Google Drive link, DriveFS (6.8 GB), drivefs containers/prefs, com.sync.desktop.plist, Chrome-app Google Drive.app. Left: ~/Library/CloudStorage/GoogleDrive-clphan7@gmail.com (mv denied, File Provider-held). Kept Google updater agents (Chrome).
 - 2026-10-29 15:01 PDT · Gallery Files sidebar name → "Gallery" · DONE (System Events shows "Gallery"). apple/macos: CFBundleName "Gallery Files" (must match the bundle file name), en.lproj/InfoPlist.strings → "Gallery", LSHasLocalizedDisplayName; rebuilt + installed, Finder relaunched.
-- 2026-10-29 15:59 PDT · Offsite disks (Photos, Messages, Mail stores in R2) · PARTIAL. APFS sparse bundles in gallery-archive/.disks/ via the direct S3 remote; login item com.chauphan.disks-mount runs through ~/Applications/Disks Helper.app (zsh run by launchd is refused the network mount). Verified: test image survives an empty-cache remount (md5 + SQLite integrity), cache evicts to its cap, upload ~3.9 MB/s. Messages + Mail stores copied (verified) and linked from ~/Library (originals kept as *.local-2026-10-29); Photos library copied (89,732 files), the switch is the owner's GUI step. Runbook docs/runbooks/offsite-disks.md; details .handoff/HANDOFF.md. Next: owner GUI steps, then Gallery-app exports (ask the owner what to show).
+- 2026-10-29 15:59 PDT · Offsite disks (Photos, Messages, Mail stores in R2) · PARTIAL. APFS sparse bundles in gallery-archive/.disks/ via the direct S3 remote; login item com.chauphan.disks-mount runs through ~/Applications/Disks Helper.app (zsh run by launchd is refused the network mount). Verified: test image survives an empty-cache remount (md5 + SQLite integrity), cache evicts to its cap, upload ~3.9 MB/s. Messages + Mail stores copied (verified) and linked from ~/Library (originals kept as *.local-2026-10-29); Photos library copied (89,732 files), the switch is the owner's GUI step. Runbook docs/runbooks/offsite-disks.md; details .handoff/2026-10-29_164631_HANDOFF.md. Next: owner GUI steps, then Gallery-app exports (ask the owner what to show).
 - 2026-10-31 07:09 PDT · Gallery iOS app icon → Photos-style petals forming the iCloud cloud · DONE (actool compiles AppIcon for iOS 18 with no warnings; 120 px output checked; not built or installed on a device). AppIcon.appiconset/icon-1024.png replaced (white background, 12 translucent petals around a round aperture, outline fitted to Apple's iCloud icon cloud); Contents.json is now a single universal entry, so dark and tinted modes use the light icon (owner's choice). icon-1024-dark.png and icon-1024-tinted.png kept on disk unreferenced (owner chose to keep them). Uncommitted. Details: gallery/.handoff/ITEM38.md
+- 2026-11-05 13:47 PST · Unified offline-first + redesign plan (Sync · Gallery · Recense) · PROPOSED. The owner approved it as documentation only; spec at docs/specs/unified-offline-first-and-redesign.md (A1–A17, B1–B11). Nothing is implemented or deployed. Next, each on the owner's go: phase 0 (A10's five reversible changes; Recense R15 idle crash and R16 ⌘-hold bug; Gallery G20 indexing budget; X1–X9 security), then A15 (one repo). Details .handoff/HANDOFF.md.
 
 ## 8. Decisions made (defaults; change only if the owner objects)
 1. "rw" = R2. "5 GB" = the iCloud quota (superseded: the plan is iCloud+ 200 GB, see §1).
@@ -410,6 +411,23 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
+
+### 2026-11-05 13:47 PST · Unified offline-first + redesign plan (spec saved) · DONE
+- Saved the owner-approved plan as `docs/specs/unified-offline-first-and-redesign.md`. It is documentation only: its items are PROPOSED, and nothing is implemented, deployed or committed. It covers:
+  - the 11-03 Error 1027 (docs-sync's WebDAV bisync makes ≈ 90 % of the Worker's requests) and A10's five reversible fixes;
+  - Obsidian everywhere (A11), media loops at 0 Worker requests (A13), ad hoc networks (A14);
+  - one repo with Recense as the parent (A15);
+  - the ask engine moved on-device, with verdicts on DEVONthink (A16);
+  - seeding and links made offline (A17);
+  - gestures, haptics, languages and reading (B9–B11).
+- Found read-only on 11-05:
+  - Recense's idle crash came back on 11-04 at 06:43 (`Features.measure`; R15).
+  - Holding ⌘ breaks the strip (`recense/recense/nook.swift:51-53,93-102`; R16).
+  - Idle cron runs spend Gallery's AI indexing budget (`gallery/gallery/src/ai.js:359-362`; G20).
+  - The lyrics lookup grades D (R17).
+  - DEVONthink To Go can't sync encrypted databases or cross Tailscale, so Matters splits into Matters (syncs at home) and Sealed (Mac only).
+- The 10-29 offsite-disks handoff is archived unchanged as `.handoff/2026-10-29_164631_HANDOFF.md`; the spec and §7 cite it. `.handoff/HANDOFF.md` now holds this plan's handoff.
+- Validation: `cmp` shows the plan and the spec are identical (190,014 B); HEAD is unchanged (bdfc2cd); the notes row was added. Next: the owner's go on phase 0, then A15.
 
 ### 2026-11-04 10:37 PST · Rename Sill → Recense across sync · DONE
 - Current docs (README, CLAUDE, BACKLOG, SPEC, docs/specs, runbooks, proposals, worker comment, PROGRESS §1–7 and §8) now say Recense; paths `sill/sill/…` → `recense/recense/…`, `sill.swift` → `app.swift`, repo `louan-dev/recense`. Dated entries, CHANGELOG, `docs/archive`, `docs/research` and `decisions/` keep "Sill" as the record of the time.

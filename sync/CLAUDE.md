@@ -5,7 +5,7 @@ This repo holds the shared plan. Every session: read `PROGRESS.md` §2 (Rules) a
 ## Where things are
 - `src/ledger.mjs`: read-only observer of the iCloud folder, append-only SHA-256 hash-chained journal to a directory or rclone sink. Zero deps. Commands: `run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest`. Verified on the Mac 2026-10-13 (selftest, real vault, `SF_DATALESS`, rclone sink via `:local:`); `watch` and a real R2 remote are untested. Also `src/canary.mjs`, `tools/upload-status.swift`, `bin/ledger-job.sh` + `launchd/`.
 - Docs: `docs/research/ledger-report.md`, `docs/research/sync-matrix.md`, `docs/research/icloud-backend-technical-report.md`, `docs/runbooks/obsidian-integration.md`, `docs/specs/switchboard-spec.md`, `docs/specs/switchboard-scheduler-addendum.md`, `docs/specs/manager.md`, `docs/specs/sync.md`. `switchboard-iphone-addendum.md` is referenced everywhere but is missing: ask the owner for it.
-- Local git exists (no remote; no push until the owner names a repo). `.gitignore`: `.env`, `rclone.conf`, ledger sinks and mirrors, `.DS_Store`, `node_modules/`. Commit before each task.
+- Git remote: `louan-dev/sync` (private); push only on the owner's go. `.gitignore`: `.env`, `rclone.conf`, ledger sinks and mirrors, `.DS_Store`, `node_modules/`. Commit before each task.
 
 ## Your items (PROGRESS §4-§5, BACKLOG §S)
 Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session:
