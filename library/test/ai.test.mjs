@@ -1,7 +1,7 @@
 // The assistant (src/ai.js, src/ai-core.js) against in-memory stand-ins for R2, Workers AI and Vectorize.
 //   node test/ai.test.mjs
 import assert from "node:assert/strict";
-import { chunkText, chunkTranscript, nameText, inScope, pick, buildMessages, vectorId, kindOf, parseAuth, classifyMessages, parseQueries, applyMemory, MEMORY_MAX } from "../src/ai-core.js";
+import { chunkText, chunkTranscript, nameText, inScope, pick, buildMessages, vectorId, kindOf, parseAuth, classifyMessages, parseQueries, applyMemory, MEMORY_MAX, sealed } from "../src/ai-core.js";
 import { aiRoute, indexStep, indexRun, thinkStripper, ruleFor } from "../src/ai.js";
 
 let passed = 0;
@@ -292,6 +292,26 @@ await test("bad requests are refused", async () => {
   assert.equal((await post("/main/api/ai/ask", { q: "  " })).status, 400);
   assert.equal((await aiRoute(new Request("https://g.test/x", { method: "POST", body: "{" }), env, ctx, null, "/main/api/ai/ask", "POST")).status, 400);
   assert.equal((await get("/main/api/ai/ask")).status, 405);
+});
+
+await test("client matters (Main's Raven/) are never indexed (A6)", async () => {
+  assert.ok(sealed("main", "Raven/Client A/letter.txt") && sealed("main", "Raven"));
+  assert.ok(!sealed("main", "Ravenna/notes.txt") && !sealed("archive", "Raven/x.txt") && !sealed("main", "Books/Raven/x.txt"));
+  await env.MAIN.put("files/Raven/Client A/letter.txt", "Privileged and confidential. ".repeat(50));
+  await restOver();
+  await untilDone();
+  assert.ok(![...env.VECTORS.m.values()].some((v) => v.metadata.root === "main" && v.metadata.path.startsWith("Raven/")));
+  assert.ok(!JSON.parse(env.MAIN.m.get("ai/index.json").text).files["main:Raven/Client A/letter.txt"]);
+});
+await test("resting runs spend none of the daily AI budget; indexing does (G20)", async () => {
+  await env.MAIN.delete("ai/index-budget.json");
+  for (let i = 1; i <= 5; i++) assert.ok((await indexRun(env, 60000, 24, 3)).done, `resting run ${i} answers done, not out of budget`);
+  assert.equal(env.MAIN.m.get("ai/index-budget.json"), undefined, "resting runs write nothing");
+  await env.MAIN.put("files/Books/Fresh.txt", "Section 5000. A fresh upload after the reset. ".repeat(50));
+  await restOver();
+  await indexRun(env, 60000, 24, 3);
+  const b = JSON.parse(env.MAIN.m.get("ai/index-budget.json").text);
+  assert.ok(b.steps >= 1 && b.steps <= 3, `AI steps counted, within the budget: ${b.steps}`);
 });
 
 console.log(`\n${passed} passed`);

@@ -55,6 +55,13 @@ export function nameText(root, path) {
   return `${name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")} (${root === "archive" ? "Archive" : "Main"}${parts.length ? " / " + parts.join(" / ") : ""}, ${kindOf(path)})`;
 }
 
+/** Folders never indexed nor answered from: client matters stay out of Workers AI and Vectorize (spec A6, X7). A folder
+ *  added here leaves the index on the next pass, when the sweep deletes its vectors and text. */
+export const SEALED = { main: ["Raven/"] };
+export function sealed(root, rel) {
+  return (SEALED[root] || []).some((p) => rel === p.slice(0, -1) || String(rel).startsWith(p));
+}
+
 /** Whether a passage is inside what the person has open: a root and a folder (or file) path under it; "all" is everything. */
 export function inScope(hit, scope) {
   if (!scope || scope.root === "all" || !scope.root) return true;

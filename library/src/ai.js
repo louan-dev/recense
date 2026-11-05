@@ -23,7 +23,7 @@
 import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
 import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH,
-  planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide } from "./ai-core.js";
+  planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide, sealed } from "./ai-core.js";
 import { listEvents, createEvent, updateEvent, addInvitee, dateFacts, TZ_DEFAULT } from "./calendar.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
@@ -111,7 +111,7 @@ async function retrieve(env, queries, scope) {
   const results = await Promise.all(vecs.map((v) => env.VECTORS.query(v, opts)));
   const best = new Map();
   for (const res of results) for (const m of res?.matches || []) {
-    if (!m.metadata) continue;
+    if (!m.metadata || sealed(m.metadata.root, m.metadata.path)) continue;   // still in the index until the next sweep
     const had = best.get(m.id);
     if (!had || m.score > had.score) best.set(m.id, m);
   }
@@ -320,16 +320,16 @@ async function status(env) {
 export async function indexStep(env) {
   const s = await readState(env);
   if (s.passEnded && !s.active && !s.todo.length && !s.names.length && !s.sweep && Date.now() - Date.parse(s.passEnded) < REST) {
-    return { ok: true, done: true, files: Object.keys(s.files).length };
+    return { ok: true, done: true, files: Object.keys(s.files).length };            // resting: no AI used
   }
   if (s.passEnded && s.listed && !s.sweep && !s.active && !s.todo.length && !s.names.length) {   // rest is over: a new pass
     s.gen++; s.root = "main"; s.cursor = null; s.listed = false; s.passEnded = null;
   }
-  let calls = 1, extracted = false;
+  let calls = 1, extracted = false, ai = false;                   // ai: this step called Workers AI (neurons)
   while (calls < BUDGET) {
-    if (s.active) { calls += await embedActive(env, s, BUDGET - calls); if (s.active) break; continue; }
-    if (s.names.length >= NAMES || (s.listed && s.names.length)) { calls += await embedNames(env, s); continue; }
-    if (s.todo.length && !extracted) { calls += await extract(env, s, s.todo.shift()); extracted = true; continue; }
+    if (s.active) { ai = true; calls += await embedActive(env, s, BUDGET - calls); if (s.active) break; continue; }
+    if (s.names.length >= NAMES || (s.listed && s.names.length)) { ai = true; calls += await embedNames(env, s); continue; }
+    if (s.todo.length && !extracted) { ai = true; calls += await extract(env, s, s.todo.shift()); extracted = true; continue; }
     if (s.todo.length) break;                                       // one extraction per step: it is the heavy part
     if (!s.listed) { calls += await listPage(env, s); continue; }
     if (!s.sweep) s.sweep = Object.entries(s.files).filter(([, f]) => f[2] < s.gen).map(([k]) => k);
@@ -339,17 +339,19 @@ export async function indexStep(env) {
   }
   await writeState(env, s);
   const done = !!s.passEnded && !s.active && !s.todo.length && !s.names.length;
-  return { ok: true, done, files: Object.keys(s.files).length, pending: s.todo.length + s.names.length + (s.active ? 1 : 0), listing: s.listed ? "done" : s.root };
+  return { ok: true, done, ai, files: Object.keys(s.files).length, pending: s.todo.length + s.names.length + (s.active ? 1 : 0), listing: s.listed ? "done" : s.root };
 }
 
-/** The one-minute cron's work: steps until the pass is done, about 45 s have passed (so runs never overlap), or the
+/** The ten-minute cron's work: steps until the pass is done, about 45 s have passed (so runs never overlap), or the
  *  run's subrequest allowance (1,000) is nearly spent. */
-// daily: the most steps per UTC day (the per-minute cron passes one). Workers AI's free plan is 10,000 neurons a day for
-// everything, so unbounded indexing left nothing for questions (error 4006); hitting 4006 also stops it until tomorrow.
+// daily: the most steps per UTC day that call Workers AI (the cron passes one). Its free plan is 10,000 neurons a day for
+// everything, so unbounded indexing left nothing for questions (error 4006, now 3036); hitting it also stops it until
+// tomorrow. Resting, listing and sweeping use no neurons and spend none of it: until 2026-11-05 every idle minute spent a
+// step, so the budget ran out about 2 hours after the reset and new uploads waited a day (G20).
 const INDEX_BUDGET = "ai/index-budget.json";
 export async function indexRun(env, wallMs = 45000, maxSteps = 24, daily = 0) {
   const t0 = Date.now(), day = new Date().toISOString().slice(0, 10);
-  let b = null;
+  let b = null, dirty = false;
   if (daily) {
     b = (await env.MAIN.get(INDEX_BUDGET).then((o) => o && o.json()).catch(() => null)) || {};
     if (b.day !== day) b = { day, steps: 0 };
@@ -357,14 +359,14 @@ export async function indexRun(env, wallMs = 45000, maxSteps = 24, daily = 0) {
   }
   try {
     for (let i = 0; i < maxSteps && Date.now() - t0 < wallMs && !(b && b.steps >= daily); i++) {
-      if (b) b.steps++;
       const r = await indexStep(env);
+      if (b && r.ai) { b.steps++; dirty = true; }
       if (r.done) return r;
     }
   } catch (e) {
-    if (b && /4006|neurons/.test(String(e?.message || e))) b.out = true; else throw e;
+    if (b && /3036|4006|neurons/.test(String(e?.message || e))) { b.out = true; dirty = true; } else throw e;
   } finally {
-    if (b) await env.MAIN.put(INDEX_BUDGET, JSON.stringify(b));
+    if (dirty) await env.MAIN.put(INDEX_BUDGET, JSON.stringify(b));         // an idle run writes nothing
   }
   return { ok: true, done: false };
 }
@@ -375,7 +377,7 @@ async function listPage(env, s) {
   const r = b ? await b.list({ prefix, cursor: s.cursor || undefined, limit: 1000 }) : { objects: [], truncated: false };
   for (const o of r.objects) {
     const rel = o.key.slice(prefix.length);
-    if (!rel || rel.endsWith("/") || rel.split("/").some((x) => x.startsWith("."))) continue;   // folders, hidden, trash
+    if (!rel || rel.endsWith("/") || rel.split("/").some((x) => x.startsWith(".")) || sealed(s.root, rel)) continue;   // folders, hidden, trash, client matters
     const key = s.root + ":" + rel, f = s.files[key];
     if (f && f[0] === o.etag) { f[2] = s.gen; continue; }
     if (wantsText(s.root, rel, o.size)) s.todo.push([key, o.etag]); else s.names.push([key, o.etag]);

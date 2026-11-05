@@ -80,8 +80,9 @@ export default {
   },
 
     async scheduled(event, env, ctx) {
-    // every minute: up to ~45 s of the assistant's indexing steps (ai.js), nothing else
-    if (event.cron === "* * * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch(() => {})); return; }
+    // every 10 minutes (wrangler.toml; every minute until 2026-11-05, A10): up to ~45 s of the assistant's indexing
+    // steps (ai.js), nothing else. Only the 03:00 run does the nightly sweeps.
+    if (event.cron !== "0 3 * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch(() => {})); return; }
     ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env), diskSweep(env).catch(() => {}),
       warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
   },

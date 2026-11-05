@@ -20,8 +20,8 @@ binding = "MAIN"
 bucket_name = "gallery-main"
 
 [triggers]
-# 03:00: the nightly sweeps; every minute: one step of the assistant's indexing (src/ai.js), nothing else
-crons = ["0 3 * * *", "* * * * *"]
+# 03:00: the nightly sweeps; every 10 minutes (every minute until 2026-11-05): the assistant's indexing (src/ai.js), nothing else
+crons = ["0 3 * * *", "*/10 * * * *"]
 
 [vars]
 ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
@@ -64,11 +64,12 @@ bucket_name = "gallery-archive"
 binding = "NOTES_IMAGES"
 bucket_name = "notes-images"
 
-# The assistant (src/ai.js, /main/api/ai/…, owner-only): Workers AI answers, Vectorize finds the passages.
-# Until the owner creates the index, `wrangler deploy` fails on this binding:
+# The assistant (src/ai.js, /main/api/ai/…, owner-only): Workers AI answers, Vectorize finds the passages. The index
+# exists; were it lost, `wrangler deploy` fails on this binding until it is made again:
 #   npx wrangler vectorize create gallery-ai --dimensions=1024 --metric=cosine
 #   npx wrangler vectorize create-metadata-index gallery-ai --property-name=root --type=string
-# Then index everything once: POST /main/api/ai/index until it answers { done: true } (the sidebar does this).
+# The 10-minute cron indexes Main and Archive, spending at most AI_INDEX_DAILY_STEPS (default 120) AI-using steps a UTC
+# day; Main's Raven/ (client matters) is never indexed (src/ai-core.js SEALED).
 [ai]
 binding = "AI"
 

@@ -163,8 +163,9 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 ### Assistant
 Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans searches, cites sources, keeps memories;
 published references are trusted, your own writing once checked. Calendar: reads your events and the
-iCloud backup, creates and edits events, invites with a texted link. Indexing runs in bounded steps from a one-minute
-cron.
+iCloud backup, creates and edits events, invites with a texted link. Indexing runs in bounded steps from a cron every
+10 minutes (every minute until 2026-11-05), within a daily budget of AI-using steps that idle runs no longer spend.
+Main's `Raven/` (client matters) is never indexed or answered from; its old vectors leave on the next sweep.
 
 ### Gallery for iPhone and iPad (apple/ios, apple/HostApp/iOS)
 - A Files-like browser over Main and the archive, with Gallery's own player and Learn mode inside the app
