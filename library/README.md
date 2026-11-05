@@ -59,6 +59,11 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   language and New Window.
 - Player: rewind / play / forward, time bar, Loop and A–B, Speed 0.5×…2× (pitch kept), volume. EQ panel: Low, Mid,
   High, Key and Room. Sized per device (phones, iPad Air 13", large monitors).
+- Loops cost no requests on Safari and in the iPhone and iPad browsers: with Sound on (EQ, Key, Room or vocal
+  isolation), a WAV or AIFF plays through the deck, which streams it in chunks of about 1.5 s. While A–B or Track Loop
+  is on, the deck reads ahead in loop order (A's chunk after B's, nothing past B) and keeps the loop's bytes in memory,
+  up to 64 MB (about 6 minutes of CD audio), so every pass after the first plays from memory. A longer loop streams as
+  before and says so in the console.
 - Key: semitones from the original key, named in the chosen notation (Key, Ton., Tông, Tonart, 調, 调, Sa, Maqam,
   Maqam¼, Cents). A file with no stored key has it detected on first open.
 - Downloads of audio with Key, EQ or Space on are rendered as heard.

@@ -1261,6 +1261,10 @@
     return 0;
   };
 
+  // A13 L1: the most of a loop (the file's own bytes) the deck keeps in memory while A–B or Track Loop
+  // is on, about 6 minutes of CD audio; a longer loop streams as before
+  const KEEP_LOOP = 64 * 2 ** 20;
+
   const openSound = async (url, ctx) => {
     const head = await fetch(url, { headers: { range: "bytes=0-131071" } });
     if (!head.ok) return null;
@@ -1272,23 +1276,36 @@
     const f = parsePcm(first, size);
 
     if (f && f.frames > 0) {
+      // the fetched bytes of the chunks the deck says to keep (keep): what it holds, and the loop that is on.
+      // Nothing is kept until it says (a download reads the whole file through get).
+      const kept = new Map();
+      let want = null;
+
       return {
         sr: f.sr,
         nch: Math.min(2, f.nch),
         total: f.frames,
         pcm: f,
+        keep: (w) => {
+          want = w;
+          kept.forEach((x, i) => want(i) || kept.delete(i));
+        },
         get: async (i) => {
           const a = i * CHUNK;
           const n = Math.min(CHUNK, f.frames - a);
           if (n <= 0) return [new Float32Array(0)];
 
-          const from = f.off + a * f.align;
-          const r = await fetch(url, { headers: { range: "bytes=" + from + "-" + (from + n * f.align - 1) } });
-          if (r.status !== 206) throw new Error("range");
+          let ab = kept.get(i);
+          if (!ab) {
+            const from = f.off + a * f.align;
+            const r = await fetch(url, { headers: { range: "bytes=" + from + "-" + (from + n * f.align - 1) } });
+            if (r.status !== 206) throw new Error("range");
 
-          const ab = await r.arrayBuffer();
-          if (ab.byteLength < n * f.align) throw new Error("short");
-          return pcmFloats(f, ab, n);
+            ab = await r.arrayBuffer();
+            if (ab.byteLength < n * f.align) throw new Error("short");
+            if (want && want(i)) kept.set(i, ab);
+          }
+          return pcmFloats(f, ab, n); // new arrays each time: they go to the deck, the kept bytes stay here
         },
       };
     }
@@ -2388,16 +2405,38 @@
       const ahead = Math.ceil(14 * Math.max(1, el.playbackRate));
       const drop = [];
 
+      // A13 L1: while A–B or Track Loop is on, the chunks are read in the order they play: after B's comes A's
+      // (after the end, the start), and nothing past B is fetched. The loop's bytes are kept, up to KEEP_LOOP,
+      // so the passes after the first cost no requests; a longer loop streams as before.
+      const span = loopNow.ab ? [chunkAt(loopNow.a), Math.min(last, chunkAt(loopNow.b))] : loopNow.track ? [0, last] : null;
+      const wrap = !!span && cur <= span[1];
+      const next = [];
+      for (let i = Math.max(0, cur); next.length <= ahead; i++) {
+        if (wrap && i > span[1]) i = span[0];
+        if (i > last || next.includes(i)) break;
+        next.push(i);
+      }
+
       d.have.forEach((i) => {
-        if (i < cur - 2 || i > cur + ahead + 2) {
-          d.have.delete(i);
-          drop.push(i);
-        }
+        if (next.includes(i) || (i >= cur - 2 && (wrap ? i < cur : i <= cur + ahead + 2))) return;
+        d.have.delete(i);
+        drop.push(i);
       });
 
       if (drop.length) d.node.port.postMessage({ drop });
 
-      for (let i = Math.max(0, cur); i <= Math.min(last, cur + ahead) && d.loading.size < 2; i++) {
+      const pcm = d.s.pcm;
+      if (pcm) {
+        const fits = !!span && (Math.min(d.s.total, (span[1] + 1) * CHUNK) - span[0] * CHUNK) * pcm.align <= KEEP_LOOP;
+        if (span && !fits && d.big !== span.join()) {
+          d.big = span.join();
+          console.info("[deck] this loop is over 64 MB, so it streams on every pass");
+        }
+        d.s.keep((i) => d.have.has(i) || d.loading.has(i) || (fits && i >= span[0] && i <= span[1]));
+      }
+
+      for (const i of next) {
+        if (d.loading.size >= 2) break;
         if (d.have.has(i) || d.loading.has(i)) continue;
 
         d.loading.add(i);

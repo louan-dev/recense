@@ -1743,5 +1743,80 @@ await test("item 15: Shared — tiles, Personal | Shared | Activity, a tile's fi
   await pg.waitForURL(/\/main\/$/);
 });
 
+// A13 L1: on the deck (Safari with Sound on; here Key +1 and window.__pdcDeck), a loop plays from memory once it
+// has gone round: no Range request after the first pass. The deck reads 65536-frame chunks, 0.34 s of this 192 kHz
+// file. It used to keep only two chunks behind the playhead and read 14 ahead, past B: a six-chunk A–B loop fetched
+// three of them again on every pass, and Track Loop the start of the file on every wrap.
+const loopWav = (chunks) => {
+  const n = 65536 * chunks * 2; // mono, 16-bit
+  const w = Buffer.alloc(44 + n);
+  w.write("RIFF", 0); w.writeUInt32LE(36 + n, 4); w.write("WAVEfmt ", 8); w.writeUInt32LE(16, 16);
+  w.writeUInt16LE(1, 20); w.writeUInt16LE(1, 22); w.writeUInt32LE(192000, 24); w.writeUInt32LE(384000, 28);
+  w.writeUInt16LE(2, 32); w.writeUInt16LE(16, 34); w.write("data", 36); w.writeUInt32LE(n, 40);
+  w.writeUInt32LE(++wavs, 44 + n - 4);
+  return w;
+};
+const CH = 65536 / 192000;
+const chunkRange = (i) => "bytes=" + (44 + i * 131072) + "-" + (44 + (i + 1) * 131072 - 1);
+// the item open with the deck playing it; returns the Range requests the page makes for it (the element's own are media)
+const deckOn = async (pg, dir, chunks) => {
+  await pg.addInitScript(() => { window.__pdcDeck = true; });
+  await MAIN.put("files/" + dir + "/loop.wav", loopWav(chunks), { httpMetadata: { contentType: "audio/wav" } });
+  const ranges = [];
+  pg.on("request", (r) => { if (r.resourceType() === "fetch" && r.headers().range && r.url().includes("loop.wav")) ranges.push(r.headers().range); });
+  pg.on("pageerror", (e) => ranges.push("page error: " + e.message));
+  await pg.goto(base + "/main?p=" + dir);
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".p-eqbtn");
+  await pg.click(".p-eqbtn");
+  await pg.focus(".p-band.key .p-btrack");
+  await pg.keyboard.press("ArrowUp");
+  for (let i = 0; i < 100 && ranges.length < 2; i++) await pg.waitForTimeout(50);
+  assert.ok(ranges.length >= 2, "the deck reads the file in ranges");
+  return ranges;
+};
+// counts each jump back (A–B at B, Track Loop at the end), then plays
+const playCounting = (pg) =>
+  pg.$eval("audio", (a) => {
+    let last = a.currentTime;
+    window.__passes = 0;
+    a.addEventListener("timeupdate", () => {
+      if (a.currentTime < last - 0.5) window.__passes++;
+      last = a.currentTime;
+    });
+    a.play();
+  });
+
+await test("A13 L1: the deck loops A–B from memory: no Range request after the first pass", true, async (pg) => {
+  const ranges = await deckOn(pg, "Lab", 30);
+  await barTo(pg, "loop");
+  await pg.$eval("audio", (a, t) => (a.currentTime = t), 4 * CH + 0.05);
+  await pg.click(slide(".p-pa"));
+  await pg.$eval("audio", (a, t) => (a.currentTime = t), 10 * CH - 0.05);
+  await pg.click(slide(".p-pb"));
+  await pg.$eval("audio", (a, t) => (a.currentTime = t), 4 * CH + 0.05);
+  await pg.waitForTimeout(300);
+  await playCounting(pg);
+  await pg.waitForFunction(() => window.__passes >= 1, null, { timeout: 15000 });
+  const first = ranges.length;
+  await pg.waitForFunction(() => window.__passes >= 5, null, { timeout: 30000 });
+  assert.deepEqual(ranges.slice(first), [], "Range requests after the first pass");
+  for (let i = 4; i <= 9; i++) assert.ok(ranges.includes(chunkRange(i)), "the deck read chunk " + i);
+});
+
+await test("A13 L1: Track Loop on the deck plays the file from memory after the first time through", true, async (pg) => {
+  const ranges = await deckOn(pg, "Ltr", 22); // longer than the deck holds at once, so it is the kept bytes that play
+  await barTo(pg, "loop");
+  await pg.click(slide(".p-hloop"));
+  await pg.$eval("audio", (a) => (a.currentTime = 0));
+  await pg.waitForTimeout(300);
+  await playCounting(pg);
+  await pg.waitForFunction(() => window.__passes >= 1, null, { timeout: 20000 });
+  const first = ranges.length;
+  await pg.waitForFunction(() => window.__passes >= 2, null, { timeout: 20000 });
+  assert.deepEqual(ranges.slice(first), [], "Range requests after the first time through");
+  for (let i = 0; i < 22; i++) assert.equal(ranges.filter((r) => r === chunkRange(i)).length, 1, "chunk " + i + " is read once");
+});
+
 await browser.close();
 await mf.dispose();
