@@ -32,7 +32,7 @@ exec /opt/homebrew/bin/rclone nfsmount ":webdav,url='$URL',vendor=nextcloud:" "$
   --volname Chauphan -o nobrowse -o locallocks \
   --cache-dir "$HOME/Library/Caches/rclone-archive" \
   --vfs-cache-mode full --vfs-cache-max-size 2G --vfs-cache-min-free-space 3G --vfs-cache-max-age 168h \
-  --vfs-write-back 5s --dir-cache-time 1m \
+  --vfs-write-back 5s --dir-cache-time 1h \
   --exclude '.*' \
   --contimeout 10s --timeout 30s --low-level-retries 3 --retries 3 \
   --log-level NOTICE

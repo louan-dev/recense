@@ -35,20 +35,23 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
 - **CalDAV Worker** (`worker/`): your own calendar server; calendar backup through EventKit (`tools/cal-export`).
 - **Messenger ingest** (`src/messenger.mjs`).
 - **Always-on archive mount**: `gallery-archive/chauphan` over Gallery's `/main/nc-archive/`, kept alive by launchd with
-  a 2 GB cache.
+  a 2 GB cache; folder listings are cached for an hour (Worker requests), and deletes still go to Gallery's trash.
 - **Offsite disks**: Photos, Messages and Mail stores on APFS sparse bundles in `gallery-archive/.disks`, one rclone
   mount per disk plus a watchdog; Messages mounts at `~/Library/Messages` (the Disks Helper needs Full Disk Access).
 - **Move Offsite**: a Finder Quick Action and an iPhone Shortcut that move files into R2, naming the macOS privacy
   permission when one blocks a read.
 - **Docs sync** (`bin/docs-sync.zsh`, launchd `com.chauphan.docs-sync`): every readable or editable document on the
   Mac in one place, Gallery Main › **Docs**, seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and
-  the website. Two-way (rclone bisync) for the Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary;
-  one-way for Developer (its live notes split into `.conflict` copies when synced both ways), Voice Memos (`Docs/Recordings`; macOS lets the job read it only once Disks Helper has Full Disk Access) and Notability's PDF backups
-  (`Docs/Notability`); `Docs/INDEX.md` lists everything by source. Documents only (`config/docs-sync.filters`: writing,
-  PDFs, Office/iWork, ebooks, recordings; no code, app data or hidden files; the vault also takes its pictures). Writes
-  go through the Worker with this Mac's Access token, so Gallery keeps what it replaces in its trash; files a pass
-  removes on the Mac are kept in `~/.docs-sync/kept/`. The same file edited on both sides → both kept
-  (`name.conflict1.md`, `name.conflict2.md`). Every 10 minutes, at login and when the vault changes.
+  the website. Two-way (rclone bisync) for iCloud Drive, Documents, Desktop and Temporary, without Markdown (that goes
+  to the Obsidian vault, which only iCloud writes); one-way for the vault, Developer, Voice Memos (`Docs/Recordings`;
+  macOS lets the job read it only once Disks Helper has Full Disk Access) and Notability's PDF backups
+  (`Docs/Notability`). Downloads isn't a lane: downloads-to-r2 moves it into Gallery's tmp. `Docs/INDEX.md` lists
+  everything by source, rebuilt nightly. Documents only (`config/docs-sync.filters`: writing, PDFs, Office/iWork,
+  ebooks, recordings; no code, app data or hidden files; the vault also takes its pictures). Straight to R2 over its
+  S3 API (`jobs.conf` remote `gallery-main:`), so a pass costs no Worker requests; until 2026-11-05 it went through
+  the Worker's WebDAV and used most of the account's daily budget. What a pass replaces in Docs goes to Main's
+  `trash/<day>/Docs/`; what it would delete on the Mac is kept in `~/.docs-sync/kept/`. The same file edited on both
+  sides: the newer keeps its name, the other becomes `name.conflict1.ext`. Hourly, and at login.
 - **resign-ios**: a daily check that re-signs Gallery on the iPad and iPhone when 2 days or less are left.
 
 ## Layout
@@ -74,7 +77,7 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
     node src/canary.mjs start|check
     zsh bin/archive-mount.zsh         # the always-on archive mount (launchd: com.chauphan.archive-mount)
     zsh bin/disks-mount.zsh           # the offsite disks (launchd: com.chauphan.disks-mount)
-    zsh bin/docs-sync.zsh             # one Docs pass now; --dry-run, --resync, --only "Obsidian"
+    zsh bin/docs-sync.zsh             # one Docs pass now; --dry-run, --resync, --only "Obsidian", --verbose
 
 ## launchd
 

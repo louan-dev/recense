@@ -2,22 +2,26 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.chauphan.docs-sync</string>
-  <!-- Disks Helper holds Full Disk Access, so the pass can read Documents, Downloads and Voice Memos -->
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/chauphan/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
-    <string>/Users/chauphan/Developer/sync/bin/docs-sync.zsh</string>
-  </array>
-  <!-- every 10 minutes while awake, at login, and when the Obsidian vault changes -->
-  <key>RunAtLoad</key><true/>
-  <key>StartInterval</key><integer>600</integer>
-  <key>WatchPaths</key>
-  <array><string>/Users/chauphan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian</string></array>
-  <key>ThrottleInterval</key><integer>120</integer>
-  <key>ProcessType</key><string>Background</string>
-  <key>LowPriorityIO</key><true/>
-  <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/docs-sync.log</string>
-  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/docs-sync.log</string>
+	<key>Label</key>
+	<string>com.chauphan.docs-sync</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/chauphan/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
+		<string>/Users/chauphan/Developer/sync/bin/docs-sync.zsh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/chauphan/Library/Logs/docs-sync.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/chauphan/Library/Logs/docs-sync.log</string>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>ThrottleInterval</key>
+	<integer>120</integer>
 </dict>
 </plist>

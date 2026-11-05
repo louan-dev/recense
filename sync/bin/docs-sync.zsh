@@ -1,24 +1,28 @@
 #!/bin/zsh
 # docs-sync.zsh: every readable or editable document on this Mac, in one place: Gallery Main › Docs (gallery notes
 # 20261029 item 42). Seen in the Gallery app on iPhone/iPad, Gallery in Finder and Files, and the website.
-#   Two-way (rclone bisync): Obsidian vault, iCloud Drive, Documents, Desktop, Downloads, Temporary.
-#     An edit on either side reaches the other at the next pass; same file edited on both → both kept.
-#   One-way (copy, never deletes): Voice Memos → Docs/Recordings, Developer → Docs/Developer, Notability's PDF backups → Docs/Notability.
-#   Docs/INDEX.md lists everything, by source.
-# Writes go through the Worker's WebDAV with this Mac's Access token (Keychain gallery-access), so every file Gallery
-# replaces or deletes goes to Gallery's trash; files a pass would delete on the Mac are kept in ~/.docs-sync/kept.
-#   docs-sync.zsh [--dry-run] [--resync] [--only NAME]
-# launchd (com.chauphan.docs-sync) runs it every 10 minutes through Disks Helper (Full Disk Access).
+#   Two-way (rclone bisync): iCloud Drive, Documents, Desktop, Temporary, without Markdown (spec A11 N2: Markdown goes
+#     to the Obsidian vault, and only iCloud writes the vault). An edit on either side reaches the other at the next
+#     pass; the same file edited on both sides: the newer keeps its name, the other is kept once as name.conflict1.ext.
+#   One-way (copy, never deletes): the Obsidian vault, Voice Memos → Docs/Recordings, Developer, Notability's PDF backups.
+#   Not here: Downloads (downloads-to-r2 moves it into Gallery's tmp, one engine per folder).
+#   Docs/INDEX.md lists everything, by source; it is rebuilt once a night.
+# Straight to R2 over its S3 API (the jobs.conf remote gallery-main:), so a pass costs no Worker requests (spec A10).
+# Until 2026-11-05 it went through the Worker's WebDAV: about 400–550 requests a pass, most of the account's daily
+# budget. What a pass replaces or deletes in Docs goes to Main's trash/<day>/Docs/, like Gallery's own trash; what it
+# would delete on the Mac is kept in ~/.docs-sync/kept.
+#   docs-sync.zsh [--dry-run] [--resync] [--only NAME] [--verbose]
+# launchd (com.chauphan.docs-sync) runs it hourly through Disks Helper (Full Disk Access).
 set -u
 export PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
-export RCLONE_CONFIG=${RCLONE_CONFIG:-$HOME/.config/rclone/jobs.conf}   # only for Notability's S3 source
+export RCLONE_CONFIG=${RCLONE_CONFIG:-$HOME/.config/rclone/jobs.conf}   # gallery-main: (R2 over S3)
 HERE=${0:A:h}
 STATE=$HOME/.docs-sync
 CONF=${HERE:h}/config
-DRY=() RESYNC=0 ONLY=
+DRY=() RESYNC=0 ONLY= Q=(-q)
 while (( $# )); do case $1 in
-  --dry-run) DRY=(--dry-run) ;; --resync) RESYNC=1 ;; --only) ONLY=$2; shift ;;
-  *) print -u2 "usage: docs-sync.zsh [--dry-run] [--resync] [--only NAME]"; exit 2 ;;
+  --dry-run) DRY=(--dry-run) ;; --resync) RESYNC=1 ;; --only) ONLY=$2; shift ;; --verbose) Q=(-v) ;;
+  *) print -u2 "usage: docs-sync.zsh [--dry-run] [--resync] [--only NAME] [--verbose]"; exit 2 ;;
 esac; shift; done
 
 notify() { /usr/bin/osascript -e "display notification \"$1\" with title \"Docs sync\"" >/dev/null 2>&1; }
@@ -35,29 +39,26 @@ else
 fi
 trap 'rm -f $LOCK/pid; rmdir $LOCK 2>/dev/null' EXIT
 
-# Main through the Worker (Access, trash, versions, chunked uploads); the token never leaves the Keychain otherwise
-ID=$(security find-generic-password -s gallery-access -a client-id -w 2>/dev/null)
-SEC=$(security find-generic-password -s gallery-access -a client-secret -w 2>/dev/null)
-[[ -n $ID && -n $SEC ]] || { log "no Access token in the Keychain (gallery-access)"; notify "no Gallery token in the Keychain"; exit 1; }
-export RCLONE_WEBDAV_URL=https://gallery.improvdiplomat.workers.dev/main/nc/dav/files/owner/
-export RCLONE_WEBDAV_VENDOR=nextcloud RCLONE_WEBDAV_NEXTCLOUD_CHUNK_SIZE=50M
-export RCLONE_WEBDAV_HEADERS="CF-Access-Client-Id,$ID,CF-Access-Client-Secret,$SEC"
-unset ID SEC
-G=:webdav:Docs
-rclone lsf --max-depth 1 :webdav: >/dev/null 2>&1 || { log "skip: Gallery not reachable"; exit 0; }
+G=gallery-main:gallery-main/files/Docs                 # Main's files/Docs, the folder Gallery shows as Docs
+BK=gallery-main:gallery-main/trash/$(date -u +%F)/Docs  # one prior copy per file per day of what a pass replaces
+rclone lsf --max-depth 1 $G >/dev/null 2>&1 || { log "skip: R2 not reachable"; exit 0; }
 
 # name | Mac folder | mode
 SOURCES=(
-  "Obsidian|$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian|two-way"
+  "Obsidian|$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian|one-way"   # iCloud alone writes the vault (T1)
   "iCloud Drive|$HOME/Library/Mobile Documents/com~apple~CloudDocs|two-way"
   "Documents|$HOME/Documents|two-way"
   "Desktop|$HOME/Desktop|two-way"
-  "Downloads|$HOME/Downloads|two-way"
   "Temporary|$HOME/Temporary|two-way"
   "Developer|$HOME/Developer|one-way"   # git repos + live notes: two-way split notes into .conflict copies
   "Recordings|$HOME/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings|one-way"
 )
-COMMON=(--local-unicode-normalization --webdav-nextcloud-chunk-size 50M --transfers 4 --checkers 8 --stats 0 -q)
+COMMON=(--local-unicode-normalization --fast-list --modify-window 1s --transfers 4 --checkers 8 --stats 0 $Q)
+# (--modify-window: Gallery keeps rclone's mtimes in whole seconds; the Mac's have nanoseconds)
+# Two-way lanes leave Markdown alone: the md mirror carries it into the vault (spec A11 N2, N4).
+TWOWAY=$STATE/two-way.filters
+{ print -l -- "# generated by docs-sync.zsh from docs-sync.filters" "- *.md" "- *.markdown"; cat $CONF/docs-sync.filters; } > $TWOWAY.new
+cmp -s $TWOWAY.new $TWOWAY && rm -f $TWOWAY.new || mv -f $TWOWAY.new $TWOWAY
 failed=()
 
 for s in $SOURCES; do
@@ -67,19 +68,28 @@ for s in $SOURCES; do
   # Voice Memos lives in another app's container: macOS blocks it until Disks Helper has Full Disk Access
   ls "$src" >/dev/null 2>&1 || { log "$name: macOS blocks reading $src"; failed+="$name (give Disks Helper Full Disk Access)"; continue; }
   filters=$CONF/docs-sync.filters; [[ $name == Obsidian ]] && filters=$CONF/docs-sync-obsidian.filters
+  [[ $mode == two-way ]] && filters=$TWOWAY
   fhash=$(md5 -q $filters)
   if [[ $mode == one-way ]]; then
     # made here, never edited elsewhere (recordings, code and its notes): copy new ones, never delete
-    rclone copy "$src" "$G/$name" --filter-from $filters $COMMON $DRY || failed+=$name
+    rclone copy "$src" "$G/$name" --filter-from $filters $COMMON $DRY --backup-dir "$BK/$name" || failed+=$name
     continue
   fi
-  # first pass for a folder, or after the filter list changed: --resync joins both sides (nothing deleted)
+  # empty on both sides (the Desktop): nothing to sync, and bisync refuses an empty listing on every pass (Y8). Empty
+  # here but not in R2 still goes to bisync, which stops rather than delete Gallery's copies.
+  if [[ -z $(rclone lsf -R --files-only --filter-from $filters "$src" 2>/dev/null | head -1) ]]; then
+    if [[ -z $(rclone lsf -R --files-only --fast-list --filter-from $filters "$G/$name" 2>/dev/null | head -1) ]]; then
+      log "$name: no documents on either side, skipped"; continue
+    fi
+  fi
+  # first pass for a folder, or after the filter list changed: --resync joins both sides (nothing deleted; where both
+  # have a file and they differ, the newer wins and the other goes to the backup dir)
   mark=$STATE/state/$name.ok
   re=()
-  if (( RESYNC )) || [[ ! -f $mark || $(cat $mark) != $fhash ]]; then re=(--resync); rclone mkdir "$G/$name"; fi
+  if (( RESYNC )) || [[ ! -f $mark || $(cat $mark) != $fhash ]]; then re=(--resync --resync-mode newer); fi
   rclone bisync "$src" "$G/$name" --filters-file $filters $COMMON $DRY $re \
-    --workdir $STATE/bisync --backup-dir1 "$STATE/kept/$name" \
-    --compare size,modtime --conflict-resolve none --conflict-loser num --conflict-suffix conflict --suffix-keep-extension \
+    --workdir $STATE/bisync --backup-dir1 "$STATE/kept/$name" --backup-dir2 "$BK/$name" \
+    --compare size,modtime --conflict-resolve newer --conflict-loser num --conflict-suffix conflict --suffix-keep-extension \
     --resilient --recover --max-lock 15m --max-delete 25 --no-slow-hash
   rc=$?
   if (( rc == 0 )); then [[ -z $DRY ]] && print $fhash > $mark
@@ -88,13 +98,15 @@ done
 
 # Notability's own PDF backups (its WebDAV Auto-Backup) are kept outside Main's files; show them under Docs too
 if [[ -z $ONLY || $ONLY == Notability ]]; then
-  rclone copy gallery-main:gallery-main/notability-backup "$G/Notability" --filter-from $CONF/docs-sync.filters $COMMON $DRY || failed+=Notability
+  rclone copy gallery-main:gallery-main/notability-backup "$G/Notability" --filter-from $CONF/docs-sync.filters $COMMON $DRY \
+    --backup-dir "$BK/Notability" || failed+=Notability
 fi
 
-# Docs/INDEX.md: every document, by source, linked (relative links open in Gallery, Obsidian and Finder)
-if [[ -z $DRY ]]; then
-  idx=$STATE/INDEX.md
-  rclone lsf -R --files-only --format tsp --separator $'\t' $G 2>/dev/null | LC_ALL=C sort -t$'\t' -k3 | python3 -I -c '
+# Docs/INDEX.md: every document, by source, linked (relative links open in Gallery, Obsidian and Finder). Once a
+# night (the 03:00 pass), or when the last one is over a day old (the Mac slept through 03:00)
+idx=$STATE/INDEX.md
+if [[ -z $DRY ]] && [[ $(date +%H) == 03 || ! -s $idx || -n $(find $idx -mtime +1 2>/dev/null) ]]; then
+  rclone lsf -R --fast-list --files-only --format tsp --separator $'\t' $G 2>/dev/null | LC_ALL=C sort -t$'\t' -k3 | python3 -I -c '
 import sys, urllib.parse
 rows = [l.rstrip("\n").split("\t") for l in sys.stdin if l.count("\t") == 2]
 rows = [(t, int(s), p) for t, s, p in rows if p != "INDEX.md"]

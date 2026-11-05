@@ -397,7 +397,7 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 - 2026-10-29 15:01 PDT · Gallery Files sidebar name → "Gallery" · DONE (System Events shows "Gallery"). apple/macos: CFBundleName "Gallery Files" (must match the bundle file name), en.lproj/InfoPlist.strings → "Gallery", LSHasLocalizedDisplayName; rebuilt + installed, Finder relaunched.
 - 2026-10-29 15:59 PDT · Offsite disks (Photos, Messages, Mail stores in R2) · PARTIAL. APFS sparse bundles in gallery-archive/.disks/ via the direct S3 remote; login item com.chauphan.disks-mount runs through ~/Applications/Disks Helper.app (zsh run by launchd is refused the network mount). Verified: test image survives an empty-cache remount (md5 + SQLite integrity), cache evicts to its cap, upload ~3.9 MB/s. Messages + Mail stores copied (verified) and linked from ~/Library (originals kept as *.local-2026-10-29); Photos library copied (89,732 files), the switch is the owner's GUI step. Runbook docs/runbooks/offsite-disks.md; details .handoff/2026-10-29_164631_HANDOFF.md. Next: owner GUI steps, then Gallery-app exports (ask the owner what to show).
 - 2026-10-31 07:09 PDT · Gallery iOS app icon → Photos-style petals forming the iCloud cloud · DONE (actool compiles AppIcon for iOS 18 with no warnings; 120 px output checked; not built or installed on a device). AppIcon.appiconset/icon-1024.png replaced (white background, 12 translucent petals around a round aperture, outline fitted to Apple's iCloud icon cloud); Contents.json is now a single universal entry, so dark and tinted modes use the light icon (owner's choice). icon-1024-dark.png and icon-1024-tinted.png kept on disk unreferenced (owner chose to keep them). Uncommitted. Details: gallery/.handoff/ITEM38.md
-- 2026-11-05 13:47 PST · Unified offline-first + redesign plan (Sync · Gallery · Recense) · PROPOSED. The owner approved it as documentation only; spec at docs/specs/unified-offline-first-and-redesign.md (A1–A17, B1–B11). Nothing is implemented or deployed. Next, each on the owner's go: phase 0 (A10's five reversible changes; Recense R15 idle crash and R16 ⌘-hold bug; Gallery G20 indexing budget; X1–X9 security), then A15 (one repo). Details .handoff/HANDOFF.md.
+- 2026-11-05 13:47 PST · Unified offline-first + redesign plan (Sync · Gallery · Recense) · IN PROGRESS (phase 0 since the owner's "go ahead for all", 11-05 14:00). Spec at docs/specs/unified-offline-first-and-redesign.md (A1–A17, B1–B11). Done 2026-11-05 14:21 PST: A10 #1–#4 + downloads-to-r2 --no-traverse (docs-sync hourly on S3, 0 Worker requests a pass), A11 N2, Y8 (empty Desktop), R15, R16, G20, Raven sealed, A10 #5 committed (gallery 9226f2a, push = deploy waits for the owner), X5, D1. Next: A11 N3–N4, A13 L1, R17, X4/X9, then A15. Details .handoff/HANDOFF.md.
 
 ## 8. Decisions made (defaults; change only if the owner objects)
 1. "rw" = R2. "5 GB" = the iCloud quota (superseded: the plan is iCloud+ 200 GB, see §1).
@@ -411,6 +411,36 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
+
+### 2026-11-05 14:21 PST · Phase 0 of the unified plan: A10, A11 N2, Y8, R15, R16, G20, Raven, X5, D1 · PARTIAL
+- **A10 #1–#3, A11 N2 (sync bin/docs-sync.zsh, launchd plist):** docs-sync now reaches Main's `files/Docs` over R2's S3
+  API (`gallery-main:`), not the Worker's WebDAV: 0 Worker requests a pass (it was ≈ 400–550, ≈ 90 % of the daily
+  budget). Hourly with no WatchPaths (was every ≤ 10 min plus every vault save); INDEX.md nightly; `--modify-window 1s`
+  (Gallery keeps whole-second mtimes), `--fast-list`, `--conflict-resolve newer`, every resync `--resync-mode newer`,
+  `--backup-dir2` = Main's `trash/<day>/Docs/`. The vault is one-way (only iCloud writes it, T1); Downloads left
+  (downloads-to-r2 owns it); two-way lanes skip Markdown. Y8: a lane with no documents on either side is skipped (the
+  empty Desktop failed 408 passes and notified each time).
+- **Not as planned:** the preview run went through Disks Helper, which passes no arguments, so it ran for real (14:15)
+  instead of `--dry-run`. Audit: the new S3 listings equal the old WebDAV listings file for file in all four two-way
+  lanes; no backup was written on either side; nothing was copied, replaced or deleted. Next previews run the script
+  directly, not through Disks Helper.
+- **A10 #4:** archive-mount caches listings 1 h (was 1 min); it stays on the Worker so Finder deletes keep Gallery's
+  trash. downloads-to-r2 gets `--no-traverse` (live plist).
+- **R15/R16 (recense cee3f7f, installed):** the idle crash was `flux.sorted()[n-1]` with n = 0 (stems under 160
+  samples), confirmed in the crashed binary's code; guarded, and the login item restarts Recense after a crash
+  (KeepAlive Crashed; SIGTRAP restarts, SIGTERM stays quit, tested). ⌘ reveals hidden icons only when held alone with
+  the pointer in the menu bar. `recense selftest` covers both. Every build since the rename had failed on a module cache
+  holding `sill/` paths (moved to the Trash); the installed app dated from 11-03. `nook-fix` kept as tag
+  `archive/nook-fix-1f871c`, worktree removed (504 MB).
+- **G20, Raven, A10 #5 (gallery 9226f2a, not pushed):** only AI-using steps spend the daily budget; Main's `Raven/` is
+  never indexed or answered from (its vectors leave on the next sweep); cron every 10 minutes. Tests: 25/25 AI (the G20
+  test fails on the old code), routes 60 and 61 (D1 variant), the rest green; wrangler dry run OK. Pushing deploys: the auto-mode
+  classifier blocked it, so it waits for the owner.
+- **X5:** five plain-text `rclone.conf` copies moved to `~/.Trash/rclone-conf-backups-20261105/` (empty the Trash).
+  **D1:** `com.chauphan.sandisk-rescue` unloaded and disabled (its caffeinate kept the Mac awake).
+- Validation: docs-sync log `Desktop: no documents on either side, skipped` then `ok` (22:18Z, about 15 s); launchctl
+  interval 3600; Recense selftest 14/14, running under launchd; gallery suites as above.
+- Next: A11 N3–N4, A13 L1, R17, X4, X9; then A15 (one repo). Owner: push gallery (deploys), X1–X3, X8.
 
 ### 2026-11-05 13:47 PST · Unified offline-first + redesign plan (spec saved) · DONE
 - Saved the owner-approved plan as `docs/specs/unified-offline-first-and-redesign.md`. It is documentation only: its items are PROPOSED, and nothing is implemented, deployed or committed. It covers:
