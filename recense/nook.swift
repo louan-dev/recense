@@ -3,10 +3,10 @@
 //   [ hidden icons ] │ [ visible icons ] [ system icons ]
 //
 // macOS lets no app move other apps' icons, so icons are hidden by ⌘-dragging them left of the divider (hold ⌘ a
-// moment to see it). Collapsed, the divider is invisible and spans the room left of it, pushing those icons off the
-// screen; since macOS 27 a status item wider than that room is moved off the bar instead, so it spans exactly that room
-// (see `fit`). Hovering the divider's spot reveals the icons; they tuck away again a few seconds after the pointer
-// leaves the menu bar.
+// moment with the pointer in the menu bar to see it). Collapsed, the divider is invisible and spans the room left of
+// it, pushing those icons off the screen; since macOS 27 a status item wider than that room is moved off the bar
+// instead, so it spans exactly that room (see `fit`). Hovering the divider's spot reveals the icons; they tuck away
+// again a few seconds after the pointer leaves the menu bar.
 //
 // Off (Recense's app menu ▸ Hide Menu-Bar Icons, or `defaults write local.recense nookEnabled -bool NO`): no status item,
 // no monitors, no timer.
@@ -26,7 +26,9 @@ final class Nook {
     private var monitors: [Any] = []
     private var holdWork: DispatchWorkItem?
     private var tuckWork: DispatchWorkItem?
+    private var commandSince: Date?          // when ⌘ went down on its own; nil once released or joined by a key or modifier
     static let tuckDelay: TimeInterval = 3
+    static let holdDelay: TimeInterval = 0.7
 
     var running: Bool { item != nil }
 
@@ -48,11 +50,13 @@ final class Nook {
         item = it
         expand()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.collapse() }   // once it has a place
-        let flags: (NSEvent) -> Void = { [weak self] e in self?.commandChanged(e.modifierFlags.contains(.command)) }
+        let flags: (NSEvent) -> Void = { [weak self] e in self?.commandChanged(e.modifierFlags) }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags) { monitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { e in flags(e); return e }) { monitors.append(l) }
-        // Any key pressed with ⌘ means a shortcut, not arranging: don't reveal anything.
-        if let k = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] _ in self?.holdWork?.cancel() }) { monitors.append(k) }
+        // Any key pressed with ⌘ means a shortcut, not arranging: don't reveal anything (in other apps and in Recense's own).
+        let key: (NSEvent) -> Void = { [weak self] _ in self?.holdWork?.cancel(); self?.commandSince = nil }
+        if let k = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(k) }
+        if let k = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { e in key(e); return e }) { monitors.append(k) }
         if let m = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved, handler: { [weak self] _ in self?.mouseMoved() }) { monitors.append(m) }
     }
 
@@ -88,18 +92,31 @@ final class Nook {
         }
     }
 
-    /// Holding ⌘ on its own for a moment shows the divider so icons can be ⌘-dragged across it; letting go tucks
-    /// them away again. A quick ⌘ for a shortcut does nothing.
-    private func commandChanged(_ down: Bool) {
+    /// Holding ⌘ on its own for a moment with the pointer in the menu bar shows the divider, so icons can be ⌘-dragged
+    /// across it; letting go tucks them away again. ⌘ held anywhere else (a shortcut, ⌘-Tab, ⌘-click in a window) does
+    /// nothing: until 2026-11-05 a held ⌘ revealed the icons wherever the pointer was, and they took the strip's place (R16).
+    private func commandChanged(_ flags: NSEvent.ModifierFlags) {
         holdWork?.cancel()
-        if down {
-            let w = DispatchWorkItem { [weak self] in self?.tuckWork?.cancel(); self?.expand(showing: true) }
+        if Nook.commandAlone(flags) {
+            commandSince = Date()
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self, self.pointerInMenuBar(NSEvent.mouseLocation) else { return }
+                self.reveal()
+            }
             holdWork = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
-        } else if !collapsed {
-            scheduleTuck(0.8)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Nook.holdDelay, execute: w)
+        } else {
+            commandSince = nil
+            if !collapsed, !flags.contains(.command) { scheduleTuck(0.8) }
         }
     }
+
+    /// ⌘ and nothing else (Caps Lock and the fn/keypad bits don't count).
+    static func commandAlone(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .command
+    }
+
+    private func reveal() { tuckWork?.cancel(); expand(showing: true) }
 
     /// Hover to peek: the pointer at the divider's spot (its right end while collapsed) reveals the icons; once the
     /// pointer leaves the menu bar they tuck away after `tuckDelay`. Cheap: one frame test per move.
@@ -107,6 +124,8 @@ final class Nook {
         guard let w = item?.button?.window else { return }
         let p = NSEvent.mouseLocation
         if collapsed {
+            // ⌘ held alone first, then the pointer brought up to the menu bar to arrange icons
+            if let t = commandSince, Date().timeIntervalSince(t) >= Nook.holdDelay, pointerInMenuBar(p) { reveal(); return }
             let spot = CGRect(x: w.frame.maxX - 14, y: w.frame.minY, width: 14, height: w.frame.height)
             if spot.contains(p) { tuckWork?.cancel(); expand() }
         } else if !pointerInMenuBar(p) {
@@ -146,4 +165,19 @@ final class NookToggle: NSObject {
     static let shared = NookToggle()
     weak var nook: Nook?
     @objc func fire() { guard let n = nook else { return }; n.setEnabled(!n.running) }
+}
+
+/// `recense selftest`: which modifier states count as ⌘ alone, the only state that reveals the icons (R16).
+func hiderSelftest() -> Bool {
+    let cases: [(NSEvent.ModifierFlags, Bool, String)] = [
+        ([.command], true, "⌘"), ([.command, .capsLock], true, "⌘ with Caps Lock"), ([.command, .function], true, "⌘ with fn"),
+        ([.command, .shift], false, "⌘⇧"), ([.command, .option], false, "⌘⌥"), ([.command, .control], false, "⌘⌃"),
+        ([], false, "no modifier"), ([.shift], false, "⇧")]
+    var ok = true
+    for (flags, want, label) in cases {
+        let got = Nook.commandAlone(flags)
+        print("\(got == want ? "ok  " : "FAIL") hider, \(label): \(got ? "reveals" : "does nothing")")
+        ok = ok && got == want
+    }
+    return ok
 }

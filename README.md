@@ -75,12 +75,13 @@ what it's for. Each project meets a different kind of friction, so each carries 
   files), calendar and a right-edge widget panel inside Recense, so the tools come to the work instead of the reverse.
 
 ## Menu-bar hider (Nook, inside Recense)
-`recense/nook.swift`. Recense adds `[ always-hidden ] ┆ [ hidden ] │ ‹›` to the menu bar; ⌘-drag icons left of │ to hide them,
-left of ┆ to always hide them (macOS has no API to move other apps' icons). Click ‹› to show or hide; hovering ‹› peeks
-at the hidden tier only; ⌥-click (or right-click ▸ Reveal Always-Hidden Items) shows both; holding ⌘ shows both dividers
-for arranging. Everything tucks back after the auto-hide delay (3 s). Right-click ‹› (or Recense's app menu ▸ Menu-Bar
-Hider) for auto-hide, Peek on Hover, per-app Rules (hide all, show all, show selection) and the off switch; off means no
-status items, monitors or timers. Nook.app is retired; it opens with Recense.
+`recense/nook.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
+⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). To see │ while arranging, hold ⌘ on
+its own with the pointer in the menu bar; ⌘ held anywhere else (a shortcut, ⌘-Tab, ⌘-click in a window) does nothing.
+Hovering the divider's spot shows the hidden icons; they tuck away 3 s after the pointer leaves the menu bar. Recense's
+app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers. The earlier two-tier
+version (an always-hidden tier, per-app Rules) is in the history: commit 93e5cb3, and tag `archive/nook-fix-1f871c` for
+its macOS 27.2 placement fix.
 
 ## Features
 
@@ -186,7 +187,7 @@ recense/
 cd ~/Developer/recense/recense
 zsh build.sh                              # builds /Applications/Recense.app and ./recense
 ./recense &                               # opens the time view
-zsh scripts/install-launchagent.sh        # start at login (status | remove)
+zsh scripts/install-launchagent.sh        # start at login, and again after a crash (status | remove)
 zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to main (status | remove)
 ```
 
@@ -202,6 +203,10 @@ macOS 27 SDK, which on-device hearing needs.
 ## Commands
 
 `./recense up | down | pad | time | show | hide | toggle | quit | status | background`
+
+`selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
+too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), and which modifier states reveal the
+hider's icons (⌘ alone only).
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).

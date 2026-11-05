@@ -19,9 +19,18 @@
     <key>AssociatedBundleIdentifiers</key>
     <string>local.recense</string>
 
-    <!-- Start once when you log in. No KeepAlive on purpose: "recense quit" and pkill stay quit. -->
+    <!-- Start once when you log in. -->
     <key>RunAtLoad</key>
     <true/>
+
+    <!-- Start again after a crash (R15: an idle-time crash on 11-03 and 11-04 left Recense closed until reopened by hand).
+         Only a crash: "recense quit" (exit 0) and pkill (SIGTERM) stay quit. Tested 2026-11-05: launchd restarts a job
+         killed by SIGTRAP, the signal of Swift's runtime traps, and leaves one killed by SIGTERM alone. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+    </dict>
 
     <!-- Only inside a normal graphical login session. -->
     <key>LimitLoadToSessionType</key>

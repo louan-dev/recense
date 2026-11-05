@@ -5071,7 +5071,8 @@ final class Features: Codable {
             }
             flux[k] = f
         }
-        let top = flux.sorted()[min(n - 1, max(0, n * 99 / 100))]
+        // n is 0 for audio shorter than one frame (160 samples); indexing then crashed Recense while idle (R15)
+        let top = n > 0 ? flux.sorted()[min(n - 1, n * 99 / 100)] : 0
 
         // pitch: YIN on frames with voice in them
         let W = 512, tmin = 16, tmax = 228, need = W + tmax
@@ -6836,7 +6837,7 @@ final class NativeSources {
                 return Features.measure(s, source: "vocals")
             }.value
             if !here { try? FileManager.default.removeItem(at: stem) }      // R2 still has it
-            guard let f else { continue }
+            guard let f, !f.db.isEmpty else { continue }                  // a stem too short to measure: try again next launch
             f.write(key)
             if await Keep.pushFeatures(key) { log("gallery: measured the voice of \(key)") }
         }
@@ -8134,6 +8135,24 @@ final class NativeSources {
         print(String(format: "words in the song: %d%% (%d/%d) · lyric lines shown: %d%% (%d/%d)",
                      100 * real / max(1, shown.count), real, shown.count, 100 * found / max(1, long.count), found, long.count))
     }
+}
+
+/// `recense selftest`: Features.measure on audio too short for one 10 ms frame. Until 2026-11-05 a vocal stem under
+/// 160 samples made it index an empty array, and Recense crashed while idle (R15: crash reports of 11-03 and 11-04).
+/// Then a 220 Hz tone after half a second of silence, to show measuring still hears pitch (A3 = 5700 cents).
+func measureSelftest() -> Bool {
+    var ok = true
+    for (count, label) in [(0, "no samples"), (1, "1 sample"), (159, "159 samples"), (160, "one frame"), (16_000, "1 s of silence")] {
+        let s = [Float](repeating: 0, count: count), f = Features.measure(s, source: "vocals"), n = frameDB(s).count
+        let shaped = [f.db.count, f.onset.count, f.pitch.count, f.clarity.count, f.voiced.count].allSatisfy { $0 == n }
+        print("\(shaped ? "ok  " : "FAIL") measure, \(label): \(n) frames")
+        ok = ok && shaped
+    }
+    let tone = [Float](repeating: 0, count: 8_000) + (0..<16_000).map { Float(0.3 * sin(2 * Double.pi * 220 * Double($0) / 16_000)) }
+    let pitched = Features.measure(tone, source: "vocals").pitch.filter { $0 > 0 }.sorted()
+    let median = pitched.isEmpty ? 0 : pitched[pitched.count / 2], heard = abs(median - 5700) <= 50
+    print("\(heard ? "ok  " : "FAIL") measure, 220 Hz tone: median pitch \(median) cents over \(pitched.count) frames")
+    return ok && heard
 }
 
 /// `Recense --edits-selftest` (RECENSE_CACHE set): corrections laid over a transcript that the pipeline then remakes
