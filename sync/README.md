@@ -52,6 +52,15 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
   the Worker's WebDAV and used most of the account's daily budget. What a pass replaces in Docs goes to Main's
   `trash/<day>/Docs/`; what it would delete on the Mac is kept in `~/.docs-sync/kept/`. The same file edited on both
   sides: the newer keeps its name, the other becomes `name.conflict1.ext`. Hourly, and at login.
+- **Markdown mirror** (`bin/md-mirror.zsh`, launchd `com.chauphan.md-mirror`): every Markdown file made on the Mac is
+  in the Obsidian vault too, under `Mac/Developer`, `Mac/Desktop` and `Mac/Documents`, so it opens in Obsidian on the
+  iPhone and iPad, and an edit made there reaches the original on the next pass. Two-way, disk to disk (rclone bisync,
+  no network, no Worker requests), every 5 minutes, through Disks Helper. Markdown only (`config/md-mirror.filters`:
+  no `.git`, `node_modules`, `.build*`, `backups`, `.claude`, `.handoff`, `.wrangler`, `venv`, `auto_avsr`). The same
+  file edited on both sides: the newer wins, the other stays as `name.md.conflictN`. Whatever a pass overwrites or
+  deletes on either side is kept first in `~/Library/Application Support/md-mirror/backup/<time>/<name>/{mac,vault}`,
+  and a pass that would delete more than 10 % of a side stops. If the vault's `Mac/<name>` folder disappears, that pair
+  waits for `--resync` instead of reading it as every note deleted. Log: `~/Library/Logs/md-mirror.log`.
 - **resign-ios**: a daily check that re-signs Gallery on the iPad and iPhone when 2 days or less are left.
 
 ## Layout
@@ -60,9 +69,9 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
 - `worker/` the CalDAV Worker (`src/caldav.js`, `src/index.js`, tests)
 - `bin/` launchd jobs and mount scripts: `archive-mount.zsh`, `disks-mount.zsh`, `gallery-main-over-dav.zsh`,
   `add-gallery-archive-remote.zsh`, `add-gallery-tmp-remote.zsh`, `cal-job.sh`, `docs-sync.zsh`, `caldav-passwd.sh`, `ledger-job.sh`,
-  `messenger-job.sh`, `move-ledger-sinks.zsh`, `offsite-image.zsh`, `resign-ios.zsh`
+  `md-mirror.zsh`, `messenger-job.sh`, `move-ledger-sinks.zsh`, `offsite-image.zsh`, `resign-ios.zsh`
 - `tools/` `cal-export.swift`, `upload-status.swift`, `disks-helper`, `quick-actions/`, `shortcuts/`, `hetzner-check.py`
-- `config/` docs-sync filter lists
+- `config/` docs-sync and md-mirror filter lists
 - `launchd/` plist templates (`__HOME__` placeholders)
 - `docs/specs` what is being built, `docs/research` reports, `docs/runbooks` step-by-step (Arq, overflow, offsite
   disks, recovery, SanDisk evacuation, Obsidian images and integration, Gallery drive), `docs/proposals` decisions
@@ -78,11 +87,15 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
     zsh bin/archive-mount.zsh         # the always-on archive mount (launchd: com.chauphan.archive-mount)
     zsh bin/disks-mount.zsh           # the offsite disks (launchd: com.chauphan.disks-mount)
     zsh bin/docs-sync.zsh             # one Docs pass now; --dry-run, --resync, --only "Obsidian", --verbose
+    zsh bin/md-mirror.zsh             # one Markdown pass now; --dry-run, --resync, --only Developer, --verbose
 
 ## launchd
 
     cp launchd/com.chauphan.docs-sync.plist ~/Library/LaunchAgents/ &&
       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.docs-sync.plist
+
+    cp launchd/com.chauphan.md-mirror.plist ~/Library/LaunchAgents/ &&
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.md-mirror.plist
 
     sed "s#__HOME__#$HOME#g" launchd/com.chauphan.ledger.obsidian.plist.example \
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist

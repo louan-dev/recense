@@ -138,6 +138,7 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 | N1029-9 | Notes 20261029 item 9: on-device ears (SpeechAnalyzer) + correction lexicon | PARTIAL (installed; custom LM BLOCKED) | 2026-10-29 19:59: Recense transcribes on this Mac: SpeechTranscriber (en, fr), DictationTranscriber (vi), Groq only for languages Apple can't hear (Persian) and only with a key; no key needed any more; offline translation falls back to Apple Translation. `recense/recense/speech.swift` (engine + Lexicon + CustomLM), `voiceprint.swift` (MFCC + DTW), `recense.swift` (whisper() routes on-device first; Word.c/heard; correct()/Gallery overrides teach; relisten() on replays). Built against Apple CLT 27.2 unpacked in `recense/.toolchain` (Xcode here is 16.4/SDK 15.5); `build.sh` uses it when present. Spike: 98 % of Whisper's words, word times ±0.09 s median, 30× real time; auto language en/fr/vi + French↔English code-switching verified on a bench; correction → next recording fixed by sound; real "cafe" left alone; 33 Recense self-tests + Gallery `npm test` 128 ok. **Blocked:** Apple's custom-LM builder fails (SFSpeechErrorDomain 1) in every variant, CLI and signed Recense with permission. **Not yet run:** live playback inside Recense (first real media will be; `curl -s localhost:47123/speech`). |
 | N1029-3 | Notes 20261029 item 3: share-link preview cards (iMessage, Messenger, Telegram) | DONE (deployed a3307bc1; real paste not yet seen) | 2026-10-30: c35d22d. `/s/<id>` head gets og:title ("N files for you · Shared by Chau Phan" or folder name), og:description/type/url/image(+1200×630), twitter:card summary_large_image (summary when no picture). `GET /api/og-image/<id>[?cover=]` (public.js `ogImage`): ?cover= → manifest/link `coverItem` (fromMain body `cover`) → first jpeg/png/webp/gif ≤8 MB → any image → song cover; public, max-age=3600, ACAO *. routes 53/53, UI 34/34. Deployed c35d22d alone (live was 5e99216) as a3307bc1; /api/og-image live. Row 30 (9e68d98, 18c1b2c) left undeployed: transcript.test 2 FAIL there, 15/15 at c35d22d. Next: owner pastes a link in iMessage. |
 | IMG | Obsidian images → R2 (S3 Image Sync plugin) | PARTIAL | 2026-10-29: Gallery `/i/<key>` route (`src/images.js`, binding `NOTES_IMAGES` → bucket `notes-images`), `test/images.test.mjs` 5 ok, full `npm test` passes. 2026-10-29 19:50 PDT: bucket `notes-images` exists (no lifecycle: links must outlive the source); deployed **9664dc41 from 2045487** (owner's yes; HEAD 7322474/1a10977 not deployed: needs Vectorize index `gallery-ai`, other session's step); live: test PNG 200 image/png, bad key 404, `/` 200, `/main/` 302; test object deleted. 2026-10-29 20:40: **Move Offsite** (any app): Gallery `a942b18` `PUT /main/api/img` (images 8 ok, routes 47) committed, **deploy blocked by the auto-mode classifier, owner to deploy**; `bin/offsite-image.zsh` tested vs a local stand-in; `tools/shortcuts/Move Offsite (Mac|iPhone).shortcut` signed, not imported/run. Owner steps in `docs/runbooks/obsidian-images.md` |
+| U0 | Unified offline-first plan, phase 0 (`docs/specs/unified-offline-first-and-redesign.md`; order: `.handoff/CONTINUATION-PLAN.md`) | PARTIAL | 2026-11-05: A10 #1–5, N2, R15, R16, G20, Raven, X5, D1 done (CHANGELOG 14:21), pushed by the owner 14:57 (gallery deployed by CI). A13 L1 DONE in tests (gallery 7442fcc, deploys with the next gallery push). A11 N3 DONE (vault: one brain dump, one draftpad; 50 copies in `_conflicts/2026-11-03/`). A11 N4 DONE on the Mac (md-mirror every 5 min, 108 notes; canary f6666f34 waits for the iPhone and iPad). Next: R17, X4/X9; then A15 once its gates open |
 | — | Chrome `/main` 404, setup scripts, Recense CPU, audio/EQ, layout, Draftpad, Phi, Nook, cleanup | PROPOSED | BACKLOG |
 
 ### 2026-10-29 20:50 PDT · "Deploy all, resolve all": event-log open items · DONE except the sink move (BLOCKED on one dashboard step)
@@ -411,6 +412,58 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
+
+### 2026-11-05 15:43 PST · A11 N4: every Markdown file on the Mac in the vault (md-mirror) · DONE on the Mac (device check open)
+- **New:** `bin/md-mirror.zsh`, `config/md-mirror.filters`, `launchd/com.chauphan.md-mirror.plist`, installed and loaded
+  (every 300 s through Disks Helper, no WatchPaths, log `~/Library/Logs/md-mirror.log`). Three local bisync pairs,
+  `~/Developer`, `~/Desktop`, `~/Documents` ↔ `<vault>/Mac/<name>`: Markdown only, minus `.git`, `node_modules`,
+  `.build*`, `backups`, `.toolchain`, `.claude`, `.handoff`, `.wrangler`, `venv`, `auto_avsr`. `--compare
+  size,modtime,checksum --conflict-resolve newer --resilient --recover --max-lock 2m --max-delete 10`, workdir
+  `~/Library/Application Support/md-mirror/`.
+- **Changes from the spec:** `--backup-dir1/2` keep every overwritten or deleted copy in
+  `~/Library/Application Support/md-mirror/backup/<time>/<name>/{mac,vault}` (without them a note deleted on the iPhone
+  would delete the original). A pair whose vault folder disappears after it was in step waits for `--resync` instead of
+  reading it as every note deleted. The filters sit in `config/` beside docs-sync's (the plan said `bin/`).
+  `RCLONE_CONFIG=/dev/null`: the user's rclone.conf is encrypted, and any rclone command without it waits for a password.
+- **Validation:** dry-run resync: 108 copies, no deletes. First resync, then `rclone check`: 108 matching, 0 differences.
+  Desktop and Documents hold no Markdown (skipped). launchd loaded; the RunAtLoad pass exited 0. A test note in
+  `sync/notes/` reached the vault on the next scheduled pass, 4 min 41 s after it was made; an edit to the vault copy
+  reached the original (kickstart, 1 s); deleting the vault copy moved the original into `backup/…/mac/` (4 s). iCloud:
+  `Mac/` 108 of 108 uploaded, the vault 423 of 423, 0 pending. Canary f6666f34 started at 15:43 (the 10-13 note and
+  state are kept in `~/.ledger/`).
+- **Owner:** on the iPhone, then the iPad, append `iphone HH:MM` and `ipad HH:MM` to `_sync-canary.md` in Obsidian and
+  open a note under `Mac/Developer/`; `node src/canary.mjs check` reports the hops.
+- Next: R17 (Recense lyrics).
+
+### 2026-11-05 15:33 PST · A11 N3: the split notes cleaned up (vault) · DONE
+- **Brain dump:** 11 variants and no base file. The two newest differed only in lines 10–14: the 11-04 10:58 copy
+  (62,228 B) has the full line 10 (the loop-cost request) and 2 more lines (the ad hoc networks question and a `---`),
+  where the 10:40 copy has a cut-off "strengthen the replay logi". The 10:58 copy is now `20261102235159 Brain Dump.md`.
+- **Moved, nothing deleted:** the other 10 variants and the 40 `draftpad.conflict*.md` are in
+  `<vault>/_conflicts/2026-11-03/` under their old names; `draftpad.md` is untouched. The folder `Brain Dump/`
+  (Notepad.md) is not a variant and stayed.
+- **Report for the owner:** `_conflicts/2026-11-03/N3 report.md` lists, once each, the lines the moved copies have and the
+  kept notes lack: 67 in the older brain dumps, 58 in the draftpad conflicts (some are long pasted blocks, cut at 400
+  characters with their length noted). Nothing was merged.
+- Validation: 0 brain-dump variants and 0 draftpad conflicts left at the vault root; 0 `*.conflict*` files anywhere else
+  in the vault; 51 files in `_conflicts/2026-11-03/` (50 + the report).
+- Next: N4 (md-mirror). Owner: the 7-day check for new `*.conflict*` files (spec A11 acceptance).
+
+### 2026-11-05 15:32 PST · A13 L1: the Safari deck loops from memory · DONE (tests; not deployed)
+- **What changed (gallery 7442fcc):** with Sound on, Safari's deck streams a WAV or AIFF in 65536-frame Range chunks. It
+  kept two chunks behind the playhead and read 14 ahead, past B, so every A–B pass fetched the loop's start again and
+  every Track Loop wrap the file's start. Now, while A–B or Track Loop is on, it reads ahead in loop order and never past
+  B, and `openSound` keeps the fetched bytes of the chunks the deck holds plus the loop's, up to 64 MB. A longer loop
+  streams and logs `[deck] this loop is over 64 MB`. Keeping is opt-in, so a download (bake) keeps nothing.
+- **Change from the spec (A13 L1):** above 64 MB the loop streams instead of "fetch the file once", which would hold the
+  whole file in memory; the local store (L2–L4) covers longer loops.
+- **Validation:** two new UI tests with the deck forced. A six-chunk A–B loop: 0 Range requests in the 4 passes after
+  the first (HEAD: 24). Track Loop on a 22-chunk file: each chunk read once over two passes (HEAD: 27 on the second).
+  Both fail on HEAD. Full `npm test` in a clean worktree: exit 0 (calendar 15, routes 60 + 61, dav-rclone 3,
+  transcript 15, images 8, UI 36, viewer 108). WebKit not run (only Chromium's headless shell is installed).
+- **Also:** the owner pushed sync, recense and gallery at 14:57–14:58, so G20, the Raven seal and the 10-minute cron are
+  deployed. The cut-off session `offline-first-unified-system-plan` has exited (no process); it can't resume on its own.
+- Next: A11 N3 (vault conflicts), then N4 (md-mirror).
 
 ### 2026-11-05 14:21 PST · Phase 0 of the unified plan: A10, A11 N2, Y8, R15, R16, G20, Raven, X5, D1 · PARTIAL
 - **A10 #1–#3, A11 N2 (sync bin/docs-sync.zsh, launchd plist):** docs-sync now reaches Main's `files/Docs` over R2's S3
