@@ -3349,7 +3349,110 @@
     return d;
   };
 
-  const show = (i) => {
+  // ----- the viewer's window of three (P0 bug 1) -----
+  //
+  // Swiping across many tracks froze the gestures: every track passed on the way built a whole player
+  // and started fetching and decoding the file for its key, none of it ever let go. Now only the item
+  // on stage is live; its neighbours (cur ± 1) are at most a decoded picture; everything else is
+  // released: media paused and emptied, blob: URLs revoked, canvases shrunk to nothing, the key
+  // detection aborted, and the AudioContext suspended while nothing plays. A swipe that lands within
+  // SWIPE_SETTLE of the last one shows the item's picture and mounts the player once the swiping stops.
+  const SWIPE_SETTLE = 280;
+  const KEY_SETTLE = 1500;
+  const near = new Map(); // item -> Image, for cur - 1 and cur + 1 (pictures only)
+  let lastSwipe = 0;
+  let mountT = 0;
+  let keyJob = null;
+
+  const keyStop = () => {
+    if (!keyJob) return;
+    clearTimeout(keyJob.timer);
+    keyJob.ctl.abort();
+    keyJob = null;
+  };
+  // the key is looked for only once an item has stayed on stage a moment, and given up when it leaves
+  const keySoon = (f) => {
+    keyStop();
+    const ctl = new AbortController();
+    const job = { f, ctl };
+    job.timer = setTimeout(() => {
+      if (keyJob !== job) return;
+      autoKey(f, false, ctl.signal).finally(() => keyJob === job && (keyJob = null));
+    }, KEY_SETTLE);
+    keyJob = job;
+  };
+
+  const inUse = (u) => items.some((x) => x.src === u || x.art === u);
+  // lets go of everything under node that holds memory or a decoder
+  const releaseTree = (node) => {
+    const all = [node, ...node.querySelectorAll("*")];
+    for (const box of node.querySelectorAll(".mbox")) if (box.shadowRoot) all.push(...box.shadowRoot.querySelectorAll("*"));
+    for (const el of all) {
+      const tag = el.tagName;
+      for (const a of ["src", "href", "poster"]) {
+        const u = el.getAttribute && el.getAttribute(a);
+        if (u && u.startsWith("blob:") && !inUse(u)) URL.revokeObjectURL(u);
+      }
+      if (tag === "AUDIO" || tag === "VIDEO") {
+        try {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        } catch (x) {}
+      } else if (tag === "CANVAS") {
+        el.width = el.height = 0;
+      } else if (tag === "IMG") {
+        el.removeAttribute("srcset");
+        el.src = "";
+      }
+    }
+  };
+  const quiet = () => {
+    if (audioCtx && audioCtx.state === "running" && !playingHere()) audioCtx.suspend().catch(() => {});
+  };
+  // pictures for the neighbours only; anything further is dropped
+  const keepNear = () => {
+    const want = new Set(items.length > 1 ? [items[(cur + 1) % items.length], items[(cur - 1 + items.length) % items.length]] : []);
+    for (const [f, im] of near) {
+      if (!want.has(f)) {
+        im.src = "";
+        near.delete(f);
+      }
+    }
+    for (const f of want) {
+      if (near.has(f) || f.pending || kind(f) !== "img") continue;
+      const im = new Image();
+      im.decoding = "async";
+      im.src = src(f);
+      near.set(f, im);
+    }
+  };
+  // what a track shows while it is swiped past: its cover, or its name
+  const peekOf = (f) => {
+    const a = artSrc(f);
+    if (a) {
+      const im = new Image();
+      im.src = a;
+      im.alt = f.name;
+      im.className = "peek";
+      return im;
+    }
+    const d = mkEl("div", "pw");
+    d.innerHTML = "<b></b>";
+    d.firstChild.textContent = f.name;
+    return d;
+  };
+  window.__galleryViewerStats = () => {
+    let media = 0;
+    const count = (root) => {
+      media += root.querySelectorAll("audio, video").length;
+      root.querySelectorAll(".mbox").forEach((b) => b.shadowRoot && count(b.shadowRoot));
+    };
+    count(document);
+    return { cur, media, live: media - [...document.querySelectorAll("audio, video")].filter((e) => !e.getAttribute("src")).length, near: near.size, keyJob: !!keyJob, ctx: audioCtx ? audioCtx.state : null };
+  };
+
+  const show = (i, how) => {
     if (!items.length) return;
 
     cur = (i + items.length) % items.length;
@@ -3364,9 +3467,17 @@
       killPdf = null;
     }
 
+    clearTimeout(mountT);
+    keyStop();
     endPlayer();
     if (prefs.prominence != null) setProminence(null); // each item opens in Learn
+    releaseTree(stage);
     stage.replaceChildren();
+    keepNear();
+    quiet();
+    const now = performance.now();
+    const quick = how === "swipe" && now - lastSwipe < SWIPE_SETTLE;
+    if (how === "swipe") lastSwipe = now;
     meta.hidden = true;
     paintCap();
 
@@ -3380,8 +3491,9 @@
     if (f.pending) {
       stage.appendChild(pendingView(f));
     } else if (k === "img") {
-      const im = new Image();
-      im.src = s;
+      const im = near.get(f) || new Image();
+      near.delete(f); // the stage owns it now
+      if (!im.src) im.src = s;
       im.alt = f.name;
       im.decoding = "async";
       stage.appendChild(im);
@@ -3392,13 +3504,19 @@
       pill.hidden = true;
       stage.appendChild(p.wrap);
       activePlayer = p;
+    } else if ((k === "vid" || k === "aud") && quick) {
+      // swiped past: the picture now, the player once the swiping stops (and only if it stops here)
+      stage.appendChild(peekOf(f));
+      mountT = setTimeout(() => {
+        if (items[cur] === f && !lb.hidden && performance.now() - lastSwipe >= SWIPE_SETTLE - 20) show(cur);
+      }, SWIPE_SETTLE);
     } else if (k === "vid") {
       stage.appendChild(buildMedia("video", s));
       showTranscript(f);
     } else if (k === "aud") {
       stage.appendChild(buildMedia("audio", s, artSrc(f)));
       showTranscript(f);
-      autoKey(f);
+      keySoon(f);
     } else if (isPdf(f)) {
       stage.appendChild(buildPdf(f));
     } else if (isTextDoc(f)) {
@@ -3413,8 +3531,9 @@
 
     if (thumbs) {
       thumbs.forEach((t, j) => t.classList.toggle("on", j === cur));
-      strip.scrollLeft = thumbs[cur].offsetLeft - (strip.clientWidth - 30) / 2;
+      strip.scrollLeft = thumbs[cur].offsetLeft + thumbs[cur].offsetWidth / 2 - strip.clientWidth / 2;
     }
+    tellShell(f);
   };
 
   // The open item is in the address (?open=<n>, which a load opens onto), so a refresh stays on it instead of
@@ -3449,11 +3568,126 @@
       killPdf = null;
     }
 
+    clearTimeout(mountT);
+    keyStop();
     endPlayer();
+    releaseTree(stage);
     stage.replaceChildren();
+    for (const im of near.values()) im.src = "";
+    near.clear();
+    quiet();
     document.body.style.overflow = "";
     document.body.classList.remove("lbopen", "comments-open");
     thread.hidden = true;
+    tellShell(null);
+    healMain();
+  };
+
+  // Back on the folder it must draw at once (P0 bug 1: after a long swipe, Back landed on a blank page that
+  // needed a second Back). Whatever the viewer left behind is undone, the grid rebuilt if it lost its tiles,
+  // and a paint forced on the next two frames; the same on a page shown again from the back/forward cache.
+  const healMain = () => {
+    if (!lb.hidden) return;
+    document.body.style.overflow = "";
+    document.body.classList.remove("lbopen", "comments-open");
+    if (items.length && !grid.querySelector(".tile")) rebuildGrid();
+    requestAnimationFrame(() => {
+      grid.style.transform = "translateZ(0)";
+      void grid.offsetHeight;
+      requestAnimationFrame(() => (grid.style.transform = ""));
+    });
+  };
+  addEventListener("pageshow", () => {
+    // the viewer open with no history entry of its own (restored from the cache): close it
+    if (!lb.hidden && !(history.state && history.state.lb)) hide();
+    else healMain();
+  });
+  document.addEventListener("visibilitychange", () => !document.hidden && healMain());
+
+  // ----- what the viewer shell (viewer-shell.js, G3) sees of this viewer -----
+  // One active item: show() is the only place it changes, and every surface (stage, filmstrip, title, sheet)
+  // hears it through onShow, so they can never disagree. #lb carries it as data-active.
+  const shellHooks = [];
+  const tellShell = (f) => {
+    lb.dataset.active = f ? f.path || f.n || "" : "";
+    for (const fn of shellHooks) {
+      try {
+        fn(f);
+      } catch (e) {}
+    }
+  };
+  window.__galleryViewer = {
+    item: () => (lb.hidden ? null : items[cur] || null),
+    index: () => cur,
+    count: () => items.length,
+    show: (i) => show(i),
+    kind: (f) => kind(f),
+    src: (f) => src(f),
+    art: (f) => artSrc(f),
+    media: () => stageMedia(),
+    toggle: () => {
+      if (activePlayer) activePlayer.toggle();
+      else {
+        const el = stageMedia();
+        if (el) el.paused ? el.play().catch(() => {}) : el.pause();
+      }
+    },
+    isOpen: () => document.body.classList.contains("comments-open"),
+    setOpen: (o) => setOpen(o),
+    liked: () => {
+      const f = items[cur];
+      return !!(f && Array.isArray(f.likes) && f.likes.some(isMe));
+    },
+    canLike: () => canWrite() && !(G.invite && G.invite.perms && G.invite.perms.react === false),
+    like: async () => {
+      const f = items[cur];
+      await send(f, { op: "like" });
+      paintComment();
+    },
+    canShare: () => !!(G.main && window.galleryInvite),
+    share: () => {
+      const f = items[cur];
+      if (f && !f.pending && window.galleryInvite) window.galleryInvite([f]);
+    },
+    canDownload: () => !document.body.classList.contains("nodl"),
+    canDelete: () => !!(G.main && !G.invite && owner && items[cur] && !items[cur].pending),
+    del: async () => {
+      const f = items[cur];
+      if (!f || !confirm("Delete “" + f.name + "”? Deleted files stay in the trash for 30 days.")) return false;
+      const r = await fetch(MAIN_API + "/file?" + new URLSearchParams({ key: f.path }), { method: "DELETE" });
+      if (!r.ok) {
+        tell((await r.text()) || "Delete failed", true);
+        return false;
+      }
+      items.splice(items.indexOf(f), 1);
+      rebuildGrid();
+      if (items.length) show(Math.min(cur, items.length - 1));
+      else history.back();
+      return true;
+    },
+    lines: async (f) => {
+      const t = f && !f.pending ? await txFetch(f) : null;
+      return (t && Array.isArray(t.lines) && t.lines) || [];
+    },
+    folder: () => (G.dir ? G.dir.split("/").pop() : G.title || "Gallery"),
+    at: (i) => items[i] || null,
+    indexOf: (key) => items.findIndex((x) => x.path === key || x.n === key || x.name === key),
+    thumbOf: (f) => (f ? artSrc(f) || (kind(f) === "img" ? src(f) : null) : null),
+    // the sheet's metadata and map: Main's own routes for the owner, the link's for an invitee; none on a public link
+    where: () => (G.main && !G.invite ? "owner" : G.invite ? "invite" : null),
+    metaUrl: (f) => (!f || f.pending ? null : G.main && !G.invite ? MAIN_API + "/meta?path=" + encodeURIComponent(f.path) : G.invite ? API + "/meta?name=" + encodeURIComponent(f.path.split("/").pop()) : null),
+    geoUrl: (b) => {
+      const q = new URLSearchParams(b || {});
+      if (G.main && !G.invite) return MAIN_API + "/geo?" + (q.set("dir", G.dir || ""), q);
+      return G.invite ? API + "/geo?" + q : null;
+    },
+    canAdjust: () => !!(G.main && !G.invite && owner),
+    adjust: async (f, body) => {
+      const r = await fetch(MAIN_API + "/meta", { method: "PUT", headers: { "content-type": "application/json", "x-gallery": "1" }, body: JSON.stringify({ path: f.path, ...body }) });
+      if (!r.ok) throw new Error((await r.text()) || "Couldn’t save that");
+      return r.json();
+    },
+    onShow: (fn) => shellHooks.push(fn),
   };
 
   $("sel").onclick = () => {
@@ -3895,6 +4129,66 @@
     swFold();
   });
 
+  // P0 bug 2: tapping a word of your comment put the caret somewhere else, because the page moved
+  // (the keyboard opening) between the tap and the field. The character is found on pointerdown, on the
+  // text as it stands, and the field takes it once the layout has settled.
+  const offsetAt = (el, x, y) => {
+    let node = null;
+    let off = 0;
+    if (document.caretPositionFromPoint) {
+      const c = document.caretPositionFromPoint(x, y);
+      if (c) [node, off] = [c.offsetNode, c.offset];
+    } else if (document.caretRangeFromPoint) {
+      const r = document.caretRangeFromPoint(x, y);
+      if (r) [node, off] = [r.startContainer, r.startOffset];
+    }
+    if (!node || !el.contains(node)) return null;
+    if (node.nodeType !== 3) return off ? el.textContent.length : 0;
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let n = 0;
+    while (w.nextNode()) {
+      if (w.currentNode === node) return n + off;
+      n += w.currentNode.length;
+    }
+    return null;
+  };
+  // the field set like the text it replaces, so nothing jumps under the finger
+  const likeText = (box, p) => {
+    const cs = getComputedStyle(p);
+    for (const k of ["font", "letterSpacing", "wordSpacing", "lineHeight", "textIndent", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft"]) box.style[k] = cs[k];
+    box.style.boxSizing = "border-box";
+    box.style.width = p.getBoundingClientRect().width + "px";
+    box.style.whiteSpace = "pre-wrap";
+  };
+  // focus with the caret at off; the scroller holds still until the viewport stops resizing
+  const focusAt = (box, off, scroller) => {
+    const top = scroller.scrollTop;
+    const was = scroller.style.overflowY;
+    const vv = window.visualViewport;
+    let t = 0;
+    let done = false;
+    scroller.style.overflowY = "hidden";
+    box.focus({ preventScroll: true });
+    box.setSelectionRange(off, off);
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      if (vv) vv.removeEventListener("resize", settle);
+      scroller.style.overflowY = was;
+      scroller.scrollTop = top;
+      if (document.activeElement === box) box.setSelectionRange(off, off);
+      box.scrollIntoView({ block: "nearest" });
+    };
+    const settle = () => {
+      clearTimeout(t);
+      t = setTimeout(finish, 160);
+    };
+    if (vv) vv.addEventListener("resize", settle);
+    settle();
+    setTimeout(finish, 900);
+  };
+
   const paintThread = (f) => {
     const list = listOf(f);
     const can = canWrite();
@@ -3983,7 +4277,7 @@
         edb.onclick = () => !ed.disabled && ed.onclick(); // only the words change: the comment keeps its time
         let tap = null;
         p.addEventListener("pointerdown", (e) => {
-          tap = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, t: e.timeStamp, st: thread.scrollTop } : null;
+          tap = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, t: e.timeStamp, st: thread.scrollTop, at: offsetAt(p, e.clientX, e.clientY) } : null;
         });
         p.addEventListener("pointermove", (e) => {
           if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) tap = null;
@@ -4000,7 +4294,7 @@
           if (sel) return;
           // let any momentum scroll settle; a tap that only stopped a fling doesn't edit
           setTimeout(() => {
-            if (Math.abs(thread.scrollTop - t.st) <= 1 && p.isConnected) ed.onclick();
+            if (Math.abs(thread.scrollTop - t.st) <= 1 && p.isConnected) ed.onclick(t.at);
           }, 120);
         });
 
@@ -4016,7 +4310,7 @@
           }
         };
 
-        ed.onclick = () => {
+        ed.onclick = (at) => {
           const box = mkEl("textarea", "cedit");
           const bar = mkEl("div", "cbtns");
           const save = mkBtn("lnk", "Save comment", "Save");
@@ -4030,11 +4324,13 @@
           box.maxLength = 4000;
           box.value = c.text;
           bar.append(save, back);
+          likeText(box, p);
           row.classList.remove("sw", "open");
           row.replaceChildren(box, bar);
           box.oninput = fitE;
           fitE();
-          box.focus();
+          // from Edit (no tap): the end, as before
+          focusAt(box, typeof at === "number" ? Math.min(at, box.value.length) : box.value.length, thread);
 
           back.onclick = () => paintComment();
           const doSave = async () => {
@@ -6147,7 +6443,7 @@
     up.textContent = "Add";
     up.hidden = false;
   }
-  if (G.perms && G.perms.download === false) document.body.classList.add("nodl");
+  if ((G.perms && G.perms.download === false) || (G.invite && G.invite.perms && G.invite.perms.download === false)) document.body.classList.add("nodl");
 
   upin.onchange = () => {
     const files = Array.from(upin.files || []);
@@ -6294,11 +6590,12 @@
   const DETECT_SECONDS = 120;
   const DETECT_SR = 22050;
 
-  const detectKey = async (from) => {
+  const detectKey = async (from, signal) => {
     const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Off) return "";
 
-    const data = from instanceof Blob ? await from.arrayBuffer() : await (await fetch(from)).arrayBuffer();
+    const data = from instanceof Blob ? await from.arrayBuffer() : await (await fetch(from, { signal })).arrayBuffer();
+    if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
     const ctx = new Off(1, 1, DETECT_SR);
     const audio = await new Promise((ok, no) => {
       const p = ctx.decodeAudioData(data, ok, no);
@@ -6407,13 +6704,13 @@
   // what it finds; a share link keeps it for the visit. force: also when a key was typed by hand
   // (the prompt names the original).
   const autoTried = new Map(); // item → its detection
-  const autoKey = (f, force) => {
+  const autoKey = (f, force, signal) => {
     if ((f.key && !force) || f.size > DETECT_BYTES || f.pending) return Promise.resolve();
     const id = f.path || f.n || f.name;
     if (!autoTried.has(id)) {
       autoTried.set(
         id,
-        detectKey(src(f))
+        detectKey(src(f), signal)
           .then(async (k) => {
             if (!k) return;
             f.autoKey = k;
@@ -6421,7 +6718,9 @@
             if (G.main && f.path) keySaved(f, await saveKey(f.path, k, "auto"));
             else keySaved(f, { key: k, keySrc: "auto" });
           })
-          .catch(() => {})
+          .catch(() => {
+            if (signal && signal.aborted) autoTried.delete(id); // left before it finished: try again next time
+          })
       );
     }
     return autoTried.get(id);
@@ -7349,7 +7648,7 @@
         !e.target.closest(".p-eq") &&
         !e.target.closest(".pdfv")
       ) {
-        show(cur + (dx < 0 ? 1 : -1));
+        show(cur + (dx < 0 ? 1 : -1), "swipe");
       }
     }
   );

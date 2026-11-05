@@ -53,6 +53,8 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 ## Features
 
 ### The viewer
+- Viewer shell (G3, `src/client/viewer-shell.js` + `.css`, over gallery.js through `window.__galleryViewer`): the framing states only, with a spring (stiffness 320, damping 32, mass 1) that follows the finger 1:1, translate3d and scale only, on the media layer. **A Full-bleed** (tap the media from B: 100%, no radius, top bar and bottom row faded and untappable), **B Framed** (default: scale .82, radius 24px, black around, a soft glow of the item's own artwork behind it), **C Docked** (swipe up or Info: the media docks above the sheet; a phone on its side keeps the media beside it; the bottom row steps aside). The top bar, the thumbnail strip with "Add a comment…", the home bar and the sound stroke are the viewer's own (gallery.js, homebar.js) and the shell never draws, moves or fades the two home bars. (2026-11-02: the round-back/two-line top bar, the 2D scrubber, the action capsule and the centred filmstrip were tried and taken out again; the dock height is the viewer's own `--mh`.) One active item (`#lb[data-active]`) drives stage, strip, title and sheet. A click views or plays, never downloads.
+- State C sheet (G5, `src/client/viewer-sheet.js` + `.css`), the same for every kind of item, top to bottom: the comments, each cut to three lines with a blue "more" (a tap on a word opens it, the edit caret on that word); the inspector, a Transcript | Info pill (transcript lines with their times; editing one loops it until Save or Cancel and saves a `line:<n>` override; Info is the file's name, type, size, length and EXIF); the cards rise in one after another; the metadata card, "Day • Date • Time" with a blue Adjust (time, location); name, type, size, length and camera are in Info, not on the card — overrides are non-destructive (`/main/api/meta`, D1 `metadata_overrides` + `revisions`, else `meta/<path>.json` in R2), marked "edited"; Revoke drops one, Clear writes a revision first, Changes lists every revision with Restore; the map (Leaflet 1.9.4 from unpkg, OpenStreetMap tiles, no key, darkened), the item as a rounded thumbnail pin, the folder's other items in view from `GET /main/api/geo?dir=&s=&w=&n=&e=` (or `/m/<token>/api/geo`, only what the link may see) on every move, close pins grouped with a count, a tap opens that item; the map keeps its own drags; Adjust moves the pin, Revoke puts it back; no place, no card. Invitees see the card and map read-only. EXIF is read from JPEGs only (40 new files per request, cached per ETag in `geo/<dir>/.geo.json`).
 - Grid, strip and viewer; click views or plays, never downloads. Info holds Download, Rename, Change Cover, Key, native
   language and New Window.
 - Player: rewind / play / forward, time bar, Loop and A–B, Speed 0.5×…2× (pitch kept), volume. EQ panel: Low, Mid,
@@ -82,6 +84,9 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   Google Drive, Voice Memos, Notability's PDFs), kept in step both ways by Sync's `bin/docs-sync.zsh`; `Docs/INDEX.md`
   lists them by source.
 
+- Swiping (P0): only the item on stage is live; its neighbours are at most a decoded picture. Leaving an item pauses and empties its media, revokes its blob: URLs, shrinks its canvases and aborts its key detection, which now starts only after 1.5 s on one track; the AudioContext is suspended while nothing plays. A swipe within 280 ms of the last shows the cover and mounts the player once swiping stops. Back to the folder always draws (the grid is rebuilt if empty and repainted; also on `pageshow`).
+- Editing your comment: the caret lands on the character you tapped (found on pointerdown, before the keyboard moves the page); the field takes the comment's typography and the thread holds still until the viewport settles.
+- Tests: `node test/viewer.test.mjs` (in `npm test`) runs each viewer regression on iPad Air 13", MacBook Pro 13" and iPhone 12 Pro Max, portrait and landscape, touch and pointer; failures leave screenshots in `gallery/test/.shots/viewer/`.
 ### Learn mode, karaoke light and notation
 - The transcript centred in the player; each word lights as it is heard and its translation (Vietnamese, French or
   English) takes its place once read. Tap a line to go there and correct it; corrections save after a second and teach
@@ -143,13 +148,17 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 ### Storage
 - Buckets: `gallery-public` (Public) and `gallery-main` (Main), plus the read-only archive; on the Mac they mount at
   `~/Gallery` through `Gallery.app`. Transcripts and their timing live under `keep/<key>/` (asr.json, tr/<lang>.json,
-  corrections.json, features.json). Comments, captions and folder order are JSON objects in R2; no database yet.
+  corrections.json, features.json). Comments, captions and folder order are JSON objects in R2 (Main comments move to D1 once it is bound, below).
+
+- D1 (C1, `src/d1.js`, `gallery/migrations/`): invitations, folder locks, Main comments and likes, annotations, metadata overrides and their revisions. Used once the `DB` binding exists; R2 JSON is copied in lazily on first read and kept as a backup. Until then everything stays in R2 as before. The database `gallery` exists (id in `gallery/wrangler.toml`); apply the schema with `npx wrangler d1 migrations apply gallery --remote` before the first deploy that uses it.
 
 ### Sharing
 - Share links from Main, the archive or the apps; each draws a large preview card in iMessage, Messenger and Telegram.
 - Guests comment and like under a name given once (random HttpOnly cookie, stored hashed), editing only their own.
 - `/main/shared`: Personal | Shared | Activity (participant uploads, likes, comments); Delete expires a link now.
-- Participant links: one folder each, with permissions, expiry and revoke; tokens stored hashed.
+- Participant links (`/m/<token>`, `src/invite.js`): one folder each; tokens are 32 random bytes, stored as SHA-256 only. Permissions view, download, upload, comment, react, annotate (defaults: all but annotate; a room never uploads); per-file overrides; a view-only lock per invitation and per folder (`PUT /main/api/invites/locks {dir, locked}`); no expiry unless set; revoke. Every check is in the Worker; an unknown, expired or revoked link is one 404, and no request through a link can delete or replace the owner's files, comments or annotations. Download off still plays media inline but refuses `?dl=1` and non-playable files.
+- Annotations (`src/annotations.js`): notes pinned to a time or a spot of a Main file; owner at `/main/api/annotations`, invitees at `/m/<token>/api/annotations` with the annotate permission, deleting only their own.
+- Link answers from `/main/api/link` carry `href`, the absolute link, beside the relative `url`.
 
 ### Assistant
 Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans searches, cites sources, keeps memories;

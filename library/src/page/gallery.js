@@ -5,6 +5,10 @@ import css from "../client/gallery.css";
 import homebarCss from "../client/homebar.css";
 import homebar from "../client/homebar.js";
 import js from "../client/gallery.js";
+import viewerShell from "../client/viewer-shell.js";
+import viewerShellCss from "../client/viewer-shell.css";
+import viewerSheet from "../client/viewer-sheet.js";
+import viewerSheetCss from "../client/viewer-sheet.css";
 import keylabel from "../client/keylabel.js";
 import prosody from "../client/prosody.js";
 import prosogram from "../client/prosogram.js";
@@ -41,7 +45,9 @@ export function galleryPage(live, nav = "", crumbs = "", og = null) {
 <meta name="robots" content="noindex">
 <title>${esc(live.title || "Shared by " + OWNER)}</title>
 ${og ? ogTags(og) : ""}<style>${homebarCss}
-${css}${live.main ? "\n" + assistantCss : ""}</style>
+${css}
+${viewerShellCss}
+${viewerSheetCss}${live.main ? "\n" + assistantCss : ""}</style>
 </head>
 
 <body>
@@ -241,6 +247,12 @@ ${cadence}
 </script>
 <script>
 ${js}
+</script>
+<script>
+${viewerShell}
+</script>
+<script>
+${viewerSheet}
 </script>
 <!-- The live prosogram. prosody.js, prosogram.js and prosogram-mount.js know no app-specific routes and load on every
      page, so share links get it too. Only prosogram-main.js names an owner route, so it alone is gated: a participant's

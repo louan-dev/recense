@@ -1,0 +1,57 @@
+/* The viewer shell (G3, viewer-shell.js): the framing states only. The spring writes four values on #lb, once a frame:
+   --vs the media's scale, --vr its corner radius, --vc how present the chrome is (0 = A … 1 = B), --vy the
+   media's offset while dragged. Only the media layer moves (translate3d + scale): the player's own controls
+   (home bar, sound stroke, the three glass buttons) are not touched and keep their anchors. The top bar, strip and bottom row are
+   the viewer's own (gallery.css). */
+
+#lb[data-shell]{--vs:.82;--vr:24px;--vc:1;--vy:0px;background:#000}
+
+#lb[data-shell] #stage>img,
+#lb[data-shell] #stage .aw>img,
+#lb[data-shell] #stage .mbox,
+#lb[data-shell] #stage .peek,
+#lb[data-shell] #stage .pw,
+#lb[data-shell] #stage .dv,
+#lb[data-shell] #stage .pdfw{
+  transform:translate3d(0,var(--vy),0) scale(var(--vs));
+  border-radius:var(--vr);
+  overflow:hidden;
+  transform-origin:50% 50%;
+  will-change:transform
+}
+#lb[data-shell] #stage .peek{width:100%;height:100%;object-fit:contain}
+/* C: the sheet's media is already the top --mh (gallery.css); it docks whole, nothing cropped */
+body.comments-open #lb[data-shell]{--vs:1;--vr:0px}
+body.comments-open #lb[data-shell] #stage>img{object-fit:contain;object-position:center}
+
+/* A: the top bar and the bottom row fade with the spring and stop taking taps. The home bar and the sound stroke
+   are the player's own and are never touched here. */
+#lb[data-shell] .top,
+#lb[data-shell] .bot{opacity:var(--vc)}
+#lb[data-shell][data-vstate="A"] .top,
+#lb[data-shell][data-vstate="A"] .bot{pointer-events:none}
+
+/* C: the bottom bar steps aside for the sheet, as it always did (gallery.css), whatever the spring says */
+body.comments-open #lb[data-shell] .bot{opacity:0;pointer-events:none}
+
+/* the media takes one-finger drags itself (pointer events, 1:1); a pinch is still the browser's */
+#lb[data-shell] #stage>img,
+#lb[data-shell] #stage .aw>img,
+#lb[data-shell] #stage .mbox,
+#lb[data-shell] #stage .peek{touch-action:pinch-zoom}
+
+/* Text size (a⁻ 100% A⁺): three buttons that touch. iPhone Safari draws a button's own gradient and border unless every
+   one is reset, and the three then read as one grey slab; the wedges draw themselves. */
+#lb .p-slide button.p-tseg{-webkit-appearance:none;appearance:none;background:none;border:0;border-radius:0;box-shadow:none;-webkit-tap-highlight-color:transparent}
+#lb .p-tsz{min-height:var(--rowh);overflow:visible}
+
+/* the glow: the artwork, blurred, under the framed media (B), fading as the media fills the screen (A) or docks (C) */
+#lb[data-shell]::before{
+  content:"";position:absolute;inset:-12%;z-index:0;pointer-events:none;
+  background:var(--vart,none) center/cover no-repeat;
+  filter:blur(64px) saturate(1.5);-webkit-filter:blur(64px) saturate(1.5);
+  opacity:calc(var(--vc,0) * .42 * var(--vglow,0));
+  transition:opacity .6s ease
+}
+body.comments-open #lb[data-shell]::before{opacity:0}
+@media (prefers-reduced-motion:reduce){#lb[data-shell]::before{transition:none}}

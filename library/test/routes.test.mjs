@@ -2,11 +2,12 @@
 // by a throwaway key. Run with `npm test` (it builds first).
 
 import { Miniflare } from "miniflare";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
 import { GENESIS, link, massDelete, JUNK_PATHS, CHURN_PATHS, reconcile } from "../src/fp.js";
 import { createHash } from "node:crypto";
+import { jpegWithExif } from "./exif-fixture.mjs";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const TEAM = "team.cloudflareaccess.com";
@@ -43,12 +44,16 @@ const serviceJwt = await jwt({ common_name: CLIENT });
 
 const textModules = readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js");
 
+// GALLERY_D1=1: the same tests with the DB binding (C1), the schema from migrations/ applied first
+const WITH_D1 = !!process.env.GALLERY_D1;
+
 const mf = new Miniflare({
   modules: [
     { type: "ESModule", path: BUILD + "worker.js" },
     ...textModules.map((f) => ({ type: "Text", path: BUILD + f })),
   ],
   compatibilityDate: "2026-08-01",
+  ...(WITH_D1 ? { d1Databases: { DB: "gallery-d1-test" } } : {}),
   r2Buckets: { PUBLIC: "gallery-public-test", MAIN: "gallery-main-test", KEEP: "recense-keep-test", TMP: "gallery-tmp-test", ARCHIVE: "gallery-archive-test" },
   bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: CLIENT + ", phone-id.access", NOTABILITY_DAV_HASH: NOTE_HASH },
   outboundService: (req) =>
@@ -60,6 +65,37 @@ const mf = new Miniflare({
 const PUBLIC = await mf.getR2Bucket("PUBLIC");
 const ARCHIVE_B = await mf.getR2Bucket("ARCHIVE");
 const MAIN = await mf.getR2Bucket("MAIN");
+const DB = WITH_D1 ? await mf.getD1Database("DB") : null;
+if (DB) await applyMigrations(DB);
+
+// Every migration file, statement by statement (what `wrangler d1 migrations apply` runs).
+async function applyMigrations(db) {
+  const dir = new URL("../migrations/", import.meta.url).pathname;
+  for (const f of readdirSync(dir).filter((f) => /^\d{4}_.*\.sql$/.test(f)).sort()) {
+    const sql = readFileSync(dir + f, "utf8").replace(/--.*$/gm, "");
+    for (const st of sql.split(/;\s*$/m).map((x) => x.trim()).filter(Boolean)) await db.prepare(st).run();
+  }
+}
+
+// An invitation as stored (D1 row or R2 object), changed by fn: for expiry tests.
+async function patchInvite(id, fn) {
+  if (DB) {
+    const row = await DB.prepare("SELECT doc FROM shares WHERE id = ?").bind(id).first();
+    const v = fn(JSON.parse(row.doc));
+    await DB.prepare("UPDATE shares SET doc = ?, expires_at = ? WHERE id = ?").bind(JSON.stringify(v), v.expires || 0, id).run();
+    return;
+  }
+  const k = (await MAIN.list({ prefix: "invites/" + id })).objects[0].key;
+  await MAIN.put(k, JSON.stringify(fn(await (await MAIN.get(k)).json())));
+}
+
+// What is stored for invitations, as [{ key, raw }]: never the token
+async function storedInvites() {
+  if (DB) return (await DB.prepare("SELECT token_hash, doc FROM shares").all()).results.map((r) => ({ key: "invites/" + r.token_hash + ".json", raw: r.doc }));
+  const out = [];
+  for (const o of (await MAIN.list({ prefix: "invites/" })).objects) out.push({ key: o.key, raw: await (await MAIN.get(o.key)).text() });
+  return out;
+}
 
 const call = (path, { as, write = true, headers = {}, ...init } = {}) => {
   const h = { ...headers };
@@ -385,9 +421,9 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
   const at = "/m/" + token;
 
   // the token itself is never stored, only its hash
-  const keys = (await MAIN.list({ prefix: "invites/" })).objects.map((o) => o.key);
-  assert.equal(keys.length, 1);
-  assert.ok(!keys[0].includes(token) && keys[0].startsWith("invites/" + inv.id));
+  const stored = await storedInvites();
+  assert.equal(stored.length, 1);
+  assert.ok(!stored[0].key.includes(token) && !stored[0].raw.includes(token) && stored[0].key.startsWith("invites/" + inv.id));
   const list = await (await call("/main/api/invites?dir=Party", { as: "owner", headers: { "x-gallery": "1" } })).json();
   assert.equal(list.length, 1);
   assert.equal(list[0].url, undefined);
@@ -445,9 +481,7 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
 
   // expiry
   const short = await (await mk({ name: "Brief", ttl: 3600, dir: "Party" })).json();
-  const k = (await MAIN.list({ prefix: "invites/" + short.id })).objects[0].key;
-  const rec = await (await MAIN.get(k)).json();
-  await MAIN.put(k, JSON.stringify({ ...rec, expires: Date.now() - 1 }));
+  await patchInvite(short.id, (v) => ({ ...v, expires: Date.now() - 1 }));
   assert.equal((await call("/m/" + short.url.split("/m/")[1])).status, 404);
 });
 
@@ -1894,9 +1928,7 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
   await MAIN.put("files/Fest/f1.jpg", "F", { httpMetadata: { contentType: "image/jpeg" } });
   const inv = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Ana Lee", ttl: 0, dir: "Fest" }) })).json();
   const gone = await (await call("/main/api/invites", { as: "owner", method: "POST", body: JSON.stringify({ name: "Old", ttl: 1, dir: "Fest" }) })).json();
-  const gk = (await MAIN.list({ prefix: "invites/" + gone.id })).objects[0].key;
-  const gv = await (await MAIN.get(gk)).json();
-  await MAIN.put(gk, JSON.stringify({ ...gv, expires: Date.now() - 1 }));
+  await patchInvite(gone.id, (v) => ({ ...v, expires: Date.now() - 1 }));
 
   let { shares } = await (await own("/main/api/shares")).json();
   const find = (kind, id) => shares.find((s) => s.kind === kind && s.id === id);
@@ -1969,6 +2001,316 @@ await test("shared: owner-only list of live links and invites, detail, delete ex
   // their activity goes with them
   const after = (await (await own("/main/api/activity")).json()).events;
   assert.ok(!after.some((e) => [up.id, fl.id, inv.id].includes(e.share.id)));
+});
+
+// ---------- C0: the participant surface, every check in the Worker ----------
+
+await test("C0: unauthenticated, expired, revoked, direct URL, cross-folder, public/main separation, never delete the owner's", async () => {
+  await MAIN.put("files/C0/a.jpg", "A", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/C0/b.mp3", "B", { httpMetadata: { contentType: "audio/mpeg" } });
+  await MAIN.put("files/C0/doc.zip", "Z", { httpMetadata: { contentType: "application/zip" } });
+  await MAIN.put("files/C0Other/x.jpg", "X", { httpMetadata: { contentType: "image/jpeg" } });
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const made = await (await own("/main/api/invites", { method: "POST", body: JSON.stringify({ name: "Cee", ttl: 0, dir: "C0" }) })).json();
+  const token = made.url.split("/m/")[1];
+  const at = "/m/" + token;
+  assert.deepEqual(made.perms, { view: true, download: true, upload: true, comment: true, react: true, annotate: false });
+  assert.equal(made.expires, 0, "no expiry by default");
+
+  let ck = "";
+  const w = async (path, init = {}) => {
+    const r = await call(at + path, { ...init, headers: { "x-gallery": "1", ...(ck ? { cookie: ck } : {}), ...(init.headers || {}) } });
+    const sc = /gs=([^;]+)/.exec(r.headers.get("set-cookie") || "");
+    if (sc) ck = "gs=" + sc[1];
+    return r;
+  };
+  const cap = (b) => w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", ...b }) });
+  const ann = (b) => w("/api/annotations", { method: "PUT", body: JSON.stringify(b) });
+
+  // unauthenticated: no token, a malformed one, a well-formed unknown one, the hash itself: one 404
+  for (const p of ["/m/", "/m/x", "/m/" + "A".repeat(43), "/m/" + made.id, "/m/" + token.slice(0, 42)]) assert.equal((await call(p)).status, 404, p);
+  // direct URL: the same file through /main, without Access, is the owner's 404
+  assert.equal((await call("/main/f/C0/a.jpg")).status, 404);
+  assert.equal((await call("/main/api/invites?dir=C0", { headers: { cookie: "gs=x" } })).status, 404);
+
+  // cross-folder: names with a path, other folders' paths in bodies
+  assert.equal((await call(at + "/f/..%2FC0Other%2Fx.jpg")).status, 404);
+  assert.equal((await cap({ path: "C0Other/x.jpg", op: "add", text: "x" })).status, 403);
+  assert.equal((await ann({ name: "../C0Other/x.jpg", op: "add", text: "x" })).status, 400);
+  assert.equal((await call(at + "/api/transcript?name=..%2FC0Other%2Fx.jpg", { headers: { "x-gallery": "1" } })).status, 400);
+  assert.equal((await w("/api/file?name=..%2FC0Other%2Fy.jpg", { method: "PUT", body: "Y", headers: { "content-length": "1" } })).status, 400);
+
+  // public/main separation: an invite token is no share-link id, and a share-link id is no invite
+  assert.equal((await call("/s/" + token)).status, 404);
+  assert.equal((await call("/api/gallery?id=" + token)).status, 404);
+  const pubLink = await (await own("/main/api/link?action=fromMain&days=7", { method: "POST", body: JSON.stringify({ paths: ["C0/a.jpg"] }) })).json();
+  assert.equal((await call("/m/" + pubLink.id)).status, 404);
+  assert.equal(pubLink.href, ORIGIN + pubLink.url, "a share link answers with an absolute link too");
+  // a participant's comment never lands on the public side, nor the public's on Main
+  assert.equal((await cap({ kind: "link", id: pubLink.id, key: "000", op: "add", text: "x" })).status, 403);
+
+  // participants can never delete the owner's content: files, comments, annotations
+  const ownerC = (await (await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "C0/a.jpg", op: "add", text: "mine" }) })).json()).comments[0].id;
+  const ownerA = (await (await own("/main/api/annotations", { method: "PUT", body: JSON.stringify({ path: "C0/a.jpg", op: "add", text: "owner pin", x: 0.5, y: 0.5 }) })).json()).items[0].id;
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "guest" })).status, 200); // accepts the invitation
+  for (const method of ["DELETE", "PUT", "POST", "PATCH", "MOVE"]) {
+    const r = await w("/f/a.jpg", { method, body: method === "DELETE" ? undefined : "X" });
+    assert.ok([403, 404].includes(r.status), method + " " + r.status);
+  }
+  assert.ok([403, 404].includes((await cap({ path: "C0/a.jpg", op: "del", cid: ownerC })).status));
+  assert.ok([403, 404].includes((await cap({ path: "C0/a.jpg", op: "edit", cid: ownerC, text: "hacked" })).status));
+  assert.equal((await w("/api/file?name=a.jpg", { method: "PUT", body: "X", headers: { "content-length": "1" } })).status, 409);
+  assert.equal(await (await MAIN.get("files/C0/a.jpg")).text(), "A");
+  // annotate is off by default; turned on, a guest can't remove the owner's pin
+  assert.equal((await ann({ name: "a.jpg", op: "add", text: "g" })).status, 403);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ annotate: true }) })).status, 200);
+  const ga = await ann({ name: "a.jpg", op: "add", text: "guest pin", t: 1200 });
+  assert.equal(ga.status, 200, await ga.clone().text());
+  const items = (await ga.json()).items;
+  assert.deepEqual(items.map((a) => [a.text, a.mine]), [["owner pin", false], ["guest pin", true]]);
+  assert.ok(!JSON.stringify(items).includes(made.id), "the invitation id is never shown");
+  assert.equal((await ann({ name: "a.jpg", op: "del", aid: ownerA })).status, 404);
+  assert.equal((await ann({ name: "a.jpg", op: "del", aid: items[1].id })).status, 200);
+  const caps = (await (await own("/main/api/annotations?path=C0%2Fa.jpg")).json()).items;
+  assert.deepEqual(caps.map((a) => a.text), ["owner pin"]);
+
+  // download off: media still plays, ?dl and non-playable files are refused
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ download: false }) });
+  assert.equal((await call(at + "/f/a.jpg", { headers: { cookie: ck } })).status, 200);
+  assert.equal((await call(at + "/f/a.jpg?dl=1", { headers: { cookie: ck } })).status, 403);
+  assert.equal((await call(at + "/f/doc.zip", { headers: { cookie: ck } })).status, 403);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ download: true }) });
+
+  // react: a like needs it, a comment doesn't
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ react: false }) });
+  assert.equal((await cap({ path: "C0/a.jpg", op: "like" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "still talking" })).status, 200);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ react: true }) });
+
+  // per-media overrides: one file hidden, another without comments; null goes back to the invite's
+  let r = await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": { view: false }, "a.jpg": { comment: false } } }) });
+  assert.deepEqual((await r.json()).overrides, { "b.mp3": { view: false }, "a.jpg": { comment: false } });
+  let html = await (await call(at, { headers: { cookie: ck } })).text();
+  assert.ok(!html.includes("b.mp3") && !html.includes("b.MP3"));
+  assert.equal((await call(at + "/f/b.mp3", { headers: { cookie: ck } })).status, 404);
+  assert.equal((await call(at + "/api/transcript?name=b.mp3", { headers: { cookie: ck, "x-gallery": "1" } })).status, 403);
+  assert.equal((await cap({ path: "C0/b.mp3", op: "add", text: "x" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "x" })).status, 403);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "like" })).status, 200);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": "x" } }) })).status, 400);
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "../b.mp3": {} } }) })).status, 400);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ overrides: { "b.mp3": null, "a.jpg": { comment: null } } }) });
+  assert.equal((await call(at + "/f/b.mp3", { headers: { cookie: ck } })).status, 200);
+
+  // the invitation's view-only lock, then the owner's lock on the whole folder: reads stay, every write goes
+  const writes = async () => [
+    (await cap({ path: "C0/a.jpg", op: "add", text: "w" })).status,
+    (await cap({ path: "C0/a.jpg", op: "like" })).status,
+    (await ann({ name: "a.jpg", op: "add", text: "w" })).status,
+    (await w("/api/file?name=new" + Math.random().toString(36).slice(2) + ".jpg", { method: "PUT", body: "N", headers: { "content-type": "image/jpeg", "content-length": "1" } })).status,
+  ];
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ viewOnly: true }) });
+  assert.deepEqual(await writes(), [403, 403, 403, 403]);
+  assert.equal((await call(at + "/f/a.jpg", { headers: { cookie: ck } })).status, 200);
+  await own("/main/api/invites/" + made.id, { method: "PATCH", body: JSON.stringify({ viewOnly: false }) });
+  assert.equal((await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: true }) })).status, 200);
+  assert.equal((await call("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: false }) })).status, 404, "only the owner unlocks");
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), { C0: true });
+  assert.deepEqual(await writes(), [403, 403, 403, 403]);
+  html = await (await call(at, { headers: { cookie: ck } })).text();
+  assert.match(html, /"locked":true/);
+  await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "C0", locked: false }) });
+  assert.deepEqual(await writes(), [200, 200, 200, 200]);
+
+  // expired, then revoked: the same 404 as never existing, for the page, files and every API
+  await patchInvite(made.id, (v) => ({ ...v, expires: Date.now() - 1 }));
+  for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "expired " + p);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
+  await patchInvite(made.id, (v) => ({ ...v, expires: 0 }));
+  assert.equal((await own("/main/api/invites/" + made.id, { method: "DELETE" })).status, 200);
+  for (const p of ["", "/f/a.jpg", "/api/annotations?name=a.jpg"]) assert.equal((await call(at + p, { headers: { cookie: ck, "x-gallery": "1" } })).status, 404, "revoked " + p);
+  assert.equal((await cap({ path: "C0/a.jpg", op: "add", text: "late" })).status, 404);
+});
+
+// ---------- C1: D1, with the R2 JSON copied in lazily and kept ----------
+
+if (DB) await test("C1 (D1): invites, locks, comments, likes and annotations move in on first read; R2 JSON is never deleted", async () => {
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const sha = (t) => createHash("sha256").update(t).digest("hex");
+  await MAIN.put("files/Mig/a.jpg", "A", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Mig/b.jpg", "B", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Mig/Sub/c.jpg", "C", { httpMetadata: { contentType: "image/jpeg" } });
+
+  // an invitation an older Worker wrote to R2 opens, is copied once, and its R2 object stays
+  const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  const hash = sha(token);
+  const old = { name: "Legacy", folder: "Mig", created: 1, expires: 0, perms: { download: true, upload: true, comment: true } };
+  await MAIN.put("invites/" + hash + ".json", JSON.stringify(old));
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares WHERE token_hash = ?").bind(hash).first()).n, 0);
+  assert.equal((await call("/m/" + token)).status, 200);
+  let row = await DB.prepare("SELECT * FROM shares WHERE token_hash = ?").bind(hash).first();
+  assert.equal(row.migrated_from, "r2:invites/" + hash + ".json");
+  assert.equal(row.can_react, 1, "old invitations keep likes");
+  assert.equal(row.can_annotate, 0);
+  assert.ok(await MAIN.head("invites/" + hash + ".json"), "R2 copy kept");
+  assert.equal((await call("/m/" + token)).status, 200);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares").first()).n >= 1, true);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM shares WHERE token_hash = ?").bind(hash).first()).n, 1);
+  // writes land in D1, not in the R2 copy
+  await own("/main/api/invites/" + hash.slice(0, 16), { method: "PATCH", body: JSON.stringify({ annotate: true, overrides: { "b.jpg": { comment: false } } }) });
+  row = await DB.prepare("SELECT can_annotate FROM shares WHERE id = ?").bind(hash.slice(0, 16)).first();
+  assert.equal(row.can_annotate, 1);
+  assert.deepEqual((await DB.prepare("SELECT name, can_comment, can_view FROM overrides WHERE share_id = ?").bind(hash.slice(0, 16)).all()).results, [{ name: "b.jpg", can_comment: 0, can_view: null }]);
+  assert.deepEqual(await (await MAIN.get("invites/" + hash + ".json")).json(), old);
+  // the first write claims it in D1, exactly once
+  let r = await call("/m/" + token + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Mig/a.jpg", op: "add", text: "from legacy" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  const ck = "gs=" + /gs=([^;]+)/.exec(r.headers.get("set-cookie"))[1];
+  assert.ok(JSON.parse((await DB.prepare("SELECT doc FROM shares WHERE token_hash = ?").bind(hash).first()).doc).guest);
+  r = await call("/m/" + token + "/api/caption", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ kind: "main", path: "Mig/a.jpg", op: "add", text: "someone else" }) });
+  assert.equal(r.status, 401, "a second device can't claim it again");
+  // revoked: 404 even when an older Worker puts the R2 copy back
+  assert.equal((await own("/main/api/invites/" + hash.slice(0, 16), { method: "DELETE" })).status, 200);
+  assert.ok((await DB.prepare("SELECT revoked_at FROM shares WHERE token_hash = ?").bind(hash).first()).revoked_at > 0);
+  assert.equal(await MAIN.head("invites/" + hash + ".json"), null);
+  await MAIN.put("invites/" + hash + ".json", JSON.stringify(old));
+  assert.equal((await call("/m/" + token, { headers: { cookie: ck } })).status, 404);
+  assert.ok(!(await (await own("/main/api/invites?dir=Mig")).json()).some((i) => i.id === hash.slice(0, 16)));
+  await MAIN.delete("invites/" + hash + ".json");
+
+  // comments: both R2 shapes copy in on the first read of the folder, once; the R2 map is left byte for byte
+  const notes = {
+    "b.jpg": { text: "old single", at: 7 },
+    "Gone.jpg": { list: [{ id: "c1", text: "orphan", at: 8, by: "owner" }] },
+  };
+  const R2KEY = "notes/Mig/Sub/.comments.json";
+  const sub = { "c.jpg": { list: [{ id: "c1", text: "one", at: 1, by: "Pat" }, { id: "c2", text: "two", at: 2, by: "owner", as: "Mum" }], likes: [{ by: "Pat", at: 3 }] } };
+  await MAIN.put(R2KEY, JSON.stringify(sub));
+  const before = await (await MAIN.get(R2KEY)).text();
+  let html = await (await own("/main?p=Mig%2FSub")).text();
+  assert.match(html, /"text":"one"/);
+  assert.match(html, /"as":"Mum"/);
+  const n = async (t, dir) => (await DB.prepare(`SELECT count(*) n FROM ${t} WHERE dir = ?`).bind(dir).first()).n;
+  assert.equal(await n("comments", "Mig/Sub"), 2);
+  assert.equal(await n("reactions", "Mig/Sub"), 1);
+  assert.ok(await DB.prepare("SELECT etag FROM migrated WHERE r2_key = ?").bind(R2KEY).first());
+  await own("/main?p=Mig%2FSub");
+  assert.equal(await n("comments", "Mig/Sub"), 2, "copied once");
+  // a new comment goes to D1 only
+  r = await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/Sub/c.jpg", op: "add", text: "three" }) });
+  assert.deepEqual((await r.json()).comments.map((c) => c.text), ["one", "two", "three"]);
+  assert.equal(await n("comments", "Mig/Sub"), 3);
+  assert.equal(await (await MAIN.get(R2KEY)).text(), before, "R2 backup untouched");
+  // an older Worker writes R2 during the rollout: its new comment is merged in by id, nothing doubles
+  const late = JSON.parse(before);
+  late["c.jpg"].list.push({ id: "c9", text: "late", at: 9, by: "owner" });
+  await MAIN.put(R2KEY, JSON.stringify(late));
+  html = await (await own("/main?p=Mig%2FSub")).text();
+  assert.match(html, /"text":"late"/);
+  assert.equal(await n("comments", "Mig/Sub"), 4);
+  // the old single-comment shape becomes owner comment c0
+  await MAIN.put("notes/Mig/.comments.json", JSON.stringify(notes));
+  r = await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/b.jpg", op: "like" }) });
+  const j = await r.json();
+  assert.deepEqual(j.comments.map((c) => [c.id, c.text]), [["c0", "old single"]]);
+  assert.equal(j.likes.length, 1);
+  // deleting every comment empties D1 for that item; the R2 map is still there
+  await own("/main/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", path: "Mig/b.jpg", text: "" }) });
+  assert.deepEqual(await (await MAIN.get("notes/Mig/.comments.json")).json(), notes);
+  // a rename carries comments and annotations in D1
+  await own("/main/api/annotations", { method: "PUT", body: JSON.stringify({ path: "Mig/Sub/c.jpg", op: "add", text: "pin", t: 5 }) });
+  r = await own("/main/api/rename", { method: "POST", body: JSON.stringify({ path: "Mig/Sub/c.jpg", name: "d.jpg" }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  assert.equal((await DB.prepare("SELECT count(*) n FROM comments WHERE dir = 'Mig/Sub' AND name = 'd.jpg'").first()).n, 4);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM comments WHERE dir = 'Mig/Sub' AND name = 'c.jpg'").first()).n, 0);
+  assert.equal((await DB.prepare("SELECT count(*) n FROM annotations WHERE dir = 'Mig/Sub' AND name = 'd.jpg'").first()).n, 1);
+
+  // annotations and folder locks written by R2 code copy in too
+  await MAIN.put("annotations/Mig/a.jpg.json", JSON.stringify({ items: [{ id: "r2a", by: "owner", inv: null, at: 4, text: "from r2", x: 0.1, y: 0.2 }] }));
+  const items = (await (await own("/main/api/annotations?path=Mig%2Fa.jpg")).json()).items;
+  assert.deepEqual(items.map((a) => [a.id, a.text, a.x, a.mine]), [["r2a", "from r2", 0.1, true]]);
+  assert.ok(await MAIN.head("annotations/Mig/a.jpg.json"));
+  await MAIN.put("invites/_locks.json", JSON.stringify({ Mig: true }));
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), { Mig: true });
+  await own("/main/api/invites/locks", { method: "PUT", body: JSON.stringify({ dir: "Mig", locked: false }) });
+  assert.deepEqual(await (await own("/main/api/invites/locks")).json(), {});
+  assert.ok(await MAIN.head("invites/_locks.json"), "R2 locks kept");
+});
+
+// ---------- G5: metadata overrides, revisions, the map ----------
+
+// A JPEG with EXIF (big-endian): DateTimeOriginal, Make, GPS lat/lon, pixel size. Enough for exifOf.
+
+await test("G5: metadata overrides are non-destructive; revoke falls back; clear writes a revision first; restore; the map's bounds", async () => {
+  const own = (path, init = {}) => call(path, { as: "owner", ...init, headers: { "x-gallery": "1", ...(init.headers || {}) } });
+  const put = (b) => own("/main/api/meta", { method: "PUT", body: JSON.stringify({ path: "Geo/paris.jpg", ...b }) });
+  const paris = jpegWithExif({ lat: 48.8584, lon: 2.2945 });
+  await MAIN.put("files/Geo/paris.jpg", paris, { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/sydney.jpg", jpegWithExif({ lat: -33.8568, lon: 151.2153 }), { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/plain.jpg", "x", { httpMetadata: { contentType: "image/jpeg" } });
+  await MAIN.put("files/Geo/song.mp3", "x", { httpMetadata: { contentType: "audio/mpeg" } });
+
+  // the file's own values
+  let m = await (await own("/main/api/meta?path=Geo%2Fparis.jpg")).json();
+  assert.equal(m.original.make, "Apple");
+  assert.equal(m.original.width, 4032);
+  assert.ok(Math.abs(m.original.lat - 48.8584) < 1e-3 && Math.abs(m.original.lon - 2.2945) < 1e-3, JSON.stringify(m.original));
+  assert.equal(m.original.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.deepEqual(m.overrides, {});
+  assert.equal((await call("/main/api/meta?path=Geo%2Fparis.jpg")).status, 404, "owner only");
+  // a modified time stored in seconds is still a date this century, not January 1970
+  await MAIN.put("files/Geo/secs.mp4", "x", { httpMetadata: { contentType: "video/mp4" }, customMetadata: { mtime: "1776897722" } });
+  await MAIN.put("files/Geo/millis.mp4", "x", { httpMetadata: { contentType: "video/mp4" }, customMetadata: { mtime: "1776897722000" } });
+  assert.equal((await (await own("/main/api/meta?path=Geo%2Fsecs.mp4")).json()).original.taken, 1776897722000);
+  assert.equal((await (await own("/main/api/meta?path=Geo%2Fmillis.mp4")).json()).original.taken, 1776897722000);
+
+  // adjust: an override, an "edited" value, the file untouched
+  const t2 = Date.UTC(2024, 4, 7, 12, 0, 0);
+  m = await (await put({ field: "time", action: "adjust", value: t2 })).json();
+  assert.equal(m.effective.taken, t2);
+  assert.equal(m.original.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.deepEqual(Buffer.from(await (await MAIN.get("files/Geo/paris.jpg")).arrayBuffer()), paris, "never re-encoded");
+  assert.equal((await put({ field: "time", action: "adjust", value: "soon" })).status, 400);
+  assert.equal((await put({ field: "colour", action: "adjust", value: 1 })).status, 400);
+  // revoke: the file's own value again
+  m = await (await put({ field: "time", action: "revoke" })).json();
+  assert.equal(m.effective.taken, Date.UTC(2024, 4, 6, 7, 8, 9));
+  assert.ok(!("time" in m.overrides));
+  assert.equal((await put({ field: "time", action: "revoke" })).status, 409);
+  // clear: blank, with a revision holding what showed, so it can be restored
+  m = await (await put({ field: "location", action: "clear" })).json();
+  assert.equal(m.effective.lat, null);
+  assert.equal(m.revisions[0].action, "clear");
+  assert.ok(Math.abs(m.revisions[0].before.lat - 48.8584) < 1e-3);
+  m = await (await put({ field: "location", action: "restore", rev: m.revisions[0].id })).json();
+  assert.ok(Math.abs(m.effective.lat - 48.8584) < 1e-3);
+  assert.deepEqual(m.revisions.map((r) => r.action), ["restore", "clear", "revoke", "adjust"]);
+  // a transcript line, and a moved pin
+  m = await (await put({ field: "line:3", action: "adjust", value: "the words, fixed" })).json();
+  assert.equal(m.overrides["line:3"], "the words, fixed");
+  m = await (await put({ field: "location", action: "adjust", value: { lat: 51.5007, lon: -0.1246, name: "London" } })).json();
+  assert.equal(m.effective.place, "London");
+  if (DB) assert.equal((await DB.prepare("SELECT count(*) n FROM revisions WHERE path = 'Geo/paris.jpg'").first()).n, 6);
+
+  // the map: the folder's items with a place, the moved pin where it was moved, only inside the bounds
+  let g = await (await own("/main/api/geo?dir=Geo")).json();
+  assert.deepEqual(g.items.map((i) => i.name).sort(), ["paris.jpg", "sydney.jpg"]);
+  assert.ok(Math.abs(g.items.find((i) => i.name === "paris.jpg").lat - 51.5007) < 1e-3, "the moved pin");
+  g = await (await own("/main/api/geo?dir=Geo&s=-40&w=140&n=-30&e=160")).json();
+  assert.deepEqual(g.items.map((i) => i.name), ["sydney.jpg"]);
+  assert.equal((await call("/main/api/geo?dir=Geo")).status, 404, "owner only");
+
+  // an invitee: read-only, same folder and permission scope, no history
+  const inv = await (await own("/main/api/invites", { method: "POST", body: JSON.stringify({ name: "Geo guest", ttl: 0, dir: "Geo" }) })).json();
+  const at = "/m/" + inv.url.split("/m/")[1];
+  await own("/main/api/invites/" + inv.id, { method: "PATCH", body: JSON.stringify({ overrides: { "sydney.jpg": { view: false } } }) });
+  g = await (await call(at + "/api/geo", { headers: { "x-gallery": "1" } })).json();
+  assert.deepEqual(g.items.map((i) => i.path), ["paris.jpg"], "a hidden item is not on their map");
+  m = await (await call(at + "/api/meta?name=paris.jpg", { headers: { "x-gallery": "1" } })).json();
+  assert.equal(m.effective.place, "London");
+  assert.deepEqual(m.revisions, []);
+  assert.equal((await call(at + "/api/meta?name=sydney.jpg", { headers: { "x-gallery": "1" } })).status, 404);
+  assert.equal((await call(at + "/api/meta", { method: "PUT", headers: { "x-gallery": "1" }, body: JSON.stringify({ path: "Geo/paris.jpg", field: "time", action: "revoke" }) })).status, 404, "never writes");
 });
 
 console.log(`\n${passed} passed`);

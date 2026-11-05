@@ -12,6 +12,7 @@
 // The calendar event (/m/<token>/invite.ics) is generated from the invitation itself, so its end is the real expiry.
 // Everything lives in the private MAIN bucket beside the invitations; no new database, WebDAV has no part.
 
+import { hasDB, shareGet, shareClaim } from "./d1.js";
 import { esc, jsonResponse, page } from "./common.js";
 
 const GUESTS = "guests/";
@@ -107,12 +108,22 @@ export async function guestStatus(env, inv) {
 // Claims the invitation for a new guest (first write wins: the invitation's ETag must not have moved).
 // -> { guest, cookie } or null when someone else claimed it first.
 export async function claim(env, key, base) {
-  const r = await readJson(env, key);
-  if (!r || r.v.guest) return null;
   const gid = hex(crypto.getRandomValues(new Uint8Array(16)));
-  const ok = await env.MAIN.put(key, JSON.stringify({ ...r.v, guest: gid, claimed: Date.now() }), { ...JSON_MD, onlyIf: { etagMatches: r.etag } });
-  if (!ok) return null;
-  const guest = { gid, name: r.v.name, invite: key.slice(8, 24), created: Date.now(), passkeys: [] };
+  let name;
+  if (hasDB(env)) {
+    // D1 (C1): one conditional UPDATE, so only one claim can win
+    const hash = key.slice(8, -5);
+    const inv = await shareGet(env, hash);
+    if (!inv || inv.guest || !(await shareClaim(env, hash, gid, Date.now()))) return null;
+    name = inv.name;
+  } else {
+    const r = await readJson(env, key);
+    if (!r || r.v.guest) return null;
+    const ok = await env.MAIN.put(key, JSON.stringify({ ...r.v, guest: gid, claimed: Date.now() }), { ...JSON_MD, onlyIf: { etagMatches: r.etag } });
+    if (!ok) return null;
+    name = r.v.name;
+  }
+  const guest = { gid, name, invite: key.slice(8, 24), created: Date.now(), passkeys: [] };
   await putGuest(env, guest);
   return { guest, cookie: await newSession(env, gid, base) };
 }

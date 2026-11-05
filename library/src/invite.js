@@ -6,6 +6,10 @@
 // items (file names in the folder) makes it a room: the person sees only those, and a room of one
 // opens straight onto that item in the viewer. A room never takes uploads.
 // The public id shown to the owner (for Revoke) is the first 16 hex of the hash.
+// Permissions (every one checked here, whatever the page shows): view, download, upload, comment,
+// react, annotate. perms holds the invite's defaults; overrides[name] changes them for one file
+// (null = inherit); viewOnly, or the owner's lock on the folder (invites/_locks.json), turns every
+// write off. download off still lets media play inline; it refuses ?dl=1 and anything not playable.
 // A participant can see and download the folder's files, upload new ones and comment, and
 // delete only their own comments. They can never delete or replace the owner's files, see
 // other folders, or reach /main. An unknown, expired or revoked link is the same 404.
@@ -17,6 +21,9 @@ import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
 import { logActivity } from "./shared.js";
+import { hasDB, shareGet, sharePut, shareList, shareById, shareRevoke, locksGet, lockSet } from "./d1.js";
+import { metaOf, folderGeo, inBounds } from "./meta.js";
+import { annotationChange, readAnnotations, pubOf as annotationOf } from "./annotations.js";
 import { identityApi, authRoute, signInPage, sessionGuest, claim, revokeGuest, guestStatus, endSessions, inviteIcs, emailOn } from "./identity.js";
 
 const INVITES = "invites/";
@@ -25,6 +32,37 @@ const ID_RE = /^[0-9a-f]{16}$/;
 const NAME_MAX = 80;
 const TTL_MAX = 365 * 86400;
 const ITEMS_MAX = 500;
+const LOCKS = INVITES + "_locks.json";
+export const PERMS = ["view", "download", "upload", "comment", "react", "annotate"];
+const WRITES = ["upload", "comment", "react", "annotate"];
+// what the browser can show inline; anything else is a download
+const PLAYABLE = /\.(jpe?g|png|gif|webp|heic|heif|avif|mp3|m4a|aac|wav|aiff?|flac|ogg|opus|mp4|m4v|mov|webm|pdf)$/i;
+
+// The invite's own defaults, the same for invites made before react/annotate/view existed.
+export const basePerms = (inv) => ({ view: true, download: true, upload: !inv.items, comment: true, react: true, annotate: false, ...(inv.perms || {}) });
+
+// What this invite may do with one file (name null = the folder itself), the lock applied last.
+export function permsFor(inv, name, locked = false) {
+  const p = basePerms(inv);
+  const o = name != null && inv.overrides && inv.overrides[name];
+  if (o) for (const k of PERMS) if (typeof o[k] === "boolean") p[k] = o[k];
+  if (inv.items) p.upload = false;
+  if (inv.viewOnly || locked) for (const k of WRITES) p[k] = false;
+  if (!p.view) for (const k of PERMS) p[k] = false;
+  return p;
+}
+
+async function readLocks(env) {
+  if (hasDB(env)) return locksGet(env);
+  try {
+    const o = await env.MAIN.get(LOCKS);
+    const j = o ? await o.json() : null;
+    return j && typeof j === "object" ? j : {};
+  } catch (e) {
+    return {};
+  }
+}
+export const folderLocked = async (env, folder) => !!(await readLocks(env))[folder];
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 const hashOf = async (token) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
@@ -41,7 +79,9 @@ const pub = (hash, inv) => ({
   items: inv.items || null,
   created: inv.created,
   expires: inv.expires || 0,
-  perms: inv.perms,
+  perms: basePerms(inv),
+  viewOnly: !!inv.viewOnly,
+  overrides: inv.overrides || {},
 });
 
 // ---------- owner: /main/api/invites ----------
@@ -55,18 +95,9 @@ export async function inviteApi(req, env, url, path) {
   if (path === "/main/api/invites" && method === "GET") {
     const dir = cleanPath(url.searchParams.get("dir") || "");
     const out = [];
-    let cursor;
-
-    do {
-      const r = await env.MAIN.list({ prefix: INVITES, cursor });
-
-      for (const o of r.objects) {
-        const inv = await readInvite(env, o.key);
-        if (inv && (dir === null || inv.folder === dir)) out.push({ ...pub(o.key.slice(INVITES.length, -5), inv), guest: await guestStatus(env, inv) });
-      }
-
-      cursor = r.truncated ? r.cursor : undefined;
-    } while (cursor);
+    for (const { hash, inv } of await allInvites(env)) {
+      if (dir === null || inv.folder === dir) out.push({ ...pub(hash, inv), guest: await guestStatus(env, inv) });
+    }
 
     out.sort((a, b) => a.created - b.created);
     return jsonResponse(out);
@@ -113,22 +144,49 @@ export async function inviteApi(req, env, url, path) {
       folder,
       created: Date.now(),
       expires: ttl ? Date.now() + ttl * 1000 : 0,
-      perms: { download: true, upload: !items, comment: true },
+      perms: { view: true, download: true, upload: !items, comment: true, react: true, annotate: false },
     };
+    // the owner may narrow (or widen annotate) when making it; upload never goes to a room
+    if (b.perms && typeof b.perms === "object") for (const k of PERMS) if (typeof b.perms[k] === "boolean") inv.perms[k] = b.perms[k];
+    if (items) inv.perms.upload = false;
+    if (b.viewOnly === true) inv.viewOnly = true;
     if (items) inv.items = items;
     const view = viewOf(b);
     if (view) inv.view = view;
 
-    await env.MAIN.put(INVITES + hash + ".json", JSON.stringify(inv), {
-      httpMetadata: { contentType: "application/json" },
-    });
+    await saveInvite(env, hash, inv);
 
     return jsonResponse({ ...pub(hash, inv), url: url.origin + "/m/" + token });
   }
 
+  // GET /main/api/invites/locks -> { "<folder>": true }   PUT { dir, locked }  a folder's view-only lock
+  if (path === "/main/api/invites/locks") {
+    if (method === "GET") return jsonResponse(await readLocks(env));
+    if (method !== "PUT") return new Response("Method not allowed", { status: 405 });
+    let b;
+    try {
+      b = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+    const dir = cleanPath(String((b && b.dir) || ""));
+    if (dir === null || typeof b.locked !== "boolean") return new Response("Bad request", { status: 400 });
+    if (hasDB(env)) {
+      await locksGet(env); // copies the R2 locks in first, so the change lands on top of them
+      await lockSet(env, dir, b.locked);
+    } else {
+      const locks = await readLocks(env);
+      if (b.locked) locks[dir] = true;
+      else delete locks[dir];
+      await env.MAIN.put(LOCKS, JSON.stringify(locks), { httpMetadata: { contentType: "application/json" } });
+    }
+    return jsonResponse({ ok: true, locked: b.locked });
+  }
+
   const m = path.match(/^\/main\/api\/invites\/([0-9a-f]+)$/);
 
-  // PATCH /main/api/invites/<id>   body: { upload?, download? }  the owner's overrides -> { ok, perms }
+  // PATCH /main/api/invites/<id>   body: { <perm>?: bool, viewOnly?: bool, overrides?: { <file>: { <perm>: bool|null } | null } }
+  //   -> { ok, perms, viewOnly, overrides }
   if (m && method === "PATCH") {
     if (!ID_RE.test(m[1])) return new Response("Bad id", { status: 400 });
     let b;
@@ -137,21 +195,43 @@ export async function inviteApi(req, env, url, path) {
     } catch (e) {
       return new Response("Bad request", { status: 400 });
     }
-    const r = await env.MAIN.list({ prefix: INVITES + m[1] });
-    const key = r.objects.length === 1 ? r.objects[0].key : null;
-    const inv = key && (await readInvite(env, key));
-    if (!inv) return new Response("Not found", { status: 404 });
-    inv.perms = { download: true, upload: !inv.items, comment: true, ...(inv.perms || {}) };
-    for (const k of ["upload", "download"]) if (typeof b[k] === "boolean") inv.perms[k] = b[k];
-    await env.MAIN.put(key, JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
-    return jsonResponse({ ok: true, perms: inv.perms });
+    const found = await inviteById(env, m[1]);
+    if (!found) return new Response("Not found", { status: 404 });
+    const { hash, inv } = found;
+    inv.perms = basePerms(inv);
+    for (const k of PERMS) if (typeof b[k] === "boolean") inv.perms[k] = b[k];
+    if (inv.items) inv.perms.upload = false;
+    if (typeof b.viewOnly === "boolean") inv.viewOnly = b.viewOnly;
+    if (b.overrides && typeof b.overrides === "object") {
+      const ov = { ...(inv.overrides || {}) };
+      for (const [n, o] of Object.entries(b.overrides)) {
+        const name = cleanPath(String(n));
+        if (!name || name.includes("/")) return new Response("Bad override", { status: 400 });
+        if (o === null) {
+          delete ov[name];
+          continue;
+        }
+        if (typeof o !== "object") return new Response("Bad override", { status: 400 });
+        const cur = { ...(ov[name] || {}) };
+        for (const k of PERMS) {
+          if (o[k] === null) delete cur[k];
+          else if (typeof o[k] === "boolean") cur[k] = o[k];
+        }
+        if (Object.keys(cur).length) ov[name] = cur;
+        else delete ov[name];
+      }
+      if (Object.keys(ov).length > ITEMS_MAX) return new Response("Too many overrides", { status: 400 });
+      inv.overrides = ov;
+    }
+    await saveInvite(env, hash, inv);
+    return jsonResponse({ ok: true, perms: inv.perms, viewOnly: !!inv.viewOnly, overrides: inv.overrides || {} });
   }
 
   // DELETE /main/api/invites/<id>/sessions   signs the guest out on every device (the invitation stays)
   const ms = path.match(/^\/main\/api\/invites\/([0-9a-f]{16})\/sessions$/);
   if (ms && method === "DELETE") {
-    const r = await env.MAIN.list({ prefix: INVITES + ms[1] });
-    const inv = r.objects.length === 1 && (await readInvite(env, r.objects[0].key));
+    const found = await inviteById(env, ms[1]);
+    const inv = found && found.inv;
     if (!inv) return new Response("Not found", { status: 404 });
     if (inv.guest) await endSessions(env, inv.guest);
     return jsonResponse({ ok: true });
@@ -170,6 +250,11 @@ export async function inviteApi(req, env, url, path) {
 // Revokes an invite by its public id: the link is the same 404 as any unknown one from now on.
 export async function revokeInvite(env, id) {
   if (!ID_RE.test(id)) return false;
+  if (hasDB(env)) {
+    const inv = await shareRevoke(env, id);
+    if (inv && inv.guest) await revokeGuest(env, inv.guest);
+    return !!inv;
+  }
   const r = await env.MAIN.list({ prefix: INVITES + id });
   if (!r.objects.length) return false;
   // the guest goes with it: every session ends and no email or passkey signs them back in
@@ -184,20 +269,36 @@ export async function revokeInvite(env, id) {
 // Every invite still alive, for the Shared section (shared.js): [{ id, name, folder, items, created, expires, perms }]
 export async function liveInvites(env) {
   const now = Date.now();
+  return (await allInvites(env)).filter(({ inv }) => !(inv.expires && inv.expires <= now)).map(({ hash, inv }) => pub(hash, inv));
+}
+
+// ---------- storage: D1 when bound (C1), else invites/<hash>.json in MAIN ----------
+
+// Every invitation (expired ones too) as [{ hash, inv }].
+async function allInvites(env) {
+  if (hasDB(env)) return shareList(env);
   const out = [];
   let cursor;
-
   do {
     const r = await env.MAIN.list({ prefix: INVITES, cursor });
     for (const o of r.objects) {
       const inv = await readInvite(env, o.key);
-      if (inv && !(inv.expires && inv.expires <= now)) out.push(pub(o.key.slice(INVITES.length, -5), inv));
+      if (inv) out.push({ hash: o.key.slice(INVITES.length, -5), inv });
     }
     cursor = r.truncated ? r.cursor : undefined;
   } while (cursor);
-
   return out;
 }
+
+async function inviteById(env, id) {
+  if (hasDB(env)) return shareById(env, id);
+  const r = await env.MAIN.list({ prefix: INVITES + id });
+  const inv = r.objects.length === 1 && (await readInvite(env, r.objects[0].key));
+  return inv ? { hash: r.objects[0].key.slice(INVITES.length, -5), inv } : null;
+}
+
+const saveInvite = (env, hash, inv) =>
+  hasDB(env) ? sharePut(env, hash, inv) : env.MAIN.put(INVITES + hash + ".json", JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
 
 async function readInvite(env, key) {
   try {
@@ -213,7 +314,8 @@ async function readInvite(env, key) {
 async function lookup(env, token) {
   if (!TOKEN_RE.test(token)) return null;
 
-  const inv = await readInvite(env, INVITES + (await hashOf(token)) + ".json");
+  const hash = await hashOf(token);
+  const inv = hasDB(env) ? await shareGet(env, hash) : await readInvite(env, INVITES + hash + ".json");
   if (!inv || (inv.expires && inv.expires <= Date.now())) return null;
 
   return inv;
@@ -255,7 +357,10 @@ export async function participantRoute(req, env, ctx, url, path) {
   // once someone has accepted the invitation, it opens only for them (signed in on any of their devices)
   if (inv.guest && !me) return read && !rest.startsWith("/api/") ? signInPage(inv, env) : new Response("Sign in first", { status: 401 });
   const inFolder = (name) => (inv.folder ? inv.folder + "/" : "") + name;
-  const allowed = (name) => !inv.items || inv.items.includes(name);
+  const locked = await folderLocked(env, inv.folder);
+  const P = (name) => permsFor(inv, name, locked);
+  const allowed = (name) => (!inv.items || inv.items.includes(name)) && P(name).view;
+  const hashId = invKey.slice(INVITES.length, INVITES.length + 16);
 
   if ((rest === "" || rest === "/") && read) {
     const items = (await listFolder(env, inv.folder)).items.filter((f) => allowed(f.path.split("/").pop()));
@@ -264,6 +369,7 @@ export async function participantRoute(req, env, ctx, url, path) {
     // files are served through this link only, never through /main
     for (const f of items) {
       const name = f.path.split("/").pop();
+      f.perms = P(name); // for the page's controls only; every request is checked again here
       f.src = base + "/f/" + encodeURIComponent(name);
       f.art = f.art ? f.src + f.art.slice(f.art.indexOf("?")) : null; // keeps the cover's version
     }
@@ -272,7 +378,7 @@ export async function participantRoute(req, env, ctx, url, path) {
 
     return galleryPage({
       id: "invite",
-      invite: { name: inv.name, perms: inv.perms, expires: inv.expires || 0, room: !!inv.items, you: !!me, emailOn: emailOn(env), email: (me && me.email) || "", passkeys: me ? (me.passkeys || []).length : 0 },
+      invite: { name: inv.name, perms: P(null), locked: locked || !!inv.viewOnly, expires: inv.expires || 0, room: !!inv.items, you: !!me, emailOn: emailOn(env), email: (me && me.email) || "", passkeys: me ? (me.passkeys || []).length : 0 },
       start: inv.items && items.length === 1 ? 0 : null,
       view: inv.view || null,
       api: base + "/api",
@@ -293,10 +399,10 @@ export async function participantRoute(req, env, ctx, url, path) {
   const fm = rest.match(/^\/f\/([^/]+)$/);
 
   if (fm && read) {
-    if (!inv.perms.download) return gone();
-
     const name = cleanPath(fm[1], true);
     if (!name || name.includes("/") || !allowed(name)) return gone();
+    // without download, media still plays in the page; saving it (?dl, or a file that only downloads) is refused
+    if (!P(name).download && (url.searchParams.has("dl") || !PLAYABLE.test(name))) return new Response("Not allowed", { status: 403 });
 
     return mainFile(req, env, ctx, url, urlPath(inFolder(name)));
   }
@@ -306,7 +412,6 @@ export async function participantRoute(req, env, ctx, url, path) {
 
     // GET /m/<token>/api/transcript?name=<file>   Recense's transcript of a file in the folder
     if (rest === "/api/transcript" && read) {
-      if (!inv.perms.download) return new Response("Not allowed", { status: 403 });
       const name = cleanPath(url.searchParams.get("name") || "");
       if (!name || name.includes("/")) return new Response("Bad file name", { status: 400 });
       if (!allowed(name)) return new Response("Not allowed", { status: 403 });
@@ -315,7 +420,6 @@ export async function participantRoute(req, env, ctx, url, path) {
 
     // PUT /m/<token>/api/caption   same body as the owner's, path inside the folder
     if (rest === "/api/caption" && method === "PUT") {
-      if (!inv.perms.comment) return new Response("Not allowed", { status: 403 });
 
       let b;
       try {
@@ -329,6 +433,7 @@ export async function participantRoute(req, env, ctx, url, path) {
         return new Response("Not allowed", { status: 403 });
       }
       if (b.op !== "add" && b.op !== "del" && b.op !== "edit" && b.op !== "like") return new Response("Not allowed", { status: 403 });
+      if (!P(rel.split("/").pop())[b.op === "like" ? "react" : "comment"]) return new Response("Not allowed", { status: 403 });
 
       // the first to write accepts the invitation and becomes its guest; after that only they (signed in) can
       let setCookie = "";
@@ -338,13 +443,54 @@ export async function participantRoute(req, env, ctx, url, path) {
         setCookie = c.cookie;
       }
       const r = await commentApi(req, env, inv.name, true, null, countryOf(req));
-      if (setCookie && r.ok) r.headers.append("set-cookie", setCookie);
+      if (setCookie) r.headers.append("set-cookie", setCookie);
       return r;
+    }
+
+    // GET /m/<token>/api/annotations?name=<file>     PUT { name, op: add|del, text?, t?, x?, y?, aid? }
+    if (rest === "/api/annotations" && (read || method === "PUT")) {
+      let b = null;
+      if (!read) {
+        try {
+          b = await req.json();
+        } catch (e) {
+          return new Response("Bad request", { status: 400 });
+        }
+      }
+      const name = cleanPath(String((read ? url.searchParams.get("name") : b && b.name) || ""));
+      if (!name || name.includes("/")) return new Response("Bad file name", { status: 400 });
+      if (!allowed(name) || !(await env.MAIN.head("files/" + inFolder(name)))) return new Response("Not found", { status: 404 });
+      if (read) return jsonResponse({ items: (await readAnnotations(env, inFolder(name))).map((a) => annotationOf(a, hashId)) });
+      if (!P(name).annotate) return new Response("Not allowed", { status: 403 });
+      return annotationChange(env, inFolder(name), b, { by: inv.name, inv: hashId });
+    }
+
+    // GET /m/<token>/api/meta?name=<file>   the item's metadata, as the owner set it (read-only here)
+    if (rest === "/api/meta" && read) {
+      const name = cleanPath(url.searchParams.get("name") || "");
+      if (!name || name.includes("/") || !allowed(name)) return new Response("Not found", { status: 404 });
+      const m = await metaOf(env, inFolder(name));
+      if (!m) return new Response("Not found", { status: 404 });
+      // the history of changes is the owner's
+      return jsonResponse({ ...m, path: name, revisions: [] });
+    }
+
+    // GET /m/<token>/api/geo?s=&w=&n=&e=   the folder's items with a place, only those this link may see
+    if (rest === "/api/geo" && read) {
+      const g = await folderGeo(env, inv.folder, allowed);
+      return jsonResponse({ items: inBounds(g.items, url.searchParams).map((i) => ({ ...i, path: i.name })), pending: g.pending });
     }
 
     // PUT /m/<token>/api/file?name=<file>&mtime=<ms>   a new file only; nothing is ever replaced
     if (rest === "/api/file" && method === "PUT") {
-      if (!inv.perms.upload || inv.items) return new Response("Not allowed", { status: 403 });
+      if (!P(null).upload) return new Response("Not allowed", { status: 403 });
+      // a bad request must not accept the invitation (its cookie would be lost with the error)
+      const name = cleanPath(url.searchParams.get("name") || "");
+      if (!name || name.includes("/") || name.startsWith(".")) return new Response("Bad file name", { status: 400 });
+
+      const key = inFolder(name);
+      if (await env.MAIN.head("files/" + key)) return new Response("A file with that name is already here", { status: 409 });
+
       let setCookie = "";
       if (!me) {
         const c = await claim(env, invKey, base);
@@ -352,38 +498,27 @@ export async function participantRoute(req, env, ctx, url, path) {
         setCookie = c.cookie;
       }
 
-      const name = cleanPath(url.searchParams.get("name") || "");
-      if (!name || name.includes("/") || name.startsWith(".")) return new Response("Bad file name", { status: 400 });
-
-      const key = inFolder(name);
-      if (await env.MAIN.head("files/" + key)) return new Response("A file with that name is already here", { status: 409 });
-
       const u = new URL(url);
       u.search = new URLSearchParams({ key, mtime: url.searchParams.get("mtime") || "" }).toString();
       const res = await mainUpload(req, env, u);
       if (res.ok) await logActivity(env, { type: "upload", by: inv.name, kind: "main", ref: key }).catch(() => {});
-      if (setCookie && res.ok) res.headers.append("set-cookie", setCookie);
+      if (setCookie) res.headers.append("set-cookie", setCookie);
       return res;
     }
 
     return new Response("Not found", { status: 404 });
   }
 
-  return read ? gone() : new Response("Method not allowed", { status: 405 });
+  // no write reaches the owner's files through a link (DELETE, PUT, MOVE … on /f/ or anywhere): the same 404
+  return gone();
 }
 
 // A file in a folder was renamed: rooms that hold it keep holding it.
 export async function renameInInvites(env, folder, from, to) {
-  let cursor;
-  do {
-    const r = await env.MAIN.list({ prefix: INVITES, cursor });
-    for (const o of r.objects) {
-      const inv = await readInvite(env, o.key);
-      if (inv && inv.folder === folder && Array.isArray(inv.items) && inv.items.includes(from)) {
-        inv.items = to == null ? inv.items.filter((x) => x !== from) : inv.items.map((x) => (x === from ? to : x));
-        await env.MAIN.put(o.key, JSON.stringify(inv), { httpMetadata: { contentType: "application/json" } });
-      }
+  for (const { hash, inv } of await allInvites(env)) {
+    if (inv.folder === folder && Array.isArray(inv.items) && inv.items.includes(from)) {
+      inv.items = to == null ? inv.items.filter((x) => x !== from) : inv.items.map((x) => (x === from ? to : x));
+      await saveInvite(env, hash, inv);
     }
-    cursor = r.truncated ? r.cursor : undefined;
-  } while (cursor);
+  }
 }
