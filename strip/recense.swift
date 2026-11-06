@@ -787,7 +787,7 @@ struct Override: Codable, Equatable {
     static var pending: [String: Task<Void, Never>] = [:]
     static let live = NSHashTable<Episode>.weakObjects()   // open pieces: told when keep/'s fixes arrive
 
-    static func url(_ key: String) -> URL { cacheDir.appendingPathComponent(key + ".edits.json") }
+    static func url(_ key: String) -> URL { KeepHome.url(key + ".edits.json") }
 
     /// keep/'s copy and its etag (an old <key>.edits.json copied to <key>/corrections.json first).
     static func fetch(_ key: String) async -> (Edits?, String?) {
@@ -2949,7 +2949,7 @@ enum ContentKey {
     /// The content key, unless only the address's older key has a transcript on this Mac. The empty stub a failed fetch
     /// leaves (no lines, not complete) is no transcript: it held a re-uploaded Gallery file on 0 lines (notes 38).
     @MainActor static func choose(_ fp: String, legacy: String) -> String {
-        let has = { (k: String) in FileManager.default.fileExists(atPath: cacheDir.appendingPathComponent(k + ".v2.json").path) }
+        let has = { (k: String) in FileManager.default.fileExists(atPath: KeepHome.url(k + ".v2.json").path) }
         guard !has(fp), has(legacy), let c = Episode.Cache.read(legacy), c.complete == true || !c.lines.isEmpty else { return fp }
         return legacy
     }
@@ -3496,13 +3496,11 @@ private func lyricsSelftestRun() async -> Bool {
             }
             nextId = (lines.map(\.id).filter { $0 < 2_000_000 }.max() ?? nextId) + 1
             Library.absorb(lines)
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: cacheDir.appendingPathComponent(key + ".v2.json").path)
             log("loaded cached transcript for \(url.prefix(80)): \(lines.count) lines")
         }
         if let d = try? Data(contentsOf: editsURL), var e = try? JSONDecoder().decode(Edits.self, from: d) {
             e.english = e.english.filter { $0.value.map(\.w) != ["…"] }      // given up on, as above: tried again
             edits = e
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: editsURL.path)
             if !e.edits.isEmpty { log("\(e.edits.count) edit(s) laid over the transcript") }
         }
         for lang in Keep.others {
@@ -3515,7 +3513,7 @@ private func lyricsSelftestRun() async -> Bool {
         Task { [weak self] in if let self { await CorrectionSync.pull(self) } }
     }
 
-    var editsURL: URL { cacheDir.appendingPathComponent(key + ".edits.json") }
+    var editsURL: URL { CorrectionSync.url(key) }
     func saveEdits(push: Bool = true) {
         guard !dry, let d = try? JSONEncoder().encode(edits) else { return }
         try? d.write(to: editsURL, options: .atomic)
@@ -3651,7 +3649,7 @@ private func lyricsSelftestRun() async -> Bool {
         var engine: String?; var lexicon: Int?      // the ears that heard it; the lexicon version it was last checked against
         var lyricsAt: Double?; var lyricsFor: String?; var heardMusic: Bool?   // R17: the last lookup; SoundAnalysis's verdict
         static func read(_ key: String) -> Cache? {
-            (try? Data(contentsOf: cacheDir.appendingPathComponent(key + ".v2.json"))).flatMap { try? JSONDecoder().decode(Cache.self, from: $0) }
+            (try? Data(contentsOf: KeepHome.url(key + ".v2.json"))).flatMap { try? JSONDecoder().decode(Cache.self, from: $0) }
         }
     }
     var dry = false                    // a replay: nothing is written
@@ -3687,7 +3685,7 @@ private func lyricsSelftestRun() async -> Bool {
                       language: language, publishedTitle: publishedTitle, redone: redone, offsite: offsite,
                       complete: complete, engine: engine, lexicon: lexiconSeen,
                       lyricsAt: lyricsAt, lyricsFor: lyricsFor, heardMusic: heardMusic)
-        if let d = try? JSONEncoder().encode(c) { try? d.write(to: cacheDir.appendingPathComponent(key + ".v2.json")) }
+        if let d = try? JSONEncoder().encode(c) { try? d.write(to: KeepHome.url(key + ".v2.json"), options: .atomic) }
         Library.flush()
     }
 
@@ -5343,7 +5341,7 @@ final class Features: Codable {
         self.source = source; self.floor = floor; self.db = db; self.onset = onset; self.pitch = pitch; self.clarity = clarity; self.voiced = voiced
     }
 
-    static func url(_ key: String) -> URL { cacheDir.appendingPathComponent(key + ".features.json") }
+    static func url(_ key: String) -> URL { KeepHome.url(key + ".features.json") }
     static func read(_ key: String) -> Features? { (try? Data(contentsOf: url(key))).flatMap { try? JSONDecoder().decode(Features.self, from: $0) } }
     func write(_ key: String) { if let d = try? JSONEncoder().encode(self) { try? d.write(to: Features.url(key)) } }
 
@@ -5942,7 +5940,7 @@ enum Fingerprint {
     /// and its audio is still on this Mac or in tmp/, its fingerprint is filed — a transcript already made twice
     /// (two sources of one recording) becomes an alias of the first.
     static func backfill() async {
-        var keys = Set(((try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path)) ?? [])
+        var keys = Set((KeepHome.names(in: keepDir) + (KeepHome.migrated() ? [] : KeepHome.names(in: cacheDir)))
             .filter { $0.hasSuffix(".v2.json") }.map { String($0.prefix(24)) })
         keys.formUnion(await Store.keepKeys())
         let fresh = keys.subtracting(index.tried ?? []).subtracting(index.pieces.keys).subtracting(index.aliases.keys)
@@ -6000,8 +5998,8 @@ enum Fingerprint {
 //   keep/<key>/history/<v>.json  Gallery's last 20 versions of corrections.json
 //   keep/locks/<key>             Gallery asking for a transcript (GalleryJob): one folder, as it is listed every minute
 //   keep/library.json, translations.json, glossary.json   this Mac's library (Library, Glossary)
-// This Mac's cache keeps its own shape (<key>.v2.json with the English inside, <key>.edits.json, <key>.tr.vi.json,
-// <key>.tr.fr.json); each part goes to keep/ only when it changed, so a language translated again never touches the
+// This Mac keeps its own shape in ~/Recense/keep (KeepHome: <key>.v2.json with the English inside, <key>.edits.json,
+// <key>.tr.vi.json, <key>.tr.fr.json); each part goes to keep/ only when it changed, so a language translated again never touches the
 // others or the original. The flat files of before (keep/<key>.v2.json, keep/<key>.edits.json) are still read: the
 // first read of one writes it out in this layout, never over a file already there and never deleting the old one.
 struct TrLine: Codable { var src: String; var text: String?; var words: [EnWord]? = nil; var draft: Bool? = nil; var same: Bool? = nil }
@@ -6022,7 +6020,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     static func tr(_ key: String, _ lang: String) -> String { "\(key)/tr/\(lang).json" }
     static func corrections(_ key: String) -> String { "\(key)/corrections.json" }
     static func features(_ key: String) -> String { "\(key)/features.json" }
-    static func trURL(_ key: String, _ lang: String) -> URL { cacheDir.appendingPathComponent("\(key).tr.\(lang).json") }
+    static func trURL(_ key: String, _ lang: String) -> URL { KeepHome.url("\(key).tr.\(lang).json") }
 
     static func encode<T: Encodable>(_ v: T) -> Data? {
         let e = JSONEncoder(); e.outputFormatting = [.sortedKeys]
@@ -6141,7 +6139,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     /// edits, and its translations. An old flat transcript is written out in the new layout (Gallery reads that).
     static func restore(_ key: String) async {
         guard Store.r2 else { return }
-        let fm = FileManager.default, json = cacheDir.appendingPathComponent(key + ".v2.json")
+        let fm = FileManager.default, json = KeepHome.url(key + ".v2.json")
         if !fm.fileExists(atPath: json.path) {
             if let (d, _) = await get(asr(key)), let a = try? JSONDecoder().decode(ASR.self, from: d) {
                 let en = await get(tr(key, "en")).flatMap { try? JSONDecoder().decode(TrFile.self, from: $0.0) }
@@ -6207,7 +6205,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
 // (never via the Trash): it can always be fetched or separated again. tmpDays is retuned daily (tuneExpiry) to the
 // longest stay that keeps the bucket inside R2's free storage at the rate media has been arriving. Transcripts are what's costly to remake (a day's Groq
 // quota, and the lyric choice and re-timing a song took), so each is mirrored to keep/, which never expires, and
-// fetched back when a piece returns: on this Mac one stays a week unused once mirrored (30 days if not).
+// fetched back when a piece returns. On this Mac they live in ~/Recense/keep (KeepHome), never swept.
 // Exports' chapter files go after a day (sweepExports); the log is kept short.
 enum Store {
     // A test cache (RECENSE_CACHE) stays off R2: nothing pulled in from keep/, nothing of it mirrored there.
@@ -6371,34 +6369,41 @@ enum Store {
         let fm = FileManager.default
         let props: [URLResourceKey] = [.contentModificationDateKey, .isDirectoryKey, .fileSizeKey]
         var freed = 0, moved = 0
+        // Transcripts (KeepHome): mirrored to keep/ when they changed, never deleted. The cache's legacy copies are
+        // read (and so mirrored) only until the move to ~/Recense/keep is verified.
+        let local = KeepHome.names(in: keepDir).map { keepDir.appendingPathComponent($0) }
+            + (KeepHome.migrated() ? [] : KeepHome.names(in: cacheDir).map { cacheDir.appendingPathComponent($0) })
+        for u in local where u == KeepHome.url(u.lastPathComponent) {
+            let name = u.lastPathComponent, key = String(name.prefix(24))
+            guard key != keep, let d = (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                  Date().timeIntervalSince(d) > 60 else { continue }
+            let m = d.timeIntervalSince1970
+            guard mirrored[name] != m else { continue }
+            // each to its place in the item's folder in keep/ (Keep), whatever the item
+            // corrections are written in keep/ by Gallery too: merged with keep/'s copy, never sent over it blind
+            if name.hasSuffix(".edits.json") { await CorrectionSync.push(key) }
+            else if name.hasSuffix(".v2.json") { if await Keep.pushTranscript(key) { mirrored[name] = m } }
+            else if name.hasSuffix(".features.json") { if await Keep.pushFeatures(key) { mirrored[name] = m } }
+            else if let lang = name.firstMatch(of: #/\.tr\.([a-z]{2,3})\.json$/#)?.1 {
+                // a translation goes once it covers the whole transcript (until then it is kept here)
+                if await Keep.pushTranslation(key, String(lang)) { mirrored[name] = m }
+            }
+        }
         for u in (try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: props)) ?? [] {
             let name = u.lastPathComponent, key = String(name.prefix(24))
             guard let v = try? u.resourceValues(forKeys: Set(props)), v.isDirectory != true,
-                  name.count > 25, key.allSatisfy(\.isHexDigit), key != keep, !busy.contains(u.path) else { continue }
+                  name.count > 25, key.allSatisfy(\.isHexDigit), key != keep, !busy.contains(u.path),
+                  !KeepHome.isTranscript(name) else { continue }      // a transcript left in the cache is never deleted here
             let age = Date().timeIntervalSince(v.contentModificationDate ?? .distantPast)
             if name.hasSuffix(".json") {
-                let m = (v.contentModificationDate ?? .distantPast).timeIntervalSince1970
-                // each to its place in the item's folder in keep/ (Keep), whatever the item
-                if mirrored[name] != m, age > 60 {
-                    // corrections are written in keep/ by Gallery too: merged with keep/'s copy, never sent over it blind
-                    if name.hasSuffix(".edits.json") { await CorrectionSync.push(key) }
-                    else if name.hasSuffix(".v2.json") { if await Keep.pushTranscript(key) { mirrored[name] = m } }
-                    else if name.hasSuffix(".features.json") { if await Keep.pushFeatures(key) { mirrored[name] = m } }
-                    else if let lang = name.firstMatch(of: #/\.tr\.([a-z]{2,3})\.json$/#)?.1 {
-                        // a translation goes once it covers the whole transcript (until then it is kept here)
-                        if await Keep.pushTranslation(key, String(lang)) { mirrored[name] = m }
-                    }
-                }
-                // Edits and translations go only after their transcript: it's when the transcript is missing that all
-                // are fetched back.
-                let partner = !name.hasSuffix(".v2.json") && fm.fileExists(atPath: cacheDir.appendingPathComponent(key + ".v2.json").path)
-                if !partner, age > (mirrored[name] == m ? 7 : 30) * 86400 { try? fm.removeItem(at: u); mirrored[name] = nil }
+                // what's measured from the media (prosody), remade from it when needed
+                if age > 30 * 86400 { try? fm.removeItem(at: u) }
                 continue
             }
             guard age > 60 else { continue }                       // still being written
             if await upload(u) {
                 moved += 1
-                let j = cacheDir.appendingPathComponent(key + ".v2.json")
+                let j = KeepHome.url(key + ".v2.json")
                 if let d = try? Data(contentsOf: j), var c = try? JSONDecoder().decode(Episode.Cache.self, from: d) {
                     c.offsite = Array(Set((c.offsite ?? []) + [name]))
                     if let e = try? JSONEncoder().encode(c) { try? e.write(to: j) }
@@ -7068,7 +7073,7 @@ final class NativeSources {
         }
 
         // a retranscription starts from nothing: the transcript this Mac has is set aside (back if this fails)
-        let tkey = Library.resolve(key)?.key ?? key, json = cacheDir.appendingPathComponent(tkey + ".v2.json")
+        let tkey = Library.resolve(key)?.key ?? key, json = KeepHome.url(tkey + ".v2.json")
         let aside = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(tkey).json")
         let setAside = redo && (try? FileManager.default.moveItem(at: json, to: aside)) != nil
         if redo { setAsideTranslations(tkey) }
@@ -7328,6 +7333,13 @@ final class NativeSources {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // Transcripts out of the cache into ~/Recense/keep, once, before any is read (D19; KeepHome.migrate).
+        let t0 = Date(), moved = KeepHome.migrate()
+        if moved.found > 0 || !KeepHome.migrated() {
+            log("keep: \(moved.found) transcript file(s) in the cache, \(moved.copied) copied, \(moved.verified) verified, \(moved.removed) removed from the cache"
+                + (moved.failed.isEmpty ? "" : ", \(moved.failed.count) left there: \(moved.failed.prefix(5).joined(separator: ", "))")
+                + " (\(Int(Date().timeIntervalSince(t0) * 1000)) ms)")
+        }
         overlay = Overlay()
         overlay.onCmd = { [weak self] c in self?.command(c) }
         overlay.onSkipAd = { [weak self] in self?.skipAd() }
@@ -7558,7 +7570,7 @@ final class NativeSources {
         // Retranscribe on a file playing here loaded it again and did nothing (notes 38).
         let (url, page, referer, title, music) = (ep.url, ep.page, ep.referer, ep.title, ep.music)
         ep.stop(); episode = nil
-        let json = cacheDir.appendingPathComponent(ep.key + ".v2.json")
+        let json = KeepHome.url(ep.key + ".v2.json")
         let aside = FileManager.default.temporaryDirectory.appendingPathComponent("recense-redo-\(ep.key).json")
         try? FileManager.default.removeItem(at: aside)
         let setAside = (try? FileManager.default.moveItem(at: json, to: aside)) != nil
@@ -8112,7 +8124,7 @@ final class NativeSources {
             if ep.url != url { ep.url = url; log("same media, new address: \(url.prefix(80))") }
             return episodeState
         }
-        if !fresh, !FileManager.default.fileExists(atPath: cacheDir.appendingPathComponent(key + ".v2.json").path) {
+        if !fresh, !FileManager.default.fileExists(atPath: KeepHome.url(key + ".v2.json").path) {
             await Store.restoreTranscript(key)
             if let ep = episode, ep.source == src, ep.key == key, episodeState != "failed" { ep.url = url; return episodeState }   // loaded meanwhile
         }
@@ -8502,7 +8514,9 @@ func measureSelftest() -> Bool {
     let pitched = Features.measure(tone, source: "vocals").pitch.filter { $0 > 0 }.sorted()
     let median = pitched.isEmpty ? 0 : pitched[pitched.count / 2], heard = abs(median - 5700) <= 50
     print("\(heard ? "ok  " : "FAIL") measure, 220 Hz tone: median pitch \(median) cents over \(pitched.count) frames")
-    return ok && heard
+    // keep's checks run from here until app.swift's selftest list (lane cmd) names keepSelftest itself
+    let kept = keepSelftest()
+    return ok && heard && kept
 }
 
 /// `Recense --edits-selftest` (RECENSE_CACHE set): corrections laid over a transcript that the pipeline then remakes
