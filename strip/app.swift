@@ -4201,8 +4201,9 @@ final class GlassPauseButton: NSButton {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
-    override func mouseEntered(with e: NSEvent) { hover = true; needsDisplay = true }
-    override func mouseExited(with e: NSEvent) { hover = false; needsDisplay = true }
+    var onHover: ((Bool) -> Void)?      // the strip's chevron: hover 0.5 s shows the hidden menu-bar icons
+    override func mouseEntered(with e: NSEvent) { hover = true; needsDisplay = true; onHover?(true) }
+    override func mouseExited(with e: NSEvent) { hover = false; needsDisplay = true; onHover?(false) }
     func bounce() {
         wantsLayer = true
         guard let l = layer else { return }
@@ -5086,6 +5087,9 @@ final class RestStrip: NSObject {
     var onRecord: (() -> Void)?
     let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
+    let chevron = GlassPauseButton()           // the hidden menu-bar icons (hider.swift): click, or hover 0.5 s (D23)
+    var onShowIcons: (() -> Void)?
+    private var chevronHold: DispatchWorkItem?
     private var batteryText = ""
     private var batteryAt = Date.distantPast
     let store: EKEventStore
@@ -5146,9 +5150,19 @@ final class RestStrip: NSObject {
             b.symbol = sym; b.isBordered = false; b.title = ""; b.toolTip = tip
             b.target = self; b.action = sel
         }
+        chevron.symbol = "chevron.left.2"; chevron.isBordered = false; chevron.title = ""
+        chevron.toolTip = "Show the hidden menu-bar icons (click, or rest the pointer here)"
+        chevron.target = self; chevron.action = #selector(showIcons)
+        chevron.onHover = { [weak self] inside in
+            self?.chevronHold?.cancel()
+            guard inside else { return }
+            let w = DispatchWorkItem { [weak self] in self?.onShowIcons?() }
+            self?.chevronHold = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
+        }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense, chevron].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -5192,6 +5206,7 @@ final class RestStrip: NSObject {
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
 
 
+    @objc func showIcons() { chevron.bounce(); chevronHold?.cancel(); onShowIcons?() }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -5247,6 +5262,7 @@ final class RestStrip: NSObject {
         battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX + 14 - bx), height: 15)   // up to the Spaces arrows
         battery.lineBreakMode = .byTruncatingTail
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
+        chevron.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)   // the old desktop-arrow slot
         space.frame = NSRect(x: b.midX + 42, y: (b.height - 20) / 2, width: 20, height: 20)
         spaceNext.frame = NSRect(x: b.midX + 64, y: (b.height - 18) / 2, width: 18, height: 18)
         countdown.frame = NSRect(x: b.width - bandInset - 18 - 100, y: (b.height - 14) / 2, width: 100, height: 14)
@@ -6793,6 +6809,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.onClick = { [weak self] in self?.present(.pad) }
         // Recense opens as its own strip hanging from the top of the screen; Recense's card steps aside.
         rest.onRecord = { [weak self] in self?.toggleRecorder() }
+        rest.onShowIcons = { [weak self] in self?.menuBar.hider.showIcons() }
         timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
         timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
@@ -7061,6 +7078,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "snapshot": snapshot()
         case "editor-new": setEditor(.new)
         case "editor-classic": setEditor(.classic)
+        case "show-icons": menuBar.hider.showIcons()
         default:       present(.time)
         }
     }
@@ -7739,7 +7757,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 // MARK: - Entry point
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
-                "editor-new", "editor-classic"]
+                "editor-new", "editor-classic", "show-icons"]
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
@@ -7754,7 +7772,7 @@ let holdsLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
 var initial = "time"
 if let cmd = CommandLine.arguments.dropFirst().first {
     guard commands.contains(cmd) else {
-        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot|editor-new|editor-classic]\n", stderr)
+        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot|editor-new|editor-classic|show-icons]\n", stderr)
         exit(64)
     }
     if cmd == "status" {
@@ -7774,6 +7792,7 @@ if let cmd = CommandLine.arguments.dropFirst().first {
         exit(1)
     }
     // Nothing is running: launch, then act on the command. A first "toggle" or "up" opens the pad.
+    // A first "show-icons" launches Recense hidden, as "background" does, and shows the icons.
     initial = (cmd == "toggle" || cmd == "up") ? "pad" : (cmd == "down" ? "time" : cmd)
 } else if !holdsLock {
     // Plain launch while a copy is already running: show the time there.
