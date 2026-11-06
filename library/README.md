@@ -174,6 +174,15 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 - Annotations (`src/annotations.js`): notes pinned to a time or a spot of a Main file; owner at `/main/api/annotations`, invitees at `/m/<token>/api/annotations` with the annotate permission, deleting only their own.
 - Link answers from `/main/api/link` carry `href`, the absolute link, beside the relative `url`.
 
+### Shows (private podcasts, `chau/show.mjs`)
+- A Markdown outline becomes a show: one episode per `## ` section, spoken by a macOS voice, AAC `.m4a`.
+- Publish (renders, then syncs to Main's `Shows/<show>/` over the rclone remote `gallery-main`; a section you drop goes to `trash/<date>/`):
+  `node chau/show.mjs publish <outline.md>` (show name = the `# ` title; `--show <name>` to choose).
+- Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
+- Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
+- An outline under a `Matters` or `Raven` folder is refused: client matters never leave the Mac (A6).
+- The episode list is `.show.json` in the show's folder (hidden in Gallery's folder view).
+
 ### Assistant
 Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans searches, cites sources, keeps memories;
 published references are trusted, your own writing once checked. Calendar: reads your events and the
