@@ -20,6 +20,7 @@ import { commentApi, countryOf, guestName } from "./public.js";
 import { galleryPage } from "./page/gallery.js";
 import { sameSite } from "./access.js";
 import { transcriptResponse } from "./transcript.js";
+import { showFeed } from "./feed.js";
 import { logActivity } from "./shared.js";
 import { hasDB, shareGet, sharePut, shareList, shareById, shareRevoke, locksGet, lockSet } from "./d1.js";
 import { metaOf, folderGeo, inBounds } from "./meta.js";
@@ -354,6 +355,8 @@ export async function participantRoute(req, env, ctx, url, path) {
     return identityApi(req, env, url, rest, inv, invKey, base, me);
   }
 
+  // a podcast app can't sign in: a claimed invitation's feed is the same 404 as a bad link (shows use view-only links)
+  if (rest === "/feed.xml" && inv.guest && !me) return gone();
   // once someone has accepted the invitation, it opens only for them (signed in on any of their devices)
   if (inv.guest && !me) return read && !rest.startsWith("/api/") ? signInPage(inv, env) : new Response("Sign in first", { status: 401 });
   const inFolder = (name) => (inv.folder ? inv.folder + "/" : "") + name;
@@ -361,6 +364,13 @@ export async function participantRoute(req, env, ctx, url, path) {
   const P = (name) => permsFor(inv, name, locked);
   const allowed = (name) => (!inv.items || inv.items.includes(name)) && P(name).view;
   const hashId = invKey.slice(INVITES.length, INVITES.length + 16);
+
+  // GET /m/<token>/feed.xml   the folder's show as a podcast feed (feed.js), only what this link may see
+  if (rest === "/feed.xml" && read) {
+    const rss = await showFeed(env, inv.folder, allowed, url.origin, base);
+    if (!rss) return gone();
+    return new Response(rss, { headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": "private, max-age=300", "x-robots-tag": "noindex" } });
+  }
 
   if ((rest === "" || rest === "/") && read) {
     const items = (await listFolder(env, inv.folder)).items.filter((f) => allowed(f.path.split("/").pop()));

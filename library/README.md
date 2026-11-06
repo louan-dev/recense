@@ -38,6 +38,7 @@ the common tuning, and a link carries both to someone who goes looking. The long
 | `/` | Make a new link from files on this device (only you) | `gallery-public` |
 | `/s/<id>` | A link: anyone who has it can view, download, comment and like | `gallery-public` |
 | `/m/<token>` | A participant link to one folder (view / download / upload / comment) | `gallery-main` |
+| `/m/<token>/feed.xml` | A show's podcast feed, for an invite to a folder made by `chau/show.mjs` | `gallery-main` |
 | `/main` | The library: browse, play, upload, rename, delete (only you) | `gallery-main` |
 | `/main/archive` | The archive's page and player, read-only | `gallery-archive` |
 | `/main/shared` | Every live share link as an album, with Activity | `gallery-public` |
@@ -182,6 +183,11 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
 - An outline under a `Matters` or `Raven` folder is refused: client matters never leave the Mac (A6).
 - The episode list is `.show.json` in the show's folder (hidden in Gallery's folder view).
+- The feed link (after the Worker with `src/feed.js` is deployed): `node chau/show.mjs invite "<show>" --name <who> [--days 30] [--guest]`.
+  It prints `https://…/m/<token>/feed.xml`; on the iPhone: Podcasts > Library > ••• > Follow a Show by URL…, paste it.
+  The feed link is view-only, so it never gets locked to one signed-in browser. `--guest` adds a second link, the web page, where they can also react and comment.
+  Both expire after `--days`; `node chau/show.mjs revoke <id>` (the id it printed) ends one at once.
+- The feed (`GET /m/<token>/feed.xml`, `src/feed.js`): RSS 2.0 with the iTunes namespace, `itunes:type` serial, episodes in outline order; each enclosure is the link's own `/m/<token>/f/<file>`, so every download is checked like any other. A wrong, expired or revoked token, a folder with no show, or a show with nothing this link may see is the same 404.
 
 ### Assistant
 Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans searches, cites sources, keeps memories;
@@ -230,6 +236,7 @@ gallery/
     public.js           links, uploads, comments, preview cards, the nightly cleanup
     main.js             the library
     invite.js           participant links (/m/<token>)
+    feed.js             a show's podcast feed (/m/<token>/feed.xml)
     shared.js           /main/shared and Activity
     archive.js          /main/archive
     dav.js              WebDAV (chunked uploads past the 100 MB request cap)
