@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chauphan.ledger.messenger</string>
+  <key>ProgramArguments</key><array><string>/Users/chauphan/Developer/sync/bin/messenger-job.sh</string></array>
+  <!-- event-driven: a zip lands in the inbox, or the SanDisk mounts -->
+  <key>WatchPaths</key><array><string>/Volumes/SanDisk/inbox/messenger</string></array>
+  <key>StartOnMount</key><true/>
+  <key>ThrottleInterval</key><integer>120</integer>
+  <key>LowPriorityIO</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/ledger-messenger.log</string>
+  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/ledger-messenger.log</string>
+</dict>
+</plist>

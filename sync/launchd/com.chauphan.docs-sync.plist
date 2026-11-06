@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.chauphan.docs-sync</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/chauphan/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
+		<string>/Users/chauphan/Developer/sync/bin/docs-sync.zsh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/chauphan/Library/Logs/docs-sync.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/chauphan/Library/Logs/docs-sync.log</string>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>ThrottleInterval</key>
+	<integer>120</integer>
+</dict>
+</plist>

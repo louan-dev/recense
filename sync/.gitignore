@@ -1,0 +1,21 @@
+.env
+.env.*
+rclone.conf
+.DS_Store
+node_modules/
+# ledger sinks, mirrors, stages and local outputs
+ledger-sink/
+mirror/
+stage/
+*.part
+progress.zip
+audit/
+requests/*
+!requests/README.md
+AUDIT.md
+*.log
+# holds pasted secrets (R2 keys, Arq password) until the owner removes them
+decisions/20261022 ARQ-CHECKLIST.md
+bin/cal-export
+.handoff/
+*-handoff.zip

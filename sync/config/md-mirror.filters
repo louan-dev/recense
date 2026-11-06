@@ -1,0 +1,14 @@
+# md-mirror.zsh filters (rclone filter syntax, first match wins): Markdown only, and none of the tool, build or
+# backup folders. Changing this file makes the next pass a --resync.
+- .git/**
+- node_modules/**
+- .build*/**
+- backups/**
+- .toolchain/**
+- .claude/**
+- .handoff/**
+- .wrangler/**
+- venv/**
+- auto_avsr/**
++ *.md
+- *
