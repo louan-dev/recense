@@ -17,6 +17,7 @@ import {
   toggleFindReplace,
   isFindReplaceOpen
 } from './search.js';
+import { legalNumberingExtension } from './legal.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -41,6 +42,7 @@ export function createEditorExtensions({
     markdown(),
     searchExtension(),
     headingFoldExtension(),
+    legalNumberingExtension(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     pageMarkersExtension(),
     compartments.theme.of(buildThemeExtension(theme)),

@@ -252,3 +252,8 @@ body {
   font-weight: 500;
   letter-spacing: 0.01em;
 }
+
+.cm-line.cm-section-heading-line {
+  color: var(--rc-blue);
+  font-weight: 600;
+}
