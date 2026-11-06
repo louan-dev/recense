@@ -39,7 +39,7 @@ Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the sec
 ## Checks (this repo's half of the validation loop in `~/.claude/CLAUDE.md`)
 | Touched | After each edit | Once, before reporting |
 |---|---|---|
-| `strip/` | `zsh strip/build.sh` (builds and installs Recense.app) | `strip/recense selftest` |
+| `strip/` | `zsh strip/build.sh` (builds and installs Recense.app); in a worktree: `RECENSE_TOOLCHAIN=~/Developer/recense/.toolchain/CommandLineTools zsh build.sh`, else it builds without the on-device ears or fails | `strip/recense selftest` |
 | `library/` | `npm run build:test && node test/<file>.test.mjs` in `library/` | `npm test` in `library/` |
 | `sync/` | `npm test` in `sync/` | the same, plus the real-path checks below |
 | `calendar/` | `npm test` in `calendar/` | the same |
