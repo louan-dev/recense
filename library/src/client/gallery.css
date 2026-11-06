@@ -2199,3 +2199,266 @@ body.nodl #dl,body.nodl .mdl{display:none!important}
 .devem{display:flex;gap:6px;margin:4px 0}
 .devem input{flex:1;min-width:0;border:0;border-radius:10px;padding:9px 10px;background:#2c2c2e;color:#fff;font:inherit}
 .devmsg{margin:4px 0 0;font-size:13px;color:#ebebf599;min-height:1em}
+
+/* ---------- Phase 4: collection search bar (Goal 43.32) & year-grouped results ---------- */
+.csearch{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 16px 8px;
+  transition:padding .32s cubic-bezier(.32,.72,0,1),background-color .25s ease
+}
+.csearch-pill{
+  flex:1;
+  min-width:0;
+  height:38px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0 10px 0 12px;
+  border-radius:12px;
+  background:rgba(118,118,128,.24);
+  color:rgba(235,235,245,.6);
+  transition:border-radius .32s cubic-bezier(.32,.72,0,1),background-color .25s ease,box-shadow .2s ease
+}
+.csearch-pill:focus-within{
+  background:rgba(118,118,128,.32)
+}
+.csearch-ico{
+  flex:none;
+  width:17px;
+  height:17px;
+  color:rgba(235,235,245,.6)
+}
+.csearch-in{
+  flex:1;
+  min-width:0;
+  height:100%;
+  border:0;
+  padding:0;
+  background:transparent;
+  color:#fff;
+  font:17px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+  outline:none;
+  -webkit-appearance:none;
+  appearance:none
+}
+.csearch-in::-webkit-search-cancel-button,
+.csearch-in::-webkit-search-decoration{
+  -webkit-appearance:none;
+  appearance:none;
+  display:none
+}
+.csearch-in::placeholder{
+  color:rgba(235,235,245,.6)
+}
+.csearch-clear{
+  flex:none;
+  width:20px;
+  height:20px;
+  display:grid;
+  place-items:center;
+  color:rgba(235,235,245,.6);
+  border-radius:50%
+}
+.csearch-clear svg{
+  width:18px;
+  height:18px
+}
+.csearch-clear:active{
+  color:#fff
+}
+.csearch-cancel{
+  flex:none;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  background:rgba(44,44,46,.9);
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.16);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  transition:transform .28s cubic-bezier(.32,.72,0,1),opacity .22s ease,background-color .15s ease
+}
+.csearch-cancel svg{
+  width:18px;
+  height:18px
+}
+.csearch-cancel:active{
+  transform:scale(.92);
+  background:rgba(68,68,72,.95)
+}
+.selecting .csearch{
+  display:none
+}
+body.csearching .crbar,
+body.csearching .bar,
+body.csearching .hero,
+body.csearching .info,
+body.csearching .note,
+body.csearching .mainnav{
+  max-height:0!important;
+  min-height:0!important;
+  margin-top:0!important;
+  margin-bottom:0!important;
+  padding-top:0!important;
+  padding-bottom:0!important;
+  opacity:0;
+  overflow:hidden;
+  pointer-events:none;
+  border:0
+}
+body.csearching #grid,
+body.csearching #foot{
+  display:none!important
+}
+body.csearching .csearch{
+  position:sticky;
+  top:0;
+  z-index:20;
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  background:rgba(28,28,30,.88);
+  -webkit-backdrop-filter:blur(20px) saturate(1.6);
+  backdrop-filter:blur(20px) saturate(1.6)
+}
+body.csearching .csearch-pill{
+  border-radius:19px
+}
+.csres{
+  padding:4px 16px calc(env(safe-area-inset-bottom) + 40px)
+}
+.csyear{
+  margin:18px 0 6px;
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-.01em;
+  color:#fff
+}
+.csyear:first-child{
+  margin-top:6px
+}
+.csrow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  width:100%;
+  padding:14px 0;
+  border-top:.5px solid rgba(255,255,255,.12);
+  text-align:left;
+  cursor:pointer
+}
+.csyear + .csrow{
+  border-top:0;
+  padding-top:6px
+}
+.csrow:active{
+  opacity:.78
+}
+.csmain{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:4px
+}
+.csdate{
+  font-size:12px;
+  font-weight:500;
+  color:var(--mut);
+  font-variant-numeric:tabular-nums
+}
+.cstitle{
+  font-size:16px;
+  font-weight:600;
+  line-height:1.25;
+  color:#fff;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical
+}
+.cssnip{
+  font-size:14px;
+  line-height:1.38;
+  color:rgba(235,235,245,.6);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical
+}
+mark.csmk{
+  background:none;
+  color:#fff;
+  font-weight:700
+}
+.csacts{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:6px
+}
+.cspill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px;
+  border-radius:99px;
+  background:rgba(10,132,255,.16);
+  color:var(--blue);
+  font-size:13px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums
+}
+.cspill svg{
+  width:12px;
+  height:12px;
+  fill:currentColor
+}
+.csmore{
+  color:var(--mut);
+  font-size:14px;
+  letter-spacing:1px
+}
+.csthumb{
+  flex:none;
+  width:64px;
+  height:64px;
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--panel);
+  position:relative
+}
+.csthumb img,
+.csthumb video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  pointer-events:none
+}
+.csthumb .doc{
+  padding:4px
+}
+.csthumb .doc small{
+  display:none
+}
+.csshowall{
+  display:block;
+  width:100%;
+  padding:14px 0;
+  border-top:.5px solid rgba(255,255,255,.12);
+  color:var(--blue);
+  font-size:16px;
+  font-weight:500;
+  text-align:left
+}
+.csempty{
+  padding:36px 0;
+  text-align:center;
+  color:var(--mut);
+  font-size:15px
+}

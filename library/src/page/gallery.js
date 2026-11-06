@@ -127,6 +127,20 @@ ${viewerSheetCss}${live.main ? "\n" + assistantCss : ""}</style>
 
   ${nav}
 
+  <div class="csearch" id="csearch" role="search" hidden>
+    <label class="csearch-pill" for="csin">
+      <svg class="csearch-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.35-4.35"/></svg>
+      <input id="csin" class="csearch-in" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search" aria-label="Search collection">
+      <button id="csclear" class="csearch-clear" type="button" aria-label="Clear search" hidden>
+        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm3.54 10.46a.75.75 0 0 1-1.06 1.06L10 11.06l-2.48 2.46a.75.75 0 0 1-1.06-1.06L8.94 10 6.46 7.54a.75.75 0 0 1 1.06-1.06L10 8.94l2.48-2.46a.75.75 0 0 1 1.06 1.06L11.06 10l2.48 2.46z"/></svg>
+      </button>
+    </label>
+    <button id="cscancel" class="csearch-cancel" type="button" aria-label="Close search" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="csres" id="csres" hidden></div>
+
   <div class="grid" id="grid">
     <button class="tile add" id="addtile" type="button" aria-label="Upload media"></button>
   </div>
@@ -289,8 +303,8 @@ function toast(t){
   clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2400);
 }
 
-// Add Media: the owner on Main, or an invited person allowed to upload
-const canAdd = G.main || (G.invite && G.invite.perms && G.invite.perms.upload);
+// Add Media: the owner on Main (when not read-only), or an invited person allowed to upload
+const canAdd = (G.main && !G.readOnly) || (G.invite && G.invite.perms && G.invite.perms.upload);
 qs('#addtile').hidden = !canAdd || !G.dir;   // the + tile lives only inside sub-folders, never on a top-level shelf
 qs('#addtile').addEventListener('click', () => qs('#up').click());
 

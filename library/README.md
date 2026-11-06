@@ -57,6 +57,12 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 - State C sheet (G5, `src/client/viewer-sheet.js` + `.css`), the same for every kind of item, top to bottom: the comments, each cut to three lines with a blue "more" (a tap on a word opens it, the edit caret on that word); the inspector, a Transcript | Info pill (transcript lines with their times; editing one loops it until Save or Cancel and saves a `line:<n>` override; Info is the file's name, type, size, length and EXIF); the cards rise in one after another; the metadata card, "Day • Date • Time" with a blue Adjust (time, location); name, type, size, length and camera are in Info, not on the card — overrides are non-destructive (`/main/api/meta`, D1 `metadata_overrides` + `revisions`, else `meta/<path>.json` in R2), marked "edited"; Revoke drops one, Clear writes a revision first, Changes lists every revision with Restore; the map (Leaflet 1.9.4 from unpkg, OpenStreetMap tiles, no key, darkened), the item as a rounded thumbnail pin, the folder's other items in view from `GET /main/api/geo?dir=&s=&w=&n=&e=` (or `/m/<token>/api/geo`, only what the link may see) on every move, close pins grouped with a count, a tap opens that item; the map keeps its own drags; Adjust moves the pin, Revoke puts it back; no place, no card. Invitees see the card and map read-only. EXIF is read from JPEGs only (40 new files per request, cached per ETag in `geo/<dir>/.geo.json`).
 - Grid, strip and viewer; click views or plays, never downloads. Info holds Download, Rename, Change Cover, Key, native
   language and New Window.
+- Collection search (Goal 43.32): a Search pill above the grid ("Search <collection>"). It matches notes and
+  comments, cached transcript lines, titles, paths, dates and kinds; results are grouped by year, newest first, with
+  the match marked and a "Show All Results for …" row; ✕ or Esc restores the grid. Rows use light thumbnails (no
+  `<audio>`/`<video>`). Add Media is hidden on read-only roots (Archive).
+- On iPhone and iPad, smaller decode limits (whole-file decode up to 24 MB or 8 min, key detection up to 20 MB), and
+  key detection pauses while the deck decodes.
 - Player: rewind / play / forward, time bar, Loop and A–B, Speed 0.5×…2× (pitch kept), volume. EQ panel: Low, Mid,
   High, Key and Room. Sized per device (phones, iPad Air 13", large monitors).
 - Loops cost no requests on Safari and in the iPhone and iPad browsers: with Sound on (EQ, Key, Room or vocal

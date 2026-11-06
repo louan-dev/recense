@@ -534,6 +534,27 @@ await test("G5: the map: the item's thumbnail pin, clusters with counts, the vie
   assert.equal(await pg.$$eval(".vsheet .vmap", (a) => a.length), 0);
 });
 
+await test("Phase 4 (Goal 43.32): morphing collection search bar groups results by year, highlights query substrings, opens items, and restores grid on dismiss", async (pg) => {
+  await pg.goto(base + "/main?p=Words");
+  assert.equal(await pg.$eval("#csin", (e) => e.placeholder), "Search Words");
+  await pg.focus("#csin");
+  assert.ok(await pg.evaluate(() => document.body.classList.contains("csearching")));
+  assert.ok(await pg.isVisible("#cscancel"));
+  await pg.fill("#csin", "delta");
+  await pg.waitForSelector("#csres .csrow");
+  const res = await pg.evaluate(() => ({
+    years: [...document.querySelectorAll("#csres .csyear")].map((h) => h.textContent),
+    marks: [...document.querySelectorAll("#csres mark.csmk")].map((m) => m.textContent.toLowerCase()),
+    showAll: document.querySelector("#csres .csshowall")?.textContent || "",
+  }));
+  assert.ok(res.years.length >= 1 && /^\d{4}$/.test(res.years[0]), "grouped under a 4-digit year header");
+  assert.ok(res.marks.includes("delta"), "matching query substring is bolded in <mark class=csmk>");
+  assert.match(res.showAll, /Show All Results for “delta”/);
+  await pg.click("#cscancel");
+  assert.ok(await pg.evaluate(() => !document.body.classList.contains("csearching") && document.getElementById("csres").hidden));
+  assert.ok(await pg.isVisible("#grid"));
+});
+
 console.log(`\n${passed} passed${failed ? ", " + failed + " failed" : ""}`);
 await browser.close();
 await mf.dispose();

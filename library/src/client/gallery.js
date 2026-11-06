@@ -1098,8 +1098,8 @@
     })() || !!window.__pdcDeck;
 
   const CHUNK = 65536; // frames per chunk: about 1.4 s
-  const BIG_DECODE = 150e6; // bytes: a compressed file larger than this isn't decoded whole
-  const LONG_DECODE = 20 * 60; // seconds: nor one longer than this (it would not fit in a phone)
+  const BIG_DECODE = IOS ? 24e6 : 150e6; // bytes: a compressed file larger than this isn't decoded whole (phones keep tighter memory)
+  const LONG_DECODE = IOS ? 8 * 60 : 20 * 60; // seconds: nor one longer than this (it would not fit in a phone)
 
   // PCM WAV and AIFF: where the samples start and how they're laid out, from the file's header
   const parsePcm = (b, size) => {
@@ -2517,6 +2517,8 @@
 
     const startDeck = () => {
       const n = nodes;
+      // pause any background key detection while the deck decodes, so two full-file decodes never collide on first play
+      if (keyJob && keyJob.f === item) keyStop();
 
       Promise.all([workletReady(), openSound(mediaSrc, audioCtx)])
         .then(([, s]) => {
@@ -2557,6 +2559,9 @@
           }
 
           if (prefs.key) applyKey();
+        })
+        .finally(() => {
+          if (nodes === n && !lb.hidden && items[cur] === item && !item.key && !item.autoKey) keySoon(item);
         });
     };
 
@@ -3314,6 +3319,7 @@
     $("count").textContent = txt;
     $("count").hidden = !!G.main && total === 0;
     $("exp").textContent = G.exp ? "Expires " + expiresAt(G.exp) : "";
+    if ($("csearch")) $("csearch").hidden = !total && !document.body.classList.contains("csearching");
 
     const c = { img: 0, vid: 0, aud: 0, doc: 0 };
     ready.forEach((f) => c[kind(f)]++);
@@ -6625,7 +6631,7 @@
   // Found from the sound: the middle two minutes, mixed to mono at 22.05 kHz, folded into a chroma
   // vector and matched against the 24 Krumhansl-Kessler key profiles (keylabel.js). Done for the
   // owner's audio uploads, and on demand from Info. What the owner types in Info wins over it.
-  const DETECT_BYTES = 80 * 1024 * 1024;
+  const DETECT_BYTES = IOS ? 20 * 1024 * 1024 : 80 * 1024 * 1024;
   const DETECT_SECONDS = 120;
   const DETECT_SR = 22050;
 
@@ -6640,6 +6646,7 @@
       const p = ctx.decodeAudioData(data, ok, no);
       if (p && p.then) p.then(ok, no);
     });
+    if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
 
     const sr = audio.sampleRate;
     const n = Math.min(audio.length, DETECT_SECONDS * sr);
@@ -6650,6 +6657,9 @@
       const d = audio.getChannelData(c);
       for (let i = 0; i < n; i++) mono[i] += d[start + i];
     }
+
+    await new Promise((r) => setTimeout(r, 0));
+    if (signal && signal.aborted) throw new DOMException("Aborted", "AbortError");
 
     return GalleryKey.keyOfChroma(GalleryKey.chromaOf(mono, sr));
   };
@@ -7818,11 +7828,302 @@
     if (!document.hidden && timer) poll();
   });
 
+  // ---------- Phase 4: collection search bar (Goal 43.32) & year-grouped results ----------
+
+  const csearch = $("csearch");
+  const csin = $("csin");
+  const csclear = $("csclear");
+  const cscancel = $("cscancel");
+  const csres = $("csres");
+  let csAll = false;
+  const txCache = new Map();
+
+  const csFolder = () => (G.dir ? G.dir.split("/").pop() : G.title || "Gallery");
+
+  // wraps every case-insensitive match of q in <mark class="csmk"> inside target el
+  const csHighlight = (el, text, q) => {
+    const s = String(text || "");
+    if (!q) {
+      el.textContent = s;
+      return;
+    }
+    const low = s.toLowerCase();
+    const qlow = q.toLowerCase();
+    const qlen = qlow.length;
+    let pos = 0;
+    while (pos < s.length) {
+      const idx = low.indexOf(qlow, pos);
+      if (idx < 0) {
+        el.appendChild(document.createTextNode(s.slice(pos)));
+        break;
+      }
+      if (idx > pos) el.appendChild(document.createTextNode(s.slice(pos, idx)));
+      const m = mkEl("mark", "csmk");
+      m.textContent = s.slice(idx, idx + qlen);
+      el.appendChild(m);
+      pos = idx + qlen;
+    }
+  };
+
+  // extracts a ~140-char window around the first match of q in text
+  const csWindow = (text, q) => {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    if (!s || !q || s.length <= 140) return s;
+    const idx = s.toLowerCase().indexOf(q.toLowerCase());
+    if (idx < 0) return s.slice(0, 140) + "…";
+    const start = Math.max(0, idx - 48);
+    const end = Math.min(s.length, idx + q.length + 84);
+    return (start > 0 ? "…" : "") + s.slice(start, end) + (end < s.length ? "…" : "");
+  };
+
+  // lightweight thumbnail for search rows (never creates <audio>/<video> elements)
+  const csThumb = (f) => {
+    const box = mkEl("div", "csthumb");
+    const u = !f.pending ? artSrc(f) || (kind(f) === "img" ? src(f) : null) : null;
+    if (u) {
+      const im = new Image();
+      im.src = u;
+      im.alt = "";
+      im.loading = "lazy";
+      im.decoding = "async";
+      im.onerror = () => {
+        const d = mkEl("span", "doc");
+        d.appendChild(icon(ext(f)));
+        box.replaceChildren(d);
+      };
+      box.appendChild(im);
+    } else {
+      const d = mkEl("span", "doc");
+      d.appendChild(icon(ext(f)));
+      box.appendChild(d);
+    }
+    return box;
+  };
+
+  const csDate = (t) => {
+    if (!t) return "";
+    const d = new Date(t);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return mm + "/" + dd + "/" + d.getFullYear();
+  };
+
+  const csMatch = (f, q) => {
+    const qlow = q.toLowerCase();
+    const title = String(f.name || f.path || "");
+    const path = String(f.path || "");
+    const dateStr = csDate(f.taken) + " " + (f.taken ? new Date(f.taken).getFullYear() : "");
+    const notes = listOf(f)
+      .map((c) => (c.by ? c.by + ": " : "") + (c.text || ""))
+      .filter(Boolean);
+    const lines = txCache.get(f) || [];
+
+    if (!qlow) {
+      const firstNote = notes[0] || (lines[0] && lines[0].text) || (path && path !== title ? path : noun(f) + (f.size ? " · " + sz(f.size) : ""));
+      return { hit: true, snip: firstNote, seek: null };
+    }
+
+    // 1. Check notes / comments
+    for (const n of notes) {
+      if (n.toLowerCase().includes(qlow)) return { hit: true, snip: csWindow(n, q), seek: null };
+    }
+    // 2. Check cached transcript lines
+    for (const l of lines) {
+      const lt = (l.text || "") + (l.tr ? " — " + l.tr : "");
+      if (lt.toLowerCase().includes(qlow)) return { hit: true, snip: csWindow(lt, q), seek: typeof l.t0 === "number" ? l.t0 : null };
+    }
+    // 3. Check title, path, date, or media kind
+    const meta = [title, path, dateStr, noun(f), ext(f)].join(" ");
+    if (meta.toLowerCase().includes(qlow)) {
+      const fallback = notes[0] || (lines[0] && lines[0].text) || (path && path !== title ? path : noun(f) + (f.size ? " · " + sz(f.size) : ""));
+      return { hit: true, snip: csWindow(fallback, q), seek: null };
+    }
+    return { hit: false, snip: "", seek: null };
+  };
+
+  const paintSearch = () => {
+    if (!csres || !document.body.classList.contains("csearching")) return;
+    const q = (csin ? csin.value : "").trim();
+    if (csclear) csclear.hidden = !q;
+
+    const matched = [];
+    for (let i = 0; i < items.length; i++) {
+      const f = items[i];
+      if (f.pending) continue;
+      const m = csMatch(f, q);
+      if (m.hit) matched.push({ f, i, snip: m.snip, seek: m.seek });
+    }
+
+    csres.replaceChildren();
+
+    if (!matched.length) {
+      const emp = mkEl("div", "csempty");
+      emp.textContent = q ? "No results for “" + q + "”" : "No items in this collection";
+      csres.appendChild(emp);
+      return;
+    }
+
+    // Group matching items by Year descending (Goal 43.32)
+    const byYear = new Map();
+    for (const row of matched) {
+      const yr = row.f.taken ? new Date(row.f.taken).getFullYear() : new Date().getFullYear();
+      if (!byYear.has(yr)) byYear.set(yr, []);
+      byYear.get(yr).push(row);
+    }
+    const years = [...byYear.keys()].sort((a, b) => b - a);
+    const limit = csAll || !q ? Infinity : 6;
+    let shown = 0;
+
+    for (const yr of years) {
+      if (shown >= limit) break;
+      const group = byYear.get(yr);
+      const h = mkEl("h3", "csyear");
+      h.textContent = String(yr);
+      csres.appendChild(h);
+
+      for (const { f, i, snip, seek } of group) {
+        if (shown >= limit) break;
+        shown++;
+
+        const row = mkEl("div", "csrow");
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        row.dataset.n = f.n;
+
+        const main = mkEl("div", "csmain");
+        const dt = mkEl("div", "csdate");
+        dt.textContent = csDate(f.taken);
+
+        const ttl = mkEl("div", "cstitle");
+        csHighlight(ttl, f.name || f.path || "Untitled", q);
+
+        const sn = mkEl("div", "cssnip");
+        csHighlight(sn, snip, q);
+
+        const acts = mkEl("div", "csacts");
+        const pill = mkEl("span", "cspill");
+        const k = kind(f);
+        const isAV = k === "aud" || k === "vid";
+        pill.innerHTML =
+          (isAV
+            ? '<svg viewBox="0 0 24 24"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>'
+            : "") +
+          "<span></span>";
+        pill.lastChild.textContent = (isAV ? "Play" : "Open") + (f.size ? " · " + sz(f.size) : "");
+
+        const more = mkEl("span", "csmore");
+        more.textContent = "•••";
+        acts.append(pill, more);
+
+        main.append(dt, ttl, sn, acts);
+        row.append(main, csThumb(f));
+
+        const activate = () => {
+          openAt(i);
+          if (seek != null) {
+            setTimeout(() => {
+              const m = stageMedia();
+              if (m) {
+                try {
+                  m.currentTime = seek;
+                } catch (x) {}
+              }
+            }, 120);
+          }
+        };
+        row.onclick = activate;
+        row.onkeydown = (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activate();
+          }
+        };
+        csres.appendChild(row);
+      }
+    }
+
+    if (q && matched.length > 0 && (!csAll || matched.length > shown)) {
+      const allBtn = mkEl("button", "csshowall");
+      allBtn.type = "button";
+      allBtn.textContent = "Show All Results for “" + q + "”";
+      allBtn.onclick = () => {
+        csAll = true;
+        paintSearch();
+      };
+      csres.appendChild(allBtn);
+    }
+  };
+
+  const enterSearch = () => {
+    if (!csearch || document.body.classList.contains("csearching")) return;
+    document.body.classList.add("csearching");
+    if (cscancel) cscancel.hidden = false;
+    if (csres) csres.hidden = false;
+    paintSearch();
+    // warm any already-resolved transcripts into txCache without firing extra network traffic during tests
+    items.forEach((f) => {
+      if (f.tx && typeof f.tx.then === "function" && !txCache.has(f)) {
+        f.tx.then((t) => {
+          if (t && Array.isArray(t.lines)) {
+            txCache.set(f, t.lines);
+            if (document.body.classList.contains("csearching")) paintSearch();
+          }
+        }).catch(() => {});
+      }
+    });
+  };
+
+  const exitSearch = () => {
+    if (!csearch) return;
+    if (csin) {
+      csin.value = "";
+      csin.blur();
+    }
+    csAll = false;
+    document.body.classList.remove("csearching");
+    if (csclear) csclear.hidden = true;
+    if (cscancel) cscancel.hidden = true;
+    if (csres) {
+      csres.hidden = true;
+      csres.replaceChildren();
+    }
+  };
+
+  if (csearch && csin) {
+    csin.placeholder = "Search " + csFolder();
+    csin.addEventListener("focus", enterSearch);
+    csin.addEventListener("input", () => {
+      csAll = false;
+      if (!document.body.classList.contains("csearching")) enterSearch();
+      else paintSearch();
+    });
+    if (csclear) {
+      csclear.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        csin.value = "";
+        csAll = false;
+        paintSearch();
+        csin.focus();
+      };
+    }
+    if (cscancel) {
+      cscancel.onclick = () => exitSearch();
+    }
+    addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && lb.hidden && document.body.classList.contains("csearching")) {
+        e.preventDefault();
+        exitSearch();
+      }
+    });
+  }
+
   // ---------- go ----------
 
   items.forEach((f) => grid.appendChild(buildTile(f)));
   ensureHero();
   refreshInfo();
+  if (csearch) csearch.hidden = !items.length;
 
   if (!complete) timer = setInterval(poll, 2000);
 
