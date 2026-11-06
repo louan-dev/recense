@@ -413,6 +413,17 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-05 18:52 PST · Library home bar: momentum glide fix (held back from f468f35) · DONE (not pushed; push deploys library)
+- **Cause:** the Gallery session's homebar.js glide detector needed < 34 ms between wheel steps; Playwright's
+  synthetic steps come ~50 ms apart, so "Notes 35" never saw the glide and failed. On failure the harness's unbounded
+  `pg.screenshot()` stalled on the animating ruler and node grew to 1.3 GB until macOS killed the UI suite.
+- **Fix** (recense 81e22fc): `library/src/client/homebar.js` glide steps may be up to 80 ms apart (detector, walk-back
+  to the lift point, swallow window); `library/test/ui.test.mjs` failure screenshot bounded (5 s, caught). Plus the
+  session's own item 31 reorder (notation toggle on the music page; `chromaAvg` declared before use). README.
+- **Validation:** Notes 35 2/2; ui 52/52; viewer 120/120; routes 60 + 61 (D1: the 90 MiB upload test flaked once
+  under memory pressure, 2/2 on rerun; passes on HEAD); dav-rclone 3; transcript 15; cadence; images 8.
+- **Next:** owner pushes recense (deploys library via `.github/workflows/library.yml`).
+
 ### 2026-11-05 18:45 PST · A15 cutover (HANDOFF item 5, steps a–l) · DONE (push and the old repos' archive below)
 - a. Gallery's tree committed by its session (f468f35, 18:24; its homebar momentum-glide change held back, patch kept in
   `.handoff/homebar-glide-uncommitted-20261105.patch`). sync and recense were already pushed. No second cutover ran.
