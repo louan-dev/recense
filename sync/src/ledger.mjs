@@ -250,7 +250,7 @@ export async function run(o) {
   const state = loadState(stateFile);
   const known = await sink.list('objects'); // what the sink already holds (dedup across everything it has ever seen)
 
-  const counts = { files: 0, unchanged: 0, changed: 0, uploaded: 0, bytes: 0, deferred: 0, evicted: 0, unstable: 0, denied: 0, symlinks: 0, tombstones: 0, conflicts: 0 };
+  const counts = { files: 0, unchanged: 0, changed: 0, uploaded: 0, bytes: 0, deferred: 0, evicted: 0, unstable: 0, denied: 0, symlinks: 0, tombstones: 0, conflicts: 0, held: 0 };
   const events = []; const next = {}; const seen = new Set(); const live = new Set();
   const stageDir = o.stageDir ? assertWritable(o.stageDir) : path.join(os.tmpdir(), 'ledger-stage');
 
@@ -285,13 +285,22 @@ export async function run(o) {
     if (!prev || prev.hash !== r.hash) events.push({ op: prev?.hash ? 'modify' : 'create', id: idOf(key), path: key, dir: false, hash: r.hash, md5: r.md5, size: r.size, mtime: Math.floor(st.mtimeMs / 1000), mtimeMs: Math.round(st.mtimeMs), prev: prev?.hash ?? null });
   }
 
-  // P1: a source that suddenly lacks most of what we knew is a broken mount, not a mass deletion.
+  // P1: a source that suddenly lacks most of what we knew is a broken mount, not a mass deletion. A file whose exact
+  // bytes are still in the source under another path was moved, so it doesn't count. When the rest trips the guard,
+  // those deletions are held (kept in state, re-checked on every run) and everything else is still recorded: one bad
+  // mount or one folder cleanup must not stop the journal (D3, 2026-11-06). --allow-mass-delete records them.
   const vanished = Object.keys(state.files).filter((k) => !seen.has(k));
   const knownCount = Object.keys(state.files).length;
-  if (!o.allowMassDelete && massDelete(vanished.length, knownCount)) {
-    throw new Error(`refusing: ${vanished.length} of ${knownCount} known files vanished at once (empty mount?). Re-run with --allow-mass-delete if this is real.`);
+  const present = new Set(); for (const k of seen) if (next[k]?.hash) present.add(next[k].hash);
+  const gone = vanished.filter((k) => !(state.files[k].hash && present.has(state.files[k].hash)));
+  const held = !o.allowMassDelete && massDelete(gone.length, knownCount) ? new Set(gone) : null;
+  if (held) {
+    for (const k of held) next[k] = state.files[k];
+    counts.held = held.size;
+    log(`held: ${held.size} of ${knownCount} known files vanished at once (empty mount?); their deletions wait. If this is real, re-run with --allow-mass-delete.`);
   }
   for (const k of vanished) { // P3: deletion is an event, never an erasure
+    if (held?.has(k)) continue;
     const p = state.files[k];
     if (p.hash) { events.push({ op: 'delete', id: idOf(k), path: k, dir: false, prev: p.hash }); counts.tombstones++; }
   }
@@ -612,8 +621,8 @@ export function quota(o = {}) {
 export async function health(sink, { maxAgeHours = 24, now = Date.now, log = console.log } = {}) {
   let h; try { h = JSON.parse(await sink.getText('views/health.json')); } catch { log(`health: no views/health.json in ${sink.name}`); return { ok: false, reason: 'missing' }; }
   const ageH = (now() - Date.parse(h.lastOk)) / 3600_000; const ok = ageH <= maxAgeHours;
-  log(`health: ${ok ? 'OK' : 'STALE'}; lastOk ${h.lastOk} (${ageH.toFixed(1)} h ago); evicted ${h.counts?.evicted ?? '?'}, unstable ${h.counts?.unstable ?? '?'}`);
-  return { ok, ageH, lastOk: h.lastOk, reason: ok ? null : 'stale' };
+  log(`health: ${ok ? 'OK' : 'STALE'}; lastOk ${h.lastOk} (${ageH.toFixed(1)} h ago); evicted ${h.counts?.evicted ?? '?'}, unstable ${h.counts?.unstable ?? '?'}${h.counts?.held ? `; HELD ${h.counts.held} deletion(s), see sync/README.md (Held deletions)` : ''}`);
+  return { ok, ageH, lastOk: h.lastOk, held: h.counts?.held || 0, reason: ok ? null : 'stale' };
 }
 
 // ------------------------------------------------------------------ overflow (read-only plan: what should leave iCloud for R2)
@@ -747,8 +756,26 @@ async function selftest() {
   const sink2 = new LocalDirSink(path.join(tmp, 'sink2')); const st2 = path.join(tmp, 'state2.json');
   await run({ source: big, sink: sink2, state: st2, apply: true, quietSecs: 0, now: () => clock, log: quiet });
   for (let i = 0; i < 12; i++) await fsp.rm(path.join(big, `f${i}.txt`));
-  threw = false; try { await run({ source: big, sink: sink2, state: st2, apply: true, quietSecs: 0, now: () => clock, log: quiet }); } catch (e) { threw = /refusing/.test(e.message); }
-  assert(threw, 'a source that suddenly loses every file is refused, not tombstoned');
+  await fsp.writeFile(path.join(big, 'kept.txt'), 'k'); await fsp.utimes(path.join(big, 'kept.txt'), old, old);
+  const go2 = (extra = {}) => run({ source: big, sink: sink2, state: st2, apply: true, quietSecs: 0, now: () => clock, log: quiet, ...extra });
+  let r2 = await go2();
+  assert(r2.counts.held === 12 && r2.counts.tombstones === 0 && r2.events.some((e) => e.op === 'create' && e.path === 'kept.txt'),
+    'a source that suddenly loses every file holds those deletions, and the run still records everything else');
+  assert((await health(sink2, { now: () => clock, log: quiet })).held === 12, 'health reports the held deletions');
+  r2 = await go2();
+  assert(r2.counts.held === 12 && !r2.events.some((e) => e.op === 'delete'), 'held deletions stay held, run after run');
+  r2 = await go2({ allowMassDelete: true });
+  assert(r2.counts.held === 0 && r2.counts.tombstones === 12, '--allow-mass-delete records the held deletions');
+  r2 = await go2();
+  assert(r2.counts.held === 0 && r2.counts.tombstones === 0 && (await health(sink2, { now: () => clock, log: quiet })).held === 0,
+    'once recorded they leave state, and health is clear');
+  const mv = path.join(tmp, 'mv'); await fsp.mkdir(path.join(mv, 'a'), { recursive: true });
+  for (let i = 0; i < 12; i++) { const f = path.join(mv, 'a', `m${i}.txt`); await fsp.writeFile(f, `m${i}`); await fsp.utimes(f, old, old); }
+  const goMv = () => run({ source: mv, sink: new LocalDirSink(path.join(tmp, 'mvsink')), state: path.join(tmp, 'mvstate.json'), apply: true, quietSecs: 0, now: () => clock, log: quiet });
+  await goMv(); await fsp.rename(path.join(mv, 'a'), path.join(mv, 'b'));
+  const rm = await goMv();
+  assert(rm.counts.held === 0 && rm.counts.tombstones === 12 && rm.events.filter((e) => e.op === 'create').length === 12,
+    'a mass move is not a mass delete: old paths tombstoned, new paths created, nothing held (the 2026-11-05 stall)');
   assert(!massDelete(10, 12) && massDelete(11, 12) && !massDelete(15, 200) && massDelete(21, 200) && massDelete(101, 1e7) && !massDelete(100, 1e7),
     'one delete guard (event-log.md §5): >100, or >10 and >10% of what was known');
 

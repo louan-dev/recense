@@ -33,6 +33,14 @@ decisions, changelog), with detail in `../docs/BACKLOG.md` and `../docs/SPEC.md`
 - **Ledger** (`src/ledger.mjs`): read-only observer of the iCloud folder, an append-only SHA-256 hash-chained journal in
   the shared event-log format, mirrored to R2. Audit, backup status (Arq to R2), quota and freeing proposals (never
   deletes), verify, restore and health (`views/health.json`). Zero dependencies.
+  - **Held deletions** (D3, 2026-11-06). A file whose bytes reappear under another path was moved, not deleted. If what
+    truly vanished trips the guard (over 100 files, or over 10 and over 10% of what was known), the run still records
+    everything else and holds those deletions until you confirm them. The log and `health` say `held: N`. You get one
+    notification when the count changes, never one per run. To record them (deletion is an event, so they stay
+    restorable), run the job's command once with `--allow-mass-delete`. For the vault:
+    `RCLONE_CONFIG=~/.config/rclone/jobs.conf node ~/Developer/recense/sync/src/ledger.mjs run --source "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian" --sink rclone:gallery-main:gallery-main/ledger/obsidian --origin obsidian --materialize --apply --allow-mass-delete`
+  - **Notifications** (`bin/ledger-job.sh`) fire only on a change: a run starts or stops failing, held deletions, fold
+    fails, the mirror goes stale. The last state of each is in `~/.ledger/notified-<origin>-*`.
 - **Canary** (`src/canary.mjs`): a note's round trip Mac → iPhone → iPad → Mac, with an upload-status probe.
 - **CalDAV Worker** (`../calendar/`): your own calendar server; calendar backup through EventKit (`tools/cal-export`).
 - **Messenger ingest** (`src/messenger.mjs`).

@@ -413,6 +413,24 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-06 07:15 PST · A12h / D3 ledger: a move is not a deletion; held deletions instead of a stalled journal · DONE
+- Cause (2026-11-05 15:33 → 11-06 14:52Z): N3 moved the conflict copies. The mass-delete guard counted moves as deletions
+  and threw before saving state, so nothing was journaled. `ledger-job.sh` notified on every WatchPaths run, which meant
+  every Draftpad save.
+- Change:
+  - `sync/src/ledger.mjs` counts only vanished files whose bytes are gone from the source.
+  - Past the guard, those deletions are held: kept in state, shown as `held: N` in the log and in `views/health.json`,
+    while the run records everything else.
+  - `sync/bin/ledger-job.sh` notifies only on a change (run failing or recovered, held count, fold, stale), using
+    markers in `~/.ledger/`.
+- The 51 conflict copies' deletions were recorded at 14:52Z by session chauphan-3f's one `--allow-mass-delete` run
+  (110 creates, 51 deletes, 2 modifies).
+- Validation:
+  - `npm test` in `sync/`: exit 0; 6 new checks (held, stays held, approve, cleared, health, mass move).
+  - The real job through launchd kickstart at 15:04Z: exit 0, `held: 0`, health OK, no notification.
+- Next: Recense foundations (X1: transcripts in `~/Recense/keep/`; the play-button fix). Lanes `work/study-feed` and
+  `work/editor` started from `main` 9fab85a; briefs in `.handoff/<area>/INBOX.md`.
+
 ### 2026-11-05 21:05 PST · A11 Draftpad: edits from the iPhone/iPad no longer overwritten · DONE (code + selftest; device round trip unverified)
 - Owner: "edits don't sync". Mac side fine: 373/373 vault files uploaded, iCloud synced 20:51; no new conflict copies.
 - Cause in Recense (`strip/app.swift` saveNow/pollExternal): the 1 s poll skips while you type, then the 0.4 s save wrote the
