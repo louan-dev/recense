@@ -2992,15 +2992,51 @@ func cleanTitle(_ s: String) -> String {
     return t.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
 }
 
-func lrclib(_ path: String, _ q: [String: String]) async -> Any? {
-    guard var c = URLComponents(string: "https://lrclib.net/api/" + path) else { return nil }
-    c.queryItems = q.map { URLQueryItem(name: $0.key, value: $0.value) }
-    for attempt in 0..<5 {
-        guard let u = c.url, let (d, r) = try? await URLSession.shared.data(from: u) else { return nil }
-        if (r as? HTTPURLResponse)?.statusCode == 503 { try? await Task.sleep(for: .seconds(1.5 * Double(attempt + 1))); continue }  // "server busy"
-        return try? JSONSerialization.jsonObject(with: d)
+// ---- lyrics lookups (R17): music only; at most 2 LRCLIB requests a song, none for speech ----
+
+/// Who is asking, as LRCLIB asks its clients to say (lrclib.net/docs: name, version, homepage).
+let lyricsAgent = "Recense/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0") (https://github.com/louan-dev/recense)"
+/// How lyrics requests go out; `recense selftest` puts a stand-in here that counts them.
+nonisolated(unsafe) var lyricsTransport: (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) }
+/// How a request waits before it is tried again; the selftest records the waits instead.
+nonisolated(unsafe) var lyricsWait: (Double) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
+
+/// A request's answer: its JSON; a definite no (404 TrackNotFound, any other 4xx); or failed (no network, or the server
+/// still busy after 3 tries), which leaves the item to be asked again next time.
+enum LyricsAnswer { case json(Any), miss, failed }
+
+/// One request, as LRCLIB and Genius ask to be used: Recense named in the User-Agent; on 429 or a 5xx, Retry-After
+/// honoured (at most 30 s; without one, 2 s, then 4 s), 3 tries in all and no wait after the last.
+func lyricsRequest(_ r: URLRequest) async -> LyricsAnswer {
+    var r = r
+    r.setValue(lyricsAgent, forHTTPHeaderField: "User-Agent"); r.timeoutInterval = 20
+    for attempt in 1...3 {
+        guard let (d, resp) = try? await lyricsTransport(r), let h = resp as? HTTPURLResponse else { return .failed }
+        switch h.statusCode {
+        case 200..<300: return (try? JSONSerialization.jsonObject(with: d)).map { .json($0) } ?? .failed   // text isn't an answer
+        case 429, 500..<600:
+            guard attempt < 3 else { return .failed }
+            await lyricsWait(retryAfter(h) ?? Double(2 * attempt))
+        default: return .miss
+        }
     }
-    return nil
+    return .failed
+}
+
+/// Retry-After, in seconds or as an HTTP date, at most 30 s.
+func retryAfter(_ h: HTTPURLResponse) -> Double? {
+    guard let v = h.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return nil }
+    if let s = Double(v) { return min(30, max(0, s)) }
+    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    return f.date(from: v).map { min(30, max(0, $0.timeIntervalSinceNow)) }
+}
+
+func lrclib(_ path: String, _ q: [String: String]) async -> LyricsAnswer {
+    guard var c = URLComponents(string: "https://lrclib.net/api/" + path) else { return .failed }
+    c.queryItems = q.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+    c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")   // a "+" in a title isn't a space
+    guard let u = c.url else { return .failed }
+    return await lyricsRequest(URLRequest(url: u))
 }
 
 func lyricLines(_ hit: [String: Any]) -> [String]? {
@@ -3012,52 +3048,324 @@ func lyricLines(_ hit: [String: Any]) -> [String]? {
     return l.isEmpty ? nil : l
 }
 
-/// Lyrics that could be this song: everything LRCLIB has at its length (within 10 s) for the title as shown, the
-/// title as published (a site may show it translated: "lo que pasó" → "what happened"), and the artist alone.
-/// Nearest length first. A podcast or lecture never matches.
-func lyricsCandidates(titles: [String], duration: Double) async -> [[String]] {
-    guard duration > 30, duration < 1200 else { return [] }
-    var queries: [String] = []
-    for t in titles.map(cleanTitle) where t.count >= 3 {
-        queries.append(t)
-        if let artist = t.components(separatedBy: " - ").first, artist != t, artist.count >= 2 { queries.append(artist) }
-    }
-    var hits: [(d: Double, lines: [String])] = [], seen = Set<String>()
-    for q in NSOrderedSet(array: queries).array as! [String] {
-        for h in (await lrclib("search", ["q": q]) as? [[String: Any]]) ?? [] {
-            let d = abs((h["duration"] as? Double ?? 0) - duration)
-            guard d <= 10, let l = lyricLines(h) else { continue }
-            let sig = Episode.norm(l.prefix(6).joined(separator: " ")).joined(separator: " ")
-            if seen.insert(sig).inserted { hits.append((d, l)) }
-        }
-    }
-    return hits.sorted { $0.d < $1.d }.prefix(8).map(\.lines)
+/// What a lyrics lookup knows of an item.
+struct LyricsItem {
+    var titles: [String]                       // as published (yt-dlp: the original, where a site shows it translated), as shown
+    var artist: String? = nil, track: String? = nil, album: String? = nil   // a file's own tags
+    var duration: Double
+    var marked = false                         // played in Music, or kept in Gallery's Music folder
+    var heard: Bool? = nil                     // SoundAnalysis on 30 s of it (heardAsMusic); nil: not heard
 }
 
-/// Songs whose lyrics contain these sung phrases (Genius searches lyrics text; needs GENIUS_TOKEN, free at
-/// genius.com/api-clients), with their lyrics from LRCLIB. For when the title names nothing LRCLIB knows.
-func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
-    guard !cfg.geniusToken.isEmpty else { return [] }
-    var out: [[String]] = [], tried = Set<String>()
-    for phrase in phrases.prefix(3) {
-        guard var c = URLComponents(string: "https://api.genius.com/search") else { continue }
-        c.queryItems = [URLQueryItem(name: "q", value: phrase)]
-        var req = URLRequest(url: c.url!); req.setValue("Bearer \(cfg.geniusToken)", forHTTPHeaderField: "Authorization")
-        guard let (d, _) = try? await URLSession.shared.data(for: req),
-              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let hits = (j["response"] as? [String: Any])?["hits"] as? [[String: Any]] else { continue }
-        for h in hits.prefix(3) {
-            guard let r = h["result"] as? [String: Any], let title = r["title"] as? String,
-                  let artist = (r["primary_artist"] as? [String: Any])?["name"] as? String,
-                  tried.insert("\(artist)|\(title)").inserted else { continue }
-            for hit in (await lrclib("search", ["track_name": title, "artist_name": artist]) as? [[String: Any]]) ?? []
-            where abs((hit["duration"] as? Double ?? 0) - duration) <= 10 {
-                if let l = lyricLines(hit) { out.append(l); break }
-            }
+/// What it found: lyrics within 10 s of the item's length, nearest first. `exact`: the nearest is within 2 s, so it is
+/// this song by its length alone; the others wait for the singing to confirm them (verifyLyrics). `failed`: no network,
+/// or the server stayed busy; nothing is learned, and the item is asked again next time.
+struct LyricsFound {
+    var options: [[String]] = []
+    var exact = false, failed = false, instrumental = false
+}
+
+/// A music-video title, or "Artist - Title" at song length: what a title alone says.
+func titledLikeSong(_ title: String?, duration: Double) -> Bool {
+    let t = cleanTitle(title ?? "")
+    return (looksLikeMusic(title ?? "") && duration < 900)
+        || (duration > 60 && duration < 480 && t.range(of: #"^[^-–—|]{2,40} [-–—] [^-–—|]{2,80}$"#, options: .regularExpression) != nil)
+}
+
+/// Music only (R17): what the source says (played in Music, kept in the Music folder), else what SoundAnalysis heard; a
+/// title alone counts only when nothing could be heard. Speech asks nothing, nor does anything under 30 s or over 20 min.
+func lyricsWanted(_ it: LyricsItem) -> Bool {
+    guard it.duration > 30, it.duration < 1200 else { return false }
+    return it.marked || (it.heard ?? titledLikeSong(it.titles.last, duration: it.duration))
+}
+
+final class MusicObserver: NSObject, SNResultsObserving, @unchecked Sendable {
+    var windows = 0, music = 0, singing = 0
+    static let sung = ["singing", "choir_singing", "rapping", "yodeling", "humming"]
+    func request(_ request: SNRequest, didProduce result: SNResult) {
+        guard let r = result as? SNClassificationResult else { return }
+        func c(_ id: String) -> Double { r.classification(forIdentifier: id)?.confidence ?? 0 }
+        windows += 1
+        if c("music") >= 0.5 { music += 1 }
+        if MusicObserver.sung.contains(where: { c($0) >= 0.3 }) { singing += 1 }
+    }
+}
+
+/// SoundAnalysis on 30 s from the middle of the file, a fifth of a second's work: music in most of its 3 s windows, or
+/// singing in half of them (R17). On this Mac (11-05) 13 music files had music in 74–100 % of their windows, and 28
+/// talks, lectures and podcasts in 0–5 %, but for two long podcasts with music beds (47 %, 89 %), which the 20-minute
+/// limit leaves out. nil: the file can't be read.
+func heardAsMusic(_ f: URL) async -> Bool? {
+    guard let af = try? AVAudioFile(forReading: f), af.length > 0,
+          let rq = try? SNClassifySoundRequest(classifierIdentifier: .version1) else { return nil }
+    let fmt = af.processingFormat, sr = fmt.sampleRate, len = Double(af.length) / sr, take = min(30, len)
+    af.framePosition = AVAudioFramePosition(max(0, len / 2 - take / 2) * sr)
+    let an = SNAudioStreamAnalyzer(format: fmt), ob = MusicObserver()
+    guard (try? an.add(rq, withObserver: ob)) != nil else { return nil }
+    var at: AVAudioFramePosition = 0, left = AVAudioFrameCount(take * sr)
+    while left > 0, let b = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: min(AVAudioFrameCount(sr), left)),
+          (try? af.read(into: b, frameCount: b.frameCapacity)) != nil, b.frameLength > 0 {
+        an.analyze(b, atAudioFramePosition: at)
+        at += AVAudioFramePosition(b.frameLength); left -= min(left, b.frameLength)
+    }
+    an.completeAnalysis()                                  // results are all in once it returns
+    guard ob.windows > 0 else { return nil }
+    return Double(ob.music) >= 0.6 * Double(ob.windows) || Double(ob.singing) >= 0.5 * Double(ob.windows)
+}
+
+/// Lyrics for an item from LRCLIB (R17), at most 2 requests: one exact /api/get by artist, title, album and length (a
+/// file's tags, else "Artist - Title"), then one /api/search as the fallback (with no artist to ask by, a search for
+/// each of two titles). Never a search by the artist alone.
+func lookUpLyrics(_ it: LyricsItem) async -> LyricsFound {
+    var out = LyricsFound()
+    guard lyricsWanted(it) else { return out }
+    let titles = NSOrderedSet(array: it.titles.map(cleanTitle).filter { $0.count >= 3 }).array as! [String]
+    let dash = #"\s[-–—]\s"#
+    var sig: (artist: String, track: String)?
+    if let a = it.artist, let t = it.track.map(cleanTitle), !a.isEmpty, !t.isEmpty { sig = (a, t) }
+    else if let t = titles.first(where: { $0.range(of: dash, options: .regularExpression) != nil }),
+            let r = t.range(of: dash, options: .regularExpression) {
+        sig = (String(t[..<r.lowerBound]).trimmingCharacters(in: .whitespaces), String(t[r.upperBound...]).trimmingCharacters(in: .whitespaces))
+    }
+    var hits: [(d: Double, lines: [String])] = [], seen = Set<String>()
+    func take(_ h: [String: Any]) {
+        let d = abs((h["duration"] as? Double ?? 0) - it.duration)
+        guard d <= 10, let l = lyricLines(h) else { return }
+        if seen.insert(Episode.norm(l.prefix(6).joined(separator: " ")).joined(separator: " ")).inserted { hits.append((d, l)) }
+    }
+    if let s = sig {
+        var q = ["track_name": s.track, "artist_name": s.artist, "duration": String(Int(it.duration.rounded()))]
+        if let a = it.album, !a.isEmpty { q["album_name"] = a }
+        switch await lrclib("get", q) {
+        case .json(let j as [String: Any]):
+            if j["instrumental"] as? Bool == true { out.instrumental = true; return out }
+            take(j)
+        case .failed: out.failed = true; return out
+        default: break
         }
     }
-    if !out.isEmpty { log("genius: \(out.count) candidate(s) from the words sung") }
+    for q in titles.prefix(sig == nil ? 2 : 1) where hits.isEmpty {
+        switch await lrclib("search", ["q": q]) {
+        case .json(let j as [[String: Any]]): j.forEach(take)
+        case .failed: out.failed = true; return out
+        default: break
+        }
+    }
+    hits.sort { $0.d < $1.d }
+    out.options = hits.prefix(8).map(\.lines)
+    out.exact = (hits.first?.d ?? 99) <= 2
     return out
+}
+
+/// A miss is asked again after 30 days, or at once under a new title (R17).
+func lyricsStale(at: Double?, asked: String?, now: Double, title: String) -> Bool {
+    asked != title || now - (at ?? 0) > 30 * 86_400
+}
+
+/// For a confirmed song whose title found nothing the singing matches: the song Genius finds by the longest phrase sung
+/// (Genius searches lyrics; needs GENIUS_TOKEN, free at genius.com/api-clients), its lyrics from LRCLIB's /api/get by
+/// that title and artist. One search and one get (R17); the singing then judges them (verifyLyrics).
+func lyricsBySung(_ phrases: [String], token: String = cfg.geniusToken) async -> [[String]] {
+    guard !token.isEmpty, let phrase = phrases.first, var c = URLComponents(string: "https://api.genius.com/search") else { return [] }
+    c.queryItems = [URLQueryItem(name: "q", value: phrase)]
+    guard let u = c.url else { return [] }
+    var r = URLRequest(url: u); r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    guard case .json(let j as [String: Any]) = await lyricsRequest(r),
+          let top = ((j["response"] as? [String: Any])?["hits"] as? [[String: Any]])?.first?["result"] as? [String: Any],
+          let title = top["title"] as? String, let artist = (top["primary_artist"] as? [String: Any])?["name"] as? String,
+          case .json(let h as [String: Any]) = await lrclib("get", ["track_name": title, "artist_name": artist]),
+          let l = lyricLines(h) else { return [] }
+    return [l]
+}
+
+/// `recense selftest`: the lookups above against a stand-in LRCLIB and Genius that count requests (R17). 50 items,
+/// songs, speech and ambiguous titles: a song costs at most 2 requests, speech none. Then the waits on 429 and 503, a
+/// network failure, the User-Agent, the 2 s rule, the 30-day recheck, and Genius's one search and one get.
+func lyricsSelftest() -> Bool {
+    final class Out: @unchecked Sendable { var ok = false }
+    let out = Out(), finished = DispatchSemaphore(value: 0)
+    Task.detached { out.ok = await lyricsSelftestRun(); finished.signal() }
+    finished.wait()
+    return out.ok
+}
+
+private func lyricsSelftestRun() async -> Bool {
+    struct Rec { let artist, track: String; let d: Double; var instrumental = false }
+    let db = [Rec(artist: "Amália Hoje", track: "Gaivota", d: 230), Rec(artist: "Nina Cobham", track: "lo que pasó", d: 151),
+              Rec(artist: "Delta V", track: "Le Cose Che Vorrei", d: 287), Rec(artist: "Kefaya", track: "Nirbhaya", d: 425),
+              Rec(artist: "Oda Jonetta Joberg", track: "Songbird", d: 123),
+              Rec(artist: "Submotion Orchestra", track: "Prism", d: 303, instrumental: true),
+              Rec(artist: "Gökhan Ulusoy", track: "İzmir", d: 432), Rec(artist: "Agim Krajka", track: "Dëgjoma Këngën", d: 225),
+              Rec(artist: "Fleetwood Mac", track: "Songbird", d: 200), Rec(artist: "The Seminar", track: "Lecture One", d: 200),
+              Rec(artist: "Briken Aliu", track: "Senin Şarkın", d: 321)]
+    final class Seen: @unchecked Sendable {
+        var asks: [URL] = [], agents = Set<String>(), waits: [Double] = [], script: [Int] = [], retryAfter: String?
+    }
+    let seen = Seen(), kept = (lyricsTransport, lyricsWait)
+    defer { lyricsTransport = kept.0; lyricsWait = kept.1 }
+    func fold(_ s: String) -> String { s.lowercased().folding(options: .diacriticInsensitive, locale: nil) }
+    lyricsWait = { seen.waits.append($0) }
+    lyricsTransport = { r in
+        let u = r.url!, c = URLComponents(url: u, resolvingAgainstBaseURL: false)!
+        seen.asks.append(u); seen.agents.insert(r.value(forHTTPHeaderField: "User-Agent") ?? "")
+        let q = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
+        func reply(_ code: Int, _ body: Any, _ head: [String: String] = [:]) -> (Data, URLResponse) {
+            (try! JSONSerialization.data(withJSONObject: body),
+             HTTPURLResponse(url: u, statusCode: code, httpVersion: nil, headerFields: head.merging(["Content-Type": "application/json"]) { a, _ in a })!)
+        }
+        if !seen.script.isEmpty {                          // the retry checks: these answers first (-1: no network)
+            let code = seen.script.removeFirst()
+            if code < 0 { throw URLError(.notConnectedToInternet) }
+            if code != 200 { return reply(code, ["message": "busy"], seen.retryAfter.map { ["Retry-After": $0] } ?? [:]) }
+        }
+        func record(_ x: Rec) -> [String: Any] {
+            ["trackName": x.track, "artistName": x.artist, "duration": x.d, "instrumental": x.instrumental,
+             "plainLyrics": x.instrumental ? NSNull() : "\(x.track), the first line\nand \(x.artist), the second" as Any]
+        }
+        if c.host == "api.genius.com" {
+            let hits = db.filter { fold(q["q"] ?? "").contains(fold($0.track)) }
+                .map { ["result": ["title": $0.track, "primary_artist": ["name": $0.artist]]] }
+            return reply(200, ["response": ["hits": hits]])
+        }
+        if u.lastPathComponent == "get" {
+            let want = q["duration"].flatMap(Double.init)
+            let x = db.first { fold($0.artist) == fold(q["artist_name"] ?? "") && fold($0.track) == fold(q["track_name"] ?? "") }
+            guard let x, want.map({ abs($0 - x.d) <= 2 }) ?? true else {
+                return reply(404, ["message": "Failed to find specified track", "name": "TrackNotFound", "statusCode": 404])
+            }
+            return reply(200, record(x))
+        }
+        let words = fold(q["q"] ?? "").split { !$0.isLetter && !$0.isNumber }
+        return reply(200, db.filter { x in let w = fold(x.artist + " " + x.track); return words.allSatisfy { w.contains($0) } }.map(record))
+    }
+
+    func it(_ titles: [String], _ d: Double, heard: Bool?, marked: Bool = false, tags: (String, String, String?)? = nil) -> LyricsItem {
+        LyricsItem(titles: titles, artist: tags?.0, track: tags?.1, album: tags?.2, duration: d, marked: marked, heard: heard)
+    }
+    // the old lookup, for comparison: a search for every title and its artist, song or not, from 30 s to 20 min
+    func before(_ i: LyricsItem) -> Int {
+        guard i.duration > 30, i.duration < 1200 else { return 0 }
+        var q = Set<String>()
+        for t in i.titles.map(cleanTitle) where t.count >= 3 {
+            q.insert(t)
+            if let a = t.components(separatedBy: " - ").first, a != t, a.count >= 2 { q.insert(a) }
+        }
+        return q.count
+    }
+    typealias Want = (lyrics: Bool, exact: Bool, asks: Int)
+    let songs: [(String, LyricsItem, Want?)] = [
+        ("Artist - Title, heard as music", it(["Amália Hoje - Gaivota (VIDEOCLIP)"], 230, heard: true), (true, true, 1)),
+        ("the title as published first", it(["Nina Cobham - lo que pasó", "Nina Cobham - what happened"], 151, heard: true), (true, true, 1)),
+        ("Title - Artist", it(["Le Cose Che Vorrei - Delta V"], 287, heard: true), (true, true, 2)),
+        ("played in Music, 2 s longer than LRCLIB's", it(["Kefaya - Nirbhaya"], 427, heard: nil, marked: true), (true, true, 1)),
+        ("live, 5 s longer: the singing decides", it(["Songbird (Live) - Oda Jonetta Joberg"], 128, heard: true), (true, false, 2)),
+        ("instrumental on LRCLIB", it(["Submotion Orchestra - Prism"], 303, heard: true), (false, false, 1)),
+        ("a file's tags, album too", it(["Gökhan Ulusoy - İzmir"], 432, heard: nil, marked: true, tags: ("Gökhan Ulusoy", "İzmir", "Ege")), (true, true, 1)),
+        ("capitals, Title - Artist", it(["DËGJOMA KËNGËN - Agim Krajka"], 225, heard: true), (true, true, 2)),
+        ("a song LRCLIB doesn't have", it(["Unknown Band - Unknown Song"], 200, heard: true), (false, false, 2)),
+        ("no artist in the title", it(["Gaivota"], 231, heard: true), (true, true, 1)),
+        ("instrumental, no artist", it(["Prism"], 303, heard: true), nil),
+        ("a title two songs share", it(["Songbird"], 200, heard: true), (true, true, 1)),
+        ("a TV-show title", it(["Oda Jonetta Joberg  Helium (Sia)  Knockout  The Voice Norway 2025"], 132, heard: true), nil),
+        ("played in Music, no title", it([], 240, heard: nil, marked: true), (false, false, 0)),
+        ("Music folder, 18 min, a file name", it(["Battaglia.mp3"], 1080, heard: nil, marked: true), nil),
+        ("a song named like a lecture", it(["The Seminar - Lecture One (Official Video)"], 200, heard: true), (true, true, 1)),
+        ("one word", it(["Interlude"], 95, heard: true), nil),
+        ("feat. in the artist", it(["Briken Aliu feat. Hakan Kara - Senin Şarkın"], 321, heard: true), nil),
+        ("not heard yet, Artist - Title", it(["Amália Hoje - Gaivota"], 230, heard: nil), (true, true, 1)),
+        ("not heard yet, official audio", it(["Kefaya - Nirbhaya (Official Audio)"], 425, heard: nil), (true, true, 1)),
+        ("a site's name after a bar", it(["Delta V - Le Cose Che Vorrei | YouTube"], 287, heard: true), nil),
+        ("lyric video", it(["Fleetwood Mac - Songbird (Lyric Video)"], 201, heard: true), (true, true, 1)),
+        ("a bracketed tag", it(["[MV] Agim Krajka - Dëgjoma Këngën"], 226, heard: true), nil),
+        ("two titles, no artist", it(["Gaivota", "Seagull"], 230, heard: true), (true, true, 1)),
+        ("an en dash", it(["Briken Aliu – Senin Şarkın"], 321, heard: true), (true, true, 1)),
+        ("played in Music, remaster note", it(["Amália Hoje - Gaivota (Remastered 2009)"], 229, heard: nil, marked: true), nil),
+    ]
+    let speech: [(String, LyricsItem)] = [
+        ("a class recording", it(["Project 4 Final Recording"], 341, heard: false)),
+        ("slides", it(["P4_Kaitlyn_Slides10_11"], 219, heard: false)),
+        ("an exercise", it(["drafting-exercise-i"], 435, heard: false)),
+        ("Artist - Title look, an interview", it(["Interview - Taylor Swift"], 240, heard: false)),
+        ("a talk with a dash", it(["TED - How to speak so that people want to listen"], 600, heard: false)),
+        ("official video, a lecture", it(["Lecture 3 - Contracts (Official Video)"], 900, heard: false)),
+        ("a podcast, 51 min, not heard", it(["Podcast Episode 12"], 3068, heard: nil)),
+        ("a webinar", it(["webinar-v"], 6681, heard: nil)),
+        ("a podcast heard as speech", it(["pbr1811"], 1100, heard: false)),
+        ("remix in a talk's title", it(["Remix culture - a talk"], 420, heard: false)),
+        ("a voice memo, 77 min", it(["Audio 2026-08-31 18-06-12"], 4634, heard: nil)),
+        ("a session recording", it(["20260804 Nichole Reconstructed"], 2553, heard: false)),
+        ("a radio hour", it(["Radio show - Hour 1"], 3600, heard: nil)),
+        ("a 25 s memo", it(["Voice memo"], 25, heard: nil)),
+        ("news, Artist - Title look", it(["News - Breaking update"], 180, heard: false)),
+        ("a sermon with a music bed, 25 min", it(["Sermon - Sunday service"], 1500, heard: true)),
+        ("an audiobook chapter", it(["Audiobook chapter 1"], 1100, heard: false)),
+        ("lyrics in a talk's title", it(["The lyrics explained - a talk"], 300, heard: false)),
+        ("a panel", it(["Q&A - Panel"], 300, heard: false)),
+        ("(audio) in a meditation's title", it(["Meditation - Guided (Audio)"], 600, heard: false)),
+        ("no title", it([], 300, heard: false)),
+        ("ft. in a podcast's title", it(["Weekly show ft. a guest - Episode 4"], 420, heard: false)),
+        ("a lecture, 45 min, title pattern", it(["Professor - Lecture 2"], 2700, heard: nil)),
+        ("a song's title, heard as speech", it(["Amália Hoje - Gaivota"], 230, heard: false)),
+    ]
+    var ok = true
+    func check(_ pass: Bool, _ what: String) { print("\(pass ? "ok  " : "FAIL") lyrics, \(what)"); ok = ok && pass }
+
+    var most = 0, total = 0, old = 0, found = 0, exact = 0
+    for (what, item, want) in songs {
+        seen.asks = []
+        let f = await lookUpLyrics(item)
+        most = max(most, seen.asks.count); total += seen.asks.count; old += before(item)
+        found += f.options.isEmpty ? 0 : 1; exact += f.exact ? 1 : 0
+        if seen.asks.count > 2 { check(false, "\(what): \(seen.asks.count) requests") }
+        if let w = want, w.lyrics != !f.options.isEmpty || w.exact != f.exact || w.asks != seen.asks.count {
+            check(false, "\(what): lyrics \(!f.options.isEmpty), within 2 s \(f.exact), \(seen.asks.count) requests")
+        }
+    }
+    check(most <= 2, "\(songs.count) songs: at most 2 requests each, \(total) in all (the old lookup: \(old)); lyrics for \(found), \(exact) within 2 s")
+    var asked = 0, oldSpeech = 0
+    for (what, item) in speech {
+        seen.asks = []
+        _ = await lookUpLyrics(item)
+        oldSpeech += before(item)
+        if !seen.asks.isEmpty { asked += 1; check(false, "\(what): \(seen.asks.count) requests") }
+    }
+    check(asked == 0, "\(speech.count) speech items: no request (the old lookup: \(oldSpeech))")
+
+    seen.asks = []
+    _ = await lookUpLyrics(it(["Gökhan Ulusoy - İzmir"], 432, heard: nil, marked: true, tags: ("Gökhan Ulusoy", "İzmir", "Ege")))
+    check(seen.asks.first?.query?.contains("album_name=Ege") == true && seen.asks.first?.query?.contains("duration=432") == true,
+          "the exact get sends the album and the length")
+    let gaivota = it(["Amália Hoje - Gaivota"], 230, heard: true)
+    seen.asks = []; seen.waits = []; seen.script = [429, 429, 429]; seen.retryAfter = "120"
+    var f = await lookUpLyrics(gaivota)
+    check(f.failed && seen.asks.count == 3 && seen.waits == [30, 30],
+          "429 three times, Retry-After 120: \(seen.asks.count) tries, waits \(seen.waits.map { Int($0) }) s, none after the last; failed")
+    seen.asks = []; seen.waits = []; seen.script = [503]; seen.retryAfter = nil
+    f = await lookUpLyrics(gaivota)
+    check(!f.failed && f.exact && seen.asks.count == 2 && seen.waits == [2], "503, then an answer: one wait, of 2 s")
+    let http = DateFormatter(); http.locale = Locale(identifier: "en_US_POSIX"); http.timeZone = TimeZone(identifier: "GMT")
+    http.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    seen.asks = []; seen.waits = []; seen.script = [503]; seen.retryAfter = http.string(from: Date().addingTimeInterval(10))
+    f = await lookUpLyrics(gaivota)
+    check(seen.waits.count == 1 && (8...10.5).contains(seen.waits[0]), "Retry-After as a date 10 s ahead: waits \(seen.waits.map { Int($0) }) s")
+    seen.asks = []; seen.waits = []; seen.script = [-1]; seen.retryAfter = nil
+    f = await lookUpLyrics(gaivota)
+    check(f.failed && seen.asks.count == 1 && seen.waits.isEmpty, "no network: 1 request, no wait, failed (not saved as a miss)")
+    let agent = seen.agents.count == 1 ? seen.agents.first! : "\(seen.agents.count) different"
+    check(agent.hasPrefix("Recense/") && agent.contains("github.com/louan-dev/recense"), "every request names Recense: \(agent)")
+
+    let now = Date().timeIntervalSince1970, day = 86_400.0
+    check(!lyricsStale(at: now - 29 * day, asked: "a", now: now, title: "a") && lyricsStale(at: now - 31 * day, asked: "a", now: now, title: "a")
+          && lyricsStale(at: now - day, asked: "a", now: now, title: "b") && lyricsStale(at: nil, asked: nil, now: now, title: "a"),
+          "a miss is asked again after 30 days, or under a new title")
+    seen.asks = []
+    let g = await lyricsBySung(["and over the sea the gaivota flies", "the sea"], token: "test")
+    check(g.count == 1 && seen.asks.count == 2 && seen.asks.first?.host == "api.genius.com" && seen.asks.last?.path == "/api/get",
+          "Genius for a confirmed song: \(seen.asks.count) requests, a search and a get")
+    seen.asks = []
+    _ = await lyricsBySung(["and over the sea the gaivota flies"], token: "")
+    check(seen.asks.isEmpty, "no Genius token: no request")
+    return ok
 }
 
 @MainActor final class Episode {
@@ -3126,7 +3434,12 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     let music: Bool                    // played in Music: a song, lyrics or not
     var lyrics: [String] = []          // the song's lyric lines: the candidate that matches what's sung
     var lyricOptions: [[String]] = []  // every lyrics found that could be this song
-    var lyricsChecked = false
+    var lyricsChecked = false          // looked up with an answer, a hit or a miss (a failed network is neither)
+    var lyricsAt: Double?              // when: a miss is asked again after 30 days (R17)
+    var lyricsFor: String?             // under which titles: a new one asks again
+    var lyricsAskedFor: String?        // asked this session (never saved): a failed lookup waits for the next one
+    var heardMusic: Bool?              // SoundAnalysis on 30 s of it (heardAsMusic); nil: not heard yet
+    var tags: (artist: String?, track: String, album: String?)?   // a file's own tags, for LRCLIB's exact get
     var lyricsVerified = false         // chosen by the words sung, after the first pass — not by title alone
     var language: String?              // forced on Whisper: the lyrics' only language (it can't drift into translating)
     var publishedTitle: String?        // the title as the site published it (yt-dlp), when the page shows it translated
@@ -3159,6 +3472,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             songPipeline = c.songPipeline ?? 0; lyricOptions = c.lyricOptions ?? []; lyricsVerified = c.lyricsVerified ?? false
             language = c.language; publishedTitle = c.publishedTitle; redone = c.redone ?? []; offsite = c.offsite ?? []
             engine = c.engine; lexiconSeen = c.lexicon ?? 0
+            lyricsAt = c.lyricsAt; lyricsFor = c.lyricsFor; heardMusic = c.heardMusic
             complete = (c.complete ?? false) && [0, 4].contains(c.songPipeline ?? 0)   // a newer song pipeline redoes it
             if !lyricsChecked { lyrics = []; lyricOptions = []; lyricsVerified = false; language = nil }
             // "…" means translation gave up on the line, usually only because a daily quota ran out: try again.
@@ -3335,6 +3649,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         var lyricOptions: [[String]]?; var lyricsVerified: Bool?; var language: String?; var publishedTitle: String?
         var redone: [[Double]]?; var offsite: [String]?; var complete: Bool?
         var engine: String?; var lexicon: Int?      // the ears that heard it; the lexicon version it was last checked against
+        var lyricsAt: Double?; var lyricsFor: String?; var heardMusic: Bool?   // R17: the last lookup; SoundAnalysis's verdict
         static func read(_ key: String) -> Cache? {
             (try? Data(contentsOf: cacheDir.appendingPathComponent(key + ".v2.json"))).flatMap { try? JSONDecoder().decode(Cache.self, from: $0) }
         }
@@ -3370,7 +3685,8 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         let c = Cache(lines: lines, done: done, duration: duration, lyricsChecked9: lyricsChecked, lyrics: lyrics,
                       heard: heard, songPipeline: songPipeline, lyricOptions: lyricOptions, lyricsVerified: lyricsVerified,
                       language: language, publishedTitle: publishedTitle, redone: redone, offsite: offsite,
-                      complete: complete, engine: engine, lexicon: lexiconSeen)
+                      complete: complete, engine: engine, lexicon: lexiconSeen,
+                      lyricsAt: lyricsAt, lyricsFor: lyricsFor, heardMusic: heardMusic)
         if let d = try? JSONEncoder().encode(c) { try? d.write(to: cacheDir.appendingPathComponent(key + ".v2.json")) }
         Library.flush()
     }
@@ -3535,6 +3851,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             // Tags come untidy ("Kefaya -"): as "Kefaya - - Title" the song looked like no song once its lyrics were ruled out.
             let artist = await tag(.commonKeyArtist).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " -–—|,;:")) }.flatMap { $0.isEmpty ? nil : $0 }
             title = artist.map { t.localizedCaseInsensitiveContains($0) ? t : "\($0) - \(t)" } ?? t
+            tags = (artist, t, await tag(.commonKeyAlbumName))
         }
         else if title == nil { title = u.lastPathComponent }
         if (try? AVAudioFile(forReading: u)) != nil { return attach(u) }
@@ -3685,13 +4002,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
     /// Kept in Gallery's Music folder: music whatever its title says (Battaglia.mp3, an 18-minute sutra), never a lecture.
     var inMusicFolder: Bool { url.hasPrefix("gallery:files/Music/") }
 
-    /// Lyrics found, played in Music, kept in Music, a music-video title, or "Artist - Title" at song length.
+    /// Lyrics confirmed (its length within 2 s, or the singing), played in Music, kept in Music; else what SoundAnalysis
+    /// heard in it (R17), and before it has heard anything, a music-video title or "Artist - Title" at song length.
     var isSong: Bool {
-        let t = cleanTitle(title ?? "")
         // Once transcribed as a song (its voice alone, against lyrics), it stays one: ruling out the wrong lyrics
         // mustn't skip the second pass, or leave the words heard so far out of the lines.
-        return !lyrics.isEmpty || music || inMusicFolder || songPipeline == 4 || (looksLikeMusic(title ?? "") && duration < 900)
-            || (duration > 60 && duration < 480 && t.range(of: #"^[^-–—|]{2,40} [-–—] [^-–—|]{2,80}$"#, options: .regularExpression) != nil)
+        !lyrics.isEmpty || music || inMusicFolder || songPipeline == 4
+            || (heardMusic.map { $0 && duration < 1200 } ?? titledLikeSong(title, duration: duration))
     }
 
     /// What's keeping lines untranslated, for the window's status line: a pair of languages Apple's Translation
@@ -3729,7 +4046,7 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
             }
         }
         while !Task.isCancelled && !stopped {
-            if !lyricsChecked { await checkLyrics(); continue }
+            if lyricsDue { await checkLyrics(); continue }
             // A song is transcribed from its isolated voice and timed against its lyrics; a transcript of it made
             // any other way (older versions, the full mix) is done again.
             if isSong && songPipeline != 4 {
@@ -3998,21 +4315,50 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         log("vocals separated in \(Int(Date().timeIntervalSince(t0))) s")
     }
 
+    /// The titles a lookup goes by, the one as published first.
+    var lyricsTitles: [String] { NSOrderedSet(array: [publishedTitle, title].compactMap { $0 }).array as! [String] }
+    var lyricsSignature: String {
+        (lyricsTitles.map(cleanTitle) + [tags?.artist, tags?.track, tags?.album].compactMap { $0 }).joined(separator: " | ")
+    }
+    /// Never looked up, or a miss 30 days old or asked under other titles (R17); once a session at most.
+    var lyricsDue: Bool {
+        let sig = lyricsSignature
+        guard lyricsAskedFor != sig else { return false }
+        return !lyricsChecked || (lyrics.isEmpty && lyricOptions.isEmpty
+            && lyricsStale(at: lyricsAt, asked: lyricsFor, now: Date().timeIntervalSince1970, title: sig))
+    }
+
+    /// Lyrics for music only (R17): played or kept in Music, or heard as music by SoundAnalysis (30 s, once per item);
+    /// speech asks nothing. A failed network leaves it unchecked, to be asked next time.
     func checkLyrics() async {
-        lyricsChecked = true
-        let titles = Array(NSOrderedSet(array: [title, publishedTitle].compactMap { $0 }).array as! [String])
-        log("looking up lyrics: \(titles.map(cleanTitle).joined(separator: " / "))")
-        lyricOptions = await lyricsCandidates(titles: titles, duration: duration)
-        lyrics = lyricOptions.first ?? []           // the nearest in length, until the singing picks one
+        let sig = lyricsSignature, again = lyricsChecked, marked = music || inMusicFolder
+        lyricsAskedFor = sig
+        if heardMusic == nil, !marked, duration > 30, duration < 1200, let f = file {
+            heardMusic = await heardAsMusic(f)
+            if let h = heardMusic { log("sound check, 30 s: \(h ? "music, so its lyrics are looked up" : "no music, so no lyrics lookup")") }
+        }
+        let item = LyricsItem(titles: lyricsTitles, artist: tags?.artist, track: tags?.track, album: tags?.album,
+                              duration: duration, marked: marked, heard: heardMusic)
+        guard lyricsWanted(item) else { lyricsChecked = true; lyricsAt = Date().timeIntervalSince1970; lyricsFor = sig; return }
+        log("looking up lyrics: \(lyricsTitles.map(cleanTitle).joined(separator: " / "))")
+        let found = await lookUpLyrics(item)
+        guard !found.failed else { log("lyrics lookup failed (no network, or LRCLIB busy): asked again next time"); return }
+        lyricsChecked = true; lyricsAt = Date().timeIntervalSince1970; lyricsFor = sig
+        if again && found.options.isEmpty { log("still no lyrics (\(Int(duration)) s)"); return }
+        lyricOptions = found.options
+        // Only its length (within 2 s) makes the nearest this song's lyrics before the singing does (verifyLyrics).
+        lyrics = found.exact ? found.options[0] : []
         lyricsVerified = false
+        if again && complete { complete = false }   // lyrics at last for a finished song: matched against the singing
         // Whisper is held to the lyrics' language only when every candidate agrees on one: a long piece otherwise
         // drifts into translating ("Il mondo brucia" came out in English from 0:55).
         // Nor to a language read from Arabic-script lyrics: the spelling can't say which (Persian reads as Arabic or Urdu),
         // and Whisper held to the wrong one writes nonsense.
         let only = Set(lyricOptions.map { Episode.onlyLanguage($0) ?? "?" })
         language = only.count == 1 && only.first != "?" && spellingTells(only.first!) ? only.first : nil
-        if lyricOptions.isEmpty { log("no lyrics found yet (\(Int(duration)) s): choosing by the words sung after the first pass") }
-        else { log("lyrics: \(lyricOptions.count) candidate(s), language \(language ?? "mixed/unsure")") }
+        if found.instrumental { log("lyrics: LRCLIB lists it as instrumental") }
+        else if lyricOptions.isEmpty { log("no lyrics found yet (\(Int(duration)) s): choosing by the words sung after the first pass") }
+        else { log("lyrics: \(lyricOptions.count) candidate(s), \(found.exact ? "the nearest within 2 s" : "none within 2 s, so the singing decides"), language \(language ?? "mixed/unsure")") }
     }
 
     /// After the first pass: the lyrics are the candidate that best matches what was sung — or, when none does,
@@ -4024,9 +4370,13 @@ func lyricsBySung(_ phrases: [String], duration: Double) async -> [[String]] {
         }
         var b = best()
         if b.score < 0.35 {
-            let found = await lyricsBySung(confidentPhrases(), duration: duration)
-            options += found; lyricOptions = options
-            b = best()
+            if heardMusic == nil, !(music || inMusicFolder), let f = file { heardMusic = await heardAsMusic(f) }
+            if music || inMusicFolder || heardMusic == true {       // Genius only for a confirmed song (R17)
+                let found = await lyricsBySung(confidentPhrases())
+                if !found.isEmpty { log("genius: a candidate from the words sung") }
+                options += found; lyricOptions = options
+                b = best()
+            }
         }
         lyricsVerified = true
         lyrics = b.score >= 0.35 ? b.lyrics : []

@@ -115,6 +115,14 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **Songs:** published lyrics (LRCLIB, then Genius) are chosen by what was actually sung and fitted to the voice; when
   none match, the screen shows what was heard, since an honest transcript serves a learner better than a confident
   mistake. A track with no voice shows ♪ INSTRUMENTAL.
+- **Lyrics are looked up for music only**, 30 s to 20 min long: an item played in Music, kept in the Music folder, or
+  heard as music by Apple's sound classifier in 30 s from its middle (once per item, kept with its transcript; a title
+  alone counts only when nothing could be heard). Speech asks nothing. A song costs at most 2 LRCLIB requests: one exact
+  lookup by artist, title, album and length, then one search. Genius, by the words sung, is asked only about a
+  confirmed song, with one search and one lookup. Requests name Recense in their User-Agent, honour Retry-After on 429
+  and 5xx (at most 30 s, 3 tries), and a failed network is asked again next time. A miss is asked again after 30 days
+  or under a new title. Found lyrics count as the song's only within 2 s of its length, or once the singing matches
+  them.
 - **Knows a recording it has heard:** the same piece from a video site, a podcast feed or a file on disk is recognised
   by an acoustic fingerprint and reuses its transcript.
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
@@ -205,8 +213,10 @@ macOS 27 SDK, which on-device hearing needs.
 `./recense up | down | pad | time | show | hide | toggle | quit | status | background`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
-too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), and which modifier states reveal the
-hider's icons (⌘ alone only).
+too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), which modifier states reveal the
+hider's icons (⌘ alone only), and the lyrics lookups against a stand-in LRCLIB and Genius that count requests: 50
+songs, talks and ambiguous titles (at most 2 requests a song, none for speech), the waits on 429 and 503, no network,
+the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get.
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).

@@ -7626,7 +7626,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot"]
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
-if CommandLine.arguments.dropFirst().first == "selftest" { let a = measureSelftest(), b = hiderSelftest(); exit(a && b ? 0 : 1) }
+if CommandLine.arguments.dropFirst().first == "selftest" {
+    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(); exit(a && b && c ? 0 : 1)
+}
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
 let lockFD = open("/tmp/local.recense.lock", O_CREAT | O_RDWR, 0o600)

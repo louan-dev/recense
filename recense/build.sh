@@ -87,7 +87,9 @@ fi
 rm -rf "$installed"
 ditto "$app" "$installed"
 lsr=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-$lsr -u "$PWD/$app" 2>/dev/null; rm -rf "$app"          # only one Recense on disk: the installed one
+# only one Recense on disk: the installed one. Unregistering the build copy fails (-10814) when LaunchServices never
+# saw it; that isn't a failed build (11-05: it stopped build.sh after the install, so autoupdate never relaunched).
+$lsr -u "$PWD/$app" 2>/dev/null || true; rm -rf "$app"
 $lsr -f "$installed"
 
 # ./recense: the terminal command. A wrapper (not a copy) so there is only one executable and one identity.
