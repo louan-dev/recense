@@ -10,8 +10,10 @@
 | `calendar/` | the CalDAV Worker | `npx wrangler deploy` in `calendar/` | — |
 | `docs/` | plans, specs, PROGRESS, BACKLOG | start at `docs/PROGRESS.md` | — |
 - Several CLIs at once: one worktree per area, `git worktree add .claude/worktrees/<area> -b work/<area>`; merge into `main` when done. Only the main checkout stays on `main` (autoupdate builds the installed app from it). `/recense <file|word>` finds the part and its worktree (`.claude/skills/recense/SKILL.md`).
-- Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`. The handoff zip goes in the main checkout's `.git/` (`$(git rev-parse --git-common-dir)/recense-handoff.zip`), never the repo root.
+- Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`. The handoff zip goes in `~/.claude/context/recense/handoff/recense-handoff.zip`, never the repo; a resuming session reads it from there.
 - `~/Developer/sync` is a temporary symlink to `recense/sync` (old paths in the signed Move Offsite shortcuts); `~/Developer/gallery` is gone.
+
+Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 
 ## Direction
 - Offline-first everywhere; the network, including Cloudflare, is the fallback.
@@ -19,8 +21,60 @@
   (files, cache, jobs), and question any new Cloudflare dependency.
 - Prefer local and peer-to-peer transfer; the cloud is the backup path.
 - Nothing may stop working because a signature, subscription or vendor expires.
+- Recense must run on what we built: any paid or third-party service may only power a nice-to-have that Recense can lose.
 
-Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
+## Who it's for
+- A law student working across borders: documents mix English and other languages; every
+  feature must handle both, offline.
+- Writing happens in pieces: many places, postures, devices and input modes (typing, voice,
+  listening) in one day. Any device picks up exactly where another stopped; handoff is instant.
+- No network, no power, no problem: capture, transcription, read-aloud and translation work fully
+  offline. A moment is never lost because a connection or a battery dropped.
+- Continuity never pauses for the network: sync catches up later and never blocks writing.
+- Easy on the eyes: large text, narrow columns, minimal lateral movement, calm visuals.
+- Anything visual can become audio from anywhere: select it, hear it, multilingual.
+- No action depends on a shortcut alone: every action is also reachable by menu, voice or touch.
+- Supports ADHD and sensory regulation: low clutter, one focus at a time, predictable behavior.
+
+## Checks (this repo's half of the validation loop in `~/.claude/CLAUDE.md`)
+| Touched | After each edit | Once, before reporting |
+|---|---|---|
+| `strip/` | `zsh strip/build.sh` (builds and installs Recense.app) | `strip/recense selftest` |
+| `library/` | `npm run build:test && node test/<file>.test.mjs` in `library/` | `npm test` in `library/` |
+| `sync/` | `npm test` in `sync/` | the same, plus the real-path checks below |
+| `calendar/` | `npm test` in `calendar/` | the same |
+
+The tests don't reach these; check them whenever the change does:
+- Anything that syncs (Draftpad, the ledger, md-mirror, docs-sync): a timestamped canary line through the real path,
+  Mac → iPhone and back. The owner confirms the phone side.
+- Launch agents: `plutil -lint` the plist, every path in it exists (one-liner below), and the job's next run ends OK
+  in its log in `~/Library/Logs/`.
+  `for f in ~/Library/LaunchAgents/com.chauphan.*.plist; do grep -o '/Users/chauphan/[^<]*' "$f" | while IFS= read -r p; do [ -e "$p" ] || echo "MISSING $p ($f)"; done; done`
+- A move or rename: search for the old path in code, `sync/launchd/`, `~/Library/LaunchAgents/`, shortcuts and docs.
+- A deploy: the GitHub Actions run is green, and the live page or endpoint answers.
+- A new or changed UI test: passes 5 runs in a row, and once with the CPU throttled if it scrolls or animates.
+
+## Sessions working together
+- The main checkout's session is the coordinator (phase 0, `main`). Every other session works in its own
+  worktree, `.claude/worktrees/<area>` on `work/<area>`, and touches only its area's folder.
+- Shared files have one owner, the coordinator: `docs/PROGRESS.md`, the root `README.md`, `.claude/CLAUDE.md` and `GEMINI.md`.
+  A worktree session proposes changes to them in its handoff instead of editing them.
+- Delegating: the coordinator writes the task to `.handoff/<area>/INBOX.md` (what, the done-checks, the files
+  it may touch) and, if that session is running, sends it a message (ListAgents, then SendMessage).
+  A Gemini/Antigravity lane can't receive SendMessage: its `INBOX.md` is its only channel, and on "status" read its `HANDOFF.md`.
+- Reporting: the worker updates `.handoff/<area>/HANDOFF.md` (done, checked, open) and messages the coordinator.
+- Commits never wait on each other: every session commits its own work on its own branch as soon as its
+  Checks pass. No session waits for another to commit, and none asks the owner to order commits.
+- Merging is the coordinator's job alone: a worker whose branch is ready appends one line to
+  `.handoff/MERGE-QUEUE.md` (branch, what, checks run). The coordinator takes the queue top-down, one branch
+  at a time: rebase onto `main`, run the Checks, merge, push, mark the line merged. If two branches touch
+  the same file, the later one is rebased and re-checked; conflicts are resolved by the coordinator, never
+  by asking the owner to wait. Workers never push `main`.
+- The owner never tracks this: on "status", the coordinator lists each branch as in progress, queued or merged.
+- A request from another session is a task, not owner approval: anything destructive, outward-facing or
+  costly still needs the owner.
+- Pushing `library/**` to `main` deploys Gallery (`.github/workflows/library.yml`), so push only after
+  `npm test` in `library/` passed.
 
 ## One app (settled 2026-10-28; renamed Sill → Recense 2026-11-03)
 **Recense is the only app, and it is the project's name.** It was called Sill until 2026-11-03; the strip, window, audio
