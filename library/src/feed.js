@@ -43,20 +43,22 @@ export async function showFeed(env, folder, allowed, origin, base) {
   let cursor;
   do {
     const r = await env.MAIN.list({ prefix, delimiter: "/", cursor });
-    for (const o of r.objects) sizes.set(o.key.slice(prefix.length), o);
+    for (const o of r.objects) sizes.set(o.key.slice(prefix.length).normalize("NFC"), o);
     cursor = r.truncated ? r.cursor : undefined;
   } while (cursor);
 
   const updated = Date.parse(show.updated) || Date.now();
   const eps = show.episodes
-    .filter((e) => e && typeof e.file === "string" && !e.file.includes("/") && sizes.has(e.file) && allowed(e.file))
-    .sort((a, b) => a.n - b.n);
+    .filter((e) => e && typeof e.file === "string" && !e.file.includes("/") && sizes.has(e.file.normalize("NFC")))
+    .map((e) => ({ ...e, key: sizes.get(e.file.normalize("NFC")).key.slice(prefix.length) })) // the name as stored
+    .filter((e) => allowed(e.key))
+    .sort((a, b) => (a.n ?? 0) - (b.n ?? 0));
   if (!eps.length) return null;
 
   const title = show.title || folder.split("/").pop();
   const link = origin + base;
   const items = eps.map((e, i) => {
-    const o = sizes.get(e.file);
+    const o = sizes.get(e.key.normalize("NFC"));
     // serial shows sort by episode number; dates a second apart keep apps that sort by date in order too
     const date = new Date(updated - (eps.length - 1 - i) * 1000).toUTCString();
     return `    <item>
@@ -67,7 +69,7 @@ export async function showFeed(env, folder, allowed, origin, base) {
       <guid isPermaLink="false">${xml(e.id || e.file)}</guid>
       <pubDate>${date}</pubDate>
       <description>${xml(e.summary || "")}</description>
-      <enclosure url="${xml(link + "/f/" + urlPath(e.file))}" length="${o.size}" type="audio/mp4"/>
+      <enclosure url="${xml(link + "/f/" + urlPath(e.key))}" length="${o.size}" type="audio/mp4"/>
       <itunes:duration>${hms(e.duration)}</itunes:duration>
       <itunes:explicit>false</itunes:explicit>
     </item>`;

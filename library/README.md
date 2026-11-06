@@ -181,7 +181,8 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
   `node chau/show.mjs publish <outline.md>` (show name = the `# ` title; `--show <name>` to choose).
 - Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
-- An outline under a `Matters` or `Raven` folder is refused: client matters never leave the Mac (A6).
+- Client matters never leave the Mac (A6): an outline is refused when it sits under a `Matters` or `Raven` folder, when the show's name says Matters or Raven, or when its front matter or a `#matters` / `#raven` tag does. This is a guard on names and tags, not a classifier: a client document copied elsewhere, renamed and untagged, gets through, so keep client work out of outlines you publish.
+- Headings and show names are stored in Unicode NFC (as rclone stores names), so Vietnamese text pasted from a PDF names the same file the feed looks up. Two sections with the same heading get different episode ids.
 - The episode list is `.show.json` in the show's folder (hidden in Gallery's folder view).
 - The feed link (after the Worker with `src/feed.js` is deployed): `node chau/show.mjs invite "<show>" --name <who> [--days 30] [--guest]`.
   It prints `https://…/m/<token>/feed.xml`; on the iPhone: Podcasts > Library > ••• > Follow a Show by URL…, paste it.

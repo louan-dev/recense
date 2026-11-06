@@ -6,7 +6,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { parseOutline, speakable, episodeFile, refusePath, showName, pickVoice, makeInvites, MANIFEST } from "../chau/show.mjs";
+import { parseOutline, speakable, episodeFile, refusePath, refusal, showName, pickVoice, makeInvites, episodeIds, MANIFEST } from "../chau/show.mjs";
+import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
 const TEAM = "team.cloudflareaccess.com";
@@ -223,6 +224,59 @@ await test("feed: only the episodes this link may see (rooms, per-file view off)
   assert.doesNotMatch(b2, /Consideration/);
   await mac("/main/api/invites/" + room.id, { method: "PATCH", body: JSON.stringify({ overrides: { "03 Remedies.m4a": { view: false } } }) });
   assert.equal((await get(pathOf(room.url) + "/feed.xml")).status, 404, "nothing to hear is a 404");
+});
+
+// ---------- review fixes (coordinator, 2026-11-06) ----------
+
+await test("NFC: an NFD heading (pasted from a PDF) names the same file rclone stores, and the feed finds it", async () => {
+  const nfd = "## Một bài\nXin chào".normalize("NFD");
+  const o = parseOutline(nfd, "Thử".normalize("NFD"));
+  assert.equal(o.episodes[0].title, "Một bài".normalize("NFC"));
+  assert.equal(episodeFile(1, o.episodes[0].title, 1), "01 Một bài.m4a".normalize("NFC"));
+  assert.equal(o.title, "Thử".normalize("NFC"));
+  assert.equal(showName("Ôn thi".normalize("NFD")), "Ôn thi".normalize("NFC"));
+  // an older manifest that kept the NFD name still finds the NFC object, and links the name as stored
+  const dir = "Shows/Ôn thi";
+  await MAIN.put("files/" + dir + "/01 Một bài.m4a", audio(1));
+  await MAIN.put("files/" + dir + "/" + MANIFEST, JSON.stringify({ title: "Ôn thi", lang: "vi", episodes: [{ id: "x", title: "Một bài", file: "01 Một bài.m4a".normalize("NFD"), duration: 3 }] }));
+  const inv = (await makeInvites(mac, { show: "Ôn thi", name: "Mẹ", days: 30 }))[0];
+  const body = await (await get(pathOf(inv.url))).text();
+  const href = body.match(/<enclosure url="([^"]+)"/)[1].replace(/&amp;/g, "&");
+  assert.equal(decodeURIComponent(pathOf(href).split("/f/")[1]), "01 Một bài.m4a".normalize("NFC"));
+  assert.equal((await get(pathOf(href))).status, 200);
+  assert.match(body, /<language>vi<\/language>/);
+});
+
+await test("guid: two sections with the same heading get different ids; a unique heading keeps its id", async () => {
+  const ids = episodeIds("Bar", ["Review", "Torts", "Review"]);
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(ids[0], createHash("sha256").update("Bar\nReview").digest("hex").slice(0, 32), "same id as before the fix");
+  assert.deepEqual(episodeIds("Bar", ["Torts", "Review"]), [ids[1], ids[0]], "a reorder keeps each id");
+});
+
+await test("A6 guard: refused by folder, show name, front matter or #tag, not only by path", async () => {
+  const clean = "# Bar\n\n## One\nText";
+  assert.equal(refusal("/Users/a/Desktop/x.md", clean, "Bar"), null);
+  assert.match(refusal("/Users/a/Matters/x.md", clean, "Bar"), /folder/);
+  assert.match(refusal("/Users/a/Desktop/x.md", clean, "Matters"), /name/);
+  assert.match(refusal("/Users/a/Desktop/x.md", clean, "Smith (Raven)"), /name/);
+  assert.match(refusal("/Users/a/Desktop/x.md", "---\ntags: [study, matters]\n---\n" + clean, "Bar"), /front matter/);
+  assert.match(refusal("/Users/a/Desktop/x.md", "---\nproject: Raven\n---\n" + clean, "Bar"), /front matter/);
+  assert.match(refusal("/Users/a/Desktop/x.md", clean + "\nSee #raven", "Bar"), /tagged/);
+  assert.equal(refusal("/Users/a/Desktop/x.md", clean + "\nRavenna, matter-of-fact", "Ravenna"), null);
+  // front matter is never spoken
+  const o = parseOutline("---\ntags: [study]\n---\n" + clean, "x");
+  assert.equal(o.title, "Bar");
+  assert.doesNotMatch(o.description + o.episodes[0].text, /tags|study/);
+});
+
+await test("nits: .show.json is never served through a link; a failed guest link names the feed link already made", async () => {
+  const base = pathOf(feedInv.url).replace(/\/feed\.xml$/, "");
+  assert.equal((await get(base + "/f/" + encodeURIComponent(MANIFEST))).status, 404);
+  assert.equal((await get(base + "/f/" + encodeURIComponent("01 Offer & acceptance.m4a"))).status, 200);
+  let n = 0;
+  const flaky = async () => (++n === 1 ? Response.json({ id: "0123456789abcdef", url: ORIGIN + "/m/tok" }) : new Response("Someone already has an invitation under that name", { status: 409 }));
+  await assert.rejects(makeInvites(flaky, { show: "S", name: "Mom", guest: true }), /409[\s\S]*revoke id 0123456789abcdef/);
 });
 
 console.log(`\n${passed} passed`);

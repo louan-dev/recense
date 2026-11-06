@@ -40,6 +40,23 @@ export function refusePath(p) {
   return p.split(/[\\/]/).some((s) => /^(matters|raven)$/i.test(s));
 }
 
+// A front-matter block ("---" … "---" at the very top) and the text after it.
+export function frontMatter(md) {
+  const m = md.match(/^\uFEFF?---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/);
+  return m ? { fm: m[1], body: md.slice(m[0].length) } : { fm: "", body: md };
+}
+
+// Why this outline must not leave the Mac (A6), or null. A guard on names and tags, not a classifier:
+// a client matter copied elsewhere, untagged and under another name, is not caught.
+export function refusal(path, md, show) {
+  if (refusePath(path)) return "it is under a Matters or Raven folder";
+  if (/\b(matters|raven)\b/i.test(show || "")) return "the show's name says Matters or Raven";
+  const { fm, body } = frontMatter(md.normalize("NFC"));
+  if (/\b(matters|raven)\b/i.test(fm)) return "its front matter says matters or raven";
+  if (/(^|\s)#(matters|raven)\b/i.test(body)) return "it is tagged #matters or #raven";
+  return null;
+}
+
 // Markdown to plain speech: no marks, links read as their text, a pause at each line's end.
 export function speakable(md) {
   return md
@@ -67,7 +84,8 @@ export function speakable(md) {
 
 // { title, description, episodes: [{ n, title, text }] }: one episode per "## " section, in order.
 export function parseOutline(md, fallbackTitle = "Show") {
-  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  // NFC, as rclone stores names: an NFD heading (pasted from a PDF) would name a file the feed can't find
+  const lines = frontMatter(md.normalize("NFC").replace(/\r\n?/g, "\n")).body.split("\n");
   let title = "";
   const intro = [];
   const episodes = [];
@@ -82,7 +100,7 @@ export function parseOutline(md, fallbackTitle = "Show") {
     else (cur ? cur.body : intro).push(l);
   }
   return {
-    title: title || fallbackTitle,
+    title: title || String(fallbackTitle).normalize("NFC"),
     description: speakable(intro.join("\n")).replace(/\n/g, " "),
     episodes: episodes.map((e, i) => {
       const body = speakable(e.body.join("\n"));
@@ -99,8 +117,18 @@ export function episodeFile(n, title, count) {
 
 // A show's folder name: one segment, no dotfile.
 export function showName(s) {
-  const t = String(s || "").replace(/[\/\\:\u0000-\u001f]+/g, "-").replace(/^\.+/, "").trim().slice(0, 80);
+  const t = String(s || "").normalize("NFC").replace(/[\/\\:\u0000-\u001f]+/g, "-").replace(/^\.+/, "").trim().slice(0, 80);
   return t || null;
+}
+
+// Each episode's guid: show + heading, so it survives a reorder; a repeated heading adds its count.
+export function episodeIds(show, titles) {
+  const seen = new Map();
+  return titles.map((t) => {
+    const k = (seen.get(t) || 0) + 1;
+    seen.set(t, k);
+    return createHash("sha256").update(show + "\n" + t + (k > 1 ? "\n#" + k : "")).digest("hex").slice(0, 32);
+  });
 }
 
 // ---------- rendering ----------
@@ -150,23 +178,26 @@ function rclone(args) {
 
 async function publish(file, opts) {
   const src = realpathSync(resolve(file));
-  if (refusePath(src)) throw new Error("refused: client matters (a Matters or Raven folder) never leave this Mac (A6)");
-  const outline = parseOutline(readFileSync(src, "utf8"), basename(src).replace(/\.[^.]+$/, ""));
+  const md = readFileSync(src, "utf8");
+  const outline = parseOutline(md, basename(src).replace(/\.[^.]+$/, ""));
   if (!outline.episodes.length) throw new Error("no '## ' sections in " + src);
   const show = showName(opts.show || outline.title);
   if (!show) throw new Error("bad show name");
+  const why = refusal(src, md, show);
+  if (why) throw new Error(`refused: client matters never leave this Mac (A6): ${why}`);
   const lang = opts.lang || "en";
   const voice = pickVoice(lang, opts.voice, installedVoices());
 
   const stage = mkdtempSync(join(tmpdir(), "show-"));
   try {
     const manifest = { title: show, description: outline.description, lang, voice, updated: new Date().toISOString(), episodes: [] };
+    const ids = episodeIds(show, outline.episodes.map((e) => e.title));
     for (const e of outline.episodes) {
       const name = episodeFile(e.n, e.title, outline.episodes.length);
       const audio = render(e.text, voice);
       copyFileSync(audio, join(stage, name));
       const duration = Math.round(durationOf(join(stage, name)));
-      const id = createHash("sha256").update(show + "\n" + e.title).digest("hex").slice(0, 32); // stable while the heading stays
+      const id = ids[e.n - 1];
       manifest.episodes.push({ n: e.n, id, title: e.title, file: name, duration, summary: e.summary });
       console.log(`${name}  ${duration}s`);
     }
@@ -217,7 +248,12 @@ export async function makeInvites(call, { show, name, days = 30, guest = false }
   const feed = await post({ name: name + " · podcast", ttl, dir, viewOnly: true, perms: { download: true, upload: false, comment: false, react: false, annotate: false } });
   out.push({ kind: "feed", id: feed.id, url: feed.url + "/feed.xml" });
   if (guest) {
-    const web = await post({ name, ttl, dir, perms: { view: true, download: true, upload: false, comment: true, react: true, annotate: false } });
+    let web;
+    try {
+      web = await post({ name, ttl, dir, perms: { view: true, download: true, upload: false, comment: true, react: true, annotate: false } });
+    } catch (e) {
+      throw new Error(`${e.message} (the feed link was made: ${feed.url}/feed.xml, revoke id ${feed.id})`);
+    }
     out.push({ kind: "web", id: web.id, url: web.url });
   }
   return out;
