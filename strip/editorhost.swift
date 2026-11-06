@@ -96,14 +96,24 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     func focus() { if loaded { call("focus()") } }
 
-    /// Asks the page for its text right now (skipping the 300 ms debounce), then calls back with it.
+    private var flushing: [(String) -> Void] = []
+    /// Asks the page for its text right now (skipping the 300 ms debounce), then calls back with it. One question at a
+    /// time; if the page doesn't answer within a second (WebKit can suspend a page that's out of sight), it goes on
+    /// with the last text the page posted, so a save is never stuck behind it.
     func flush(_ done: @escaping (String) -> Void) {
         guard loaded else { done(text); return }
-        web.evaluateJavaScript("window.recenseEditor.getText()") { [weak self] v, _ in
-            guard let self = self else { return }
-            if let s = v as? String { self.text = s }
-            done(self.text)
+        flushing.append(done)
+        guard flushing.count == 1 else { return }
+        var answered = false
+        let finish = { [weak self] (s: String?) in
+            guard let self = self, !answered else { return }
+            answered = true
+            if let s = s { self.text = s } else { log("editor: the page didn't answer; saving its last posted text") }
+            let waiting = self.flushing; self.flushing = []
+            waiting.forEach { $0(self.text) }
         }
+        web.evaluateJavaScript("window.recenseEditor.getText()") { v, _ in finish(v as? String) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish(nil) }
     }
 
     private func call(_ js: String) {
@@ -126,6 +136,13 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         call("setFontSize(18)")
         call("setText(\(jsString(text)))")
         log("editor: new editor loaded (\(source))")
+    }
+
+    /// The page's process died (memory pressure, a crash): load it again with the text native holds.
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
+        log("editor: the page's process ended; reloading it")
+        loaded = false
+        w.reload()
     }
 
     /// Offline by rule: the page may load itself and nothing from the network.
