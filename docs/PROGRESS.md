@@ -413,6 +413,19 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-05 16:40 PST · A15j "your call" rows: owner said yes · DONE (sandisk-rescue kept)
+- Moved to `~/.Trash/recense-cleanup-20261105/your-call/`: `recense/.toolchain/pkgs` 403 MB (untracked installers;
+  an offline reinstall needs them back from the Trash); `recense/.handoff/prototypes/_shared/clips/variations.flac`
+  62 MB (the `.m4a`, `.json` and features files beside it stay); `~/Developer/auto_avsr` 843 MB (its own repo, 2
+  uncommitted deletions, nothing ahead); the 4 old `~/.claude/projects/-Users-chauphan-Developer-sill*` folders 134 MB.
+- Gallery 1c676a1 (not pushed): the 20 tracked reference images under `src/page/ui/{common,main,public}` 32 MB;
+  `page/ui/README.md` (the interface rules `docs/architecture.md` cites) stays; README notes it. Nothing in the code
+  used the images. Only these paths were staged; the other session's 6 files are untouched.
+- `sandisk-rescue`: the owner said keep (until D3–D11 close). It went to the Trash for a moment and was moved back
+  unchanged (12 entries, 1.3 GB, `scripts/run-all.sh` path for its disabled launchd job works).
+- A15 order step 2 (cleanup) is done. Step 3 (merge) still waits: pushes (sync 4, recense 3, gallery 1 ahead) and a
+  clean gallery tree.
+
 ### 2026-11-05 16:25 PST · A15 (one repo), steps 2–3: Nook → plain Recense; cleanup · PARTIAL (merge waits for its gates)
 - **git-filter-repo** installed (brew, a40bce548d2c): that gate is open.
 - **A15i** (recense 0551831, not pushed): `nook.swift` → `hider.swift` (+ its `Sources/recense/` symlink); `Nook`,
