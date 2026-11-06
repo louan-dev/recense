@@ -28,6 +28,8 @@ own; Recense never depends on the Worker. The plan is `docs/specs/unified-offlin
 On this Mac the old `~/Developer/gallery` and `~/Developer/sync` folders are gone; the launch agents run
 `~/Developer/recense/sync/bin/*`, and `~/Developer/sync` is a temporary link to `recense/sync`. Several Claude Code
 sessions can work at once, one worktree per part: `/recense <file or word>` (`.claude/skills/recense/SKILL.md`).
+Gemini / Antigravity sessions work as lane workers too: `GEMINI.md` loads the same repo guide and adds the worker
+loop (the lane's `INBOX.md` is their only channel from the coordinator).
 
 ## What works offline
 Recense entirely: transcription, the light, loops, speed, sound and Draftpad run on the Mac. Gallery's apps keep what
