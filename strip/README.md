@@ -94,6 +94,13 @@ Three fingers up and down move through the strip's layers: hidden → **Essentia
   cursor memory. An edit from the iPhone or iPad that lands while you type here is merged in, never overwritten:
   each save merges the last version, yours and the file's by line; if both changed the same lines, yours stays in
   `draftpad.md` and the other device's goes beside it as `draftpad (other device <date time>).md` (`notesync.swift`).
+  - **New pages go on top of `draftpad.md`** (D4, safe version). Nothing reorders the file: the strip shows its
+    pages bottom-up, so the page it adds at its newest end lands at the top of the file.
+  - **Editor: new / classic.** The layer can host the new editor (the CodeMirror core, `editor/dist/editor.html`) in
+    a web view instead of the classic strip. Switch with `./recense editor-new` and `./recense editor-classic`, the
+    Topic menu, or right-click in the pad. Classic is the default. The new editor never writes the file itself:
+    every save goes through the same merge (`notesync.swift`). Until the core is merged, a plain stand-in page with
+    the same bridge runs instead (`editorhost.swift`). In the new editor, right-click → New Topic on Top.
 - Edge bars on hover: recorder / volume (left), vault / brightness (right), R2 (bottom).
 - Voice → calendar card; Mac ↔ iPhone ↔ iPad handoff.
 
@@ -170,6 +177,7 @@ Recense lives in `strip/` of the one repo, `~/Developer/recense` (the folders be
 strip/
   app.swift          the strip, panels, gestures, Draftpad (formerly sill.swift)
   notesync.swift     Draftpad's file sync: 3-way merge, coordinated iCloud reads and writes (recense selftest)
+  editorhost.swift   the new editor's web view host and its bridge; the page order for new pages on top
   recense.swift      Recense: players, transcripts, light, editor, export
   soundengine.swift  process tap and EQ/Key/Space chain
   cadence.swift      the karaoke light's timing
@@ -215,13 +223,14 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./recense up | down | pad | time | show | hide | toggle | quit | status | background`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
 too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), which modifier states reveal the
 hider's icons (⌘ alone only), and the lyrics lookups against a stand-in LRCLIB and Genius that count requests: 50
 songs, talks and ambiguous titles (at most 2 requests a song, none for speech), the waits on 429 and 503, no network,
-the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get.
+the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get; Draftpad's merge; and the editor
+host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact.
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).

@@ -41,6 +41,12 @@ for f in homebar/index.html $GALLERY_CLIENT/$^HB_MODULES; do
 done
 mkdir -p "$app/Contents/Resources/homebar"
 cp homebar/index.html $GALLERY_CLIENT/$^HB_MODULES "$app/Contents/Resources/homebar/"
+# The new editor's page (the CodeMirror core, editor/dist/editor.html; editorhost.swift). Until the core lands, the
+# app uses its built-in stand-in.
+rm -rf "$app/Contents/Resources/editor"
+if [[ -f ../editor/dist/editor.html ]]; then
+  mkdir -p "$app/Contents/Resources/editor" && cp ../editor/dist/editor.html "$app/Contents/Resources/editor/"
+fi
 
 if [[ "$1" == "universal" ]]; then
   swiftc -O -target arm64-apple-macos14 app.swift -o .recense-arm64
