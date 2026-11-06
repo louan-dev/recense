@@ -76,9 +76,14 @@ what it's for. Each project meets a different kind of friction, so each carries 
 
 ## Menu-bar hider
 `recense/hider.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
-⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). To see │ while arranging, hold ⌘ on
-its own with the pointer in the menu bar; ⌘ held anywhere else (a shortcut, ⌘-Tab, ⌘-click in a window) does nothing.
-Hovering the divider's spot shows the hidden icons; they tuck away 3 s after the pointer leaves the menu bar. Recense's
+⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). Three ways show │ and the hidden icons:
+- the chevron (‹‹) in the strip, right of the batteries: click it, or rest the pointer on it for 0.5 s;
+- Recense's app menu ▸ Menu-Bar Hider ▸ Show Hidden Icons;
+- `./recense show-icons`.
+
+No key or modifier reveals them: ⌘-Tab, ⌘C and ⌘-drag leave the menu bar as it is (D23; until 2026-11-06 a held ⌘
+did, and the icons took the strip's place). Hovering the divider's spot also shows the hidden icons. They tuck away
+3 s after the pointer leaves the menu bar, or 8 s after Show Hidden Icons if the pointer never comes up. Recense's
 app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers. The earlier two-tier
 version (an always-hidden tier, per-app Rules) is in the history: commit 93e5cb3, and tag `archive/nook-fix-1f871c` for
 its macOS 27.2 placement fix.
@@ -223,17 +228,18 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
-too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), which modifier states reveal the
-hider's icons (⌘ alone only), and the lyrics lookups against a stand-in LRCLIB and Genius that count requests: 50
+too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), that the hider watches no key or
+modifier event (so ⌘-Tab, ⌘C and ⌘-drag can't reveal its icons), and the lyrics lookups against a stand-in LRCLIB and Genius that count requests: 50
 songs, talks and ambiguous titles (at most 2 requests a song, none for speech), the waits on 429 and 503, no network,
 the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get; Draftpad's merge; and the editor
 host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact.
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).
+`show-icons` shows the menu-bar hider's hidden icons (launching Recense hidden first if it isn't running).
 
 ## Gestures and controls
 

@@ -2,8 +2,10 @@
 //
 //   [ hidden icons ] │ [ visible icons ] [ system icons ]
 //
-// macOS lets no app move other apps' icons, so icons are hidden by ⌘-dragging them left of the divider (hold ⌘ a
-// moment with the pointer in the menu bar to see it). Collapsed, the divider is invisible and spans the room left of
+// macOS lets no app move other apps' icons, so icons are hidden by ⌘-dragging them left of the divider. To see the
+// divider and the hidden icons: the chevron in the strip (click, or hover 0.5 s), Recense's app menu ▸ Menu-Bar Hider ▸
+// Show Hidden Icons, or `recense show-icons`. No key or modifier ever reveals them (D23: a held ⌘ did, until
+// 2026-11-06, and the icons took the strip's place during ⌘-Tab, ⌘C and ⌘-drag). Collapsed, the divider is invisible and spans the room left of
 // it, pushing those icons off the screen; since macOS 27 a status item wider than that room is moved off the bar
 // instead, so it spans exactly that room (see `fit`). Hovering the divider's spot reveals the icons; they tuck away
 // again a few seconds after the pointer leaves the menu bar.
@@ -33,12 +35,13 @@ enum HiderPrefs {
 final class MenuBarHider {
     private var item: NSStatusItem?
     private var collapsed = false
+    private var showing = false              // the divider drawn: Show Hidden Icons, until the next collapse
     private var monitors: [Any] = []
-    private var holdWork: DispatchWorkItem?
     private var tuckWork: DispatchWorkItem?
-    private var commandSince: Date?          // when ⌘ went down on its own; nil once released or joined by a key or modifier
     static let tuckDelay: TimeInterval = 3
-    static let holdDelay: TimeInterval = 0.7
+    static let showGrace: TimeInterval = 8   // after Show Hidden Icons: time to bring the pointer up to the menu bar
+    /// The only events the hider watches. No key or modifier event (D23); `hiderSelftest` checks this.
+    static let watched: NSEvent.EventTypeMask = [.mouseMoved]
 
     var running: Bool { item != nil }
 
@@ -59,27 +62,22 @@ final class MenuBarHider {
         it.button?.appearsDisabled = true
         item = it
         expand()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.collapse() }   // once it has a place
-        let flags: (NSEvent) -> Void = { [weak self] e in self?.commandChanged(e.modifierFlags) }
-        if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags) { monitors.append(g) }
-        if let l = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { e in flags(e); return e }) { monitors.append(l) }
-        // Any key pressed with ⌘ means a shortcut, not arranging: don't reveal anything (in other apps and in Recense's own).
-        let key: (NSEvent) -> Void = { [weak self] _ in self?.holdWork?.cancel(); self?.commandSince = nil }
-        if let k = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(k) }
-        if let k = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { e in key(e); return e }) { monitors.append(k) }
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved, handler: { [weak self] _ in self?.mouseMoved() }) { monitors.append(m) }
+        // Once it has a place; unless Show Hidden Icons came first (`recense show-icons` launching Recense), whose tuck collapses it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in if self?.showing == false { self?.collapse() } }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: MenuBarHider.watched, handler: { [weak self] _ in self?.mouseMoved() }) { monitors.append(m) }
     }
 
     func stop() {
         guard let it = item else { return }
         monitors.forEach { NSEvent.removeMonitor($0) }; monitors = []
-        holdWork?.cancel(); tuckWork?.cancel()
+        tuckWork?.cancel()
         NSStatusBar.system.removeStatusItem(it)
         item = nil
     }
 
     private func expand(showing: Bool = false) {
         collapsed = false
+        self.showing = showing
         item?.length = 12
         item?.button?.title = showing ? "┃" : ""
         item?.button?.alphaValue = 0.35
@@ -88,6 +86,7 @@ final class MenuBarHider {
     private func collapse() {
         guard let it = item else { return }
         collapsed = true
+        showing = false
         it.button?.title = ""
         let room = (it.button?.window?.frame.minX ?? 0) - (it.button?.window?.screen?.frame.minX ?? 0)
         fit(max(room + 12, 200), tries: 12)
@@ -102,31 +101,13 @@ final class MenuBarHider {
         }
     }
 
-    /// Holding ⌘ on its own for a moment with the pointer in the menu bar shows the divider, so icons can be ⌘-dragged
-    /// across it; letting go tucks them away again. ⌘ held anywhere else (a shortcut, ⌘-Tab, ⌘-click in a window) does
-    /// nothing: until 2026-11-05 a held ⌘ revealed the icons wherever the pointer was, and they took the strip's place (R16).
-    private func commandChanged(_ flags: NSEvent.ModifierFlags) {
-        holdWork?.cancel()
-        if MenuBarHider.commandAlone(flags) {
-            commandSince = Date()
-            let w = DispatchWorkItem { [weak self] in
-                guard let self = self, self.pointerInMenuBar(NSEvent.mouseLocation) else { return }
-                self.reveal()
-            }
-            holdWork = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + MenuBarHider.holdDelay, execute: w)
-        } else {
-            commandSince = nil
-            if !collapsed, !flags.contains(.command) { scheduleTuck(0.8) }
-        }
+    /// Show the divider and the hidden icons (the strip's chevron, the menu item, `recense show-icons`). They tuck away
+    /// `tuckDelay` after the pointer leaves the menu bar, or after `showGrace` if it never comes up.
+    func showIcons() {
+        guard running else { return }
+        expand(showing: true)
+        if pointerInMenuBar(NSEvent.mouseLocation) { tuckWork?.cancel(); tuckWork = nil } else { scheduleTuck(MenuBarHider.showGrace) }
     }
-
-    /// ⌘ and nothing else (Caps Lock and the fn/keypad bits don't count).
-    static func commandAlone(_ flags: NSEvent.ModifierFlags) -> Bool {
-        flags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .command
-    }
-
-    private func reveal() { tuckWork?.cancel(); expand(showing: true) }
 
     /// Hover to peek: the pointer at the divider's spot (its right end while collapsed) reveals the icons; once the
     /// pointer leaves the menu bar they tuck away after `tuckDelay`. Cheap: one frame test per move.
@@ -134,8 +115,6 @@ final class MenuBarHider {
         guard let w = item?.button?.window else { return }
         let p = NSEvent.mouseLocation
         if collapsed {
-            // ⌘ held alone first, then the pointer brought up to the menu bar to arrange icons
-            if let t = commandSince, Date().timeIntervalSince(t) >= MenuBarHider.holdDelay, pointerInMenuBar(p) { reveal(); return }
             let spot = CGRect(x: w.frame.maxX - 14, y: w.frame.minY, width: 14, height: w.frame.height)
             if spot.contains(p) { tuckWork?.cancel(); expand() }
         } else if !pointerInMenuBar(p) {
@@ -164,7 +143,11 @@ final class MenuBarHider {
         on.target = HiderToggle.shared; HiderToggle.shared.hider = self
         on.state = running ? .on : .off
         m.addItem(on)
-        let how = NSMenuItem(title: "Hold ⌘ and drag icons left of the divider to hide them", action: nil, keyEquivalent: "")
+        let show = NSMenuItem(title: "Show Hidden Icons", action: #selector(HiderToggle.show), keyEquivalent: "")
+        show.target = HiderToggle.shared
+        show.isEnabled = running
+        m.addItem(show)
+        let how = NSMenuItem(title: "Show them, then ⌘-drag icons left of the divider to hide them", action: nil, keyEquivalent: "")
         how.isEnabled = false
         m.addItem(how)
         return m
@@ -175,19 +158,20 @@ final class HiderToggle: NSObject {
     static let shared = HiderToggle()
     weak var hider: MenuBarHider?
     @objc func fire() { guard let n = hider else { return }; n.setEnabled(!n.running) }
+    @objc func show() { hider?.showIcons() }
 }
 
-/// `recense selftest`: which modifier states count as ⌘ alone, the only state that reveals the icons (R16).
+/// `recense selftest`: the hider watches no key or modifier event, so no modifier state (⌘ held, ⌘-Tab, ⌘C, ⌘-drag)
+/// can reveal the icons (D23).
 func hiderSelftest() -> Bool {
-    let cases: [(NSEvent.ModifierFlags, Bool, String)] = [
-        ([.command], true, "⌘"), ([.command, .capsLock], true, "⌘ with Caps Lock"), ([.command, .function], true, "⌘ with fn"),
-        ([.command, .shift], false, "⌘⇧"), ([.command, .option], false, "⌘⌥"), ([.command, .control], false, "⌘⌃"),
-        ([], false, "no modifier"), ([.shift], false, "⇧")]
+    let cases: [(NSEvent.EventTypeMask, String)] = [
+        (.flagsChanged, "modifier changes (⌘ held, ⌘-drag)"), (.keyDown, "key presses (⌘-Tab, ⌘C)"), (.keyUp, "key releases"),
+        (.leftMouseDragged, "drags"), (.leftMouseDown, "clicks")]
     var ok = true
-    for (flags, want, label) in cases {
-        let got = MenuBarHider.commandAlone(flags)
-        print("\(got == want ? "ok  " : "FAIL") hider, \(label): \(got ? "reveals" : "does nothing")")
-        ok = ok && got == want
+    for (mask, label) in cases {
+        let watched = !MenuBarHider.watched.intersection(mask).isEmpty
+        print("\(watched ? "FAIL" : "ok  ") hider, \(label): \(watched ? "watched" : "never reveals")")
+        ok = ok && !watched
     }
     return ok
 }
