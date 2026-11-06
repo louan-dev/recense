@@ -1,6 +1,0 @@
-#!/bin/zsh
-app=/Applications/Recense.app
-if ! pgrep -qx recense && [[ "${1:-time}" != (status|hide|quit) ]]; then
-  exec open -a "$app" --args "${1:-time}"
-fi
-exec "$app/Contents/MacOS/recense" "$@"

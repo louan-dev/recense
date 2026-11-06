@@ -9,3 +9,8 @@ backups/
 .handoff/
 *-handoff.zip
 __pycache__/
+# generated on this Mac by build.sh or tools (X4, 11-05): kept locally, never tracked
+recense/.build-log.txt
+/recense/recense
+recense/_CodeSignature/
+recense/.wrangler/

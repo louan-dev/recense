@@ -199,6 +199,9 @@ zsh scripts/install-launchagent.sh        # start at login, and again after a cr
 zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to main (status | remove)
 ```
 
+What a build or a tool leaves in `recense/` stays on this Mac and out of git: `.build-log.txt`, the `./recense`
+launcher (build.sh writes both), `_CodeSignature/` and wrangler's `.wrangler/` cache.
+
 **Deploy from anywhere.** A push to `main` (from a phone or cloud session) reaches this Mac on its own:
 `scripts/autoupdate.sh` runs every 5 minutes, fast-forwards recense and gallery when they have new commits (never over
 local edits), runs `build.sh` here so the app keeps this Mac's signature and its permissions, and relaunches Recense if it
