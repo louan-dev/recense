@@ -10,8 +10,15 @@
 | `calendar/` | the CalDAV Worker | `npx wrangler deploy` in `calendar/` | — |
 | `docs/` | plans, specs, PROGRESS, BACKLOG | start at `docs/PROGRESS.md` | — |
 - Several CLIs at once: one worktree per area, `git worktree add .claude/worktrees/<area> -b work/<area>`; merge into `main` when done. Only the main checkout stays on `main` (autoupdate builds the installed app from it). `/recense <file|word>` finds the part and its worktree (`.claude/skills/recense/SKILL.md`).
-- Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`.
+- Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`. The handoff zip goes in the main checkout's `.git/` (`$(git rev-parse --git-common-dir)/recense-handoff.zip`), never the repo root.
 - `~/Developer/sync` is a temporary symlink to `recense/sync` (old paths in the signed Move Offsite shortcuts); `~/Developer/gallery` is gone.
+
+## Direction
+- Offline-first everywhere; the network, including Cloudflare, is the fallback.
+- Cloudflare/R2 is storage and caching only. Keep a one-command migration path to the M4 mini
+  (files, cache, jobs), and question any new Cloudflare dependency.
+- Prefer local and peer-to-peer transfer; the cloud is the backup path.
+- Nothing may stop working because a signature, subscription or vendor expires.
 
 Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 

@@ -32,6 +32,8 @@ sessions can work at once, one worktree per part: `/recense <file or word>` (`.c
 ## What works offline
 Recense entirely: transcription, the light, loops, speed, sound and Draftpad run on the Mac. Gallery's apps keep what
 they've cached; share links, the web app and CalDAV need the internet.
+Cloudflare is storage and caching only, kept replaceable: the plan is a one-command move to a Mac mini, and nothing
+should stop working because a signature, subscription or vendor expires.
 
 ## Privacy
 Client matters never enter this repo. Secrets stay out of git: `.dev.vars`, `rclone.conf`, `.env`, wrangler's
