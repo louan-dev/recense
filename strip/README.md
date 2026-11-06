@@ -180,6 +180,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   - A copy that can't be made stays in the cache.
   - Two different versions: the newer one is kept; the older goes to `~/Recense/keep/.replaced/`.
   - `~/Recense/keep/.migrated-from-caches` records when the move was complete.
+- **⏯ (the strip's play button, CC On/Off):** plays and pauses Recense's loaded piece, however long its player has
+  been quiet. The system's ⏯ key goes out only with nothing loaded, or from the menu: Recense → Play/Pause Other Apps.
 
 ## Layout
 

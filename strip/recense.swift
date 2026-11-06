@@ -7385,6 +7385,8 @@ final class NativeSources {
         let cc = m.addItem(withTitle: "CC Off", action: #selector(toggleCC), keyEquivalent: "m")
         cc.target = self
         ccItem = cc
+        // D28: ⏯ drives Recense's piece; this is the way to the other apps' players (the system's ⏯ key)
+        m.addItem(withTitle: "Play/Pause Other Apps", action: #selector(otherAppsPlayPause), keyEquivalent: "").target = self
         let ly = m.addItem(withTitle: "Hide Captions for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
         ly.target = self
         lyricsItem = ly
@@ -7627,12 +7629,22 @@ final class NativeSources {
     }
     @objc func toggleCC() { ccTitle(paused: globalPlayPause()) }
     func ccTitle(paused: Bool) { let t = paused ? "CC On" : "CC Off"; if ccItem?.title != t { ccItem?.title = t } }
-    /// The global ⏯ (Recense's strip button): the player Recense follows is played or paused directly, so the window
-    /// changes with it at once; with none, the system's ⏯ key. Recense used to press the system key itself, which macOS
-    /// may hand to another app than the one in the window. Returns whether it is paused now.
+    /// The global ⏯ (Recense's strip button, CC On/Off): whenever Recense has a piece loaded, its player is played or
+    /// paused directly, so the window changes with it at once (D28). Only with nothing loaded, or from "Play/Pause
+    /// Other Apps", does the system's ⏯ key go out, which macOS hands to whichever app it picks. Until 2026-11-06 a
+    /// player that hadn't reported for 5 s (a paused tab in the background, a paused native player) got the system key
+    /// instead, and another app played. Returns whether it is paused now.
     @discardableResult func globalPlayPause() -> Bool {
-        let has = !pos.url.isEmpty && Date().timeIntervalSince(pos.received) < 5
-        if has { let paused = expectPaused ?? pos.paused; setPlaying(paused); globalPaused = !paused; kick(); return globalPaused }
+        if AppDelegate.playTarget(loaded: episode != nil, followed: pos.url) == .recense {
+            let paused = expectPaused ?? pos.paused; setPlaying(paused); globalPaused = !paused; kick(); return globalPaused
+        }
+        return otherAppsPlayPause()
+    }
+    enum PlayTarget { case recense, otherApps }
+    /// Who the ⏯ button drives: Recense's player when it has a piece loaded and a player it follows; else other apps.
+    nonisolated static func playTarget(loaded: Bool, followed: String) -> PlayTarget { loaded && !followed.isEmpty ? .recense : .otherApps }
+    /// The system's ⏯ key, for whatever else is playing (the menu's "Play/Pause Other Apps").
+    @objc @discardableResult func otherAppsPlayPause() -> Bool {
         recensePressPlayPause()
         globalPaused.toggle()
         return globalPaused

@@ -171,5 +171,9 @@ func keepSelftest() -> Bool {
     put(cache, "\(k("7")).v2.json", "stray")
     check(KeepHome.url("\(k("7")).v2.json", keep: keep, cache: cache).deletingLastPathComponent().path == keep.path, "once marked, the cache isn't read")
 
+    // D28: ⏯ drives Recense's loaded piece, however long its player has been quiet; other apps only with none loaded
+    check(AppDelegate.playTarget(loaded: true, followed: "https://example.com/a.mp3") == .recense, "play: a loaded piece is played by Recense")
+    check(AppDelegate.playTarget(loaded: false, followed: "") == .otherApps, "play: nothing loaded, the system ⏯ key")
+    check(AppDelegate.playTarget(loaded: true, followed: "") == .otherApps, "play: no player followed, the system ⏯ key")
     return ok
 }
