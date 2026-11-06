@@ -25,8 +25,8 @@ the resources to buy that, so I am making it, playfully and in the open, and lea
 
 The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLOG.md` and `SPEC.md`. Start with
 `docs/specs/gallery-nervous-system.md`. The unified offline-first plan for Sync, Gallery and Recense
-(approved 2026-11-05; phase 0 done locally, A15 under way (cleanup done 11-05): Sync, Gallery and Recense become one repo,
-`louan-dev/recense`, after the next pushes) is `docs/specs/unified-offline-first-and-redesign.md`.
+(approved 2026-11-05; phase 0 done and pushed, A15 under way (cleanup done 11-05): Sync, Gallery and Recense become one
+repo, `louan-dev/recense`, once Gallery's working tree is clean) is `docs/specs/unified-offline-first-and-redesign.md`.
 
 ## Features
 - **Ledger** (`src/ledger.mjs`): read-only observer of the iCloud folder, an append-only SHA-256 hash-chained journal in
