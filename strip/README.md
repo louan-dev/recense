@@ -171,8 +171,22 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - `[Ambient Sounds]` where no voice is heard; no overlay over captions the video already shows.
 - **Sound tray:** a native process tap → EQ / Key / Space → limiter chain for each player; vocal / instrumental
   extraction, so the voice can be heard alone or sung over; chord detection.
-- Idle backfill separates and measures songs under 15 minutes. Transcripts cache locally and mirror to Gallery's
-  `keep/<key>/` when available. A file asked for from Gallery (opened there, or Retranscribe) goes before the backfill.
+- Idle backfill separates and measures songs under 15 minutes. A file asked for from Gallery (opened there, or
+  Retranscribe) goes before the backfill.
+- **Transcripts live in `~/Recense/keep/`** (D19; `keephome.swift`).
+  - It holds each item's transcript, corrections, translations and features (`<key>.v2.json`, `.edits.json`,
+    `.tr.<lang>.json`, `.features.json`).
+  - Nothing there is ever swept. With the network off, a transcript opens from there.
+  - R2's `keep/<key>/` mirrors it when R2 is set up.
+  - `~/Library/Caches/recense/` keeps media only.
+  - Read order: `~/Recense/keep` → the cache (only until the move below is verified) → R2's `keep/`.
+  - At launch, any transcript still in the cache is copied over, checked by SHA-256, and only then removed from the
+    cache. The launch log line starts `keep:`.
+  - A copy that can't be made stays in the cache.
+  - Two different versions: the newer one is kept; the older goes to `~/Recense/keep/.replaced/`.
+  - `~/Recense/keep/.migrated-from-caches` records when the move was complete.
+- **⏯ (the strip's play button, CC On/Off):** plays and pauses Recense's loaded piece, however long its player has
+  been quiet. The system's ⏯ key goes out only with nothing loaded, or from the menu: Recense → Play/Pause Other Apps.
 
 ## Layout
 
@@ -184,6 +198,7 @@ strip/
   notesync.swift     Draftpad's file sync: 3-way merge, coordinated iCloud reads and writes (recense selftest)
   editorhost.swift   the new editor's web view host and its bridge; the page order for new pages on top
   recense.swift      Recense: players, transcripts, light, editor, export
+  keephome.swift     where transcripts live (~/Recense/keep), the move out of the cache (recense selftest)
   soundengine.swift  process tap and EQ/Key/Space chain
   cadence.swift      the karaoke light's timing
   prosody.swift      prosody notation
