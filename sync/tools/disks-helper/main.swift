@@ -6,7 +6,7 @@
 import Foundation
 
 let script = CommandLine.arguments.count > 1
-  ? CommandLine.arguments[1] : NSHomeDirectory() + "/Developer/sync/bin/disks-mount.zsh"
+  ? CommandLine.arguments[1] : NSHomeDirectory() + "/Developer/recense/sync/bin/disks-mount.zsh"
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/bin/zsh")
 child.arguments = [script]

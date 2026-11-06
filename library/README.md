@@ -1,6 +1,6 @@
 # gallery
 
-My library and share links, served at **https://gallery.improvdiplomat.workers.dev** (Cloudflare Worker + R2),
+Gallery is the `library/` folder of the one repo, `louan-dev/recense` (A15). My library and share links, served at **https://gallery.improvdiplomat.workers.dev** (Cloudflare Worker + R2),
 with native apps for macOS, iOS and iPadOS and a Finder/Files location.
 
 ## Why this exists
@@ -154,14 +154,14 @@ the first 24 hex of SHA-256 of `fp:<bytes>:<sha256 of the first 64 KiB>:<sha256 
 same way on the Mac, so one recording has one transcript wherever it plays, renamed, moved or uploaded twice.
 `keep/library.json` aliases a recording heard from another source, with its time shift.
 A corrected line keeps the space typed before `! ? ; :` (French writes `fini !`); a space before `, . …` and the
-Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Pushing to `main` deploys: GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
+Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Pushing to `main` a change under `library/` deploys (`.github/workflows/library.yml`): GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
 
 ### Storage
 - Buckets: `gallery-public` (Public) and `gallery-main` (Main), plus the read-only archive; on the Mac they mount at
   `~/Gallery` through `Gallery.app`. Transcripts and their timing live under `keep/<key>/` (asr.json, tr/<lang>.json,
   corrections.json, features.json). Comments, captions and folder order are JSON objects in R2 (Main comments move to D1 once it is bound, below).
 
-- D1 (C1, `src/d1.js`, `gallery/migrations/`): invitations, folder locks, Main comments and likes, annotations, metadata overrides and their revisions. Used once the `DB` binding exists; R2 JSON is copied in lazily on first read and kept as a backup. Until then everything stays in R2 as before. The database `gallery` exists (id in `gallery/wrangler.toml`); apply the schema with `npx wrangler d1 migrations apply gallery --remote` before the first deploy that uses it.
+- D1 (C1, `src/d1.js`, `migrations/`): invitations, folder locks, Main comments and likes, annotations, metadata overrides and their revisions. Used once the `DB` binding exists; R2 JSON is copied in lazily on first read and kept as a backup. Until then everything stays in R2 as before. The database `gallery` exists (id in `gallery/wrangler.toml`); apply the schema with `npx wrangler d1 migrations apply gallery --remote` before the first deploy that uses it.
 
 ### Sharing
 - Share links from Main, the archive or the apps; each draws a large preview card in iMessage, Messenger and Telegram.
@@ -304,7 +304,7 @@ gallery/
 ### Deploy
 
 ```
-cd gallery
+cd ~/Developer/recense/library
 npm install
 npm test
 npx wrangler deploy
@@ -351,5 +351,5 @@ For the Quick Action, make an Automator Quick Action (files or folders in Finder
 as arguments) containing:
 
 ```
-exec /bin/bash "$HOME/Developer/gallery/gallery/chau/copy-share-link.sh" "$@"
+exec /bin/bash "$HOME/Developer/recense/library/chau/copy-share-link.sh" "$@"
 ```

@@ -23,17 +23,18 @@ the resources to buy that, so I am making it, playfully and in the open, and lea
 - Calendar, contacts, notes and messages on standards (CalDAV, CardDAV, IMAP, WebDAV), never private iCloud endpoints.
 - A tamper-evident record of every change, so anything can be verified and restored.
 
-The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLOG.md` and `SPEC.md`. Start with
-`docs/specs/gallery-nervous-system.md`. The unified offline-first plan for Sync, Gallery and Recense
-(approved 2026-11-05; phase 0 done and pushed, A15 under way: the merge is built and tested on a branch; Sync, Gallery and Recense
-become one repo, `louan-dev/recense`, once Gallery's working tree is clean) is `docs/specs/unified-offline-first-and-redesign.md`.
+Sync is the `sync/` folder of the one repo, `louan-dev/recense` (A15). The plan is `../docs/PROGRESS.md` (status,
+decisions, changelog), with detail in `../docs/BACKLOG.md` and `../docs/SPEC.md`. Start with
+`../docs/specs/gallery-nervous-system.md`. The unified offline-first plan for Sync, Gallery and Recense
+(approved 2026-11-05; phase 0 done and pushed; A15 made the one repo) is
+`../docs/specs/unified-offline-first-and-redesign.md`.
 
 ## Features
 - **Ledger** (`src/ledger.mjs`): read-only observer of the iCloud folder, an append-only SHA-256 hash-chained journal in
   the shared event-log format, mirrored to R2. Audit, backup status (Arq to R2), quota and freeing proposals (never
   deletes), verify, restore and health (`views/health.json`). Zero dependencies.
 - **Canary** (`src/canary.mjs`): a note's round trip Mac → iPhone → iPad → Mac, with an upload-status probe.
-- **CalDAV Worker** (`worker/`): your own calendar server; calendar backup through EventKit (`tools/cal-export`).
+- **CalDAV Worker** (`../calendar/`): your own calendar server; calendar backup through EventKit (`tools/cal-export`).
 - **Messenger ingest** (`src/messenger.mjs`).
 - **Always-on archive mount**: `gallery-archive/chauphan` over Gallery's `/main/nc-archive/`, kept alive by launchd with
   a 2 GB cache; folder listings are cached for an hour (Worker requests), and deletes still go to Gallery's trash.
@@ -71,20 +72,22 @@ become one repo, `louan-dev/recense`, once Gallery's working tree is clean) is `
 ## Layout
 
 - `src/` ledger, canary, Messenger ingest
-- `worker/` the CalDAV Worker (`src/caldav.js`, `src/index.js`, tests)
+- `../calendar/` the CalDAV Worker (`src/caldav.js`, `src/index.js`, tests)
 - `bin/` launchd jobs and mount scripts: `archive-mount.zsh`, `disks-mount.zsh`, `gallery-main-over-dav.zsh`,
   `add-gallery-archive-remote.zsh`, `add-gallery-tmp-remote.zsh`, `cal-job.sh`, `docs-sync.zsh`, `caldav-passwd.sh`, `ledger-job.sh`,
   `md-mirror.zsh`, `messenger-job.sh`, `move-ledger-sinks.zsh`, `offsite-image.zsh`, `resign-ios.zsh`
 - `tools/` `cal-export.swift`, `upload-status.swift`, `disks-helper`, `quick-actions/`, `shortcuts/`, `hetzner-check.py`
 - `config/` docs-sync and md-mirror filter lists
 - `launchd/` plist templates (`__HOME__` placeholders)
-- `docs/specs` what is being built, `docs/research` reports, `docs/runbooks` step-by-step (Arq, overflow, offsite
-  disks, recovery, SanDisk evacuation, Obsidian images and integration, Gallery drive), `docs/proposals` decisions
+- `../docs/specs` what is being built, `../docs/research` reports, `docs/runbooks` step-by-step (Arq, overflow, offsite
+  disks, recovery, SanDisk evacuation, Obsidian images and integration, Gallery drive), `../docs/proposals` decisions
   waiting on you
-- `decisions/` your recorded decisions
-- `requests/` inbox for files you upload (contents are git-ignored)
+- `../docs/decisions/` your recorded decisions
+- `../docs/requests/` inbox for files you upload (contents are git-ignored)
 
 ## Commands
+
+Run from `sync/` (`cd ~/Developer/recense/sync`).
 
     npm test                          # both selftests
     node src/ledger.mjs <command>     # run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest

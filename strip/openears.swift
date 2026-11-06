@@ -21,7 +21,7 @@ import NaturalLanguage
     static var python: String { root.appendingPathComponent("bin/python").path }
     static var script: String? {
         if let p = Bundle.main.path(forResource: "omni", ofType: "py", inDirectory: "ears") { return p }
-        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/recense/recense/ears/omni.py").path
+        let dev = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Developer/recense/strip/ears/omni.py").path
         return FileManager.default.fileExists(atPath: dev) ? dev : nil
     }
     /// The helper and its Python are on this Mac (the model itself may still need its one download).

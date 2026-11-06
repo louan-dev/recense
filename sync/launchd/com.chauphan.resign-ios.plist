@@ -4,7 +4,7 @@
 <dict>
   <key>Label</key><string>com.chauphan.resign-ios</string>
   <key>ProgramArguments</key>
-  <array><string>/bin/zsh</string><string>/Users/chauphan/Developer/sync/bin/resign-ios.zsh</string></array>
+  <array><string>/bin/zsh</string><string>/Users/chauphan/Developer/recense/sync/bin/resign-ios.zsh</string></array>
   <!-- daily at noon (and at the next wake if the Mac slept through it); the script re-signs only when 2 days or less are left -->
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
   <key>ProcessType</key><string>Background</string>

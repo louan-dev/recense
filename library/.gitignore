@@ -12,7 +12,7 @@ old-versions.zip
 .handoff/
 *-handoff.zip
 .claude/
-gallery/test/.shots/
+test/.shots/
 *.tmp.mjs
 *.bak
 .DS_Store
@@ -20,7 +20,7 @@ gallery/test/.shots/
 node_modules/
 
 # Gallery Files builds (apple/macos/build.sh)
-gallery/apple/build/
+apple/build/
 # the device token build.sh copies in from the Keychain: never commit
-gallery/apple/ios/Secrets/
-gallery/test-results/
+apple/ios/Secrets/
+test-results/

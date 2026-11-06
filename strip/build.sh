@@ -32,21 +32,15 @@ cp canon/*.json "$app/Contents/Resources/canon/"
 # and this copies them into the bundle. homebar.js/css = the bar itself; keylabel.js (the Key's names) and room.js (the
 # reverb's rooms) for the sound tray (SPEC 54); prosody.js + prosogram.js for the live prosogram.
 # TODO: replace this list with a MANIFEST.json read, so a module's consumers are declared instead of typed here.
-GALLERY_CLIENT=${GALLERY_CLIENT:-$HOME/Developer/gallery/gallery/src/client}
+# One repo since A15: Gallery's client is ../library/src/client. A missing file stops the build (it used to warn and
+# build Recense without its home bar).
+GALLERY_CLIENT=${GALLERY_CLIENT:-$PWD/../library/src/client}
 HB_MODULES=(homebar.js homebar.css keylabel.js room.js prosody.js prosogram.js)
-if [[ -f homebar/index.html && -f $GALLERY_CLIENT/homebar.js && -f $GALLERY_CLIENT/homebar.css ]]; then
-  mkdir -p "$app/Contents/Resources/homebar"
-  cp homebar/index.html "$app/Contents/Resources/homebar/"
-  for m in $HB_MODULES; do
-    if [[ -f $GALLERY_CLIENT/$m ]]; then
-      cp "$GALLERY_CLIENT/$m" "$app/Contents/Resources/homebar/"
-    else
-      echo "warning: shared module not bundled: $GALLERY_CLIENT/$m"
-    fi
-  done
-else
-  echo "warning: Recense home bar not bundled (needs recense/homebar/index.html and $GALLERY_CLIENT)"
-fi
+for f in homebar/index.html $GALLERY_CLIENT/$^HB_MODULES; do
+  [[ -f $f ]] || { echo "build failed: the home bar needs $f" >&2; exit 1; }
+done
+mkdir -p "$app/Contents/Resources/homebar"
+cp homebar/index.html $GALLERY_CLIENT/$^HB_MODULES "$app/Contents/Resources/homebar/"
 
 if [[ "$1" == "universal" ]]; then
   swiftc -O -target arm64-apple-macos14 app.swift -o .recense-arm64

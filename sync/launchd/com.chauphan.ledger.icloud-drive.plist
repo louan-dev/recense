@@ -5,7 +5,7 @@
   <key>Label</key><string>com.chauphan.ledger.icloud-drive</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/chauphan/Developer/sync/bin/ledger-job.sh</string>
+    <string>/Users/chauphan/Developer/recense/sync/bin/ledger-job.sh</string>
     <string>/Users/chauphan/Library/Mobile Documents/com~apple~CloudDocs</string>
     <string>rclone:gallery-main:gallery-main/ledger/icloud-drive</string>
     <string>icloud-drive</string>

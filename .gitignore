@@ -10,7 +10,13 @@ backups/
 *-handoff.zip
 __pycache__/
 # generated on this Mac by build.sh or tools (X4, 11-05): kept locally, never tracked
-recense/.build-log.txt
-/recense/recense
-recense/_CodeSignature/
-recense/.wrangler/
+strip/.build-log.txt
+/strip/recense
+strip/_CodeSignature/
+strip/.wrangler/
+# sync's plan folders (moved to docs/ by A15): requests stay local, and the Arq checklist holds pasted secrets
+docs/requests/*
+!docs/requests/README.md
+docs/decisions/20261022 ARQ-CHECKLIST.md
+# wrangler's account cache, in any Worker folder (X4)
+.wrangler/

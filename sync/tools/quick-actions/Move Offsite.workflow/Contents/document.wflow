@@ -59,7 +59,7 @@
 				<key>ActionParameters</key>
 				<dict>
 					<key>COMMAND_STRING</key>
-					<string>exec /bin/zsh "$HOME/Developer/sync/bin/offsite-image.zsh" "$@"</string>
+					<string>exec /bin/zsh "$HOME/Developer/recense/sync/bin/offsite-image.zsh" "$@"</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>
@@ -72,7 +72,7 @@
 				<key>ActionRuntimeParameters</key>
 				<dict>
 					<key>COMMAND_STRING</key>
-					<string>exec /bin/zsh "$HOME/Developer/sync/bin/offsite-image.zsh" "$@"</string>
+					<string>exec /bin/zsh "$HOME/Developer/recense/sync/bin/offsite-image.zsh" "$@"</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>

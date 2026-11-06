@@ -9,4 +9,4 @@ rclone copy "${R}:gallery-archive/chauphan" "${R}:gallery-archive/archive" --met
 rclone check "${R}:gallery-archive/chauphan" "${R}:gallery-archive/archive" --one-way
 echo "Verified. Removing gallery-archive/chauphan/ …"
 rclone purge "${R}:gallery-archive/chauphan"
-echo "Done. Now: cd ~/Developer/gallery/gallery && npx wrangler deploy && apple/macos/build.sh"
+echo "Done. Now: cd ~/Developer/recense/library && npx wrangler deploy && apple/macos/build.sh"

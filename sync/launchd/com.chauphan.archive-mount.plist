@@ -4,7 +4,7 @@
 <dict>
   <key>Label</key><string>com.chauphan.archive-mount</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/chauphan/Developer/sync/bin/archive-mount.zsh</string></array>
+  <array><string>/Users/chauphan/Developer/recense/sync/bin/archive-mount.zsh</string></array>
   <!-- always on: up at login, back up if rclone exits (sleep, Wi-Fi loss, crash) -->
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

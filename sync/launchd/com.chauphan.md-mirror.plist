@@ -11,7 +11,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Users/chauphan/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
-		<string>/Users/chauphan/Developer/sync/bin/md-mirror.zsh</string>
+		<string>/Users/chauphan/Developer/recense/sync/bin/md-mirror.zsh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

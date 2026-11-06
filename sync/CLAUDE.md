@@ -1,6 +1,6 @@
-# CLAUDE.md · Sync (backend root, plan owner) · repo root `~/Developer/sync`
+# CLAUDE.md · Sync (backend root, plan owner) · folder `sync/` of the one repo `~/Developer/recense` (A15). The plan files (`docs/`, `docs/PROGRESS.md`, `docs/BACKLOG.md`) sit at the repo root; `src/`, `bin/`, `tools/`, `launchd/`, `config/` are under `sync/`; the CalDAV Worker is `calendar/`
 
-This repo holds the shared plan. Every session: read `PROGRESS.md` §2 (Rules) and only the section for the task named. Open only the matching section of `BACKLOG.md`. Don't re-read unchanged files or re-plan. You edit only this repo unless the task names another folder.
+This repo holds the shared plan. Every session: read `docs/PROGRESS.md` §2 (Rules) and only the section for the task named. Open only the matching section of `docs/BACKLOG.md`. Don't re-read unchanged files or re-plan. You edit only this repo unless the task names another folder.
 
 ## Where things are
 - `src/ledger.mjs`: read-only observer of the iCloud folder, append-only SHA-256 hash-chained journal to a directory or rclone sink. Zero deps. Commands: `run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest`. Verified on the Mac 2026-10-13 (selftest, real vault, `SF_DATALESS`, rclone sink via `:local:`); `watch` and a real R2 remote are untested. Also `src/canary.mjs`, `tools/upload-status.swift`, `bin/ledger-job.sh` + `launchd/`.
@@ -21,7 +21,7 @@ Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session
 Never delete or move user data, overwrite backups, change production access rules or push without explicit confirmation. Never print, log or archive secrets (`.env`, tokens, `rclone.conf`, wrangler secrets). No private iCloud endpoints and no Apple credentials in code; use standards (CalDAV, CardDAV, IMAP, WebDAV), EventKit, FSEvents, Shortcuts. Label status honestly and claim no real-time sync or security without a test.
 
 ## Keep the plan current
-Update `PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3 and BACKLOG SL6, which are now out of date:
+Update `docs/PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3 and BACKLOG SL6, which are now out of date:
 - **Nook is being folded into Recense** (hover-to-peek and an always-hidden tier behind a Recense setting that can be turned off; running Recense hides menu-bar icons automatically). The old `~/Developer/nook` folder is deleted afterwards, only after verification, a recoverable snapshot and the owner's confirmation of the exact path. Work happens in the Recense repo.
 - A new **widget panel** (name undecided; right-edge slide-out on a non-conflicting three-finger gesture, first widget Find My) is built inside Recense as item SL7, not as a standalone app.
 - Repos: `sync`, `recense`, `gallery` are separate local git repos, all private.
@@ -29,12 +29,12 @@ Update `PROGRESS.md` §7 as you go. Add these owner decisions to §8 and fix §3
 ## Output
 No routine narration, no whole-file dumps. Report decisions, blockers, validation, next action. Running low on context: update §7, write a patch, build `progress.zip` (PROGRESS.md, patch, test output; no secrets, caches or `.env`) and verify it exists.
 ## Changelog
-After each step, append an entry under ## CHANGELOG in PROGRESS.md: date and time from `date`, item ID, status (DONE/PARTIAL/BLOCKED), what changed, validation, next action. Keep §7 current.
+After each step, append an entry under ## CHANGELOG in docs/PROGRESS.md: date and time from `date`, item ID, status (DONE/PARTIAL/BLOCKED), what changed, validation, next action. Keep §7 current.
 
 ## Layout
 - `src/` code (`src/ledger.mjs`, `src/canary.mjs`), `bin/` launchd job, `tools/` Swift probes, `launchd/` plist template with `__HOME__` placeholders. `npm test` runs both selftests.
 - `docs/specs` what we are building, `docs/research` reports, `docs/runbooks` step-by-step, `docs/proposals` decisions waiting on the owner, `docs/archive` raw transcripts (read only when asked).
-- `CLAUDE.md`, `PROGRESS.md` and `BACKLOG.md` stay at the repo root.
+- `sync/CLAUDE.md` stays here; `PROGRESS.md` and `BACKLOG.md` live in `docs/` (A15).
 
 ## Requests inbox
-`requests/` holds files the owner uploads because a task asked for them (for example the iCloud storage breakdown screenshots for A1). Read the newest files there when a task says to ask for a screenshot or export. Never commit, move, rename or delete anything in it; its contents are git-ignored.
+`docs/requests/` holds files the owner uploads because a task asked for them (for example the iCloud storage breakdown screenshots for A1). Read the newest files there when a task says to ask for a screenshot or export. Never commit, move, rename or delete anything in it; its contents are git-ignored.

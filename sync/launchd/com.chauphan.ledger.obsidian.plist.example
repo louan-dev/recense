@@ -5,7 +5,7 @@
   <key>Label</key><string>com.chauphan.ledger.obsidian</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__HOME__/Developer/sync/bin/ledger-job.sh</string>
+    <string>__HOME__/Developer/recense/sync/bin/ledger-job.sh</string>
     <string>__HOME__/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian</string>
     <string>rclone:gallery-main:gallery-main/ledger/obsidian</string>
     <string>obsidian</string>

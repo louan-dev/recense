@@ -16,7 +16,7 @@ let home = FileManager.default.homeDirectoryForCurrentUser.path
 // sealed by a Secure Enclave key that only Touch ID or the login password opens. Unattended jobs use jobs.conf instead.
 let rcloneConf = home + "/.config/rclone/rclone.conf"
 let sealedPass = home + "/Library/Application Support/Gallery/config-pass.json"
-let recoveryDoc = home + "/Developer/sync/docs/runbooks/recovery.md"
+let recoveryDoc = home + "/Developer/recense/docs/runbooks/recovery.md"
 // hidden, so nobody browsing your home folder finds a way in; Gallery.app opens it after Touch ID
 let mountPoint = home + "/.gallery"
 let rclone = "/opt/homebrew/bin/rclone"

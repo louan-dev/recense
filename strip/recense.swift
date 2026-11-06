@@ -1137,7 +1137,7 @@ func clock(_ t: Double) -> String {
 
 // ---------- the home bar and the vertical bar: Gallery's, one implementation ----------
 //
-// Not a port: Gallery's own homebar.js and homebar.css (../gallery/gallery/src/client), copied into the app by
+// Not a port: Gallery's own homebar.js and homebar.css (../library/src/client), copied into the app by
 // build.sh and run in a transparent web view over the subtitles (homebar/index.html is the host page). Any change
 // to the bar is made there, once, for both apps (SPEC P2).
 //

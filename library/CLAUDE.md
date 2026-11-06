@@ -1,12 +1,12 @@
-# CLAUDE.md · Gallery (Cloudflare Worker + R2) · repo root `~/Developer/gallery`
+# CLAUDE.md · Gallery (Cloudflare Worker + R2) · folder `library/` of the one repo `~/Developer/recense` (A15)
 
-Shared plan: `../sync/PROGRESS.md` (read §2 Rules every session, plus §6 for Track C) and `../sync/BACKLOG.md` (open only the §G section you are on). Before touching the viewer or comments read `gallery/src/page/ui/README.md` §1.1, §3, §4.4, §7. Don't re-read unchanged files or re-plan. Nothing has run on the owner's Mac unless §7 says so.
+Shared plan: `../docs/PROGRESS.md` (read §2 Rules every session, plus §6 for Track C) and `../docs/BACKLOG.md` (open only the §G section you are on). Before touching the viewer or comments read `library/src/page/ui/README.md` §1.1, §3, §4.4, §7. Don't re-read unchanged files or re-plan. Nothing has run on the owner's Mac unless §7 says so.
 
 ## Where things are
-- Worker: `gallery/src/worker.js`, `public.js`, `main.js`, `access.js`, `common.js`; client in `gallery/src/client/`; UI contract and screenshots in `gallery/src/page/ui/` (`common/`, `main/`; `public/` is empty).
+- Worker: `library/src/worker.js`, `public.js`, `main.js`, `access.js`, `common.js`; client in `library/src/client/`; UI contract and screenshots in `library/src/page/ui/` (`common/`, `main/`; `public/` is empty).
 - Buckets: `gallery-public` (public) and `gallery-main` (main). Cron 03:00. Comments, captions and folder order are JSON objects in R2. No D1, KV or Durable Objects yet.
 - `/main` is owner-only via Cloudflare Access; everyone else gets an indistinguishable 404 by design (`access.js`, `isOwner()`).
-- Tests: `npm test` (miniflare + playwright; `node_modules` was not shipped, run `npm install` once). Scripts: `gallery/chau/setup.sh`, `copy-share-link.sh` (README says `mac/` and `copy-public-link.sh`: reconcile).
+- Tests: `npm test` (miniflare + playwright; `node_modules` was not shipped, run `npm install` once). Scripts: `library/chau/setup.sh`, `copy-share-link.sh` (README says `mac/` and `copy-public-link.sh`: reconcile).
 - Missing from the uploads: `playerv12` (player reference). Ask the owner, else use the current player in `src/client/gallery.js`.
 - Git exists here. Keep out of git and out of anything shared: `.wrangler/`, `old-versions.zip` (contains account metadata), `node_modules/`, `.test-build/`, `*.bak`, `src/page/ui.zip`, `.env`. Remove clutter only with the owner's confirmation. No push or deploy without explicit confirmation. Never print or commit wrangler secrets.
 
@@ -25,4 +25,4 @@ Security before cosmetics: **C0 server-side authz, then C1 D1 data**, before UI 
 - Recense embeds Gallery through `?embed=1` and `views/health.json`: keep that contract, do not merge the projects.
 
 ## Output
-No routine narration, no whole-file dumps. Report decisions, blockers, validation (run the narrowest test, then regressions), next action. Update `../sync/PROGRESS.md` §7 and stop. Label status DONE (verified) / PARTIAL / BLOCKED / PROPOSED.
+No routine narration, no whole-file dumps. Report decisions, blockers, validation (run the narrowest test, then regressions), next action. Update `../docs/PROGRESS.md` §7 and stop. Label status DONE (verified) / PARTIAL / BLOCKED / PROPOSED.

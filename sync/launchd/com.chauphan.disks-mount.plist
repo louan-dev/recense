@@ -7,7 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>__HOME__/Applications/Disks Helper.app/Contents/MacOS/disks-helper</string>
-    <string>__HOME__/Developer/sync/bin/disks-mount.zsh</string>
+    <string>__HOME__/Developer/recense/sync/bin/disks-mount.zsh</string>
   </array>
   <!-- always on: the Photos, Messages and Mail disks are up at login and come back if rclone exits -->
   <key>RunAtLoad</key><true/>

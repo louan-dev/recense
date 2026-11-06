@@ -1,21 +1,23 @@
-name: deploy
+name: library
+# Gallery (library/) deploys on every push to main that touches it. strip/, sync/, calendar/ and docs/ never deploy here.
 on:
   push:
     branches: [main]
+    paths: [library/**, .github/workflows/library.yml]
   workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: gallery
+        working-directory: library
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: gallery/package-lock.json
+          cache-dependency-path: library/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps
       - run: npm test

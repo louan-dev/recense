@@ -4,7 +4,7 @@
 <dict>
   <key>Label</key><string>com.chauphan.ledger.calendar</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/chauphan/Developer/sync/bin/cal-job.sh</string></array>
+  <array><string>/Users/chauphan/Developer/recense/sync/bin/cal-job.sh</string></array>
   <!-- EventKit has no file to watch: export every 30 minutes, plus at login -->
   <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>

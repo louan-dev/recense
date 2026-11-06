@@ -1,15 +1,16 @@
 #!/bin/zsh
 # Keeps /Applications/Recense.app on the latest pushed code, so "deploy recense" from a phone or cloud session needs nothing
-# typed on this Mac. Every few minutes (a LaunchAgent; see install-autoupdate.sh) it fetches recense and gallery; when
-# either has new commits on main it fast-forwards them, rebuilds with build.sh (signed here, so permissions carry over)
+# typed on this Mac. Every few minutes (a LaunchAgent; see install-autoupdate.sh) it fetches the one recense repo; when
+# main has new commits it fast-forwards it, rebuilds with build.sh (signed here, so permissions carry over)
 # and relaunches Recense if it was running.
 #   zsh scripts/install-autoupdate.sh            install
 #   zsh scripts/install-autoupdate.sh status     is it loaded; when did it last build
 #   zsh scripts/install-autoupdate.sh remove     stop updating
 setopt err_return
-recense_dir="${0:A:h:h}"                 # recense/recense (build.sh lives here)
-recense_repo="${recense_dir:h}"              # ~/Developer/recense
-gallery_repo="$HOME/Developer/gallery" # build.sh copies Gallery's shared client code
+recense_dir="${0:A:h:h}"                 # recense/strip (build.sh lives here)
+recense_repo="${recense_dir:h}"              # ~/Developer/recense: one repo since A15 (library/ holds Gallery's client)
+# Only the main checkout builds the installed app, never a worktree (their .git is a file, not a folder).
+[[ -d $recense_repo/.git ]] || { print -r -- "$recense_repo is a worktree; autoupdate runs only in the main checkout"; exit 0; }
 lock="$HOME/Library/Caches/recense-autoupdate.lock"
 stamp() { print -r -- "$(date '+%F %T') $*"; }
 
@@ -31,7 +32,7 @@ advance() {
   return 0
 }
 
-changed=$(advance "$recense_repo")$(advance "$gallery_repo")
+changed=$(advance "$recense_repo")
 [[ -n $changed || $1 == now ]] || return 0 2>/dev/null || exit 0
 
 stamp "new code; building $(git -C "$recense_repo" log -1 --format='%h %s' | cut -c1-80)"
