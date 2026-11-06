@@ -1237,11 +1237,26 @@ globalThis.Homebar = (() => {
       if (w.seeking) finishSeek();
     };
 
-    // A page alone (Gallery in a browser, notes 35) can't see fingers resting, so it guesses: a swipe that
-    // dies away in a momentum tail (each step no bigger than the last, down to a pixel or two) was let go;
-    // one that stops short is held. A held swipe ends at the next sign of a hand: the pointer moving, a
-    // click, a key, or two minutes. A new swipe simply carries on from where it stopped.
-    const tailed = (d) => d.length >= 5 && d.slice(-5).every((v, i, a) => !i || v <= a[i - 1] + 0.5) && d[d.length - 1] <= 2;
+    // A page alone (Gallery in a browser, notes 35) can't see fingers resting, so it guesses. The fingers
+    // lifting while they move leave a momentum glide: a dozen or more steps a frame apart, each no bigger
+    // than the last. A hand slowing to a stop is shorter and rougher than that, so a swipe that just stops
+    // is held. The glide is never the fingers (as in Recense, where it never reaches the page): once one is
+    // seen, the seek goes back to where it began and lands there. A held swipe ends at the next sign of a
+    // hand: the pointer moving, a click, a key, or two minutes. A new swipe carries on from where it stopped.
+    const GLIDE = 12;
+    // steps of one glide come a frame apart (8–16 ms); allow a few frames, as a busy page or a test's synthetic
+    // wheel (about 50 ms) spaces them out, and as the 80 ms window below already does for the glide's last steps
+    const GAP = 80;
+    let glideAt = -1e9; // the last step of a glide seen ending a swipe
+    const gliding = (d) => {
+      if (d.length < GLIDE) return false;
+      const r = d.slice(-GLIDE);
+      return (
+        r.every((e, i) => !i || (e.v <= r[i - 1].v * 1.03 + 0.3 && e.at - r[i - 1].at < GAP)) &&
+        r[GLIDE - 1].v < r[0].v * 0.8
+      );
+    };
+    const tailed = (d) => d.length > 0 && d[d.length - 1].glide;
     const holdUntilHand = (w) => {
       if (w.release) return;
       const end = () => ws === w && endWheel();
@@ -1272,6 +1287,11 @@ globalThis.Homebar = (() => {
         if (wroll && !ws) return e.preventDefault(); // the rest of a swipe that rolled the slides (notes 26)
         // just after the host said the fingers lifted, what still arrives is that swipe's tail, not a new one
         if (!ws && !fingersOn && performance.now() - fingersUpAt < 300) return e.preventDefault();
+        // the rest of a glide that ended a swipe, for as long as its steps keep coming
+        if (!ws && performance.now() - glideAt < GAP) {
+          glideAt = performance.now();
+          return e.preventDefault();
+        }
         const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
         const dx = e.deltaX * k;
         const dy = e.deltaY * k;
@@ -1310,8 +1330,19 @@ globalThis.Homebar = (() => {
         }
         ws.px = e.clientX;
         ws.py = e.clientY;
-        ws.d.push(Math.hypot(dx, dy));
-        if (ws.d.length > 8) ws.d.shift();
+        ws.d.push({ v: Math.hypot(dx, dy), at: performance.now(), x: sideways ? fingerX : 0 });
+        if (ws.d.length > 40) ws.d.shift();
+        if (!hostFingers && ws.seeking && gliding(ws.d)) {
+          // the fingers lifted where the glide began: take its steps back and land there
+          glideAt = performance.now();
+          let i = ws.d.length - 1; // back to the glide's first step (the biggest, where the fingers left)
+          while (i > 0 && (ws.d[i].v < ws.d[i - 1].v * 0.97 || ws.d[i].v <= 2) && ws.d[i].at - ws.d[i - 1].at < GAP) i--;
+          ws.sum -= ws.d.slice(i).reduce((a, e) => a + e.x, 0);
+          ws.d[ws.d.length - 1].glide = true;
+          seekMove({ clientX: ws.x0 + ws.sum, clientY: sk.lineY - ws.up });
+          e.preventDefault();
+          return endWheel();
+        }
 
         e.preventDefault(); // (also stops the browser turning a two-finger swipe into Back / Forward)
         if (sideways) ws.sum += fingerX;
@@ -2223,6 +2254,10 @@ globalThis.Homebar = (() => {
     chordNow.textContent = "—";
     chordPage.hidden = true;
     chordPage.append(chordNow, chordBtn);
+    // item 31: the notation toggle (ribbon · chords · notes) sat alone under the stroke, in the way of the stroke's
+    // own hit area; it lives on the music page now, beside Chords, where what it draws is chosen
+    const nmode = vbar.el.querySelector(".p-nmode");
+    if (nmode) nmode.classList.add("p-eqflat"), chordPage.appendChild(nmode);
     const pages = [eqCols, chordPage];
     const dots = mkEl("div", "p-wdots");
     let page = 0;
@@ -2251,10 +2286,6 @@ globalThis.Homebar = (() => {
     // the chord detector: while on, the host's live chroma every 250 ms, a chord named once it has
     // held two readings (no flicker), spelled in the notation chordState() picks; the host places it
     // above the transcript, or where the transcript would be when there is none
-    // item 31: the notation toggle (ribbon · chords · notes) sat alone under the stroke, in the way of the stroke's
-    // own hit area; it lives on the music page now, beside Chords, where what it draws is chosen
-    const nmode = vbar.el.querySelector(".p-nmode");
-    if (nmode) nmode.classList.add("p-eqflat"), chordPage.appendChild(nmode);
     let chordsOn = false;
     let chordT = 0;
     let chordLast = null;
@@ -2266,6 +2297,9 @@ globalThis.Homebar = (() => {
       chordNow.textContent = t || "—";
       if (host.chords) host.chords(chordsOn ? t : null);
     };
+    // item 31: the readout flickered (a new chord after two 250 ms reads). The chroma is now smoothed over ~1 s and
+    // a chord shows only once it has held for 1 s; the same text is never rewritten.
+    let chromaAvg = null;
     const chordTick = () => {
       const v = host.chroma && host.chroma();
       if (v) chromaAvg = chromaAvg ? chromaAvg.map((x, i) => x * 0.6 + v[i] * 0.4) : v.slice();
@@ -2298,9 +2332,6 @@ globalThis.Homebar = (() => {
     const paintChord = () => chordsOn && chordLast && showChord(chordText(chordLast));
 
     // swiping the menu: a finger (or mouse) up or down 36 px inside it, or two fingers on a trackpad
-    // item 31: the readout flickered (a new chord after two 250 ms reads). The chroma is now smoothed over ~1 s and
-    // a chord shows only once it has held for 1 s; the same text is never rewritten.
-    let chromaAvg = null;
     const inMenu = (t) => t && t.closest && !t.closest(".p-band, .kpop, button, input");
     let pg = null;
     eq.addEventListener("pointerdown", (e) => {

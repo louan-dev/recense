@@ -63,6 +63,9 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   `<audio>`/`<video>`). Add Media is hidden on read-only roots (Archive).
 - On iPhone and iPad, smaller decode limits (whole-file decode up to 24 MB or 8 min, key detection up to 20 MB), and
   key detection pauses while the deck decodes.
+- Home-bar swipes in a browser: a momentum glide (12+ steps, each no bigger than the last, under 80 ms apart) is
+  never the fingers, so the seek lands where they lifted; a swipe that just stops stays held. Item 31: the notation
+  toggle sits on the music page beside Chords, and a chord shows only after holding 1 s on ~1 s-smoothed chroma.
 - Player: rewind / play / forward, time bar, Loop and A–B, Speed 0.5×…2× (pitch kept), volume. EQ panel: Low, Mid,
   High, Key and Room. Sized per device (phones, iPad Air 13", large monitors).
 - Loops cost no requests on Safari and in the iPhone and iPad browsers: with Sound on (EQ, Key, Room or vocal

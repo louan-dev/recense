@@ -182,7 +182,8 @@ const test = async (name, owner, fn) => {
     console.log("ok   " + name);
   } catch (e) {
     console.log("FAIL " + name + "\n     " + (e && e.message));
-    await pg.screenshot({ path: "test-fail.png" });
+    // bounded: a page still animating can stall a screenshot, and an unbounded one grew to 1.3 GB (11-05)
+    await pg.screenshot({ path: "test-fail.png", timeout: 5000 }).catch(() => {});
     process.exitCode = 1;
   }
   await ctx.close();
