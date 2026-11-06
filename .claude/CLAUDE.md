@@ -43,6 +43,7 @@ Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the sec
 | `library/` | `npm run build:test && node test/<file>.test.mjs` in `library/` | `npm test` in `library/` |
 | `sync/` | `npm test` in `sync/` | the same, plus the real-path checks below |
 | `calendar/` | `npm test` in `calendar/` | the same |
+| `editor/` | `npm test` in `editor/` | `npm run build` in `editor/`, then commit `dist/editor.html` (`strip/build.sh` copies it into Recense.app) |
 
 The tests don't reach these; check them whenever the change does:
 - Anything that syncs (Draftpad, the ledger, md-mirror, docs-sync): a timestamped canary line through the real path,

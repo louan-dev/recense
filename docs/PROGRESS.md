@@ -402,6 +402,8 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 - 2026-11-06 08:20 PST · D34 G0 show feeds (work/study-feed, merged 8e7986a) · PARTIAL. `library/chau/show.mjs` publish|invite|revoke; `GET /m/<token>/feed.xml`. npm test 120 passed; fresh Claude review: no blockers, 3 fixes (NFC titles, GUID per section, Matters/Raven guard by name) coming as a follow-up merge. Next: live feed + iPhone Podcasts follow.
 
+- 2026-11-06 11:55 PST · D13/D33 editor core in the strip (work/editor 3d0a4b4, strip side be1efdf) · DONE. CodeMirror 6 core M1–M5 (search, outline, legal numbering, Draftpad page markers, bridge, deletions record); a Claude review found 2 blockers, fixed and now regression tests; the real page round-trips and syncs inside Recense. Classic stays the default. Open: `getRemoved()` (D32) isn't read by the host yet.
+
 ## 8. Decisions made (defaults; change only if the owner objects)
 1. "rw" = R2. "5 GB" = the iCloud quota (superseded: the plan is iCloud+ 200 GB, see §1).
 2. iCloud stays the live lane once unclogged; ledger mirrors it; R2 takes overflow (A6). *Superseded in part by the owner's goal of 2026-10-27 ("everything serves G1, replace iCloud", §7) and §1a: iCloud stays live only until each source's cutover. The ledger keeps recording whatever Apple still holds, and at cutover a source's history moves to the catalog (`docs/specs/event-log.md` §1).*
