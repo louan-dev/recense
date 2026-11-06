@@ -1,5 +1,18 @@
 # CLAUDE.md · Recense: the one repo (`~/Developer/recense`); this file covers the Mac app in `strip/`. Gallery: `library/CLAUDE.md`; Sync: `sync/CLAUDE.md`
 
+## One repo, separate apps (A15, cut over 2026-11-05)
+`louan-dev/recense` holds every part; each app still builds, tests and deploys on its own.
+| Folder | What | Build / run | Guide |
+|---|---|---|---|
+| `strip/` | Recense.app for the Mac | `zsh strip/build.sh` | this file |
+| `library/` | Gallery: Worker, web app, iOS/Mac apps | `npm test` in `library/`; deploys on push to `library/**` (`.github/workflows/library.yml`) | `library/CLAUDE.md` |
+| `sync/` | the Mac's jobs, ledger, canary, launch-agent copies | `npm test` in `sync/`; agents in `~/Library/LaunchAgents` run `~/Developer/recense/sync/bin/*` | `sync/CLAUDE.md` |
+| `calendar/` | the CalDAV Worker | `npx wrangler deploy` in `calendar/` | — |
+| `docs/` | plans, specs, PROGRESS, BACKLOG | start at `docs/PROGRESS.md` | — |
+- Several CLIs at once: one worktree per area, `git worktree add .claude/worktrees/<area> -b work/<area>`; merge into `main` when done. Only the main checkout stays on `main` (autoupdate builds the installed app from it). `/recense <file|word>` finds the part and its worktree (`.claude/skills/recense/SKILL.md`).
+- Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`.
+- `~/Developer/sync` is a temporary symlink to `recense/sync` (old paths in the signed Move Offsite shortcuts); `~/Developer/gallery` is gone.
+
 Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 
 ## One app (settled 2026-10-28; renamed Sill → Recense 2026-11-03)
@@ -17,8 +30,8 @@ is the strip and entry point (the old `sill.swift`). There is no second process.
   for recited texts (`strip/canon.swift`, `canon/*.json`); it caches locally; `keep/<key>/` is a mirror for sharing with Gallery, merged on read, never required.
 - **Gallery is two things to Recense:** shared client code (`homebar.js`, `homebar.css`, `keylabel.js`, `room.js`, and later
   `prosody.js`/`prosogram.js`) copied into the bundle by `build.sh`; and an optional cloud side (Worker + R2) for sync.
-  `gallery:files/<path>` is one source among local files and followed players, gated on `Store.r2`. Do not merge the
-  projects, and do not let Recense acquire a hard dependency on the Worker.
+  `gallery:files/<path>` is one source among local files and followed players, gated on `Store.r2`. One repo, separate
+  apps: the runtimes stay apart, and Recense never acquires a hard dependency on the Worker.
 - **Where work goes:** Recense → `strip/recense.swift`. The strip → `strip/app.swift`. The tap and audio chain →
   `strip/soundengine.swift`. The home-bar host page → `strip/homebar/index.html` (the one `build.sh` bundles).
   Shared JS → Gallery's `library/src/client/`, copied by `build.sh`.

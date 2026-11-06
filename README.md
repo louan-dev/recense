@@ -25,6 +25,9 @@ The player Gallery and Recense share (home bar, key labels, rooms, prosody) has 
 One repo since A15 (2026-11-05): Gallery (`louan-dev/gallery`) and Sync (`louan-dev/sync`) joined with their full
 history, so `git log library/src/main.js` reaches Gallery's first commit. Each app still builds, tests and deploys on its
 own; Recense never depends on the Worker. The plan is `docs/specs/unified-offline-first-and-redesign.md`.
+On this Mac the old `~/Developer/gallery` and `~/Developer/sync` folders are gone; the launch agents run
+`~/Developer/recense/sync/bin/*`, and `~/Developer/sync` is a temporary link to `recense/sync`. Several Claude Code
+sessions can work at once, one worktree per part: `/recense <file or word>` (`.claude/skills/recense/SKILL.md`).
 
 ## What works offline
 Recense entirely: transcription, the light, loops, speed, sound and Draftpad run on the Mac. Gallery's apps keep what
