@@ -61,6 +61,10 @@ The plan is `PROGRESS.md` (status, decisions, changelog), with detail in `BACKLO
   deletes on either side is kept first in `~/Library/Application Support/md-mirror/backup/<time>/<name>/{mac,vault}`,
   and a pass that would delete more than 10 % of a side stops. If the vault's `Mac/<name>` folder disappears, that pair
   waits for `--resync` instead of reading it as every note deleted. Log: `~/Library/Logs/md-mirror.log`.
+- **Where the vault's pictures and shares go** (read 11-05; nothing changed): the images-uploader plugin sends each
+  pasted picture straight to R2 (bucket `notes-images`, over S3) and deletes the local copy at once, so a picture lives
+  only in R2, and notes show it through the Gallery Worker's `/i`. The share-note plugin publishes encrypted copies to
+  note.sx (5 notes). Both plugins keep their keys in the synced vault's `.obsidian/plugins/*/data.json`.
 - **resign-ios**: a daily check that re-signs Gallery on the iPad and iPhone when 2 days or less are left.
 
 ## Layout

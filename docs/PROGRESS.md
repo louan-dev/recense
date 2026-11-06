@@ -138,7 +138,7 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 | N1029-9 | Notes 20261029 item 9: on-device ears (SpeechAnalyzer) + correction lexicon | PARTIAL (installed; custom LM BLOCKED) | 2026-10-29 19:59: Recense transcribes on this Mac: SpeechTranscriber (en, fr), DictationTranscriber (vi), Groq only for languages Apple can't hear (Persian) and only with a key; no key needed any more; offline translation falls back to Apple Translation. `recense/recense/speech.swift` (engine + Lexicon + CustomLM), `voiceprint.swift` (MFCC + DTW), `recense.swift` (whisper() routes on-device first; Word.c/heard; correct()/Gallery overrides teach; relisten() on replays). Built against Apple CLT 27.2 unpacked in `recense/.toolchain` (Xcode here is 16.4/SDK 15.5); `build.sh` uses it when present. Spike: 98 % of Whisper's words, word times ±0.09 s median, 30× real time; auto language en/fr/vi + French↔English code-switching verified on a bench; correction → next recording fixed by sound; real "cafe" left alone; 33 Recense self-tests + Gallery `npm test` 128 ok. **Blocked:** Apple's custom-LM builder fails (SFSpeechErrorDomain 1) in every variant, CLI and signed Recense with permission. **Not yet run:** live playback inside Recense (first real media will be; `curl -s localhost:47123/speech`). |
 | N1029-3 | Notes 20261029 item 3: share-link preview cards (iMessage, Messenger, Telegram) | DONE (deployed a3307bc1; real paste not yet seen) | 2026-10-30: c35d22d. `/s/<id>` head gets og:title ("N files for you · Shared by Chau Phan" or folder name), og:description/type/url/image(+1200×630), twitter:card summary_large_image (summary when no picture). `GET /api/og-image/<id>[?cover=]` (public.js `ogImage`): ?cover= → manifest/link `coverItem` (fromMain body `cover`) → first jpeg/png/webp/gif ≤8 MB → any image → song cover; public, max-age=3600, ACAO *. routes 53/53, UI 34/34. Deployed c35d22d alone (live was 5e99216) as a3307bc1; /api/og-image live. Row 30 (9e68d98, 18c1b2c) left undeployed: transcript.test 2 FAIL there, 15/15 at c35d22d. Next: owner pastes a link in iMessage. |
 | IMG | Obsidian images → R2 (S3 Image Sync plugin) | PARTIAL | 2026-10-29: Gallery `/i/<key>` route (`src/images.js`, binding `NOTES_IMAGES` → bucket `notes-images`), `test/images.test.mjs` 5 ok, full `npm test` passes. 2026-10-29 19:50 PDT: bucket `notes-images` exists (no lifecycle: links must outlive the source); deployed **9664dc41 from 2045487** (owner's yes; HEAD 7322474/1a10977 not deployed: needs Vectorize index `gallery-ai`, other session's step); live: test PNG 200 image/png, bad key 404, `/` 200, `/main/` 302; test object deleted. 2026-10-29 20:40: **Move Offsite** (any app): Gallery `a942b18` `PUT /main/api/img` (images 8 ok, routes 47) committed, **deploy blocked by the auto-mode classifier, owner to deploy**; `bin/offsite-image.zsh` tested vs a local stand-in; `tools/shortcuts/Move Offsite (Mac|iPhone).shortcut` signed, not imported/run. Owner steps in `docs/runbooks/obsidian-images.md` |
-| U0 | Unified offline-first plan, phase 0 (`docs/specs/unified-offline-first-and-redesign.md`; order: `.handoff/CONTINUATION-PLAN.md`) | PARTIAL | 2026-11-05: A10 #1–5, N2, R15, R16, G20, Raven, X5, D1 done (CHANGELOG 14:21), pushed by the owner 14:57 (gallery deployed by CI). A13 L1 DONE in tests (gallery 7442fcc, deploys with the next gallery push). A11 N3 DONE (vault: one brain dump, one draftpad; 50 copies in `_conflicts/2026-11-03/`). A11 N4 DONE on the Mac (md-mirror every 5 min, 108 notes; canary f6666f34 waits for the iPhone and iPad). Next: R17, X4/X9; then A15 once its gates open |
+| U0 | Unified offline-first plan, phase 0 (`docs/specs/unified-offline-first-and-redesign.md`; order: `.handoff/CONTINUATION-PLAN.md`) | PARTIAL | 2026-11-05: A10 #1–5, N2, R15, R16, G20, Raven, X5, D1 done (CHANGELOG 14:21), pushed by the owner 14:57 (gallery deployed by CI). A13 L1 DONE in tests (gallery 7442fcc, deploys with the next gallery push). A11 N3 DONE (vault: one brain dump, one draftpad; 50 copies in `_conflicts/2026-11-03/`). A11 N4 DONE on the Mac (md-mirror every 5 min, 108 notes; canary f6666f34 waits for the iPhone and iPad). R17 DONE (recense 03c398d, installed and running since 16:11). X4 DONE (recense fcb45a5), X9/N9 read, autoupdate resumed. Not pushed: sync, recense 2, gallery 1. Next: A15 once its gates open (gallery tree clean, git-filter-repo) |
 | — | Chrome `/main` 404, setup scripts, Recense CPU, audio/EQ, layout, Draftpad, Phi, Nook, cleanup | PROPOSED | BACKLOG |
 
 ### 2026-10-29 20:50 PDT · "Deploy all, resolve all": event-log open items · DONE except the sink move (BLOCKED on one dashboard step)
@@ -412,6 +412,51 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
+
+### 2026-11-05 16:15 PST · X4 + X9/N9 + autoupdate (continuation step 5) · DONE; A15 gates still closed
+- **X4** (recense fcb45a5, not pushed): `recense/.build-log.txt`, the `./recense` launcher, `recense/_CodeSignature/`
+  and `recense/.wrangler/` (wrangler's account cache) left the index and joined `.gitignore`; the local files are
+  untouched. History still holds them: rewriting it is the owner's call (A15).
+- **X9/N9** (read only; no key printed, nothing changed):
+  - share-note publishes encrypted copies (`shareUnencrypted: false`) to `api.note.sx`. 5 notes are shared: "Chicago
+    Family Trip…", "Revelato 007 Draft Pad - Design Brief", "Forwarding Address", "Medication & Sleep Log",
+    "RÉVÉLATO 001 V1". Anyone holding a link can read the note; the key travels in the link.
+  - images-uploader uploads straight to R2 over S3 (account endpoint, bucket `notes-images`), not through the Worker.
+    Its access key and secret sit in the vault's `.obsidian/plugins/images-uploader/data.json`, which iCloud syncs to
+    every device (X1/X8: rotate it, scope it to that bucket). `deletePolicy: immediate`: the vault holds 0 local
+    attachments, so a picture exists only in R2. Notes show pictures through the Gallery Worker's `/i`, so each view
+    is a Worker request. Its `customDomainName` holds literal backticks (`` `https://…workers.dev/i` ``); the 2 links
+    in notes are fine, but check that the next upload's link works.
+- **autoupdate** resumed (`launchctl bootstrap`): the first run exited 0 and left both repos untouched. It logs
+  "installed" only after a push brings new commits; local commits never trigger it.
+- **A15 gates:** pushes open (all three repos have new local commits now); gallery tree closed (the other session's 6
+  files + `notes/item16-rec/`); `git-filter-repo` not installed. A15 waits for its own session.
+- **Owner:** keep or unshare the two sensitive shares; fix `customDomainName`; set `deletePolicy` to keep a local copy
+  if pictures should survive offline.
+
+### 2026-11-05 16:13 PST · R17: lyrics lookups for music only (Recense) · DONE (installed and running; the hour's log check runs to 17:11)
+- **Changed** (`recense/recense/recense.swift`, recense 03c398d, not pushed):
+  1. Music only: played in Music, kept in the Music folder, or heard as music by SoundAnalysis in 30 s from the middle
+     (`heardAsMusic`, once per item, cached as `heardMusic`). A title alone counts only when nothing could be heard.
+  2. One exact LRCLIB `/api/get` (artist, title, album, length), then one `/api/search`; no artist-only search. Genius
+     only for a confirmed song: 1 search + 1 get.
+  3. User-Agent `Recense/0.1 (https://github.com/louan-dev/recense)`.
+  4. 429/5xx: Retry-After (≤ 30 s; else 2 s, 4 s), 3 tries, no wait after the last; 404 = a definite miss.
+  5. A miss is asked again after 30 days or under a new title (`lyricsAt`, `lyricsFor`); a failed network isn't saved.
+  6. Lyrics count as the song's only within 2 s of its length or once the singing matches them (≥ 35 %).
+- **Changes from the plan:** the title patterns (`looksLikeMusic`, "Artist - Title") don't bypass the sound check; they
+  count only when nothing could be heard, because a 4-minute "Interview - Someone" otherwise costs 2 requests (the
+  fixture's "0 for speech"). Once heard, the verdict also outranks the title heuristics in `isSong`. `build.sh` fix:
+  lsregister failing to unregister the build copy (-10814) stopped the script after the install, before the launcher
+  and cleanup (autoupdate would have logged "build failed" and never relaunched).
+- **Validation:** sound check calibrated on 41 local files: 13 music files had music in 74–100 % of their 3 s windows,
+  28 talks, lectures and podcasts 0–5 % (two podcasts over 20 min with music beds: 47 %, 89 %). `zsh build.sh` OK;
+  `recense selftest` exit 0, 25 checks, 11 of them lyrics: 50 items against a stand-in that counts requests. 26 songs
+  cost at most 2 each, 30 in all (the old lookup searched 44 times before any Genius call); 24 speech items cost 0
+  (old: 25). Also checked: the retries, no network, the User-Agent, the 2 s rule, the 30-day recheck, Genius 1 + 1.
+  Live LRCLIB, 5 requests: get hit, get miss (404 TrackNotFound) and search all have the shapes the parser expects.
+  Recense relaunched on the new build at 16:11 (quit + open, as autoupdate does).
+- Next: X4 untrack, X9/N9 plugin checks, resume autoupdate.
 
 ### 2026-11-05 15:43 PST · A11 N4: every Markdown file on the Mac in the vault (md-mirror) · DONE on the Mac (device check open)
 - **New:** `bin/md-mirror.zsh`, `config/md-mirror.filters`, `launchd/com.chauphan.md-mirror.plist`, installed and loaded
