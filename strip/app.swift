@@ -6588,6 +6588,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     var ready = false
 
     var texts: [String] { views.map { $0.textView.string } }
+    /// The new editor (editorhost.swift), made the first time it's switched on. nil while the classic pad is in use.
+    var editor: EditorHost?
+    var editorOn: Bool { editor != nil && editorKind == .new }
     var gestures: NativeGestures?
     lazy var menuBar = MenuBarUsage()
     lazy var spatial = SpatialController(strip: rest)
@@ -6633,11 +6636,21 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         index = max(d.integer(forKey: "page"), 0)
         if d.object(forKey: "cursor") != nil { cursors[index] = d.integer(forKey: "cursor") }
         load()
+        // The strip now shows the file bottom-up (D4, editorhost.swift): carry the saved page over once.
+        if d.string(forKey: "pageOrder") == nil {
+            index = max(0, views.count - 1 - index)
+            if let c = d.object(forKey: "cursor") as? Int {
+                let tv = views[min(index, views.count - 1)].textView
+                tv.setSelectedRange(NSRange(location: min(c, (tv.string as NSString).length), length: 0))
+            }
+            d.set("fileBottomUp", forKey: "pageOrder")
+        }
         index = min(index, views.count - 1)
         layoutStrip()
         updateLabel()
         updateClock()
         ready = true
+        if editorKind == .new { applyEditorKind() }
 
         registerHotKey { [weak self] in self?.toggle() }
         DistributedNotificationCenter.default().addObserver(
@@ -6909,8 +6922,80 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let hideItem = page.addItem(withTitle: "Hide", action: #selector(hidePanel), keyEquivalent: "w")
         let clear = page.addItem(withTitle: "Clear Terminal", action: #selector(clearTerminal), keyEquivalent: "k")
         [prev, next, hideItem, clear].forEach { $0.target = self }
+        page.addItem(.separator())
+        editorMenuItems().forEach { page.addItem($0) }
 
         NSApp.mainMenu = main
+    }
+
+    // MARK: Editor: new / classic (editorhost.swift)
+
+    /// "Editor: New", "Editor: Classic" and, in the new editor, "New Topic on Top": in the Topic menu and on right-click.
+    func editorMenuItems() -> [NSMenuItem] {
+        var items = [NSMenuItem]()
+        let new = NSMenuItem(title: "Editor: New", action: #selector(useNewEditor), keyEquivalent: "")
+        let classic = NSMenuItem(title: "Editor: Classic", action: #selector(useClassicEditor), keyEquivalent: "")
+        new.state = editorKind == .new ? .on : .off
+        classic.state = editorKind == .classic ? .on : .off
+        items += [new, classic]
+        if editorKind == .new {
+            items.append(NSMenuItem(title: "New Topic on Top", action: #selector(newTopicOnTop), keyEquivalent: ""))
+        }
+        items.forEach { $0.target = self }
+        return items
+    }
+    @objc func useNewEditor() { setEditor(.new) }
+    @objc func useClassicEditor() { setEditor(.classic) }
+
+    /// Switches the pad between the classic strip and the new editor. Both show the same file: the switch saves first.
+    func setEditor(_ k: EditorKind) {
+        if k == .classic, editorOn, let e = editor {
+            e.flush { [weak self] _ in
+                guard let self = self else { return }
+                self.saveNow()
+                editorKind = .classic
+                self.showText(self.lastWritten)
+                self.applyEditorKind()
+            }
+            return
+        }
+        saveNow()
+        editorKind = k
+        applyEditorKind()
+    }
+
+    /// Shows the pad `editorKind` names, making the new editor the first time it's needed.
+    func applyEditorKind() {
+        let on = editorKind == .new
+        if on && editor == nil {
+            let e = EditorHost(frame: viewport.frame)
+            e.web.autoresizingMask = [.width, .height]
+            e.web.extraItems = { [weak self] in self?.editorMenuItems() ?? [] }
+            e.onChange = { [weak self] _ in
+                self?.saveTimer?.invalidate()
+                self?.saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in self?.saveNow() }
+            }
+            padView.addSubview(e.web)
+            editor = e
+        }
+        if on, let e = editor { e.web.frame = viewport.frame; e.setText(fileText(texts)) }
+        editor?.web.isHidden = !on
+        viewport.isHidden = on
+        pageLabel.isHidden = on
+        log("editor: \(editorKind.rawValue)")
+        if mode == .pad && panel.isVisible {
+            if on, let e = editor { panel.makeFirstResponder(e.web); e.focus() }
+            else if views.indices.contains(index) { panel.makeFirstResponder(views[index].textView) }
+        }
+    }
+
+    @objc func newTopicOnTop() {
+        guard editorOn, let e = editor else { return }
+        e.flush { [weak self] cur in
+            e.setText(withNewPageOnTop(cur))
+            self?.saveNow()
+            e.focus()
+        }
     }
 
     @objc func prevPage() { step(-1) }
@@ -6974,6 +7059,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "quit":   saveNow(); NSApp.terminate(nil)
         case "background": break
         case "snapshot": snapshot()
+        case "editor-new": setEditor(.new)
+        case "editor-classic": setEditor(.classic)
         default:       present(.time)
         }
     }
@@ -7302,7 +7389,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         }
         if m == .pad {
             panel.makeKeyAndOrderFront(nil)
-            if views.indices.contains(index) { panel.makeFirstResponder(views[index].textView) }
+            if editorOn, let e = editor { panel.makeFirstResponder(e.web); e.focus() }
+            else if views.indices.contains(index) { panel.makeFirstResponder(views[index].textView) }
         } else if m == .notebook, let t = terminal {
             panel.makeKeyAndOrderFront(nil)
             panel.makeFirstResponder(t)
@@ -7358,6 +7446,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         if !timeView.audioSheet.isHidden { timeView.showAudio(false) }
         cancelDrag()
         saveNow()
+        if editorOn { editor?.flush { [weak self] _ in self?.saveNow() } }   // the page's last unposted typing
         hoverWork?.cancel()
         panel.makeFirstResponder(nil)
         panel.allowsKey = false
@@ -7475,7 +7564,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     /// Keyboard paging (Cmd+[ / Cmd+]).
     func step(_ delta: Int) {
-        guard mode == .pad, !settling, !dragging else { return }
+        guard mode == .pad, !editorOn, !settling, !dragging else { return }
         let target = index + delta
         if target < 0 { bounce(); return }
         if target >= views.count {
@@ -7537,7 +7626,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         }
         layoutStrip()
         updateLabel()
-        if mode == .pad && panel.isKeyWindow { panel.makeFirstResponder(views[index].textView) }
+        if mode == .pad && panel.isKeyWindow && !editorOn { panel.makeFirstResponder(views[index].textView) }
         saveNow()
     }
 
@@ -7577,13 +7666,13 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let text = coordinatedRead(notePath) ?? ""
         lastWritten = text
         lastMTime = mtime()
-        for t in parsePages(text) { appendView(t) }
+        for t in stripPages(text) { appendView(t) }
     }
 
     func saveNow() {
         saveTimer?.invalidate(); saveTimer = nil
         guard ready, !views.isEmpty else { return }
-        let text = texts.joined(separator: pageJoiner)
+        let text = editorOn ? editor!.text : fileText(texts)
         // The file may have changed under us (an edit from the iPhone or iPad arriving through iCloud): merge, never
         // overwrite it (notesync.swift).
         var theirs: String? = nil
@@ -7596,6 +7685,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case .adopt(let t):
             showText(t)
             lastWritten = t
+            if editorOn { log("draftpad: took an edit from another device into the new editor") }
         case .conflict(let mine, let other):
             let sib = conflictSiblingPath(notePath)
             coordinatedWrite(mine, to: notePath)
@@ -7613,6 +7703,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     func pollExternal() {
         guard saveTimer == nil, !dragging, !settling, let m = mtime(), m != lastMTime else { return }
+        if editorOn {
+            // The page may hold up to 300 ms of typing it hasn't posted yet: take it, then merge as a save does.
+            editor?.flush { [weak self] _ in self?.saveNow() }
+            return
+        }
         lastMTime = m
         guard let text = coordinatedRead(notePath) else { return }
         lastWritten = text
@@ -7621,7 +7716,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     /// Show a newer version of the note in the panel, keeping each page's cursor where it can.
     func showText(_ text: String) {
-        let new = parsePages(text)
+        if editorOn, editor?.text != text { editor?.setText(text) }
+        let new = stripPages(text)
         if new == texts { return }
         if new.count == views.count {
             for (i, t) in new.enumerated() where views[i].textView.string != t {
@@ -7642,11 +7738,13 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
 // MARK: - Entry point
 
-let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot"]
+let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
+                "editor-new", "editor-classic"]
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
-    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(); exit(a && b && c && d ? 0 : 1)
+    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest()
+    exit(a && b && c && d && e ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
@@ -7656,7 +7754,7 @@ let holdsLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
 var initial = "time"
 if let cmd = CommandLine.arguments.dropFirst().first {
     guard commands.contains(cmd) else {
-        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot]\n", stderr)
+        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot|editor-new|editor-classic]\n", stderr)
         exit(64)
     }
     if cmd == "status" {
