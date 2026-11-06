@@ -26,7 +26,7 @@ Three separate causes, all now understood. Record them so nobody reintroduces on
    Claude Code scratchpad path that no longer exists. Harmless but it kept the name alive in System Settings.
 
 Removal order: `lsregister -u` the trashed bundle → delete the bundle → remove the login item in System Settings →
-delete `recense/recense/` by the Nook procedure in `.claude/CLAUDE.md` (snapshot zip outside the folder first; the only live work
+delete `recense/recense/` by the snapshot-then-confirm procedure in `.claude/CLAUDE.md` (hider decisions, item 8) (snapshot zip outside the folder first; the only live work
 inside it is `recense/homebar/prosogram/`, which must be moved out before deletion).
 
 ## The reuse problem, in the owner's words
@@ -88,7 +88,7 @@ have not slowed this project down. **Do not split for tidiness.** Split only whe
 | `Transcribe` | the ASR and translation provider seam (below) | partly |
 | `RecenseCore` | Episode, transcripts, cache, `keep/` merge, ffmpeg export, the 47123 server | **no** — `Process()`, ffmpeg |
 | `RecenseUI` | panel, overlay, homebar WKWebView host, Recense menu | macOS |
-| `RecenseUI` | strip, panels, nook, draftpad | macOS |
+| `RecenseUI` | strip, panels, menu-bar hider, draftpad | macOS |
 
 **Extract `VoiceMeasure` first.** Cleanest boundary, no UI, it is what the prosogram work needs, and it is the only
 piece with any future outside macOS.

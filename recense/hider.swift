@@ -1,4 +1,4 @@
-// Nook, the menu-bar hider, as part of Recense (folded in from Nook's own app on 2026-10-31; Nook is no longer an app).
+// The menu-bar hider, part of Recense (folded in on 2026-10-31 from an app once called Nook; renamed hider.swift on 2026-11-05).
 //
 //   [ hidden icons ] │ [ visible icons ] [ system icons ]
 //
@@ -8,19 +8,29 @@
 // instead, so it spans exactly that room (see `fit`). Hovering the divider's spot reveals the icons; they tuck away
 // again a few seconds after the pointer leaves the menu bar.
 //
-// Off (Recense's app menu ▸ Hide Menu-Bar Icons, or `defaults write local.recense nookEnabled -bool NO`): no status item,
+// Off (Recense's app menu ▸ Hide Menu-Bar Icons, or `defaults write local.recense hiderEnabled -bool NO`): no status item,
 // no monitors, no timer.
 
 import AppKit
 
-enum NookPrefs {
+enum HiderPrefs {
     static var enabled: Bool {
-        get { UserDefaults.standard.object(forKey: "nookEnabled") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "nookEnabled") }
+        get { _ = migrated; return UserDefaults.standard.object(forKey: "hiderEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "hiderEnabled") }
     }
+    /// Once: carry the old `nookEnabled` setting over to `hiderEnabled`, and drop the positions of Nook's old status
+    /// items (`local.sill.nook.always` and `.toggle`), which no longer exist.
+    private static let migrated: Void = {
+        let d = UserDefaults.standard
+        if let old = d.object(forKey: "nookEnabled") as? Bool {
+            if d.object(forKey: "hiderEnabled") == nil { d.set(old, forKey: "hiderEnabled") }
+            d.removeObject(forKey: "nookEnabled")
+        }
+        for k in ["always", "toggle"] { d.removeObject(forKey: "NSStatusItem Preferred Position local.sill.nook.\(k)") }
+    }()
 }
 
-final class Nook {
+final class MenuBarHider {
     private var item: NSStatusItem?
     private var collapsed = false
     private var monitors: [Any] = []
@@ -33,12 +43,12 @@ final class Nook {
     var running: Bool { item != nil }
 
     func setEnabled(_ on: Bool) {
-        NookPrefs.enabled = on
+        HiderPrefs.enabled = on
         on ? start() : stop()
     }
 
     func start() {
-        guard NookPrefs.enabled, !running else { return }
+        guard HiderPrefs.enabled, !running else { return }
         // With no saved spot macOS would put the divider rightmost and hide every icon; start it just left of the
         // system icons instead (the spot it had before 2026-10-31; ⌘-drag moves it).
         let pos = "NSStatusItem Preferred Position local.recense.divider"
@@ -97,14 +107,14 @@ final class Nook {
     /// nothing: until 2026-11-05 a held ⌘ revealed the icons wherever the pointer was, and they took the strip's place (R16).
     private func commandChanged(_ flags: NSEvent.ModifierFlags) {
         holdWork?.cancel()
-        if Nook.commandAlone(flags) {
+        if MenuBarHider.commandAlone(flags) {
             commandSince = Date()
             let w = DispatchWorkItem { [weak self] in
                 guard let self = self, self.pointerInMenuBar(NSEvent.mouseLocation) else { return }
                 self.reveal()
             }
             holdWork = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + Nook.holdDelay, execute: w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + MenuBarHider.holdDelay, execute: w)
         } else {
             commandSince = nil
             if !collapsed, !flags.contains(.command) { scheduleTuck(0.8) }
@@ -125,11 +135,11 @@ final class Nook {
         let p = NSEvent.mouseLocation
         if collapsed {
             // ⌘ held alone first, then the pointer brought up to the menu bar to arrange icons
-            if let t = commandSince, Date().timeIntervalSince(t) >= Nook.holdDelay, pointerInMenuBar(p) { reveal(); return }
+            if let t = commandSince, Date().timeIntervalSince(t) >= MenuBarHider.holdDelay, pointerInMenuBar(p) { reveal(); return }
             let spot = CGRect(x: w.frame.maxX - 14, y: w.frame.minY, width: 14, height: w.frame.height)
             if spot.contains(p) { tuckWork?.cancel(); expand() }
         } else if !pointerInMenuBar(p) {
-            if tuckWork == nil { scheduleTuck(Nook.tuckDelay) }
+            if tuckWork == nil { scheduleTuck(MenuBarHider.tuckDelay) }
         } else {
             tuckWork?.cancel(); tuckWork = nil
         }
@@ -150,8 +160,8 @@ final class Nook {
     /// Recense's app menu entry.
     func menu() -> NSMenu {
         let m = NSMenu()
-        let on = NSMenuItem(title: "Hide Menu-Bar Icons", action: #selector(NookToggle.fire), keyEquivalent: "")
-        on.target = NookToggle.shared; NookToggle.shared.nook = self
+        let on = NSMenuItem(title: "Hide Menu-Bar Icons", action: #selector(HiderToggle.fire), keyEquivalent: "")
+        on.target = HiderToggle.shared; HiderToggle.shared.hider = self
         on.state = running ? .on : .off
         m.addItem(on)
         let how = NSMenuItem(title: "Hold ⌘ and drag icons left of the divider to hide them", action: nil, keyEquivalent: "")
@@ -161,10 +171,10 @@ final class Nook {
     }
 }
 
-final class NookToggle: NSObject {
-    static let shared = NookToggle()
-    weak var nook: Nook?
-    @objc func fire() { guard let n = nook else { return }; n.setEnabled(!n.running) }
+final class HiderToggle: NSObject {
+    static let shared = HiderToggle()
+    weak var hider: MenuBarHider?
+    @objc func fire() { guard let n = hider else { return }; n.setEnabled(!n.running) }
 }
 
 /// `recense selftest`: which modifier states count as ⌘ alone, the only state that reveals the icons (R16).
@@ -175,7 +185,7 @@ func hiderSelftest() -> Bool {
         ([], false, "no modifier"), ([.shift], false, "⇧")]
     var ok = true
     for (flags, want, label) in cases {
-        let got = Nook.commandAlone(flags)
+        let got = MenuBarHider.commandAlone(flags)
         print("\(got == want ? "ok  " : "FAIL") hider, \(label): \(got ? "reveals" : "does nothing")")
         ok = ok && got == want
     }

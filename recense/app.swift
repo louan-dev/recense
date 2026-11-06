@@ -6486,11 +6486,11 @@ final class ShelfUsage {
     }
 }
 
-/// Counts clicks on menu bar icons and owns the menu-bar hider (nook.swift). (The floating shelf that used to show the top icons was
+/// Counts clicks on menu bar icons and owns the menu-bar hider (hider.swift). (The floating shelf that used to show the top icons was
 /// retired on 2026-10-07: the ranking is meant to decide which icons stay visible and which go past the divider.)
 final class MenuBarUsage {
     let usage = ShelfUsage()
-    let nook = Nook()
+    let hider = MenuBarHider()
     private var monitors: [Any] = []
 
     init() {
@@ -6498,7 +6498,7 @@ final class MenuBarUsage {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             self?.noteClick(at: NSEvent.mouseLocation)
         }) { monitors.append(m) }
-        nook.start()
+        hider.start()
     }
 
     private func noteClick(at p: NSPoint) {
@@ -6887,7 +6887,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         let hider = NSMenuItem(title: "Menu-Bar Hider", action: nil, keyEquivalent: "")
-        hider.submenu = menuBar.nook.menu(); appMenu.addItem(hider)
+        hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
         appMenu.delegate = self                                   // rebuilds the hider's entries each time it opens
         appMenu.addItem(withTitle: "Quit Recense", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -7687,6 +7687,6 @@ app.run()
 
 extension App: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.nook.menu()
+        menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
     }
 }

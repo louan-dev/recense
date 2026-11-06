@@ -37,7 +37,7 @@ is the strip and entry point (the old `sill.swift`). There is no second process.
 - **B1** Notes in Recense (Obsidian, Notability read-only, filesystem). **A7** Recense status chip from `views/health.json`.
 - Do one item per session, update §7 in `../sync/PROGRESS.md`, then stop.
 
-## Owner decisions: Nook folds into Recense (supersedes BACKLOG SL6 wording)
+## Owner decisions: the menu-bar hider (once the Nook app) folds into Recense (supersedes BACKLOG SL6 wording)
 Source: `nook/main.swift` in this repo (379 lines, `BarController`, `Rule`/`RuleAction`, `Prefs`); Nook is not built or run as its own app (owner, 2026-10-31). The old `~/Developer/nook` folder is already gone.
 
 1. **Import the menu-bar hider into Recense** as its own file, controlled by a **Recense setting that can be turned off**. When on, running Recense automatically installs the two divider status items and collapses so the hidden icons are out of sight. When off: no status items, no global mouse monitors, no timers.
@@ -49,7 +49,7 @@ Source: `nook/main.swift` in this repo (379 lines, `BarController`, `Rule`/`Rule
 7. Idle cost must stay near zero (SL1): the global `mouseMoved` monitor exists only while the feature is on and the pointer work is cheap.
 8. **Delete the old `~/Developer/nook` folder entirely, after the import:** build Recense, confirm hover and always-hidden work, confirm nothing else depends on Nook, make a recoverable snapshot zip outside the folder, then show the owner the exact path and delete only on explicit confirmation of that exact target. Never uninstall shared CLIs.
 
-## New Nook: a widget panel inside Recense (separate session, after the import)
+## The widget panel inside Recense (once called "New Nook"; separate session, after the import)
 Not a standalone app. A notification-center-style panel that slides out from the **right screen edge**, summoned by a **three-finger right-to-left swipe**, hosting widgets. First widget: **Find My**, embedding the Find My app view. Name undecided; candidates Exedra, Eyvan.
 - Recense already reads three-finger swipes via private MultitouchSupport (experimental) for layers (up/down) and panel paging. Read the gesture code, find a gesture that does not conflict (for example a right-edge-only trigger or a different finger count), and propose it before building.
 - **Spike Find My first.** macOS has no public Find My API. Report plainly whether embedding the app view is possible; if not, list the fallbacks (Shortcuts, local cache needing Full Disk Access) with their risks. Never fake data.

@@ -5,7 +5,7 @@ the listening surface where a recording becomes something to learn from: heard, 
 One app, one process, no Dock icon. It works offline; Gallery's Worker and R2 are an optional cloud side for sharing
 transcripts and files.
 
-Its menu-bar hider (Nook) is part of Recense, not an app of its own.
+Its menu-bar hider is part of Recense, not an app of its own.
 
 ## Why this exists
 Recense began as a kindness to an old MacBook: an M1 with 8 GB of memory and a nearly full disk, gasping under files that
@@ -71,11 +71,11 @@ what it's for. Each project meets a different kind of friction, so each carries 
   in Gallery, on iPhone and iPad. A correction made once teaches every surface.
 - **Draftpad: friction of capture.** One endless `draftpad.md`, reached by a swipe, so a thought lands before it fades;
   topics instead of files, so nothing needs a name first.
-- **Nook and the desk tools: friction of clutter.** Menu-bar icons tucked until wanted; notes (Obsidian, Notability,
+- **The menu-bar hider and the desk tools: friction of clutter.** Menu-bar icons tucked until wanted; notes (Obsidian, Notability,
   files), calendar and a right-edge widget panel inside Recense, so the tools come to the work instead of the reverse.
 
-## Menu-bar hider (Nook, inside Recense)
-`recense/nook.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
+## Menu-bar hider
+`recense/hider.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
 ⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). To see │ while arranging, hold ⌘ on
 its own with the pointer in the menu bar; ⌘ held anywhere else (a shortcut, ⌘-Tab, ⌘-click in a window) does nothing.
 Hovering the divider's spot shows the hidden icons; they tuck away 3 s after the pointer leaves the menu bar. Recense's
@@ -175,7 +175,7 @@ recense/
     canon.swift        recited texts (canon/*.json)
     voiceprint.swift   voice matching
     handoff.swift      Mac ↔ iPhone ↔ iPad handoff
-    nook.swift         the menu-bar hider
+    hider.swift        the menu-bar hider
     ears/omni.py       the open ears' worker (Omnilingual ASR)
     canon/             recited texts (Pali, Sanskrit) and tools/mkcanon.py
     homebar/           the home-bar host page
