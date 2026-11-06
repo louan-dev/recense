@@ -413,6 +413,20 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-05 21:05 PST · A11 Draftpad: edits from the iPhone/iPad no longer overwritten · DONE (code + selftest; device round trip unverified)
+- Owner: "edits don't sync". Mac side fine: 373/373 vault files uploaded, iCloud synced 20:51; no new conflict copies.
+- Cause in Recense (`strip/app.swift` saveNow/pollExternal): the 1 s poll skips while you type, then the 0.4 s save wrote the
+  whole panel over `draftpad.md` and set lastMTime, so an edit that arrived from another device in that window was lost
+  for good. Writes were also uncoordinated (no NSFileCoordinator) on an iCloud file, the T1 conflict-copy path.
+- Fix: `strip/notesync.swift` (linked in `Sources/recense/`): every save compares base (last read/written), mine and the
+  file; file unchanged → write mine; only the file changed → show it; both → line 3-way merge (Myers via
+  CollectionDifference), shown in the panel; same lines both ways → mine in the file, theirs as one sibling
+  `draftpad (other device <date time>).md` (spec A4 notes rule). Reads/writes through NSFileCoordinator.
+- Validation: build ok (one retry: a transient "error closing speech.swift.o"); `recense selftest` exit 0 with 9 new
+  draftpad checks; Recense relaunched on it. Not yet seen live: an iPhone edit while typing on the Mac.
+- Next: owner test: type in Draftpad on the Mac, edit `draftpad.md` in Obsidian on the iPhone, check both land; also
+  the canary f6666f34 lines (`iphone HH:MM`, `ipad HH:MM`), which show whether iCloud carries the vault both ways.
+
 ### 2026-11-05 20:40 PST · Library deploys from louan-dev/recense · DONE
 - `wrangler deploy` failed twice on `/accounts` with the GALLERY_GITHUB secret set at 18:12; the owner gave a new Cloudflare API
   token (set 20:01). The rerun then hung 30 min in `playwright install --with-deps` (cancelled); a fresh `workflow_dispatch`

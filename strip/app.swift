@@ -7574,7 +7574,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         try? fm.createDirectory(atPath: (notePath as NSString).deletingLastPathComponent,
                                 withIntermediateDirectories: true)
         if !fm.fileExists(atPath: notePath) { fm.createFile(atPath: notePath, contents: nil) }
-        let text = (try? String(contentsOfFile: notePath, encoding: .utf8)) ?? ""
+        let text = coordinatedRead(notePath) ?? ""
         lastWritten = text
         lastMTime = mtime()
         for t in parsePages(text) { appendView(t) }
@@ -7584,9 +7584,24 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         saveTimer?.invalidate(); saveTimer = nil
         guard ready, !views.isEmpty else { return }
         let text = texts.joined(separator: pageJoiner)
-        if text != lastWritten {
-            try? text.write(toFile: notePath, atomically: true, encoding: .utf8)
-            lastWritten = text
+        // The file may have changed under us (an edit from the iPhone or iPad arriving through iCloud): merge, never
+        // overwrite it (notesync.swift).
+        var theirs: String? = nil
+        if let m = mtime(), m != lastMTime { theirs = coordinatedRead(notePath) }
+        switch planNoteSave(base: lastWritten, mine: text, theirs: theirs) {
+        case .write(let t):
+            if t != (theirs ?? lastWritten) { coordinatedWrite(t, to: notePath) }
+            if t != text { showText(t); log("draftpad: merged an edit from another device") }
+            lastWritten = t
+        case .adopt(let t):
+            showText(t)
+            lastWritten = t
+        case .conflict(let mine, let other):
+            let sib = conflictSiblingPath(notePath)
+            coordinatedWrite(mine, to: notePath)
+            coordinatedWrite(other, to: sib)
+            lastWritten = mine
+            log("draftpad: the same lines changed here and on another device; theirs kept in \((sib as NSString).lastPathComponent)")
         }
         lastMTime = mtime()
         let d = UserDefaults.standard
@@ -7599,11 +7614,15 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     func pollExternal() {
         guard saveTimer == nil, !dragging, !settling, let m = mtime(), m != lastMTime else { return }
         lastMTime = m
-        guard let text = try? String(contentsOfFile: notePath, encoding: .utf8) else { return }
+        guard let text = coordinatedRead(notePath) else { return }
+        lastWritten = text
+        showText(text)
+    }
+
+    /// Show a newer version of the note in the panel, keeping each page's cursor where it can.
+    func showText(_ text: String) {
         let new = parsePages(text)
         if new == texts { return }
-        lastWritten = text
-
         if new.count == views.count {
             for (i, t) in new.enumerated() where views[i].textView.string != t {
                 let tv = views[i].textView
@@ -7627,7 +7646,7 @@ let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
-    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(); exit(a && b && c ? 0 : 1)
+    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(); exit(a && b && c && d ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".

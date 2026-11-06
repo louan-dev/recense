@@ -91,7 +91,9 @@ Three fingers up and down move through the strip's layers: hidden → **Essentia
   between them; recorder, Recense and others, glowing on hover. Two fingers page through essentials → DEVONthink hub →
   notebook (Obsidian).
 - **Drafting:** the layer where Draftpad runs; one endless `draftpad.md` in the Obsidian vault, paged by topic, with
-  cursor memory.
+  cursor memory. An edit from the iPhone or iPad that lands while you type here is merged in, never overwritten:
+  each save merges the last version, yours and the file's by line; if both changed the same lines, yours stays in
+  `draftpad.md` and the other device's goes beside it as `draftpad (other device <date time>).md` (`notesync.swift`).
 - Edge bars on hover: recorder / volume (left), vault / brightness (right), R2 (bottom).
 - Voice → calendar card; Mac ↔ iPhone ↔ iPad handoff.
 
@@ -167,6 +169,7 @@ Recense lives in `strip/` of the one repo, `~/Developer/recense` (the folders be
 ```
 strip/
   app.swift          the strip, panels, gestures, Draftpad (formerly sill.swift)
+  notesync.swift     Draftpad's file sync: 3-way merge, coordinated iCloud reads and writes (recense selftest)
   recense.swift      Recense: players, transcripts, light, editor, export
   soundengine.swift  process tap and EQ/Key/Space chain
   cadence.swift      the karaoke light's timing
