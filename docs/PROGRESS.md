@@ -413,6 +413,14 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-05 20:40 PST · Library deploys from louan-dev/recense · DONE
+- `wrangler deploy` failed twice on `/accounts` with the GALLERY_GITHUB secret set at 18:12; the owner gave a new Cloudflare API
+  token (set 20:01). The rerun then hung 30 min in `playwright install --with-deps` (cancelled); a fresh `workflow_dispatch`
+  run 42163127779 passed `npm test` and deployed e7b4cb3 at 20:39 (Cloudflare deployment 04:39:18Z). First library deploy
+  from the one repo: everything since 7442fcc (f468f35, the cutover, the home bar glide fix) is live.
+- Owner: roll that token (it was pasted in chat) and set the new value on GitHub; rotate the two 64-hex values pasted
+  earlier if they are live R2 keys.
+
 ### 2026-11-05 19:50 PST · CI: the comment swipe test that blocked every library deploy · DONE (fix pushed; deploy below)
 - Every CI run since 11-05 14:57 (gallery 9226f2a, 1c676a1; recense 75acd7a, e005a61 twice) failed only
   `comments: right after posting…` (`library/test/ui.test.mjs`), waiting 30 s for `#thread .crow.sw.open`; it passed on the Mac.
