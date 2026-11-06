@@ -27755,6 +27755,101 @@ ${PAGE_MARKER}
     ];
   }
 
+  // src/bridge.js
+  var DEBOUNCE_MS = 300;
+  var externalSetTextAnnotation = Annotation.define();
+  function createEditorBridge({
+    getState,
+    dispatch,
+    focusView,
+    getScroll,
+    setScroll,
+    setTheme,
+    setFontSize,
+    getRemoved = () => [],
+    globalObj = typeof window !== "undefined" ? window : {},
+    debounceMs = DEBOUNCE_MS
+  }) {
+    let debounceTimer = null;
+    function clearPendingPost() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+    }
+    function postToNative(text) {
+      const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.editor;
+      if (handler && typeof handler.postMessage === "function") {
+        handler.postMessage(text);
+      }
+    }
+    function notifyDocChanged(transactions = []) {
+      const isExternal = transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
+      if (isExternal) {
+        return;
+      }
+      clearPendingPost();
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        const state = getState();
+        if (state) {
+          postToNative(state.doc.toString());
+        }
+      }, debounceMs);
+    }
+    function getText() {
+      const state = getState();
+      return state ? state.doc.toString() : "";
+    }
+    function setText(nextText) {
+      const s = typeof nextText === "string" ? nextText : String(nextText ?? "");
+      clearPendingPost();
+      const state = getState();
+      if (!state) return;
+      const current = state.doc.toString();
+      if (s === current) return;
+      const sel = state.selection.main;
+      const anchor = Math.min(sel.anchor, s.length);
+      const head = Math.min(sel.head, s.length);
+      const scroll = typeof getScroll === "function" ? getScroll() : null;
+      dispatch({
+        changes: { from: 0, to: current.length, insert: s },
+        selection: { anchor, head },
+        annotations: externalSetTextAnnotation.of(true)
+      });
+      if (scroll && typeof setScroll === "function") {
+        setScroll(scroll);
+      }
+    }
+    function focus() {
+      if (typeof focusView === "function") {
+        focusView();
+      }
+    }
+    const api = {
+      setText,
+      getText,
+      focus,
+      setTheme(mode) {
+        if (typeof setTheme === "function") setTheme(mode);
+      },
+      setFontSize(px) {
+        if (typeof setFontSize === "function") setFontSize(px);
+      },
+      getRemoved() {
+        return typeof getRemoved === "function" ? getRemoved() : [];
+      }
+    };
+    if (globalObj) {
+      globalObj.recenseEditor = api;
+    }
+    return {
+      api,
+      notifyDocChanged,
+      clearPendingPost
+    };
+  }
+
   // src/legal.js
   var INDENTS = ["", "   ", "      ", "         "];
   var ROMAN_VALUES = [
@@ -28155,7 +28250,7 @@ ${PAGE_MARKER}
     return true;
   }
   var legalRenumberFilter = EditorState.transactionFilter.of((tr) => {
-    if (!tr.docChanged) return tr;
+    if (!tr.docChanged || tr.annotation(externalSetTextAnnotation)) return tr;
     let lineCountChanged = false;
     tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
       const removedText = tr.startState.doc.sliceString(fromA, toA);
@@ -28466,6 +28561,7 @@ ${PAGE_MARKER}
     root.innerHTML = "";
     root.appendChild(shell);
     let view = null;
+    let bridge = null;
     function renderHeadingRow(h) {
       const row = document.createElement("div");
       row.className = "rc-outline-item";
@@ -28565,6 +28661,9 @@ ${PAGE_MARKER}
       fontSize: currentFontSize,
       onUpdate(update) {
         searchBtn.setAttribute("aria-pressed", String(isFindReplaceOpen(update.state)));
+        if (update.docChanged) {
+          if (bridge) bridge.notifyDocChanged(update.transactions);
+        }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
         }
@@ -28598,6 +28697,24 @@ ${PAGE_MARKER}
       newestFirstBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
+    bridge = createEditorBridge({
+      getState: () => view ? view.state : null,
+      dispatch: (spec) => {
+        if (view) view.dispatch(spec);
+      },
+      focusView: () => {
+        if (view) view.focus();
+      },
+      getScroll: () => view && view.scrollDOM ? { top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft } : null,
+      setScroll: (pos) => {
+        if (view && view.scrollDOM && pos) {
+          view.scrollDOM.scrollTop = pos.top;
+          view.scrollDOM.scrollLeft = pos.left;
+        }
+      },
+      setTheme,
+      setFontSize
+    });
     outlineToggleBtn.addEventListener("click", () => {
       outlineVisible = !outlineVisible;
       outlinePanel.hidden = !outlineVisible;
@@ -28618,6 +28735,7 @@ ${PAGE_MARKER}
     renderOutline();
     return {
       view,
+      bridge: bridge.api,
       setTheme,
       setFontSize,
       setNewestFirst,
@@ -28627,25 +28745,11 @@ ${PAGE_MARKER}
       isNewestFirst: () => newestFirst
     };
   }
-  var DEFAULT_SAMPLE = `Friday, November 6, 2026
-
-\xA7 Negligence
-
-1. Duty of care owed to foreseeable plaintiffs.
-   1.1 Majority view (Cardozo): zone of danger.
-   1.2 Minority view (Andrews): everyone harmed proximately.
-
-<!-- page -->
-
-Thursday, November 5, 2026
-
-# Contracts Outline
-
-1. Mutual assent requires offer and acceptance.`;
   if (typeof window !== "undefined" && typeof document !== "undefined") {
     const boot = () => {
       const host = document.getElementById("app") || document.body;
-      mountEditor(host, DEFAULT_SAMPLE);
+      const initial = typeof window.__RECENSE_INITIAL_DOC === "string" ? window.__RECENSE_INITIAL_DOC : "";
+      mountEditor(host, initial);
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", boot, { once: true });

@@ -2,6 +2,7 @@ import { EditorState, StateField } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { moveLineUp, moveLineDown } from '@codemirror/commands';
 import { PAGE_MARKER } from './pages.js';
+import { externalSetTextAnnotation } from './bridge.js';
 
 const INDENTS = ['', '   ', '      ', '         '];
 
@@ -472,7 +473,7 @@ function applyPureEdit(view, result) {
  * Automatically renumbers legal lists when lines are deleted or moved.
  */
 const legalRenumberFilter = EditorState.transactionFilter.of(tr => {
-  if (!tr.docChanged) return tr;
+  if (!tr.docChanged || tr.annotation(externalSetTextAnnotation)) return tr;
   let lineCountChanged = false;
   tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     const removedText = tr.startState.doc.sliceString(fromA, toA);

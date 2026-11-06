@@ -18,6 +18,7 @@ import {
   isFindReplaceOpen
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
+import { createEditorBridge } from './bridge.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -151,6 +152,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   root.appendChild(shell);
 
   let view = null;
+  let bridge = null;
 
   function renderHeadingRow(h) {
     const row = document.createElement('div');
@@ -263,6 +265,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
     fontSize: currentFontSize,
     onUpdate(update) {
       searchBtn.setAttribute('aria-pressed', String(isFindReplaceOpen(update.state)));
+      if (update.docChanged) {
+        if (bridge) bridge.notifyDocChanged(update.transactions);
+      }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
       }
@@ -301,6 +306,28 @@ export function mountEditor(root = document.body, initialDoc = '') {
     renderOutline();
   }
 
+  bridge = createEditorBridge({
+    getState: () => (view ? view.state : null),
+    dispatch: spec => {
+      if (view) view.dispatch(spec);
+    },
+    focusView: () => {
+      if (view) view.focus();
+    },
+    getScroll: () =>
+      view && view.scrollDOM
+        ? { top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft }
+        : null,
+    setScroll: pos => {
+      if (view && view.scrollDOM && pos) {
+        view.scrollDOM.scrollTop = pos.top;
+        view.scrollDOM.scrollLeft = pos.left;
+      }
+    },
+    setTheme,
+    setFontSize
+  });
+
   outlineToggleBtn.addEventListener('click', () => {
     outlineVisible = !outlineVisible;
     outlinePanel.hidden = !outlineVisible;
@@ -326,6 +353,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   return {
     view,
+    bridge: bridge.api,
     setTheme,
     setFontSize,
     setNewestFirst,
@@ -336,26 +364,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   };
 }
 
-const DEFAULT_SAMPLE = `Friday, November 6, 2026
-
-§ Negligence
-
-1. Duty of care owed to foreseeable plaintiffs.
-   1.1 Majority view (Cardozo): zone of danger.
-   1.2 Minority view (Andrews): everyone harmed proximately.
-
-<!-- page -->
-
-Thursday, November 5, 2026
-
-# Contracts Outline
-
-1. Mutual assent requires offer and acceptance.`;
-
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const boot = () => {
     const host = document.getElementById('app') || document.body;
-    mountEditor(host, DEFAULT_SAMPLE);
+    const initial = typeof window.__RECENSE_INITIAL_DOC === 'string' ? window.__RECENSE_INITIAL_DOC : '';
+    mountEditor(host, initial);
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });
