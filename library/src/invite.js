@@ -410,7 +410,8 @@ export async function participantRoute(req, env, ctx, url, path) {
 
   if (fm && read) {
     const name = cleanPath(fm[1], true);
-    if (!name || name.includes("/") || !allowed(name)) return gone();
+    // a dotfile (a show's .show.json, a folder marker) is the folder's own bookkeeping, never served
+    if (!name || name.includes("/") || name.startsWith(".") || !allowed(name)) return gone();
     // without download, media still plays in the page; saving it (?dl, or a file that only downloads) is refused
     if (!P(name).download && (url.searchParams.has("dl") || !PLAYABLE.test(name))) return new Response("Not allowed", { status: 403 });
 
