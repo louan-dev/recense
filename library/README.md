@@ -157,7 +157,7 @@ the first 24 hex of SHA-256 of `fp:<bytes>:<sha256 of the first 64 KiB>:<sha256 
 same way on the Mac, so one recording has one transcript wherever it plays, renamed, moved or uploaded twice.
 `keep/library.json` aliases a recording heard from another source, with its time shift.
 A corrected line keeps the space typed before `! ? ; :` (French writes `fini !`); a space before `, . …` and the
-Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Pushing to `main` a change under `library/` deploys (`.github/workflows/library.yml`): GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`.
+Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Pushing to `main` a change under `library/` deploys (`.github/workflows/library.yml`): GitHub Actions installs the test browsers, runs `npm test`, then `wrangler deploy`. The comment swipe-to-delete UI test waits for the thread's scroll to settle before it swipes, so a slow runner no longer fails it (it had blocked every deploy since 11-05).
 
 ### Storage
 - Buckets: `gallery-public` (Public) and `gallery-main` (Main), plus the read-only archive; on the Mac they mount at

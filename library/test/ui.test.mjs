@@ -56,14 +56,28 @@ const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: p
 let passed = 0;
 
 // spec §7: a two-finger trackpad swipe (a horizontal wheel) over your comment reveals its Delete
+// The field's smooth scrollIntoView can still be settling after a repaint: on a slow runner (CI) the thread moved 52 px
+// between reading the row and the wheel, which then landed on the field (11-05). So wait for the scroll to rest, and
+// try again if the row didn't open.
 const swipeDelete = async (pg) => {
-  const at = await pg.$eval("#thread .crow.sw", (e) => {
-    const r = e.getBoundingClientRect();
-    return { x: r.left + r.width * 0.75, y: r.top + r.height / 2 };
-  });
-  await pg.mouse.move(at.x, at.y);
-  await pg.mouse.wheel(80, 0);
-  await pg.waitForSelector("#thread .crow.sw.open");
+  for (let i = 0; ; i++) {
+    await pg.waitForFunction(() => new Promise((ok) => {
+      const t = document.querySelector("#thread"), s = t.scrollTop;
+      setTimeout(() => ok(t.scrollTop === s), 150);
+    }));
+    const at = await pg.$eval("#thread .crow.sw", (e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.left + r.width * 0.75, y: r.top + r.height / 2 };
+    });
+    await pg.mouse.move(at.x, at.y);
+    await pg.mouse.wheel(80, 0);
+    try {
+      await pg.waitForSelector("#thread .crow.sw.open", { timeout: i < 4 ? 2000 : 30000 });
+      break;
+    } catch (e) {
+      if (i >= 4) throw e;
+    }
+  }
   await pg.click("#thread .crow.open .cdel");
 };
 

@@ -413,6 +413,17 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-05 19:50 PST · CI: the comment swipe test that blocked every library deploy · DONE (fix pushed; deploy below)
+- Every CI run since 11-05 14:57 (gallery 9226f2a, 1c676a1; recense 75acd7a, e005a61 twice) failed only
+  `comments: right after posting…` (`library/test/ui.test.mjs`), waiting 30 s for `#thread .crow.sw.open`; it passed on the Mac.
+- Reproduced with Chromium CPU throttled 6× (2 of 3 failed). Probe: between reading the row and the wheel, the thread
+  scrolled 52 px (the field's smooth `scrollIntoView` still settling after the repaint), so the wheel hit the field's
+  textarea, not the row. A test race, not a product bug: a real pointer stays over the moving content.
+- Fix (test only): `swipeDelete` waits until the thread's scroll rests for 150 ms, then swipes, and retries up to 4 times.
+  Throttled 6×: 5 of 5 pass, plus all 4 comment tests; full `ui.test.mjs` unthrottled: 36 passed, 0 failed.
+- Also: `gh` timed out to api.github.com from this Mac (curl worked): CI was read, rerun and the old repos archived
+  through the REST API with gh's token (`louan-dev/gallery` and `louan-dev/sync` archived 19:3x).
+
 ### 2026-11-05 18:52 PST · Library home bar: momentum glide fix (held back from f468f35) · DONE (not pushed; push deploys library)
 - **Cause:** the Gallery session's homebar.js glide detector needed < 34 ms between wheel steps; Playwright's
   synthetic steps come ~50 ms apart, so "Notes 35" never saw the glide and failed. On failure the harness's unbounded
