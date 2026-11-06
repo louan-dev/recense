@@ -227,7 +227,8 @@ gallery/
     art.js, tagwrite.js cover art: read from audio tags, written back into MP3/FLAC
     common.js           responses, file types, paths
     player-key.js       serves the player's Key processor
-    page/               the HTML pages
+    page/               the HTML pages; page/ui/README.md holds the interface rules (the reference images
+                        were removed 11-05; git history keeps them)
     client/             CSS and browser scripts (gallery.js, cadence.js, prosody.js, prosogram*.js, keylabel.js,
                         homebar.js, room.js, assistant.js, sharedview.js, upload.js)
   test/                 route, transcript, cadence, feed, assistant and page tests (npm test)
