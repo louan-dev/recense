@@ -19,6 +19,7 @@ import {
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
 import { createEditorBridge } from './bridge.js';
+import { removedRecordExtension, getRemoved } from './removed.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -36,6 +37,7 @@ export function createEditorExtensions({
   extraExtensions = []
 } = {}) {
   const extensions = [
+    EditorState.lineSeparator.of('\n'),
     history(),
     drawSelection(),
     highlightActiveLine(),
@@ -44,6 +46,7 @@ export function createEditorExtensions({
     searchExtension(),
     headingFoldExtension(),
     legalNumberingExtension(),
+    removedRecordExtension(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     pageMarkersExtension(),
     compartments.theme.of(buildThemeExtension(theme)),
@@ -325,7 +328,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       }
     },
     setTheme,
-    setFontSize
+    setFontSize,
+    getRemoved: () => (view ? getRemoved(view.state) : [])
   });
 
   outlineToggleBtn.addEventListener('click', () => {

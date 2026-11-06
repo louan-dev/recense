@@ -66,146 +66,272 @@ const DECIMAL_ITEM_RE = /^(\s*)(\d+)\.(\d+)(\s+)(.*)$/;
 const TOP_ITEM_RE = /^(\s*)(\d+)\.(\s+)(.*)$/;
 const PAREN_ITEM_RE = /^(\s*)\(([a-z]+)\)(\s+)(.*)$/i;
 
+function splitLineCR(line) {
+  if (typeof line === 'string' && line.endsWith('\r')) {
+    return { clean: line.slice(0, -1), cr: '\r' };
+  }
+  return { clean: typeof line === 'string' ? line : '', cr: '' };
+}
+
+function classifyParenToken(indent, tokenRaw, prevItem) {
+  const token = tokenRaw.toLowerCase();
+  const upper = tokenRaw === tokenRaw.toUpperCase();
+  const romanVal = fromRoman(token);
+  const alphaVal = fromAlpha(token);
+
+  let isRoman = false;
+  if (romanVal !== null) {
+    if (token.length > 1) {
+      isRoman = true;
+    } else if (upper && (token === 'i' || token === 'v' || token === 'x')) {
+      isRoman = true;
+    } else if (prevItem && prevItem.level === 3) {
+      if (
+        indent.length >= prevItem.indent.length ||
+        romanVal === prevItem.rawIndex + 1 ||
+        romanVal === prevItem.index + 1
+      ) {
+        isRoman = true;
+      }
+    } else if (prevItem && prevItem.level === 2) {
+      if (token === 'i') {
+        const prevNearH =
+          prevItem.rawIndex === 8 ||
+          prevItem.index === 8 ||
+          prevItem.rawIndex === 7 ||
+          prevItem.index === 7;
+        isRoman = !(prevNearH && indent.length <= prevItem.indent.length);
+      } else {
+        isRoman = false;
+      }
+    } else if (token === 'i') {
+      isRoman = true;
+    }
+  }
+
+  return { token, upper, romanVal, alphaVal, isRoman };
+}
+
 /**
  * Parses a single line as a legal numbered item (`1.`, `1.1`, `(a)`, `(i)`).
- * Uses `prevItem` and indentation to disambiguate `(i)` between level 2 (`(a)`) and level 3 (`(i)`).
+ * Leaves prose numbers, years (`1990.`), decimals (`1.5 hours`), and isolated
+ * statutory/cross-reference citations (`(c) of the statute`, `(v) supra`) alone.
+ * Decides ambiguous `(i)` from the item before it and preserves Roman numeral case.
  */
-export function parseLegalItem(lineText, prevItem = null) {
+export function parseLegalItem(lineText, prevItem = null, nextLineText = null) {
   if (typeof lineText !== 'string') return null;
+  const { clean, cr } = splitLineCR(lineText);
 
-  let m = DECIMAL_ITEM_RE.exec(lineText);
+  let m = DECIMAL_ITEM_RE.exec(clean);
   if (m) {
     const [, indent, majorStr, minorStr, space, body] = m;
-    return {
-      level: 1,
-      style: '1.1',
-      indent,
-      major: Number(majorStr),
-      index: Number(minorStr),
-      marker: `${majorStr}.${minorStr}`,
-      space,
-      body
-    };
-  }
+    const major = Number(majorStr);
+    const minor = Number(minorStr);
+    if (major <= 0 || major >= 100 || minor <= 0 || minor >= 100) {
+      return null;
+    }
 
-  m = TOP_ITEM_RE.exec(lineText);
-  if (m) {
-    const [, indent, numStr, space, body] = m;
-    return {
-      level: 0,
-      style: '1.',
-      indent,
-      major: Number(numStr),
-      index: Number(numStr),
-      marker: `${numStr}.`,
-      space,
-      body
-    };
-  }
-
-  m = PAREN_ITEM_RE.exec(lineText);
-  if (m) {
-    const [, indent, tokenRaw, space, body] = m;
-    const token = tokenRaw.toLowerCase();
-    const romanVal = fromRoman(token);
-    const alphaVal = fromAlpha(token);
-
-    let isRoman = false;
-    if (romanVal !== null) {
-      if (token.length > 1) {
-        isRoman = true;
-      } else if (indent.length >= 8) {
-        isRoman = true;
-      } else if (prevItem && prevItem.level === 3) {
-        isRoman = true;
-      } else if (token === 'i') {
-        // `(i)` is Roman numeral 1 unless it directly follows `(h)` at level 2
-        const followsHAtLevel2 = prevItem && prevItem.level === 2 && prevItem.index === 8;
-        isRoman = !followsHAtLevel2;
+    let nextMatchesSameMajor = false;
+    if (typeof nextLineText === 'string') {
+      const nextClean = splitLineCR(nextLineText).clean;
+      const nm = DECIMAL_ITEM_RE.exec(nextClean);
+      if (nm && Number(nm[2]) === major) {
+        nextMatchesSameMajor = true;
       }
     }
 
-    if (isRoman) {
-      return {
-        level: 3,
-        style: '(i)',
-        indent,
-        major: prevItem ? prevItem.major : 1,
-        index: romanVal,
-        marker: `(${token})`,
-        space,
-        body
-      };
+    const inListContext =
+      indent.length > 0 ||
+      minor === 1 ||
+      (prevItem !== null && (prevItem.major === major || prevItem.level <= 1)) ||
+      nextMatchesSameMajor;
+
+    if (!inListContext) {
+      return null;
     }
 
-    if (alphaVal !== null) {
-      return {
-        level: 2,
-        style: '(a)',
-        indent,
-        major: prevItem ? prevItem.major : 1,
-        index: alphaVal,
-        marker: `(${token})`,
-        space,
-        body
-      };
+    return {
+      level: 1,
+      style: '1.1',
+      upper: false,
+      indent,
+      major,
+      index: minor,
+      rawIndex: minor,
+      rawToken: `${majorStr}.${minorStr}`,
+      marker: `${majorStr}.${minorStr}`,
+      space,
+      body,
+      cr
+    };
+  }
+
+  m = TOP_ITEM_RE.exec(clean);
+  if (m) {
+    const [, indent, numStr, space, body] = m;
+    const num = Number(numStr);
+    const followsPrevTop =
+      prevItem &&
+      prevItem.level === 0 &&
+      (prevItem.rawIndex === num - 1 || prevItem.index === num - 1);
+    if (num <= 0 || (num >= 100 && !followsPrevTop)) {
+      return null;
     }
+    return {
+      level: 0,
+      style: '1.',
+      upper: false,
+      indent,
+      major: num,
+      index: num,
+      rawIndex: num,
+      rawToken: numStr,
+      marker: `${numStr}.`,
+      space,
+      body,
+      cr
+    };
+  }
+
+  m = PAREN_ITEM_RE.exec(clean);
+  if (m) {
+    const [, indent, tokenRaw, space, body] = m;
+    const { token, upper, romanVal, alphaVal, isRoman } = classifyParenToken(
+      indent,
+      tokenRaw,
+      prevItem
+    );
+
+    const level = isRoman ? 3 : 2;
+    const indexVal = isRoman ? romanVal : alphaVal;
+    if (indexVal === null) return null;
+
+    // Standalone unindented parenthesized tokens with index > 2 (e.g. `(c) of the statute`,
+    // `(v) supra / (x) infra`) are prose unless they start a consecutive sequence like `(h)/(i)/(j)`.
+    if (indent.length === 0 && !prevItem && indexVal > 2) {
+      let hasConsecutiveNext = false;
+      if (typeof nextLineText === 'string') {
+        const nextClean = splitLineCR(nextLineText).clean;
+        const nm = PAREN_ITEM_RE.exec(nextClean);
+        if (nm) {
+          const fakePrev = {
+            level,
+            indent,
+            major: 1,
+            index: indexVal,
+            rawIndex: indexVal
+          };
+          const nextClass = classifyParenToken(nm[1], nm[2], fakePrev);
+          const nextLevel = nextClass.isRoman ? 3 : 2;
+          const nextIdx = nextClass.isRoman ? nextClass.romanVal : nextClass.alphaVal;
+          if (nextLevel === level && nextIdx === indexVal + 1) {
+            hasConsecutiveNext = true;
+          }
+        }
+      }
+      if (!hasConsecutiveNext) {
+        return null;
+      }
+    }
+
+    const formattedToken = upper ? token.toUpperCase() : token;
+    return {
+      level,
+      style: isRoman ? (upper ? '(I)' : '(i)') : (upper ? '(A)' : '(a)'),
+      upper,
+      indent,
+      major: prevItem ? prevItem.major : 1,
+      index: indexVal,
+      rawIndex: indexVal,
+      rawToken: tokenRaw,
+      marker: `(${formattedToken})`,
+      space,
+      body,
+      cr
+    };
   }
 
   return null;
 }
 
-export function formatLegalMarker(level, counters) {
+export function formatLegalMarker(level, counters, options = {}) {
   const [c0, c1, c2, c3] = counters;
+  const upper = Boolean(options.upper);
   switch (level) {
     case 0:
       return `${Math.max(1, c0)}.`;
     case 1:
       return `${Math.max(1, c0)}.${Math.max(1, c1)}`;
-    case 2:
-      return `(${toAlpha(Math.max(1, c2))})`;
+    case 2: {
+      const a = toAlpha(Math.max(1, c2));
+      return `(${upper ? a.toUpperCase() : a})`;
+    }
     case 3:
-    default:
-      return `(${toRoman(Math.max(1, c3))})`;
+    default: {
+      const r = toRoman(Math.max(1, c3));
+      return `(${upper ? r.toUpperCase() : r})`;
+    }
   }
 }
 
-export function formatLegalLine(level, counters, body = '', customIndent = null) {
+export function formatLegalLine(level, counters, body = '', customIndent = null, options = {}) {
   const indent = customIndent !== null ? customIndent : INDENTS[Math.max(0, Math.min(3, level))];
-  const marker = formatLegalMarker(level, counters);
-  return `${indent}${marker} ${body}`;
+  const marker = formatLegalMarker(level, counters, options);
+  const cr = options.cr || '';
+  return `${indent}${marker} ${body}${cr}`;
 }
 
 export function isSectionHeadingLine(lineText) {
-  return typeof lineText === 'string' && /^§\s+\S/.test(lineText);
+  if (typeof lineText !== 'string') return false;
+  const { clean } = splitLineCR(lineText);
+  return /^§\s+\S/.test(clean);
 }
 
 /**
- * Renumbers all legal list blocks in `text` so that items are sequential
- * (`1.`, `1.1`, `(a)`, `(i)`) after moves, insertions, promotions, or deletions.
+ * Renumbers legal list items in `text` sequentially (`1.`, `1.1`, `(a)`, `(i)`),
+ * while leaving non-list numbers, years, decimals, and prose citations untouched,
+ * preserving Roman numeral case and CRLF line endings.
  */
 export function renumberLegalLists(text) {
   const source = typeof text === 'string' ? text : '';
   const lines = source.split('\n');
   let counters = [0, 0, 0, 0];
   let prevItem = null;
+  let sawBlankLine = false;
 
-  const out = lines.map(line => {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed === PAGE_MARKER || /^#{1,6}\s+/.test(trimmed) || /^§\s+/.test(trimmed)) {
-      counters = [0, 0, 0, 0];
+  const out = lines.map((line, i) => {
+    const { clean } = splitLineCR(line);
+    const trimmed = clean.trim();
+
+    if (trimmed === '') {
+      sawBlankLine = true;
       prevItem = null;
       return line;
     }
 
-    const parsed = parseLegalItem(line, prevItem);
+    if (trimmed === PAGE_MARKER || /^#{1,6}\s+/.test(trimmed) || /^§\s+/.test(trimmed)) {
+      counters = [0, 0, 0, 0];
+      prevItem = null;
+      sawBlankLine = false;
+      return line;
+    }
+
+    const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
+    const parsed = parseLegalItem(line, prevItem, nextLine);
     if (!parsed) {
+      counters = [0, 0, 0, 0];
+      prevItem = null;
+      sawBlankLine = false;
       return line;
     }
 
     const lvl = parsed.level;
     if (lvl === 0) {
-      counters[0] += 1;
+      if (sawBlankLine && parsed.rawIndex === 1) {
+        counters[0] = 1;
+      } else {
+        counters[0] += 1;
+      }
       counters[1] = 0;
       counters[2] = 0;
       counters[3] = 0;
@@ -215,49 +341,153 @@ export function renumberLegalLists(text) {
       counters[2] = 0;
       counters[3] = 0;
     } else if (lvl === 2) {
+      const noParent = counters[0] === 0 && counters[1] === 0 && !prevItem;
       if (counters[0] === 0) counters[0] = 1;
       if (counters[1] === 0) counters[1] = 1;
-      counters[2] += 1;
+      if (noParent && counters[2] === 0 && parsed.rawIndex > 2) {
+        counters[2] = parsed.rawIndex;
+      } else {
+        counters[2] += 1;
+      }
       counters[3] = 0;
     } else {
+      const noParent = counters[0] === 0 && counters[1] === 0 && counters[2] === 0 && !prevItem;
       if (counters[0] === 0) counters[0] = 1;
       if (counters[1] === 0) counters[1] = 1;
       if (counters[2] === 0) counters[2] = 1;
-      counters[3] += 1;
+      if (noParent && counters[3] === 0 && parsed.rawIndex > 2) {
+        counters[3] = parsed.rawIndex;
+      } else {
+        counters[3] += 1;
+      }
     }
 
-    const marker = formatLegalMarker(lvl, counters);
+    sawBlankLine = false;
+    const marker = formatLegalMarker(lvl, counters, { upper: parsed.upper });
     prevItem = {
       ...parsed,
       major: counters[0],
       index: counters[lvl],
+      rawIndex: parsed.rawIndex,
       marker
     };
 
-    return `${parsed.indent}${marker}${parsed.space}${parsed.body}`;
+    return `${parsed.indent}${marker}${parsed.space}${parsed.body}${parsed.cr}`;
   });
 
   return out.join('\n');
 }
 
+function isPotentialListLine(lineText) {
+  if (typeof lineText !== 'string') return false;
+  const { clean } = splitLineCR(lineText);
+  const trimmed = clean.trim();
+  if (
+    trimmed === '' ||
+    trimmed === PAGE_MARKER ||
+    /^#{1,6}\s+/.test(trimmed) ||
+    /^§\s+/.test(trimmed)
+  ) {
+    return false;
+  }
+  return (
+    DECIMAL_ITEM_RE.test(clean) ||
+    TOP_ITEM_RE.test(clean) ||
+    PAREN_ITEM_RE.test(clean)
+  );
+}
+
 /**
- * Computes the counters `[c0, c1, c2, c3]` up to `targetLineIndex` (0-based, inclusive).
+ * Finds the `[start, end]` line index bounds of the contiguous list block
+ * containing `targetLineIdx`, or `null` if `targetLineIdx` is not in a list block.
+ */
+export function findListBlockBounds(lines, targetLineIdx) {
+  if (targetLineIdx < 0 || targetLineIdx >= lines.length) return null;
+  if (!isPotentialListLine(lines[targetLineIdx])) return null;
+
+  let start = targetLineIdx;
+  while (start > 0 && isPotentialListLine(lines[start - 1])) {
+    start--;
+  }
+  let end = targetLineIdx;
+  while (end + 1 < lines.length && isPotentialListLine(lines[end + 1])) {
+    end++;
+  }
+  return { start, end };
+}
+
+/**
+ * Renumbers ONLY the contiguous list block holding `targetLineIdx`,
+ * leaving every other line in `text` untouched.
+ */
+export function renumberListBlockAtLine(text, targetLineIdx) {
+  const source = typeof text === 'string' ? text : '';
+  const lines = source.split('\n');
+  let bounds = findListBlockBounds(lines, targetLineIdx);
+  if (!bounds && targetLineIdx > 0) {
+    bounds = findListBlockBounds(lines, targetLineIdx - 1);
+  }
+  if (!bounds) return source;
+
+  const blockText = lines.slice(bounds.start, bounds.end + 1).join('\n');
+  const renumberedBlock = renumberLegalLists(blockText).split('\n');
+  const nextLines = [...lines];
+  nextLines.splice(
+    bounds.start,
+    bounds.end - bounds.start + 1,
+    ...renumberedBlock
+  );
+  return nextLines.join('\n');
+}
+
+/**
+ * Computes the minimal single-range change `{ from, to, insert }` between `oldText` and `newText`,
+ * or `null` if they are identical.
+ */
+export function computeMinimalTextChange(oldText, newText) {
+  if (oldText === newText) return null;
+  let from = 0;
+  const minLen = Math.min(oldText.length, newText.length);
+  while (from < minLen && oldText.charCodeAt(from) === newText.charCodeAt(from)) {
+    from++;
+  }
+  let oldTo = oldText.length;
+  let newTo = newText.length;
+  while (
+    oldTo > from &&
+    newTo > from &&
+    oldText.charCodeAt(oldTo - 1) === newText.charCodeAt(newTo - 1)
+  ) {
+    oldTo--;
+    newTo--;
+  }
+  return {
+    from,
+    to: oldTo,
+    insert: newText.slice(from, newTo)
+  };
+}
+
+/**
+ * Computes the counters `[c0, c1, c2, c3]` within the contiguous list block up to `targetLineIndex`.
  */
 function computeContextAtLine(lines, targetLineIndex) {
+  const bounds = findListBlockBounds(lines, targetLineIndex);
+  if (!bounds) return { counters: [0, 0, 0, 0], parsedTarget: null, bounds: null };
+
   let counters = [0, 0, 0, 0];
   let prevItem = null;
   let parsedTarget = null;
 
-  for (let i = 0; i <= targetLineIndex && i < lines.length; i++) {
+  for (let i = bounds.start; i <= targetLineIndex && i <= bounds.end; i++) {
     const line = lines[i];
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed === PAGE_MARKER || /^#{1,6}\s+/.test(trimmed) || /^§\s+/.test(trimmed)) {
+    const nextLine = i + 1 <= bounds.end ? lines[i + 1] : null;
+    const parsed = parseLegalItem(line, prevItem, nextLine);
+    if (!parsed) {
       counters = [0, 0, 0, 0];
       prevItem = null;
       continue;
     }
-    const parsed = parseLegalItem(line, prevItem);
-    if (!parsed) continue;
 
     const lvl = parsed.level;
     if (lvl === 0) {
@@ -271,33 +501,44 @@ function computeContextAtLine(lines, targetLineIndex) {
       counters[2] = 0;
       counters[3] = 0;
     } else if (lvl === 2) {
+      const noParent = counters[0] === 0 && counters[1] === 0 && !prevItem;
       if (counters[0] === 0) counters[0] = 1;
       if (counters[1] === 0) counters[1] = 1;
-      counters[2] += 1;
+      if (noParent && counters[2] === 0 && parsed.rawIndex > 2) {
+        counters[2] = parsed.rawIndex;
+      } else {
+        counters[2] += 1;
+      }
       counters[3] = 0;
     } else {
+      const noParent = counters[0] === 0 && counters[1] === 0 && counters[2] === 0 && !prevItem;
       if (counters[0] === 0) counters[0] = 1;
       if (counters[1] === 0) counters[1] = 1;
       if (counters[2] === 0) counters[2] = 1;
-      counters[3] += 1;
+      if (noParent && counters[3] === 0 && parsed.rawIndex > 2) {
+        counters[3] = parsed.rawIndex;
+      } else {
+        counters[3] += 1;
+      }
     }
 
     prevItem = {
       ...parsed,
       major: counters[0],
-      index: counters[lvl]
+      index: counters[lvl],
+      rawIndex: parsed.rawIndex
     };
     if (i === targetLineIndex) {
       parsedTarget = prevItem;
     }
   }
 
-  return { counters, parsedTarget };
+  return { counters, parsedTarget, bounds };
 }
 
 /**
  * Pure helper: continues a legal numbered item when Enter is pressed at `cursorOffset`.
- * Returns `{ text, cursor }` or `null` if the line at `cursorOffset` is not a legal item.
+ * Renumbers ONLY the contiguous list holding the cursor.
  */
 export function continueLegalOnEnter(text, cursorOffset) {
   const source = typeof text === 'string' ? text : '';
@@ -315,45 +556,64 @@ export function continueLegalOnEnter(text, cursorOffset) {
     offset = end + 1;
   }
 
-  const { counters, parsedTarget } = computeContextAtLine(lines, lineIdx);
-  if (!parsedTarget) return null;
+  const { counters, parsedTarget, bounds } = computeContextAtLine(lines, lineIdx);
+  if (!parsedTarget || !bounds) return null;
 
   const lineStart = offset;
   const lineText = lines[lineIdx];
+  const cleanLen = lineText.length - parsedTarget.cr.length;
   const prefixLen = parsedTarget.indent.length + parsedTarget.marker.length + parsedTarget.space.length;
   const bodyStart = lineStart + prefixLen;
 
   // If the item has no body text, pressing Enter clears the empty marker on this line
   if (parsedTarget.body.trim() === '') {
-    const before = source.slice(0, lineStart);
-    const after = source.slice(lineStart + lineText.length);
-    const nextDoc = renumberLegalLists(before + after);
+    const newLines = [...lines];
+    newLines[lineIdx] = parsedTarget.cr;
+    let nextDoc = newLines.join('\n');
+    if (lineIdx > bounds.start) {
+      nextDoc = renumberListBlockAtLine(nextDoc, lineIdx - 1);
+    }
+    if (lineIdx < bounds.end) {
+      nextDoc = renumberListBlockAtLine(nextDoc, lineIdx + 1);
+    }
     return {
       text: nextDoc,
       cursor: lineStart
     };
   }
 
-  const splitAt = Math.max(bodyStart, pos);
-  const keptOnCurrentLine = source.slice(lineStart, splitAt);
-  const movedToNextLine = source.slice(splitAt, lineStart + lineText.length);
+  const clampedPos = Math.min(pos, lineStart + cleanLen);
+  const splitAt = Math.max(bodyStart, clampedPos);
+  const keptOnCurrentLine = `${source.slice(lineStart, splitAt)}${parsedTarget.cr}`;
+  const movedToNextLine = source.slice(splitAt, lineStart + cleanLen);
 
   const nextCounters = [...counters];
   nextCounters[parsedTarget.level] += 1;
   for (let k = parsedTarget.level + 1; k < 4; k++) nextCounters[k] = 0;
 
-  const nextMarker = formatLegalMarker(parsedTarget.level, nextCounters);
+  const nextMarker = formatLegalMarker(parsedTarget.level, nextCounters, {
+    upper: parsedTarget.upper
+  });
   const insertedPrefix = `${parsedTarget.indent}${nextMarker} `;
   const newLines = [...lines];
-  newLines.splice(lineIdx, 1, keptOnCurrentLine, `${insertedPrefix}${movedToNextLine}`);
+  newLines.splice(
+    lineIdx,
+    1,
+    keptOnCurrentLine,
+    `${insertedPrefix}${movedToNextLine}${parsedTarget.cr}`
+  );
 
-  const renumbered = renumberLegalLists(newLines.join('\n'));
+  const renumbered = renumberListBlockAtLine(newLines.join('\n'), lineIdx + 1);
   const renumberedLines = renumbered.split('\n');
   let newCursor = 0;
   for (let i = 0; i <= lineIdx; i++) {
     newCursor += renumberedLines[i].length + 1;
   }
-  const nextParsed = parseLegalItem(renumberedLines[lineIdx + 1]);
+  const nextParsed = parseLegalItem(
+    renumberedLines[lineIdx + 1],
+    parsedTarget,
+    lineIdx + 2 < renumberedLines.length ? renumberedLines[lineIdx + 2] : null
+  );
   if (nextParsed) {
     newCursor += nextParsed.indent.length + nextParsed.marker.length + nextParsed.space.length;
   } else {
@@ -369,7 +629,7 @@ export function continueLegalOnEnter(text, cursorOffset) {
 /**
  * Pure helper: promotes (`delta = -1`) or demotes (`delta = +1`) the legal item on
  * the line containing `cursorOffset` through `1.` <-> `1.1` <-> `(a)` <-> `(i)`,
- * then renumbers the list.
+ * then renumbers ONLY the contiguous list holding the cursor.
  */
 export function shiftLegalLevelAtCursor(text, cursorOffset, delta) {
   const source = typeof text === 'string' ? text : '';
@@ -390,7 +650,6 @@ export function shiftLegalLevelAtCursor(text, cursorOffset, delta) {
   const { counters, parsedTarget } = computeContextAtLine(lines, lineIdx);
   if (!parsedTarget) return null;
 
-  const oldLineText = lines[lineIdx];
   const offsetInLine = pos - offset;
   const oldPrefixLen = parsedTarget.indent.length + parsedTarget.marker.length + parsedTarget.space.length;
   const bodyOffset = Math.max(0, offsetInLine - oldPrefixLen);
@@ -406,23 +665,29 @@ export function shiftLegalLevelAtCursor(text, cursorOffset, delta) {
     Math.max(1, counters[2]),
     Math.max(1, counters[3])
   ];
-  lines[lineIdx] = formatLegalLine(targetLevel, tempCounters, parsedTarget.body);
+  lines[lineIdx] = formatLegalLine(targetLevel, tempCounters, parsedTarget.body, null, {
+    upper: parsedTarget.upper,
+    cr: parsedTarget.cr
+  });
 
-  const renumbered = renumberLegalLists(lines.join('\n'));
+  const renumbered = renumberListBlockAtLine(lines.join('\n'), lineIdx);
   const renumberedLines = renumbered.split('\n');
   let newLineStart = 0;
   for (let i = 0; i < lineIdx; i++) {
     newLineStart += renumberedLines[i].length + 1;
   }
-  const updatedParsed = parseLegalItem(renumberedLines[lineIdx]);
+  const prevLineParsed =
+    lineIdx > 0 ? parseLegalItem(renumberedLines[lineIdx - 1]) : null;
+  const updatedParsed = parseLegalItem(renumberedLines[lineIdx], prevLineParsed);
   const newPrefixLen = updatedParsed
     ? updatedParsed.indent.length + updatedParsed.marker.length + updatedParsed.space.length
-    : 0;
+    : INDENTS[targetLevel].length + formatLegalMarker(targetLevel, tempCounters).length + 1;
 
+  const lineCleanLen = splitLineCR(renumberedLines[lineIdx]).clean.length;
   return {
     text: renumbered,
     cursor: Math.min(
-      newLineStart + renumberedLines[lineIdx].length,
+      newLineStart + lineCleanLen,
       newLineStart + newPrefixLen + bodyOffset
     )
   };
@@ -459,39 +724,86 @@ const sectionHeadingField = StateField.define({
 function applyPureEdit(view, result) {
   if (!result) return false;
   const current = view.state.doc.toString();
-  if (result.text === current && result.cursor === view.state.selection.main.head) {
+  const change = computeMinimalTextChange(current, result.text);
+  if (!change && result.cursor === view.state.selection.main.head) {
     return true;
   }
   view.dispatch({
-    changes: { from: 0, to: current.length, insert: result.text },
+    ...(change ? { changes: change } : {}),
     selection: { anchor: result.cursor }
   });
   return true;
 }
 
+function renumberListAtCursorView(view) {
+  const cur = view.state.doc.toString();
+  const cursorLineIdx = view.state.doc.lineAt(view.state.selection.main.head).number - 1;
+  const renumbered = renumberListBlockAtLine(cur, cursorLineIdx);
+  const change = computeMinimalTextChange(cur, renumbered);
+  if (change) {
+    view.dispatch({
+      changes: change,
+      selection: view.state.selection
+    });
+  }
+}
+
 /**
- * Automatically renumbers legal lists when lines are deleted or moved.
+ * Automatically renumbers ONLY the contiguous legal list holding the cursor
+ * when a line inside that list is deleted. Never triggers on load, setText,
+ * typing, or paste.
  */
 const legalRenumberFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.docChanged || tr.annotation(externalSetTextAnnotation)) return tr;
-  let lineCountChanged = false;
+  if (
+    tr.isUserEvent('input') ||
+    tr.isUserEvent('input.type') ||
+    tr.isUserEvent('input.paste') ||
+    tr.isUserEvent('undo') ||
+    tr.isUserEvent('redo')
+  ) {
+    return tr;
+  }
+
+  let hasPureLineDeletion = false;
+  let hasInsertion = false;
+  let deletedListLine = false;
+  let deletionPosB = 0;
+
   tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
-    const removedText = tr.startState.doc.sliceString(fromA, toA);
-    if (removedText.includes('\n') || inserted.toString().includes('\n')) {
-      lineCountChanged = true;
+    if (inserted.length > 0) {
+      hasInsertion = true;
+      return;
+    }
+    if (toA > fromA) {
+      const removedText = tr.startState.doc.sliceString(fromA, toA);
+      if (removedText.includes('\n')) {
+        hasPureLineDeletion = true;
+        deletionPosB = fromB;
+        const removedLines = removedText.split('\n');
+        if (removedLines.some(l => isPotentialListLine(l))) {
+          deletedListLine = true;
+        }
+      }
     }
   });
-  if (!lineCountChanged) return tr;
+
+  if (hasInsertion || !hasPureLineDeletion || !deletedListLine) {
+    return tr;
+  }
 
   const newDocText = tr.newDoc.toString();
-  const renumbered = renumberLegalLists(newDocText);
-  if (renumbered === newDocText) return tr;
+  const clampedPos = Math.max(0, Math.min(tr.newDoc.length, deletionPosB));
+  const targetLineIdx = tr.newDoc.lineAt(clampedPos).number - 1;
+  const renumbered = renumberListBlockAtLine(newDocText, targetLineIdx);
+  const change = computeMinimalTextChange(newDocText, renumbered);
+  if (!change) return tr;
 
   const head = Math.min(renumbered.length, tr.newSelection.main.head);
   return [
     tr,
     {
-      changes: { from: 0, to: newDocText.length, insert: renumbered },
+      changes: change,
       selection: { anchor: head },
       sequential: true
     }
@@ -532,14 +844,7 @@ export function legalNumberingExtension() {
         run(view) {
           const moved = moveLineUp(view);
           if (!moved) return false;
-          const cur = view.state.doc.toString();
-          const renumbered = renumberLegalLists(cur);
-          if (renumbered !== cur) {
-            view.dispatch({
-              changes: { from: 0, to: cur.length, insert: renumbered },
-              selection: view.state.selection
-            });
-          }
+          renumberListAtCursorView(view);
           return true;
         }
       },
@@ -548,14 +853,7 @@ export function legalNumberingExtension() {
         run(view) {
           const moved = moveLineDown(view);
           if (!moved) return false;
-          const cur = view.state.doc.toString();
-          const renumbered = renumberLegalLists(cur);
-          if (renumbered !== cur) {
-            view.dispatch({
-              changes: { from: 0, to: cur.length, insert: renumbered },
-              selection: view.state.selection
-            });
-          }
+          renumberListAtCursorView(view);
           return true;
         }
       }

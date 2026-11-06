@@ -58,10 +58,19 @@ export function inspectDraftpadPages(text) {
     let leadTrim = 0;
     let trailTrim = 0;
     if (i > 0) {
-      while (leadTrim < part.length && part[leadTrim] === '\n') leadTrim++;
+      while (
+        leadTrim < part.length &&
+        (part[leadTrim] === '\n' || part[leadTrim] === '\r')
+      ) {
+        leadTrim++;
+      }
     }
     if (i < parts.length - 1) {
-      while (trailTrim < part.length - leadTrim && part[part.length - 1 - trailTrim] === '\n') {
+      while (
+        trailTrim < part.length - leadTrim &&
+        (part[part.length - 1 - trailTrim] === '\n' ||
+          part[part.length - 1 - trailTrim] === '\r')
+      ) {
         trailTrim++;
       }
     }
@@ -119,7 +128,8 @@ export function findPageDecorations(text) {
   let awaitingPageFirstContentLine = true;
 
   for (let i = 0; i < lines.length; i++) {
-    const lineText = lines[i];
+    const rawLine = lines[i];
+    const lineText = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
     const from = offset;
     const to = offset + lineText.length;
     const lineNumber = i + 1;
@@ -134,7 +144,7 @@ export function findPageDecorations(text) {
       }
     }
 
-    offset = to + 1;
+    offset += rawLine.length + 1;
   }
 
   return { markers, dateLines };

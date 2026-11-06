@@ -1,4 +1,4 @@
-import { Annotation } from '@codemirror/state';
+import { Annotation, Transaction } from '@codemirror/state';
 
 export const DEBOUNCE_MS = 300;
 
@@ -60,6 +60,17 @@ export function createEditorBridge({
     }, debounceMs);
   }
 
+  function flushPendingPost() {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+      const state = getState();
+      if (state) {
+        postToNative(state.doc.toString());
+      }
+    }
+  }
+
   function getText() {
     const state = getState();
     return state ? state.doc.toString() : '';
@@ -67,7 +78,7 @@ export function createEditorBridge({
 
   function setText(nextText) {
     const s = typeof nextText === 'string' ? nextText : String(nextText ?? '');
-    clearPendingPost();
+    flushPendingPost();
     const state = getState();
     if (!state) return;
     const current = state.doc.toString();
@@ -81,7 +92,10 @@ export function createEditorBridge({
     dispatch({
       changes: { from: 0, to: current.length, insert: s },
       selection: { anchor, head },
-      annotations: externalSetTextAnnotation.of(true)
+      annotations: [
+        externalSetTextAnnotation.of(true),
+        Transaction.addToHistory.of(false)
+      ]
     });
 
     if (scroll && typeof setScroll === 'function') {

@@ -44,11 +44,12 @@ export function extractHeadings(text) {
   const lineOffsets = [];
   let offset = 0;
   for (let i = 0; i < lines.length; i++) {
+    const cleanText = lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i];
     lineOffsets.push({
       lineNumber: i + 1,
       from: offset,
-      to: offset + lines[i].length,
-      text: lines[i]
+      to: offset + cleanText.length,
+      text: cleanText
     });
     offset += lines[i].length + 1;
   }
@@ -77,11 +78,11 @@ export function extractHeadings(text) {
   return rawHeadings.map((h, idx) => {
     let endLineIndex = lines.length - 1;
     for (let k = h.lineIndex + 1; k < lines.length; k++) {
-      if (lines[k] === PAGE_MARKER) {
+      if (lineOffsets[k].text === PAGE_MARKER) {
         endLineIndex = k - 1;
         break;
       }
-      const nextParsed = parseHeadingLine(lines[k]);
+      const nextParsed = parseHeadingLine(lineOffsets[k].text);
       if (nextParsed && nextParsed.level <= h.level) {
         endLineIndex = k - 1;
         break;
