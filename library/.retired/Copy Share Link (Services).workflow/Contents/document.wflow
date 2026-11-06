@@ -1,0 +1,1028 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>528</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>#!/bin/bash
+#
+# Finder Quick Action: "Copy Share Link"
+#
+# Automator:
+#   New &gt; Quick Action
+#   Workflow receives current: files or folders
+#   in: Finder
+#   Add "Run Shell Script"
+#     Shell: /bin/bash
+#     Pass input: as arguments   (to stdin works too)
+#
+# What it does:
+#   1. Creates a LIVE gallery first, so the link works immediately
+#   2. Copies the link to your clipboard right away (and opens the gallery)
+#   3. Uploads smallest file first, so photos are viewable while a big video
+#      is still going up. Unfinished items show up as "uploading" placeholders
+#      and turn into real media by themselves the moment they land.
+#   4. Files &lt;= ~90 MB: single PUT. Bigger: 32 MiB multipart parts with
+#      per-part progress, so the gallery shows a progress ring.
+#   5. Logs everything to ~/Library/Logs/share-link.log
+#
+# Needs the "live-v2" Worker. On an older Worker it still works the old way
+# (link appears when everything is uploaded).
+
+set -u
+
+# -------------------------------------------------------------------
+# Configuration
+# -------------------------------------------------------------------
+
+BASE="${SHARE_BASE:-https://cloud.improvdiplomat.workers.dev}"
+BASE="${BASE%/}"
+
+PASSWORD="${SHARE_PASSWORD:-819kCphL}"
+DAYS="${SHARE_DAYS:-7}"
+
+# 1 = open the gallery in your browser as soon as the link exists, 0 = don't
+OPEN_GALLERY="${SHARE_OPEN:-1}"
+
+PART_MB="${SHARE_PART_MB:-32}"        # must stay &gt;= 5 (R2 minimum part size)
+BIG="${SHARE_BIG_BYTES:-90000000}"    # above this size, upload in parts
+RETRY_SLEEP="${SHARE_RETRY_SLEEP:-3}"
+
+# -------------------------------------------------------------------
+# Logging
+# -------------------------------------------------------------------
+
+LOG_DIR="${SHARE_LOG_DIR:-$HOME/Library/Logs}"
+LOG="$LOG_DIR/share-link.log"
+
+mkdir -p "$LOG_DIR" 2&gt;/dev/null || true
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" &gt;&gt; "$LOG" 2&gt;/dev/null || true
+}
+
+log "============================================================"
+log "Share link Quick Action started"
+log "Arguments received: $#"
+
+# -------------------------------------------------------------------
+# macOS messages
+# -------------------------------------------------------------------
+
+alert() {
+  local title="$1"
+  local message="$2"
+
+  /usr/bin/osascript \
+    -e 'on run argv' \
+    -e 'display alert (item 1 of argv) message (item 2 of argv) buttons {"OK"} default button "OK"' \
+    -e 'end run' \
+    "$title" "$message" \
+    &gt;/dev/null 2&gt;&amp;1 || true
+}
+
+notify() {
+  local message="$1"
+
+  /usr/bin/osascript \
+    -e 'on run argv' \
+    -e 'display notification (item 1 of argv) with title "Share link"' \
+    -e 'end run' \
+    "$message" \
+    &gt;/dev/null 2&gt;&amp;1 || true
+}
+
+# short dialog that closes itself and never blocks the upload
+toast_bg() {
+  /usr/bin/osascript \
+    -e 'on run argv' \
+    -e 'display dialog (item 1 of argv) with title "Share link" buttons {"OK"} default button "OK" giving up after 7' \
+    -e 'end run' \
+    "$1" \
+    &gt;/dev/null 2&gt;&amp;1 &amp;
+}
+
+# -------------------------------------------------------------------
+# State + cleanup
+# -------------------------------------------------------------------
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/share-link.XXXXXX")"
+UPID=""
+CUR_ID=""
+CUR_I=""
+LIVE=0
+MAXT=120
+
+cleanup() {
+  rm -rf "$TMP"
+}
+
+trap cleanup EXIT
+
+# -------------------------------------------------------------------
+# Platform-specific file metadata
+# -------------------------------------------------------------------
+
+if [ "$(uname)" = "Darwin" ]; then
+  fsize() {
+    /usr/bin/stat -f%z "$1"
+  }
+
+  fmtime() {
+    /usr/bin/stat -f%m "$1"
+  }
+else
+  fsize() {
+    /usr/bin/stat -c%s "$1"
+  }
+
+  fmtime() {
+    /usr/bin/stat -c%Y "$1"
+  }
+fi
+
+# -------------------------------------------------------------------
+# Percent-encode arbitrary bytes
+# -------------------------------------------------------------------
+
+enc() {
+  /usr/bin/printf %s "$1" |
+    /usr/bin/od -An -v -tx1 |
+    /usr/bin/tr -d ' \n' |
+    /usr/bin/sed 's/../%&amp;/g'
+}
+
+# -------------------------------------------------------------------
+# HTTP request helper
+#
+# Sets:
+#   CODE = HTTP status, or 000 for network failure
+#   RESP = response body
+# -------------------------------------------------------------------
+
+CODE="000"
+RESP=""
+
+call() {
+  CODE="000"
+  RESP=""
+
+  CODE=$(
+    /usr/bin/curl \
+      -sS \
+      --connect-timeout 20 \
+      --max-time "$MAXT" \
+      -o "$TMP/resp" \
+      -w '%{http_code}' \
+      -H "x-password: $PASSWORD" \
+      "$@" \
+      2&gt;"$TMP/curl-error"
+  ) || CODE="000"
+
+  RESP=$(
+    /bin/cat "$TMP/resp" 2&gt;/dev/null || true
+  )
+
+  if [ "$CODE" = "000" ]; then
+    local curl_error
+    curl_error=$(
+      /bin/cat "$TMP/curl-error" 2&gt;/dev/null || true
+    )
+
+    if [ -n "$curl_error" ]; then
+      log "curl error: $curl_error"
+    fi
+  fi
+
+  log "HTTP $CODE"
+}
+
+# -------------------------------------------------------------------
+# Retry a request
+# -------------------------------------------------------------------
+
+call_retry() {
+  local tries=1
+
+  while :; do
+    call "$@"
+
+    if [ "$CODE" = "200" ]; then
+      return 0
+    fi
+
+    # Wrong password / unknown route will not improve with retries.
+    if [ "$CODE" = "401" ] || [ "$CODE" = "404" ]; then
+      return 1
+    fi
+
+    if [ "$tries" -ge 4 ]; then
+      return 1
+    fi
+
+    log "Request failed with HTTP $CODE; retry $((tries + 1))/4"
+
+    sleep $((RETRY_SLEEP * tries))
+
+    tries=$((tries + 1))
+  done
+}
+
+# -------------------------------------------------------------------
+# Human-readable HTTP/network failure reason
+# -------------------------------------------------------------------
+
+why() {
+  case "$CODE" in
+    401)
+      echo "wrong password"
+      ;;
+    400)
+      echo "bad request (HTTP 400)"
+      ;;
+    403)
+      echo "forbidden (HTTP 403)"
+      ;;
+    404)
+      echo "not found (HTTP 404): is the newest worker.mjs deployed?"
+      ;;
+    413)
+      echo "file too large for one request (HTTP 413)"
+      ;;
+    429)
+      echo "rate limited (HTTP 429)"
+      ;;
+    500)
+      echo "server error (HTTP 500)"
+      ;;
+    502)
+      echo "gateway error (HTTP 502)"
+      ;;
+    503)
+      echo "service unavailable (HTTP 503)"
+      ;;
+    504)
+      echo "gateway timeout (HTTP 504)"
+      ;;
+    000)
+      echo "no connection"
+      ;;
+    *)
+      echo "HTTP $CODE"
+      ;;
+  esac
+}
+
+# -------------------------------------------------------------------
+# Abort an in-progress multipart upload / cancel the live session
+# -------------------------------------------------------------------
+
+abort_upload() {
+  if [ -n "$UPID" ]; then
+
+    log "Aborting multipart upload $UPID"
+
+    call \
+      -X POST \
+      "$BASE/api/upload?action=abort&amp;id=$CUR_ID&amp;i=$CUR_I&amp;uploadId=$(enc "$UPID")" \
+      &gt;/dev/null 2&gt;&amp;1 || true
+
+    UPID=""
+  fi
+}
+
+cancel_session() {
+  if [ "$LIVE" = "1" ]; then
+
+    log "Marking unfinished items as failed"
+
+    call \
+      -X POST \
+      "$BASE/api/share?action=cancel&amp;id=$ID" \
+      &gt;/dev/null 2&gt;&amp;1 || true
+
+    LIVE=0
+  fi
+}
+
+# -------------------------------------------------------------------
+# Fatal error
+# -------------------------------------------------------------------
+
+fail() {
+  local message="$1"
+
+  log "FAIL: $message"
+  printf 'Share link failed: %s\n' "$message" &gt;&amp;2
+
+  abort_upload
+  cancel_session
+
+  alert "Share link — Failed" "$message"
+
+  exit 1
+}
+
+trap 'log "Interrupted"; abort_upload; cancel_session; exit 1' INT TERM
+
+# -------------------------------------------------------------------
+# Dependency check
+# -------------------------------------------------------------------
+
+for required in \
+  /usr/bin/curl \
+  /usr/bin/openssl \
+  /usr/bin/file \
+  /bin/dd \
+  /usr/bin/od \
+  /usr/bin/tr \
+  /usr/bin/sed \
+  /usr/bin/sort \
+  /usr/bin/cut \
+  /usr/bin/mktemp
+do
+  if [ ! -x "$required" ]; then
+    fail "Required command is missing: $required"
+  fi
+done
+
+# -------------------------------------------------------------------
+# Upload one file
+# -------------------------------------------------------------------
+
+upload_one() {
+  local f="$1"
+  local i="$2"
+
+  local size
+  local name
+  local nameq
+  local mime
+  local taken
+  local qs
+
+  size="$(fsize "$f")"
+  name="$(basename "$f")"
+  nameq="$(enc "$name")"
+
+  mime=$(
+    /usr/bin/file -b --mime-type "$f" 2&gt;/dev/null ||
+      echo "application/octet-stream"
+  )
+
+  taken=$(( $(fmtime "$f") * 1000 ))
+
+  CUR_I="$i"
+
+  log "Uploading file #$((i + 1))"
+  log "Name: $name"
+  log "Size: $size bytes"
+  log "MIME: $mime"
+
+  qs="id=$ID&amp;i=$i&amp;name=$nameq&amp;days=$DAYS&amp;t=$taken&amp;hasArt=0"
+
+  # ---------------------------------------------------------------
+  # Normal upload
+  # ---------------------------------------------------------------
+
+  if [ "$size" -le "$BIG" ]; then
+
+    log "Using single-request upload"
+
+    MAXT=900
+
+    if ! call_retry \
+      -X PUT \
+      -T "$f" \
+      -H "content-type: $mime" \
+      "$BASE/api/upload?$qs"
+    then
+      MAXT=120
+      fail "$name: $(why)"
+    fi
+
+    MAXT=120
+
+    log "Single-request upload completed"
+
+    return 0
+  fi
+
+  # ---------------------------------------------------------------
+  # Multipart upload
+  # ---------------------------------------------------------------
+
+  log "Using multipart upload"
+
+  local part_bytes
+  local total
+  local parts
+  local n
+  local etag
+
+  part_bytes=$((PART_MB * 1024 * 1024))
+  total=$(( (size + part_bytes - 1) / part_bytes ))
+
+  call \
+    -X POST \
+    "$BASE/api/upload?action=start&amp;$qs&amp;total=$total&amp;type=$(enc "$mime")"
+
+  if [ "$CODE" != "200" ]; then
+    fail "$name: could not start upload ($(why))"
+  fi
+
+  UPID="$RESP"
+
+  # Remove accidental whitespace/newlines from upload ID.
+  UPID=$(
+    /usr/bin/printf %s "$UPID" |
+      /usr/bin/tr -d '\r\n '
+  )
+
+  if [ -z "$UPID" ]; then
+    fail "$name: server returned an empty upload ID"
+  fi
+
+  log "Multipart upload ID: $UPID"
+
+  parts=""
+  n=1
+
+  while [ "$n" -le "$total" ]; do
+
+    log "Preparing part $n/$total"
+
+    /bin/dd \
+      if="$f" \
+      of="$TMP/chunk" \
+      bs=1048576 \
+      skip=$(( (n - 1) * PART_MB )) \
+      count="$PART_MB" \
+      2&gt;/dev/null
+
+    notify "$name: part $n of $total"
+
+    log "Uploading part $n/$total"
+
+    MAXT=900
+
+    if ! call_retry \
+      -X PUT \
+      -T "$TMP/chunk" \
+      -H "content-type: application/octet-stream" \
+      "$BASE/api/upload?action=part&amp;id=$ID&amp;i=$i&amp;uploadId=$(enc "$UPID")&amp;part=$n&amp;total=$total"
+    then
+      MAXT=120
+      fail "$name: part $n of $total failed ($(why))"
+    fi
+
+    MAXT=120
+
+    etag=$(
+      /usr/bin/printf %s "$RESP" |
+        /usr/bin/tr -d '"\r\n '
+    )
+
+    if [ -z "$etag" ]; then
+      fail "$name: part $n returned an empty ETag"
+    fi
+
+    parts="$parts{\"partNumber\":$n,\"etag\":\"$etag\"},"
+
+    n=$((n + 1))
+  done
+
+  rm -f "$TMP/chunk"
+
+  log "Completing multipart upload"
+
+  if ! call_retry \
+    -X POST \
+    -H "content-type: application/json" \
+    --data "[${parts%,}]" \
+    "$BASE/api/upload?action=complete&amp;id=$ID&amp;i=$i&amp;uploadId=$(enc "$UPID")"
+  then
+
+    local response_preview
+    response_preview="$RESP"
+
+    if [ -n "$response_preview" ]; then
+      fail "$name: could not finish ($(why)): $response_preview"
+    else
+      fail "$name: could not finish ($(why))"
+    fi
+  fi
+
+  UPID=""
+
+  log "Multipart upload completed"
+}
+
+# -------------------------------------------------------------------
+# Receive Finder input
+#
+# Automator normally passes selected files as arguments.
+# If it is configured for stdin instead, read one path per line.
+# -------------------------------------------------------------------
+
+if [ "$#" -eq 0 ] &amp;&amp; [ ! -t 0 ]; then
+
+  log "No command-line arguments; attempting to read Finder input from stdin"
+
+  while IFS= read -r -t 5 f || [ -n "$f" ]; do
+
+    # Remove CR in case Automator supplies CRLF.
+    f="${f%$'\r'}"
+
+    if [ -n "$f" ]; then
+      set -- "$@" "$f"
+    fi
+
+    f=""
+
+  done
+
+fi
+
+# -------------------------------------------------------------------
+# Validate input
+# -------------------------------------------------------------------
+
+if [ "$#" -eq 0 ]; then
+  fail "No files were received from Finder. In Automator, set 'Pass input' to 'as arguments'."
+fi
+
+log "Final input count: $#"
+
+# -------------------------------------------------------------------
+# Already in the cloud: a folder (or anything inside one) in the Shared
+# side of the Studio mount. Nothing to upload; ask for the folder's link.
+# Its files expire with that link. Same folder, same link.
+# -------------------------------------------------------------------
+
+SHARED_DIR="${SHARE_SHARED_DIR:-$HOME/Studio/Shared}"
+
+case "$1" in
+  "$SHARED_DIR"/*)
+    rel="${1#"$SHARED_DIR"/}"
+    folder="${rel%%/*}"
+
+    if [ "$folder" = "$rel" ] &amp;&amp; [ -f "$1" ]; then
+      fail "Put it in a folder inside Shared first; each Shared folder is one link."
+    fi
+
+    log "Shared folder: $folder"
+
+    call -X POST "$BASE/api/share?action=folder&amp;name=$(enc "$folder")&amp;days=$DAYS"
+
+    case "$CODE" in
+      200) ;;
+      410) fail "\"$folder\" had expired, so it was deleted." ;;
+      404) fail "\"$folder\" isn't in the cloud yet. Wait a few seconds for it to finish copying, then try again." ;;
+      *) fail "Could not get a link for \"$folder\" ($(why))" ;;
+    esac
+
+    path=$(/usr/bin/printf %s "$RESP" | /usr/bin/sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
+    [ -n "$path" ] || fail "The server sent no link back."
+
+    LINK="$BASE$path"
+    log "Folder link: $LINK"
+
+    if /usr/bin/printf %s "$LINK" | /usr/bin/pbcopy; then
+      notify "Link copied for \"$folder\". It expires with the folder."
+    else
+      toast_bg "$LINK"
+    fi
+
+    echo "$LINK"
+    log "SUCCESS"
+    exit 0
+    ;;
+esac
+
+FILES=("$@")
+COUNT="$#"
+
+for f in "${FILES[@]}"; do
+  log "Selected path: $f"
+
+  if [ ! -f "$f" ]; then
+    fail "Not a regular file: $f (folders are not supported)"
+  fi
+done
+
+# -------------------------------------------------------------------
+# Generate share ID + link
+# -------------------------------------------------------------------
+
+ID=$(
+  /usr/bin/openssl rand -hex 6 2&gt;/dev/null
+) || fail "Could not generate upload ID"
+
+if [ -z "$ID" ]; then
+  fail "Could not generate upload ID"
+fi
+
+CUR_ID="$ID"
+LINK="$BASE/s/$ID"
+
+log "Share ID: $ID"
+log "Final link: $LINK"
+
+# -------------------------------------------------------------------
+# Register the live gallery BEFORE uploading anything
+#
+# One line per file: size, taken (ms), type, name (type + name encoded)
+# -------------------------------------------------------------------
+
+: &gt; "$TMP/items.txt"
+
+i=0
+
+for f in "${FILES[@]}"; do
+  mime=$(
+    /usr/bin/file -b --mime-type "$f" 2&gt;/dev/null ||
+      echo "application/octet-stream"
+  )
+
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(fsize "$f")" \
+    "$(( $(fmtime "$f") * 1000 ))" \
+    "$(enc "$mime")" \
+    "$(enc "$(basename "$f")")" \
+    &gt;&gt; "$TMP/items.txt"
+
+  i=$((i + 1))
+done
+
+log "Creating live gallery for $COUNT file(s)"
+
+call \
+  -X POST \
+  -H "content-type: text/plain" \
+  --data-binary "@$TMP/items.txt" \
+  "$BASE/api/share?action=start&amp;id=$ID&amp;days=$DAYS"
+
+case "$CODE" in
+  200)
+    LIVE=1
+    log "Live gallery created"
+    ;;
+  404)
+    # Older Worker without live galleries: carry on the classic way.
+    log "Worker has no live gallery support; uploading first, link at the end"
+    ;;
+  *)
+    fail "Could not create the gallery ($(why))"
+    ;;
+esac
+
+# -------------------------------------------------------------------
+# The link works NOW: copy it, tell the user, open the gallery
+# -------------------------------------------------------------------
+
+copy_link() {
+  if [ -x /usr/bin/pbcopy ]; then
+    if /usr/bin/printf %s "$LINK" | /usr/bin/pbcopy; then
+      log "Clipboard copy succeeded"
+      return 0
+    fi
+  fi
+
+  log "Clipboard copy FAILED"
+  return 1
+}
+
+if [ "$LIVE" = "1" ]; then
+
+  if copy_link; then
+    COPIED_NOW="Link copied."
+  else
+    COPIED_NOW="Link ready (couldn't copy it)."
+  fi
+
+  notify "$COPIED_NOW Uploading $COUNT file(s)..."
+  toast_bg "$COPIED_NOW
+
+Your gallery is live: items appear as they finish uploading.
+
+$LINK"
+
+  if [ "$OPEN_GALLERY" = "1" ] &amp;&amp; [ -x /usr/bin/open ]; then
+    /usr/bin/open "$LINK" &gt;/dev/null 2&gt;&amp;1 &amp;
+    log "Opened gallery in browser"
+  fi
+
+else
+  notify "Uploading $COUNT file(s)..."
+fi
+
+# -------------------------------------------------------------------
+# Upload, smallest first
+# -------------------------------------------------------------------
+
+ORDER=$(
+  j=0
+  for f in "${FILES[@]}"; do
+    printf '%s %s\n' "$(fsize "$f")" "$j"
+    j=$((j + 1))
+  done | /usr/bin/sort -n | /usr/bin/cut -d' ' -f2
+)
+
+for idx in $ORDER; do
+  upload_one "${FILES[$idx]}" "$idx"
+done
+
+# -------------------------------------------------------------------
+# Verify
+# -------------------------------------------------------------------
+
+if [ "$LIVE" = "1" ]; then
+
+  log "Checking that every item is live"
+
+  done_ok=0
+  tries=0
+
+  while [ "$tries" -lt 10 ]; do
+    G=$(/usr/bin/curl -sS --connect-timeout 20 --max-time 30 "$BASE/api/gallery?id=$ID" 2&gt;/dev/null || true)
+
+    case "$G" in
+      *'"complete":true'*)
+        done_ok=1
+        break
+        ;;
+    esac
+
+    tries=$((tries + 1))
+    sleep 1
+  done
+
+  if [ "$done_ok" != "1" ]; then
+    fail "Uploads finished, but the gallery doesn't show every item yet."
+  fi
+fi
+
+log "Checking final share page"
+
+CHECK_CODE=$(
+  /usr/bin/curl \
+    -sS \
+    --connect-timeout 20 \
+    --max-time 60 \
+    -o /dev/null \
+    -w '%{http_code}' \
+    "$LINK" \
+    2&gt;"$TMP/check-error"
+) || CHECK_CODE="000"
+
+if [ "$CHECK_CODE" != "200" ]; then
+
+  check_error=$(
+    /bin/cat "$TMP/check-error" 2&gt;/dev/null || true
+  )
+
+  if [ -n "$check_error" ]; then
+    log "Final link curl error: $check_error"
+  fi
+
+  fail "Upload finished, but the share link did not open (HTTP $CHECK_CODE)."
+fi
+
+log "Final share page returned HTTP 200"
+
+# -------------------------------------------------------------------
+# Done
+# -------------------------------------------------------------------
+
+if [ "$LIVE" = "1" ]; then
+  # The link was copied at the start; don't overwrite whatever you copied since.
+  DONE_MSG="All uploads complete."
+else
+  if copy_link; then
+    DONE_MSG="The link has been copied to your clipboard."
+  else
+    DONE_MSG="The link was created, but copying to the clipboard failed."
+  fi
+fi
+
+echo "$LINK"
+
+log "SUCCESS"
+log "============================================================"
+
+notify "All $COUNT file(s) uploaded"
+
+alert \
+  "Share link — Complete" \
+  "$DONE_MSG
+
+$LINK"
+
+exit 0</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>1</integer>
+					<key>shell</key>
+					<string>/bin/bash</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>EC1ADB0E-B75B-4C44-B7F4-43B4FD899F47</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+					<string>Unix</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>B3F9357B-30EE-4EBC-A2D8-127962F2B3E7</string>
+				<key>UUID</key>
+				<string>68821F35-9860-4079-BBF4-CD51D2294BB2</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<integer>1</integer>
+				<key>location</key>
+				<string>398.000000:305.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleIDsByPath</key>
+		<dict/>
+		<key>applicationPaths</key>
+		<array/>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>15</integer>
+		<key>processesInput</key>
+		<false/>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<false/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>

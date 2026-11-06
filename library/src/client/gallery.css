@@ -1,0 +1,2464 @@
+:root{
+  --bg:#1c1c1e;
+  --panel:#2c2c2e;
+  --mut:#98989d;
+  --blue:#0a84ff;
+  --r:10px;
+  --gap:3px;
+  --info-h:92px
+}
+
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent
+}
+
+[hidden]{
+  display:none!important
+}
+
+html{
+  background:var(--bg);
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%
+}
+
+body{
+  margin:0;
+  color:#fff;
+  font:15px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased
+}
+
+a,
+a:link,
+a:visited {
+  color: #fff !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease;
+}
+
+a:link:hover,
+a:visited:hover,
+a:link:active,
+a:visited:active,
+a:hover,
+a:active {
+  color: var(--blue) !important;
+}
+
+button{
+  font:inherit;
+  color:inherit;
+  background:none;
+  border:0;
+  padding:0;
+  cursor:pointer
+}
+
+button:focus-visible{
+  outline:2px solid var(--blue);
+  outline-offset:2px
+}
+
+main{
+  max-width:860px;
+  margin:0 auto
+}
+
+.bar{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  height:calc(48px + env(safe-area-inset-top));
+  padding:env(safe-area-inset-top) 16px 0
+}
+
+.lnk{
+  color:var(--blue);
+  font-size:17px;
+  padding:7px 16px;
+  border-radius:99px
+}
+
+.hero{
+  position:relative;
+  height:calc(clamp(200px,54vw,340px) + var(--info-h));
+  background:#000;
+  overflow:hidden;
+  cursor:pointer;
+  border-radius:var(--r);
+  box-shadow: inset 0 .5px 0 rgba(255, 255, 255, .45);
+}
+.hero:not([hidden]) + .info{
+  position:relative;
+  z-index:1;
+  margin-top:calc(var(--info-h) * -1)
+}
+
+.hero img.art,
+.hero .doc{
+  padding-bottom:var(--info-h)
+}
+
+.hero img,
+.hero video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block
+}
+
+#hdate{
+  position:absolute;
+  left:0;
+  top:0;
+  padding:6px 12px;
+  border-bottom-right-radius:var(--r);
+  background:rgba(0,0,0,.55);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+  font-size:20px;
+  font-weight:700
+}
+
+.hero img.art{
+  object-fit:contain
+}
+
+.info{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:var(--info-h);
+  padding:14px 16px;
+  background:var(--panel);
+  border-bottom-left-radius:var(--r);
+  border-bottom-right-radius:var(--r)
+}
+
+.info b{
+  display:block;
+  font-size:17px;
+  font-weight:600;
+  margin-bottom:2px
+}
+
+.mut{
+  color:var(--mut)
+}
+
+.pill{
+  background:var(--blue);
+  color:#fff;
+  font-size:17px;
+  font-weight:600;
+  padding:6px 16px;
+  border-radius:99px;
+  white-space:nowrap
+}
+
+.pill:active{
+  opacity:.7
+}
+
+.acts{
+  display:flex;
+  gap:8px;
+  flex-shrink:0
+}
+
+@media (max-width:400px){
+  .acts .pill{
+    font-size:15px;
+    padding:6px 11px
+  }
+}
+
+/* a one-line warning, shown only when something needs saying */
+.note{
+  margin:10px 16px 0;
+  color:var(--mut);
+  font-size:13px
+}
+
+.note.bad{
+  color:#ff6961
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:var(--gap);
+  padding:var(--gap)
+}
+
+@media(min-width:620px){
+  .grid{
+    grid-template-columns:repeat(5,1fr)
+  }
+}
+
+.tile{
+  position:relative;
+  display:block;
+  width:100%;
+  aspect-ratio:1;
+  border-radius:var(--r);
+  overflow:hidden;
+  background:var(--panel)
+}
+
+.tile img,
+.tile video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  pointer-events:none
+}
+
+.tile.on img,
+.tile.on video{
+  opacity:.65
+}
+
+.dur{
+  position:absolute;
+  right:0;
+  bottom:0;
+  padding:5px 9px;
+  border-top-left-radius:var(--r);
+  background:rgba(0,0,0,.55);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+  font-size:15px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums
+}
+
+.chk{
+  position:absolute;
+  left:7px;
+  bottom:7px;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  border:2px solid #fff;
+  background:rgba(0,0,0,.25);
+  display:none
+}
+
+.selecting .chk{
+  display:block
+}
+
+.tile.on .chk{
+  background:var(--blue);
+  border-color:var(--blue)
+}
+
+.tile.on .chk::after{
+  content:"";
+  position:absolute;
+  left:7px;
+  top:2px;
+  width:5px;
+  height:11px;
+  border:solid #fff;
+  border-width:0 2px 2px 0;
+  transform:rotate(45deg)
+}
+
+.doc{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:10px;
+  color:var(--blue)
+}
+
+.doc small{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:11px;
+  color:#fff
+}
+
+.doc.mini{
+  position:static;
+  display:block;
+  width:100%;
+  height:100%;
+  padding:0;
+  background:var(--panel)
+}
+
+.fi{
+  position:relative;
+  display:block;
+  width:34px;
+  height:42px
+}
+
+.fi svg{
+  width:100%;
+  height:100%;
+  display:block
+}
+
+.fi i{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:7px;
+  text-align:center;
+  font-size:8px;
+  font-weight:700;
+  font-style:normal;
+  line-height:1;
+  color:#fff
+}
+
+.foot{
+  margin:0;
+  padding:56px 16px calc(64px + env(safe-area-inset-bottom));
+  text-align:center;
+  font-size:17px;
+  font-weight:600;
+}
+.foot.sel{
+  position:sticky;
+  bottom:calc(12px + env(safe-area-inset-bottom));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin:0 12px 12px;
+  padding:12px 14px 12px 18px;
+  border-radius:14px;
+  background:var(--panel);
+  color:#fff;
+  text-align:left
+}
+
+#del,#del:hover,#del:active,#del:focus-visible{
+  background:var(--panel);
+  color:#fff;
+  opacity:1
+}
+
+#del{width:36px;height:36px;display:grid;place-items:center;border-radius:50%}
+#mv{margin-left:auto;margin-right:6px;padding:7px 10px}
+#del svg{width:22px;height:22px}
+
+#lb{
+  --tb:calc(56px + env(safe-area-inset-top));
+  --bb:calc(66px + env(safe-area-inset-bottom));
+  /* the bottom bar's real height (thumbnails and the comment label), measured by gallery.js (--botH): the two bars
+     stand right above it on every screen (SPEC 55); the figure after it is only the first paint's guess */
+  --bb0:var(--botH,calc(96px + env(safe-area-inset-bottom)));
+  /* the control line: how far above the bottom bar the two strokes are centred. The home bar
+     (time, horizontal) runs along it and the sound stroke (vertical) stands across it, so the
+     two read as one pair of axes. It used to sit 88px up, to leave room for a scrubber that is
+     gone; 40px leaves exactly the room the speed value needs under the stroke. */
+  --cl:40px;
+  position:fixed;
+  inset:0;
+  z-index:10;
+  display:flex;
+  flex-direction:column;
+  background:#000;
+  animation:in .18s ease
+}
+
+@keyframes in{
+  from{opacity:0}
+}
+
+.top{
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  z-index:6;
+  height:var(--tb);
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left))
+}
+
+.ttl{
+  grid-column:2;
+  text-align:center;
+  line-height:1.25
+}
+
+.ttl b{
+  display:block;
+  font-size:15px;
+  font-weight:560;
+  line-height:1.2;
+  letter-spacing:-.016em
+}
+
+.ttl span{
+  display:block;
+  font-size:12px;
+  font-weight:400;
+  line-height:1.25;
+  letter-spacing:.01em;
+  color:rgba(235,235,245,.62);
+  font-variant-numeric:tabular-nums
+}
+
+.stage-container{
+  position:absolute;
+  inset:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column
+}
+
+.back{
+  grid-column:1;
+  justify-self:start;
+  display:inline-flex;
+  align-items:center;
+  gap:1px;
+  height:38px;
+  padding:0 16px 0 10px;
+  border-radius:99px;
+  color:var(--blue);
+  font-size:17px;
+  transition:opacity .3s
+}
+
+.back svg{
+  width:20px;
+  height:20px
+}
+
+#stage{
+  position:relative;
+  flex:1;
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+#stage>img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  padding:var(--tb) 0 var(--bb);
+  box-sizing:border-box;
+  object-fit:contain
+}
+
+.vw{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:var(--tb) 0 var(--bb)
+}
+
+/* The player is an instrument, not a page: nothing on it is text to select. On iPhone and iPad a
+   finger held still for about 0.8 s (iPhone) or 1 s (iPad) otherwise starts a text selection
+   (the blue handles, Copy · Look Up · Translate, the loupe), whatever control it is on. */
+.vw,
+.aw{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent
+}
+
+.vw video{
+  display:block;
+  width:100%;
+  height:auto;
+  max-height:100%;
+  object-fit:contain;
+  background:#000
+}
+
+.aw{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  background:#000;
+  overflow:hidden
+}
+
+.aw img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  padding:var(--tb) 0 var(--bb);
+  box-sizing:border-box;
+  object-fit:contain;
+  display:block
+}
+
+.aw audio{
+  display:none
+}
+
+/* the player's media sits in a shadow root (gallery.js shelter): the box itself lays nothing out */
+.mbox{
+  display:contents
+}
+
+.dv{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding:0 24px;
+  text-align:center;
+  color:var(--blue)
+}
+
+.dv .fi{
+  width:84px;
+  height:105px
+}
+
+.dv .fi i{
+  font-size:18px;
+  bottom:18px
+}
+
+.dv b{
+  font-weight:500;
+  color:#fff;
+  word-break:break-word
+}
+
+.p-ctrl{
+  position:absolute;
+  bottom:calc(var(--bb0) + var(--cl) - 32px); /* the sound stroke's 64px target, centred on the control line */
+  left:auto;
+  right:max(20px,calc(env(safe-area-inset-right) + 12px));
+  display:flex;
+  align-items:center;
+  gap:10px;
+  z-index:5;
+  transition:opacity .3s
+}
+
+/* ---- PiP lives in the top bar, so the bottom stays clean ---- */
+
+.topr{
+  grid-column:3;
+  justify-self:end;
+  display:flex;
+  align-items:center;
+  gap:8px
+}
+
+.p-pip{
+  flex:none;
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:38px;
+  border-radius:19px;
+  color:#fff;
+  transition:transform .15s ease
+}
+
+.p-pip svg{
+  width:20px;
+  height:20px
+}
+
+.p-pip:active,
+.p-center-btn:active,
+.p-center-play:active{
+  transform:scale(.93)
+}
+
+
+.p-center-controls{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  align-items:center;
+  gap:22px;
+  z-index:6;
+  transition:opacity .3s
+}
+
+.p-center-btn{
+  display:grid;
+  place-items:center;
+  width:52px;
+  height:52px;
+  border-radius:26px;
+  color:#fff;
+  transition:transform .15s ease
+}
+
+.p-center-btn svg{
+  width:26px;
+  height:26px
+}
+
+.p-center-play{
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:76px;
+  height:76px;
+  border-radius:38px;
+  color:#fff;
+  transition:transform .15s ease
+}
+
+.p-center-play svg{
+  position:absolute;
+  width:32px;
+  height:32px;
+  transition:opacity .18s ease,transform .18s ease
+}
+
+.p-center-play .pa{
+  opacity:0;
+  transform:scale(.6)
+}
+
+.p-center-play.playing .pl{
+  opacity:0;
+  transform:scale(.6)
+}
+
+.p-center-play.playing .pa{
+  opacity:1;
+  transform:none
+}
+
+.p-toast{
+  position:absolute;
+  top:calc(var(--tb) + 12px);
+  left:50%;
+  transform:translateX(-50%);
+  padding:8px 16px;
+  border-radius:99px;
+  font-size:15px;
+  font-weight:600;
+  white-space:nowrap;
+  opacity:0;
+  transition:opacity .25s ease;
+  pointer-events:none;
+  z-index:7
+}
+
+.p-toast.on{
+  opacity:1
+}
+
+
+.nv{
+  position:absolute;
+  top:50%;
+  width:40px;
+  height:40px;
+  margin-top:-20px;
+  border-radius:50%;
+  background:rgba(255,255,255,.12);
+  display:grid;
+  place-items:center;
+  z-index:2
+}
+
+.nv svg{
+  width:22px;
+  height:22px
+}
+
+.pv{
+  left:max(12px,env(safe-area-inset-left))
+}
+
+.nx{
+  right:max(12px,env(safe-area-inset-right))
+}
+
+@media(pointer:coarse){
+  .nv{
+    display:none
+  }
+}
+
+#meta{
+  position:absolute;
+  left:max(12px,env(safe-area-inset-left));
+  bottom:calc(var(--bb) + 12px);
+  max-width:min(420px,calc(100% - 24px));
+  padding:12px 16px;
+  border-radius:14px;
+  background:var(--panel);
+  z-index:7
+}
+
+#meta b{
+  display:block;
+  margin-bottom:2px;
+  word-break:break-all
+}
+
+#meta span{
+  color:var(--mut)
+}
+
+.bot{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:6;
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) 44px;
+  grid-template-areas:". strp ." "inf cm sav";
+  align-items:center;
+  column-gap:8px;
+  row-gap:0;
+  padding:10px max(12px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))
+}
+
+#info{grid-area:inf}
+#strip{grid-area:strp}
+#vshare{grid-area:sav}
+#cm{grid-area:cm}
+
+.ic{
+  width:44px;
+  height:44px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:var(--blue)
+}
+
+.ic svg{
+  width:26px;
+  height:26px
+}
+
+.ic.busy{
+  pointer-events:none;
+  animation:baking 1.2s ease-in-out infinite alternate
+}
+
+@keyframes baking{
+  to{opacity:.35}
+}
+
+#strip{
+  position:relative;
+  display:flex;
+  gap:6px;
+  overflow-x:auto;
+  padding:4px 0;
+  scrollbar-width:none
+}
+
+#strip::-webkit-scrollbar{
+  display:none
+}
+
+#strip::before,
+#strip::after{
+  content:"";
+  margin:auto
+}
+
+.th{
+  flex:none;
+  width:20px;
+  height:30px;
+  border-radius:4px;
+  overflow:hidden;
+  background:var(--panel);
+  transition:width .2s
+}
+
+.th.on{
+  width:30px
+}
+
+.th img,
+.th video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  pointer-events:none
+}
+
+@media(prefers-reduced-motion:reduce){
+  #lb{
+    animation:none
+  }
+
+  .th{
+    transition:none
+  }
+}
+/* ---- a phone on its side (or any short window) ----
+   The page is only about 340 to 430px tall. The viewer used to give the top and bottom bars the
+   same fixed 56 + 66px it uses in portrait: in landscape that is more than a third of the height,
+   and it left the media a small strip in the middle. So, in a short window the bars shrink to what
+   their contents need, the media gets the room, and everything that sits on the media is placed
+   against what is left:
+     centre controls  smaller, and centred in the space ABOVE the home bar (not the middle of the
+                      screen, where they would lie on top of it)
+     home bar         a shorter touch zone, just above the EQ button's line
+     EQ               still three vertical sliders, a little shorter, as tall as the room allows
+   (The edge controls also keep clear of the notch now: see the safe-area padding on the bars.) */
+@media (max-height:560px){
+  #lb{
+    --tb:calc(44px + env(safe-area-inset-top));
+    --bb:calc(56px + env(safe-area-inset-bottom));
+    --bb0:var(--botH,calc(56px + env(safe-area-inset-bottom)));
+    --cl:36px
+  }
+
+  /* one row instead of two: Info · thumbnails · comment · Save. The bar drops from about
+     114pt to about 77pt and the media gets that height back. */
+  .bot{
+    grid-template-columns:44px minmax(0,1fr) auto 44px;
+    grid-template-areas:"inf strp cm sav";
+    column-gap:10px;
+    padding-top:6px;
+    padding-bottom:calc(6px + env(safe-area-inset-bottom))
+  }
+
+  .bot #cm .cmlabel{
+    min-width:0
+  }
+
+  .p-hb{
+    --hbh:30px;
+    --hbs:780px
+  }
+
+  .p-center-controls{
+    top:calc((var(--tb) + 100% - var(--bb) - 100px) / 2);
+    gap:16px
+  }
+
+  .p-center-btn{
+    width:44px;
+    height:44px;
+    border-radius:22px
+  }
+
+  .p-center-btn svg{
+    width:22px;
+    height:22px
+  }
+
+  .p-center-play{
+    width:60px;
+    height:60px;
+    border-radius:30px
+  }
+
+  .p-center-play svg{
+    width:26px;
+    height:26px
+  }
+
+  /* while the home bar is open the centre controls step aside altogether */
+  .vw.tools .p-center-controls,
+  .aw.tools .p-center-controls{
+    opacity:0 !important;
+    pointer-events:none
+  }
+}
+
+/* phones: the centre controls about 12% smaller, so the EQ panel fits beneath them */
+@media (max-width:600px){
+  .p-center-controls{
+    gap:20px
+  }
+
+  .p-center-btn{
+    width:46px;
+    height:46px;
+    border-radius:23px
+  }
+
+  .p-center-btn svg{
+    width:23px;
+    height:23px
+  }
+
+  .p-center-play{
+    width:66px;
+    height:66px;
+    border-radius:33px
+  }
+
+  .p-center-play svg{
+    width:28px;
+    height:28px
+  }
+}
+
+/* ---------- PDF viewer ---------- */
+
+.pdfw{
+  position:absolute;
+  inset:0
+}
+
+.pdfv{
+  position:absolute;
+  inset:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:manipulation;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.22) transparent;
+  cursor:zoom-in;
+  outline:none
+}
+
+.pdfv.z{
+  cursor:zoom-out
+}
+
+.pdfd{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin:0 auto;
+  padding:calc(var(--tb) + 14px) 10px calc(var(--bb) + 14px);
+  width:calc(min(100%,820px) * var(--z,1))
+}
+
+.pdfp{
+  flex:none;
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  border-radius:4px;
+  background:#fff;
+  box-shadow:
+    0 0 0 .5px rgba(255,255,255,.08),
+    0 2px 8px rgba(0,0,0,.35),
+    0 14px 36px rgba(0,0,0,.28)
+}
+
+.pdfp canvas{
+  display:block;
+  width:100%;
+  height:100%;
+  opacity:0;
+  transition:opacity .25s ease
+}
+
+.pdfp canvas.ok{
+  opacity:1
+}
+
+.pg{
+  position:absolute;
+  left:50%;
+  bottom:calc(var(--bb) + 14px);
+  transform:translateX(-50%);
+  padding:7px 14px;
+  border-radius:99px;
+  background:rgba(28,28,30,.6);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.15);
+  font-size:13px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  opacity:0;
+  transition:opacity .25s ease;
+  pointer-events:none
+}
+
+.pg.on{
+  opacity:1
+}
+
+.spin{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:28px;
+  height:28px;
+  margin:-14px 0 0 -14px;
+  border-radius:50%;
+  border:2.5px solid rgba(255,255,255,.18);
+  border-top-color:#fff;
+  animation:sp .8s linear infinite
+}
+
+@keyframes sp{
+  to{transform:rotate(360deg)}
+}
+
+.tile img.pdfimg,
+.th img.pdfimg{
+  object-position:50% 0
+}
+
+@media(prefers-reduced-motion:reduce){
+  .pdfp canvas,
+  .pg{
+    transition:none
+  }
+}
+
+/* ---------- live uploads: placeholder tiles + viewer message ---------- */
+
+.tile.pending{
+  cursor:pointer;
+  background:#2a2a2c
+}
+
+.tile .shim{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.06) 50%,transparent 65%);
+  background-size:250% 100%;
+  animation:shim 2.4s linear infinite
+}
+
+@keyframes shim{
+  from{background-position:150% 0}
+  to{background-position:-100% 0}
+}
+
+.tile.failed .shim,
+.tile.stalled .shim{
+  animation:none;
+  opacity:0
+}
+
+.ring{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:46px;
+  height:46px;
+  margin:-23px 0 0 -23px;
+  display:grid;
+  place-items:center;
+  color:rgba(255,255,255,.92)
+}
+
+.rsvg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  transform:rotate(-90deg)
+}
+
+.rsvg circle{
+  fill:none;
+  stroke-width:2.5;
+  stroke-linecap:round
+}
+
+.rt{
+  stroke:rgba(255,255,255,.14)
+}
+
+.rp{
+  stroke:#fff;
+  transition:stroke-dashoffset .6s ease
+}
+
+.ring.indet .rsvg{
+  animation:sp 1.1s linear infinite
+}
+
+.ring.indet .rp{
+  stroke-dasharray:28 86!important;
+  stroke-dashoffset:0!important
+}
+
+.gly{
+  position:relative;
+  width:20px;
+  height:20px
+}
+
+.tile.stalled .ring,
+.tile.failed .ring{
+  color:rgba(255,255,255,.5)
+}
+
+.tile.failed .rp{
+  stroke:#ff453a
+}
+
+.tile.stalled .rp{
+  stroke:rgba(255,255,255,.45)
+}
+
+.appear{
+  animation:appear .55s cubic-bezier(.2,.8,.2,1)
+}
+
+@keyframes appear{
+  from{opacity:0;transform:scale(.94)}
+}
+
+.th.pending{
+  position:relative;
+  background:var(--panel)
+}
+
+.th.pending::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.08) 50%,transparent 65%);
+  background-size:250% 100%;
+  animation:shim 2.4s linear infinite
+}
+
+/* iCloud-style message when you open something that is still uploading */
+
+.pw{
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  padding:calc(var(--tb) + 10vh) 28px 0;
+  text-align:center
+}
+
+.pw b{
+  font-size:17px;
+  font-weight:600
+}
+
+.pw span{
+  font-size:17px;
+  font-weight:400
+}
+
+.pw small{
+  margin-top:14px;
+  font-size:13px;
+  color:rgba(235,235,245,.55);
+  font-variant-numeric:tabular-nums
+}
+
+/* ---------- Liquid glass ---------- */
+
+:root{
+  --glass-blur:blur(22px) saturate(180%) brightness(.68);
+  --glass-fill:linear-gradient(180deg,rgba(255,255,255,.26),rgba(255,255,255,.10));
+  --glass-edge:
+    inset 0 .5px 0 rgba(255,255,255,.45),
+    inset 0 -.5px 0 rgba(255,255,255,.10),
+    inset 0 0 0 .5px rgba(255,255,255,.22),
+    0 8px 22px rgba(0,0,0,.28);
+
+  /* the specular sheen: light catches the top-left of every pane, like the real thing */
+  --sheen:radial-gradient(140% 170% at 0% 0%,rgba(255,255,255,.17) 0%,rgba(255,255,255,.05) 42%,rgba(255,255,255,0) 64%)
+}
+
+.back,
+.p-pip,
+.p-center-btn,
+.p-center-play,
+.nv,
+.ic,
+.pg{
+  background:var(--glass-fill),rgba(18,18,20,.36);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
+  border:0;
+  box-shadow:var(--glass-edge)
+}
+
+.p-toast,
+.pg{
+  text-shadow:0 1px 2px rgba(0,0,0,.4)
+}
+
+.pill{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.02)),
+    rgba(10,132,255,.78);
+  -webkit-backdrop-filter:var(--glass-blur);
+  backdrop-filter:var(--glass-blur);
+  box-shadow:
+    inset 0 .5px 0 rgba(255,255,255,.55),
+    inset 0 -.5px 0 rgba(255,255,255,.12),
+    inset 0 0 0 .5px rgba(255,255,255,.20),
+    0 6px 16px rgba(10,132,255,.25)
+}
+
+.pill[disabled]{
+  opacity:.45;
+  pointer-events:none
+}
+
+#up{opacity:.5;transition:opacity .2s,box-shadow .2s}
+#dl{opacity:.45;transition:opacity .2s,box-shadow .2s}
+
+@media(hover:hover){
+  #up:hover{
+    opacity:1;
+    box-shadow:inset 0 .5px 0 rgba(255,255,255,.55),0 0 0 1px rgba(10,132,255,.9),0 0 16px 3px rgba(10,132,255,.8)
+  }
+}
+
+#up:active{opacity:1}
+
+#up,
+#dl{
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:136px;
+  height:34px;
+  padding:0;
+  font-variant-numeric:tabular-nums
+}
+
+@media(max-width:400px){
+  #up,
+  #dl{width:108px}
+}
+
+#dl.glow{
+  opacity:1;
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.55),0 0 0 1px rgba(10,132,255,.9),0 0 16px 3px rgba(10,132,255,.8)
+}
+
+/* ---------- Smoked glass for anything that carries text ----------
+   Clear glass lets a white thumbnail wash out white type. These surfaces dim
+   the backdrop first (brightness) and add a dark tint, so even pure white
+   behind them still leaves white text above 4.5:1. */
+
+:root{
+  --ink-blur:blur(24px) saturate(180%) brightness(.62);
+  --ink-edge:
+    inset 0 .5px 0 rgba(255,255,255,.38),
+    inset 0 0 0 .5px rgba(255,255,255,.12)
+}
+
+/* viewer chrome sits on the media as a dark scrim, not a gray bar (README §1.1, §5.8) */
+.bot{
+  background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0))
+}
+
+.foot.sel{
+  background:var(--panel);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  border-radius:14px;
+  font:500 15px -apple-system,BlinkMacSystemFont,sans-serif
+}
+
+.foot.sel{
+  min-height:48px;
+  padding:0 14px 0 18px
+}
+
+.top .back,
+.bot .ic{
+  box-shadow:
+    inset 0 .5px 0 rgba(255,255,255,.45),
+    inset 0 -.5px 0 rgba(255,255,255,.10),
+    inset 0 0 0 .5px rgba(255,255,255,.22)
+}
+
+.top{
+  background:linear-gradient(180deg,rgba(0,0,0,.6),rgba(0,0,0,0))
+}
+
+/* every floating control surface. (Neither the home bar nor the sound stroke is on this list: they have no surface.) */
+.p-toast,
+.pg{
+  background:
+    var(--sheen),
+    linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.02)),
+    rgba(20,20,22,.58);
+  -webkit-backdrop-filter:var(--ink-blur);
+  backdrop-filter:var(--ink-blur);
+  box-shadow:var(--glass-edge)
+}
+
+.info{
+  background:rgba(20,20,22,.40);
+  -webkit-backdrop-filter:var(--ink-blur);
+  backdrop-filter:var(--ink-blur);
+  box-shadow:var(--ink-edge)
+}
+
+#hdate,
+.dur{
+  background:rgba(18,18,20,.34);
+  -webkit-backdrop-filter:blur(16px) saturate(180%) brightness(.62);
+  backdrop-filter:blur(16px) saturate(180%) brightness(.62);
+  box-shadow:var(--ink-edge)
+}
+
+@media(prefers-reduced-transparency:reduce){
+  .top,
+  .bot,
+  .info,
+  #hdate,
+  .dur{
+    background:#2c2c2e;
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .tile .shim,
+  .th.pending::after,
+  .appear,
+  .pdfp canvas,
+  .pg,
+  .p-center-play svg,
+  .p-toast{
+    animation:none;
+    transition:none
+  }
+}
+
+/* ---------- the viewer: plain controls, no glass badges; and the owner's note ---------- */
+
+.top .back {
+  background: transparent;
+  color: var(--blue);
+  height: 36px;
+  padding: 0 16px 0 8px;
+  border-radius: 10px;
+  font: 500 15px -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  box-shadow:none;
+}
+
+.bot .ic {
+  background: none;
+  color: var(--blue);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  box-shadow:none;
+}
+
+body.lbopen main{
+  visibility:hidden
+}
+
+/* ---------- comments (README §3, §4.4) ----------
+   COLLAPSED: #cm is one blue label in the bottom bar.
+   EXPANDED (body.comments-open): the media box shrinks to the top (--mh tall), the bottom bar
+   steps aside, and #thread fills the rest: Hide Comments, the comments oldest first, then the
+   field directly under the newest one. */
+
+#lb{--mh:min(100vw,50dvh)}
+
+#cm{
+  min-width:0;
+  font:400 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif
+}
+
+#cm .cmlabel{
+  display:block;
+  margin:0 auto;
+  max-width:100%;
+  min-height:44px;
+  padding:0 12px;
+  border:0;
+  background:none;
+  color:var(--blue);
+  font:inherit;
+  text-align:center;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  -webkit-tap-highlight-color:transparent
+}
+
+#cm .cmlabel:active{opacity:.6}
+#cm .cmlabel:not(.has){color:#fff}
+/* item 18: "Add a comment…" and "Share" side by side; a horizontal swipe slides between them */
+#cm{overflow:hidden}
+#cm .cmtrack{display:flex;width:200%;transition:transform .3s ease;touch-action:pan-y}
+#cm .cmtrack>.cmlabel{flex:0 0 50%}
+#cm .cmtrack.on{transform:translateX(-50%)}
+#cm .cmlabel.cmshare{color:#fff}
+.cmmenu{position:fixed;top:auto;right:auto;z-index:1000}
+
+#thread{
+  position:absolute;
+  left:0;
+  right:0;
+  top:var(--mh);
+  bottom:0;
+  z-index:5;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  background:#000;
+  padding:0 max(0px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0px,env(safe-area-inset-left));
+  font:400 17px/22px -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+  animation:thread-in .28s cubic-bezier(.2,.8,.2,1)
+}
+
+@keyframes thread-in{
+  from{transform:translateY(40px);opacity:0}
+}
+
+#thread .tact{
+  display:flex;
+  justify-content:flex-end;
+  gap:20px;
+  align-items:center;
+  height:44px;
+  padding:0 16px;
+  border-bottom:1px solid #2a2a2c
+}
+
+#thread .tact .tlike{margin-right:auto}
+#thread .tliked{margin:0;padding:12px 16px;font-size:13px;color:#fff;border-bottom:1px solid #2a2a2c}
+
+#thread .lnk,
+#thread .cbtns button{
+  border:0;
+  background:none;
+  padding:0;
+  color:var(--blue);
+  font:inherit;
+  min-height:44px;
+  -webkit-tap-highlight-color:transparent
+}
+
+#thread .lnk:disabled,
+#thread .cbtns button:disabled{opacity:.4}
+
+#thread .crow{
+  padding:8px 20px 8px 16px;
+  border-bottom:1px solid #2a2a2c
+}
+
+#thread .ctext{
+  margin:0;
+  color:#fff;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere
+}
+
+#thread .cmeta{
+  margin:2px 0 0;
+  font-size:13px;
+  line-height:18px;
+  color:#939297;
+  font-variant-numeric:tabular-nums
+}
+
+#thread .cmeta b{color:#fff;font-weight:600}
+/* the flag after a name: small, squared off, a hairline edge, like a system glyph (notes 47) */
+#thread .cmeta .cflag{display:inline-block;margin-left:5px;font-size:11px;line-height:1;vertical-align:1px;border-radius:2px;overflow:hidden;box-shadow:0 0 0 .5px rgba(255,255,255,.18);filter:saturate(.9)}
+#thread .cname{display:block;width:100%;box-sizing:border-box;background:none;border:0;border-bottom:1px solid #2a2a2c;color:#fff;font:inherit;font-size:15px;padding:8px 0;margin-bottom:6px;outline:none}
+#thread .cname::placeholder{color:#939297}
+#thread .cname.need::placeholder{color:#0a84ff}
+#thread .cops{float:right;display:inline-flex;gap:16px}
+#thread .cops .lnk{min-height:18px;font-size:13px;padding:13px 0;margin:-13px 0}
+#thread .crow textarea.cedit{border-bottom:1px solid #2a2a2c}
+
+#thread .cfield{padding:0 16px 24px}
+
+#thread textarea{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  min-height:44px;
+  margin:0;
+  padding:11px 0;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#fff;
+  caret-color:var(--blue);
+  font:inherit;
+  font-size:17px; /* 16px or more: iOS Safari doesn't zoom the page on focus */
+  resize:none;
+  overflow:hidden
+}
+
+#thread textarea::placeholder{color:var(--blue);opacity:1}
+
+#thread .cbtns{
+  display:flex;
+  justify-content:flex-end;
+  gap:24px
+}
+
+#thread .cbtns[hidden]{display:none}
+
+/* expanded geometry: the media box is the top --mh; the bars inside it re-anchor to it */
+body.comments-open .stage-container{
+  bottom:auto;
+  height:var(--mh);
+  transition:height .28s cubic-bezier(.2,.8,.2,1)
+}
+
+body.comments-open #stage>img{
+  padding:var(--tb) 0 0;
+  object-fit:cover;
+  object-position:top
+}
+
+body.comments-open .vw,
+body.comments-open .aw img{padding:var(--tb) 0 0}
+
+body.comments-open #lb{--bb:0px;--bb0:0px}
+
+body.comments-open .bot{
+  opacity:0;
+  pointer-events:none
+}
+
+body.comments-open #prev,
+body.comments-open #next{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  #thread{animation:none}
+  body.comments-open .stage-container{transition:none}
+}
+
+/* landscape phones: media left, thread right */
+@media (orientation:landscape) and (max-height:560px){
+  body.comments-open .stage-container{height:auto;bottom:0;right:45%}
+  #thread{top:var(--tb);left:55%}
+}
+
+.crbar {
+  background: rgba(20, 20, 22, .40);
+  -webkit-backdrop-filter: var(--ink-blur);
+  backdrop-filter: var(--ink-blur);
+  border-top-left-radius: var(--r);
+  border-top-right-radius: var(--r);
+  box-shadow: none;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  font: 500 15px -apple-system, BlinkMacSystemFont, sans-serif;
+  color: rgba(255, 255, 255, .55);
+  overflow-wrap: anywhere;
+}
+
+/* crumbs as tabs: the current folder is the raised one */
+.crbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 0;
+}
+
+.crbar a {
+  color: inherit;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 8px 8px 0 0;
+  background: rgba(255, 255, 255, .06);
+}
+
+.crbar a:hover {
+  color: #fff;
+}
+
+.crbar a:last-child {
+  color: #fff;
+  font-weight: 600;
+  background: #000;
+}
+
+.crbar i {
+  display: none;
+}
+
+.bar {
+  justify-content: space-between;
+}
+
+.barr {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* the "… Select" row continues the same glass pane, flush with the hero below */
+.crbar + .bar {
+  height: 48px;
+  padding-top: 0;
+  background: rgba(20, 20, 22, .40);
+  -webkit-backdrop-filter: var(--ink-blur);
+  backdrop-filter: var(--ink-blur);
+  box-shadow: none;
+}
+/* the hero's top corners square off where the header meets it */
+.crbar ~ .hero {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.bar {
+  justify-content: space-between;
+}
+
+/* ================= "…" menu, invite sheet, upload tile ================= */
+
+/* keep the header row (and the menu hanging from it) above the hero */
+.bar{position:relative;z-index:5}
+.barr{position:relative;gap:4px}
+
+/* the "…" button */
+.mbtn{
+  display:grid;place-items:center;
+  width:34px;height:34px;border-radius:50%;
+  color:#fff;
+  background:transparent;
+  transition:background .15s ease
+}
+.mbtn svg{width:20px;height:20px}
+.mbtn:hover{background:transparent;color:var(--blue)}
+.mbtn:active,.mbtn[aria-expanded="true"]{background:rgba(10,132,255,.28);color:var(--blue)}
+
+/* the menu: opens under the button, right edge level with Select.
+   Near-opaque on purpose: the header row already has a backdrop blur, and a blur
+   nested inside it can't see the page behind it. */
+.mnu{
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  z-index:30;
+  width:min(300px,calc(100vw - 24px));
+  padding:0 0 6px;
+  overflow:hidden;
+  border-radius:22px;
+  background:rgba(44,44,46,.97);
+  box-shadow:
+    inset 0 .5px 0 rgba(255,255,255,.22),
+    inset 0 0 0 .5px rgba(255,255,255,.12),
+    0 18px 48px rgba(0,0,0,.5);
+  transform-origin:100% 0;
+  animation:mnuin .24s cubic-bezier(.2,.9,.25,1.06)
+}
+@keyframes mnuin{from{opacity:0;transform:scale(.9)}}
+
+.mhd{padding:16px 18px 12px}
+.mhd b{display:block;font-size:17px;font-weight:600}
+.mhd span{display:block;margin-top:2px;font-size:14px;color:var(--mut);font-variant-numeric:tabular-nums}
+
+.msep{height:.5px;margin:6px 18px;background:rgba(255,255,255,.14)}
+
+.mi{
+  display:flex;align-items:center;gap:14px;
+  width:100%;min-height:48px;padding:0 18px;
+  color:var(--blue);font-size:17px;text-align:left;text-decoration:none
+}
+.mi svg{
+  flex:none;width:22px;height:22px;
+  fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round
+}
+.mi:hover{background:rgba(255,255,255,.07)}
+.mi:active{background:rgba(255,255,255,.14)}
+.mi:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.mi .n{margin-left:auto;color:var(--mut);font-variant-numeric:tabular-nums}
+.mi.danger{color:var(--blue)}
+
+/* ---- Invite sheet: bottom sheet on phones, centred card on larger screens ---- */
+.inv{
+  position:fixed;inset:0;z-index:40;
+  display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.45);
+  color-scheme:dark;
+  animation:in .18s ease
+}
+.invc{
+  width:min(100%,520px);
+  max-height:86vh;overflow:auto;
+  padding:4px 0 calc(16px + env(safe-area-inset-bottom));
+  border-radius:22px 22px 0 0;
+  background:var(--panel);
+  animation:sheetup .3s cubic-bezier(.2,.9,.25,1.04)
+}
+@keyframes sheetup{from{transform:translateY(100%)}}
+@media(min-width:620px){
+  .inv{align-items:center}
+  .invc{border-radius:22px}
+}
+.invh{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px 18px}
+.invh b{font-size:17px;font-weight:600}
+
+.invf{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:6px 16px 14px}
+.invf input,.invf select{
+  height:44px;padding:0 14px;border:0;border-radius:12px;
+  background:rgba(255,255,255,.10);color:#fff;
+  font:inherit;font-size:17px;outline:none
+}
+.invf input:focus,.invf select:focus{box-shadow:0 0 0 2px var(--blue)}
+#invname{grid-column:1 / -1}
+.invf .pill{height:44px;border-radius:12px}
+
+.invl{list-style:none;margin:0;padding:0}
+.invr{display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:.5px solid rgba(255,255,255,.12)}
+.invw{flex:1;min-width:0}
+.invw b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invw small{display:block;margin-top:2px;font-size:13px;color:var(--mut)}
+.invb{padding:8px 10px;border-radius:10px;color:var(--blue);font-weight:600}
+.invb:active{background:rgba(255,255,255,.12)}
+.invb.rev{color:var(--blue);font-weight:400}
+.inve{margin:8px 18px;color:var(--mut);text-align:center}
+.mvcr{text-align:left;overflow-wrap:anywhere}
+.mvcr .invb{padding:4px 2px;font-weight:400}
+.invb.mvf{flex:1;text-align:left;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invf .pill:disabled{opacity:.4}
+.invn{margin:10px 18px 0;color:var(--mut);font-size:13px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* ---- small toast for "Link copied" etc. ---- */
+.mtoast{
+  position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top));
+  transform:translateX(-50%);z-index:50;
+  padding:9px 16px;border-radius:99px;
+  background:rgba(44,44,46,.96);font-weight:600;
+  opacity:0;pointer-events:none;transition:opacity .25s ease
+}
+.mtoast.on{opacity:1}
+
+/* ---- the blue "+" tile after the last media = upload button ---- */
+.tile.add{order:2147483647;background:var(--panel);color:var(--blue)}   /* order keeps it last even when new tiles are appended */
+.tile.add::before,
+.tile.add::after{
+  content:"";position:absolute;left:50%;top:50%;
+  background:currentColor;border-radius:2px;
+  transform:translate(-50%,-50%)
+}
+.tile.add::before{width:30px;height:4px}
+.tile.add::after{width:4px;height:30px}
+.tile.add:hover{background:#3a3a3c}
+.tile.add:active{background:#48484a}
+.tile.add:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.selecting .tile.add{display:none}
+
+/* ---- the old Upload pill goes away (kept in the DOM so your upload code still works) ---- */
+#up{display:none!important}
+
+@media(prefers-reduced-motion:reduce){
+  .mnu,.inv,.invc{animation:none}
+  .mtoast{transition:none}
+}
+.mtoast{
+  max-width:calc(100vw - 32px);
+  text-align:center;
+  white-space:normal
+}
+/* ---------- transcripts from Recense ---------- */
+.tx{
+  position:absolute;
+  left:50%;
+  top:calc(var(--tb) + 8px);
+  transform:translateX(-50%);
+  z-index:4;
+  width:min(92%,640px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  pointer-events:none
+}
+
+/* Learn mode: two places, one over the other; a phrase and its English share one slot */
+.txp{
+  pointer-events:auto;
+  box-sizing:border-box;
+  max-width:100%;
+  min-height:calc(2.6em + 12px);
+  padding:6px 12px;
+  border:0;
+  border-radius:12px;
+  background:rgba(0,0,0,.5);
+  color:#fff;
+  font:600 clamp(22px,3vw,30px)/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+  letter-spacing:.012em;
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  align-content:center;
+  column-gap:.3em;
+  text-align:center;
+  -webkit-tap-highlight-color:transparent
+}
+.txp[hidden]{display:none}
+/* row 30: a line in a script written without spaces (Chinese, Thai, Tibetan) has no gap between its phrases either;
+   letters that join (Arabic) are never spaced apart; a lit word's light reaches its marks above and below the line
+   (Devanagari, Tibetan stacks, Arabic dots), which the text clip would otherwise cut off */
+.txp.txglued{column-gap:0}
+/* ...and each phrase leans on its neighbour (a phrase is as wide as its English, which would leave a gap) */
+.txp.txglued .txc:not(:last-child)>.txs{text-align:end}
+.txp.txglued .txc:not(:first-child)>.txs{text-align:start}
+.txp.txglued .txc:not(:first-child)>.txe{padding-inline-start:.3em} /* (its English keeps a space from the one before) */
+.txp[dir=rtl],.txline[dir=rtl],.txin:dir(rtl){letter-spacing:0}
+.txp.txother .txw{padding-block:.3em;margin-block:-.3em}
+.txc{display:inline-grid;justify-items:stretch;white-space:nowrap;max-width:100%}
+/* a phrase wider than the place wraps inside it (one size for every line, SPEC 59: never shrunk to fit) */
+.txc>.txs,.txc>.txe{white-space:normal;overflow-wrap:anywhere}
+.txc>.txs,.txc>.txe{grid-area:1/1;text-align:center}
+.txw,:root.prom .txe{-webkit-background-clip:text;background-clip:text}
+.txw{position:relative} /* the voice lifts a lit word (notes 33) without the line reflowing */
+/* a word Recense's lexicon wrote from what a correction taught it (its title says what was heard): a faint blue dotted underline */
+.txw.txl{text-decoration:underline dotted rgba(10,132,255,.55);text-decoration-thickness:1.5px;text-underline-offset:.22em}
+.txe{font-weight:400;color:rgba(255,255,255,.8);visibility:hidden}
+/* a vocal score's stave (item 20): the target line, its ribbon (canvas.pg-lane) and, tucked right under the ribbon, a
+   smaller, dimmer translation, so pitch drops never collide with it; generous room between staves */
+.tx.follow .txc>.txe,:root.prom .tx .txc>.txe{font-size:.6em;line-height:1.3;color:rgba(255,255,255,.45);letter-spacing:.01em}
+/* Learn (the default): the phrase and its notation dissolve, and its translation surfaces in their place, full size,
+   where the words were */
+.tx.learn:not(.follow) .txc>.txe{align-self:start}
+.tx .txc>.txs>canvas.pg-lane{margin:.05em 0 .1em}
+:root.nt-off .tx canvas.pg-lane{display:none}
+.tx .txp{row-gap:.9em}
+.tx.learn .txp+.txp{margin-top:.6em}
+
+/* Learn and Follow: the lyrics are centred in the band between the top bar (with its day and time) and the two bars,
+   in either orientation: never under the date or the browser's chrome, never over the bars (SPEC 55, 56). A tap on
+   them opens the editor (SPEC 57) */
+.tx.learn{top:calc(var(--tb) + 4px);bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);justify-content:center}
+.tx.learn .txp{cursor:pointer}
+/* a dense track (a choir): the words and the notation start Off, with Show for this item (item 22) */
+.tx.txoff{display:none !important}
+.txq{position:absolute;left:50%;bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);z-index:4;
+  display:flex;align-items:center;gap:4px;padding:2px 4px 2px 14px;border-radius:18px;background:rgba(0,0,0,.45);
+  color:rgba(255,255,255,.8);font-size:14px;white-space:nowrap;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.txq .lnk{font-size:14px;padding:6px 10px;min-height:0;background:none;border:0}
+/* Follow: the line being heard, its trailing language under it (each phrase over its own translation) */
+.tx.follow .txc{grid-template-rows:auto auto}
+.tx.follow .txc>.txs{grid-area:1/1;visibility:visible !important;-webkit-mask-image:none !important;mask-image:none !important}
+.tx.follow .txc>.txe{grid-area:2/1;visibility:visible !important;-webkit-mask-image:none !important;mask-image:none !important}
+/* comments open: the lyrics centre in the shrunk media box, below the top bar */
+body.comments-open .tx.learn{top:calc((var(--tb) + 100%) / 2);bottom:auto;transform:translate(-50%,-50%);max-height:calc(100% - var(--tb) - 8px)}
+#thread .ctext.cmine{cursor:text;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+body.comments-open .tx{top:calc(var(--tb) + 4px)}
+
+/* correcting a line in place; waiting for a transcript */
+.txed{pointer-events:auto;width:100%;display:flex;flex-direction:column;align-items:stretch;gap:4px}
+.txin{box-sizing:border-box;width:100%;resize:none;padding:8px 12px;border:0;border-radius:12px;background:rgba(0,0,0,.72);color:#fff;letter-spacing:.012em;font:600 calc(clamp(22px,3vw,30px) * var(--txs,1))/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:center;outline:none}
+.txbar{display:flex;justify-content:center;gap:4px}
+.txbtn{pointer-events:auto;border:0;background:rgba(0,0,0,.5);font:inherit;font-size:17px;cursor:pointer}
+.txall{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;background:rgba(0,0,0,.84);color:#fff;font:calc(17px * var(--txs,1))/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
+/* Editing (notes 20261029 row 40): what plays keeps the top of the screen (--txv), the editor is a pane under it
+   that ends above the home bars, which stay where they are with all they do */
+.txon{--txv:clamp(150px,34dvh,420px);--txe:calc(var(--bb0) + var(--cl) + 36px)}
+.vw.txon{padding-bottom:calc(100dvh - var(--tb) - var(--txv))}
+.aw.txon img{padding-bottom:calc(100dvh - var(--tb) - var(--txv))}
+.txon>.tx.learn{bottom:calc(100dvh - var(--tb) - var(--txv))}
+.txon>.txall{top:calc(var(--tb) + var(--txv));bottom:var(--txe);border-radius:16px 16px 0 0;background:rgba(18,18,20,.94)}
+.txon>.txall>.txallbar{padding-top:6px}
+.txon>.txall{overflow:clip}
+.txon>.txall>.txlist{min-height:0}
+/* a short landscape screen: what plays on the left, the editor beside it */
+@media (orientation:landscape) and (max-height:540px){
+  .vw.txon{padding:var(--tb) 55% var(--txe) 0}
+  .aw.txon img{padding:var(--tb) 55% var(--txe) 0}
+  .txon>.tx.learn{left:22.5%;width:42%;bottom:var(--txe)}
+  .txon>.txall{top:var(--tb);left:45%;right:max(8px,env(safe-area-inset-right));border-radius:16px}
+}
+/* the editor's bar (notes 20261029 row 40): Changes · the grabber · Done, and the tools (homebar.js tools, SPEC 57)
+   folded under the grabber, opening as the home bar does */
+.txallbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:0 10px;padding:calc(var(--tb,0px) + 6px) 12px 2px}
+.txallbar>.txbtn{grid-row:1;grid-column:1;justify-self:start;background:none}
+.txallbar>.txbtn:last-child{grid-column:3;justify-self:end}
+.txgrab{grid-row:1;grid-column:2;width:88px;height:36px;border:0;padding:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.txgrab::before{content:"";width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.4);transition:width .5s cubic-bezier(.2,.9,.25,1.04),background .25s ease}
+.txgrab:hover::before,.txgrab:focus-visible::before,.txall.tools .txgrab::before{width:56px;background:rgba(255,255,255,.85)}
+.txgrab:focus-visible{outline:none}
+.txtray{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .5s cubic-bezier(.2,.9,.25,1.04),opacity .25s ease}
+.txall.tools .txtray{grid-template-rows:1fr;opacity:1}
+.txtrayin{min-height:0;overflow:hidden}
+.txtray .p-tools{padding:4px 12px 12px}
+.txbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.txtrl{color:rgba(255,255,255,.42);font-size:.92em}
+.txrow.cur .txtrl{color:rgba(255,255,255,.7)}
+.txtime{margin-top:.5em}
+.txchips{display:flex;flex-wrap:wrap;gap:.3em}
+.txchip{font:inherit;font-size:.85em;padding:.2em .6em;border-radius:1em;border:1px solid rgba(255,255,255,.25);background:none;color:rgba(255,255,255,.75)}
+.txchip.set{border-color:rgba(255,214,51,.7);color:#ffd633}
+.txchip.on{background:rgba(255,255,255,.14)}
+.txchip.txstanza{border-style:dashed}
+.txlsay{font-size:.85em;color:#7fbcff}
+.txltap{max-width:454px;padding:16px 8px;font-size:1em}
+.txltap[hidden]{display:none}
+.txpanel{margin-top:.6em;display:grid;gap:.5em}
+/* Start · End, tapped as it is sung (as A and B are): two wide marks, apart, so a thumb never lands on the other */
+.txmarks{display:flex;gap:14px}
+.txmark{flex:1;min-width:0;max-width:220px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:10px 8px;border:0;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;font:inherit;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.txmname{font-size:.78em;font-weight:600;color:#7fbcff}
+.txmval{font-size:.92em;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.85)}
+.txmark:focus-visible{outline:2px solid rgba(10,132,255,.8);outline-offset:1px}
+.txmark.hit{animation:txhit .35s cubic-bezier(.3,1.4,.5,1)}
+@keyframes txhit{40%{transform:scale(.95);background:rgba(10,132,255,.32)}}
+.txsbtns{display:flex;flex-wrap:wrap;gap:.2em 1.2em}
+.txlightw{display:flex;flex-direction:column;gap:2px;max-width:454px}
+.txtrace{display:flex;align-items:flex-start;justify-content:center;box-sizing:border-box;width:100%;max-width:454px;height:72px;padding:12px 12px 0;border-radius:14px;background:rgba(255,255,255,.08);touch-action:none;cursor:ew-resize;outline:0;overflow:hidden;-webkit-user-select:none;user-select:none}
+.txtrace:focus-visible{box-shadow:0 0 0 2px rgba(10,132,255,.8)}
+.txtrt{white-space:nowrap;color:#fff;font:600 22px/1.2 system-ui,-apple-system,sans-serif;pointer-events:none}
+.txlcap{font-size:.72em;color:#7fbcff;text-align:center}
+.txsbtns .txbtn{background:none;padding:4px 0}
+.txsbtns .txbtn[hidden]{display:none}
+.txrow .txin.txtr{font-weight:400;color:rgba(255,255,255,.85)}
+.txlist{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 16px 40vh}
+.txrow{display:flex;gap:12px;align-items:baseline;max-width:720px;margin:0 auto;padding:6px 0}
+.txt{flex:none;width:44px;color:rgba(255,255,255,.4);font-size:13px;font-variant-numeric:tabular-nums}
+.txline{flex:1;text-align:start;border:0;padding:0;background:none;color:rgba(255,255,255,.62);font:inherit;cursor:pointer}
+.txline:hover{color:#fff}
+.txrow.cur .txline{color:#fff}
+.txrow .txin{text-align:start;font-size:17px;background:rgba(255,255,255,.1)}
+.txchg{flex-wrap:wrap}
+.txchg .txt{width:auto;flex-basis:100%}
+.txdiff{flex:1;display:flex;flex-direction:column;gap:2px}
+.txwas{color:rgba(255,255,255,.45)}
+.txnow{text-decoration:none}
+.txlist>.txmsg{text-align:center;color:rgba(255,255,255,.6);padding:24px}
+.txst{flex-direction:row;justify-content:center;color:rgba(255,255,255,.8);font-size:15px}
+.txst .txmsg{background:rgba(0,0,0,.5);padding:6px 12px;border-radius:12px}
+
+/* ---------- Create Share Link from a selection: how long the link lasts ---------- */
+#shr .seg{display:flex;margin:6px 16px 8px;padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#shr .seg label{flex:1;position:relative}
+#shr .seg input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+#shr .seg span{display:block;padding:9px 0;border-radius:8px;text-align:center;font-size:15px;color:var(--blue)}
+#shr .seg input:checked + span{background:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+#shr .seg input:focus-visible + span{outline:2px solid var(--blue)}
+
+/* the info panel's owner actions: Rename, Change Cover */
+#meta .mops{display:flex;flex-wrap:wrap;gap:0 20px;margin-top:8px}
+#meta .mops .lnk{border:0;background:none;padding:0;min-height:44px;color:var(--blue);font:inherit;font-size:17px}
+
+/* ---------- spec §2: the viewer's two modes for audio ----------
+   mode 1: the cover (and, while it is being transcribed, a small progress pill on it);
+   mode 2 (.aw.lyrics): a transcript exists, so the lyrics on black, where Learn mode always shows them. */
+.aw.lyrics img{display:none}
+.txst{font-size:13px}
+.txst .txmsg{padding:4px 10px;border-radius:10px;font-variant-numeric:tabular-nums}
+
+/* ---------- spec §1: the native language picker in Info, Create Share Link's segmented control ---------- */
+#meta .mlang{margin-top:8px}
+#meta .mlang .mlcap{display:block;margin-bottom:4px;color:var(--mut);font-size:13px}
+#meta .seg{display:flex;padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#meta .seg label{flex:1;position:relative}
+#meta .seg input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+#meta .seg span{display:block;padding:9px 12px;border-radius:8px;text-align:center;font-size:15px;color:var(--blue)}
+#meta .seg input:checked + span{background:#1c1c1e;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+#meta .seg input:focus-visible + span{outline:2px solid var(--blue)}
+
+/* ---------- spec §7: swipe a comment of yours left (touch), or two-finger swipe over it (trackpad), for Delete ---------- */
+#thread .crow.sw{position:relative;overflow:hidden;padding:0;touch-action:pan-y}
+#thread .crow.sw .cslide{position:relative;z-index:1;padding:8px 20px 8px 16px;background:#000;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+#thread .crow.sw.drag .cslide{transition:none}
+#thread .crow.sw.open .cslide{transform:translateX(calc(-1 * var(--cdw,88px)))}
+#thread .crow.sw{--cdw:168px}
+#thread .crow.sw .cacts{position:absolute;top:0;right:0;bottom:0;width:var(--cdw);display:flex}
+#thread .crow.sw .cedb,#thread .crow.sw .cdel{flex:1;display:flex;align-items:center;justify-content:center;padding:0;border:0;background:none;color:var(--blue);font:inherit;font-size:17px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#thread .crow.sw .cdel:disabled,#thread .crow.sw .cedb:disabled{opacity:.4}
+
+/* text documents (Markdown, Word, plain text) on a page like a PDF's */
+.pdfp.txtdoc{height:auto;overflow:visible;box-sizing:border-box;padding:clamp(20px,6%,56px);color:#1d1d1f;font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;text-align:left;user-select:text;-webkit-user-select:text;word-wrap:break-word}
+.txtdoc h1,.txtdoc h2,.txtdoc h3,.txtdoc h4{line-height:1.25;margin:1.2em 0 .5em}
+.txtdoc h1{font-size:1.8em}.txtdoc h2{font-size:1.45em}.txtdoc h3{font-size:1.2em}
+.txtdoc>:first-child{margin-top:0}
+.txtdoc p,.txtdoc ul,.txtdoc ol,.txtdoc blockquote,.txtdoc table,.txtdoc pre{margin:0 0 .9em}
+.txtdoc a{color:#0066cc}
+.txtdoc img{max-width:100%;height:auto}
+.txtdoc blockquote{padding-left:1em;border-left:3px solid #d2d2d7;color:#515154}
+.txtdoc pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f5f5f7;padding:12px;border-radius:6px}
+.txtdoc code{font:.9em ui-monospace,SFMono-Regular,Menlo,monospace;background:#f5f5f7;padding:.1em .3em;border-radius:4px}
+.txtdoc pre code{background:none;padding:0}
+.txtdoc table{border-collapse:collapse;display:block;overflow-x:auto}
+.txtdoc th,.txtdoc td{border:1px solid #d2d2d7;padding:6px 10px}
+.txtdoc hr{border:0;border-top:1px solid #d2d2d7;margin:1.5em 0}
+
+/* Info: the name, its size alone under it, both to the left; the key controls a row of their own */
+#meta .mname,#meta .msize{display:block;text-align:left}
+#meta .mops + .mops{margin-top:0}
+
+/* [Ambient Sounds]: between lines and over an instrumental, where Learn mode's lines sit */
+.txamb{position:absolute;left:50%;top:calc(var(--tb) + (100% - var(--tb) - var(--bb0) - var(--cl) - 30px) / 2);transform:translate(-50%,-50%);z-index:3;pointer-events:none;
+  font:italic 500 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;color:rgba(255,255,255,.7);
+  text-shadow:0 1px 6px rgba(0,0,0,.8);white-space:nowrap}
+.txamb[hidden]{display:none}
+/* paused with no line up: a grabber where the lines show, the editor's own (notes 20261029 row 40) */
+.txamb.grab{top:calc(var(--tb) + 8px);transform:translateX(-50%);font-size:0;padding:14px 26px;text-shadow:none}
+.txamb.grab::before{content:"";display:block;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.45);box-shadow:0 1px 6px rgba(0,0,0,.5);transition:width .5s cubic-bezier(.2,.9,.25,1.04),background .25s ease}
+.txamb.grab:hover::before{width:56px;background:rgba(255,255,255,.85)}
+
+/* playback that outlives the viewer: the dock, the now-playing pill, frames over the page */
+.dock{display:none}
+.nowpl{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 12px);transform:translateX(-50%);z-index:2147483600;
+  display:flex;align-items:center;gap:6px;max-width:min(80vw,420px);padding:4px 4px 4px 14px;border-radius:22px;
+  background:rgba(40,40,44,.92);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:0 2px 12px rgba(0,0,0,.5)}
+.nowpl[hidden]{display:none}
+.nowpl-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:none;border:0;color:#fff;font:500 14px -apple-system,BlinkMacSystemFont,sans-serif;text-align:left;padding:8px 0}
+.nowpl-p{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;padding:0}
+.nowpl-p svg{width:18px;height:18px}
+.shellfr{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483000;background:#000}
+body.shelled{overflow:hidden}
+body.lbopen .nowpl{bottom:auto;top:calc(env(safe-area-inset-top) + 64px)}
+
+/* phones upright: with the sound tray open, the play controls rise clear of it */
+@media (max-width:600px) and (min-height:561px){
+  .aw:has(.p-eqwrap.open) .p-center-controls,
+  .vw:has(.p-eqwrap.open) .p-center-controls{
+    transform:translate(-50%,calc(-50% - 120px))
+  }
+}
+
+/* Info: tap the name to rename (owner, Main); Transpose on the last row, to the left */
+#meta .mname.mrn{cursor:pointer}
+#meta .mops.mkey{justify-content:flex-start;margin-top:8px}
+
+/* ---------- Text Size: the top-right pill (opposite Back), Info's row, and a pinch over the lyrics ---------- */
+.tsz{display:flex;align-items:center}
+.tsz button{border:0;background:none;color:var(--blue);font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tsz button:disabled{opacity:.32;cursor:default}
+.tsz .txs-pct{display:none;min-width:3.2em;text-align:center;font-size:13px;color:#fff;font-variant-numeric:tabular-nums}
+.tsz.live .txs-pct{display:block}
+.tsz button.pulse{animation:tszp .26s ease-out}
+@keyframes tszp{40%{transform:scale(.86)}}
+.tpill{height:34px;padding:0 4px;border-radius:17px;background:rgba(44,44,46,.55);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14)}
+.tpill[hidden]{display:none}
+.tpill button{display:grid;place-items:center;width:34px;height:34px;padding:0}
+.tpill button+button,.tpill .txs-pct+button{border-left:.5px solid rgba(255,255,255,.16)}
+.tpill .sm{font-size:13px;font-weight:600}
+.tpill .lg{font-size:19px;font-weight:600}
+.tpill.live{box-shadow:inset 0 0 0 1px var(--blue)}
+#meta .mtsz .tsz{padding:2px;border-radius:10px;background:rgba(255,255,255,.08)}
+#meta .mtsz .tsz button{flex:1;padding:9px 12px;border-radius:8px;font-size:15px}
+#meta .mtsz .tsz sup{font-size:.7em}
+@media (prefers-reduced-motion:reduce){.tsz button.pulse{animation:none}}
+
+/* ---------- P2: the home bar holds the player's Info, comments and Share (homebar.js) ---------- */
+
+/* audio and video: Info, the comment label and Share live in the home bar; photos and documents keep them here */
+#lb.hasbar #info,
+#lb.hasbar #vshare{
+  visibility:hidden;
+  pointer-events:none
+}
+
+/* the comment count: white while there are none, blue with comments. It is the slide's only item,
+   so it may run past its third on both sides */
+.p-slide .p-cmt{
+  max-width:none;
+  font-weight:500
+}
+
+.p-slide .p-cmt .n{
+  overflow:visible
+}
+
+/* Original-language prominence (the vertical bar): the original stacked over the trailing
+   language, each at its own opacity; neither turns into the other. A side at 0 takes no room;
+   at 100% the canvas is blank. */
+:root.prom .tx .txc{
+  grid-template-rows:auto auto
+}
+
+:root.prom .tx .txc>.txs{
+  grid-area:1/1;
+  opacity:var(--po);
+  visibility:visible !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+  transition:opacity .2s ease
+}
+
+:root.prom .tx .txc>.txe{
+  grid-area:2/1;
+  opacity:var(--pt);
+  visibility:visible !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+  transition:opacity .2s ease
+}
+
+:root.prom-o0 .tx .txc>.txs,
+:root.prom-t0 .tx .txc>.txe{
+  display:none
+}
+
+:root.prom-o0.prom-t0 .tx{
+  visibility:hidden
+}
+
+/* the chord detector (SPEC 40): directly above the transcript's lines (.over, inside .tx.learn), or alone where they would be */
+.txchord{position:absolute;left:50%;top:calc(var(--tb) + 4px);bottom:calc(var(--bb0) + var(--cl) + 30px);transform:translateX(-50%);display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2;font:600 clamp(22px,5vw,40px)/1.1 system-ui,-apple-system,sans-serif;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap}
+.txchord.over{position:static;transform:none;display:block;text-align:center;font-size:clamp(16px,3.2vw,26px);color:#8fc4ff;margin:0 0 .3em}
+.txchord[hidden]{display:none}
+
+/* Notes 23: a phone held upright (iPhone 12 Pro Max: 428×746 in Safari). The square cover leaves a black
+   band about 90px tall between its bottom and the thumbnails; the whole home bar, open (stroke, hitbox,
+   sheen and the slide row: a⁻ · 100% · A⁺), fits inside it: a little shorter, its stroke low in the band
+   with a small even gap above the strip, and the bar spanning from just right of the strip's left end to
+   just left of the vertical bar. The vertical bar keeps its place. Landscape and the Mac are unchanged. */
+@media (pointer:coarse) and (orientation:portrait) and (max-width:600px){
+  #lb .p-hb{
+    --hbh:36px;
+    --rowh:38px;
+    --fs:13px;
+    bottom:calc(var(--bb0) - 4px) /* the strip's top sits about 10px inside the bottom bar: a 6px gap */
+  }
+  #lb .p-hb .p-hbholo{left:-8px;right:-8px;height:calc(var(--rowh) + 16px)}
+  #lb .p-hb[data-open="true"]:not([data-mode="seek"]){
+    padding-left:max(76px,calc(env(safe-area-inset-left) + 64px));
+    padding-right:max(76px,calc(env(safe-area-inset-right) + 64px))
+  }
+}
+
+/* a share link's tiles, for its owner (notes item 4): drag to order, pin the preview card's cover */
+.tile .pin{
+  position:absolute;
+  left:6px;
+  top:6px;
+  width:26px;
+  height:26px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:rgba(0,0,0,.35);
+  color:#fff;
+  opacity:0;
+  transition:opacity .15s
+}
+.tile .pin svg{width:15px;height:15px}
+.tile:hover .pin,
+.tile.cover .pin{opacity:1}
+.tile.cover .pin{background:var(--blue)}
+.selecting .tile .pin{display:none}
+@media (hover:none){.tile .pin{opacity:1}}
+.tile.lift{opacity:.4}
+/* editing a Main text file in place (notes 20261029 item 42) */
+.txtedit-bar{display:flex;gap:18px;align-items:baseline;justify-content:flex-end;margin:0 0 8px;font-size:15px}
+.txtedit-note{color:#8e8e93;font-size:13px}
+.pdfp.txtdoc.txtedit{display:block;width:100%;min-height:70vh;resize:vertical;border:0;outline:none;font:15px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
+
+/* a share whose owner turned downloads off (notes 20261029 item 16): view and comment only */
+body.nodl #dl,body.nodl .mdl{display:none!important}
+.txediting #strip,.txediting .cmshare{visibility:hidden;pointer-events:none}
+
+/* Ask is only the lightbulb, white, blue when hovered or open (notes 20261029 item 16) */
+.mbtn.aibulb{color:#fff}
+.mbtn.aibulb:hover,.mbtn.aibulb:active,.mbtn.aibulb[aria-expanded="true"]{color:#0a84ff}
+/* an invitee's Devices sheet (notes 47): system-blue text rows on a dark card, nothing louder */
+#thread .cdev{margin-left:auto;background:none;border:0;color:#0a84ff;font:inherit;padding:0 4px}
+.devs{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.devbox{width:min(320px,calc(100vw - 32px));display:grid;gap:2px;padding:14px;border-radius:14px;background:#1c1c1e;color:#fff;font:15px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;text-align:center}
+.devbox>b{font-size:17px;margin-bottom:6px}
+.devb{background:none;border:0;color:#0a84ff;font:inherit;padding:10px;border-radius:10px}
+.devb:active{background:#2c2c2e}
+.devem{display:flex;gap:6px;margin:4px 0}
+.devem input{flex:1;min-width:0;border:0;border-radius:10px;padding:9px 10px;background:#2c2c2e;color:#fff;font:inherit}
+.devmsg{margin:4px 0 0;font-size:13px;color:#ebebf599;min-height:1em}
+
+/* ---------- Phase 4: collection search bar (Goal 43.32) & year-grouped results ---------- */
+.csearch{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 16px 8px;
+  transition:padding .32s cubic-bezier(.32,.72,0,1),background-color .25s ease
+}
+.csearch-pill{
+  flex:1;
+  min-width:0;
+  height:38px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0 10px 0 12px;
+  border-radius:12px;
+  background:rgba(118,118,128,.24);
+  color:rgba(235,235,245,.6);
+  transition:border-radius .32s cubic-bezier(.32,.72,0,1),background-color .25s ease,box-shadow .2s ease
+}
+.csearch-pill:focus-within{
+  background:rgba(118,118,128,.32)
+}
+.csearch-ico{
+  flex:none;
+  width:17px;
+  height:17px;
+  color:rgba(235,235,245,.6)
+}
+.csearch-in{
+  flex:1;
+  min-width:0;
+  height:100%;
+  border:0;
+  padding:0;
+  background:transparent;
+  color:#fff;
+  font:17px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+  outline:none;
+  -webkit-appearance:none;
+  appearance:none
+}
+.csearch-in::-webkit-search-cancel-button,
+.csearch-in::-webkit-search-decoration{
+  -webkit-appearance:none;
+  appearance:none;
+  display:none
+}
+.csearch-in::placeholder{
+  color:rgba(235,235,245,.6)
+}
+.csearch-clear{
+  flex:none;
+  width:20px;
+  height:20px;
+  display:grid;
+  place-items:center;
+  color:rgba(235,235,245,.6);
+  border-radius:50%
+}
+.csearch-clear svg{
+  width:18px;
+  height:18px
+}
+.csearch-clear:active{
+  color:#fff
+}
+.csearch-cancel{
+  flex:none;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  background:rgba(44,44,46,.9);
+  box-shadow:inset 0 .5px 0 rgba(255,255,255,.16);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  transition:transform .28s cubic-bezier(.32,.72,0,1),opacity .22s ease,background-color .15s ease
+}
+.csearch-cancel svg{
+  width:18px;
+  height:18px
+}
+.csearch-cancel:active{
+  transform:scale(.92);
+  background:rgba(68,68,72,.95)
+}
+.selecting .csearch{
+  display:none
+}
+body.csearching .crbar,
+body.csearching .bar,
+body.csearching .hero,
+body.csearching .info,
+body.csearching .note,
+body.csearching .mainnav{
+  max-height:0!important;
+  min-height:0!important;
+  margin-top:0!important;
+  margin-bottom:0!important;
+  padding-top:0!important;
+  padding-bottom:0!important;
+  opacity:0;
+  overflow:hidden;
+  pointer-events:none;
+  border:0
+}
+body.csearching #grid,
+body.csearching #foot{
+  display:none!important
+}
+body.csearching .csearch{
+  position:sticky;
+  top:0;
+  z-index:20;
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  background:rgba(28,28,30,.88);
+  -webkit-backdrop-filter:blur(20px) saturate(1.6);
+  backdrop-filter:blur(20px) saturate(1.6)
+}
+body.csearching .csearch-pill{
+  border-radius:19px
+}
+.csres{
+  padding:4px 16px calc(env(safe-area-inset-bottom) + 40px)
+}
+.csyear{
+  margin:18px 0 6px;
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-.01em;
+  color:#fff
+}
+.csyear:first-child{
+  margin-top:6px
+}
+.csrow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  width:100%;
+  padding:14px 0;
+  border-top:.5px solid rgba(255,255,255,.12);
+  text-align:left;
+  cursor:pointer
+}
+.csyear + .csrow{
+  border-top:0;
+  padding-top:6px
+}
+.csrow:active{
+  opacity:.78
+}
+.csmain{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:4px
+}
+.csdate{
+  font-size:12px;
+  font-weight:500;
+  color:var(--mut);
+  font-variant-numeric:tabular-nums
+}
+.cstitle{
+  font-size:16px;
+  font-weight:600;
+  line-height:1.25;
+  color:#fff;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical
+}
+.cssnip{
+  font-size:14px;
+  line-height:1.38;
+  color:rgba(235,235,245,.6);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical
+}
+mark.csmk{
+  background:none;
+  color:#fff;
+  font-weight:700
+}
+.csacts{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:6px
+}
+.cspill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px;
+  border-radius:99px;
+  background:rgba(10,132,255,.16);
+  color:var(--blue);
+  font-size:13px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums
+}
+.cspill svg{
+  width:12px;
+  height:12px;
+  fill:currentColor
+}
+.csmore{
+  color:var(--mut);
+  font-size:14px;
+  letter-spacing:1px
+}
+.csthumb{
+  flex:none;
+  width:64px;
+  height:64px;
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--panel);
+  position:relative
+}
+.csthumb img,
+.csthumb video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  pointer-events:none
+}
+.csthumb .doc{
+  padding:4px
+}
+.csthumb .doc small{
+  display:none
+}
+.csshowall{
+  display:block;
+  width:100%;
+  padding:14px 0;
+  border-top:.5px solid rgba(255,255,255,.12);
+  color:var(--blue);
+  font-size:16px;
+  font-weight:500;
+  text-align:left
+}
+.csempty{
+  padding:36px 0;
+  text-align:center;
+  color:var(--mut);
+  font-size:15px
+}

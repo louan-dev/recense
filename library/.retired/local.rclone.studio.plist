@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.rclone.studio</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>umount -f "$HOME/Studio" 2>/dev/null; exec /opt/homebrew/bin/rclone nfsmount studio: "$HOME/Studio" --vfs-cache-mode full --vfs-cache-max-size 20G --volname Studio --dir-cache-time 1m --log-file "$HOME/Library/Logs/rclone/studio.log" --log-level INFO</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/rclone/studio.launchd.log</string>
+</dict>
+</plist>

@@ -1,0 +1,23 @@
+# The remotes Gallery uses. mac/setup.sh writes these into ~/.config/rclone/rclone.conf
+# with the real keys; this copy has none.
+
+[gallery-public]
+type = s3
+provider = Cloudflare
+access_key_id = <gallery-public-mac key id>
+secret_access_key = <gallery-public-mac secret>
+endpoint = https://<account id>.r2.cloudflarestorage.com
+no_check_bucket = true
+
+[gallery-main]
+type = s3
+provider = Cloudflare
+access_key_id = <gallery-main-mac key id>
+secret_access_key = <gallery-main-mac secret>
+endpoint = https://<account id>.r2.cloudflarestorage.com
+no_check_bucket = true
+
+# what the Gallery mount shows: two folders, each backed by its own bucket and token
+[gallery]
+type = combine
+upstreams = Public=gallery-public:gallery-public/folders Main=gallery-main:gallery-main/files

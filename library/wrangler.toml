@@ -1,0 +1,94 @@
+# gallery: public links and the private Main library on Cloudflare Workers and R2.
+name = "gallery"
+main = "src/worker.js"
+compatibility_date = "2026-10-05"
+workers_dev = true
+preview_urls = false
+
+# the pages' own CSS and browser scripts are bundled as text
+[[rules]]
+type = "Text"
+globs = ["**/client/*.css", "**/client/*.js"]
+fallthrough = false
+
+[[r2_buckets]]
+binding = "PUBLIC"
+bucket_name = "gallery-public"
+
+[[r2_buckets]]
+binding = "MAIN"
+bucket_name = "gallery-main"
+
+[triggers]
+# 03:00: the nightly sweeps; every 10 minutes (every minute until 2026-11-05): the assistant's indexing (src/ai.js), nothing else
+crons = ["0 3 * * *", "*/10 * * * *"]
+
+[vars]
+ACCESS_TEAM_DOMAIN = "chauphan.cloudflareaccess.com"
+# the assistant's model (src/ai.js); any Workers AI chat model that takes messages. The search model is fixed (bge-m3).
+AI_CHAT_MODEL = "@cf/openai/gpt-oss-120b"
+# the assistant's calendar (src/calendar.js): the owner's time zone, and the Sync worker's CalDAV user (sync/worker/wrangler.toml)
+OWNER_TZ = "America/Los_Angeles"
+CALDAV_USER = "chau"
+CALDAV_DEFAULT_NAME = "Calendar"
+# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
+# NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
+
+# Recense's bucket: Gallery reads its transcripts (keep/<key>.v2.json) and writes only corrections
+# (keep/<key>.edits.json, keep/history/) and transcription requests (keep/locks/)
+[[r2_buckets]]
+binding = "KEEP"
+bucket_name = "recense-tmp"
+
+# SPEC 42: temporary downloads (/t/<id>/<name>, PUT /main/api/tmp), deleted after a day (src/tmp.js).
+# The bucket and its lifecycle rule are NOT created yet; until the owner runs these, `wrangler deploy` fails on this binding:
+#   npx wrangler r2 bucket create gallery-tmp
+#   npx wrangler r2 bucket lifecycle add gallery-tmp expire-tmp-1d tmp/ --expire-days 1 --force
+#   npx wrangler r2 bucket lifecycle add gallery-tmp abort-mpu-1d --abort-multipart-days 1 --force
+# Everything else in the bucket (Downloads moved by the Mac's agent, whatever is dropped in ~/.gallery/tmp) goes after two weeks:
+#   npx wrangler r2 bucket lifecycle add gallery-tmp expire-all-14d --expire-days 14 --force
+[[r2_buckets]]
+binding = "TMP"
+bucket_name = "gallery-tmp"
+
+# Phase 2: the archive (folders moved off the Mac, under archive/), mounted at /main/dav-archive/ (dav.js).
+# Its trash is .trash/ in the same bucket. The bucket exists (created 2026-10-28).
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "gallery-archive"
+
+# Obsidian note images, uploaded by the vault's "S3 Image Sync" plugin (bucket-scoped token), served
+# publicly at /i/<key> (images.js). Until the owner creates the bucket, `wrangler deploy` fails on this binding:
+#   npx wrangler r2 bucket create notes-images
+[[r2_buckets]]
+binding = "NOTES_IMAGES"
+bucket_name = "notes-images"
+
+# The assistant (src/ai.js, /main/api/ai/…, owner-only): Workers AI answers, Vectorize finds the passages. The index
+# exists; were it lost, `wrangler deploy` fails on this binding until it is made again:
+#   npx wrangler vectorize create gallery-ai --dimensions=1024 --metric=cosine
+#   npx wrangler vectorize create-metadata-index gallery-ai --property-name=root --type=string
+# The 10-minute cron indexes Main and Archive, spending at most AI_INDEX_DAILY_STEPS (default 120) AI-using steps a UTC
+# day; Main's Raven/ (client matters) is never indexed (src/ai-core.js SEALED).
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORS"
+index_name = "gallery-ai"
+
+# The owner's own calendar: the Sync worker's CalDAV store (sync/worker), shared so the assistant can read and write events
+# the way a CalDAV client would (same keys, same trash copies). The bucket exists (created for G1-0).
+[[r2_buckets]]
+binding = "CALENDAR"
+bucket_name = "sync"
+
+# C1: who may do what, and the conversation around items (src/d1.js; schema in migrations/). Blobs stay in R2.
+# Without this database the Worker keeps everything in R2 JSON as before. Created with
+# `npx wrangler d1 create gallery`; the schema is applied with (once, and after each new migration):
+#   npx wrangler d1 migrations apply gallery --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "gallery"
+database_id = "faa79d1c-8076-410b-bdf0-6ab2054cc803"
+migrations_dir = "migrations"

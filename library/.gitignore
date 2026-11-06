@@ -1,0 +1,26 @@
+.wrangler/
+.test-build/
+.dev.vars
+node_modules/
+.DS_Store
+*.bak
+test-fail.png
+.claude/settings.local.json
+rclone.conf
+old-versions.zip
+
+.handoff/
+*-handoff.zip
+.claude/
+gallery/test/.shots/
+*.tmp.mjs
+*.bak
+.DS_Store
+.wrangler/
+node_modules/
+
+# Gallery Files builds (apple/macos/build.sh)
+gallery/apple/build/
+# the device token build.sh copies in from the Keychain: never commit
+gallery/apple/ios/Secrets/
+gallery/test-results/
