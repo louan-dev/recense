@@ -21,6 +21,9 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `Views/Root.swift` (`ShowsRoot`: sidebar on iPad and Mac, tabs on iPhone), `Views/Library.swift` (the grid),
     `Views/ShowPage.swift` (seasons, episode rows that swipe, with the same actions in the context menu),
     `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`). The host app passes our player in.
+  - `Views/Theme.swift`: the look every screen shares, in ShowsKit and in each app's own places: `Theme` (accent,
+    gutter, corners, readable width, `hues`), `Artwork`, `SectionHeader`, `LibraryRow`, `Place` (a screen the app adds
+    to Library) and `.recenseScreen(title)`.
   - `Sample.swift`: `MemoryCatalog.sample(device:)`, a made-up pool for previews and tests.
 - `ItemState.verdict` (B2): Clicked / Not yet, one stamped record per episode (the retelling loop's measurement).
 
@@ -35,7 +38,7 @@ Recense/.trash/…                         → deletes, kept 30 days
 ```
 
 ## Build and test
-- Test: `swift test` in this folder (24 tests).
+- Test: `swift test` in this folder (25 tests).
 - Mac: `strip/Package.swift` depends on it by path; `zsh strip/build.sh` builds it in.
 - iOS: a local package of `mobile/ios/GalleryFiles.xcodeproj`. This folder is excluded from the project's
   synchronized `shared/` group, so its files compile only as the package.

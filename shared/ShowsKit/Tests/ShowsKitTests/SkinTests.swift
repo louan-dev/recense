@@ -125,6 +125,12 @@ final class SkinTests: XCTestCase {
         }
     }
 
+    func testArtworkHuesAreStablePerName() {
+        let a = Theme.hues("MPEP"), b = Theme.hues("MPEP"), c = Theme.hues("Folio")
+        XCTAssertEqual("\(a.0)", "\(b.0)")
+        XCTAssertNotEqual("\(a.0)", "\(c.0)")
+    }
+
     /// Each view lays out and draws with real rows (a crash or a layout trap fails here).
     func testViewsRender() async throws {
         let m = ShowsModel(store: MemoryCatalog.sample(device: "mac"), gate: refused())
@@ -143,6 +149,10 @@ final class SkinTests: XCTestCase {
             ("mini", AnyView(MiniPlayer(model: m))),
             ("now", AnyView(NowPlaying(model: m) { _ in Text("player") })),
             ("verdict", AnyView(VerdictBar(chosen: .clicked) { _ in })),
+            ("artwork", AnyView(Artwork(title: "MPEP").frame(width: 160))),
+            ("header", AnyView(NavigationStack { SectionHeader("Up Next") { Text("more") } })),
+            ("row", AnyView(LibraryRow("Shows", symbol: "square.stack"))),
+            ("place", AnyView(Place(id: "d", title: "Draftpad", symbol: "square.and.pencil") { Text("pad") }.screen())),
         ]
         for (name, v) in views {
             let r = ImageRenderer(content: v.frame(width: 390, height: 700))
