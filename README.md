@@ -10,7 +10,7 @@ is [the preface](docs/recense-preface.md).
 |------------|----------------------------------------------------------------|----------------------------------------------------|
 | `strip`    | Recense.app for the Mac: the strip, listening surface, sound engine, menu-bar hider, Draftpad ([README](strip/README.md)) | `zsh strip/build.sh` |
 | `mobile`   | Recense for iPhone and iPad (the Mac app's mirror) and the retiring Gallery Mac app ([README](mobile/README.md)) | `zsh mobile/ios/build.sh` |
-| `shared`   | Swift both Recense apps compile: Draftpad's file sync (`notesync.swift`), embeds (`embedfiles.swift`), and `ShowsKit`, the Podcasts-style skin's model, rules and catalog store ([README](shared/ShowsKit/README.md)) | built by each app; `swift test` in `shared/ShowsKit` |
+| `shared`   | Swift both Recense apps compile: Draftpad's file sync (`notesync.swift`), embeds (`embedfiles.swift`), and `ShowsKit`, the Podcasts-style skin: model, rules, catalog store and its SwiftUI views (spaces, Library, shows, Now Playing, the Face ID gate) ([README](shared/ShowsKit/README.md)) | built by each app; `swift test` in `shared/ShowsKit` |
 | `library`  | Gallery: the Worker, web app and share links ([README](library/README.md)) | deploys on push to `library/**` |
 | `sync`     | the Mac's jobs, ledger, canary and launch-agent copies ([README](sync/README.md)) | launch agents in `sync/launchd/` |
 | `calendar` | your calendar server (CalDAV Worker)                           | `cd calendar && npx wrangler deploy`               |
