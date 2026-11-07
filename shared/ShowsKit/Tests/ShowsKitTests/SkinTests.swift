@@ -125,6 +125,42 @@ final class SkinTests: XCTestCase {
         }
     }
 
+    func testFeedsForHomeAndLibrary() async throws {
+        let m = ShowsModel(store: MemoryCatalog.sample(device: "ipad"), gate: refused())
+        await m.reload()
+        XCTAssertEqual(m.upNext.first?.episode.title, "2106 Patent subject matter eligibility", "started and unfinished comes first")
+        XCTAssertEqual(m.upNext.first?.remaining, 272)
+        XCTAssertEqual(m.upNext.map(\.episode.title), ["2106 Patent subject matter eligibility", "Reading statutes in two languages",
+                                                      "Voice memo, 6 November", "Lecture clip: treaty interpretation"],
+                       "started and unfinished, newest listen first; then New's arrivals, newest first")
+        XCTAssertEqual(m.recentlyPlayed.map(\.episode.title), ["2106 Patent subject matter eligibility", "Reading statutes in two languages"])
+        XCTAssertEqual(m.recentlyPlayed.last?.showTitle, "Law and Language")
+        let saved = await m.entries(.saved)
+        XCTAssertEqual(saved.map(\.episode.title), ["2111 Claim interpretation"])
+        let latest = await m.entries(.latest)
+        XCTAssertFalse(latest.contains { $0.episode.item.locked }, "Matters stays out while locked")
+        XCTAssertEqual(m.recentlyUpdated.first?.show.title, "New")
+
+        let open = ShowsModel(store: MemoryCatalog.sample(device: "ipad"), gate: Gate { _ in nil })
+        await open.unlock("Matters")
+        let all = await open.entries(.latest)
+        XCTAssertTrue(all.contains { $0.episode.title == "Call notes" }, "and joins once unlocked")
+        open.lock()
+        XCTAssertFalse(open.gate.isOpen)
+    }
+
+    func testMiniPlayerOpensNowPlayingUntilThereIsATransport() async {
+        let m = ShowsModel(store: MemoryCatalog.sample(device: "ipad"), gate: refused())
+        await m.reload()
+        m.togglePlay()
+        XCTAssertTrue(m.nowPlayingOpen, "no transport yet: play opens Now Playing")
+        final class T: Transport { var isPlaying = false; var skipped = 0.0
+            func toggle() { isPlaying.toggle() }; func skip(_ s: Double) { skipped += s } }
+        let t = T(); m.transport = t; m.nowPlayingOpen = false
+        m.togglePlay()
+        XCTAssertTrue(t.isPlaying); XCTAssertFalse(m.nowPlayingOpen)
+    }
+
     func testArtworkHuesAreStablePerName() {
         let a = Theme.hues("MPEP"), b = Theme.hues("MPEP"), c = Theme.hues("Folio")
         XCTAssertEqual("\(a.0)", "\(b.0)")
@@ -132,6 +168,7 @@ final class SkinTests: XCTestCase {
     }
 
     /// Each view lays out and draws with real rows (a crash or a layout trap fails here).
+    @available(macOS 15, *)
     func testViewsRender() async throws {
         let m = ShowsModel(store: MemoryCatalog.sample(device: "mac"), gate: refused())
         await m.reload()
@@ -141,11 +178,18 @@ final class SkinTests: XCTestCase {
         m.play(e)
         let matters = try XCTUnwrap(m.spaces.first { $0.id == .matters })
         let views: [(String, AnyView)] = [
-            ("root", AnyView(ShowsRoot(model: m) { _ in Text("player") })),
-            ("grid", AnyView(NavigationStack { LibraryGrid(model: m, space: m.spaces[0]) })),
+            ("root", AnyView(ShowsRoot(model: m, places: [Place(id: "d", title: "Draftpad", symbol: "square.and.pencil") { Text("pad") }]) { _ in Text("player") })),
+            ("home", AnyView(NavigationStack { HomeView(model: m) })),
+            ("new", AnyView(NavigationStack { NewView(model: m) })),
+            ("library", AnyView(NavigationStack { LibraryView(model: m, places: []) })),
+            ("search", AnyView(NavigationStack { SearchView(model: m) })),
+            ("list", AnyView(NavigationStack { EntryList(model: m, feed: .latest, title: "Latest") })),
+            ("grid", AnyView(NavigationStack { ShowsGrid(model: m, shows: m.allShows, title: "Shows") })),
             ("show", AnyView(NavigationStack { ShowPage(model: m, show: mpep) })),
-            ("row", AnyView(EpisodeRow(episode: e))),
-            ("locked", AnyView(SpaceView(model: m, space: matters))),
+            ("episode", AnyView(EpisodeRow(model: m, episode: e))),
+            ("card", AnyView(UpNextCard(model: m, entry: try XCTUnwrap(m.upNext.first)))),
+            ("played", AnyView(EntryRow(model: m, entry: try XCTUnwrap(m.recentlyPlayed.first)))),
+            ("locked", AnyView(SpaceScreen(model: m, space: matters))),
             ("mini", AnyView(MiniPlayer(model: m))),
             ("now", AnyView(NowPlaying(model: m) { _ in Text("player") })),
             ("verdict", AnyView(VerdictBar(chosen: .clicked) { _ in })),

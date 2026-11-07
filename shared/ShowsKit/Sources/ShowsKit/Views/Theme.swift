@@ -36,9 +36,12 @@ public struct Artwork: View {
     let title: String
     let seed: String
     let corner: CGFloat
+    let ratio: CGFloat
+    let named: Bool
 
-    public init(title: String, seed: String? = nil, corner: CGFloat = Theme.artCorner) {
-        self.title = title; self.seed = seed ?? title; self.corner = corner
+    /// `named: false` for thumbnails too small to read a name on (the mini-player, search rows).
+    public init(title: String, seed: String? = nil, corner: CGFloat = Theme.artCorner, ratio: CGFloat = 1, named: Bool = true) {
+        self.title = title; self.seed = seed ?? title; self.corner = corner; self.ratio = ratio; self.named = named
     }
 
     public var body: some View {
@@ -46,10 +49,10 @@ public struct Artwork: View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
             .fill(LinearGradient(colors: [a, b], startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay(alignment: .bottomLeading) {
-                Text(title).font(.system(.title3, design: .rounded, weight: .bold)).foregroundStyle(.white)
-                    .lineLimit(3).minimumScaleFactor(0.6).padding(12)
+                if named { Text(title).font(.system(.title3, design: .rounded, weight: .bold)).foregroundStyle(.white)
+                    .lineLimit(3).minimumScaleFactor(0.6).padding(12) }
             }
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(ratio, contentMode: .fit)
             .accessibilityHidden(true)
     }
 }
