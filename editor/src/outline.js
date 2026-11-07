@@ -207,3 +207,73 @@ export function headingFoldExtension() {
     })
   ];
 }
+
+/**
+ * Wires left-edge touch swipe to summon the outline, and Escape or tap/click outside to close it.
+ */
+export function attachOutlineGestures(
+  container,
+  outlineEl,
+  {
+    edgePx = 28,
+    threshold = 40,
+    isOpen = () => false,
+    onOpen = () => {},
+    onClose = () => {}
+  } = {}
+) {
+  let startX = null;
+  let startY = null;
+
+  container.addEventListener(
+    'touchstart',
+    e => {
+      const t = e.touches && e.touches[0];
+      if (!t || (e.touches && e.touches.length > 1)) {
+        startX = null;
+        return;
+      }
+      if (t.clientX <= edgePx) {
+        startX = t.clientX;
+        startY = t.clientY;
+      } else {
+        startX = null;
+      }
+    },
+    { passive: true }
+  );
+
+  container.addEventListener(
+    'touchend',
+    e => {
+      if (startX === null) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      const sx = startX;
+      const sy = startY;
+      startX = null;
+      startY = null;
+      if (!t) return;
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      if (dx >= threshold && Math.abs(dy) < dx) {
+        onOpen();
+      }
+    },
+    { passive: true }
+  );
+
+  container.addEventListener('pointerdown', e => {
+    if (!isOpen()) return;
+    if (outlineEl && typeof outlineEl.contains === 'function' && outlineEl.contains(e.target)) {
+      return;
+    }
+    onClose();
+  });
+
+  container.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && isOpen()) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      onClose();
+    }
+  });
+}

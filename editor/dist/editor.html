@@ -59,6 +59,8 @@ body {
 }
 
 .rc-toolbar {
+  position: relative;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -67,12 +69,76 @@ body {
   border-bottom: 1px solid var(--rc-border);
   background: var(--rc-panel);
   flex-shrink: 0;
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
-.rc-toolbar-group {
+.rc-toolbar.rc-toolbar-faded {
+  opacity: 0;
+}
+
+.rc-page-indicator {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rc-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.rc-page-indicator:hover {
+  color: var(--rc-cyan);
+}
+
+.rc-menu-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.rc-menu-btn {
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+}
+
+.rc-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 164px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  background: var(--rc-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+.rc-menu[hidden] {
+  display: none;
+}
+
+.rc-menu-item {
+  appearance: none;
+  background: transparent;
+  color: var(--rc-text);
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc-menu-item:hover,
+.rc-menu-item:focus-visible,
+.rc-menu-item[aria-pressed="true"] {
+  color: var(--rc-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  outline: none;
 }
 
 .rc-btn {
@@ -272,8 +338,16 @@ body {
   font-weight: 600;
 }
 
-/* Find: one field, a count, ⇄ for replace, ✕ to close. */
+/* Find: one field, a count, ↑/↓, ⇄ for replace, ✕ to close; always sits above the outline. */
+.cm-panels,
+.cm-panels-top {
+  position: relative;
+  z-index: 10;
+}
+
 .rc-find {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -311,10 +385,22 @@ body {
 }
 
 .rc-find-count {
-  min-width: 3ch;
+  min-width: 6ch;
   color: var(--rc-muted);
   font-size: 12px;
   text-align: right;
+  white-space: nowrap;
+}
+
+.cm-searchMatch {
+  background-color: rgba(56, 189, 248, 0.22);
+  border-radius: 3px;
+}
+
+.cm-searchMatch.cm-searchMatch-selected {
+  background-color: rgba(56, 189, 248, 0.52);
+  outline: 1.5px solid var(--rc-cyan);
+  border-radius: 3px;
 }
 
 .rc-find-toggle,
@@ -3369,10 +3455,10 @@ body {
     cause the method to sort them.
     */
     static of(ranges, sort = false) {
-      let build4 = new RangeSetBuilder();
+      let build3 = new RangeSetBuilder();
       for (let range of ranges instanceof Range ? [ranges] : sort ? lazySort(ranges) : ranges)
-        build4.add(range.from, range.to, range.value);
-      return build4.finish();
+        build3.add(range.from, range.to, range.value);
+      return build3.finish();
     }
     /**
     Join an array of range sets into a single set.
@@ -26735,6 +26821,66 @@ ${PAGE_MARKER}
       })
     ];
   }
+  function attachOutlineGestures(container, outlineEl, {
+    edgePx = 28,
+    threshold = 40,
+    isOpen = () => false,
+    onOpen = () => {
+    },
+    onClose = () => {
+    }
+  } = {}) {
+    let startX = null;
+    let startY = null;
+    container.addEventListener(
+      "touchstart",
+      (e) => {
+        const t2 = e.touches && e.touches[0];
+        if (!t2 || e.touches && e.touches.length > 1) {
+          startX = null;
+          return;
+        }
+        if (t2.clientX <= edgePx) {
+          startX = t2.clientX;
+          startY = t2.clientY;
+        } else {
+          startX = null;
+        }
+      },
+      { passive: true }
+    );
+    container.addEventListener(
+      "touchend",
+      (e) => {
+        if (startX === null) return;
+        const t2 = e.changedTouches && e.changedTouches[0];
+        const sx = startX;
+        const sy = startY;
+        startX = null;
+        startY = null;
+        if (!t2) return;
+        const dx = t2.clientX - sx;
+        const dy = t2.clientY - sy;
+        if (dx >= threshold && Math.abs(dy) < dx) {
+          onOpen();
+        }
+      },
+      { passive: true }
+    );
+    container.addEventListener("pointerdown", (e) => {
+      if (!isOpen()) return;
+      if (outlineEl && typeof outlineEl.contains === "function" && outlineEl.contains(e.target)) {
+        return;
+      }
+      onClose();
+    });
+    container.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && isOpen()) {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        onClose();
+      }
+    });
+  }
 
   // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
@@ -27837,150 +27983,18 @@ ${PAGE_MARKER}
     baseTheme3
   ];
 
-  // src/search.js
-  function openFindReplace(view) {
-    openSearchPanel(view);
-    return searchPanelOpen(view.state);
-  }
-  function toggleFindReplace(view) {
-    if (searchPanelOpen(view.state)) {
-      closeSearchPanel(view);
-      return false;
-    }
-    openSearchPanel(view);
-    return true;
-  }
-  function isFindReplaceOpen(state) {
-    return searchPanelOpen(state);
-  }
-  function countMatches(state, query, cap = 999) {
-    if (!query.valid) return 0;
-    const cur = query.getCursor(state);
-    let n = 0;
-    while (n <= cap && !cur.next().done) n++;
-    return n;
-  }
-  function el(tag, props = {}) {
-    const e = document.createElement(tag);
-    Object.assign(e, props);
-    return e;
-  }
-  function createFindPanel(view) {
-    const dom = el("div", { className: "rc-find" });
-    const find2 = el("input", { className: "rc-find-input", type: "search", placeholder: "Find", spellcheck: false });
-    find2.setAttribute("main-field", "true");
-    find2.setAttribute("aria-label", "Find");
-    const count2 = el("span", { className: "rc-find-count" });
-    const toggle = el("button", { className: "rc-find-toggle", type: "button", textContent: "\u21C4", title: "Replace" });
-    const close = el("button", { className: "rc-find-close", type: "button", textContent: "\u2715", title: "Close (Esc)" });
-    const row = el("div", { className: "rc-find-row" });
-    row.append(find2, count2, toggle, close);
-    const replaceRow = el("div", { className: "rc-find-row rc-find-replace", hidden: true });
-    const repl = el("input", { className: "rc-find-input", placeholder: "Replace with", spellcheck: false });
-    repl.setAttribute("aria-label", "Replace with");
-    const one = el("button", { className: "rc-find-btn", type: "button", textContent: "Replace" });
-    const all = el("button", { className: "rc-find-btn", type: "button", textContent: "All" });
-    replaceRow.append(repl, one, all);
-    dom.append(row, replaceRow);
-    const q = getSearchQuery(view.state);
-    find2.value = q.search;
-    repl.value = q.replace;
-    function commit() {
-      const query = new SearchQuery({ search: find2.value, replace: repl.value, caseSensitive: false });
-      if (!query.eq(getSearchQuery(view.state))) view.dispatch({ effects: setSearchQuery.of(query) });
-      return query;
-    }
-    function showCount() {
-      const query = getSearchQuery(view.state);
-      if (!query.search) {
-        count2.textContent = "";
-        return;
-      }
-      const n = countMatches(view.state, query);
-      count2.textContent = n > 999 ? "999+" : n === 0 ? "none" : String(n);
-    }
-    find2.addEventListener("input", () => {
-      commit();
-      if (find2.value) findNext(view);
-      showCount();
-    });
-    repl.addEventListener("input", commit);
-    find2.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commit();
-        (e.shiftKey ? findPrevious : findNext)(view);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closeSearchPanel(view);
-        view.focus();
-      }
-    });
-    repl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commit();
-        replaceNext(view);
-        showCount();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closeSearchPanel(view);
-        view.focus();
-      }
-    });
-    toggle.addEventListener("click", () => {
-      replaceRow.hidden = !replaceRow.hidden;
-      toggle.setAttribute("aria-pressed", String(!replaceRow.hidden));
-      (replaceRow.hidden ? find2 : repl).focus();
-    });
-    close.addEventListener("click", () => {
-      closeSearchPanel(view);
-      view.focus();
-    });
-    one.addEventListener("click", () => {
-      commit();
-      replaceNext(view);
-      showCount();
-    });
-    all.addEventListener("click", () => {
-      commit();
-      replaceAll(view);
-      showCount();
-    });
-    return {
-      dom,
-      top: true,
-      mount() {
-        find2.focus();
-        find2.select();
-        showCount();
-      },
-      update(u) {
-        if (u.docChanged) showCount();
-      }
-    };
-  }
-  function searchExtension() {
-    return [
-      search({ top: true, createPanel: createFindPanel }),
-      highlightSelectionMatches(),
-      keymap.of([
-        {
-          key: "Mod-f",
-          run: (view) => {
-            openSearchPanel(view);
-            return true;
-          },
-          preventDefault: true
-        },
-        ...searchKeymap
-      ])
-    ];
-  }
-
   // src/bridge.js
   var DEBOUNCE_MS = 300;
   var externalSetTextAnnotation = Annotation.define();
+  function postHaptic(kind, globalObj = typeof window !== "undefined" ? window : null) {
+    if (!kind) return false;
+    const h = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ui;
+    if (h && typeof h.postMessage === "function") {
+      h.postMessage({ haptic: String(kind) });
+      return true;
+    }
+    return false;
+  }
   function createEditorBridge({
     getState,
     dispatch,
@@ -28086,6 +28100,328 @@ ${PAGE_MARKER}
       notifyDocChanged,
       clearPendingPost
     };
+  }
+
+  // src/search.js
+  var matchMark2 = Decoration.mark({ class: "cm-searchMatch" });
+  var selectedMatchMark2 = Decoration.mark({ class: "cm-searchMatch cm-searchMatch-selected" });
+  function openFindReplace(view) {
+    openSearchPanel(view);
+    if (searchPanelOpen(view.state)) {
+      view.dispatch({ effects: setSearchQuery.of(getSearchQuery(view.state)) });
+    }
+    return searchPanelOpen(view.state);
+  }
+  function toggleFindReplace(view) {
+    if (searchPanelOpen(view.state)) {
+      closeSearchPanel(view);
+      return false;
+    }
+    openFindReplace(view);
+    return true;
+  }
+  function isFindReplaceOpen(state) {
+    return searchPanelOpen(state);
+  }
+  function findMatches(state, query = getSearchQuery(state), cap = 999) {
+    if (!query || !query.valid) return [];
+    const cur = query.getCursor(state);
+    const out = [];
+    while (out.length <= cap && !cur.next().done) {
+      out.push({ from: cur.value.from, to: cur.value.to });
+    }
+    return out;
+  }
+  function matchStatus(state, query = getSearchQuery(state), cap = 999) {
+    if (!query || !query.search) {
+      return { index: 0, count: 0, label: "", matches: [] };
+    }
+    const matches = findMatches(state, query, cap);
+    const count2 = matches.length;
+    if (count2 === 0) {
+      return { index: 0, count: 0, label: "none", matches };
+    }
+    const sel = state.selection.main;
+    let idx = matches.findIndex((m) => m.from === sel.from && m.to === sel.to);
+    if (idx === -1) {
+      idx = matches.findIndex((m) => m.from >= sel.from);
+      if (idx === -1) idx = 0;
+    }
+    const index = idx + 1;
+    const totalStr = count2 > cap ? `${cap}+` : String(count2);
+    return {
+      index,
+      count: count2,
+      label: `${index} of ${totalStr}`,
+      matches
+    };
+  }
+  function buildSearchDecos(state) {
+    const query = getSearchQuery(state);
+    if (!query || !query.valid) return Decoration.none;
+    const matches = findMatches(state, query);
+    if (matches.length === 0) return Decoration.none;
+    const sel = state.selection.main;
+    return Decoration.set(
+      matches.map(
+        (m) => (m.from === sel.from && m.to === sel.to ? selectedMatchMark2 : matchMark2).range(m.from, m.to)
+      ),
+      true
+    );
+  }
+  var searchHighlightField = StateField.define({
+    create(state) {
+      return buildSearchDecos(state);
+    },
+    update(decos, tr) {
+      if (tr.docChanged || tr.selection || tr.effects.some((e) => e.is(setSearchQuery))) {
+        return buildSearchDecos(tr.state);
+      }
+      return decos;
+    },
+    provide: (f) => EditorView.decorations.from(f)
+  });
+  function stepFind(view, delta = 1, { onWrap = null, globalObj } = {}) {
+    const query = getSearchQuery(view.state);
+    if (!query || !query.valid) return null;
+    const matches = findMatches(view.state, query);
+    if (matches.length === 0) return null;
+    const sel = view.state.selection.main;
+    const exactIdx = matches.findIndex((m) => m.from === sel.from && m.to === sel.to);
+    let idx = 0;
+    let wrapped = false;
+    if (delta === 0) {
+      idx = matches.findIndex((m) => m.from >= sel.from);
+      if (idx === -1) {
+        idx = 0;
+        wrapped = true;
+      }
+    } else if (exactIdx !== -1) {
+      const raw = exactIdx + (delta > 0 ? 1 : -1);
+      if (raw >= matches.length) {
+        idx = 0;
+        wrapped = true;
+      } else if (raw < 0) {
+        idx = matches.length - 1;
+        wrapped = true;
+      } else {
+        idx = raw;
+      }
+    } else if (delta > 0) {
+      idx = matches.findIndex((m) => m.from >= sel.to);
+      if (idx === -1) {
+        idx = 0;
+        wrapped = true;
+      }
+    } else {
+      idx = -1;
+      for (let i = matches.length - 1; i >= 0; i--) {
+        if (matches[i].to <= sel.from) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) {
+        idx = matches.length - 1;
+        wrapped = true;
+      }
+    }
+    const target = matches[idx];
+    const range = EditorSelection.range(target.from, target.to);
+    const scrollEffect = EditorView.scrollIntoView(range, { y: "center" });
+    view.dispatch({
+      selection: EditorSelection.create([range]),
+      effects: [scrollEffect],
+      userEvent: "select.search"
+    });
+    if (view.scrollDOM && typeof view.lineBlockAt === "function") {
+      const block = view.lineBlockAt(target.from);
+      const viewHeight = view.scrollDOM.clientHeight || 0;
+      const centeredTop = Math.max(0, block.top - Math.round(viewHeight / 2));
+      view.scrollDOM.scrollTop = centeredTop;
+    }
+    if (wrapped && delta !== 0) {
+      postHaptic("edge", globalObj);
+      if (typeof onWrap === "function") onWrap();
+    }
+    const status = matchStatus(view.state, query);
+    return {
+      from: target.from,
+      to: target.to,
+      index: status.index,
+      count: status.count,
+      label: status.label,
+      wrapped,
+      scrollEffect
+    };
+  }
+  function el(tag, props = {}) {
+    const e = document.createElement(tag);
+    Object.assign(e, props);
+    return e;
+  }
+  function createFindPanel(view) {
+    const dom = el("div", { className: "rc-find" });
+    const find2 = el("input", { className: "rc-find-input", type: "search", placeholder: "Find", spellcheck: false });
+    find2.setAttribute("main-field", "true");
+    find2.setAttribute("aria-label", "Find");
+    const count2 = el("span", { className: "rc-find-count" });
+    const prevBtn = el("button", {
+      className: "rc-find-btn rc-find-prev",
+      type: "button",
+      textContent: "\u2191",
+      title: "Previous match (Shift-Enter)",
+      ariaLabel: "Previous match"
+    });
+    const nextBtn = el("button", {
+      className: "rc-find-btn rc-find-next",
+      type: "button",
+      textContent: "\u2193",
+      title: "Next match (Enter)",
+      ariaLabel: "Next match"
+    });
+    const toggle = el("button", { className: "rc-find-toggle", type: "button", textContent: "\u21C4", title: "Replace" });
+    const close = el("button", { className: "rc-find-close", type: "button", textContent: "\u2715", title: "Close (Esc)" });
+    const row = el("div", { className: "rc-find-row" });
+    row.append(find2, count2, prevBtn, nextBtn, toggle, close);
+    const replaceRow = el("div", { className: "rc-find-row rc-find-replace", hidden: true });
+    const repl = el("input", { className: "rc-find-input", placeholder: "Replace with", spellcheck: false });
+    repl.setAttribute("aria-label", "Replace with");
+    const one = el("button", { className: "rc-find-btn", type: "button", textContent: "Replace" });
+    const all = el("button", { className: "rc-find-btn", type: "button", textContent: "All" });
+    replaceRow.append(repl, one, all);
+    dom.append(row, replaceRow);
+    const q = getSearchQuery(view.state);
+    find2.value = q.search;
+    repl.value = q.replace;
+    function commit() {
+      const query = new SearchQuery({ search: find2.value, replace: repl.value, caseSensitive: false });
+      if (!query.eq(getSearchQuery(view.state))) view.dispatch({ effects: setSearchQuery.of(query) });
+      return query;
+    }
+    function showCount() {
+      const query = getSearchQuery(view.state);
+      count2.textContent = matchStatus(view.state, query).label;
+    }
+    find2.addEventListener("input", () => {
+      const query = commit();
+      if (query.valid) stepFind(view, 0);
+      showCount();
+    });
+    repl.addEventListener("input", commit);
+    find2.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+        stepFind(view, e.shiftKey ? -1 : 1);
+        showCount();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        commit();
+        stepFind(view, 1);
+        showCount();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        commit();
+        stepFind(view, -1);
+        showCount();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeSearchPanel(view);
+        view.focus();
+      }
+    });
+    repl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+        replaceNext(view);
+        showCount();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeSearchPanel(view);
+        view.focus();
+      }
+    });
+    prevBtn.addEventListener("click", () => {
+      commit();
+      stepFind(view, -1);
+      showCount();
+    });
+    nextBtn.addEventListener("click", () => {
+      commit();
+      stepFind(view, 1);
+      showCount();
+    });
+    toggle.addEventListener("click", () => {
+      replaceRow.hidden = !replaceRow.hidden;
+      toggle.setAttribute("aria-pressed", String(!replaceRow.hidden));
+      (replaceRow.hidden ? find2 : repl).focus();
+    });
+    close.addEventListener("click", () => {
+      closeSearchPanel(view);
+      view.focus();
+    });
+    one.addEventListener("click", () => {
+      commit();
+      replaceNext(view);
+      showCount();
+    });
+    all.addEventListener("click", () => {
+      commit();
+      replaceAll(view);
+      showCount();
+    });
+    return {
+      dom,
+      top: true,
+      mount() {
+        find2.focus();
+        find2.select();
+        showCount();
+      },
+      update(u) {
+        if (u.docChanged || u.selectionSet || u.transactions.some((tr) => tr.effects.some((e) => e.is(setSearchQuery)))) {
+          showCount();
+        }
+      }
+    };
+  }
+  function searchExtension({ onOpen = null } = {}) {
+    const openWatcher = StateField.define({
+      create(state) {
+        return searchPanelOpen(state);
+      },
+      update(wasOpen, tr) {
+        const isOpen = searchPanelOpen(tr.state);
+        const queryRecommitted = isOpen && tr.effects.some((e) => e.is(setSearchQuery));
+        if (isOpen && (!wasOpen || queryRecommitted) && typeof onOpen === "function") {
+          onOpen();
+        }
+        return isOpen;
+      }
+    });
+    return [
+      search({
+        top: true,
+        createPanel: createFindPanel,
+        scrollToMatch: (r) => EditorView.scrollIntoView(r, { y: "center" })
+      }),
+      openWatcher,
+      searchHighlightField,
+      highlightSelectionMatches(),
+      keymap.of([
+        {
+          key: "Mod-f",
+          run: (view) => {
+            openFindReplace(view);
+            return true;
+          },
+          preventDefault: true
+        },
+        ...searchKeymap
+      ])
+    ];
   }
 
   // src/legal.js
@@ -28857,25 +29193,16 @@ ${PAGE_MARKER}
     }
     return Math.max(0, pages.length - 1);
   }
-  function hiddenRanges(text, index) {
-    const pages = inspectDraftpadPages(text);
-    if (pages.length <= 1) return [];
-    const i = Math.max(0, Math.min(pages.length - 1, index));
-    const { from, to } = pages[i];
-    const out = [];
-    if (from > 0) out.push({ from: 0, to: from - 1 });
-    if (to < text.length) out.push({ from: to + 1, to: text.length });
-    return out.filter((r) => r.to >= r.from);
-  }
-  function build(state, value) {
-    if (!value.on) return Decoration.none;
-    const ranges = hiddenRanges(state.doc.toString(), value.index);
-    return Decoration.set(ranges.map((r) => Decoration.replace({ block: true }).range(r.from, r.to)));
+  function pageHeadingOffset(doc2, page) {
+    if (!page) return 0;
+    if (page.dateLineNumber && doc2 && typeof doc2.line === "function") {
+      return doc2.line(page.dateLineNumber).from;
+    }
+    return page.from;
   }
   var pageModeField = StateField.define({
-    create(state) {
-      const value = { on: true, index: 0 };
-      return { ...value, decos: build(state, value) };
+    create() {
+      return { on: true, index: 0, decos: Decoration.none };
     },
     update(v, tr) {
       let on = v.on;
@@ -28890,13 +29217,14 @@ ${PAGE_MARKER}
         const at = pageAt(pages, tr.state.selection.main.head);
         if (at !== index) index = at;
       }
-      if (on === v.on && index === v.index && !tr.docChanged) return v;
-      const value = { on, index };
-      return { ...value, decos: build(tr.state, value) };
+      if (on === v.on && index === v.index) return v;
+      return { on, index, decos: Decoration.none };
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.decos)
   });
-  function currentPage(state) {
+  function currentPage(stateOrView) {
+    const state = stateOrView && stateOrView.state ? stateOrView.state : stateOrView;
+    if (!state) return 0;
     const v = state.field(pageModeField, false);
     return v ? v.index : 0;
   }
@@ -28907,42 +29235,77 @@ ${PAGE_MARKER}
   function pageCount(state) {
     return inspectDraftpadPages(state.doc.toString()).length;
   }
+  function syncPageFromScroll(view, { onSnap = null, globalObj } = {}) {
+    if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
+      return currentPage(view);
+    }
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const top2 = Math.max(0, Number(view.scrollDOM.scrollTop) || 0);
+    const pos = top2 <= 4 ? 0 : view.lineBlockAtHeight(top2 + 24).from;
+    const at = pageAt(pages, pos);
+    const prev = currentPage(view.state);
+    if (at !== prev) {
+      view.dispatch({ effects: setPageIndex.of(at) });
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(at);
+    }
+    return at;
+  }
   function showPage(view, index) {
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const i = Math.max(0, Math.min(pages.length - 1, index));
+    const targetPos = pageHeadingOffset(view.state.doc, pages[i]);
     view.dispatch({
-      selection: { anchor: pages[i].from },
-      effects: [setPageIndex.of(i), EditorView.scrollIntoView(pages[i].from, { y: "start" })]
+      selection: { anchor: targetPos },
+      effects: [setPageIndex.of(i), EditorView.scrollIntoView(targetPos, { y: "start", yMargin: 8 })]
     });
-    view.scrollDOM.scrollTop = 0;
+    if (view.scrollDOM) {
+      const targetTop = i === 0 ? 0 : typeof view.lineBlockAt === "function" ? Math.max(0, view.lineBlockAt(targetPos).top) : i * 240;
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: targetTop, behavior: "smooth" });
+      } else {
+        view.scrollDOM.scrollTop = targetTop;
+      }
+    }
     return i;
   }
-  function stepPage(view, delta) {
+  function stepPage(view, delta, { onSnap = null, onBounce = null, globalObj } = {}) {
     if (!isPageMode(view.state)) return false;
     const target = currentPage(view.state) + delta;
-    if (target < 0 || target >= pageCount(view.state)) return false;
+    if (target < 0 || target >= pageCount(view.state)) {
+      postHaptic("edge", globalObj);
+      if (typeof onBounce === "function") onBounce();
+      return false;
+    }
     showPage(view, target);
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(target);
     return true;
   }
-  function pageModeExtension() {
+  function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     return [
       pageModeField,
       Prec.highest(keymap.of([
         { key: "Mod-]", run: (v) => {
-          stepPage(v, 1);
+          stepPage(v, 1, { onSnap, onBounce });
           return true;
         } },
         { key: "Mod-[", run: (v) => {
-          stepPage(v, -1);
+          stepPage(v, -1, { onSnap, onBounce });
           return true;
         } }
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, onBounce = null } = {}) {
+  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null } = {}) {
     let acc = 0;
     let spent = false;
     let timer = null;
+    let suppressScrollUntil = 0;
+    const stepWithGlide = (delta) => {
+      suppressScrollUntil = Date.now() + 380;
+      return stepPage(view, delta, { onSnap, onBounce });
+    };
     view.scrollDOM.addEventListener("wheel", (e) => {
       if (!isPageMode(view.state)) return;
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
@@ -28956,10 +29319,39 @@ ${PAGE_MARKER}
       acc += e.deltaX;
       if (Math.abs(acc) >= threshold) {
         spent = true;
-        const moved = stepPage(view, acc > 0 ? 1 : -1);
-        if (!moved && typeof onBounce === "function") onBounce();
+        stepWithGlide(acc > 0 ? 1 : -1);
       }
     }, { passive: false });
+    let touchStartX = null;
+    let touchStartY = null;
+    view.scrollDOM.addEventListener("touchstart", (e) => {
+      if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
+        touchStartX = null;
+        return;
+      }
+      const t2 = e.touches[0];
+      if (t2.clientX <= edgePx) {
+        touchStartX = null;
+        return;
+      }
+      touchStartX = t2.clientX;
+      touchStartY = t2.clientY;
+    }, { passive: true });
+    view.scrollDOM.addEventListener("touchend", (e) => {
+      if (touchStartX === null || !e.changedTouches || e.changedTouches.length === 0) return;
+      const t2 = e.changedTouches[0];
+      const dx = t2.clientX - touchStartX;
+      const dy = t2.clientY - touchStartY;
+      touchStartX = null;
+      touchStartY = null;
+      if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        stepWithGlide(dx < 0 ? 1 : -1);
+      }
+    }, { passive: true });
+    view.scrollDOM.addEventListener("scroll", () => {
+      if (Date.now() < suppressScrollUntil) return;
+      syncPageFromScroll(view, { onSnap });
+    }, { passive: true });
   }
 
   // src/embeds.js
@@ -29027,13 +29419,13 @@ ${PAGE_MARKER}
     }
     return out;
   }
-  function build2(doc2) {
+  function build(doc2) {
     const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption), block: true, side: 1 }).range(e.end));
     return Decoration.set(items);
   }
   var embedField = StateField.define({
-    create: (state) => build2(state.doc),
-    update: (decos, tr) => tr.docChanged ? build2(tr.state.doc) : decos,
+    create: (state) => build(state.doc),
+    update: (decos, tr) => tr.docChanged ? build(tr.state.doc) : decos,
     provide: (f) => EditorView.decorations.from(f)
   });
   function embedsExtension() {
@@ -29078,7 +29470,7 @@ ${PAGE_MARKER}
   };
   var bullet = Decoration.replace({ widget: new BulletWidget() });
   var linkMark = Decoration.mark({ class: "cm-url-link" });
-  function build3(view) {
+  function build2(view) {
     const b = new RangeSetBuilder();
     for (const { from, to } of view.visibleRanges) {
       let pos = from;
@@ -29099,10 +29491,10 @@ ${PAGE_MARKER}
   }
   var decorations2 = ViewPlugin.fromClass(class {
     constructor(view) {
-      this.decorations = build3(view);
+      this.decorations = build2(view);
     }
     update(u) {
-      if (u.docChanged || u.viewportChanged) this.decorations = build3(u.view);
+      if (u.docChanged || u.viewportChanged) this.decorations = build2(u.view);
     }
   }, { decorations: (v) => v.decorations });
   var clicks = EditorView.domEventHandlers({
@@ -29215,10 +29607,12 @@ ${PAGE_MARKER}
         },
         ".cm-searchMatch": {
           backgroundColor: "rgba(56, 189, 248, 0.22)",
-          outline: `1px solid ${palette.cyan}`
+          borderRadius: "3px"
         },
         ".cm-searchMatch.cm-searchMatch-selected": {
-          backgroundColor: "rgba(56, 189, 248, 0.42)"
+          backgroundColor: "rgba(56, 189, 248, 0.52)",
+          outline: `1.5px solid ${palette.cyan}`,
+          borderRadius: "3px"
         }
       },
       { dark: isDark }
@@ -29246,11 +29640,26 @@ ${PAGE_MARKER}
   }
 
   // src/index.js
+  var MENU_ACTIONS = [
+    "outline",
+    "find",
+    "newerPage",
+    "olderPage",
+    "pages",
+    "newestFirst",
+    "theme"
+  ];
+  function formatPageIndicator(index, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safePage = Math.max(1, Math.min(safeTotal, (Number(index) || 0) + 1));
+    return `Page ${safePage} of ${safeTotal}`;
+  }
   function createEditorExtensions({
     theme: theme2 = "dark",
     fontSize = DEFAULT_FONT_SIZE,
     compartments = createThemeCompartments(),
     onUpdate = null,
+    onOpenFind = null,
     extraExtensions = []
   } = {}) {
     const extensions = [
@@ -29260,7 +29669,7 @@ ${PAGE_MARKER}
       highlightActiveLine(),
       EditorView.lineWrapping,
       markdown(),
-      searchExtension(),
+      searchExtension({ onOpen: onOpenFind }),
       headingFoldExtension(),
       legalNumberingExtension(),
       removedRecordExtension(),
@@ -29294,42 +29703,66 @@ ${PAGE_MARKER}
     let currentFontSize = DEFAULT_FONT_SIZE;
     let newestFirst = false;
     let outlineVisible = false;
+    let menuOpen = false;
+    let toolbarFaded = false;
     const shell = document.createElement("div");
     shell.className = "rc-shell";
     const toolbar = document.createElement("header");
     toolbar.className = "rc-toolbar";
-    const leftGroup = document.createElement("div");
-    leftGroup.className = "rc-toolbar-group";
-    const outlineToggleBtn = document.createElement("button");
-    outlineToggleBtn.type = "button";
-    outlineToggleBtn.className = "rc-btn";
-    outlineToggleBtn.id = "rc-outline-toggle-btn";
-    outlineToggleBtn.setAttribute("aria-pressed", "false");
-    outlineToggleBtn.textContent = "Outline";
-    const pagesBtn = document.createElement("button");
-    pagesBtn.type = "button";
-    pagesBtn.className = "rc-btn";
-    pagesBtn.id = "rc-pages-btn";
+    const pageIndicator = document.createElement("span");
+    pageIndicator.className = "rc-page-indicator";
+    pageIndicator.id = "rc-page-indicator";
+    pageIndicator.textContent = formatPageIndicator(0, 1);
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "rc-menu-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "rc-btn rc-menu-btn";
+    menuBtn.id = "rc-menu-btn";
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.setAttribute("aria-haspopup", "menu");
+    menuBtn.setAttribute("aria-label", "Actions");
+    menuBtn.title = "Actions";
+    menuBtn.textContent = "\xB7\xB7\xB7";
+    const menu = document.createElement("div");
+    menu.className = "rc-menu";
+    menu.id = "rc-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+    function makeMenuItem(id2, label, title = "") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rc-menu-item";
+      btn.id = id2;
+      btn.setAttribute("role", "menuitem");
+      btn.setAttribute("aria-pressed", "false");
+      if (title) btn.title = title;
+      btn.textContent = label;
+      return btn;
+    }
+    const outlineToggleBtn = makeMenuItem("rc-outline-toggle-btn", "Outline", "Outline");
+    const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
+    const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "Newer page (\u2318[)");
+    const nextPageBtn = makeMenuItem("rc-next-page-btn", "Older page", "Older page (\u2318])");
+    const pagesBtn = makeMenuItem(
+      "rc-pages-btn",
+      "Pages",
+      "Swipe or \u2318] / \u2318[ to glide between pages"
+    );
     pagesBtn.setAttribute("aria-pressed", "true");
-    pagesBtn.title = "One page at a time (two fingers left / right, \u2318] / \u2318[); off = one long scroll";
-    pagesBtn.textContent = "Pages";
-    const searchBtn = document.createElement("button");
-    searchBtn.type = "button";
-    searchBtn.className = "rc-btn";
-    searchBtn.id = "rc-search-btn";
-    searchBtn.setAttribute("aria-pressed", "false");
-    searchBtn.title = "Find (\u2318F)";
-    searchBtn.textContent = "Search";
-    leftGroup.append(outlineToggleBtn, pagesBtn, searchBtn);
-    const rightGroup = document.createElement("div");
-    rightGroup.className = "rc-toolbar-group";
-    const themeBtn = document.createElement("button");
-    themeBtn.type = "button";
-    themeBtn.className = "rc-btn";
-    themeBtn.id = "rc-theme-btn";
-    themeBtn.textContent = "Light";
-    rightGroup.appendChild(themeBtn);
-    toolbar.append(leftGroup, rightGroup);
+    const newestFirstMenuBtn = makeMenuItem("rc-newest-first-menu-btn", "Newest first", "Order outline newest first");
+    const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
+    menu.append(
+      outlineToggleBtn,
+      searchBtn,
+      prevPageBtn,
+      nextPageBtn,
+      pagesBtn,
+      newestFirstMenuBtn,
+      themeBtn
+    );
+    menuWrap.append(menuBtn, menu);
+    toolbar.append(pageIndicator, menuWrap);
     const workspace = document.createElement("div");
     workspace.className = "rc-workspace";
     const outlinePanel = document.createElement("aside");
@@ -29457,12 +29890,45 @@ ${PAGE_MARKER}
         }
       }
     }
+    function updatePageIndicator(state2 = view ? view.state : null) {
+      if (!state2) return;
+      pageIndicator.textContent = formatPageIndicator(currentPage(state2), pageCount(state2));
+    }
+    function setToolbarFaded(faded) {
+      toolbarFaded = Boolean(faded);
+      if (toolbarFaded) {
+        toolbar.classList.add("rc-toolbar-faded");
+      } else {
+        toolbar.classList.remove("rc-toolbar-faded");
+      }
+    }
+    function closeMenu() {
+      menuOpen = false;
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+    }
+    function toggleMenu() {
+      menuOpen = !menuOpen;
+      menu.hidden = !menuOpen;
+      menuBtn.setAttribute("aria-expanded", String(menuOpen));
+      if (menuOpen) setToolbarFaded(false);
+    }
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
+      onOpenFind: () => hideOutline(),
       onUpdate(update) {
-        searchBtn.setAttribute("aria-pressed", String(isFindReplaceOpen(update.state)));
+        const findOpen = isFindReplaceOpen(update.state);
+        searchBtn.setAttribute("aria-pressed", String(findOpen));
+        if (findOpen && outlineVisible) {
+          hideOutline();
+        }
+        updatePageIndicator(update.state);
         if (update.docChanged) {
+          const isExternal = update.transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
+          if (!isExternal && !menuOpen) {
+            setToolbarFaded(true);
+          }
           if (bridge) bridge.notifyDocChanged(update.transactions);
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
@@ -29474,12 +29940,14 @@ ${PAGE_MARKER}
       state,
       parent: editorHost
     });
-    attachSwipePaging(view, {
-      onBounce: () => {
-        const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ui;
-        if (h) h.postMessage("bounce");
-      }
-    });
+    attachSwipePaging(view);
+    function showOutline() {
+      const wasVisible = outlineVisible;
+      outlineVisible = true;
+      outlinePanel.hidden = false;
+      outlineToggleBtn.setAttribute("aria-pressed", "true");
+      if (!wasVisible) postHaptic("open");
+    }
     function hideOutline() {
       outlineVisible = false;
       outlinePanel.hidden = true;
@@ -29489,6 +29957,7 @@ ${PAGE_MARKER}
       view.dispatch({ effects: setPageMode.of(Boolean(on)) });
       pagesBtn.setAttribute("aria-pressed", String(isPageMode(view.state)));
       if (on) showPage(view, currentPage(view.state));
+      updatePageIndicator();
     }
     function insertBlock(text) {
       const line = view.state.doc.lineAt(view.state.selection.main.head);
@@ -29511,7 +29980,7 @@ ${String(text ?? "")}`;
       if (typeof document !== "undefined" && document.documentElement) {
         document.documentElement.setAttribute("data-theme", currentTheme);
       }
-      themeBtn.textContent = currentTheme === "dark" ? "Light" : "Dark";
+      themeBtn.textContent = currentTheme === "dark" ? "Light theme" : "Dark theme";
       view.dispatch({
         effects: compartments.theme.reconfigure(buildThemeExtension(currentTheme))
       });
@@ -29528,6 +29997,7 @@ ${String(text ?? "")}`;
     function setNewestFirst(flag) {
       newestFirst = Boolean(flag);
       newestFirstBtn.setAttribute("aria-pressed", String(newestFirst));
+      newestFirstMenuBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
     bridge = createEditorBridge({
@@ -29559,24 +30029,82 @@ ${String(text ?? "")}`;
         insertBlock
       }
     });
-    outlineToggleBtn.addEventListener("click", () => {
-      outlineVisible = !outlineVisible;
-      outlinePanel.hidden = !outlineVisible;
-      outlineToggleBtn.setAttribute("aria-pressed", String(outlineVisible));
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMenu();
     });
-    pagesBtn.addEventListener("click", () => setPages(!isPageMode(view.state)));
+    toolbar.addEventListener("pointerenter", () => setToolbarFaded(false));
+    toolbar.addEventListener("mousemove", () => setToolbarFaded(false));
+    toolbar.addEventListener("touchstart", () => setToolbarFaded(false), { passive: true });
+    shell.addEventListener("mousemove", (e) => {
+      if (typeof e.clientY === "number" && e.clientY <= 48) {
+        setToolbarFaded(false);
+      }
+    });
+    shell.addEventListener("touchstart", (e) => {
+      const t2 = e.touches && e.touches[0];
+      if (t2 && typeof t2.clientY === "number" && t2.clientY <= 48) {
+        setToolbarFaded(false);
+      }
+    }, { passive: true });
+    pageIndicator.addEventListener("click", () => {
+      setToolbarFaded(false);
+      if (outlineVisible) hideOutline();
+      else showOutline();
+    });
+    outlineToggleBtn.addEventListener("click", () => {
+      closeMenu();
+      if (outlineVisible) hideOutline();
+      else showOutline();
+    });
+    prevPageBtn.addEventListener("click", () => {
+      closeMenu();
+      stepPage(view, -1);
+    });
+    nextPageBtn.addEventListener("click", () => {
+      closeMenu();
+      stepPage(view, 1);
+    });
+    pagesBtn.addEventListener("click", () => {
+      closeMenu();
+      setPages(!isPageMode(view.state));
+    });
     searchBtn.addEventListener("click", () => {
+      closeMenu();
       const open = toggleFindReplace(view);
+      if (open) hideOutline();
       searchBtn.setAttribute("aria-pressed", String(open));
     });
     newestFirstBtn.addEventListener("click", () => {
       setNewestFirst(!newestFirst);
     });
+    newestFirstMenuBtn.addEventListener("click", () => {
+      closeMenu();
+      setNewestFirst(!newestFirst);
+    });
     themeBtn.addEventListener("click", () => {
+      closeMenu();
       setTheme(currentTheme === "dark" ? "light" : "dark");
+    });
+    shell.addEventListener("click", (e) => {
+      if (menuOpen && !menuWrap.contains(e.target)) {
+        closeMenu();
+      }
+    });
+    shell.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (menuOpen) closeMenu();
+        if (outlineVisible) hideOutline();
+      }
+    });
+    attachOutlineGestures(workspace, outlinePanel, {
+      isOpen: () => outlineVisible,
+      onOpen: () => showOutline(),
+      onClose: () => hideOutline()
     });
     setTheme(currentTheme);
     setFontSize(currentFontSize);
+    updatePageIndicator();
     renderOutline();
     return {
       view,
@@ -29584,7 +30112,14 @@ ${String(text ?? "")}`;
       setTheme,
       setFontSize,
       setNewestFirst,
-      openSearch: () => openFindReplace(view),
+      showOutline,
+      hideOutline,
+      isOutlineOpen: () => outlineVisible,
+      isToolbarFaded: () => toolbarFaded,
+      openSearch: () => {
+        hideOutline();
+        return openFindReplace(view);
+      },
       getTheme: () => currentTheme,
       getFontSize: () => currentFontSize,
       isNewestFirst: () => newestFirst

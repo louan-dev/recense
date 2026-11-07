@@ -10,6 +10,23 @@ export const DEBOUNCE_MS = 300;
 export const externalSetTextAnnotation = Annotation.define();
 
 /**
+ * Posts `{ haptic: kind }` (`'snap' | 'edge' | 'open'`) to `window.webkit.messageHandlers.ui`.
+ */
+export function postHaptic(kind, globalObj = typeof window !== 'undefined' ? window : null) {
+  if (!kind) return false;
+  const h =
+    globalObj &&
+    globalObj.webkit &&
+    globalObj.webkit.messageHandlers &&
+    globalObj.webkit.messageHandlers.ui;
+  if (h && typeof h.postMessage === 'function') {
+    h.postMessage({ haptic: String(kind) });
+    return true;
+  }
+  return false;
+}
+
+/**
  * Creates the debounced native bridge (`window.recenseEditor`) and change notifier
  * (`window.webkit.messageHandlers.editor.postMessage(fullText)`).
  */

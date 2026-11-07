@@ -167,7 +167,15 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 UIApplication.shared.open(u)
             }
         case "ui":
-            if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
+            if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
+                switch kind {
+                case "snap": UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                case "edge": UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                case "open": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                default: break
+                }
+            }
         default:
             guard let s = m.body as? String else { return }
             lastPosted = s
