@@ -17,6 +17,8 @@ Gallery Worker (`../library/`) only through its API, so a push here never redepl
 ## Recense for iPhone and iPad (`ios/`, `HostApp/iOS/`; formerly Gallery)
 The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
 updates in place.
+- **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Listen, Ask, Main, Archive, Data, Exhibits,
+  Shared) as ShowsKit `Place`s, the rows the skin's Library shows (B2 redo, 11-07).
 - **Shows (preview)** (sidebar, under Draftpad): the Podcasts-style skin from `../shared/ShowsKit/` (B2). Spaces as tabs on
   the iPhone and a sidebar on the iPad; the Library grid; each show's seasons and episodes (swipe or long-press a row to
   Star or mark Played); the mini-player and Now Playing with **Clicked / Not yet**; Matters opens only with Face ID. It
