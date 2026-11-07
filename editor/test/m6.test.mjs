@@ -61,6 +61,29 @@ test('M6 pages: page mode is on by default, page 0 is the top, and the cursor pu
   assert.equal(off.doc.toString(), doc, 'paging never changes the text');
 });
 
+test('E1 pages: a page step glides (smooth scrollTo) and never cancels it with a scrollTop jump', () => {
+  let { state } = createEditorState(doc);
+  const calls = [];
+  let jumps = 0;
+  const scrollDOM = {
+    _top: 0,
+    get scrollTop() { return this._top; },
+    set scrollTop(v) { jumps += 1; this._top = v; },
+    scrollTo(o) { calls.push(o); }
+  };
+  const fakeView = {
+    get state() { return state; },
+    scrollDOM,
+    lineBlockAt(pos) { return { top: (state.doc.lineAt(pos).number - 1) * 28, from: pos }; },
+    dispatch(spec) { state = state.update(spec).state; }
+  };
+  assert.equal(stepPage(fakeView, 1), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].behavior, 'smooth');
+  assert.ok(calls[0].top > 0);
+  assert.equal(jumps, 0, 'no scrollTop write after the smooth scrollTo');
+});
+
 test('E1 pages: page step lands on the next page heading in one continuous scroll with no hidden ranges', () => {
   let { state } = createEditorState(doc);
   const pages = inspectDraftpadPages(doc);

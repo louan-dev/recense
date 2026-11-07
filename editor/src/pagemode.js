@@ -116,10 +116,12 @@ export function showPage(view, index) {
         : typeof view.lineBlockAt === 'function'
           ? Math.max(0, view.lineBlockAt(targetPos).top)
           : i * 240;
+    // Setting scrollTop right after a smooth scrollTo cancels the glide: set it only where scrollTo is missing.
     if (typeof view.scrollDOM.scrollTo === 'function') {
       view.scrollDOM.scrollTo({ top: targetTop, behavior: 'smooth' });
+    } else {
+      view.scrollDOM.scrollTop = targetTop;
     }
-    view.scrollDOM.scrollTop = targetTop;
   }
   return i;
 }
