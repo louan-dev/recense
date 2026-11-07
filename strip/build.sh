@@ -61,10 +61,15 @@ else
   # (Their SwiftPM's default build system compiles SwiftTerm's Metal shader, and the tools have no `metal`: native.)
   tools=${RECENSE_TOOLCHAIN:-$PWD/../.toolchain/CommandLineTools} scratch=.build flags=()
   if [[ -x $tools/usr/bin/swift ]]; then export DEVELOPER_DIR=$tools; scratch=.build-sdk27; flags=(--build-system native); fi
+  # The native build system keeps a local package's file list: a file added to shared/ShowsKit stays unseen ("cannot find
+  # 'Theme' in scope", 11-07). When that list changes, clean the build folder first (its checkouts stay).
+  sk=$(cd ../shared/ShowsKit && find Sources -name '*.swift' | sort | shasum | cut -c1-12)
+  if [[ -d $scratch && "$(cat $scratch/.showskit-files 2>/dev/null)" != "$sk" ]]; then echo "ShowsKit files changed: clean build" >&2; swift package clean --scratch-path $scratch; fi
   # A Swift package (see Package.swift) so Recense can use SwiftTerm for its terminal panel.
   if ! swift build -c release --product recense --scratch-path $scratch $flags > .build-log.txt 2>&1; then
     grep -E "error" .build-log.txt | head -20 >&2; echo "build failed (full log: .build-log.txt)" >&2; exit 1
   fi
+  echo $sk > $scratch/.showskit-files
   cp $scratch/release/recense "$exe"
   [[ -x "$exe" ]] || { echo "build failed" >&2; exit 1; }
 fi

@@ -240,6 +240,8 @@ zsh build.sh                              # builds /Applications/Recense.app and
 zsh scripts/install-launchagent.sh        # start at login, and again after a crash (status | remove)
 zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to main (status | remove)
 ```
+- When `shared/ShowsKit` gains or loses a file, `build.sh` cleans its build folder first (the native build system keeps
+  a package's file list; 11-07). It says "ShowsKit files changed: clean build".
 
 What a build or a tool leaves in `strip/` stays on this Mac and out of git: `.build-log.txt`, the `./recense`
 launcher (build.sh writes both), `_CodeSignature/` and wrangler's `.wrangler/` cache.
