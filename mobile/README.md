@@ -17,8 +17,12 @@ Gallery Worker (`../library/`) only through its API, so a push here never redepl
 ## Recense for iPhone and iPad (`ios/`, `HostApp/iOS/`; formerly Gallery)
 The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
 updates in place.
-- **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Listen, Ask, Main, Archive, Data, Exhibits,
-  Shared) as ShowsKit `Place`s, rows in Library (B2 redo, 11-07).
+- **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Listen, Archive, Main, Ask, Data, Exhibits,
+  Shared) as ShowsKit `Place`s, rows in Library (B2 redo, 11-07). Each wears the skin: native screens a large title and
+  the accent (`.recenseScreen`), web places and the Draftpad editor an inline title (`.webPlace`), round toolbar buttons
+  (`.glassCircle()`, glass on iOS 26) and a `···` menu holding every action (`MoreMenu`). Archive and Listen's episodes
+  are rows like Podcasts' Recently Played (square picture, title, detail); inside a folder rows are the default, Icons
+  is in `···` › View.
 - **The root (11-07): the Podcasts-style shell** (`HostApp/iOS/Shows.swift`, from `../shared/ShowsKit/`): Home (Up Next,
   Recently Played), New (what landed in `Recense/inbox/`), Library (Shows, Study, Folio, Matters with Face ID, Saved,
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.

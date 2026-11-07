@@ -2,6 +2,7 @@
 // folder as icons or a list, searched and sorted like Files. It reads the same feed as the Files extension. Opening a
 // file shows it in Gallery's own player (PlayerView), in its folder, so next and previous work as on the web.
 import SwiftUI
+import ShowsKit
 import PhotosUI
 import UniformTypeIdentifiers
 import Vision
@@ -70,6 +71,7 @@ extension Record {
     }
 }
 
+// retired root (B2 redo); kept until the owner confirms the new shell
 struct Browser: View {
     static let assistant = "\u{0}assistant"  // a sidebar tag no folder path can be
     static let shared = "\u{0}shared"
@@ -79,7 +81,6 @@ struct Browser: View {
     static let exhibits = "\u{0}exhibits"
     static let draftpad = "\u{0}draftpad"
     @State private var picked: String? = Gallery.rootPath
-    @State private var showsOpen = false
 
     // a rounded square card for a place; tapping it opens the place
     private func place(_ name: String, _ symbol: String, _ tag: String) -> some View {
@@ -92,9 +93,9 @@ struct Browser: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .aspectRatio(1, contentMode: .fit)
-            .foregroundStyle(picked == tag ? Color.accentColor : .primary)
+            .foregroundStyle(picked == tag ? Theme.accent : .primary)
             .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemBackground)))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(picked == tag ? Color.accentColor : .clear, lineWidth: 2))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(picked == tag ? Theme.accent : .clear, lineWidth: 2))
         }
         .buttonStyle(.plain)
     }
@@ -105,7 +106,6 @@ struct Browser: View {
             List(selection: $picked) {
                 Section("Locations") {
                     Label("Draftpad", systemImage: "square.and.pencil").tag(Browser.draftpad)
-                    Button { showsOpen = true } label: { Label("Shows (preview)", systemImage: "play.square.stack") }
                     Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -121,8 +121,6 @@ struct Browser: View {
                 }
             }
             .navigationTitle("Galleries")
-            .fullScreenCover(isPresented: $showsOpen) { ShowsPreview { showsOpen = false } }
-            .onAppear { if ProcessInfo.processInfo.environment["RECENSE_OPEN"] == "shows" { showsOpen = true } }  // simulator checks
         } detail: {
             NavigationStack {
                 if picked == Browser.draftpad {
@@ -154,11 +152,10 @@ struct Browser: View {
 struct MainView: View {
     @State private var asking = false
     var body: some View {
-        PlayerView(url: galleryURL("/main")).ignoresSafeArea(edges: .bottom)
-            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+        PlayerView(url: galleryURL("/main")).webPlace("")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.labelStyle(.iconOnly).foregroundStyle(.white)
+                    Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.glassCircle()
                         .keyboardShortcut("k")
                 }
             }
@@ -177,7 +174,8 @@ struct FolderView: View {
     @StateObject private var folder: Folder
     @State private var query = ""
     @State private var sort = Sort.name
-    @AppStorage("asList") private var asList = false
+    @AppStorage("asList") private var asList = false          // the Archive's front page: cover cards unless List
+    @AppStorage("archive.grid") private var asGrid = false    // inside a folder: rows unless Icons
     @State private var playing: Record?
     @State private var linking: (done: Int, total: Int)?
     @State private var shared: SharedLink?
@@ -222,18 +220,19 @@ struct FolderView: View {
                 ContentUnavailableView(error, systemImage: "icloud.slash", description: Text("Pull to try again."))
             } else if folder.loading && folder.items.isEmpty {
                 ProgressView()
-            } else if folder.path == Gallery.rootPath && !asList {
+            } else if root && !asList {
                 // the Archive's front page: each folder a rounded square card wearing its first picture, 2 columns
                 // that scroll down (notes 20261029 item 16); inside a folder the grid stays as it is
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                         ForEach(shown, id: \.id) { r in r.dir ? AnyView(card(r)) : AnyView(tile(r)) }
                     }
-                    .padding(16)
+                    .padding(Theme.gutter)
                 }
                 .task { await loadCovers() }
-            } else if asList {
-                List(shown, id: \.id) { r in row(r) }.listStyle(.plain)
+            } else if listed {
+                List(shown, id: \.id) { r in row(r).listRowInsets(EdgeInsets(top: 6, leading: Theme.gutter, bottom: 6, trailing: Theme.gutter)) }
+                    .listStyle(.plain)
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 24)], spacing: 28) {
@@ -243,13 +242,13 @@ struct FolderView: View {
                 }
             }
         }
-        .navigationTitle(selecting ? (picked.isEmpty ? "Select Items" : "\(picked.count) Selected") : title)
+        .recenseScreen(selecting ? (picked.isEmpty ? "Select Items" : "\(picked.count) Selected") : title)
         .searchable(text: $query)
         .refreshable { folder.load() }
         .toolbar {
             // the assistant, on this folder ("This folder"; it has an All switch)
             ToolbarItem(placement: .primaryAction) {
-                Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.labelStyle(.iconOnly).foregroundStyle(.white)
+                Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }.glassCircle()
                     .keyboardShortcut("k")  // ⌘K, as on the Mac
             }
             ToolbarItem(placement: .primaryAction) { more }
@@ -332,7 +331,8 @@ struct FolderView: View {
 
     // the … menu: the site's (page/gallery.js), wired to the archive (src/fp.js) and the system's own sheets
     private var more: some View {
-        Menu {
+        MoreMenu {
+            Button { asking = true } label: { Label("Ask", systemImage: "lightbulb") }
             Section {
                 Button { selecting = true; picked = Set(shown.map(\.id)) } label: { Label("Select", systemImage: "checkmark.circle") }
                     .disabled(shown.isEmpty)
@@ -357,7 +357,7 @@ struct FolderView: View {
                 Button { newName = ""; naming = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
             }
             Section {
-                Picker("View", selection: $asList) {
+                Picker("View", selection: listBinding) {
                     Label("Icons", systemImage: "square.grid.2x2").tag(false)
                     Label("List", systemImage: "list.bullet").tag(true)
                 }
@@ -365,8 +365,12 @@ struct FolderView: View {
                     ForEach(Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
             }
-        } label: { Image(systemName: "ellipsis.circle") }
+        }
     }
+
+    private var root: Bool { folder.path == Gallery.rootPath }
+    private var listed: Bool { root ? asList : !asGrid }
+    private var listBinding: Binding<Bool> { Binding(get: { listed }, set: { if root { asList = $0 } else { asGrid = !$0 } }) }
 
     private func say(_ text: String?, for seconds: Double = 2.4) {
         status = text
@@ -485,7 +489,7 @@ struct FolderView: View {
                     label()
                         .overlay(alignment: .topTrailing) {
                             Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle")
-                                .font(.title3).foregroundStyle(Color.accentColor).background(Circle().fill(.background))
+                                .font(.title3).foregroundStyle(Theme.accent).background(Circle().fill(.background))
                         }
                 }
                 .buttonStyle(.plain)
@@ -536,12 +540,12 @@ struct FolderView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
-                Text(r.name).font(.headline).foregroundStyle(.white).lineLimit(1).padding(12)
+                Text(r.name).font(.system(.title3, design: .rounded, weight: .bold)).foregroundStyle(.white).lineLimit(2).padding(12)
             }
             .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
             .overlay(alignment: .topTrailing) {
-                if selecting { Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(.white, Color.accentColor).padding(10) }
+                if selecting { Image(systemName: picked.contains(r.id) ? "checkmark.circle.fill" : "circle").font(.title2).foregroundStyle(.white, Theme.accent).padding(10) }
             }
             .contentShape(Rectangle())
         }
@@ -566,7 +570,7 @@ struct FolderView: View {
             VStack(spacing: 6) {
                 Image(systemName: r.symbol)
                     .font(.system(size: r.dir ? 64 : 44, weight: .light))
-                    .foregroundStyle(r.dir ? Color.accentColor : .secondary)
+                    .foregroundStyle(r.dir ? Theme.accent : .secondary)
                     .frame(height: 80)
                 Text(r.name).font(.footnote).lineLimit(2).multilineTextAlignment(.center)
                 Text(r.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -576,18 +580,33 @@ struct FolderView: View {
         }
     }
 
+    // a row like Podcasts' Recently Played: a square picture at left (a folder's cover or colours, a file's kind),
+    // the name in title3, its date and size under it
     private func row(_ r: Record) -> some View {
         open(r) {
-            HStack(spacing: 12) {
-                Image(systemName: r.symbol).font(.title2).foregroundStyle(r.dir ? Color.accentColor : .secondary).frame(width: 32)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(r.name).lineLimit(1)
-                    Text(r.detail).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                thumb(r).frame(width: 60, height: 60)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(r.name).font(.title3).lineLimit(2)
+                    Text(r.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Spacer()
-                if r.dir { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+                Spacer(minLength: 0)
+                if r.dir { Image(systemName: "chevron.right").font(.subheadline.bold()).foregroundStyle(.tertiary) }
             }
             .contentShape(Rectangle())
+        }
+    }
+
+    @ViewBuilder private func thumb(_ r: Record) -> some View {
+        if let im = shownCovers[r.name] ?? covers[r.name] {
+            Image(uiImage: im).resizable().scaledToFill().frame(width: 60, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else if r.dir {
+            Artwork(title: r.name, corner: 8, named: false)
+                .overlay { Image(systemName: r.symbol).font(.title2).foregroundStyle(.white.opacity(0.9)) }
+        } else {
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card)
+                .overlay { Image(systemName: r.symbol).font(.title2).foregroundStyle(Theme.accent) }
         }
     }
 }
@@ -697,7 +716,7 @@ struct CoverEditor: View {
                     if folders.count > 1 {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack { ForEach(folders, id: \.self) { f in
-                                Button(f) { folder = f }.buttonStyle(.bordered).tint(f == folder ? .accentColor : .gray)
+                                Button(f) { folder = f }.buttonStyle(.bordered).tint(f == folder ? Theme.accent : .gray)
                             } }.padding(.horizontal)
                         }
                     }
@@ -705,7 +724,7 @@ struct CoverEditor: View {
                         Color(.secondarySystemBackground)
                         if let preview { Image(uiImage: preview).resizable().scaledToFill() }
                     }
-                    .frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
                     Picker("Blur", selection: $blur) {
                         Text("Off").tag("off"); Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
                     }
@@ -715,7 +734,7 @@ struct CoverEditor: View {
                             Button { file = p.path } label: {
                                 ZStack { Color(.secondarySystemBackground); if let im = thumbs[p.path] { Image(uiImage: im).resizable().scaledToFill() } }
                                     .aspectRatio(1, contentMode: .fit).clipped()
-                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: (file ?? pics.first?.path) == p.path ? 3 : 0))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.accent, lineWidth: (file ?? pics.first?.path) == p.path ? 3 : 0))
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                             .buttonStyle(.plain)
