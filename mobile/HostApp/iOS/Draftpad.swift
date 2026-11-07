@@ -10,6 +10,7 @@
 //   the compact palette). Done saves the drawing next to draftpad.md, in "Draftpad ink/", as a PNG (what the editor
 //   and Obsidian show) plus its PencilKit .drawing, and puts ![](<Draftpad ink/…png>) under the cursor's line.
 import SwiftUI
+import ShowsKit
 import WebKit
 import PencilKit
 import UniformTypeIdentifiers
@@ -294,13 +295,14 @@ struct ChooseVault: View {
     @State private var picking = false
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "square.and.pencil").font(.system(size: 44, weight: .light))
-            Text("Draftpad").font(.title2.bold())
+            Image(systemName: "square.and.pencil").font(.system(size: 52, weight: .light)).foregroundStyle(Theme.accent)
             Text("Choose your Obsidian vault folder once. Draftpad opens draftpad.md in it, the same file as the Mac.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
-            Button("Choose the vault folder") { picking = true }.buttonStyle(.borderedProminent)
+                .font(.title3).multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
+            Button("Choose the vault folder") { picking = true }.buttonStyle(.borderedProminent).controlSize(.large)
         }
-        .padding()
+        .padding(Theme.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .recenseScreen("Draftpad")
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
             if case .success(let u) = r { file.choose(u) }
         }
@@ -325,18 +327,24 @@ struct DraftpadEditor: View {
             EditorSurface(web: editor.web.web) { toggleInk() }
             if inking { InkLayer(drawing: $drawing).ignoresSafeArea(edges: .bottom) }
         }
+        // the editor is a web page that never scrolls the bar away: an inline title, as the web places have
         .navigationTitle("Draftpad").navigationBarTitleDisplayMode(.inline)
+        .tint(Theme.accent)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 if inking {
                     Button("Cancel", role: .cancel) { drawing = PKDrawing(); inking = false }
                     Button("Done") { finishInk() }.bold()
                 } else {
-                    Button { editor.web.step(-1) } label: { Label("Newer page", systemImage: "chevron.left") }
+                    Button { editor.web.step(-1) } label: { Label("Newer page", systemImage: "chevron.left") }.glassCircle()
                         .keyboardShortcut("[", modifiers: .command)
-                    Button { editor.web.step(1) } label: { Label("Older page", systemImage: "chevron.right") }
+                    Button { editor.web.step(1) } label: { Label("Older page", systemImage: "chevron.right") }.glassCircle()
                         .keyboardShortcut("]", modifiers: .command)
-                    Button { toggleInk() } label: { Label("Draw", systemImage: "pencil.tip.crop.circle") }
+                    MoreMenu {
+                        Button { editor.web.step(-1) } label: { Label("Newer Page", systemImage: "chevron.left") }
+                        Button { editor.web.step(1) } label: { Label("Older Page", systemImage: "chevron.right") }
+                        Button { toggleInk() } label: { Label("Draw", systemImage: "pencil.tip.crop.circle") }
+                    }
                 }
             }
         }

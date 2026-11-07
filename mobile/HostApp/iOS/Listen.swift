@@ -6,6 +6,7 @@
 // In the app: Read along (Spotify's look) with Copy, Clear and full screen. What's heard is kept per episode (the
 // user says what's playing; iOS can't see other apps), so going back to one opens where it was left (Episode).
 import SwiftUI
+import ShowsKit
 import AVKit
 import ReplayKit
 import Speech
@@ -114,7 +115,10 @@ final class Listener: NSObject, ObservableObject {
         } else if !on { engine.stop() }
     }
 
-    func allowSpeech() { SFSpeechRecognizer.requestAuthorization { _ in } }
+    func allowSpeech() {
+        guard ProcessInfo.processInfo.environment["RECENSE_NO_LISTEN"] == nil else { return }  // simulator screenshots: no prompt over the screen
+        SFSpeechRecognizer.requestAuthorization { _ in }
+    }
 
     // the languages this device can hear without sending audio anywhere
     static let hearable: [Locale] = SFSpeechRecognizer.supportedLocales()
@@ -630,16 +634,17 @@ struct ListenView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(l.on ? "Listening" : "Off").font(.headline)
+                    Text(l.on ? "Listening" : "Off").font(.title3.bold())
                     Text("Hears whatever is playing in any app, on this device, then shows it in a window that floats over every app.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 // Start asks what's playing, then opens the system's Start Broadcast sheet (its own button can draw as
                 // nothing, so a real button taps it); Stop tells the extension to end the broadcast, no sheet
                 Button {
                     if l.on { l.stop() } else { startAfterPick = true; picking = true }
                 } label: {
-                    Label(l.stopping ? "Stopping…" : l.on ? "Stop listening" : "Start listening", systemImage: l.on ? "stop.circle" : "record.circle")
+                    Label(l.stopping ? "Stopping…" : l.on ? "Stop listening" : "Start listening", systemImage: l.on ? "stop.circle.fill" : "record.circle")
+                        .font(.title3.weight(.semibold))
                 }
                 .disabled(l.stopping)
                 .background(BroadcastButton().frame(width: 1, height: 1).opacity(0.01))
@@ -650,7 +655,7 @@ struct ListenView: View {
                 if let e = l.error { Text(e).font(.footnote).foregroundStyle(.blue) }
             }
             Section {
-                CaptionLayer().aspectRatio(640 / 300, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 10))
+                CaptionLayer().aspectRatio(640 / 300, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: Theme.artCorner, style: .continuous))
                     .listRowInsets(EdgeInsets())
                 Picker("Look", selection: $l.look) {
                     Text("Follow").tag("follow")
@@ -683,10 +688,14 @@ struct ListenView: View {
                 Section("Episodes") {
                     ForEach(l.episodes.filter { $0.key != l.episode?.key }) { e in
                         NavigationLink(value: e) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(e.title).lineLimit(1)
-                                Text("\(e.sentences.count) sentences · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 14) {
+                                Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
+                                    .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(e.title).font(.title3).lineLimit(2)
+                                    Text("\(e.sentences.count) sentences · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
+                                        .font(.subheadline).foregroundStyle(.secondary)
+                                }
                             }
                         }
                         .swipeActions { Button("Delete") { l.delete(e) }.tint(.blue) }
@@ -694,12 +703,27 @@ struct ListenView: View {
                 }
             }
         }
-        .navigationTitle("Listen")
+        .recenseScreen("Listen")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                MoreMenu {
+                    Button { if l.on { l.stop() } else { startAfterPick = true; picking = true } } label: {
+                        Label(l.on ? "Stop Listening" : "Start Listening", systemImage: l.on ? "stop.circle" : "record.circle")
+                    }.disabled(l.stopping)
+                    Button { startAfterPick = false; picking = true } label: { Label("Choose What's Playing", systemImage: "music.note.list") }
+                    if l.floats { Button { l.dock() } label: { Label("Dock in Gallery", systemImage: "pip.enter") } }
+                    else { Button { l.float() } label: { Label("Float over Apps", systemImage: "pip.exit") } }
+                    Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    Button { clearing = true } label: { Label("Clear This Episode", systemImage: "trash") }.disabled(l.sentences.isEmpty)
+                }
+            }
+        }
         .navigationDestination(for: Episode.self) { e in
             ReadAlong(sentences: e.sentences, place: e.place, live: false, two: e.heard.prefix(2) != e.into.prefix(2), expand: nil, clear: nil)
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle(e.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .primaryAction) { Button("Now playing") { l.choose(e.title) } } }
+                .tint(Theme.accent)
+                .toolbar { ToolbarItem(placement: .primaryAction) { MoreMenu { Button { l.choose(e.title) } label: { Label("Now Playing", systemImage: "play.circle") } } } }
         }
         .fullScreenCover(isPresented: $full) {
             NavigationStack {
@@ -708,6 +732,7 @@ struct ListenView: View {
                     .navigationTitle(l.episode?.title ?? "").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { full = false } } }
             }
+            .tint(Theme.accent)
         }
         .sheet(isPresented: $picking) {
             EpisodePicker { title in
@@ -770,6 +795,7 @@ struct EpisodePicker: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { pick(title) }.disabled(title.trimmingCharacters(in: .whitespaces).isEmpty) }
             }
         }
+        .tint(Theme.accent)
         .presentationDetents([.medium, .large])
     }
 }
