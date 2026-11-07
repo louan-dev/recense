@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PAGE_JOINER } from '../src/pages.js';
-import { hiddenRanges, pageModeField, setPageIndex, setPageMode, currentPage } from '../src/pagemode.js';
+import { PAGE_JOINER, inspectDraftpadPages } from '../src/pages.js';
+import {
+  hiddenRanges,
+  pageModeField,
+  setPageIndex,
+  setPageMode,
+  currentPage,
+  stepPage,
+  showPage,
+  syncPageFromScroll
+} from '../src/pagemode.js';
 import { parseEmbedLine, embedSource, findEmbeds } from '../src/embeds.js';
 import { urlAt, openURL } from '../src/links.js';
 import {
@@ -48,6 +57,49 @@ test('M6 pages: page mode is on by default, page 0 is the top, and the cursor pu
   const off = state.update({ effects: setPageMode.of(false) }).state;
   assert.equal(off.field(pageModeField).on, false);
   assert.equal(off.doc.toString(), doc, 'paging never changes the text');
+});
+
+test('E1 pages: page step lands on the next page heading in one continuous scroll with no hidden ranges', () => {
+  let { state } = createEditorState(doc);
+  const pages = inspectDraftpadPages(doc);
+
+  const fakeView = {
+    get state() { return state; },
+    scrollDOM: { scrollTop: 0 },
+    lineBlockAt(pos) {
+      const lineNo = state.doc.lineAt(pos).number;
+      return { top: (lineNo - 1) * 28, from: pos };
+    },
+    lineBlockAtHeight(y) {
+      const lineNo = Math.max(1, Math.min(state.doc.lines, Math.floor(y / 28) + 1));
+      const line = state.doc.line(lineNo);
+      return { top: (lineNo - 1) * 28, from: line.from };
+    },
+    dispatch(spec) {
+      state = state.update(spec).state;
+    }
+  };
+
+  assert.equal(state.field(pageModeField).decos.size, 0, 'no hidden ranges in pageModeField');
+  const moved1 = stepPage(fakeView, 1);
+  assert.equal(moved1, true);
+  assert.equal(currentPage(state), 1);
+  assert.equal(state.selection.main.head, pages[1].from, 'lands on the next page date heading');
+  assert.equal(state.field(pageModeField).decos.size, 0, 'still no hidden ranges after stepping');
+  assert.ok(fakeView.scrollDOM.scrollTop > 0, 'glides scrollTop to page 1 heading');
+
+  // Continuous scroll updates currentPage from the scroll position
+  fakeView.scrollDOM.scrollTop = (state.doc.lineAt(pages[2].from).number - 1) * 28;
+  assert.equal(syncPageFromScroll(fakeView), 2);
+  assert.equal(currentPage(state), 2);
+
+  // At the last page, stepping deeper returns false
+  assert.equal(stepPage(fakeView, 1), false);
+  // Stepping back glides to page 1, then page 0
+  assert.equal(stepPage(fakeView, -1), true);
+  assert.equal(currentPage(state), 1);
+  assert.equal(showPage(fakeView, 0), 0);
+  assert.equal(fakeView.scrollDOM.scrollTop, 0);
 });
 
 test('M6 embeds: only a line holding just ![](…pdf|image) embeds', () => {

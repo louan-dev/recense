@@ -3389,10 +3389,10 @@ body {
     cause the method to sort them.
     */
     static of(ranges, sort = false) {
-      let build4 = new RangeSetBuilder();
+      let build3 = new RangeSetBuilder();
       for (let range of ranges instanceof Range ? [ranges] : sort ? lazySort(ranges) : ranges)
-        build4.add(range.from, range.to, range.value);
-      return build4.finish();
+        build3.add(range.from, range.to, range.value);
+      return build3.finish();
     }
     /**
     Join an array of range sets into a single set.
@@ -29057,25 +29057,16 @@ ${PAGE_MARKER}
     }
     return Math.max(0, pages.length - 1);
   }
-  function hiddenRanges(text, index) {
-    const pages = inspectDraftpadPages(text);
-    if (pages.length <= 1) return [];
-    const i = Math.max(0, Math.min(pages.length - 1, index));
-    const { from, to } = pages[i];
-    const out = [];
-    if (from > 0) out.push({ from: 0, to: from - 1 });
-    if (to < text.length) out.push({ from: to + 1, to: text.length });
-    return out.filter((r) => r.to >= r.from);
-  }
-  function build(state, value) {
-    if (!value.on) return Decoration.none;
-    const ranges = hiddenRanges(state.doc.toString(), value.index);
-    return Decoration.set(ranges.map((r) => Decoration.replace({ block: true }).range(r.from, r.to)));
+  function pageHeadingOffset(doc2, page) {
+    if (!page) return 0;
+    if (page.dateLineNumber && doc2 && typeof doc2.line === "function") {
+      return doc2.line(page.dateLineNumber).from;
+    }
+    return page.from;
   }
   var pageModeField = StateField.define({
-    create(state) {
-      const value = { on: true, index: 0 };
-      return { ...value, decos: build(state, value) };
+    create() {
+      return { on: true, index: 0, decos: Decoration.none };
     },
     update(v, tr) {
       let on = v.on;
@@ -29090,13 +29081,14 @@ ${PAGE_MARKER}
         const at = pageAt(pages, tr.state.selection.main.head);
         if (at !== index) index = at;
       }
-      if (on === v.on && index === v.index && !tr.docChanged) return v;
-      const value = { on, index };
-      return { ...value, decos: build(tr.state, value) };
+      if (on === v.on && index === v.index) return v;
+      return { on, index, decos: Decoration.none };
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.decos)
   });
-  function currentPage(state) {
+  function currentPage(stateOrView) {
+    const state = stateOrView && stateOrView.state ? stateOrView.state : stateOrView;
+    if (!state) return 0;
     const v = state.field(pageModeField, false);
     return v ? v.index : 0;
   }
@@ -29107,42 +29099,73 @@ ${PAGE_MARKER}
   function pageCount(state) {
     return inspectDraftpadPages(state.doc.toString()).length;
   }
+  function syncPageFromScroll(view, { onSnap = null } = {}) {
+    if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
+      return currentPage(view);
+    }
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const top2 = Math.max(0, Number(view.scrollDOM.scrollTop) || 0);
+    const pos = top2 <= 4 ? 0 : view.lineBlockAtHeight(top2 + 24).from;
+    const at = pageAt(pages, pos);
+    const prev = currentPage(view.state);
+    if (at !== prev) {
+      view.dispatch({ effects: setPageIndex.of(at) });
+      if (typeof onSnap === "function") onSnap(at);
+    }
+    return at;
+  }
   function showPage(view, index) {
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const i = Math.max(0, Math.min(pages.length - 1, index));
+    const targetPos = pageHeadingOffset(view.state.doc, pages[i]);
     view.dispatch({
-      selection: { anchor: pages[i].from },
-      effects: [setPageIndex.of(i), EditorView.scrollIntoView(pages[i].from, { y: "start" })]
+      selection: { anchor: targetPos },
+      effects: [setPageIndex.of(i), EditorView.scrollIntoView(targetPos, { y: "start", yMargin: 8 })]
     });
-    view.scrollDOM.scrollTop = 0;
+    if (view.scrollDOM) {
+      const targetTop = i === 0 ? 0 : typeof view.lineBlockAt === "function" ? Math.max(0, view.lineBlockAt(targetPos).top) : i * 240;
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
+      view.scrollDOM.scrollTop = targetTop;
+    }
     return i;
   }
-  function stepPage(view, delta) {
+  function stepPage(view, delta, { onSnap = null, onBounce = null } = {}) {
     if (!isPageMode(view.state)) return false;
     const target = currentPage(view.state) + delta;
-    if (target < 0 || target >= pageCount(view.state)) return false;
+    if (target < 0 || target >= pageCount(view.state)) {
+      if (typeof onBounce === "function") onBounce();
+      return false;
+    }
     showPage(view, target);
+    if (typeof onSnap === "function") onSnap(target);
     return true;
   }
-  function pageModeExtension() {
+  function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     return [
       pageModeField,
       Prec.highest(keymap.of([
         { key: "Mod-]", run: (v) => {
-          stepPage(v, 1);
+          stepPage(v, 1, { onSnap, onBounce });
           return true;
         } },
         { key: "Mod-[", run: (v) => {
-          stepPage(v, -1);
+          stepPage(v, -1, { onSnap, onBounce });
           return true;
         } }
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, onBounce = null } = {}) {
+  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null } = {}) {
     let acc = 0;
     let spent = false;
     let timer = null;
+    let suppressScrollUntil = 0;
+    const stepWithGlide = (delta) => {
+      suppressScrollUntil = Date.now() + 380;
+      return stepPage(view, delta, { onSnap, onBounce });
+    };
     view.scrollDOM.addEventListener("wheel", (e) => {
       if (!isPageMode(view.state)) return;
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
@@ -29156,10 +29179,39 @@ ${PAGE_MARKER}
       acc += e.deltaX;
       if (Math.abs(acc) >= threshold) {
         spent = true;
-        const moved = stepPage(view, acc > 0 ? 1 : -1);
-        if (!moved && typeof onBounce === "function") onBounce();
+        stepWithGlide(acc > 0 ? 1 : -1);
       }
     }, { passive: false });
+    let touchStartX = null;
+    let touchStartY = null;
+    view.scrollDOM.addEventListener("touchstart", (e) => {
+      if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
+        touchStartX = null;
+        return;
+      }
+      const t2 = e.touches[0];
+      if (t2.clientX <= edgePx) {
+        touchStartX = null;
+        return;
+      }
+      touchStartX = t2.clientX;
+      touchStartY = t2.clientY;
+    }, { passive: true });
+    view.scrollDOM.addEventListener("touchend", (e) => {
+      if (touchStartX === null || !e.changedTouches || e.changedTouches.length === 0) return;
+      const t2 = e.changedTouches[0];
+      const dx = t2.clientX - touchStartX;
+      const dy = t2.clientY - touchStartY;
+      touchStartX = null;
+      touchStartY = null;
+      if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        stepWithGlide(dx < 0 ? 1 : -1);
+      }
+    }, { passive: true });
+    view.scrollDOM.addEventListener("scroll", () => {
+      if (Date.now() < suppressScrollUntil) return;
+      syncPageFromScroll(view, { onSnap });
+    }, { passive: true });
   }
 
   // src/embeds.js
@@ -29227,13 +29279,13 @@ ${PAGE_MARKER}
     }
     return out;
   }
-  function build2(doc2) {
+  function build(doc2) {
     const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption), block: true, side: 1 }).range(e.end));
     return Decoration.set(items);
   }
   var embedField = StateField.define({
-    create: (state) => build2(state.doc),
-    update: (decos, tr) => tr.docChanged ? build2(tr.state.doc) : decos,
+    create: (state) => build(state.doc),
+    update: (decos, tr) => tr.docChanged ? build(tr.state.doc) : decos,
     provide: (f) => EditorView.decorations.from(f)
   });
   function embedsExtension() {
@@ -29278,7 +29330,7 @@ ${PAGE_MARKER}
   };
   var bullet = Decoration.replace({ widget: new BulletWidget() });
   var linkMark = Decoration.mark({ class: "cm-url-link" });
-  function build3(view) {
+  function build2(view) {
     const b = new RangeSetBuilder();
     for (const { from, to } of view.visibleRanges) {
       let pos = from;
@@ -29299,10 +29351,10 @@ ${PAGE_MARKER}
   }
   var decorations2 = ViewPlugin.fromClass(class {
     constructor(view) {
-      this.decorations = build3(view);
+      this.decorations = build2(view);
     }
     update(u) {
-      if (u.docChanged || u.viewportChanged) this.decorations = build3(u.view);
+      if (u.docChanged || u.viewportChanged) this.decorations = build2(u.view);
     }
   }, { decorations: (v) => v.decorations });
   var clicks = EditorView.domEventHandlers({
