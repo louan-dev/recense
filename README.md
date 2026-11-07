@@ -9,7 +9,9 @@ is [the preface](docs/recense-preface.md).
 | Folder     | What it is                                                     | Build or run                                       |
 |------------|----------------------------------------------------------------|----------------------------------------------------|
 | `strip`    | Recense.app for the Mac: the strip, listening surface, sound engine, menu-bar hider, Draftpad ([README](strip/README.md)) | `zsh strip/build.sh` |
-| `library`  | Gallery: the Worker, web app, share links, and the iPhone, iPad and Mac apps ([README](library/README.md)) | deploys on push to `library/**` |
+| `mobile`   | Recense for iPhone and iPad (the Mac app's mirror) and the retiring Gallery Mac app ([README](mobile/README.md)) | `zsh mobile/ios/build.sh` |
+| `shared`   | Swift both Recense apps compile: Draftpad's file sync (`notesync.swift`), embeds (`embedfiles.swift`) | built by each app |
+| `library`  | Gallery: the Worker, web app and share links ([README](library/README.md)) | deploys on push to `library/**` |
 | `sync`     | the Mac's jobs, ledger, canary and launch-agent copies ([README](sync/README.md)) | launch agents in `sync/launchd/` |
 | `calendar` | your calendar server (CalDAV Worker)                           | `cd calendar && npx wrangler deploy`               |
 | `docs`     | plans, specs, runbooks, decisions, Recense's design docs       | start at `docs/PROGRESS.md`                        |
@@ -26,7 +28,7 @@ One repo since A15 (2026-11-05): Gallery (`louan-dev/gallery`) and Sync (`louan-
 history, so `git log library/src/main.js` reaches Gallery's first commit. Each app still builds, tests and deploys on its
 own; Recense never depends on the Worker. The plan is `docs/specs/unified-offline-first-and-redesign.md`.
 On this Mac the old `~/Developer/gallery` and `~/Developer/sync` folders are gone; the launch agents run
-`~/Developer/recense/sync/bin/*`, and `~/Developer/sync` is a temporary link to `recense/sync`. Several Claude Code
+`~/Developer/recense/sync/bin/*`. Several Claude Code
 sessions can work at once, one worktree per part: `/recense <file or word>` (`.claude/skills/recense/SKILL.md`).
 Gemini / Antigravity sessions work as lane workers too: `GEMINI.md` loads the same repo guide and adds the worker
 loop (the lane's `INBOX.md` is their only channel from the coordinator).

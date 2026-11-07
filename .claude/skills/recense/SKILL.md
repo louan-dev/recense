@@ -22,7 +22,7 @@ The repo is `~/Developer/recense` (one repo, separate apps; see the root `.claud
    | library, gallery, worker, share, viewer | `library/src/` (`main.js`, `client/sharedview.js`, `client/gallery.js`) |
    | ask, assistant, ai, index | `library/src/ai.js`, `library/src/client/assistant.js` |
    | dav, webdav | `library/src/dav.js` |
-   | apple, ios, ipad, files app | `library/apple/` |
+   | apple, ios, ipad, iphone, mobile, files app | `mobile/` (shared Swift: `shared/`) |
    | sync, ledger, canary, md-mirror, docs-sync, mount, disks | `sync/` (`src/ledger.mjs`, `src/canary.mjs`, `bin/*.zsh`) |
    | calendar, caldav | `calendar/` |
    | plan, progress, backlog, spec | `docs/` |

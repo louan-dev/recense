@@ -1,20 +1,22 @@
-# CLAUDE.md · Recense: the one repo (`~/Developer/recense`); this file covers the Mac app in `strip/`. Gallery: `library/CLAUDE.md`; Sync: `sync/CLAUDE.md`
+# CLAUDE.md · Recense: the one repo (`~/Developer/recense`); this file covers the Mac app in `strip/`. Mobile: `mobile/CLAUDE.md`; Gallery: `library/CLAUDE.md`; Sync: `sync/CLAUDE.md`
 
 ## One repo, separate apps (A15, cut over 2026-11-05)
 `louan-dev/recense` holds every part; each app still builds, tests and deploys on its own.
 | Folder | What | Build / run | Guide |
 |---|---|---|---|
 | `strip/` | Recense.app for the Mac | `zsh strip/build.sh` | this file |
-| `library/` | Gallery: Worker, web app, iOS/Mac apps | `npm test` in `library/`; deploys on push to `library/**` (`.github/workflows/library.yml`) | `library/CLAUDE.md` |
+| `mobile/` | Recense for iPhone and iPad (this app's mirror); the retiring Gallery Mac app | `zsh mobile/ios/build.sh` | `mobile/CLAUDE.md` |
+| `shared/` | Swift both Recense apps compile (`notesync.swift`, `embedfiles.swift`) | built by `strip/` (links in `Sources/recense/`) and the iOS project | this file |
+| `library/` | Gallery: Worker, web app, share links | `npm test` in `library/`; deploys on push to `library/**` (`.github/workflows/library.yml`) | `library/CLAUDE.md` |
 | `sync/` | the Mac's jobs, ledger, canary, launch-agent copies | `npm test` in `sync/`; agents in `~/Library/LaunchAgents` run `~/Developer/recense/sync/bin/*` | `sync/CLAUDE.md` |
 | `calendar/` | the CalDAV Worker | `npx wrangler deploy` in `calendar/` | — |
 | `docs/` | plans, specs, PROGRESS, BACKLOG | start at `docs/PROGRESS.md` | — |
 - Several CLIs at once: one worktree per area, `git worktree add .claude/worktrees/<area> -b work/<area>`; merge into `main` when done. Only the main checkout stays on `main` (autoupdate builds the installed app from it). `/recense <file|word>` finds the part and its worktree (`.claude/skills/recense/SKILL.md`).
 - Handoff: the main checkout writes `.handoff/HANDOFF.md`; a worktree writes `.handoff/<worktree>/HANDOFF.md` in the main checkout, so sessions don't overwrite each other. The pre-merge handoffs are in `.handoff/gallery/` and `.handoff/sync/`. The handoff zip goes in `~/.claude/context/recense/handoff/recense-handoff.zip`, never the repo; a resuming session reads it from there.
 - **Shared surfaces ship everywhere (owner, 2026-11-06):**
-  - **Draftpad:** a change applies to the Mac and the mobile builds. The editor is `editor/` (bundled as `editor/dist/editor.html`), hosted by `strip/editorhost.swift` and `library/apple/HostApp/iOS/Draftpad.swift`; the sync is `strip/notesync.swift`. Rebuild and check both apps before reporting.
+  - **Draftpad:** a change applies to the Mac and the mobile builds. The editor is `editor/` (bundled as `editor/dist/editor.html`), hosted by `strip/editorhost.swift` and `mobile/HostApp/iOS/Draftpad.swift`; the sync is `shared/notesync.swift`. Rebuild and check both apps before reporting.
+  - **Mirrors (owner, 2026-11-06):** Recense Mac (`strip/`) and Recense mobile (`mobile/`) mirror each other: the Podcasts-style skin (shared `ShowsKit`, planned), the strip controls that carry over, and Draftpad ship to both in the same change. Mac-only controls (menu-bar hider, brightness, CoreAudio volume, vault, terminal) stay on the Mac. Swift both apps use lives in `shared/`.
   - **The player:** a change applies to the Mac, mobile and web. Its one home is `library/src/client/` (copied into the Mac app by `strip/build.sh`); the web app and the iOS app's player use it too. Test all three.
-- `~/Developer/sync` is a temporary symlink to `recense/sync` (old paths in the signed Move Offsite shortcuts); `~/Developer/gallery` is gone.
 
 Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 

@@ -1,1 +1,1 @@
-../../notesync.swift
+../../../shared/notesync.swift

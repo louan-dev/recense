@@ -27,11 +27,11 @@
 		A0C0FFEE00000000000000F8 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A0C0FFEE00000000000000F7); runOnlyForDeploymentPostprocessing = 0; };
 		A0C0FFEE00000000000000D0 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../HostApp/iOS/Draftpad.swift"; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000D1 = {isa = PBXBuildFile; fileRef = A0C0FFEE00000000000000D0; };
-		A0C0FFEE00000000000000D2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../strip/notesync.swift"; sourceTree = SOURCE_ROOT; };
+		A0C0FFEE00000000000000D2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../shared/notesync.swift"; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000D3 = {isa = PBXBuildFile; fileRef = A0C0FFEE00000000000000D2; };
-		A0C0FFEE00000000000000D4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../../strip/embedfiles.swift"; sourceTree = SOURCE_ROOT; };
+		A0C0FFEE00000000000000D4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../shared/embedfiles.swift"; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000D5 = {isa = PBXBuildFile; fileRef = A0C0FFEE00000000000000D4; };
-		A0C0FFEE00000000000000D6 = {isa = PBXFileReference; lastKnownFileType = text.html; path = "../../../editor/dist/editor.html"; sourceTree = SOURCE_ROOT; };
+		A0C0FFEE00000000000000D6 = {isa = PBXFileReference; lastKnownFileType = text.html; path = "../../editor/dist/editor.html"; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000D7 = {isa = PBXBuildFile; fileRef = A0C0FFEE00000000000000D6; };
 		A0C0FFEE00000000000000F5 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../HostApp/iOS/Player.swift"; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000F6 = {isa = PBXBuildFile; fileRef = A0C0FFEE00000000000000F5; };

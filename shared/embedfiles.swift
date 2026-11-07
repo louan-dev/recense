@@ -3,7 +3,7 @@ import WebKit
 import CryptoKit
 import UniformTypeIdentifiers
 
-// Shared by Recense on the Mac (editorhost.swift) and Draftpad on iPad and iPhone (library/apple/HostApp/iOS).
+// Shared by Recense on the Mac (editorhost.swift) and Draftpad on iPad and iPhone (mobile/HostApp/iOS).
 /// `recense-file://vault/<path>` serves a file next to draftpad.md; `recense-file://remote/<url>` serves a web file
 /// from the cache, downloading it the first time. So an embed opened once opens again with no network.
 final class EmbedFiles: NSObject, WKURLSchemeHandler {

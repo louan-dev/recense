@@ -2,7 +2,7 @@
 # Builds Gallery (as "Gallery Files.app": /Applications/Gallery.app is the Touch ID mount app) (host app + File Provider extension) and installs it in /Applications.
 #   zsh build.sh
 # Signed with this Mac's Apple Development certificate (free Personal Team, team 48RZ72DNP3). The App Group is
-# team-prefixed, so macOS needs no provisioning profile. Each build goes to a fresh folder under apple/build/;
+# team-prefixed, so macOS needs no provisioning profile. Each build goes to a fresh folder under mobile/build/;
 # nothing is deleted.
 set -e
 here="${0:A:h}"

@@ -197,43 +197,8 @@ iCloud backup, creates and edits events, invites with a texted link. Indexing ru
 10 minutes (every minute until 2026-11-05), within a daily budget of AI-using steps that idle runs no longer spend.
 Main's `Raven/` (client matters) is never indexed or answered from; its old vectors leave on the next sweep.
 
-### Recense for iPhone and iPad (apple/ios, apple/HostApp/iOS; formerly Gallery)
-The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
-updates in place.
-- **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
-  The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
-  Saves go through the Mac's 3-way merge (`strip/notesync.swift`), and an edit from the Mac or Obsidian is merged in
-  within 3 s while it's open. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
-  Links open in Safari; `![](file.pdf)` and images show inline (vault files directly, web files cached for offline,
-  through `strip/embedfiles.swift`).
-- **Apple Pencil in Draftpad:** write into the text with Scribble (iPadOS turns handwriting into typed text).
-  Squeeze (Apple Pencil Pro), double-tap, or the pencil button opens the ink layer: the Pencil draws, fingers still
-  scroll, and the system palette follows the Pencil Pro (barrel roll, squeeze for the compact palette). **Done** saves
-  the drawing in `Draftpad ink/` next to the note, as a PNG (dark ink on white, shown by the editor and Obsidian) plus
-  its PencilKit `.drawing`, and puts `![](<Draftpad ink/….png>)` under the cursor's line. **Cancel** throws it away.
-- A Files-like browser over Main and the archive, with Gallery's own player and Learn mode inside the app
-  (`gallery://` scheme handler), and an Assistant button on each folder (⌘K on an iPad keyboard).
-- Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
-- Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
-  Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad. Start it from Control Center › Screen Recording › Gallery; the broadcast
-  extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
-  and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
-  in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, Read along
-  with Copy, Clear and full screen. What's heard is kept per episode in the same transcript store as the Mac.
-  The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
-  its middle button holds the words where they are and play shows the newest. Read along shows a word only once
-  speech recognition has stopped rewriting it (Settle), so sentences grow calmly.
-- **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
-  the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
-  no chapters yet).
-
-### Gallery for the Mac (apple/macos, apple/HostApp/macOS)
-- The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and
-  Select, Download to Downloads and native AirDrop.
-- Gallery as a location in Finder (File Provider extension). Deletes go both ways: what Gallery deletes leaves
-  Finder, and a file deleted in Finder or Files goes to Gallery's trash for 30 days (`DELETE /main/api/fp/<root>/item`);
-  folders are deleted in Gallery.
+### Native apps (moved)
+Recense for iPhone and iPad, and the retiring Gallery for the Mac, are in `../mobile/` (`mobile/README.md`).
 
 ### The feed (fp.js)
 Catalog and event log over Main and the archive: stable ids, md5 from R2 etags, one junk/churn list shared with Sync's
@@ -271,13 +236,7 @@ gallery/
     client/             CSS and browser scripts (gallery.js, cadence.js, prosody.js, prosogram*.js, keylabel.js,
                         homebar.js, room.js, assistant.js, sharedview.js, upload.js)
   test/                 route, transcript, cadence, feed, assistant and page tests (npm test)
-  apple/
-    ios/                the iPhone/iPad project (GalleryFiles.xcodeproj), Broadcast extension, build.sh
-    macos/              the Mac app's plists and build.sh
-    HostApp/            the apps' SwiftUI sources (iOS: Browser, Player, Listen, Captions; macOS)
-    Extension/          the File Provider extension
-    FileProviderCore/   code shared by the apps and the extension
-    Icon/               the app icon, drawn in code
+  (the iPhone, iPad and Mac apps moved to ../mobile/ on 11-06)
   docs/architecture.md  File Provider design and the app's interface
   migrations/           D1 drafts
   chau/
@@ -359,16 +318,7 @@ Cloudflare settings outside this folder:
 - Lifecycle rules: `r2/lifecycle.md`.
 
 ### Native apps
-
-```
-zsh library/apple/ios/build.sh [device name or id]   # builds and installs on a connected iPhone or iPad
-zsh library/apple/macos/build.sh                     # builds and installs the Mac app in /Applications
-```
-
-Signed with a free Personal Team, so the iOS profile lasts 7 days. `../sync/bin/resign-ios.zsh` runs daily and checks
-each device on its own: one whose app is missing or was installed 5 or more days ago is reinstalled (the cached
-profile is renewed first when 2 days or less are left). Per-device stamps: `~/Library/Application Support/recense/resign-ios/`. The device's Access token comes from the Keychain (`gallery-access-<device>`, else
-`gallery-access`) into `Secrets/token.json`, which git ignores.
+The iPhone, iPad and Mac apps moved to `../mobile/` (11-06): see `mobile/README.md`. They use this Worker's API.
 
 ### Mac setup
 

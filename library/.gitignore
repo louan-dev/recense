@@ -19,8 +19,4 @@ test/.shots/
 .wrangler/
 node_modules/
 
-# Gallery Files builds (apple/macos/build.sh)
-apple/build/
-# the device token build.sh copies in from the Keychain: never commit
-apple/ios/Secrets/
 test-results/

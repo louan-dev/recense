@@ -8,7 +8,7 @@
 # A device that can't be reached gets a notification and is tried again on the next day's run.
 #   zsh resign-ios.zsh [--force]
 set -u
-BUILD=${0:A:h}/../../library/apple/ios/build.sh
+BUILD=${0:A:h}/../../mobile/ios/build.sh
 PD="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 RETIRED="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles (retired)"
 LOG=$HOME/Library/Logs/resign-ios.log

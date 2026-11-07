@@ -122,7 +122,7 @@ bucket root are never reachable through a mount.
     Face ID gate is an OPEN question (§8).
   - **Host app:** AppKit menu-bar item on macOS, SwiftUI single screen on iOS. Both only do sign-in, the Keep list
     and status.
-- Folder layout: `gallery/apple/FileProviderCore/`, `gallery/apple/Extension/`, `gallery/apple/HostApp/`. The
+- Folder layout: `mobile/FileProviderCore/`, `mobile/Extension/`, `mobile/HostApp/`. The
   project is built with `xcodebuild` from a hand-kept project. **XcodeGen only on the owner's yes.**
 
 ## 7 · Apple account and signing (WALLs; one test pending)

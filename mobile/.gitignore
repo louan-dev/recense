@@ -1,0 +1,5 @@
+# builds (ios/build.sh, macos/build.sh)
+build/
+# the device token ios/build.sh copies in from the Keychain: never commit
+ios/Secrets/
+.DS_Store

@@ -1,1 +1,1 @@
-../../embedfiles.swift
+../../../shared/embedfiles.swift
