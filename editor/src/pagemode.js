@@ -4,6 +4,7 @@
 import { StateField, StateEffect, Prec } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { inspectDraftpadPages } from './pages.js';
+import { postHaptic } from './bridge.js';
 
 export const setPageMode = StateEffect.define();
 export const setPageIndex = StateEffect.define();
@@ -82,7 +83,7 @@ export function pageCount(state) {
 /**
  * Updates `currentPage` from `view.scrollDOM.scrollTop` so continuous scrolling keeps the active page in sync.
  */
-export function syncPageFromScroll(view, { onSnap = null } = {}) {
+export function syncPageFromScroll(view, { onSnap = null, globalObj } = {}) {
   if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== 'function') {
     return currentPage(view);
   }
@@ -93,6 +94,7 @@ export function syncPageFromScroll(view, { onSnap = null } = {}) {
   const prev = currentPage(view.state);
   if (at !== prev) {
     view.dispatch({ effects: setPageIndex.of(at) });
+    postHaptic('snap', globalObj);
     if (typeof onSnap === 'function') onSnap(at);
   }
   return at;
@@ -123,14 +125,16 @@ export function showPage(view, index) {
 }
 
 /** One page deeper (+1) or back toward the top (-1). Returns false at either end. */
-export function stepPage(view, delta, { onSnap = null, onBounce = null } = {}) {
+export function stepPage(view, delta, { onSnap = null, onBounce = null, globalObj } = {}) {
   if (!isPageMode(view.state)) return false;
   const target = currentPage(view.state) + delta;
   if (target < 0 || target >= pageCount(view.state)) {
+    postHaptic('edge', globalObj);
     if (typeof onBounce === 'function') onBounce();
     return false;
   }
   showPage(view, target);
+  postHaptic('snap', globalObj);
   if (typeof onSnap === 'function') onSnap(target);
   return true;
 }

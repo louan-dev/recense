@@ -19,7 +19,7 @@ import {
   isFindReplaceOpen
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
-import { createEditorBridge, externalSetTextAnnotation } from './bridge.js';
+import { createEditorBridge, externalSetTextAnnotation, postHaptic } from './bridge.js';
 import { removedRecordExtension, getRemoved } from './removed.js';
 import {
   pageModeExtension,
@@ -387,18 +387,14 @@ export function mountEditor(root = document.body, initialDoc = '') {
     parent: editorHost
   });
 
-  // At the first or last page a swipe bounces; the host plays its bounce so it feels like the old strip.
-  attachSwipePaging(view, {
-    onBounce: () => {
-      const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ui;
-      if (h) h.postMessage('bounce');
-    }
-  });
+  attachSwipePaging(view);
 
   function showOutline() {
+    const wasVisible = outlineVisible;
     outlineVisible = true;
     outlinePanel.hidden = false;
     outlineToggleBtn.setAttribute('aria-pressed', 'true');
+    if (!wasVisible) postHaptic('open');
   }
 
   function hideOutline() {

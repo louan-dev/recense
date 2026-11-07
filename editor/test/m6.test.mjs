@@ -26,6 +26,7 @@ import {
 import { SearchQuery, setSearchQuery } from '@codemirror/search';
 import { createEditorState, MENU_ACTIONS, formatPageIndicator } from '../src/index.js';
 import { attachOutlineGestures } from '../src/outline.js';
+import { postHaptic } from '../src/bridge.js';
 
 const doc = ['Friday, November 6, 2026\n\nnewest', 'Monday, November 2, 2026\n\nmiddle', 'Thursday, October 8, 2026\n\nold']
   .join(PAGE_JOINER);
@@ -275,6 +276,62 @@ test('E1 outline gestures: left-edge swipe opens outline; Esc or tap outside clo
   open = true;
   listeners.keydown({ key: 'Escape', preventDefault() {} });
   assert.equal(open, false);
+});
+
+test('E1 haptics: posts { haptic: "snap" } on page step/scroll, "edge" at ends or find wrap, and "open" on outline', () => {
+  const haptics = [];
+  const fakeWindow = {
+    webkit: {
+      messageHandlers: {
+        ui: {
+          postMessage(msg) {
+            haptics.push(msg);
+          }
+        }
+      }
+    }
+  };
+
+  let { state } = createEditorState(doc);
+  const fakeView = {
+    get state() { return state; },
+    scrollDOM: { scrollTop: 0 },
+    lineBlockAt(pos) {
+      const lineNo = state.doc.lineAt(pos).number;
+      return { top: (lineNo - 1) * 28, from: pos };
+    },
+    lineBlockAtHeight(y) {
+      const lineNo = Math.max(1, Math.min(state.doc.lines, Math.floor(y / 28) + 1));
+      const line = state.doc.line(lineNo);
+      return { top: (lineNo - 1) * 28, from: line.from };
+    },
+    dispatch(spec) {
+      state = state.update(spec).state;
+    }
+  };
+
+  // Stepping to page 1 posts { haptic: 'snap' }
+  assert.equal(stepPage(fakeView, 1, { globalObj: fakeWindow }), true);
+  assert.deepEqual(haptics, [{ haptic: 'snap' }]);
+
+  // Stepping before page 0 posts { haptic: 'edge' }
+  assert.equal(stepPage(fakeView, -1, { globalObj: fakeWindow }), true);
+  assert.equal(stepPage(fakeView, -1, { globalObj: fakeWindow }), false);
+  assert.deepEqual(haptics, [{ haptic: 'snap' }, { haptic: 'snap' }, { haptic: 'edge' }]);
+
+  // Find wrapping around the document posts { haptic: 'edge' }
+  haptics.length = 0;
+  fakeView.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: '2026' })) });
+  stepFind(fakeView, 0, { globalObj: fakeWindow });
+  stepFind(fakeView, 1, { globalObj: fakeWindow });
+  stepFind(fakeView, 1, { globalObj: fakeWindow });
+  const wrappedStep = stepFind(fakeView, 1, { globalObj: fakeWindow });
+  assert.equal(wrappedStep.wrapped, true);
+  assert.deepEqual(haptics, [{ haptic: 'edge' }]);
+
+  // Opening outline posts { haptic: 'open' }
+  assert.equal(postHaptic('open', fakeWindow), true);
+  assert.deepEqual(haptics[haptics.length - 1], { haptic: 'open' });
 });
 
 test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {

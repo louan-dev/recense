@@ -27983,6 +27983,125 @@ ${PAGE_MARKER}
     baseTheme3
   ];
 
+  // src/bridge.js
+  var DEBOUNCE_MS = 300;
+  var externalSetTextAnnotation = Annotation.define();
+  function postHaptic(kind, globalObj = typeof window !== "undefined" ? window : null) {
+    if (!kind) return false;
+    const h = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ui;
+    if (h && typeof h.postMessage === "function") {
+      h.postMessage({ haptic: String(kind) });
+      return true;
+    }
+    return false;
+  }
+  function createEditorBridge({
+    getState,
+    dispatch,
+    focusView,
+    getScroll,
+    setScroll,
+    setTheme,
+    setFontSize,
+    getRemoved: getRemoved2 = () => [],
+    extra = {},
+    globalObj = typeof window !== "undefined" ? window : {},
+    debounceMs = DEBOUNCE_MS
+  }) {
+    let debounceTimer = null;
+    function clearPendingPost() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+    }
+    function postToNative(text) {
+      const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.editor;
+      if (handler && typeof handler.postMessage === "function") {
+        handler.postMessage(text);
+      }
+    }
+    function notifyDocChanged(transactions = []) {
+      const isExternal = transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
+      if (isExternal) {
+        return;
+      }
+      clearPendingPost();
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        const state = getState();
+        if (state) {
+          postToNative(state.doc.toString());
+        }
+      }, debounceMs);
+    }
+    function flushPendingPost() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+        const state = getState();
+        if (state) {
+          postToNative(state.doc.toString());
+        }
+      }
+    }
+    function getText() {
+      const state = getState();
+      return state ? state.doc.toString() : "";
+    }
+    function setText(nextText) {
+      const s = typeof nextText === "string" ? nextText : String(nextText ?? "");
+      flushPendingPost();
+      const state = getState();
+      if (!state) return;
+      const current = state.doc.toString();
+      if (s === current) return;
+      const sel = state.selection.main;
+      const anchor = Math.min(sel.anchor, s.length);
+      const head = Math.min(sel.head, s.length);
+      const scroll = typeof getScroll === "function" ? getScroll() : null;
+      dispatch({
+        changes: { from: 0, to: current.length, insert: s },
+        selection: { anchor, head },
+        annotations: [
+          externalSetTextAnnotation.of(true),
+          Transaction.addToHistory.of(false)
+        ]
+      });
+      if (scroll && typeof setScroll === "function") {
+        setScroll(scroll);
+      }
+    }
+    function focus() {
+      if (typeof focusView === "function") {
+        focusView();
+      }
+    }
+    const api = {
+      ...extra,
+      setText,
+      getText,
+      focus,
+      setTheme(mode) {
+        if (typeof setTheme === "function") setTheme(mode);
+      },
+      setFontSize(px) {
+        if (typeof setFontSize === "function") setFontSize(px);
+      },
+      getRemoved() {
+        return typeof getRemoved2 === "function" ? getRemoved2() : [];
+      }
+    };
+    if (globalObj) {
+      globalObj.recenseEditor = api;
+    }
+    return {
+      api,
+      notifyDocChanged,
+      clearPendingPost
+    };
+  }
+
   // src/search.js
   var matchMark2 = Decoration.mark({ class: "cm-searchMatch" });
   var selectedMatchMark2 = Decoration.mark({ class: "cm-searchMatch cm-searchMatch-selected" });
@@ -28062,7 +28181,7 @@ ${PAGE_MARKER}
     },
     provide: (f) => EditorView.decorations.from(f)
   });
-  function stepFind(view, delta = 1, { onWrap = null } = {}) {
+  function stepFind(view, delta = 1, { onWrap = null, globalObj } = {}) {
     const query = getSearchQuery(view.state);
     if (!query || !query.valid) return null;
     const matches = findMatches(view.state, query);
@@ -28121,8 +28240,9 @@ ${PAGE_MARKER}
       const centeredTop = Math.max(0, block.top - Math.round(viewHeight / 2));
       view.scrollDOM.scrollTop = centeredTop;
     }
-    if (wrapped && delta !== 0 && typeof onWrap === "function") {
-      onWrap();
+    if (wrapped && delta !== 0) {
+      postHaptic("edge", globalObj);
+      if (typeof onWrap === "function") onWrap();
     }
     const status = matchStatus(view.state, query);
     return {
@@ -28302,116 +28422,6 @@ ${PAGE_MARKER}
         ...searchKeymap
       ])
     ];
-  }
-
-  // src/bridge.js
-  var DEBOUNCE_MS = 300;
-  var externalSetTextAnnotation = Annotation.define();
-  function createEditorBridge({
-    getState,
-    dispatch,
-    focusView,
-    getScroll,
-    setScroll,
-    setTheme,
-    setFontSize,
-    getRemoved: getRemoved2 = () => [],
-    extra = {},
-    globalObj = typeof window !== "undefined" ? window : {},
-    debounceMs = DEBOUNCE_MS
-  }) {
-    let debounceTimer = null;
-    function clearPendingPost() {
-      if (debounceTimer !== null) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
-    }
-    function postToNative(text) {
-      const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.editor;
-      if (handler && typeof handler.postMessage === "function") {
-        handler.postMessage(text);
-      }
-    }
-    function notifyDocChanged(transactions = []) {
-      const isExternal = transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
-      if (isExternal) {
-        return;
-      }
-      clearPendingPost();
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        const state = getState();
-        if (state) {
-          postToNative(state.doc.toString());
-        }
-      }, debounceMs);
-    }
-    function flushPendingPost() {
-      if (debounceTimer !== null) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-        const state = getState();
-        if (state) {
-          postToNative(state.doc.toString());
-        }
-      }
-    }
-    function getText() {
-      const state = getState();
-      return state ? state.doc.toString() : "";
-    }
-    function setText(nextText) {
-      const s = typeof nextText === "string" ? nextText : String(nextText ?? "");
-      flushPendingPost();
-      const state = getState();
-      if (!state) return;
-      const current = state.doc.toString();
-      if (s === current) return;
-      const sel = state.selection.main;
-      const anchor = Math.min(sel.anchor, s.length);
-      const head = Math.min(sel.head, s.length);
-      const scroll = typeof getScroll === "function" ? getScroll() : null;
-      dispatch({
-        changes: { from: 0, to: current.length, insert: s },
-        selection: { anchor, head },
-        annotations: [
-          externalSetTextAnnotation.of(true),
-          Transaction.addToHistory.of(false)
-        ]
-      });
-      if (scroll && typeof setScroll === "function") {
-        setScroll(scroll);
-      }
-    }
-    function focus() {
-      if (typeof focusView === "function") {
-        focusView();
-      }
-    }
-    const api = {
-      ...extra,
-      setText,
-      getText,
-      focus,
-      setTheme(mode) {
-        if (typeof setTheme === "function") setTheme(mode);
-      },
-      setFontSize(px) {
-        if (typeof setFontSize === "function") setFontSize(px);
-      },
-      getRemoved() {
-        return typeof getRemoved2 === "function" ? getRemoved2() : [];
-      }
-    };
-    if (globalObj) {
-      globalObj.recenseEditor = api;
-    }
-    return {
-      api,
-      notifyDocChanged,
-      clearPendingPost
-    };
   }
 
   // src/legal.js
@@ -29225,7 +29235,7 @@ ${PAGE_MARKER}
   function pageCount(state) {
     return inspectDraftpadPages(state.doc.toString()).length;
   }
-  function syncPageFromScroll(view, { onSnap = null } = {}) {
+  function syncPageFromScroll(view, { onSnap = null, globalObj } = {}) {
     if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
       return currentPage(view);
     }
@@ -29236,6 +29246,7 @@ ${PAGE_MARKER}
     const prev = currentPage(view.state);
     if (at !== prev) {
       view.dispatch({ effects: setPageIndex.of(at) });
+      postHaptic("snap", globalObj);
       if (typeof onSnap === "function") onSnap(at);
     }
     return at;
@@ -29257,14 +29268,16 @@ ${PAGE_MARKER}
     }
     return i;
   }
-  function stepPage(view, delta, { onSnap = null, onBounce = null } = {}) {
+  function stepPage(view, delta, { onSnap = null, onBounce = null, globalObj } = {}) {
     if (!isPageMode(view.state)) return false;
     const target = currentPage(view.state) + delta;
     if (target < 0 || target >= pageCount(view.state)) {
+      postHaptic("edge", globalObj);
       if (typeof onBounce === "function") onBounce();
       return false;
     }
     showPage(view, target);
+    postHaptic("snap", globalObj);
     if (typeof onSnap === "function") onSnap(target);
     return true;
   }
@@ -29926,16 +29939,13 @@ ${PAGE_MARKER}
       state,
       parent: editorHost
     });
-    attachSwipePaging(view, {
-      onBounce: () => {
-        const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ui;
-        if (h) h.postMessage("bounce");
-      }
-    });
+    attachSwipePaging(view);
     function showOutline() {
+      const wasVisible = outlineVisible;
       outlineVisible = true;
       outlinePanel.hidden = false;
       outlineToggleBtn.setAttribute("aria-pressed", "true");
+      if (!wasVisible) postHaptic("open");
     }
     function hideOutline() {
       outlineVisible = false;

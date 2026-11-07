@@ -173,7 +173,19 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             }
             return
         }
-        if m.name == "ui" { if (m.body as? String) == "bounce" { onBounce?() }; return }
+        if m.name == "ui" {
+            if (m.body as? String) == "bounce" { onBounce?(); return }
+            if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
+                let p = NSHapticFeedbackManager.defaultPerformer
+                switch kind {
+                case "snap": p.perform(.alignment, performanceTime: .now)
+                case "edge": p.perform(.levelChange, performanceTime: .now); onBounce?()
+                case "open": p.perform(.generic, performanceTime: .now)
+                default: break
+                }
+            }
+            return
+        }
         // The bridge posts the full text; a {text: …} object is accepted too.
         let s = (m.body as? String) ?? ((m.body as? [String: Any])?["text"] as? String)
         guard let s = s, s != text else { return }

@@ -15,6 +15,7 @@ import {
   replaceAll
 } from '@codemirror/search';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
+import { postHaptic } from './bridge.js';
 
 const matchMark = Decoration.mark({ class: 'cm-searchMatch' });
 const selectedMatchMark = Decoration.mark({ class: 'cm-searchMatch cm-searchMatch-selected' });
@@ -128,7 +129,7 @@ export const searchHighlightField = StateField.define({
  * - `delta > 0`: advances to the next match (wrapping around the end).
  * - `delta < 0`: moves to the previous match (wrapping around the start).
  */
-export function stepFind(view, delta = 1, { onWrap = null } = {}) {
+export function stepFind(view, delta = 1, { onWrap = null, globalObj } = {}) {
   const query = getSearchQuery(view.state);
   if (!query || !query.valid) return null;
   const matches = findMatches(view.state, query);
@@ -193,8 +194,9 @@ export function stepFind(view, delta = 1, { onWrap = null } = {}) {
     view.scrollDOM.scrollTop = centeredTop;
   }
 
-  if (wrapped && delta !== 0 && typeof onWrap === 'function') {
-    onWrap();
+  if (wrapped && delta !== 0) {
+    postHaptic('edge', globalObj);
+    if (typeof onWrap === 'function') onWrap();
   }
 
   const status = matchStatus(view.state, query);

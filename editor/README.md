@@ -29,7 +29,7 @@ Offline-first Markdown editor core built on CodeMirror 6 (MIT) for the Mac strip
 - `window.recenseEditor.getRemoved()` — returns the array of recorded user deletions (`{ text, from, to, time, before, after, context }`) for the "Farewell" episode (D32).
 - `window.recenseEditor.focus()` — focuses the CodeMirror view.
 - `window.recenseEditor.step(delta)` — one page deeper (`1`) or toward the top (`-1`); returns `'ok'` or `'bounce'`. Also `showPage(i)`, `currentPage()`, `pageCount()`, `setPageMode(on)`, `isPageMode()`, `setCursor(offset)`, `insertBlock(text)` (a new line under the cursor line, saved like typing).
-- **Page → Native, besides `editor`:** `link` gets a URL to open; `ui` gets `'bounce'` when a swipe passes either end.
+- **Page → Native, besides `editor`:** `link` gets a URL to open; `ui` receives `{ haptic: 'snap' | 'edge' | 'open' }` (`snap` when a page is reached, `edge` at the first/last page or when Find wraps, `open` when the Outline opens), played by `NSHapticFeedbackManager.defaultPerformer` on the Mac (`strip/editorhost.swift`) and `UIImpactFeedbackGenerator` (`.light` / `.rigid` / `.soft`) on iPhone and iPad (`mobile/HostApp/iOS/Draftpad.swift`).
 - `window.recenseEditor.setTheme('dark' | 'light')` — switches between dark and light themes.
 - `window.recenseEditor.setFontSize(px)` — sets the editor font size in pixels (clamped to `12`–`36`, default `18`).
 - **Page → Native notifications:** user edits are debounced to `300 ms` and posted as the full plain string via `window.webkit.messageHandlers.editor.postMessage(fullText)` when that handler is present.
