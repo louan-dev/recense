@@ -304,10 +304,22 @@ body {
 }
 
 .rc-find-count {
-  min-width: 3ch;
+  min-width: 6ch;
   color: var(--rc-muted);
   font-size: 12px;
   text-align: right;
+  white-space: nowrap;
+}
+
+.cm-searchMatch {
+  background-color: rgba(56, 189, 248, 0.22);
+  border-radius: 3px;
+}
+
+.cm-searchMatch.cm-searchMatch-selected {
+  background-color: rgba(56, 189, 248, 0.52);
+  outline: 1.5px solid var(--rc-cyan);
+  border-radius: 3px;
 }
 
 .rc-find-toggle,

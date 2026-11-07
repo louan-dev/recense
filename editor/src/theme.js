@@ -101,10 +101,12 @@ export function buildThemeExtension(mode = 'dark') {
       },
       '.cm-searchMatch': {
         backgroundColor: 'rgba(56, 189, 248, 0.22)',
-        outline: `1px solid ${palette.cyan}`
+        borderRadius: '3px'
       },
       '.cm-searchMatch.cm-searchMatch-selected': {
-        backgroundColor: 'rgba(56, 189, 248, 0.42)'
+        backgroundColor: 'rgba(56, 189, 248, 0.52)',
+        outline: `1.5px solid ${palette.cyan}`,
+        borderRadius: '3px'
       }
     },
     { dark: isDark }

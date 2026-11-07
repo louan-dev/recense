@@ -5,8 +5,8 @@ import { PAGE_JOINER } from '../src/pages.js';
 import { hiddenRanges, pageModeField, setPageIndex, setPageMode, currentPage } from '../src/pagemode.js';
 import { parseEmbedLine, embedSource, findEmbeds } from '../src/embeds.js';
 import { urlAt, openURL } from '../src/links.js';
-import { countMatches } from '../src/search.js';
-import { SearchQuery } from '@codemirror/search';
+import { countMatches, findMatches, matchStatus, stepFind, searchHighlightField } from '../src/search.js';
+import { SearchQuery, setSearchQuery } from '@codemirror/search';
 import { createEditorState } from '../src/index.js';
 
 const doc = ['Friday, November 6, 2026\n\nnewest', 'Monday, November 2, 2026\n\nmiddle', 'Thursday, October 8, 2026\n\nold']
@@ -70,6 +70,71 @@ test('M6 find: counts matches case-insensitively', () => {
   const { state } = createEditorState('Patent patent PATENT pat');
   assert.equal(countMatches(state, new SearchQuery({ search: 'patent' })), 3);
   assert.equal(countMatches(state, new SearchQuery({ search: '' })), 0);
+});
+
+test('E1 find: highlights every match, moves selection to match n, scrolls into view, and formats "3 of 12"', () => {
+  const twelveDoc = [
+    'Friday, November 6, 2026\n\nclaim one and claim two and claim three and claim four',
+    'Monday, November 2, 2026\n\nclaim five and claim six and claim seven and claim eight',
+    'Thursday, October 8, 2026\n\nclaim nine and claim ten and claim eleven and claim twelve'
+  ].join(PAGE_JOINER);
+
+  let { state } = createEditorState(twelveDoc);
+  const effectsLog = [];
+  const fakeView = {
+    get state() { return state; },
+    scrollDOM: { scrollTop: 0, clientHeight: 200 },
+    lineBlockAt(pos) { return { top: state.doc.lineAt(pos).number * 24 }; },
+    dispatch(spec) {
+      const tr = state.update(spec);
+      state = tr.state;
+      if (spec.effects) {
+        const list = Array.isArray(spec.effects) ? spec.effects : [spec.effects];
+        effectsLog.push(...list);
+      }
+    }
+  };
+
+  const query = new SearchQuery({ search: 'claim', caseSensitive: false });
+  fakeView.dispatch({ effects: setSearchQuery.of(query) });
+
+  const all = findMatches(state, query);
+  assert.equal(all.length, 12);
+
+  // Typing word-by-word (delta = 0) selects match 1 without skipping ahead
+  const m1 = stepFind(fakeView, 0);
+  assert.equal(m1.label, '1 of 12');
+  assert.equal(state.selection.main.from, all[0].from);
+  assert.equal(state.selection.main.to, all[0].to);
+
+  // Stepping twice (Enter / ↓ / next) lands on match 3 of 12 and scrolls it into view
+  stepFind(fakeView, 1);
+  const m3 = stepFind(fakeView, 1);
+  assert.equal(m3.index, 3);
+  assert.equal(m3.count, 12);
+  assert.equal(m3.label, '3 of 12');
+  assert.equal(matchStatus(state, query).label, '3 of 12');
+  assert.equal(state.selection.main.from, all[2].from);
+  assert.equal(state.selection.main.to, all[2].to);
+  assert.ok(m3.scrollEffect, 'dispatches scrollIntoView effect');
+
+  // Stepping to match 6 on page 1 moves currentPage to 1 and updates scrollTop
+  stepFind(fakeView, 1);
+  stepFind(fakeView, 1);
+  const m6 = stepFind(fakeView, 1);
+  assert.equal(m6.label, '6 of 12');
+  assert.equal(currentPage(state), 1, 'moves to the match on another page');
+  assert.ok(fakeView.scrollDOM.scrollTop > 0, 'scrolls the match into view');
+
+  // Every match is highlighted in searchHighlightField, and match 6 has cm-searchMatch-selected
+  const decos = state.field(searchHighlightField);
+  const classes = [];
+  decos.between(0, state.doc.length, (from, to, val) => {
+    classes.push({ from, to, cls: val.spec.class });
+  });
+  assert.equal(classes.length, 12);
+  assert.equal(classes[5].cls, 'cm-searchMatch cm-searchMatch-selected');
+  assert.equal(classes[0].cls, 'cm-searchMatch');
 });
 
 test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {
