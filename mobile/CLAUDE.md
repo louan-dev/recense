@@ -14,7 +14,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - `zsh mobile/ios/build.sh [device]`: builds and installs on a connected iPhone or iPad (free team, 7-day profile; `sync/bin/resign-ios.zsh` renews daily).
 - One iOS build at a time across sessions (`.handoff/MERGE-QUEUE`).
 - After a Draftpad or shared change, also run `zsh strip/build.sh` and `recense selftest`, and `npm test` in `editor/`.
-- New source files: until the project uses synchronized folders (B0.3), each one needs a PBXFileReference, a PBXBuildFile, a group entry and a build-phase entry in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
+- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
 
 ## Never
 - Commit `ios/Secrets/` (the device token) or `build/` (`mobile/.gitignore`).
