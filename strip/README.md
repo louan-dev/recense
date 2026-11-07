@@ -91,7 +91,8 @@ its macOS 27.2 placement fix.
 ## Features
 
 ### Layers
-Three fingers up and down move through the strip's layers: hidden → **Essentials** → **Drafting**.
+Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
+the panel from any layer. Moving the pointer off the panel never closes it: once down, it waits for the swipe.
 - **Essentials:** time and date (it doesn't take keyboard focus), batteries (a bolt while charging), and four icons
   between them; recorder, Recense and others, glowing on hover. Two fingers page through essentials → DEVONthink hub →
   notebook (Obsidian).
@@ -265,7 +266,8 @@ host: the page order round-trips the file byte for byte, new pages land on top, 
 
 | Do this | Result |
 | --- | --- |
-| Three fingers up / down | One layer up / down |
+| Three fingers up | One layer up |
+| Three fingers down | Close the panel (from Drafting too) |
 | Click the time | Open Draftpad |
 | Click the small time at the top of Draftpad | Back to the time view |
 | Ctrl+Option+Space | Toggle Draftpad |

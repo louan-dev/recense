@@ -25,8 +25,8 @@
 //   Cmd+] / Cmd+[            = next / previous topic
 //   Esc or Cmd+W             = hide
 //   Ctrl+Option+Space        = toggle the pad
-// Trackpad gestures (three-finger up / down) are NOT handled here. BetterTouchTool runs `recense up` / `recense down`
-// through scripts/gesture.sh, so there is exactly one gesture source and nothing double-fires.
+//   Three fingers up         = one layer up (hidden → time → pad)
+//   Three fingers down       = close the panel, from any layer. Moving the pointer away never closes it.
 //
 // File format: pages are separated by  <!-- page -->  (hidden in Obsidian's reading view).
 
@@ -56,7 +56,7 @@ let notePath: String = {
 let panelWidth: CGFloat = 620           // every surface shares one size
 let padSize = NSSize(width: panelWidth, height: 400)
 let timeSize = padSize                  // one size for every surface: switching never changes the geometry
-let closeOnHoverAway = true              // the panel retracts into the menu bar when the pointer leaves it
+let closeOnHoverAway = false             // owner, 11-06: once down, the panel stays until three fingers swipe it away
 let hoverAwayDelay: TimeInterval = 0.45 // grace period, so brushing past the edge doesn't close it
 let morphOutDuration: TimeInterval = 0.24   // closing: shrink back up into the menu bar
 let cardRadius: CGFloat = 26                 // bottom corners of the card
@@ -7059,15 +7059,14 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     func run(_ cmd: String) {
         switch cmd {
-        // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up, down one down.
+        // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up; down closes the
+        // panel from any layer, Draftpad included (owner, 11-06).
         case "up":     guard settled() else { return }
                        // Recense comes up and the Recense card steps aside at the same time.
                        MainActor.assumeIsolated { if Recense.overlay?.panel.isVisible == true { Recense.overlay?.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
         case "down":   guard settled() else { return }
-                       if panel.isVisible {
-                           switch mode { case .pad: present(.time); case .time, .hub, .notebook, .media: hide() }
-                       }
+                       if panel.isVisible { hide() }
         case "pad":    present(.pad)
         case "time":   present(.time)
         case "show":   present(mode)
