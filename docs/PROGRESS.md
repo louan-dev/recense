@@ -418,6 +418,16 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-06 21:50 PST · B0.5 ShowsKit contract (starry-squishing-knuth) · DONE
+- Change: `shared/ShowsKit/`, a Swift package: `Model.swift` (ContentKey, HLC, PoolItem, ItemState, ListenPosition,
+  Space/Show/Season/Episode, ShowManifest, CatalogEvent/ChangesPage, OutboxOp), `Rules.swift` (layout, locks, expiry,
+  filters, order), `Store.swift` (CatalogReading/CatalogWriting + MemoryCatalog). Linked in `strip/Package.swift` and
+  the iOS project (local package; excluded from the synchronized `shared/` group).
+- Validation: `swift test` 16/16 (key and ids equal the Worker's fingerprintKey/fileId/folderId, run in Node); Mac
+  build.sh installed + selftest 58 ok; iOS compile BUILD SUCCEEDED with an `import ShowsKit` probe (removed), ShowsKit
+  files compiled only in the package target.
+- Next: B1 brief in `.handoff/pool/INBOX.md` (Claude 2); B0.6 cloud-index checklist (me).
+
 ### 2026-11-06 07:15 PST · A12h / D3 ledger: a move is not a deletion; held deletions instead of a stalled journal · DONE
 - Cause (2026-11-05 15:33 → 11-06 14:52Z): N3 moved the conflict copies. The mass-delete guard counted moves as deletions
   and threw before saving state, so nothing was journaled. `ledger-job.sh` notified on every WatchPaths run, which meant

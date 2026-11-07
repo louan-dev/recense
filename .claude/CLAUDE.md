@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `strip/` | Recense.app for the Mac | `zsh strip/build.sh` | this file |
 | `mobile/` | Recense for iPhone and iPad (this app's mirror); the retiring Gallery Mac app | `zsh mobile/ios/build.sh` | `mobile/CLAUDE.md` |
-| `shared/` | Swift both Recense apps compile (`notesync.swift`, `embedfiles.swift`) | built by `strip/` (links in `Sources/recense/`) and the iOS project | this file |
+| `shared/` | Swift both Recense apps compile (`notesync.swift`, `embedfiles.swift`); `ShowsKit/`, the skin's package (model, rules, catalog store) | built by `strip/` (links in `Sources/recense/`; ShowsKit by path in `Package.swift`) and the iOS project (ShowsKit as a local package) | this file; `shared/ShowsKit/README.md` |
 | `library/` | Gallery: Worker, web app, share links | `npm test` in `library/`; deploys on push to `library/**` (`.github/workflows/library.yml`) | `library/CLAUDE.md` |
 | `sync/` | the Mac's jobs, ledger, canary, launch-agent copies | `npm test` in `sync/`; agents in `~/Library/LaunchAgents` run `~/Developer/recense/sync/bin/*` | `sync/CLAUDE.md` |
 | `calendar/` | the CalDAV Worker | `npx wrangler deploy` in `calendar/` | — |
@@ -48,6 +48,7 @@ Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the sec
 | `library/` | `npm run build:test && node test/<file>.test.mjs` in `library/` | `npm test` in `library/` |
 | `sync/` | `npm test` in `sync/` | the same, plus the real-path checks below |
 | `calendar/` | `npm test` in `calendar/` | the same |
+| `shared/ShowsKit/` | `swift test` in `shared/ShowsKit/` | the same, plus `zsh strip/build.sh` + `strip/recense selftest`, and the iOS compile: `xcodebuild -project mobile/ios/GalleryFiles.xcodeproj -scheme GalleryFiles -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` |
 | `editor/` | `npm test` in `editor/` | `npm run build` in `editor/`, then commit `dist/editor.html` (`strip/build.sh` copies it into Recense.app) |
 
 The tests don't reach these; check them whenever the change does:

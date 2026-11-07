@@ -8,8 +8,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.9.0"),
+        .package(path: "../shared/ShowsKit"),   // the Podcasts-style skin, shared with Recense mobile
     ],
     targets: [
-        .executableTarget(name: "recense", dependencies: ["SwiftTerm"], path: "Sources/recense"),
+        .executableTarget(name: "recense", dependencies: ["SwiftTerm", "ShowsKit"], path: "Sources/recense"),
     ]
 )
