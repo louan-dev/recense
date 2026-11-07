@@ -107,6 +107,15 @@ the panel from any layer. Moving the pointer off the panel never closes it: once
     Topic menu, or right-click in the pad. Classic is the default. The new editor never writes the file itself:
     every save goes through the same merge (`notesync.swift`). Until the core is merged, a plain stand-in page with
     the same bridge runs instead (`editorhost.swift`). In the new editor, right-click → New Topic on Top.
+  - **Pages in the new editor:** one page at a time, as in classic. Two fingers left or ⌘] go one page deeper, two
+    fingers right or ⌘[ go back toward the top; both ends bounce. **Pages** in the toolbar switches to one long scroll.
+    The first time the pad opens on a new day, today's page starts on top with the cursor in it.
+  - **Links and embeds:** ⌘-click a link to open it in the browser. A line holding only `![](file.pdf)` or
+    `![](image.png)` shows the PDF or image under it: a path is read from the vault folder, a web link is saved to
+    `~/Library/Caches/recense/embeds/` the first time (up to 100 MB) and opens from there offline afterwards.
+  - **Newest first, once:** `./recense draftpad-flip` logs the page order it would write; `./recense draftpad-flip-go`
+    saves a copy to `~/Recense/backups/draftpad-<time>.md`, then writes `draftpad.md` newest-first through the normal
+    save. The pages written on top stay first; each dated page keeps the undated pages under it.
 - Edge bars on hover: recorder / volume (left), vault / brightness (right), R2 (bottom).
 - Voice → calendar card; Mac ↔ iPhone ↔ iPad handoff.
 
@@ -244,7 +253,7 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons | draftpad-flip | draftpad-flip-go`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
 too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), that the hider watches no key or

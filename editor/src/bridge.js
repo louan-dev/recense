@@ -22,6 +22,7 @@ export function createEditorBridge({
   setTheme,
   setFontSize,
   getRemoved = () => [],
+  extra = {},
   globalObj = typeof window !== 'undefined' ? window : {},
   debounceMs = DEBOUNCE_MS
 }) {
@@ -110,6 +111,7 @@ export function createEditorBridge({
   }
 
   const api = {
+    ...extra,
     setText,
     getText,
     focus,

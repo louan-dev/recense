@@ -6985,7 +6985,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     func applyEditorKind() {
         let on = editorKind == .new
         if on && editor == nil {
-            let e = EditorHost(frame: viewport.frame)
+            let vault = URL(fileURLWithPath: (notePath as NSString).deletingLastPathComponent)
+            let cache = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/recense/embeds")
+            let e = EditorHost(frame: viewport.frame, vault: vault, cache: cache)
+            e.onBounce = { [weak self] in self?.bounce() }
             e.web.autoresizingMask = [.width, .height]
             e.web.extraItems = { [weak self] in self?.editorMenuItems() ?? [] }
             e.onChange = { [weak self] _ in
@@ -7011,8 +7014,43 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         e.flush { [weak self] cur in
             e.setText(withNewPageOnTop(cur))
             self?.saveNow()
-            e.focus()
+            e.showPage(0)
+            e.setCursor(dateStamp().utf16.count + 2)   // the empty line under today's date
         }
+    }
+
+    /// Opening the pad on a new day starts today's page on top, once a day, so new text lands on top.
+    func startTodayIfNeeded() {
+        guard editorOn, let e = editor else { return }
+        let today = dateStamp(), d = UserDefaults.standard
+        guard d.string(forKey: "todayPageAdded") != today else { return }
+        d.set(today, forKey: "todayPageAdded")
+        if let top = parsePages(e.text).first, top.hasPrefix(today) { e.showPage(0); return }
+        newTopicOnTop()
+    }
+
+    /// `recense draftpad-flip` logs the new page order; `recense draftpad-flip-go` saves a copy to
+    /// ~/Recense/backups and writes the file newest-first through the normal save (Recense stays the only writer).
+    func flipDraftpad(go: Bool) {
+        let now: (String) -> Void = { [weak self] cur in
+            guard let self = self else { return }
+            let flipped = newestFirst(cur)
+            let order = parsePages(flipped).map { String($0.prefix(40)).replacingOccurrences(of: "\n", with: " ") }
+            log("draftpad-flip\(go ? "" : " (dry run)"): \(flipped == cur ? "already newest-first" : order.joined(separator: " | "))")
+            guard go, flipped != cur else { return }
+            let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Recense/backups")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
+            let backup = dir.appendingPathComponent("draftpad-\(f.string(from: Date())).md")
+            guard (try? cur.write(to: backup, atomically: true, encoding: .utf8)) != nil else {
+                log("draftpad-flip: couldn't save the backup; nothing changed"); return
+            }
+            if self.editorOn, let e = self.editor { e.setText(flipped); e.showPage(0) } else { self.showText(flipped) }
+            self.saveNow()
+            UserDefaults.standard.set("newestFirst", forKey: "pageOrder")
+            log("draftpad-flip: done; backup at \(backup.path)")
+        }
+        if editorOn, let e = editor { e.flush(now) } else { now(fileText(texts)) }
     }
 
     @objc func prevPage() { step(-1) }
@@ -7078,6 +7116,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "editor-new": setEditor(.new)
         case "editor-classic": setEditor(.classic)
         case "show-icons": menuBar.hider.showIcons()
+        case "draftpad-flip": flipDraftpad(go: false)
+        case "draftpad-flip-go": flipDraftpad(go: true)
         default:       present(.time)
         }
     }
@@ -7406,7 +7446,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         }
         if m == .pad {
             panel.makeKeyAndOrderFront(nil)
-            if editorOn, let e = editor { panel.makeFirstResponder(e.web); e.focus() }
+            if editorOn, let e = editor { panel.makeFirstResponder(e.web); e.focus(); startTodayIfNeeded() }
             else if views.indices.contains(index) { panel.makeFirstResponder(views[index].textView) }
         } else if m == .notebook, let t = terminal {
             panel.makeKeyAndOrderFront(nil)
@@ -7581,6 +7621,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     /// Keyboard paging (Cmd+[ / Cmd+]).
     func step(_ delta: Int) {
+        // The new editor pages itself (one page per view; page 0 is the top of the file). Past either end: bounce.
+        if mode == .pad, editorOn, let e = editor { e.step(delta) { [weak self] ok in if !ok { self?.bounce() } }; return }
         guard mode == .pad, !editorOn, !settling, !dragging else { return }
         let target = index + delta
         if target < 0 { bounce(); return }
@@ -7756,7 +7798,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 // MARK: - Entry point
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
-                "editor-new", "editor-classic", "show-icons"]
+                "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go"]
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {

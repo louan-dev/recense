@@ -21,6 +21,18 @@ import { legalNumberingExtension } from './legal.js';
 import { createEditorBridge } from './bridge.js';
 import { removedRecordExtension, getRemoved } from './removed.js';
 import {
+  pageModeExtension,
+  attachSwipePaging,
+  stepPage,
+  showPage,
+  currentPage,
+  isPageMode,
+  setPageMode,
+  pageCount
+} from './pagemode.js';
+import { embedsExtension } from './embeds.js';
+import { linksExtension } from './links.js';
+import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
   buildThemeExtension,
@@ -49,6 +61,9 @@ export function createEditorExtensions({
     removedRecordExtension(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     pageMarkersExtension(),
+    pageModeExtension(),
+    embedsExtension(),
+    linksExtension(),
     compartments.theme.of(buildThemeExtension(theme)),
     compartments.fontSize.of(buildFontSizeExtension(fontSize)),
     ...extraExtensions
@@ -77,7 +92,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let currentTheme = 'dark';
   let currentFontSize = DEFAULT_FONT_SIZE;
   let newestFirst = false;
-  let outlineVisible = true;
+  let outlineVisible = false;
 
   const shell = document.createElement('div');
   shell.className = 'rc-shell';
@@ -92,18 +107,26 @@ export function mountEditor(root = document.body, initialDoc = '') {
   outlineToggleBtn.type = 'button';
   outlineToggleBtn.className = 'rc-btn';
   outlineToggleBtn.id = 'rc-outline-toggle-btn';
-  outlineToggleBtn.setAttribute('aria-pressed', 'true');
+  outlineToggleBtn.setAttribute('aria-pressed', 'false');
   outlineToggleBtn.textContent = 'Outline';
+
+  const pagesBtn = document.createElement('button');
+  pagesBtn.type = 'button';
+  pagesBtn.className = 'rc-btn';
+  pagesBtn.id = 'rc-pages-btn';
+  pagesBtn.setAttribute('aria-pressed', 'true');
+  pagesBtn.title = 'One page at a time (two fingers left / right, ⌘] / ⌘[); off = one long scroll';
+  pagesBtn.textContent = 'Pages';
 
   const searchBtn = document.createElement('button');
   searchBtn.type = 'button';
   searchBtn.className = 'rc-btn';
   searchBtn.id = 'rc-search-btn';
   searchBtn.setAttribute('aria-pressed', 'false');
-  searchBtn.title = 'Find and replace (⌘F)';
+  searchBtn.title = 'Find (⌘F)';
   searchBtn.textContent = 'Search';
 
-  leftGroup.append(outlineToggleBtn, searchBtn);
+  leftGroup.append(outlineToggleBtn, pagesBtn, searchBtn);
 
   const rightGroup = document.createElement('div');
   rightGroup.className = 'rc-toolbar-group';
@@ -124,6 +147,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   outlinePanel.className = 'rc-outline';
   outlinePanel.id = 'rc-outline-panel';
   outlinePanel.setAttribute('aria-label', 'Document Outline');
+  outlinePanel.hidden = true;
 
   const outlineHeader = document.createElement('div');
   outlineHeader.className = 'rc-outline-header';
@@ -186,6 +210,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     jumpBtn.textContent = h.kind === 'section' ? `§ ${h.title}` : h.title;
     jumpBtn.addEventListener('click', () => {
       if (view) jumpToOffset(view, h.from);
+      hideOutline();
     });
 
     row.append(foldBtn, jumpBtn);
@@ -216,6 +241,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
         pageBtn.textContent = page.dateLine || page.title;
         pageBtn.addEventListener('click', () => {
           jumpToOffset(view, page.from);
+          hideOutline();
         });
         pageBlock.appendChild(pageBtn);
 
@@ -248,6 +274,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
         pageBtn.textContent = page.dateLine || page.title;
         pageBtn.addEventListener('click', () => {
           jumpToOffset(view, page.from);
+          hideOutline();
         });
         pageBlock.appendChild(pageBtn);
 
@@ -281,6 +308,33 @@ export function mountEditor(root = document.body, initialDoc = '') {
     state,
     parent: editorHost
   });
+
+  // At the first or last page a swipe bounces; the host plays its bounce so it feels like the old strip.
+  attachSwipePaging(view, {
+    onBounce: () => {
+      const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ui;
+      if (h) h.postMessage('bounce');
+    }
+  });
+
+  function hideOutline() {
+    outlineVisible = false;
+    outlinePanel.hidden = true;
+    outlineToggleBtn.setAttribute('aria-pressed', 'false');
+  }
+
+  function setPages(on) {
+    view.dispatch({ effects: setPageMode.of(Boolean(on)) });
+    pagesBtn.setAttribute('aria-pressed', String(isPageMode(view.state)));
+    if (on) showPage(view, currentPage(view.state));
+  }
+
+  /** Places the cursor at `offset` (clamped), shows its page, and focuses the editor. */
+  function setCursor(offset) {
+    const at = Math.max(0, Math.min(view.state.doc.length, Number(offset) || 0));
+    view.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+    view.focus();
+  }
 
   function setTheme(mode) {
     currentTheme = normalizeThemeName(mode);
@@ -329,7 +383,16 @@ export function mountEditor(root = document.body, initialDoc = '') {
     },
     setTheme,
     setFontSize,
-    getRemoved: () => (view ? getRemoved(view.state) : [])
+    getRemoved: () => (view ? getRemoved(view.state) : []),
+    extra: {
+      step: delta => (stepPage(view, Number(delta) || 0) ? 'ok' : 'bounce'),
+      showPage: i => showPage(view, Number(i) || 0),
+      currentPage: () => currentPage(view.state),
+      pageCount: () => pageCount(view.state),
+      setPageMode: on => setPages(on),
+      isPageMode: () => isPageMode(view.state),
+      setCursor
+    }
   });
 
   outlineToggleBtn.addEventListener('click', () => {
@@ -337,6 +400,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
     outlinePanel.hidden = !outlineVisible;
     outlineToggleBtn.setAttribute('aria-pressed', String(outlineVisible));
   });
+
+  pagesBtn.addEventListener('click', () => setPages(!isPageMode(view.state)));
 
   searchBtn.addEventListener('click', () => {
     const open = toggleFindReplace(view);
