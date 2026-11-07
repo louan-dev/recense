@@ -89,6 +89,8 @@ version (an always-hidden tier, per-app Rules) is in the history: commit 93e5cb3
 its macOS 27.2 placement fix.
 
 ## Features
+The app icon is Gallery's petal cloud (the iOS app's icon, `library/apple/ios/Assets.xcassets/AppIcon.appiconset`),
+drawn in macOS's rounded-square shape into `AppIcon.icns`, so Recense looks the same on the Mac, iPhone and iPad.
 
 ### Layers
 Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
