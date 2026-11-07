@@ -25,6 +25,7 @@ import {
 } from '../src/search.js';
 import { SearchQuery, setSearchQuery } from '@codemirror/search';
 import { createEditorState, MENU_ACTIONS, formatPageIndicator } from '../src/index.js';
+import { attachOutlineGestures } from '../src/outline.js';
 
 const doc = ['Friday, November 6, 2026\n\nnewest', 'Monday, November 2, 2026\n\nmiddle', 'Thursday, October 8, 2026\n\nold']
   .join(PAGE_JOINER);
@@ -230,6 +231,50 @@ test('E1 lighter toolbar: menu keeps every action reachable and page indicator f
   ]);
   assert.equal(formatPageIndicator(0, 3), 'Page 1 of 3');
   assert.equal(formatPageIndicator(2, 3), 'Page 3 of 3');
+});
+
+test('E1 outline gestures: left-edge swipe opens outline; Esc or tap outside closes it', () => {
+  const listeners = {};
+  const container = {
+    addEventListener(type, fn) {
+      listeners[type] = fn;
+    }
+  };
+  const insideNode = {};
+  const outsideNode = {};
+  const outlineEl = {
+    contains(target) {
+      return target === insideNode;
+    }
+  };
+
+  let open = false;
+  attachOutlineGestures(container, outlineEl, {
+    isOpen: () => open,
+    onOpen: () => { open = true; },
+    onClose: () => { open = false; }
+  });
+
+  // Swipe starting away from the left edge does not summon the outline
+  listeners.touchstart({ touches: [{ clientX: 90, clientY: 120 }] });
+  listeners.touchend({ changedTouches: [{ clientX: 180, clientY: 125 }] });
+  assert.equal(open, false);
+
+  // Swipe in from the left edge (clientX <= 28) opens the outline
+  listeners.touchstart({ touches: [{ clientX: 12, clientY: 120 }] });
+  listeners.touchend({ changedTouches: [{ clientX: 80, clientY: 125 }] });
+  assert.equal(open, true);
+
+  // Tapping inside the outline keeps it open; tapping outside closes it
+  listeners.pointerdown({ target: insideNode });
+  assert.equal(open, true);
+  listeners.pointerdown({ target: outsideNode });
+  assert.equal(open, false);
+
+  // Escape closes the outline when open
+  open = true;
+  listeners.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(open, false);
 });
 
 test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {

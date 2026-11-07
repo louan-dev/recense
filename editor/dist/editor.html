@@ -26821,6 +26821,66 @@ ${PAGE_MARKER}
       })
     ];
   }
+  function attachOutlineGestures(container, outlineEl, {
+    edgePx = 28,
+    threshold = 40,
+    isOpen = () => false,
+    onOpen = () => {
+    },
+    onClose = () => {
+    }
+  } = {}) {
+    let startX = null;
+    let startY = null;
+    container.addEventListener(
+      "touchstart",
+      (e) => {
+        const t2 = e.touches && e.touches[0];
+        if (!t2 || e.touches && e.touches.length > 1) {
+          startX = null;
+          return;
+        }
+        if (t2.clientX <= edgePx) {
+          startX = t2.clientX;
+          startY = t2.clientY;
+        } else {
+          startX = null;
+        }
+      },
+      { passive: true }
+    );
+    container.addEventListener(
+      "touchend",
+      (e) => {
+        if (startX === null) return;
+        const t2 = e.changedTouches && e.changedTouches[0];
+        const sx = startX;
+        const sy = startY;
+        startX = null;
+        startY = null;
+        if (!t2) return;
+        const dx = t2.clientX - sx;
+        const dy = t2.clientY - sy;
+        if (dx >= threshold && Math.abs(dy) < dx) {
+          onOpen();
+        }
+      },
+      { passive: true }
+    );
+    container.addEventListener("pointerdown", (e) => {
+      if (!isOpen()) return;
+      if (outlineEl && typeof outlineEl.contains === "function" && outlineEl.contains(e.target)) {
+        return;
+      }
+      onClose();
+    });
+    container.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && isOpen()) {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        onClose();
+      }
+    });
+  }
 
   // ../../../../editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
@@ -30019,6 +30079,17 @@ ${String(text ?? "")}`;
       if (menuOpen && !menuWrap.contains(e.target)) {
         closeMenu();
       }
+    });
+    shell.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (menuOpen) closeMenu();
+        if (outlineVisible) hideOutline();
+      }
+    });
+    attachOutlineGestures(workspace, outlinePanel, {
+      isOpen: () => outlineVisible,
+      onOpen: () => showOutline(),
+      onClose: () => hideOutline()
     });
     setTheme(currentTheme);
     setFontSize(currentFontSize);

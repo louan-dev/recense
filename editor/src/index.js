@@ -9,7 +9,8 @@ import {
   headingFoldExtension,
   isHeadingFolded,
   toggleHeadingFold,
-  jumpToOffset
+  jumpToOffset,
+  attachOutlineGestures
 } from './outline.js';
 import {
   searchExtension,
@@ -565,6 +566,19 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (menuOpen && !menuWrap.contains(e.target)) {
       closeMenu();
     }
+  });
+
+  shell.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (menuOpen) closeMenu();
+      if (outlineVisible) hideOutline();
+    }
+  });
+
+  attachOutlineGestures(workspace, outlinePanel, {
+    isOpen: () => outlineVisible,
+    onOpen: () => showOutline(),
+    onClose: () => hideOutline()
   });
 
   setTheme(currentTheme);
