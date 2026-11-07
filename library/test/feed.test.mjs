@@ -10,6 +10,7 @@ import { parseOutline, speakable, episodeFile, refusePath, refusal, showName, pi
 import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
+const OPEN = { episodes: [] };   // an unlicensed show's .show.json, for makeInvites
 const TEAM = "team.cloudflareaccess.com";
 const AUD = "test-aud";
 const OWNER = "owner@example.com";
@@ -132,7 +133,7 @@ const showOf = (s) => s.replace(/^Shows\//, "");
 let feedInv, webInv;
 
 await test("invite command: a view-only feed link and, for a guest, a web link that can react and comment", async () => {
-  const links = await makeInvites(mac, { show: showOf(SHOW), name: "Mom", days: 30, guest: true });
+  const links = await makeInvites(mac, { show: showOf(SHOW), name: "Mom", days: 30, guest: true, manifest: OPEN });
   assert.deepEqual(links.map((l) => l.kind), ["feed", "web"]);
   [feedInv, webInv] = links;
   assert.match(pathOf(feedInv.url), /^\/m\/[A-Za-z0-9_-]{43}\/feed\.xml$/);
@@ -197,7 +198,7 @@ await test("feed: wrong, revoked or expired token, or a folder with no show, is 
   assert.equal(await pr.text(), badBody);
 
   // expired
-  const exp = (await makeInvites(mac, { show: showOf(SHOW), name: "Friend", days: 1 }))[0];
+  const exp = (await makeInvites(mac, { show: showOf(SHOW), name: "Friend", days: 1, manifest: OPEN }))[0];
   assert.equal((await get(pathOf(exp.url))).status, 200);
   await patchInvite(exp.id, (v) => ({ ...v, expires: Date.now() - 1000 }));
   const er = await get(pathOf(exp.url));
@@ -205,7 +206,7 @@ await test("feed: wrong, revoked or expired token, or a folder with no show, is 
   assert.equal(await er.text(), badBody);
 
   // revoked: the feed and every enclosure go at once
-  const rev = (await makeInvites(mac, { show: showOf(SHOW), name: "Ami", days: 7 }))[0];
+  const rev = (await makeInvites(mac, { show: showOf(SHOW), name: "Ami", days: 7, manifest: OPEN }))[0];
   const enc = (await (await get(pathOf(rev.url))).text()).match(/<enclosure url="([^"]+)"/)[1].replace(/&amp;/g, "&");
   assert.equal((await mac("/main/api/invites/" + rev.id, { method: "DELETE" })).status, 200);
   const rr = await get(pathOf(rev.url));
@@ -239,7 +240,7 @@ await test("NFC: an NFD heading (pasted from a PDF) names the same file rclone s
   const dir = "Shows/Ôn thi";
   await MAIN.put("files/" + dir + "/01 Một bài.m4a", audio(1));
   await MAIN.put("files/" + dir + "/" + MANIFEST, JSON.stringify({ title: "Ôn thi", lang: "vi", episodes: [{ id: "x", title: "Một bài", file: "01 Một bài.m4a".normalize("NFD"), duration: 3 }] }));
-  const inv = (await makeInvites(mac, { show: "Ôn thi", name: "Mẹ", days: 30 }))[0];
+  const inv = (await makeInvites(mac, { show: "Ôn thi", name: "Mẹ", days: 30, manifest: OPEN }))[0];
   const body = await (await get(pathOf(inv.url))).text();
   const href = body.match(/<enclosure url="([^"]+)"/)[1].replace(/&amp;/g, "&");
   assert.equal(decodeURIComponent(pathOf(href).split("/f/")[1]), "01 Một bài.m4a".normalize("NFC"));
@@ -276,7 +277,7 @@ await test("nits: .show.json is never served through a link; a failed guest link
   assert.equal((await get(base + "/f/" + encodeURIComponent("01 Offer & acceptance.m4a"))).status, 200);
   let n = 0;
   const flaky = async () => (++n === 1 ? Response.json({ id: "0123456789abcdef", url: ORIGIN + "/m/tok" }) : new Response("Someone already has an invitation under that name", { status: 409 }));
-  await assert.rejects(makeInvites(flaky, { show: "S", name: "Mom", guest: true }), /409[\s\S]*revoke id 0123456789abcdef/);
+  await assert.rejects(makeInvites(flaky, { show: "S", name: "Mom", guest: true, manifest: OPEN }), /409[\s\S]*revoke id 0123456789abcdef/);
 });
 
 await test("licence: PLIv1 or licensed outlines are marked, and invite refuses them (or an unreadable manifest) before any call", async () => {
@@ -293,6 +294,7 @@ await test("licence: PLIv1 or licensed outlines are marked, and invite refuses t
   const counting = async () => { calls++; return Response.json({ id: "0123456789abcdef", url: ORIGIN + "/m/tok" }); };
   await assert.rejects(makeInvites(counting, { show: "Patent Bar · Core", name: "Mom", guest: true, manifest: { licensed: true } }), /refused: Patent Bar · Core: it is licensed/);
   await assert.rejects(makeInvites(counting, { show: "Lost", name: "Mom", manifest: null }), /can't be read/);
+  await assert.rejects(makeInvites(counting, { show: "Left out", name: "Mom" }), /can't be read/);   // no manifest given: fail closed
   assert.equal(calls, 0, "no invitation request is ever sent for a refused show");
   assert.equal((await makeInvites(counting, { show: "Open", name: "Mom", manifest: { episodes: [] } })).length, 1);
 });

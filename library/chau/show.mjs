@@ -256,11 +256,10 @@ function ownerCall() {
 
 // One view-only link for the feed (never claimed, so Podcasts can always fetch it) and, for a guest,
 // one for the web page with react and comment. Returns [{ kind, id, url }].
+// `manifest` is the show's .show.json and is required: left out, it is refused like one that can't be read.
 export async function makeInvites(call, { show, name, days = 30, guest = false, manifest }) {
-  if (manifest !== undefined) {
-    const why = inviteRefusal(manifest);
-    if (why) throw new Error(`refused: ${show}: ${why}`);
-  }
+  const why = inviteRefusal(manifest);
+  if (why) throw new Error(`refused: ${show}: ${why}`);
   const dir = "Shows/" + show;
   const ttl = Math.round(Number(days) * 86400);
   const post = async (body) => {
