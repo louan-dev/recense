@@ -329,6 +329,18 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (on) showPage(view, currentPage(view.state));
   }
 
+  /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
+  function insertBlock(text) {
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    const insert = `\n${String(text ?? '')}`;
+    view.dispatch({
+      changes: { from: line.to, insert },
+      selection: { anchor: line.to + insert.length },
+      scrollIntoView: true,
+      userEvent: 'input'
+    });
+  }
+
   /** Places the cursor at `offset` (clamped), shows its page, and focuses the editor. */
   function setCursor(offset) {
     const at = Math.max(0, Math.min(view.state.doc.length, Number(offset) || 0));
@@ -391,7 +403,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       pageCount: () => pageCount(view.state),
       setPageMode: on => setPages(on),
       isPageMode: () => isPageMode(view.state),
-      setCursor
+      setCursor,
+      insertBlock
     }
   });
 

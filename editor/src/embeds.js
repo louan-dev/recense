@@ -4,14 +4,15 @@
 import { StateField } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 
-const EMBED_RE = /^\s*!\[([^\]]*)\]\(<?([^)\s>]+)>?\)\s*$/;
+// `![caption](path)`, or `![caption](<path with spaces>)` as CommonMark and Obsidian write it.
+const EMBED_RE = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
 const PDF_RE = /\.pdf(?:[?#].*)?$/i;
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|heic|svg)(?:[?#].*)?$/i;
 
 export function parseEmbedLine(line) {
   const m = EMBED_RE.exec(line);
   if (!m) return null;
-  const target = m[2];
+  const target = m[2] ?? m[3];
   const kind = PDF_RE.test(target) ? 'pdf' : IMAGE_RE.test(target) ? 'image' : null;
   return kind ? { kind, target, caption: m[1] } : null;
 }

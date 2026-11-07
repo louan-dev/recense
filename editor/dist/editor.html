@@ -28963,13 +28963,13 @@ ${PAGE_MARKER}
   }
 
   // src/embeds.js
-  var EMBED_RE = /^\s*!\[([^\]]*)\]\(<?([^)\s>]+)>?\)\s*$/;
+  var EMBED_RE = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
   var PDF_RE = /\.pdf(?:[?#].*)?$/i;
   var IMAGE_RE = /\.(?:png|jpe?g|gif|webp|heic|svg)(?:[?#].*)?$/i;
   function parseEmbedLine(line) {
     const m = EMBED_RE.exec(line);
     if (!m) return null;
-    const target = m[2];
+    const target = m[2] ?? m[3];
     const kind = PDF_RE.test(target) ? "pdf" : IMAGE_RE.test(target) ? "image" : null;
     return kind ? { kind, target, caption: m[1] } : null;
   }
@@ -29490,6 +29490,17 @@ ${PAGE_MARKER}
       pagesBtn.setAttribute("aria-pressed", String(isPageMode(view.state)));
       if (on) showPage(view, currentPage(view.state));
     }
+    function insertBlock(text) {
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      const insert2 = `
+${String(text ?? "")}`;
+      view.dispatch({
+        changes: { from: line.to, insert: insert2 },
+        selection: { anchor: line.to + insert2.length },
+        scrollIntoView: true,
+        userEvent: "input"
+      });
+    }
     function setCursor(offset) {
       const at = Math.max(0, Math.min(view.state.doc.length, Number(offset) || 0));
       view.dispatch({ selection: { anchor: at }, scrollIntoView: true });
@@ -29544,7 +29555,8 @@ ${PAGE_MARKER}
         pageCount: () => pageCount(view.state),
         setPageMode: (on) => setPages(on),
         isPageMode: () => isPageMode(view.state),
-        setCursor
+        setCursor,
+        insertBlock
       }
     });
     outlineToggleBtn.addEventListener("click", () => {

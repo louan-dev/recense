@@ -197,7 +197,20 @@ iCloud backup, creates and edits events, invites with a texted link. Indexing ru
 10 minutes (every minute until 2026-11-05), within a daily budget of AI-using steps that idle runs no longer spend.
 Main's `Raven/` (client matters) is never indexed or answered from; its old vectors leave on the next sweep.
 
-### Gallery for iPhone and iPad (apple/ios, apple/HostApp/iOS)
+### Recense for iPhone and iPad (apple/ios, apple/HostApp/iOS; formerly Gallery)
+The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
+updates in place.
+- **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
+  The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
+  Saves go through the Mac's 3-way merge (`strip/notesync.swift`), and an edit from the Mac or Obsidian is merged in
+  within 3 s while it's open. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
+  Links open in Safari; `![](file.pdf)` and images show inline (vault files directly, web files cached for offline,
+  through `strip/embedfiles.swift`).
+- **Apple Pencil in Draftpad:** write into the text with Scribble (iPadOS turns handwriting into typed text).
+  Squeeze (Apple Pencil Pro), double-tap, or the pencil button opens the ink layer: the Pencil draws, fingers still
+  scroll, and the system palette follows the Pencil Pro (barrel roll, squeeze for the compact palette). **Done** saves
+  the drawing in `Draftpad ink/` next to the note, as a PNG (dark ink on white, shown by the editor and Obsidian) plus
+  its PencilKit `.drawing`, and puts `![](<Draftpad ink/….png>)` under the cursor's line. **Cancel** throws it away.
 - A Files-like browser over Main and the archive, with Gallery's own player and Learn mode inside the app
   (`gallery://` scheme handler), and an Assistant button on each folder (⌘K on an iPad keyboard).
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
@@ -348,12 +361,13 @@ Cloudflare settings outside this folder:
 ### Native apps
 
 ```
-zsh gallery/apple/ios/build.sh [device name or id]   # builds and installs on a connected iPhone or iPad
-zsh gallery/apple/macos/build.sh                     # builds and installs the Mac app in /Applications
+zsh library/apple/ios/build.sh [device name or id]   # builds and installs on a connected iPhone or iPad
+zsh library/apple/macos/build.sh                     # builds and installs the Mac app in /Applications
 ```
 
-Signed with a free Personal Team, so the iOS profile lasts 7 days; `../sync/bin/resign-ios.zsh` re-signs it daily
-when 2 days or less are left. The device's Access token comes from the Keychain (`gallery-access-<device>`, else
+Signed with a free Personal Team, so the iOS profile lasts 7 days. `../sync/bin/resign-ios.zsh` runs daily and checks
+each device on its own: one whose app is missing or was installed 5 or more days ago is reinstalled (the cached
+profile is renewed first when 2 days or less are left). Per-device stamps: `~/Library/Application Support/recense/resign-ios/`. The device's Access token comes from the Keychain (`gallery-access-<device>`, else
 `gallery-access`) into `Secrets/token.json`, which git ignores.
 
 ### Mac setup

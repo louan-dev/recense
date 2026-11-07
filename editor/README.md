@@ -27,7 +27,7 @@ Offline-first Markdown editor core built on CodeMirror 6 (MIT) for the Mac strip
 - `window.recenseEditor.getText()` — synchronously returns the full document string (used by `EditorHost.flush` before merging remote edits).
 - `window.recenseEditor.getRemoved()` — returns the array of recorded user deletions (`{ text, from, to, time, before, after, context }`) for the "Farewell" episode (D32).
 - `window.recenseEditor.focus()` — focuses the CodeMirror view.
-- `window.recenseEditor.step(delta)` — one page deeper (`1`) or toward the top (`-1`); returns `'ok'` or `'bounce'`. Also `showPage(i)`, `currentPage()`, `pageCount()`, `setPageMode(on)`, `isPageMode()`, `setCursor(offset)`.
+- `window.recenseEditor.step(delta)` — one page deeper (`1`) or toward the top (`-1`); returns `'ok'` or `'bounce'`. Also `showPage(i)`, `currentPage()`, `pageCount()`, `setPageMode(on)`, `isPageMode()`, `setCursor(offset)`, `insertBlock(text)` (a new line under the cursor line, saved like typing).
 - **Page → Native, besides `editor`:** `link` gets a URL to open; `ui` gets `'bounce'` when a swipe passes either end.
 - `window.recenseEditor.setTheme('dark' | 'light')` — switches between dark and light themes.
 - `window.recenseEditor.setFontSize(px)` — sets the editor font size in pixels (clamped to `12`–`36`, default `18`).

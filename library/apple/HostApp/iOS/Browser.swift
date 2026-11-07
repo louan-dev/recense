@@ -77,6 +77,7 @@ struct Browser: View {
     static let listen = "\u{0}listen"
     static let data = "\u{0}data"
     static let exhibits = "\u{0}exhibits"
+    static let draftpad = "\u{0}draftpad"
     @State private var picked: String? = Gallery.rootPath
 
     // a rounded square card for a place; tapping it opens the place
@@ -102,6 +103,7 @@ struct Browser: View {
             // Ask and Listen on top, then Main, Archive and Data as cards in a 2-column grid, then Exhibits (notes 20261029 item 16)
             List(selection: $picked) {
                 Section("Locations") {
+                    Label("Draftpad", systemImage: "square.and.pencil").tag(Browser.draftpad)
                     Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -119,7 +121,9 @@ struct Browser: View {
             .navigationTitle("Galleries")
         } detail: {
             NavigationStack {
-                if picked == Browser.main {
+                if picked == Browser.draftpad {
+                    DraftpadView()
+                } else if picked == Browser.main {
                     MainView()
                 } else if picked == Browser.assistant {
                     PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).ignoresSafeArea(edges: .bottom)

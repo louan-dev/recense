@@ -71,3 +71,12 @@ test('M6 find: counts matches case-insensitively', () => {
   assert.equal(countMatches(state, new SearchQuery({ search: 'patent' })), 3);
   assert.equal(countMatches(state, new SearchQuery({ search: '' })), 0);
 });
+
+test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {
+  const { state } = createEditorState('one\ntwo');
+  const line = state.doc.lineAt(1);
+  const next = state.update({ changes: { from: line.to, insert: '\n![](<Draftpad ink/a.png>)' } }).state;
+  assert.equal(next.doc.toString(), 'one\n![](<Draftpad ink/a.png>)\ntwo');
+  assert.equal(findEmbeds(next.doc.toString())[0].target, 'Draftpad ink/a.png');
+  assert.equal(findEmbeds(next.doc.toString())[0].kind, 'image');
+});
