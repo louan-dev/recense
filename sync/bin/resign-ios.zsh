@@ -14,9 +14,9 @@ RETIRED="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles (retired)"
 LOG=$HOME/Library/Logs/resign-ios.log
 STAMPS="$HOME/Library/Application Support/recense/resign-ios"   # one file per device; its date = the last install
 APP=com.chauphan.galleryfiles
-typeset -A DEVICES=(  # CoreDevice id → name
-  B8147E80-0DAE-5D60-BCF8-BCBF86AF1819 "iPad Air"
-  3D4FD625-7DBE-5C6B-91ED-0FB9EF6F885F "iPhone 12 Pro Max"
+typeset -A DEVICES=(  # UDID → name (devicectl lists UDIDs since the Xcode 27 CoreDevice update, 11-06)
+  00008122-0009799A026B801C "iPad Air"
+  00008101-001A50643A98001E "iPhone 12 Pro Max"
 )
 say() { print -r -- "$(date '+%F %T') $*" >> $LOG; }
 notify() { osascript -e "display notification \"$1\" with title \"Gallery\"" 2>/dev/null; }
@@ -47,7 +47,7 @@ remaining=$(left)
 devices=$(xcrun devicectl list devices 2>/dev/null)
 todo=() failed=()
 for id name in ${(kv)DEVICES}; do
-  if ! print -r -- "$devices" | grep "$id" | grep -q available; then
+  if ! print -r -- "$devices" | grep "$id" | grep -qE "available|connected"; then
     say "$name: not reachable"; failed+=$name; continue
   fi
   due $id $name && todo+=$id

@@ -59,6 +59,7 @@ zsh mobile/ios/build.sh [device name or id]   # builds and installs on a connect
 zsh mobile/macos/build.sh                     # builds and installs the Mac app in /Applications
 ```
 
+Built with Xcode 27.2 (`/Applications/Xcode-27.2.0.app`, iOS 27.2 SDK; `build.sh` picks it unless `DEVELOPER_DIR` is set). Devices are named by UDID.
 Signed with a free Personal Team, so the iOS profile lasts 7 days. `sync/bin/resign-ios.zsh` runs daily and checks
 each device on its own: one whose app is missing or was installed 5 or more days ago is reinstalled (the cached
 profile is renewed first when 2 days or less are left). Per-device stamps: `~/Library/Application Support/recense/resign-ios/`. The device's Access token comes from the Keychain (`gallery-access-<device>`, else

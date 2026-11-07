@@ -76,7 +76,8 @@ decisions, changelog), with detail in `../docs/BACKLOG.md` and `../docs/SPEC.md`
   only in R2, and notes show it through the Gallery Worker's `/i`. The share-note plugin publishes encrypted copies to
   note.sx (5 notes). Both plugins keep their keys in the synced vault's `.obsidian/plugins/*/data.json`.
 - **resign-ios**: a daily check, per device, that reinstalls Recense (the iOS app) on the iPad or iPhone when its app is
-  missing or 5 or more days old, renewing the 7-day profile first when 2 days or less are left.
+  missing or 5 or more days old, renewing the 7-day profile first when 2 days or less are left. Devices are listed by UDID
+  (the Xcode 27 device framework, 11-06); it builds through `mobile/ios/build.sh`.
 
 ## Layout
 
