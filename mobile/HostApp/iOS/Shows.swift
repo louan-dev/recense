@@ -5,6 +5,7 @@ import SwiftUI
 import ShowsKit
 
 struct RecenseRoot: View {
+    @State private var launchPlace: Place?
     @State private var model = ShowsModel(store: MemoryCatalog.sample(device: UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"))
 
     var body: some View {
@@ -23,6 +24,10 @@ struct RecenseRoot: View {
             case "search": model.tab = .search
             default: break
             }
+            if let id = ProcessInfo.processInfo.environment["RECENSE_PLACE"] { launchPlace = RecensePlaces.all.first { $0.id == id } }
+        }
+        .fullScreenCover(item: $launchPlace) { p in
+            NavigationStack { p.screen() }.tint(Theme.accent)   // simulator checks: SIMCTL_CHILD_RECENSE_PLACE=<id>
         }
     }
 }

@@ -31,16 +31,16 @@ public struct ShowsRoot<Player: View>: View {
     private var tabs: some View {
         TabView(selection: $model.tab) {
             Tab("Home", systemImage: "house.fill", value: ShowsModel.Tab.home) {
-                NavigationStack { HomeView(model: model).toolbar { ProfileButton(model: model) } }.modifier(TabMini(model: model))
+                NavigationStack { HomeView(model: model).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))
             }
             Tab("New", systemImage: "square.grid.2x2.fill", value: ShowsModel.Tab.new) {
-                NavigationStack { NewView(model: model).toolbar { ProfileButton(model: model) } }.modifier(TabMini(model: model))
+                NavigationStack { NewView(model: model).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))
             }
             Tab("Library", systemImage: "square.stack.fill", value: ShowsModel.Tab.library) {
-                NavigationStack { LibraryView(model: model, places: places).toolbar { ProfileButton(model: model) } }.modifier(TabMini(model: model))
+                NavigationStack { LibraryView(model: model, places: places).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))
             }
             Tab(value: ShowsModel.Tab.search, role: .search) {
-                NavigationStack { SearchView(model: model) }.modifier(TabMini(model: model))
+                NavigationStack { SearchView(model: model) }.tint(Theme.accent).modifier(TabMini(model: model))
             }
         }
         .tabViewStyle(.sidebarAdaptable)

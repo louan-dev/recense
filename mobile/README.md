@@ -28,7 +28,7 @@ updates in place.
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
   Sample shows until B1's pool store; our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
-  skips the speech prompt.
+  skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place.
 - **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
   The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
   Saves go through the Mac's 3-way merge (`shared/notesync.swift`), and an edit from the Mac or Obsidian is merged in
