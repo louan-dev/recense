@@ -6,7 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { parseOutline, speakable, episodeFile, refusePath, refusal, showName, pickVoice, makeInvites, episodeIds, MANIFEST } from "../chau/show.mjs";
+import { parseOutline, speakable, episodeFile, refusePath, refusal, showName, pickVoice, makeInvites, episodeIds, MANIFEST, licensed, inviteRefusal } from "../chau/show.mjs";
 import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
@@ -277,6 +277,24 @@ await test("nits: .show.json is never served through a link; a failed guest link
   let n = 0;
   const flaky = async () => (++n === 1 ? Response.json({ id: "0123456789abcdef", url: ORIGIN + "/m/tok" }) : new Response("Someone already has an invitation under that name", { status: 409 }));
   await assert.rejects(makeInvites(flaky, { show: "S", name: "Mom", guest: true }), /409[\s\S]*revoke id 0123456789abcdef/);
+});
+
+await test("licence: PLIv1 or licensed outlines are marked, and invite refuses them (or an unreadable manifest) before any call", async () => {
+  assert.equal(licensed("---\nsource: PLIv1 3-Learning/002/Core/014\n---\n# Bar\n## One\nx"), true);
+  assert.equal(licensed("---\nsource: \"PLIv1/x\"\n---\n## One\nx"), true);
+  assert.equal(licensed("---\nlicensed: true\n---\n## One\nx"), true);
+  assert.equal(licensed("## One\nx", true), true);
+  assert.equal(licensed("---\nsource: my own notes\n---\n## One\nPLIv1 is mentioned in the body only"), false);
+  assert.equal(licensed("## One\nx"), false);
+  assert.match(inviteRefusal({ licensed: true }), /licensed/);
+  assert.match(inviteRefusal(null), /can't be read/);
+  assert.equal(inviteRefusal({ title: "Study Feed Sample", episodes: [] }), null);
+  let calls = 0;
+  const counting = async () => { calls++; return Response.json({ id: "0123456789abcdef", url: ORIGIN + "/m/tok" }); };
+  await assert.rejects(makeInvites(counting, { show: "Patent Bar · Core", name: "Mom", guest: true, manifest: { licensed: true } }), /refused: Patent Bar · Core: it is licensed/);
+  await assert.rejects(makeInvites(counting, { show: "Lost", name: "Mom", manifest: null }), /can't be read/);
+  assert.equal(calls, 0, "no invitation request is ever sent for a refused show");
+  assert.equal((await makeInvites(counting, { show: "Open", name: "Mom", manifest: { episodes: [] } })).length, 1);
 });
 
 console.log(`\n${passed} passed`);

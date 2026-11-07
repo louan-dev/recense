@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Shows: a Markdown outline becomes a private podcast in Gallery (D16, D32, D34 G0).
 //
-//   node chau/show.mjs publish <outline.md> [--show <name>] [--lang en|vi|fr] [--voice <name>] [--dry-run]
+//   node chau/show.mjs publish <outline.md> [--show <name>] [--lang en|vi|fr] [--voice <name>] [--licensed] [--dry-run]
 //       one .m4a per "## " section, spoken by a macOS voice, plus .show.json (the episode list),
 //       synced to Main's Shows/<show>/ over the rclone remote gallery-main (~/.config/rclone/jobs.conf).
 //   node chau/show.mjs invite <show> --name <who> [--days 30] [--guest]
@@ -11,6 +11,8 @@
 //       ends an invitation at once (its feed and file links become the same 404 as any unknown link).
 //
 // The invite and revoke calls sign in with the Access service token in the Keychain (chau/setup.sh).
+// Licensed course material (front matter source: PLIv1…, licensed: true, or --licensed) is marked "licensed" in
+// .show.json; invite refuses it, and refuses any show whose .show.json can't be read.
 // Client matters (A6) never leave the Mac: an outline under a Matters or Raven folder is refused.
 
 import { spawnSync } from "node:child_process";
@@ -54,6 +56,21 @@ export function refusal(path, md, show) {
   const { fm, body } = frontMatter(md.normalize("NFC"));
   if (/\b(matters|raven)\b/i.test(fm)) return "its front matter says matters or raven";
   if (/(^|\s)#(matters|raven)\b/i.test(body)) return "it is tagged #matters or #raven";
+  return null;
+}
+
+// Licensed course material (PLIv1, the owner's bar course) may be published for the owner's own listening, never
+// shared: its outline says so in front matter (source: PLIv1…, or licensed: true), or publish is given --licensed.
+export function licensed(md, flag = false) {
+  if (flag) return true;
+  const { fm } = frontMatter(md.normalize("NFC"));
+  return /^source:\s*["']?PLIv1\b/im.test(fm) || /^licensed:\s*true\s*$/im.test(fm);
+}
+
+// Why a show must not be invited to, or null: a licensed show, or one whose manifest can't be read (fail closed).
+export function inviteRefusal(manifest) {
+  if (!manifest || typeof manifest !== "object") return "its .show.json can't be read, so it can't be shown to be unlicensed";
+  if (manifest.licensed === true) return "it is licensed course material (licensed: true in .show.json): for the owner's own listening only";
   return null;
 }
 
@@ -190,7 +207,9 @@ async function publish(file, opts) {
 
   const stage = mkdtempSync(join(tmpdir(), "show-"));
   try {
+    const isLicensed = licensed(md, !!opts.licensed);
     const manifest = { title: show, description: outline.description, lang, voice, updated: new Date().toISOString(), episodes: [] };
+    if (isLicensed) manifest.licensed = true;
     const ids = episodeIds(show, outline.episodes.map((e) => e.title));
     for (const e of outline.episodes) {
       const name = episodeFile(e.n, e.title, outline.episodes.length);
@@ -206,13 +225,14 @@ async function publish(file, opts) {
     const dest = `${REMOTE}/files/Shows/${show}`;
     const backup = `${REMOTE}/trash/${new Date().toISOString().slice(0, 10)}/Shows/${show}`;
     if (opts["dry-run"]) {
-      console.log(`dry run: would sync ${outline.episodes.length} episodes to ${dest}`);
+      console.log(`dry run: would sync ${outline.episodes.length} episodes to ${dest}${isLicensed ? " (licensed: never invited)" : ""}`);
       return;
     }
     // sync: a section removed from the outline leaves the show too, kept a day in trash/
     rclone(["sync", stage, dest, "--backup-dir", backup, "--local-unicode-normalization", "--stats", "0", "-q"]);
     console.log(`published ${outline.episodes.length} episodes to Main > Shows > ${show}`);
-    console.log(`next: node chau/show.mjs invite "${show}" --name <who>`);
+    if (isLicensed) console.log("licensed course material: for your own listening in Recense; invite refuses this show");
+    else console.log(`next: node chau/show.mjs invite "${show}" --name <who>`);
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }
@@ -236,7 +256,11 @@ function ownerCall() {
 
 // One view-only link for the feed (never claimed, so Podcasts can always fetch it) and, for a guest,
 // one for the web page with react and comment. Returns [{ kind, id, url }].
-export async function makeInvites(call, { show, name, days = 30, guest = false }) {
+export async function makeInvites(call, { show, name, days = 30, guest = false, manifest }) {
+  if (manifest !== undefined) {
+    const why = inviteRefusal(manifest);
+    if (why) throw new Error(`refused: ${show}: ${why}`);
+  }
   const dir = "Shows/" + show;
   const ttl = Math.round(Number(days) * 86400);
   const post = async (body) => {
@@ -266,7 +290,7 @@ function args(argv) {
   const o = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--dry-run" || a === "--guest") o[a.slice(2)] = true;
+    if (a === "--dry-run" || a === "--guest" || a === "--licensed") o[a.slice(2)] = true;
     else if (a.startsWith("--")) o[a.slice(2)] = argv[++i];
     else pos.push(a);
   }
@@ -279,7 +303,9 @@ async function main() {
   if (cmd === "publish" && pos[0]) return publish(pos[0], o);
   if (cmd === "invite" && pos[0] && o.name) {
     const show = showName(pos[0]);
-    const links = await makeInvites(ownerCall(), { show, name: o.name, days: o.days || 30, guest: !!o.guest });
+    let manifest = null;
+    try { manifest = JSON.parse(rclone(["cat", `${REMOTE}/files/Shows/${show}/${MANIFEST}`])); } catch {}
+    const links = await makeInvites(ownerCall(), { show, name: o.name, days: o.days || 30, guest: !!o.guest, manifest });
     for (const l of links) console.log(`${l.kind === "feed" ? "Podcasts feed" : "Web page    "}  ${l.url}\n  revoke: node chau/show.mjs revoke ${l.id}`);
     console.log(`expires in ${o.days || 30} days. On the iPhone: Podcasts > Library > ••• > Follow a Show by URL…`);
     return;
@@ -290,7 +316,7 @@ async function main() {
     if (!r.ok) process.exitCode = 1;
     return;
   }
-  console.error("usage:\n  node chau/show.mjs publish <outline.md> [--show <name>] [--lang en|vi|fr] [--voice <name>] [--dry-run]\n  node chau/show.mjs invite <show> --name <who> [--days 30] [--guest]\n  node chau/show.mjs revoke <id>");
+  console.error("usage:\n  node chau/show.mjs publish <outline.md> [--show <name>] [--lang en|vi|fr] [--voice <name>] [--licensed] [--dry-run]\n  node chau/show.mjs invite <show> --name <who> [--days 30] [--guest]\n  node chau/show.mjs revoke <id>");
   process.exitCode = 2;
 }
 

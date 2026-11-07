@@ -182,6 +182,13 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 - Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
 - Client matters never leave the Mac (A6): an outline is refused when it sits under a `Matters` or `Raven` folder, when the show's name says Matters or Raven, or when its front matter or a `#matters` / `#raven` tag does. This is a guard on names and tags, not a classifier: a client document copied elsewhere, renamed and untagged, gets through, so keep client work out of outlines you publish.
+- Licensed course material (PLIv1) is for your own listening, never shared.
+  - An outline is licensed when its front matter says `source: PLIv1…` or `licensed: true`, or when you publish
+    with `--licensed`.
+  - `publish` writes `"licensed": true` into `.show.json` and prints no invite hint.
+  - `invite` reads the show's `.show.json` first. It refuses a licensed show, and any show whose `.show.json` can't
+    be read, before any link is made.
+  - Listen to a licensed show in Recense, signed in, not through a feed link.
 - Headings and show names are stored in Unicode NFC (as rclone stores names), so Vietnamese text pasted from a PDF names the same file the feed looks up. Two sections with the same heading get different episode ids.
 - The episode list is `.show.json` in the show's folder (hidden in Gallery's folder view).
 - The feed link (after the Worker with `src/feed.js` is deployed): `node chau/show.mjs invite "<show>" --name <who> [--days 30] [--guest]`.
