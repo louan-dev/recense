@@ -79,6 +79,7 @@ struct Browser: View {
     static let exhibits = "\u{0}exhibits"
     static let draftpad = "\u{0}draftpad"
     @State private var picked: String? = Gallery.rootPath
+    @State private var showsOpen = false
 
     // a rounded square card for a place; tapping it opens the place
     private func place(_ name: String, _ symbol: String, _ tag: String) -> some View {
@@ -104,6 +105,7 @@ struct Browser: View {
             List(selection: $picked) {
                 Section("Locations") {
                     Label("Draftpad", systemImage: "square.and.pencil").tag(Browser.draftpad)
+                    Button { showsOpen = true } label: { Label("Shows (preview)", systemImage: "play.square.stack") }
                     Label("Ask", systemImage: "lightbulb").tag(Browser.assistant)
                     Label("Listen", systemImage: "captions.bubble").tag(Browser.listen)
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -119,6 +121,8 @@ struct Browser: View {
                 }
             }
             .navigationTitle("Galleries")
+            .fullScreenCover(isPresented: $showsOpen) { ShowsPreview { showsOpen = false } }
+            .onAppear { if ProcessInfo.processInfo.environment["RECENSE_OPEN"] == "shows" { showsOpen = true } }  // simulator checks
         } detail: {
             NavigationStack {
                 if picked == Browser.draftpad {

@@ -13,6 +13,16 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `OutboxOp`: a change waiting to be sent, with an `opId` that applies once.
 - `Sources/ShowsKit/Rules.swift`: folder → space/show/season, locks, New's expiry, filter bars, episode order.
 - `Sources/ShowsKit/Store.swift`: the `CatalogStore` protocols, and `MemoryCatalog`, the in-memory reference store.
+- The skin (B2), SwiftUI for the Mac and iOS alike:
+  - `ShowsModel.swift`: what the views read and do over any `CatalogStore`; every mark (Star, Played, Clicked / Not yet)
+    is a stamped `.state` change through the outbox, so it works offline.
+  - `Lock.swift`: `Gate`, Face ID / Touch ID for Matters and Raven. Biometrics only (no passcode fallback, owner 11-06);
+    it shuts whenever the app leaves the screen.
+  - `Views/Root.swift` (`ShowsRoot`: sidebar on iPad and Mac, tabs on iPhone), `Views/Library.swift` (the grid),
+    `Views/ShowPage.swift` (seasons, episode rows that swipe, with the same actions in the context menu),
+    `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`). The host app passes our player in.
+  - `Sample.swift`: `MemoryCatalog.sample(device:)`, a made-up pool for previews and tests.
+- `ItemState.verdict` (B2): Clicked / Not yet, one stamped record per episode (the retelling loop's measurement).
 
 ## The pool layout
 ```
@@ -25,7 +35,7 @@ Recense/.trash/…                         → deletes, kept 30 days
 ```
 
 ## Build and test
-- Test: `swift test` in this folder (16 tests).
+- Test: `swift test` in this folder (24 tests).
 - Mac: `strip/Package.swift` depends on it by path; `zsh strip/build.sh` builds it in.
 - iOS: a local package of `mobile/ios/GalleryFiles.xcodeproj`. This folder is excluded from the project's
   synchronized `shared/` group, so its files compile only as the package.
@@ -34,3 +44,6 @@ Recense/.trash/…                         → deletes, kept 30 days
 ## Rules for changing it
 - `Model.swift`, `Rules.swift` and `Store.swift` are the contract: changes go through the coordinator.
 - A new store (B1) goes in its own file here and must pass `CatalogContract.run` in the tests.
+- No SwiftUI macros (`@State`, `@Entry`, `#Preview`): the Mac builds this package with the Command Line Tools
+  (`strip/build.sh`), which lack SwiftUI's macro plugin. Use `@StateObject`, `@Observable`, `@Bindable`.
+  `testNoSwiftUIMacros` guards it.

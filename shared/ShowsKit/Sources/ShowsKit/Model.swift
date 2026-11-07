@@ -166,13 +166,16 @@ public struct ItemState: Codable, Hashable, Sendable {
     public var starred: Stamped<Bool>?
     public var finished: Stamped<Int64?>?   // when it was played to the end, whole seconds; nil value = marked unplayed
     public var title: Stamped<String?>?     // the app's title; the real file name never changes
+    public var verdict: Stamped<Verdict?>?  // Now Playing's Clicked / Not yet; nil value = cleared
 
-    public init(key: ContentKey, starred: Stamped<Bool>? = nil, finished: Stamped<Int64?>? = nil, title: Stamped<String?>? = nil) {
-        self.key = key; self.starred = starred; self.finished = finished; self.title = title
+    public init(key: ContentKey, starred: Stamped<Bool>? = nil, finished: Stamped<Int64?>? = nil, title: Stamped<String?>? = nil,
+                verdict: Stamped<Verdict?>? = nil) {
+        self.key = key; self.starred = starred; self.finished = finished; self.title = title; self.verdict = verdict
     }
 
     public var isStarred: Bool { starred?.value ?? false }
     public var finishedAt: Int64? { finished?.value ?? nil }
+    public var verdictValue: Verdict? { verdict?.value ?? nil }
 
     /// Field by field; the same on every device whatever order the two arrive in.
     public func merged(_ o: ItemState) -> ItemState {
@@ -182,9 +185,13 @@ public struct ItemState: Codable, Hashable, Sendable {
             guard let b else { return a }
             return a.merged(b)
         }
-        return ItemState(key: key, starred: pick(starred, o.starred), finished: pick(finished, o.finished), title: pick(title, o.title))
+        return ItemState(key: key, starred: pick(starred, o.starred), finished: pick(finished, o.finished), title: pick(title, o.title),
+                         verdict: pick(verdict, o.verdict))
     }
 }
+
+/// Whether an episode's idea landed: the retelling loop's one measurement (Clicked, or Not yet = tell it another way).
+public enum Verdict: String, Codable, CaseIterable, Sendable { case clicked, notYet }
 
 /// Where one device stopped in one item: keep/listen/<device>/<key>.json, one record per device per item. Another
 /// device's newer record is offered as "Continue from <device>", never jumped to silently.
