@@ -662,13 +662,13 @@ struct ListenView: View {
                     Text("Learn").tag("learn")
                 }.pickerStyle(.segmented)
                 if l.floats {
-                    Button { l.dock() } label: { Label("Dock in Gallery", systemImage: "pip.enter") }
+                    Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") }
                 } else {
                     Button { l.float() } label: { Label("Float over apps", systemImage: "pip.exit") }
                 }
             } footer: {
-                Text(l.floats ? "Floats: leave Gallery and the window stays on top of other apps. \(l.pipState)"
-                              : "Docked: the window stays here in Gallery and doesn't follow you out.")
+                Text(l.floats ? "Floats: leave Recense and the window stays on top of other apps. \(l.pipState)"
+                              : "Docked: the window stays here in Recense and doesn't follow you out.")
             }
             Section("Language") {
                 Picker("Hear in", selection: $l.heard) {
@@ -711,7 +711,7 @@ struct ListenView: View {
                         Label(l.on ? "Stop Listening" : "Start Listening", systemImage: l.on ? "stop.circle" : "record.circle")
                     }.disabled(l.stopping)
                     Button { startAfterPick = false; picking = true } label: { Label("Choose What's Playing", systemImage: "music.note.list") }
-                    if l.floats { Button { l.dock() } label: { Label("Dock in Gallery", systemImage: "pip.enter") } }
+                    if l.floats { Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") } }
                     else { Button { l.float() } label: { Label("Float over Apps", systemImage: "pip.exit") } }
                     Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                     Button { clearing = true } label: { Label("Clear This Episode", systemImage: "trash") }.disabled(l.sentences.isEmpty)
