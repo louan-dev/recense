@@ -329,13 +329,28 @@ export function createFindPanel(view) {
   };
 }
 
-export function searchExtension() {
+export function searchExtension({ onOpen = null } = {}) {
+  const openWatcher = StateField.define({
+    create(state) {
+      return searchPanelOpen(state);
+    },
+    update(wasOpen, tr) {
+      const isOpen = searchPanelOpen(tr.state);
+      const queryRecommitted = isOpen && tr.effects.some(e => e.is(setSearchQuery));
+      if (isOpen && (!wasOpen || queryRecommitted) && typeof onOpen === 'function') {
+        onOpen();
+      }
+      return isOpen;
+    }
+  });
+
   return [
     search({
       top: true,
       createPanel: createFindPanel,
       scrollToMatch: r => EditorView.scrollIntoView(r, { y: 'center' })
     }),
+    openWatcher,
     searchHighlightField,
     highlightSelectionMatches(),
     keymap.of([

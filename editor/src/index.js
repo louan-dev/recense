@@ -46,6 +46,7 @@ export function createEditorExtensions({
   fontSize = DEFAULT_FONT_SIZE,
   compartments = createThemeCompartments(),
   onUpdate = null,
+  onOpenFind = null,
   extraExtensions = []
 } = {}) {
   const extensions = [
@@ -55,7 +56,7 @@ export function createEditorExtensions({
     highlightActiveLine(),
     EditorView.lineWrapping,
     markdown(),
-    searchExtension(),
+    searchExtension({ onOpen: onOpenFind }),
     headingFoldExtension(),
     legalNumberingExtension(),
     removedRecordExtension(),
@@ -293,8 +294,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const { state, compartments } = createEditorState(initialDoc, {
     theme: currentTheme,
     fontSize: currentFontSize,
+    onOpenFind: () => hideOutline(),
     onUpdate(update) {
-      searchBtn.setAttribute('aria-pressed', String(isFindReplaceOpen(update.state)));
+      const findOpen = isFindReplaceOpen(update.state);
+      searchBtn.setAttribute('aria-pressed', String(findOpen));
+      if (findOpen && outlineVisible) {
+        hideOutline();
+      }
       if (update.docChanged) {
         if (bridge) bridge.notifyDocChanged(update.transactions);
       }
@@ -418,6 +424,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   searchBtn.addEventListener('click', () => {
     const open = toggleFindReplace(view);
+    if (open) hideOutline();
     searchBtn.setAttribute('aria-pressed', String(open));
   });
 
@@ -439,7 +446,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setTheme,
     setFontSize,
     setNewestFirst,
-    openSearch: () => openFindReplace(view),
+    openSearch: () => {
+      hideOutline();
+      return openFindReplace(view);
+    },
     getTheme: () => currentTheme,
     getFontSize: () => currentFontSize,
     isNewestFirst: () => newestFirst

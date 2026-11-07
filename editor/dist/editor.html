@@ -272,8 +272,16 @@ body {
   font-weight: 600;
 }
 
-/* Find: one field, a count, ⇄ for replace, ✕ to close. */
+/* Find: one field, a count, ↑/↓, ⇄ for replace, ✕ to close; always sits above the outline. */
+.cm-panels,
+.cm-panels-top {
+  position: relative;
+  z-index: 10;
+}
+
 .rc-find {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -28133,13 +28141,27 @@ ${PAGE_MARKER}
       }
     };
   }
-  function searchExtension() {
+  function searchExtension({ onOpen = null } = {}) {
+    const openWatcher = StateField.define({
+      create(state) {
+        return searchPanelOpen(state);
+      },
+      update(wasOpen, tr) {
+        const isOpen = searchPanelOpen(tr.state);
+        const queryRecommitted = isOpen && tr.effects.some((e) => e.is(setSearchQuery));
+        if (isOpen && (!wasOpen || queryRecommitted) && typeof onOpen === "function") {
+          onOpen();
+        }
+        return isOpen;
+      }
+    });
     return [
       search({
         top: true,
         createPanel: createFindPanel,
         scrollToMatch: (r) => EditorView.scrollIntoView(r, { y: "center" })
       }),
+      openWatcher,
       searchHighlightField,
       highlightSelectionMatches(),
       keymap.of([
@@ -29431,6 +29453,7 @@ ${PAGE_MARKER}
     fontSize = DEFAULT_FONT_SIZE,
     compartments = createThemeCompartments(),
     onUpdate = null,
+    onOpenFind = null,
     extraExtensions = []
   } = {}) {
     const extensions = [
@@ -29440,7 +29463,7 @@ ${PAGE_MARKER}
       highlightActiveLine(),
       EditorView.lineWrapping,
       markdown(),
-      searchExtension(),
+      searchExtension({ onOpen: onOpenFind }),
       headingFoldExtension(),
       legalNumberingExtension(),
       removedRecordExtension(),
@@ -29640,8 +29663,13 @@ ${PAGE_MARKER}
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
+      onOpenFind: () => hideOutline(),
       onUpdate(update) {
-        searchBtn.setAttribute("aria-pressed", String(isFindReplaceOpen(update.state)));
+        const findOpen = isFindReplaceOpen(update.state);
+        searchBtn.setAttribute("aria-pressed", String(findOpen));
+        if (findOpen && outlineVisible) {
+          hideOutline();
+        }
         if (update.docChanged) {
           if (bridge) bridge.notifyDocChanged(update.transactions);
         }
@@ -29747,6 +29775,7 @@ ${String(text ?? "")}`;
     pagesBtn.addEventListener("click", () => setPages(!isPageMode(view.state)));
     searchBtn.addEventListener("click", () => {
       const open = toggleFindReplace(view);
+      if (open) hideOutline();
       searchBtn.setAttribute("aria-pressed", String(open));
     });
     newestFirstBtn.addEventListener("click", () => {
@@ -29764,7 +29793,10 @@ ${String(text ?? "")}`;
       setTheme,
       setFontSize,
       setNewestFirst,
-      openSearch: () => openFindReplace(view),
+      openSearch: () => {
+        hideOutline();
+        return openFindReplace(view);
+      },
       getTheme: () => currentTheme,
       getFontSize: () => currentFontSize,
       isNewestFirst: () => newestFirst

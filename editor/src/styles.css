@@ -265,8 +265,16 @@ body {
   font-weight: 600;
 }
 
-/* Find: one field, a count, ⇄ for replace, ✕ to close. */
+/* Find: one field, a count, ↑/↓, ⇄ for replace, ✕ to close; always sits above the outline. */
+.cm-panels,
+.cm-panels-top {
+  position: relative;
+  z-index: 10;
+}
+
 .rc-find {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 6px;

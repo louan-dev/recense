@@ -5,7 +5,15 @@ import { PAGE_JOINER } from '../src/pages.js';
 import { hiddenRanges, pageModeField, setPageIndex, setPageMode, currentPage } from '../src/pagemode.js';
 import { parseEmbedLine, embedSource, findEmbeds } from '../src/embeds.js';
 import { urlAt, openURL } from '../src/links.js';
-import { countMatches, findMatches, matchStatus, stepFind, searchHighlightField } from '../src/search.js';
+import {
+  countMatches,
+  findMatches,
+  matchStatus,
+  stepFind,
+  searchHighlightField,
+  openFindReplace,
+  isFindReplaceOpen
+} from '../src/search.js';
 import { SearchQuery, setSearchQuery } from '@codemirror/search';
 import { createEditorState } from '../src/index.js';
 
@@ -135,6 +143,27 @@ test('E1 find: highlights every match, moves selection to match n, scrolls into 
   assert.equal(classes.length, 12);
   assert.equal(classes[5].cls, 'cm-searchMatch cm-searchMatch-selected');
   assert.equal(classes[0].cls, 'cm-searchMatch');
+});
+
+test('E1 outline vs find: opening find closes the outline', () => {
+  let outlineOpen = true;
+  let { state } = createEditorState('# Heading\n\nBody text', {
+    onOpenFind: () => {
+      outlineOpen = false;
+    }
+  });
+  const fakeView = {
+    get state() { return state; },
+    dispatch(spec) {
+      state = state.update(spec).state;
+    }
+  };
+
+  assert.equal(outlineOpen, true);
+  assert.equal(isFindReplaceOpen(state), false);
+  openFindReplace(fakeView);
+  assert.equal(isFindReplaceOpen(state), true);
+  assert.equal(outlineOpen, false, 'opening find closes the outline');
 });
 
 test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {
