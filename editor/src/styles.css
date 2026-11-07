@@ -52,6 +52,8 @@ body {
 }
 
 .rc-toolbar {
+  position: relative;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -60,12 +62,76 @@ body {
   border-bottom: 1px solid var(--rc-border);
   background: var(--rc-panel);
   flex-shrink: 0;
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
-.rc-toolbar-group {
+.rc-toolbar.rc-toolbar-faded {
+  opacity: 0;
+}
+
+.rc-page-indicator {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rc-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.rc-page-indicator:hover {
+  color: var(--rc-cyan);
+}
+
+.rc-menu-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.rc-menu-btn {
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+}
+
+.rc-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 164px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  background: var(--rc-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+.rc-menu[hidden] {
+  display: none;
+}
+
+.rc-menu-item {
+  appearance: none;
+  background: transparent;
+  color: var(--rc-text);
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc-menu-item:hover,
+.rc-menu-item:focus-visible,
+.rc-menu-item[aria-pressed="true"] {
+  color: var(--rc-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  outline: none;
 }
 
 .rc-btn {

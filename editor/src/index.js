@@ -18,7 +18,7 @@ import {
   isFindReplaceOpen
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
-import { createEditorBridge } from './bridge.js';
+import { createEditorBridge, externalSetTextAnnotation } from './bridge.js';
 import { removedRecordExtension, getRemoved } from './removed.js';
 import {
   pageModeExtension,
@@ -40,6 +40,22 @@ import {
   normalizeThemeName,
   normalizeFontSize
 } from './theme.js';
+
+export const MENU_ACTIONS = [
+  'outline',
+  'find',
+  'newerPage',
+  'olderPage',
+  'pages',
+  'newestFirst',
+  'theme'
+];
+
+export function formatPageIndicator(index, total) {
+  const safeTotal = Math.max(1, Number(total) || 1);
+  const safePage = Math.max(1, Math.min(safeTotal, (Number(index) || 0) + 1));
+  return `Page ${safePage} of ${safeTotal}`;
+}
 
 export function createEditorExtensions({
   theme = 'dark',
@@ -94,6 +110,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let currentFontSize = DEFAULT_FONT_SIZE;
   let newestFirst = false;
   let outlineVisible = false;
+  let menuOpen = false;
+  let toolbarFaded = false;
 
   const shell = document.createElement('div');
   shell.className = 'rc-shell';
@@ -101,45 +119,66 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const toolbar = document.createElement('header');
   toolbar.className = 'rc-toolbar';
 
-  const leftGroup = document.createElement('div');
-  leftGroup.className = 'rc-toolbar-group';
+  const pageIndicator = document.createElement('span');
+  pageIndicator.className = 'rc-page-indicator';
+  pageIndicator.id = 'rc-page-indicator';
+  pageIndicator.textContent = formatPageIndicator(0, 1);
 
-  const outlineToggleBtn = document.createElement('button');
-  outlineToggleBtn.type = 'button';
-  outlineToggleBtn.className = 'rc-btn';
-  outlineToggleBtn.id = 'rc-outline-toggle-btn';
-  outlineToggleBtn.setAttribute('aria-pressed', 'false');
-  outlineToggleBtn.textContent = 'Outline';
+  const menuWrap = document.createElement('div');
+  menuWrap.className = 'rc-menu-wrap';
 
-  const pagesBtn = document.createElement('button');
-  pagesBtn.type = 'button';
-  pagesBtn.className = 'rc-btn';
-  pagesBtn.id = 'rc-pages-btn';
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.className = 'rc-btn rc-menu-btn';
+  menuBtn.id = 'rc-menu-btn';
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-label', 'Actions');
+  menuBtn.title = 'Actions';
+  menuBtn.textContent = '···';
+
+  const menu = document.createElement('div');
+  menu.className = 'rc-menu';
+  menu.id = 'rc-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  function makeMenuItem(id, label, title = '') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rc-menu-item';
+    btn.id = id;
+    btn.setAttribute('role', 'menuitem');
+    btn.setAttribute('aria-pressed', 'false');
+    if (title) btn.title = title;
+    btn.textContent = label;
+    return btn;
+  }
+
+  const outlineToggleBtn = makeMenuItem('rc-outline-toggle-btn', 'Outline', 'Outline');
+  const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
+  const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'Newer page (⌘[)');
+  const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'Older page (⌘])');
+  const pagesBtn = makeMenuItem(
+    'rc-pages-btn',
+    'Pages',
+    'Swipe or ⌘] / ⌘[ to glide between pages'
+  );
   pagesBtn.setAttribute('aria-pressed', 'true');
-  pagesBtn.title = 'One page at a time (two fingers left / right, ⌘] / ⌘[); off = one long scroll';
-  pagesBtn.textContent = 'Pages';
+  const newestFirstMenuBtn = makeMenuItem('rc-newest-first-menu-btn', 'Newest first', 'Order outline newest first');
+  const themeBtn = makeMenuItem('rc-theme-btn', 'Light theme', 'Switch theme');
 
-  const searchBtn = document.createElement('button');
-  searchBtn.type = 'button';
-  searchBtn.className = 'rc-btn';
-  searchBtn.id = 'rc-search-btn';
-  searchBtn.setAttribute('aria-pressed', 'false');
-  searchBtn.title = 'Find (⌘F)';
-  searchBtn.textContent = 'Search';
-
-  leftGroup.append(outlineToggleBtn, pagesBtn, searchBtn);
-
-  const rightGroup = document.createElement('div');
-  rightGroup.className = 'rc-toolbar-group';
-
-  const themeBtn = document.createElement('button');
-  themeBtn.type = 'button';
-  themeBtn.className = 'rc-btn';
-  themeBtn.id = 'rc-theme-btn';
-  themeBtn.textContent = 'Light';
-
-  rightGroup.appendChild(themeBtn);
-  toolbar.append(leftGroup, rightGroup);
+  menu.append(
+    outlineToggleBtn,
+    searchBtn,
+    prevPageBtn,
+    nextPageBtn,
+    pagesBtn,
+    newestFirstMenuBtn,
+    themeBtn
+  );
+  menuWrap.append(menuBtn, menu);
+  toolbar.append(pageIndicator, menuWrap);
 
   const workspace = document.createElement('div');
   workspace.className = 'rc-workspace';
@@ -291,6 +330,33 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   }
 
+  function updatePageIndicator(state = view ? view.state : null) {
+    if (!state) return;
+    pageIndicator.textContent = formatPageIndicator(currentPage(state), pageCount(state));
+  }
+
+  function setToolbarFaded(faded) {
+    toolbarFaded = Boolean(faded);
+    if (toolbarFaded) {
+      toolbar.classList.add('rc-toolbar-faded');
+    } else {
+      toolbar.classList.remove('rc-toolbar-faded');
+    }
+  }
+
+  function closeMenu() {
+    menuOpen = false;
+    menu.hidden = true;
+    menuBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleMenu() {
+    menuOpen = !menuOpen;
+    menu.hidden = !menuOpen;
+    menuBtn.setAttribute('aria-expanded', String(menuOpen));
+    if (menuOpen) setToolbarFaded(false);
+  }
+
   const { state, compartments } = createEditorState(initialDoc, {
     theme: currentTheme,
     fontSize: currentFontSize,
@@ -301,7 +367,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
       if (findOpen && outlineVisible) {
         hideOutline();
       }
+      updatePageIndicator(update.state);
       if (update.docChanged) {
+        const isExternal = update.transactions.some(tr => Boolean(tr.annotation(externalSetTextAnnotation)));
+        if (!isExternal && !menuOpen) {
+          setToolbarFaded(true);
+        }
         if (bridge) bridge.notifyDocChanged(update.transactions);
       }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
@@ -323,6 +394,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   });
 
+  function showOutline() {
+    outlineVisible = true;
+    outlinePanel.hidden = false;
+    outlineToggleBtn.setAttribute('aria-pressed', 'true');
+  }
+
   function hideOutline() {
     outlineVisible = false;
     outlinePanel.hidden = true;
@@ -333,6 +410,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     view.dispatch({ effects: setPageMode.of(Boolean(on)) });
     pagesBtn.setAttribute('aria-pressed', String(isPageMode(view.state)));
     if (on) showPage(view, currentPage(view.state));
+    updatePageIndicator();
   }
 
   /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
@@ -359,7 +437,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.setAttribute('data-theme', currentTheme);
     }
-    themeBtn.textContent = currentTheme === 'dark' ? 'Light' : 'Dark';
+    themeBtn.textContent = currentTheme === 'dark' ? 'Light theme' : 'Dark theme';
     view.dispatch({
       effects: compartments.theme.reconfigure(buildThemeExtension(currentTheme))
     });
@@ -378,6 +456,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   function setNewestFirst(flag) {
     newestFirst = Boolean(flag);
     newestFirstBtn.setAttribute('aria-pressed', String(newestFirst));
+    newestFirstMenuBtn.setAttribute('aria-pressed', String(newestFirst));
     renderOutline();
   }
 
@@ -414,15 +493,55 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   });
 
-  outlineToggleBtn.addEventListener('click', () => {
-    outlineVisible = !outlineVisible;
-    outlinePanel.hidden = !outlineVisible;
-    outlineToggleBtn.setAttribute('aria-pressed', String(outlineVisible));
+  menuBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleMenu();
   });
 
-  pagesBtn.addEventListener('click', () => setPages(!isPageMode(view.state)));
+  toolbar.addEventListener('pointerenter', () => setToolbarFaded(false));
+  toolbar.addEventListener('mousemove', () => setToolbarFaded(false));
+  toolbar.addEventListener('touchstart', () => setToolbarFaded(false), { passive: true });
+  shell.addEventListener('mousemove', e => {
+    if (typeof e.clientY === 'number' && e.clientY <= 48) {
+      setToolbarFaded(false);
+    }
+  });
+  shell.addEventListener('touchstart', e => {
+    const t = e.touches && e.touches[0];
+    if (t && typeof t.clientY === 'number' && t.clientY <= 48) {
+      setToolbarFaded(false);
+    }
+  }, { passive: true });
+
+  pageIndicator.addEventListener('click', () => {
+    setToolbarFaded(false);
+    if (outlineVisible) hideOutline();
+    else showOutline();
+  });
+
+  outlineToggleBtn.addEventListener('click', () => {
+    closeMenu();
+    if (outlineVisible) hideOutline();
+    else showOutline();
+  });
+
+  prevPageBtn.addEventListener('click', () => {
+    closeMenu();
+    stepPage(view, -1);
+  });
+
+  nextPageBtn.addEventListener('click', () => {
+    closeMenu();
+    stepPage(view, 1);
+  });
+
+  pagesBtn.addEventListener('click', () => {
+    closeMenu();
+    setPages(!isPageMode(view.state));
+  });
 
   searchBtn.addEventListener('click', () => {
+    closeMenu();
     const open = toggleFindReplace(view);
     if (open) hideOutline();
     searchBtn.setAttribute('aria-pressed', String(open));
@@ -432,12 +551,25 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setNewestFirst(!newestFirst);
   });
 
+  newestFirstMenuBtn.addEventListener('click', () => {
+    closeMenu();
+    setNewestFirst(!newestFirst);
+  });
+
   themeBtn.addEventListener('click', () => {
+    closeMenu();
     setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+  });
+
+  shell.addEventListener('click', e => {
+    if (menuOpen && !menuWrap.contains(e.target)) {
+      closeMenu();
+    }
   });
 
   setTheme(currentTheme);
   setFontSize(currentFontSize);
+  updatePageIndicator();
   renderOutline();
 
   return {
@@ -446,6 +578,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setTheme,
     setFontSize,
     setNewestFirst,
+    showOutline,
+    hideOutline,
+    isOutlineOpen: () => outlineVisible,
+    isToolbarFaded: () => toolbarFaded,
     openSearch: () => {
       hideOutline();
       return openFindReplace(view);

@@ -59,6 +59,8 @@ body {
 }
 
 .rc-toolbar {
+  position: relative;
+  z-index: 12;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -67,12 +69,76 @@ body {
   border-bottom: 1px solid var(--rc-border);
   background: var(--rc-panel);
   flex-shrink: 0;
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
-.rc-toolbar-group {
+.rc-toolbar.rc-toolbar-faded {
+  opacity: 0;
+}
+
+.rc-page-indicator {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rc-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.rc-page-indicator:hover {
+  color: var(--rc-cyan);
+}
+
+.rc-menu-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.rc-menu-btn {
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+}
+
+.rc-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 164px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  background: var(--rc-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+.rc-menu[hidden] {
+  display: none;
+}
+
+.rc-menu-item {
+  appearance: none;
+  background: transparent;
+  color: var(--rc-text);
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc-menu-item:hover,
+.rc-menu-item:focus-visible,
+.rc-menu-item[aria-pressed="true"] {
+  color: var(--rc-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  outline: none;
 }
 
 .rc-btn {
@@ -29500,6 +29566,20 @@ ${PAGE_MARKER}
   }
 
   // src/index.js
+  var MENU_ACTIONS = [
+    "outline",
+    "find",
+    "newerPage",
+    "olderPage",
+    "pages",
+    "newestFirst",
+    "theme"
+  ];
+  function formatPageIndicator(index, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safePage = Math.max(1, Math.min(safeTotal, (Number(index) || 0) + 1));
+    return `Page ${safePage} of ${safeTotal}`;
+  }
   function createEditorExtensions({
     theme: theme2 = "dark",
     fontSize = DEFAULT_FONT_SIZE,
@@ -29549,42 +29629,66 @@ ${PAGE_MARKER}
     let currentFontSize = DEFAULT_FONT_SIZE;
     let newestFirst = false;
     let outlineVisible = false;
+    let menuOpen = false;
+    let toolbarFaded = false;
     const shell = document.createElement("div");
     shell.className = "rc-shell";
     const toolbar = document.createElement("header");
     toolbar.className = "rc-toolbar";
-    const leftGroup = document.createElement("div");
-    leftGroup.className = "rc-toolbar-group";
-    const outlineToggleBtn = document.createElement("button");
-    outlineToggleBtn.type = "button";
-    outlineToggleBtn.className = "rc-btn";
-    outlineToggleBtn.id = "rc-outline-toggle-btn";
-    outlineToggleBtn.setAttribute("aria-pressed", "false");
-    outlineToggleBtn.textContent = "Outline";
-    const pagesBtn = document.createElement("button");
-    pagesBtn.type = "button";
-    pagesBtn.className = "rc-btn";
-    pagesBtn.id = "rc-pages-btn";
+    const pageIndicator = document.createElement("span");
+    pageIndicator.className = "rc-page-indicator";
+    pageIndicator.id = "rc-page-indicator";
+    pageIndicator.textContent = formatPageIndicator(0, 1);
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "rc-menu-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "rc-btn rc-menu-btn";
+    menuBtn.id = "rc-menu-btn";
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.setAttribute("aria-haspopup", "menu");
+    menuBtn.setAttribute("aria-label", "Actions");
+    menuBtn.title = "Actions";
+    menuBtn.textContent = "\xB7\xB7\xB7";
+    const menu = document.createElement("div");
+    menu.className = "rc-menu";
+    menu.id = "rc-menu";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+    function makeMenuItem(id2, label, title = "") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rc-menu-item";
+      btn.id = id2;
+      btn.setAttribute("role", "menuitem");
+      btn.setAttribute("aria-pressed", "false");
+      if (title) btn.title = title;
+      btn.textContent = label;
+      return btn;
+    }
+    const outlineToggleBtn = makeMenuItem("rc-outline-toggle-btn", "Outline", "Outline");
+    const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
+    const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "Newer page (\u2318[)");
+    const nextPageBtn = makeMenuItem("rc-next-page-btn", "Older page", "Older page (\u2318])");
+    const pagesBtn = makeMenuItem(
+      "rc-pages-btn",
+      "Pages",
+      "Swipe or \u2318] / \u2318[ to glide between pages"
+    );
     pagesBtn.setAttribute("aria-pressed", "true");
-    pagesBtn.title = "One page at a time (two fingers left / right, \u2318] / \u2318[); off = one long scroll";
-    pagesBtn.textContent = "Pages";
-    const searchBtn = document.createElement("button");
-    searchBtn.type = "button";
-    searchBtn.className = "rc-btn";
-    searchBtn.id = "rc-search-btn";
-    searchBtn.setAttribute("aria-pressed", "false");
-    searchBtn.title = "Find (\u2318F)";
-    searchBtn.textContent = "Search";
-    leftGroup.append(outlineToggleBtn, pagesBtn, searchBtn);
-    const rightGroup = document.createElement("div");
-    rightGroup.className = "rc-toolbar-group";
-    const themeBtn = document.createElement("button");
-    themeBtn.type = "button";
-    themeBtn.className = "rc-btn";
-    themeBtn.id = "rc-theme-btn";
-    themeBtn.textContent = "Light";
-    rightGroup.appendChild(themeBtn);
-    toolbar.append(leftGroup, rightGroup);
+    const newestFirstMenuBtn = makeMenuItem("rc-newest-first-menu-btn", "Newest first", "Order outline newest first");
+    const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
+    menu.append(
+      outlineToggleBtn,
+      searchBtn,
+      prevPageBtn,
+      nextPageBtn,
+      pagesBtn,
+      newestFirstMenuBtn,
+      themeBtn
+    );
+    menuWrap.append(menuBtn, menu);
+    toolbar.append(pageIndicator, menuWrap);
     const workspace = document.createElement("div");
     workspace.className = "rc-workspace";
     const outlinePanel = document.createElement("aside");
@@ -29712,6 +29816,29 @@ ${PAGE_MARKER}
         }
       }
     }
+    function updatePageIndicator(state2 = view ? view.state : null) {
+      if (!state2) return;
+      pageIndicator.textContent = formatPageIndicator(currentPage(state2), pageCount(state2));
+    }
+    function setToolbarFaded(faded) {
+      toolbarFaded = Boolean(faded);
+      if (toolbarFaded) {
+        toolbar.classList.add("rc-toolbar-faded");
+      } else {
+        toolbar.classList.remove("rc-toolbar-faded");
+      }
+    }
+    function closeMenu() {
+      menuOpen = false;
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+    }
+    function toggleMenu() {
+      menuOpen = !menuOpen;
+      menu.hidden = !menuOpen;
+      menuBtn.setAttribute("aria-expanded", String(menuOpen));
+      if (menuOpen) setToolbarFaded(false);
+    }
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
@@ -29722,7 +29849,12 @@ ${PAGE_MARKER}
         if (findOpen && outlineVisible) {
           hideOutline();
         }
+        updatePageIndicator(update.state);
         if (update.docChanged) {
+          const isExternal = update.transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
+          if (!isExternal && !menuOpen) {
+            setToolbarFaded(true);
+          }
           if (bridge) bridge.notifyDocChanged(update.transactions);
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
@@ -29740,6 +29872,11 @@ ${PAGE_MARKER}
         if (h) h.postMessage("bounce");
       }
     });
+    function showOutline() {
+      outlineVisible = true;
+      outlinePanel.hidden = false;
+      outlineToggleBtn.setAttribute("aria-pressed", "true");
+    }
     function hideOutline() {
       outlineVisible = false;
       outlinePanel.hidden = true;
@@ -29749,6 +29886,7 @@ ${PAGE_MARKER}
       view.dispatch({ effects: setPageMode.of(Boolean(on)) });
       pagesBtn.setAttribute("aria-pressed", String(isPageMode(view.state)));
       if (on) showPage(view, currentPage(view.state));
+      updatePageIndicator();
     }
     function insertBlock(text) {
       const line = view.state.doc.lineAt(view.state.selection.main.head);
@@ -29771,7 +29909,7 @@ ${String(text ?? "")}`;
       if (typeof document !== "undefined" && document.documentElement) {
         document.documentElement.setAttribute("data-theme", currentTheme);
       }
-      themeBtn.textContent = currentTheme === "dark" ? "Light" : "Dark";
+      themeBtn.textContent = currentTheme === "dark" ? "Light theme" : "Dark theme";
       view.dispatch({
         effects: compartments.theme.reconfigure(buildThemeExtension(currentTheme))
       });
@@ -29788,6 +29926,7 @@ ${String(text ?? "")}`;
     function setNewestFirst(flag) {
       newestFirst = Boolean(flag);
       newestFirstBtn.setAttribute("aria-pressed", String(newestFirst));
+      newestFirstMenuBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
     bridge = createEditorBridge({
@@ -29819,13 +29958,48 @@ ${String(text ?? "")}`;
         insertBlock
       }
     });
-    outlineToggleBtn.addEventListener("click", () => {
-      outlineVisible = !outlineVisible;
-      outlinePanel.hidden = !outlineVisible;
-      outlineToggleBtn.setAttribute("aria-pressed", String(outlineVisible));
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMenu();
     });
-    pagesBtn.addEventListener("click", () => setPages(!isPageMode(view.state)));
+    toolbar.addEventListener("pointerenter", () => setToolbarFaded(false));
+    toolbar.addEventListener("mousemove", () => setToolbarFaded(false));
+    toolbar.addEventListener("touchstart", () => setToolbarFaded(false), { passive: true });
+    shell.addEventListener("mousemove", (e) => {
+      if (typeof e.clientY === "number" && e.clientY <= 48) {
+        setToolbarFaded(false);
+      }
+    });
+    shell.addEventListener("touchstart", (e) => {
+      const t2 = e.touches && e.touches[0];
+      if (t2 && typeof t2.clientY === "number" && t2.clientY <= 48) {
+        setToolbarFaded(false);
+      }
+    }, { passive: true });
+    pageIndicator.addEventListener("click", () => {
+      setToolbarFaded(false);
+      if (outlineVisible) hideOutline();
+      else showOutline();
+    });
+    outlineToggleBtn.addEventListener("click", () => {
+      closeMenu();
+      if (outlineVisible) hideOutline();
+      else showOutline();
+    });
+    prevPageBtn.addEventListener("click", () => {
+      closeMenu();
+      stepPage(view, -1);
+    });
+    nextPageBtn.addEventListener("click", () => {
+      closeMenu();
+      stepPage(view, 1);
+    });
+    pagesBtn.addEventListener("click", () => {
+      closeMenu();
+      setPages(!isPageMode(view.state));
+    });
     searchBtn.addEventListener("click", () => {
+      closeMenu();
       const open = toggleFindReplace(view);
       if (open) hideOutline();
       searchBtn.setAttribute("aria-pressed", String(open));
@@ -29833,11 +30007,22 @@ ${String(text ?? "")}`;
     newestFirstBtn.addEventListener("click", () => {
       setNewestFirst(!newestFirst);
     });
+    newestFirstMenuBtn.addEventListener("click", () => {
+      closeMenu();
+      setNewestFirst(!newestFirst);
+    });
     themeBtn.addEventListener("click", () => {
+      closeMenu();
       setTheme(currentTheme === "dark" ? "light" : "dark");
+    });
+    shell.addEventListener("click", (e) => {
+      if (menuOpen && !menuWrap.contains(e.target)) {
+        closeMenu();
+      }
     });
     setTheme(currentTheme);
     setFontSize(currentFontSize);
+    updatePageIndicator();
     renderOutline();
     return {
       view,
@@ -29845,6 +30030,10 @@ ${String(text ?? "")}`;
       setTheme,
       setFontSize,
       setNewestFirst,
+      showOutline,
+      hideOutline,
+      isOutlineOpen: () => outlineVisible,
+      isToolbarFaded: () => toolbarFaded,
       openSearch: () => {
         hideOutline();
         return openFindReplace(view);

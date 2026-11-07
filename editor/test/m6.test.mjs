@@ -24,7 +24,7 @@ import {
   isFindReplaceOpen
 } from '../src/search.js';
 import { SearchQuery, setSearchQuery } from '@codemirror/search';
-import { createEditorState } from '../src/index.js';
+import { createEditorState, MENU_ACTIONS, formatPageIndicator } from '../src/index.js';
 
 const doc = ['Friday, November 6, 2026\n\nnewest', 'Monday, November 2, 2026\n\nmiddle', 'Thursday, October 8, 2026\n\nold']
   .join(PAGE_JOINER);
@@ -216,6 +216,20 @@ test('E1 outline vs find: opening find closes the outline', () => {
   openFindReplace(fakeView);
   assert.equal(isFindReplaceOpen(state), true);
   assert.equal(outlineOpen, false, 'opening find closes the outline');
+});
+
+test('E1 lighter toolbar: menu keeps every action reachable and page indicator formats current page', () => {
+  assert.deepEqual(MENU_ACTIONS, [
+    'outline',
+    'find',
+    'newerPage',
+    'olderPage',
+    'pages',
+    'newestFirst',
+    'theme'
+  ]);
+  assert.equal(formatPageIndicator(0, 3), 'Page 1 of 3');
+  assert.equal(formatPageIndicator(2, 3), 'Page 3 of 3');
 });
 
 test('M6 insertBlock: the line lands under the cursor line and posts like typing', () => {

@@ -19,6 +19,7 @@ Offline-first Markdown editor core built on CodeMirror 6 (MIT) for the Mac strip
   - Leaves prose numbers, years (`1990.`), decimals (`1.5 hours`), and prose cross-references (`(c) of the statute`, `(v) supra / (x) infra`) untouched; preserves Roman numeral case and disambiguates `(i)` from the item before it.
   - Lines starting with `§ ` are styled and indexed as section headings and start a fresh numbering scope.
 - **Deletions record ("Farewell", D32):** a transaction filter records every user deletion with its timestamp, character range, and surrounding text (`before`, `after`, `context`), exposed via `window.recenseEditor.getRemoved()`.
+- **Lighter toolbar (`···` menu + page indicator):** the top bar holds only the quiet page indicator (`Page 1 of 3`) and a single `···` menu button. It fades out while typing and returns on pointer move or tap at the top edge. Every editor action (**Outline**, **Find**, **Newer page**, **Older page**, **Pages**, **Newest first**, **Light / Dark theme**) stays reachable from that menu by click or touch so nothing depends on a shortcut or gesture alone.
 - **Calm reading & writing:** 18 px default font size in a centered 66-character column (`66ch`), with calm dark (near-black glass, one calm blue, cyan accent) and light themes.
 
 ## Native Shell Bridge (`window.recenseEditor`)
