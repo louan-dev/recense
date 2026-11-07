@@ -95,7 +95,8 @@ public actor MemoryCatalog: CatalogStore {
     private var watchers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     public init(device: String, items: [PoolItem] = [], manifests: [String: ShowManifest] = [:],
-                transcripts: [ContentKey: TranscriptStatus] = [:], wall: Int64? = nil) {
+                transcripts: [ContentKey: TranscriptStatus] = [:], states: [ItemState] = [], listens: [ListenPosition] = [],
+                wall: Int64? = nil) {
         self.device = device
         var c = HLCClock(node: device)
         if let wall { _ = c.now(wall: wall) }
@@ -103,6 +104,8 @@ public actor MemoryCatalog: CatalogStore {
         for i in items { self.items[i.id] = i }
         self.manifests = manifests
         self.transcripts = transcripts
+        for st in states { self.states[st.key] = st }
+        for p in listens { self.listens[p.key, default: [:]][p.device] = p }
     }
 
     // MARK: reading

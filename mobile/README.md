@@ -18,12 +18,13 @@ Gallery Worker (`../library/`) only through its API, so a push here never redepl
 The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
 updates in place.
 - **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Listen, Ask, Main, Archive, Data, Exhibits,
-  Shared) as ShowsKit `Place`s, the rows the skin's Library shows (B2 redo, 11-07).
-- **Shows (preview)** (sidebar, under Draftpad): the Podcasts-style skin from `../shared/ShowsKit/` (B2). Spaces as tabs on
-  the iPhone and a sidebar on the iPad; the Library grid; each show's seasons and episodes (swipe or long-press a row to
-  Star or mark Played); the mini-player and Now Playing with **Clicked / Not yet**; Matters opens only with Face ID. It
-  runs on a made-up sample pool until B1's pool store lands; our player fills Now Playing in B3
-  (`HostApp/iOS/Shows.swift`). Simulator check: launch with `SIMCTL_CHILD_RECENSE_OPEN=shows` to open it directly.
+  Shared) as ShowsKit `Place`s, rows in Library (B2 redo, 11-07).
+- **The root (11-07): the Podcasts-style shell** (`HostApp/iOS/Shows.swift`, from `../shared/ShowsKit/`): Home (Up Next,
+  Recently Played), New (what landed in `Recense/inbox/`), Library (Shows, Study, Folio, Matters with Face ID, Saved,
+  Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
+  Sample shows until B1's pool store; our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
+  unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
+  skips the speech prompt.
 - **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
   The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
   Saves go through the Mac's 3-way merge (`shared/notesync.swift`), and an edit from the Mac or Obsidian is merged in

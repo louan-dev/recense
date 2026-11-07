@@ -29,7 +29,22 @@ public extension MemoryCatalog {
             .init(n: 4, title: "2141 Obviousness", file: "Chapter 2100/2141 Obviousness.m4a", duration: 455),
             .init(n: 5, title: "706 Rejection of claims", file: "Chapter 700/706 Rejections.m4a", duration: 300),
         ])
-        return MemoryCatalog(device: device, items: items, manifests: ["library/Study/MPEP": mpep],
-                             transcripts: [k("b1"): .ready, k("b2"): .ready, k("a1"): .transcribing])
+        let inbox = ShowManifest(episodes: [
+            .init(title: "Voice memo, 6 November", file: "Voice memo 11-06.m4a", duration: 154),
+            .init(title: "Lecture clip: treaty interpretation", file: "Lecture clip.mp4", duration: 1260),
+        ])
+        let podcasts = ShowManifest(title: "Law and Language", episodes: [
+            .init(n: 1, title: "Reading statutes in two languages", file: "Law and language.mp3", duration: 2580,
+                  summary: "How bilingual codes are read when the versions disagree."),
+        ])
+        let ms = now * 1000
+        let listens = [
+            ListenPosition(device: "iphone", key: k("b1"), seconds: 120, at: HLC(wall: ms - 3_600_000, node: "iphone")),
+            ListenPosition(device: "ipad", key: k("d1"), seconds: 1500, at: HLC(wall: ms - 3 * 86_400_000, node: "ipad")),
+        ]
+        let states = [ItemState(key: k("b2"), starred: Stamped(true, at: HLC(wall: ms - 86_400_000, node: "mac")))]
+        return MemoryCatalog(device: device, items: items,
+                             manifests: ["library/Study/MPEP": mpep, "inbox": inbox, "library/Podcasts": podcasts],
+                             transcripts: [k("b1"): .ready, k("b2"): .ready, k("a1"): .transcribing], states: states, listens: listens)
     }
 }

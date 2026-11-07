@@ -13,8 +13,8 @@ struct GalleryFilesApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Browser()
-                .listening()
+            RecenseRoot()   // the Podcasts-style shell (Shows.swift); Browser() was the root until 11-07
+                .modifier(MaybeListening(on: ProcessInfo.processInfo.environment["RECENSE_NO_LISTEN"] == nil))
                 .task { status = await setUp() }
                 .overlay(alignment: .bottom) {
                     // only says something when the Files location couldn't be set up
@@ -39,5 +39,13 @@ struct GalleryFilesApp: App {
         } catch {
             return "Couldn't add it: \(error.localizedDescription)"
         }
+    }
+}
+
+/// Captions' listener on the root; simulator screenshots set RECENSE_NO_LISTEN to skip its speech prompt.
+struct MaybeListening: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.listening() } else { content }
     }
 }
