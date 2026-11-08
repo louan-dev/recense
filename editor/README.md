@@ -72,6 +72,6 @@ npm run build
 Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 
 ## Ink palette and shape snapping (2026-11-08)
-- The palette's tool buttons now show icons (pen, highlighter, underline, circle, eraser, partial eraser), with names on hover and for VoiceOver.
+- The palette's tool buttons now show icons (pen, highlighter as a marker over a band, underline, circle, eraser, partial eraser), with names on hover and for VoiceOver.
 - The pen only turns a stroke into a shape when you hold still at its end for 0.5 s (`SNAP_HOLD_MS`) and it's bigger than a letter (`SNAP_MIN_SIZE`, 40 px):
   a closed loop becomes an ellipse, and a nearly straight stroke becomes a line. Letters and curves stay as drawn.

@@ -25,7 +25,8 @@ const ICON = body =>
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 export const INK_TOOL_ICONS = {
   pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
-  highlighter: ICON('<path d="M5 10l5.5-6.5 2.5 2.5-6.5 5.5z"/><path d="M5 10l-2 3h3l1-1"/>'),
+  // A marker over a wide translucent band, unlike the pen's slim nib.
+  highlighter: ICON('<path d="M2 13.5h12" stroke-width="3.5" stroke-opacity="0.45"/><path d="M6.5 10.5l3.5-7.5 3 1.5-3 7.5z"/>'),
   underline: ICON('<path d="M5 3v4a3 3 0 0 0 6 0V3"/><path d="M3 13.5h10"/>'),
   circle: ICON('<ellipse cx="8" cy="8" rx="5.5" ry="4.5"/>'),
   // A solid eraser block: wipes whole strokes.
