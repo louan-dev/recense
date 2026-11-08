@@ -1096,8 +1096,50 @@ export function createDualWings(container, options = {}) {
     renderWidgets();
   }
 
+  // The Mac's native wing panels (strip/wingpanels.swift): while set, open / close / toggle go to the host, which
+  // shows the wings in floating panels at the screen edges; the in-page wings stay hidden. iOS never sets it.
+  let nativeWings = null;
+  function setNativeWings(fn) {
+    nativeWings = typeof fn === 'function' ? fn : null;
+    if (nativeWings) {
+      leftEl.hidden = true;
+      rightEl.hidden = true;
+    }
+  }
+
+  /** A wing panel's own page shows its one side, without asking the host. */
+  function reveal(side) {
+    leftEl.hidden = side !== 'left';
+    rightEl.hidden = side !== 'right';
+  }
+
+  /** The "Arrange" pill: shows each card's Move control only while arranging, so they don't clutter at rest. */
+  function setArranging(on) {
+    for (const el of [leftEl, rightEl]) el.classList?.toggle('rc-wings-arranging', Boolean(on));
+    return Boolean(on);
+  }
+
+  /** The fan-out presentation: the shown side's cards spread out from the screen edge, one after another (CSS). */
+  function fanOut(side) {
+    const el = side === 'left' ? leftEl : rightEl;
+    let i = 0;
+    for (const child of el.children || []) {
+      if (!child.classList?.contains('rc-wing-card')) continue;
+      child.style?.setProperty?.('--rc-fan-i', String(i));
+      i++;
+    }
+    el.classList?.remove('rc-wing-fan');
+    void el.offsetWidth; // restart the animation
+    el.classList?.add('rc-wing-fan');
+    return i;
+  }
+
   // Symmetric ambidextrous controls
   function openWing(side) {
+    if (nativeWings) {
+      nativeWings('open', side);
+      return;
+    }
     if (side === 'left' || side === 'both') {
       leftEl.hidden = false;
     }
@@ -1108,6 +1150,10 @@ export function createDualWings(container, options = {}) {
   }
 
   function closeWing(side) {
+    if (nativeWings) {
+      nativeWings('close', side);
+      return;
+    }
     if (side === 'left' || side === 'both') {
       leftEl.hidden = true;
     }
@@ -1117,6 +1163,10 @@ export function createDualWings(container, options = {}) {
   }
 
   function toggleWing(side) {
+    if (nativeWings) {
+      nativeWings('toggle', side);
+      return;
+    }
     if (side === 'left') {
       if (leftEl.hidden) openWing('left');
       else closeWing('left');
@@ -1339,7 +1389,9 @@ export function createDualWings(container, options = {}) {
     }
   }
 
-  if (container?.addEventListener) {
+  // A wing panel's page has no edges to swipe from (the trackpad edge opens it natively): gestures: false.
+  const listening = options.gestures !== false;
+  if (listening && container?.addEventListener) {
     container.addEventListener('touchstart', handleTouchStart);
     container.addEventListener('touchmove', handleTouchMove);
     container.addEventListener('touchend', handleTouchEnd);
@@ -1384,6 +1436,10 @@ export function createDualWings(container, options = {}) {
     setCalendarEvents,
     setCalendarStatus,
     enableHostWidget,
+    setNativeWings,
+    reveal,
+    setArranging,
+    fanOut,
     openPersistentSession,
     getState,
     setState,

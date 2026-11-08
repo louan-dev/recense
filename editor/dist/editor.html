@@ -847,13 +847,173 @@ body {
   }
 }
 
+/* A wing in the Mac's native floating panel (wingpanel.js, strip/wingpanels.swift), laid out like Notification
+   Center: no backing, so the desktop shows between cards; the host draws frosted glass behind every .rc-glass,
+   card and Move control from the shapes the page reports. */
+html.rc-wings-page,
+html.rc-wings-page body {
+  height: auto;
+  min-height: 0;
+  background: transparent;
+  overflow-x: hidden;
+}
+
+.rc-wings-only {
+  /* A dark tint over the host's glass, so text stays legible over a busy window, as Notification Center's does. */
+  --rc-glass-tint: rgba(24, 26, 32, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 2px;
+  color: #f2f4f7;
+}
+
+.rc-wingpanel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 0;
+}
+
+.rc-wingpanel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.rc-wingpanel-close {
+  background: var(--rc-glass-tint);
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: #e9edf2;
+  cursor: pointer;
+}
+
+.rc-wingpanel-foot {
+  display: flex;
+  justify-content: center;
+}
+
+.rc-wingpanel-arrange {
+  background: var(--rc-glass-tint);
+  padding: 5px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e9edf2;
+  cursor: pointer;
+}
+
+.rc-wingpanel-close:focus-visible,
+.rc-wingpanel-arrange:focus-visible,
+.rc-wings-only .rc-wing-move:focus-visible {
+  outline: 2px solid var(--rc-cyan);
+  outline-offset: 2px;
+}
+
+.rc-wings-only .rc-wing {
+  position: static;
+  width: auto;
+  padding: 0;
+  gap: 10px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+  transition: none;
+}
+
+.rc-wings-only .rc-wing-card {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--rc-glass-tint);
+  color: #f2f4f7;
+}
+
+.rc-wings-only .rc-widget-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.rc-wings-only .rc-widget-action {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rc-cyan);
+  cursor: pointer;
+}
+
+.rc-wings-only .rc-widget-body {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* Move controls show only while arranging (the Arrange pill), so the cards are calm at rest. */
+.rc-wings-only .rc-wing-move {
+  background: var(--rc-glass-tint);
+  display: none;
+  align-self: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e9edf2;
+  cursor: pointer;
+}
+
+.rc-wings-only .rc-wing.rc-wings-arranging .rc-wing-move {
+  display: block;
+}
+
+/* The fan-out presentation: cards spread out from the screen edge, one after another. */
+@keyframes rc-fan-right {
+  from { opacity: 0; transform: translate(56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rc-fan-left {
+  from { opacity: 0; transform: translate(-56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.rc-wings-only .rc-wing-right.rc-wing-fan .rc-wing-card {
+  transform-origin: top right;
+  animation: rc-fan-right 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+}
+
+.rc-wings-only .rc-wing-left.rc-wing-fan .rc-wing-card {
+  transform-origin: top left;
+  animation: rc-fan-left 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-wings-only .rc-wing.rc-wing-fan .rc-wing-card {
+    animation: none;
+  }
+}
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 (() => {
-  // ../../editor/editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -927,7 +1087,7 @@ body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../editor/editor/node_modules/@codemirror/state/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -4339,7 +4499,7 @@ body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../editor/editor/node_modules/style-mod/src/style-mod.js
+  // ../../../../editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -4475,7 +4635,7 @@ body {
     }
   };
 
-  // ../../editor/editor/node_modules/w3c-keyname/index.js
+  // ../../../../editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -4581,7 +4741,7 @@ body {
     return name2;
   }
 
-  // ../../editor/editor/node_modules/crelt/index.js
+  // ../../../../editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -4610,7 +4770,7 @@ body {
     }
   }
 
-  // ../../editor/editor/node_modules/@codemirror/view/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -14110,7 +14270,7 @@ body {
     return true;
   }
 
-  // ../../editor/editor/node_modules/@lezer/common/dist/index.js
+  // ../../../../editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -16171,7 +16331,7 @@ body {
     return result;
   }
 
-  // ../../editor/editor/node_modules/@lezer/highlight/dist/index.js
+  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -16895,7 +17055,7 @@ body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../editor/editor/node_modules/@codemirror/language/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -18381,7 +18541,7 @@ body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../editor/editor/node_modules/@codemirror/commands/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -19475,7 +19635,7 @@ body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../editor/editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -19940,7 +20100,7 @@ body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../editor/editor/node_modules/@lezer/markdown/dist/index.js
+  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -22028,7 +22188,7 @@ body {
     }]
   };
 
-  // ../../editor/editor/node_modules/@lezer/lr/dist/index.js
+  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -23806,7 +23966,7 @@ body {
     return spec.get;
   }
 
-  // ../../editor/editor/node_modules/@lezer/html/dist/index.js
+  // ../../../../editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -24150,7 +24310,7 @@ body {
     });
   }
 
-  // ../../editor/editor/node_modules/@lezer/css/dist/index.js
+  // ../../../../editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -24330,7 +24490,7 @@ body {
     tokenPrec: 2433
   });
 
-  // ../../editor/editor/node_modules/@codemirror/lang-css/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -25191,7 +25351,7 @@ body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../editor/editor/node_modules/@lezer/javascript/dist/index.js
+  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -25403,7 +25563,7 @@ body {
     tokenPrec: 15205
   });
 
-  // ../../editor/editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -25715,7 +25875,7 @@ body {
     return true;
   });
 
-  // ../../editor/editor/node_modules/@codemirror/lang-html/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -26455,7 +26615,7 @@ body {
     return true;
   });
 
-  // ../../editor/editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -27284,7 +27444,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../editor/editor/node_modules/@codemirror/search/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -29929,24 +30089,24 @@ ${PAGE_MARKER}
     const targetEl = () => view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null;
     const widthOf = () => view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400;
     function renderDrag(dx) {
-      const el2 = targetEl();
-      if (!el2 || !el2.style) return 0;
+      const el3 = targetEl();
+      if (!el3 || !el3.style) return 0;
       const eff = computeEffectiveDrag(view.state, dx, widthOf());
-      el2.style.transition = "none";
-      el2.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
+      el3.style.transition = "none";
+      el3.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
       return eff;
     }
     function settleDrag(dx) {
-      const el2 = targetEl();
+      const el3 = targetEl();
       const limit = Math.min(threshold, widthOf() * 0.2);
       if (dx >= limit) {
         swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
       } else if (dx <= -limit) {
         swipeRightToLeft(view, { onSnap, onBounce });
       }
-      if (el2 && el2.style) {
-        el2.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
-        el2.style.transform = "translateX(0px)";
+      if (el3 && el3.style) {
+        el3.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+        el3.style.transform = "translateX(0px)";
       }
     }
     view.scrollDOM.addEventListener("wheel", (e) => {
@@ -31361,43 +31521,43 @@ ${clean(nextLineText)}`;
       const isOrphaned = Boolean(stroke.orphaned);
       const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
       if (stroke.shape?.kind === "ellipse") {
-        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-        el2.setAttribute("cx", String(stroke.shape.cx));
-        el2.setAttribute("cy", String(stroke.shape.cy));
-        el2.setAttribute("rx", String(stroke.shape.rx));
-        el2.setAttribute("ry", String(stroke.shape.ry));
-        el2.setAttribute("fill", "none");
-        el2.setAttribute("stroke", stroke.color || currentColor);
-        el2.setAttribute("stroke-width", String(strokeWidth));
-        el2.setAttribute("stroke-linecap", "round");
-        if (isHighlighter) el2.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el2);
+        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        el3.setAttribute("cx", String(stroke.shape.cx));
+        el3.setAttribute("cy", String(stroke.shape.cy));
+        el3.setAttribute("rx", String(stroke.shape.rx));
+        el3.setAttribute("ry", String(stroke.shape.ry));
+        el3.setAttribute("fill", "none");
+        el3.setAttribute("stroke", stroke.color || currentColor);
+        el3.setAttribute("stroke-width", String(strokeWidth));
+        el3.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el3.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el3);
         return;
       }
       if (stroke.shape?.kind === "line") {
-        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
-        el2.setAttribute("x1", String(stroke.shape.x1));
-        el2.setAttribute("y1", String(stroke.shape.y1));
-        el2.setAttribute("x2", String(stroke.shape.x2));
-        el2.setAttribute("y2", String(stroke.shape.y2));
-        el2.setAttribute("stroke", stroke.color || currentColor);
-        el2.setAttribute("stroke-width", String(strokeWidth));
-        el2.setAttribute("stroke-linecap", "round");
-        if (isHighlighter) el2.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el2);
+        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
+        el3.setAttribute("x1", String(stroke.shape.x1));
+        el3.setAttribute("y1", String(stroke.shape.y1));
+        el3.setAttribute("x2", String(stroke.shape.x2));
+        el3.setAttribute("y2", String(stroke.shape.y2));
+        el3.setAttribute("stroke", stroke.color || currentColor);
+        el3.setAttribute("stroke-width", String(strokeWidth));
+        el3.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el3.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el3);
         return;
       }
       if (pts.length === 1) {
-        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
-        el2.setAttribute("cx", String(pts[0][0]));
-        el2.setAttribute("cy", String(pts[0][1]));
-        el2.setAttribute("r", String(strokeWidth / 2));
-        el2.setAttribute("fill", stroke.color || currentColor);
-        if (isHighlighter) el2.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el2);
+        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+        el3.setAttribute("cx", String(pts[0][0]));
+        el3.setAttribute("cy", String(pts[0][1]));
+        el3.setAttribute("r", String(strokeWidth / 2));
+        el3.setAttribute("fill", stroke.color || currentColor);
+        if (isHighlighter) el3.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el3);
         return;
       }
       const path = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -31835,7 +31995,7 @@ ${clean(nextLineText)}`;
     const listeners = {};
     const attributes = {};
     const classListSet = /* @__PURE__ */ new Set();
-    const el2 = {
+    const el3 = {
       tagName: tag.toUpperCase(),
       hidden: false,
       value: "",
@@ -31863,7 +32023,7 @@ ${clean(nextLineText)}`;
       },
       setAttribute(k, v) {
         attributes[k] = String(v);
-        if (k === "hidden") el2.hidden = true;
+        if (k === "hidden") el3.hidden = true;
         if (k === "class") {
           classListSet.clear();
           String(v).split(/\s+/).forEach((c) => {
@@ -31876,28 +32036,28 @@ ${clean(nextLineText)}`;
       },
       removeAttribute(k) {
         delete attributes[k];
-        if (k === "hidden") el2.hidden = false;
+        if (k === "hidden") el3.hidden = false;
       },
       hasAttribute(k) {
         return k in attributes;
       },
       appendChild(child) {
-        el2.children.push(child);
-        child.parentElement = el2;
+        el3.children.push(child);
+        child.parentElement = el3;
         return child;
       },
       removeChild(child) {
-        const idx = el2.children.indexOf(child);
+        const idx = el3.children.indexOf(child);
         if (idx !== -1) {
-          el2.children.splice(idx, 1);
+          el3.children.splice(idx, 1);
           child.parentElement = null;
         }
         return child;
       },
       replaceChildren(...newChildren) {
-        el2.children = [];
+        el3.children = [];
         for (const c of newChildren) {
-          el2.appendChild(c);
+          el3.appendChild(c);
         }
       },
       addEventListener(type, fn) {
@@ -31920,7 +32080,7 @@ ${clean(nextLineText)}`;
       focus() {
       }
     };
-    Object.defineProperty(el2, "className", {
+    Object.defineProperty(el3, "className", {
       get() {
         return Array.from(classListSet).join(" ");
       },
@@ -31933,35 +32093,35 @@ ${clean(nextLineText)}`;
         }
       }
     });
-    return el2;
+    return el3;
   }
   function makeDomElement(doc2, tag, props = {}, attrs = {}) {
     const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
-    let el2;
+    let el3;
     if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
-      el2 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
+      el3 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
     } else if (doc2 && typeof doc2.createElement === "function") {
-      el2 = doc2.createElement(tag);
+      el3 = doc2.createElement(tag);
     } else {
-      el2 = createMockElement(tag);
+      el3 = createMockElement(tag);
     }
     for (const [k, v] of Object.entries(props)) {
       if (k === "style" && typeof v === "object") {
-        if (el2.style) Object.assign(el2.style, v);
+        if (el3.style) Object.assign(el3.style, v);
       } else {
-        el2[k] = v;
+        el3[k] = v;
       }
     }
     for (const [k, v] of Object.entries(attrs)) {
       if (v !== void 0 && v !== null) {
-        if (typeof el2.setAttribute === "function") {
-          el2.setAttribute(k, String(v));
+        if (typeof el3.setAttribute === "function") {
+          el3.setAttribute(k, String(v));
         } else {
-          el2[k] = String(v);
+          el3[k] = String(v);
         }
       }
     }
-    return el2;
+    return el3;
   }
   function strokeToPathData(stroke) {
     if (stroke?.d) return stroke.d;
@@ -32290,18 +32450,18 @@ ${clean(nextLineText)}`;
     function updateCue(index) {
       if (index < 0 || index >= currentCues.length) return;
       const cue = currentCues[index];
-      const el2 = cueElements[index];
-      if (!el2) return;
+      const el3 = cueElements[index];
+      if (!el3) return;
       if (cue.bookmarked) {
-        el2.classList.add("is-bookmarked");
+        el3.classList.add("is-bookmarked");
       } else {
-        el2.classList.remove("is-bookmarked");
+        el3.classList.remove("is-bookmarked");
       }
-      const dotEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-dot") : null);
+      const dotEl = el3.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el3.querySelector ? el3.querySelector(".rc-transcript-cue-dot") : null);
       if (dotEl) {
         dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
       }
-      const noteEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-note") : null);
+      const noteEl = el3.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el3.querySelector ? el3.querySelector(".rc-transcript-cue-note") : null);
       if (noteEl) {
         noteEl.textContent = cue.annotation || "";
         if (cue.annotation) {
@@ -32347,9 +32507,9 @@ ${clean(nextLineText)}`;
       } else {
         cuesContainer.children = [];
         cueElements = currentCues.map((c, i) => {
-          const el2 = buildCueElement(c, i);
-          cuesContainer.appendChild(el2);
-          return el2;
+          const el3 = buildCueElement(c, i);
+          cuesContainer.appendChild(el3);
+          return el3;
         });
       }
       const active = activeCueIndexAt(currentCues, state.currentTime || 0);
@@ -33188,7 +33348,7 @@ ${clean(nextLineText)}`;
     const attributes = {};
     const classListSet = /* @__PURE__ */ new Set();
     const children = [];
-    const el2 = {
+    const el3 = {
       tagName: tag.toUpperCase(),
       nodeName: tag.toUpperCase(),
       hidden: false,
@@ -33221,10 +33381,10 @@ ${clean(nextLineText)}`;
       },
       setAttribute(k, v) {
         attributes[k] = String(v);
-        if (k === "hidden") el2.hidden = true;
+        if (k === "hidden") el3.hidden = true;
         if (k.startsWith("data-")) {
           const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
-          el2.dataset[dKey] = String(v);
+          el3.dataset[dKey] = String(v);
         }
         if (k === "class") {
           classListSet.clear();
@@ -33238,10 +33398,10 @@ ${clean(nextLineText)}`;
       },
       removeAttribute(k) {
         delete attributes[k];
-        if (k === "hidden") el2.hidden = false;
+        if (k === "hidden") el3.hidden = false;
         if (k.startsWith("data-")) {
           const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
-          delete el2.dataset[dKey];
+          delete el3.dataset[dKey];
         }
       },
       hasAttribute(k) {
@@ -33250,9 +33410,9 @@ ${clean(nextLineText)}`;
       appendChild(child) {
         if (child) {
           children.push(child);
-          child.parentElement = el2;
-          child.parentNode = el2;
-          el2.firstChild = children[0] || null;
+          child.parentElement = el3;
+          child.parentNode = el3;
+          el3.firstChild = children[0] || null;
         }
         return child;
       },
@@ -33262,16 +33422,16 @@ ${clean(nextLineText)}`;
           children.splice(idx, 1);
           child.parentElement = null;
           child.parentNode = null;
-          el2.firstChild = children[0] || null;
+          el3.firstChild = children[0] || null;
         }
         return child;
       },
       replaceChildren(...newChildren) {
         while (children.length > 0) {
-          el2.removeChild(children[0]);
+          el3.removeChild(children[0]);
         }
         for (const c of newChildren) {
-          el2.appendChild(c);
+          el3.appendChild(c);
         }
       },
       addEventListener(type, fn) {
@@ -33290,7 +33450,7 @@ ${clean(nextLineText)}`;
         }
       },
       querySelector(sel) {
-        return el2.querySelectorAll(sel)[0] || null;
+        return el3.querySelectorAll(sel)[0] || null;
       },
       querySelectorAll(sel) {
         const matches = [];
@@ -33302,7 +33462,7 @@ ${clean(nextLineText)}`;
             walk(child);
           }
         }
-        walk(el2);
+        walk(el3);
         return matches;
       }
     };
@@ -33320,7 +33480,7 @@ ${clean(nextLineText)}`;
       }
       return target.tagName === sel.toUpperCase();
     }
-    Object.defineProperty(el2, "className", {
+    Object.defineProperty(el3, "className", {
       get() {
         return Array.from(classListSet).join(" ");
       },
@@ -33333,32 +33493,32 @@ ${clean(nextLineText)}`;
         }
       }
     });
-    return el2;
+    return el3;
   }
   function makeDomElement2(doc2, tag, props = {}, attrs = {}) {
-    let el2;
+    let el3;
     if (doc2 && typeof doc2.createElement === "function") {
-      el2 = doc2.createElement(tag);
+      el3 = doc2.createElement(tag);
     } else {
-      el2 = createMockElement2(tag);
+      el3 = createMockElement2(tag);
     }
     for (const [k, v] of Object.entries(props)) {
       if (k === "style" && typeof v === "object") {
-        if (el2.style) Object.assign(el2.style, v);
+        if (el3.style) Object.assign(el3.style, v);
       } else {
-        el2[k] = v;
+        el3[k] = v;
       }
     }
     for (const [k, v] of Object.entries(attrs)) {
       if (v !== void 0 && v !== null) {
-        if (typeof el2.setAttribute === "function") {
-          el2.setAttribute(k, String(v));
+        if (typeof el3.setAttribute === "function") {
+          el3.setAttribute(k, String(v));
         } else {
-          el2[k] = String(v);
+          el3[k] = String(v);
         }
       }
     }
-    return el2;
+    return el3;
   }
   function createDualWings(container, options = {}) {
     const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
@@ -33807,7 +33967,7 @@ ${clean(nextLineText)}`;
     function moverFor(wId, side) {
       const target = side === "left" ? "right" : "left";
       const name2 = WIDGET_NAMES[wId] || wId;
-      const el2 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
+      const el3 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
         class: "rc-wing-move",
         "data-widget": wId,
         "data-target": target,
@@ -33819,20 +33979,20 @@ ${clean(nextLineText)}`;
         if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
         moveWidget(wId, target);
       };
-      el2.addEventListener("click", go);
-      el2.addEventListener("keydown", go);
-      return el2;
+      el3.addEventListener("click", go);
+      el3.addEventListener("keydown", go);
+      return el3;
     }
     function renderWidgets() {
-      for (const [el2, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
-        while (el2.firstChild) {
-          el2.removeChild(el2.firstChild);
+      for (const [el3, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
+        while (el3.firstChild) {
+          el3.removeChild(el3.firstChild);
         }
         for (const wId of list) {
           const card = widgetElements[wId];
-          if (card && shown(wId) && el2.appendChild) {
-            el2.appendChild(moverFor(wId, side));
-            el2.appendChild(card);
+          if (card && shown(wId) && el3.appendChild) {
+            el3.appendChild(moverFor(wId, side));
+            el3.appendChild(card);
           }
         }
       }
@@ -33844,7 +34004,40 @@ ${clean(nextLineText)}`;
       if (!leftWidgets.includes(wId) && !rightWidgets.includes(wId)) leftWidgets.push(wId);
       renderWidgets();
     }
+    let nativeWings = null;
+    function setNativeWings(fn) {
+      nativeWings = typeof fn === "function" ? fn : null;
+      if (nativeWings) {
+        leftEl.hidden = true;
+        rightEl.hidden = true;
+      }
+    }
+    function reveal(side) {
+      leftEl.hidden = side !== "left";
+      rightEl.hidden = side !== "right";
+    }
+    function setArranging(on) {
+      for (const el3 of [leftEl, rightEl]) el3.classList?.toggle("rc-wings-arranging", Boolean(on));
+      return Boolean(on);
+    }
+    function fanOut(side) {
+      const el3 = side === "left" ? leftEl : rightEl;
+      let i = 0;
+      for (const child of el3.children || []) {
+        if (!child.classList?.contains("rc-wing-card")) continue;
+        child.style?.setProperty?.("--rc-fan-i", String(i));
+        i++;
+      }
+      el3.classList?.remove("rc-wing-fan");
+      void el3.offsetWidth;
+      el3.classList?.add("rc-wing-fan");
+      return i;
+    }
     function openWing(side) {
+      if (nativeWings) {
+        nativeWings("open", side);
+        return;
+      }
       if (side === "left" || side === "both") {
         leftEl.hidden = false;
       }
@@ -33854,6 +34047,10 @@ ${clean(nextLineText)}`;
       postHaptic2("open");
     }
     function closeWing(side) {
+      if (nativeWings) {
+        nativeWings("close", side);
+        return;
+      }
       if (side === "left" || side === "both") {
         leftEl.hidden = true;
       }
@@ -33862,6 +34059,10 @@ ${clean(nextLineText)}`;
       }
     }
     function toggleWing(side) {
+      if (nativeWings) {
+        nativeWings("toggle", side);
+        return;
+      }
       if (side === "left") {
         if (leftEl.hidden) openWing("left");
         else closeWing("left");
@@ -34052,7 +34253,8 @@ ${clean(nextLineText)}`;
         gestureHandled = false;
       }
     }
-    if (container?.addEventListener) {
+    const listening = options.gestures !== false;
+    if (listening && container?.addEventListener) {
       container.addEventListener("touchstart", handleTouchStart);
       container.addEventListener("touchmove", handleTouchMove);
       container.addEventListener("touchend", handleTouchEnd);
@@ -34093,6 +34295,10 @@ ${clean(nextLineText)}`;
       setCalendarEvents,
       setCalendarStatus,
       enableHostWidget,
+      setNativeWings,
+      reveal,
+      setArranging,
+      fanOut,
       openPersistentSession,
       getState,
       setState,
@@ -34101,6 +34307,175 @@ ${clean(nextLineText)}`;
       rightEl,
       container
     };
+  }
+
+  // src/wingpanel.js
+  function wingSideFrom(globalObj) {
+    const s = globalObj?.__RECENSE_WING_SIDE;
+    if (s === "left" || s === "right") return s;
+    const m = /^#wings=(left|right)$/.exec(String(globalObj?.location?.hash || ""));
+    return m ? m[1] : null;
+  }
+  function el2(doc2, tag, cls, text, attrs = {}) {
+    const e = doc2.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  }
+  function pressable(node, fn) {
+    node.addEventListener("click", fn);
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        fn(e);
+      }
+    });
+    return node;
+  }
+  function mountWingPanel(root, side, { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    const doc2 = root.ownerDocument || document;
+    const post = (msg) => globalObj?.webkit?.messageHandlers?.wings?.postMessage?.(msg);
+    doc2.documentElement.classList.add("rc-wings-page");
+    const shell = el2(doc2, "div", `rc-wings-only rc-wings-only-${side}`);
+    const head = el2(doc2, "div", "rc-wingpanel-head");
+    const title = el2(doc2, "span", "rc-wingpanel-title", side === "left" ? "Left Wing" : "Right Wing");
+    const close = pressable(
+      el2(doc2, "div", "rc-wingpanel-close rc-glass", "\xD7", { role: "button", tabindex: "0", "aria-label": "Close wing" }),
+      () => post({ action: "wing", op: "close", side })
+    );
+    if (side === "left") head.append(close, title);
+    else head.append(title, close);
+    const body = el2(doc2, "div", "rc-wingpanel-body");
+    const foot = el2(doc2, "div", "rc-wingpanel-foot");
+    const arrange = el2(doc2, "div", "rc-wingpanel-arrange rc-glass", "Arrange", {
+      role: "button",
+      tabindex: "0",
+      "aria-pressed": "false",
+      "aria-label": "Arrange cards: show Move to the other side"
+    });
+    foot.append(arrange);
+    shell.append(head, body, foot);
+    root.appendChild(shell);
+    const scanner = createCalendarScanner({ globalObj });
+    const wings = createDualWings(body, {
+      onInsertToPage: (text) => post({ action: "insert", text: String(text ?? "") }),
+      onJumpToLine: (line) => post({ action: "jumpToLine", line: Number(line) || 1 }),
+      onAddEvent: (ev) => scanner.requestAdd(ev),
+      gestures: false,
+      globalObj
+    });
+    wings.setNativeWings((op, s) => post({ action: "wing", op, side: s }));
+    wings.reveal(side);
+    let arranging = false;
+    function setArranging(on) {
+      arranging = wings.setArranging(on);
+      arrange.textContent = arranging ? "Done" : "Arrange";
+      arrange.setAttribute("aria-pressed", String(arranging));
+      schedule();
+      return arranging;
+    }
+    pressable(arrange, () => setArranging(!arranging));
+    function glassShapes() {
+      const shown = side === "left" ? wings.leftEl : wings.rightEl;
+      const nodes = [...shell.querySelectorAll(".rc-glass"), ...shown.querySelectorAll(".rc-wing-card, .rc-wing-move")];
+      const out = [];
+      for (const n of nodes) {
+        const r = n.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        const cs = globalObj.getComputedStyle ? globalObj.getComputedStyle(n) : null;
+        const radius = cs ? parseFloat(cs.borderTopLeftRadius) || 0 : 0;
+        const opacity = cs ? Number(cs.opacity) : 1;
+        out.push([r.left, r.top, r.width, r.height, Number.isFinite(opacity) ? opacity : 1, Math.min(radius, r.height / 2)]);
+      }
+      return out;
+    }
+    let lastReport = "";
+    function report() {
+      const msg = { action: "layout", height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() };
+      const key = JSON.stringify(msg);
+      if (key !== lastReport) {
+        lastReport = key;
+        post(msg);
+      }
+    }
+    let frame = 0;
+    function schedule() {
+      if (frame) return;
+      frame = globalObj.requestAnimationFrame(() => {
+        frame = 0;
+        report();
+      });
+    }
+    let followUntil = 0;
+    function follow(ms) {
+      followUntil = Math.max(followUntil, performance.now() + ms);
+      const tick = () => {
+        report();
+        if (performance.now() < followUntil) globalObj.requestAnimationFrame(tick);
+      };
+      globalObj.requestAnimationFrame(tick);
+    }
+    if (globalObj.ResizeObserver) new globalObj.ResizeObserver(schedule).observe(shell);
+    globalObj.addEventListener("scroll", schedule, { passive: true });
+    globalObj.addEventListener("resize", schedule);
+    doc2.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") post({ action: "wing", op: "close", side });
+    });
+    const rescan = (text) => wings.setCalendarEvents(scanner.scanText(String(text ?? "")));
+    let docText = "";
+    const api = {
+      // The pad's text, so the Agenda card lists its dates (scanning only proposes; Add is the confirm step).
+      setText(s) {
+        docText = typeof s === "string" ? s : String(s ?? "");
+        rescan(docText);
+        schedule();
+      },
+      getText: () => docText,
+      focus() {
+      },
+      setTheme(mode) {
+        doc2.documentElement.setAttribute("data-theme", mode === "light" ? "light" : "dark");
+      },
+      setFontSize() {
+      },
+      setInk() {
+      },
+      voiceCommand() {
+      },
+      setWingsState(state) {
+        wings.setState(state);
+        wings.reveal(side);
+        wings.setArranging(arranging);
+        schedule();
+      },
+      getWingsState: () => wings.getState(),
+      setCalendarAdded(data2) {
+        const ids = typeof data2 === "string" ? JSON.parse(data2) : data2;
+        if (Array.isArray(ids)) scanner.markSynced(ids);
+        rescan(docText);
+        schedule();
+      },
+      calendarResult(id2, ok, message) {
+        if (ok) scanner.markSynced(id2);
+        wings.setCalendarStatus(id2, ok ? "added" : "error", message || "");
+        schedule();
+      },
+      enableWidget(id2) {
+        wings.enableHostWidget(id2);
+        schedule();
+      },
+      fanOut() {
+        const n = wings.fanOut(side);
+        follow(420 + n * 60);
+        return n;
+      },
+      setArranging,
+      layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() })
+    };
+    if (globalObj) globalObj.recenseEditor = api;
+    schedule();
+    return { api, wings, shell, setArranging };
   }
 
   // src/theme.js
@@ -34798,7 +35173,20 @@ ${String(text ?? "")}`;
         extractCalendarEvents: (text, opts) => extractCalendarEvents(typeof text === "string" ? text : view.state.doc.toString(), opts),
         getCalendarEvents: () => calendarScanner ? calendarScanner.getEvents() : [],
         setWingsState: (state2) => dualWings ? dualWings.setState(state2) : null,
-        getWingsState: () => dualWings ? dualWings.getState() : null
+        getWingsState: () => dualWings ? dualWings.getState() : null,
+        // The Mac shows the wings in native panels (strip/wingpanels.swift): open / close / toggle go to the host.
+        setNativeWings: (on) => {
+          if (!dualWings) return false;
+          const h = typeof window !== "undefined" ? window.webkit?.messageHandlers?.wings : null;
+          dualWings.setNativeWings(on && h ? (op, side) => h.postMessage({ action: "wing", op, side }) : null);
+          return Boolean(on && h);
+        },
+        // A wing panel's card puts text in the page (a citation) or jumps to a line (the Agenda).
+        insertBlock: (text) => insertBlock(text),
+        jumpToLine: (lineNum) => {
+          const safeLine = Math.max(1, Math.min(view.state.doc.lines, Number(lineNum) || 1));
+          jumpToOffset(view, view.state.doc.line(safeLine).from);
+        }
       }
     });
     menuBtn.addEventListener("click", (e) => {
@@ -34924,7 +35312,9 @@ ${String(text ?? "")}`;
     const boot = () => {
       const host = document.getElementById("app") || document.body;
       const initial = typeof window.__RECENSE_INITIAL_DOC === "string" ? window.__RECENSE_INITIAL_DOC : "";
-      mountEditor(host, initial);
+      const wingSide = wingSideFrom(window);
+      if (wingSide) mountWingPanel(host, wingSide);
+      else mountEditor(host, initial);
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", boot, { once: true });

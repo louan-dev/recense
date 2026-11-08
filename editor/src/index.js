@@ -77,6 +77,7 @@ import {
   createCalendarScanner,
   createDualWings
 } from './wings.js';
+import { mountWingPanel, wingSideFrom } from './wingpanel.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -759,7 +760,20 @@ export function mountEditor(root = document.body, initialDoc = '') {
       extractCalendarEvents: (text, opts) => extractCalendarEvents(typeof text === 'string' ? text : view.state.doc.toString(), opts),
       getCalendarEvents: () => (calendarScanner ? calendarScanner.getEvents() : []),
       setWingsState: state => (dualWings ? dualWings.setState(state) : null),
-      getWingsState: () => (dualWings ? dualWings.getState() : null)
+      getWingsState: () => (dualWings ? dualWings.getState() : null),
+      // The Mac shows the wings in native panels (strip/wingpanels.swift): open / close / toggle go to the host.
+      setNativeWings: on => {
+        if (!dualWings) return false;
+        const h = typeof window !== 'undefined' ? window.webkit?.messageHandlers?.wings : null;
+        dualWings.setNativeWings(on && h ? (op, side) => h.postMessage({ action: 'wing', op, side }) : null);
+        return Boolean(on && h);
+      },
+      // A wing panel's card puts text in the page (a citation) or jumps to a line (the Agenda).
+      insertBlock: text => insertBlock(text),
+      jumpToLine: lineNum => {
+        const safeLine = Math.max(1, Math.min(view.state.doc.lines, Number(lineNum) || 1));
+        jumpToOffset(view, view.state.doc.line(safeLine).from);
+      }
     }
   });
 
@@ -903,7 +917,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   const boot = () => {
     const host = document.getElementById('app') || document.body;
     const initial = typeof window.__RECENSE_INITIAL_DOC === 'string' ? window.__RECENSE_INITIAL_DOC : '';
-    mountEditor(host, initial);
+    const wingSide = wingSideFrom(window);
+    if (wingSide) mountWingPanel(host, wingSide);
+    else mountEditor(host, initial);
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

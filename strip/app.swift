@@ -14,6 +14,7 @@
 //   ./recense toggle     hide if visible, otherwise show the pad (the hotkey does this)
 //   ./recense quit       save and quit         ./recense status    prints time / pad / hidden / not running
 //   ./recense background launch without showing anything (used by the login item)
+//   ./recense wing-left | wing-right | wing-close   the wing panels at the screen edges (wingpanels.swift)
 //   - show-type commands launch the app if it isn't running yet; hide / quit exit 1 if nothing runs.
 //   - any other argument prints usage and exits 64.
 //
@@ -72,8 +73,11 @@ let repeatGuard: TimeInterval = 0.3     // a gesture this soon after the last ch
 
 let pageMarker = "<!-- page -->"
 let pageJoiner = "\n\n\(pageMarker)\n\n"
-let commandName = Notification.Name("local.recense.command")
-let statePath = "/tmp/local.recense.state"   // what `recense status` reads: "time", "pad" or "hidden"
+/// RECENSE_INSTANCE=<name> runs a second, separate copy beside the installed one, for trying a build (its own lock,
+/// command channel and state file; both copies otherwise share the Mac). Unset: the one Recense.
+let instanceSuffix = ProcessInfo.processInfo.environment["RECENSE_INSTANCE"].map { $0.isEmpty ? "" : ".\($0)" } ?? ""
+let commandName = Notification.Name("local.recense.command" + instanceSuffix)
+let statePath = "/tmp/local.recense\(instanceSuffix).state"   // what `recense status` reads: "time", "pad" or "hidden"
 
 enum Mode: String { case time, pad, hub, notebook, media }
 
@@ -345,6 +349,55 @@ func trackHold(_ touching: [(id: Int32, p: MTPoint)], at now: Double) {
     }
 }
 
+/// Two fingers in from the trackpad's right or left edge open that wing (wingpanels.swift); two fingers back toward
+/// an open wing's edge close it. With Notification Center's own edge swipe turned off (owner, 11-08) the right edge
+/// is free, and the left edge has no system gesture. Distances are fractions of the trackpad's width.
+var edgeSwipeHandler: ((String) -> Void)?
+let edgeZone: Float = 0.10        // the outer finger lands within this of the edge…
+let edgeReach: Float = 0.24       // …and the other within this
+let edgeTravel: Float = 0.06      // how far in they travel together to open (about 1 cm)
+let backTravel: Float = 0.10      // how far back toward an open wing's edge to close it
+var gEdgeStarts: [Int32: MTPoint] = [:], gEdgeSide = 0, gEdgeSpent = false
+/// Read by the scroll filter: an edge swipe may be under way, so the app under the pointer doesn't also scroll
+/// sideways (or go Back / Forward in Safari) with it.
+var gEdgeSwiping = false
+
+func trackEdgeSwipe(_ touching: [(id: Int32, p: MTPoint)]) {
+    guard touching.count == 2 else {
+        gEdgeStarts = [:]; gEdgeSide = 0; gEdgeSwiping = false
+        if touching.isEmpty { gEdgeSpent = false }
+        return
+    }
+    if Set(touching.map { $0.id }) != Set(gEdgeStarts.keys) {
+        gEdgeStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) })
+        let lo = min(touching[0].p.x, touching[1].p.x), hi = max(touching[0].p.x, touching[1].p.x)
+        gEdgeSide = hi >= 1 - edgeZone && lo >= 1 - edgeReach ? 1 : (lo <= edgeZone && hi <= edgeReach ? -1 : 0)
+        gEdgeSwiping = gEdgeSide != 0 && !gEdgeSpent
+        return
+    }
+    guard !gEdgeSpent else { return }
+    let dxs = touching.map { $0.p.x - gEdgeStarts[$0.id]!.x }, dys = touching.map { $0.p.y - gEdgeStarts[$0.id]!.y }
+    let dx = (dxs[0] + dxs[1]) / 2, dy = (dys[0] + dys[1]) / 2
+    let sideways = abs(dx) > abs(dy) * 1.5
+    if gEdgeSide != 0 {
+        // Up or down along the edge is a scroll: let it be one.
+        if abs(dy) > 0.04 && !sideways { gEdgeSide = 0; gEdgeSwiping = false; return }
+        let inward: (Float) -> Float = { gEdgeSide == 1 ? -$0 : $0 }
+        if sideways && inward(dx) >= edgeTravel && dxs.allSatisfy({ inward($0) > 0.02 }) {
+            gEdgeSpent = true; gLastTouchWasSwipe = true                // its momentum doesn't scroll either
+            let cmd = gEdgeSide == 1 ? "right-in" : "left-in"
+            DispatchQueue.main.async { edgeSwipeHandler?(cmd) }
+        }
+        return
+    }
+    // Back toward an open wing's edge, from anywhere on the trackpad.
+    guard sideways, abs(dx) >= backTravel, dxs.allSatisfy({ abs($0) > 0.03 && ($0 > 0) == (dx > 0) }) else { return }
+    let cmd = dx > 0 ? (gWingOpenRight ? "right-out" : "") : (gWingOpenLeft ? "left-out" : "")
+    guard !cmd.isEmpty else { return }
+    gEdgeSpent = true
+    DispatchQueue.main.async { edgeSwipeHandler?(cmd) }
+}
+
 let frameCallback: MTFrameCallback = { _, data, count, now, _ in
     guard let data = data else { return 0 }
     let fingers = data.assumingMemoryBound(to: MTFinger.self)
@@ -356,6 +409,7 @@ let frameCallback: MTFrameCallback = { _, data, count, now, _ in
     let n = touching.count
     if !gWasDown && n > 0 { gLastTouchWasSwipe = false }                 // a new touch begins
     gWasDown = n > 0
+    trackEdgeSwipe(touching)
     if n == 0 { gStarts = [:]; gSpent = false; gThreeMoving = false; return 0 }
     if n > 3 { gStarts = [:]; gSpent = true; gThreeMoving = false; return 0 }   // four or more: ignore until lifted
     if n < 3 { gStarts = [:]; gThreeMoving = false; return 0 }
@@ -398,7 +452,7 @@ let scrollFilter: CGEventTapCallBack = { _, type, event, _ in
     guard type == .scrollWheel, event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 else {
         return Unmanaged.passUnretained(event)
     }
-    if gThreeMoving { return nil }
+    if gThreeMoving || gEdgeSwiping { return nil }
     let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
     if !gWasDown && momentum != 0 && gLastTouchWasSwipe { return nil }
     return Unmanaged.passUnretained(event)
@@ -6597,6 +6651,27 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     var editor: EditorHost?
     var editorOn: Bool { editor != nil && editorKind == .new }
     var gestures: NativeGestures?
+    /// The wings in floating panels at the screen edges (wingpanels.swift), made on first use.
+    lazy var wingPanels: WingPanels = {
+        let w = WingPanels(vault: URL(fileURLWithPath: (notePath as NSString).deletingLastPathComponent),
+                           cache: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/recense/embeds"))
+        w.currentText = { [weak self] in
+            guard let self = self else { return "" }
+            return self.editorOn ? (self.editor?.text ?? "") : fileText(self.texts)
+        }
+        w.editor = { [weak self] in self?.editorOn == true ? self?.editor : nil }
+        w.onInsert = { [weak self] t in
+            guard let self = self, self.editorOn, let e = self.editor else { log("wings: a citation needs the new editor"); return }
+            e.send("insertBlock(\(jsString(t)))")
+        }
+        w.onJump = { [weak self] line in
+            guard let self = self, self.editorOn, let e = self.editor else { return }
+            self.present(.pad)
+            e.send("jumpToLine(\(line))")
+        }
+        w.menuItems = { [weak self] in self?.wingMotionItems() ?? [] }
+        return w
+    }()
     lazy var menuBar = MenuBarUsage()
     lazy var spatial = SpatialController(strip: rest)
     weak var cardRoot: NSView?
@@ -6697,6 +6772,17 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         holdHandler = { on in
             NSLog("recense: two-finger hold \(on ? "down" : "up")")
             MainActor.assumeIsolated { Recense.hold(on) }
+        }
+        edgeSwipeHandler = { [weak self] cmd in
+            NSLog("recense: two-finger edge swipe \(cmd)")
+            guard let self = self else { return }
+            switch cmd {
+            case "right-in": self.wingPanels.show(.right)
+            case "left-in": self.wingPanels.show(.left)
+            case "right-out": self.wingPanels.hide(.right, "swipe back")
+            case "left-out": self.wingPanels.hide(.left, "swipe back")
+            default: break
+            }
         }
         let n = gestures?.begin() ?? 0
         NSLog("recense: native gestures listening on \(n) trackpad(s)")
@@ -6908,6 +6994,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let hider = NSMenuItem(title: "Menu-Bar Hider", action: nil, keyEquivalent: "")
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
         appMenu.delegate = self                                   // rebuilds the hider's entries each time it opens
+        appMenu.addItem(.separator())
+        wingMenuItems().forEach { appMenu.addItem($0) }
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Recense", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editItem = NSMenuItem(); main.addItem(editItem)
@@ -6948,8 +7037,33 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             items.append(NSMenuItem(title: "New Topic on Top", action: #selector(newTopicOnTop), keyEquivalent: ""))
         }
         items.forEach { $0.target = self }
-        return items
+        return items + [NSMenuItem.separator()] + wingMenuItems()
     }
+
+    // MARK: Wings (wingpanels.swift): the visible controls beside the edge swipes and voice
+
+    /// "Show Left Wing", "Show Right Wing" (Hide while open) and the motion setting.
+    func wingMenuItems() -> [NSMenuItem] {
+        let left = NSMenuItem(title: wingPanels.isOpen(.left) ? "Hide Left Wing" : "Show Left Wing", action: #selector(toggleLeftWing), keyEquivalent: "")
+        let right = NSMenuItem(title: wingPanels.isOpen(.right) ? "Hide Right Wing" : "Show Right Wing", action: #selector(toggleRightWing), keyEquivalent: "")
+        [left, right].forEach { $0.target = self }
+        let motion = NSMenuItem(title: "Wing Motion", action: nil, keyEquivalent: "")
+        let sub = NSMenu(); wingMotionItems().forEach { sub.addItem($0) }
+        motion.submenu = sub
+        return [left, right, motion]
+    }
+    func wingMotionItems() -> [NSMenuItem] {
+        let slide = NSMenuItem(title: "Slide In from the Edge", action: #selector(wingSlide), keyEquivalent: "")
+        let fan = NSMenuItem(title: "Fan Out from the Edge", action: #selector(wingFan), keyEquivalent: "")
+        slide.state = wingMotion == .slide ? .on : .off
+        fan.state = wingMotion == .fan ? .on : .off
+        [slide, fan].forEach { $0.target = self }
+        return [slide, fan]
+    }
+    @objc func toggleLeftWing() { wingPanels.toggle(.left) }
+    @objc func toggleRightWing() { wingPanels.toggle(.right) }
+    @objc func wingSlide() { wingMotion = .slide }
+    @objc func wingFan() { wingMotion = .fan }
     @objc func useNewEditor() { setEditor(.new) }
     @objc func useClassicEditor() { setEditor(.classic) }
 
@@ -6980,7 +7094,14 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             e.onBounce = { [weak self] in self?.bounce() }
             e.web.autoresizingMask = [.width, .height]
             e.web.extraItems = { [weak self] in self?.editorMenuItems() ?? [] }
-            e.onChange = { [weak self] _ in
+            e.nativeWings = true                                       // its wings open in the panels at the screen edges
+            e.onWingMessage = { [weak self] d in
+                if (d["action"] as? String) == "wing" { self?.wingPanels.handle(op: d["op"] as? String ?? "", side: d["side"] as? String ?? "") }
+            }
+            e.onWingsSaved = { [weak self, weak e] json in if let e = e { self?.wingPanels.broadcast(json, except: e) } }
+            e.onEventsSaved = { [weak self, weak e] in if let e = e { self?.wingPanels.eventsSaved(except: e) } }
+            e.onChange = { [weak self] s in
+                self?.wingPanels.textChanged(s)
                 self?.saveTimer?.invalidate()
                 self?.saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in self?.saveNow() }
             }
@@ -7107,6 +7228,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "show-icons": menuBar.hider.showIcons()
         case "draftpad-flip": flipDraftpad(go: false)
         case "draftpad-flip-go": flipDraftpad(go: true)
+        case "wing-left":  wingPanels.show(.left)
+        case "wing-right": wingPanels.show(.right)
+        case "wing-close": wingPanels.hideAll()
+        case "wing-motion-slide": wingMotion = .slide
+        case "wing-motion-fan": wingMotion = .fan
         default:       present(.time)
         }
     }
@@ -7806,7 +7932,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 // MARK: - Entry point
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
-                "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go"]
+                "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go",
+                "wing-left", "wing-right", "wing-close", "wing-motion-slide", "wing-motion-fan"]
 
 func stripSelftest() -> Bool {
     let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
@@ -7821,17 +7948,18 @@ func stripSelftest() -> Bool {
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
-    exit(a && b && c && d && e && f ? 0 : 1)
+    let g = wingsSelftest()
+    exit(a && b && c && d && e && f && g ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
-let lockFD = open("/tmp/local.recense.lock", O_CREAT | O_RDWR, 0o600)
+let lockFD = open("/tmp/local.recense\(instanceSuffix).lock", O_CREAT | O_RDWR, 0o600)
 let holdsLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0
 
 var initial = "time"
 if let cmd = CommandLine.arguments.dropFirst().first {
     guard commands.contains(cmd) else {
-        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot|editor-new|editor-classic|show-icons]\n", stderr)
+        fputs("usage: recense [up|down|pad|time|show|hide|toggle|quit|status|background|snapshot|editor-new|editor-classic|show-icons|wing-left|wing-right|wing-close]\n", stderr)
         exit(64)
     }
     if cmd == "status" {
@@ -7883,5 +8011,12 @@ app.run()
 extension App: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
+        // The wing entries say Show or Hide as the wings are now.
+        if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {
+            let fresh = wingMenuItems()
+            for (k, item) in fresh.enumerated() where i + k < menu.items.count {
+                menu.removeItem(at: i + k); menu.insertItem(item, at: i + k)
+            }
+        }
     }
 }

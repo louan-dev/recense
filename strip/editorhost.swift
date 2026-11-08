@@ -72,6 +72,9 @@ private final class WeakHandler: NSObject, WKScriptMessageHandler {
 /// Adds the pad's own entries to the right-click menu, so every action is reachable without a shortcut.
 final class EditorWebView: WKWebView {
     var extraItems: () -> [NSMenuItem] = { [] }
+    /// A wing panel's page acts on the first click, though its panel isn't key (wingpanels.swift).
+    var clickThrough = false
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { clickThrough || super.acceptsFirstMouse(for: event) }
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         menu.addItem(.separator())
@@ -103,10 +106,28 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// The page bounced at its first or last page (the host plays the strip's bounce).
     var onBounce: (() -> Void)?
     let files: EmbedFiles
+    /// nil for the editor; "left" or "right" for a wing panel's page (wingpanels.swift): the same bundled page,
+    /// showing that one wing.
+    let wingSide: String?
+    /// The editor page hands its wings to the native panels (set before it loads).
+    var nativeWings = false
+    /// A page saved the wings' layout and cards (the JSON written to draftpad.wings.json): the other pages follow.
+    var onWingsSaved: ((String) -> Void)?
+    /// A page asks the host for a wing panel (open / close / toggle), a citation, a jump, or posts its layout.
+    var onWingMessage: (([String: Any]) -> Void)?
+    /// A calendar event was saved here: the other pages mark it added too.
+    var onEventsSaved: (() -> Void)?
+    /// The page finished loading (and has its text, wings state and calendar ids).
+    var onLoad: (() -> Void)?
 
-    init(frame: NSRect, vault: URL, cache: URL) {
+    init(frame: NSRect, vault: URL, cache: URL, wingSide: String? = nil) {
         self.vault = vault
+        self.wingSide = wingSide
         let cfg = WKWebViewConfiguration()
+        if let side = wingSide {
+            cfg.userContentController.addUserScript(WKUserScript(
+                source: "window.__RECENSE_WING_SIDE = \(jsString(side));", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         cfg.websiteDataStore = .default()
         files = EmbedFiles(vault: vault, cache: cache)
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
@@ -183,6 +204,15 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish(nil) }
     }
 
+    /// Runs `window.recenseEditor.<js>` once the page has loaded (wingpanels.swift).
+    func send(_ js: String) { if loaded { call(js) } }
+    func applyWingsState(_ json: String) { send("setWingsState(\(jsString(json)))") }
+    /// Re-reads the saved event ids (another page may have added one) and shows them as added.
+    func refreshCalendarAdded() {
+        reloadSyncedEventIds()
+        send("setCalendarAdded(\(jsString(syncedEventIdsJSON)))")
+    }
+
     private func call(_ js: String) {
         web.evaluateJavaScript("window.recenseEditor && window.recenseEditor.\(js)") { _, err in
             if let err = err { log("editor: \(js.prefix(20))… failed: \(err.localizedDescription)") }
@@ -245,14 +275,21 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                 }
                 return
             }
+            if let d = m.body as? [String: Any], let a = d["action"] as? String, ["wing", "insert", "jumpToLine", "layout"].contains(a) {
+                onWingMessage?(d); return
+            }
             if let json = m.body as? String {
                 coordinatedWrite(json, to: wingsPath)
+                onWingsSaved?(json)
             } else if let d = m.body as? [String: Any] {
-                if (d["action"] as? String) == "saveState",
-                   let state = d["state"],
-                   let data = try? JSONSerialization.data(withJSONObject: state),
-                   let json = String(data: data, encoding: .utf8) {
-                    coordinatedWrite(json, to: wingsPath)
+                if (d["action"] as? String) == "saveState", let state = d["state"] {
+                    // wings.js posts the state already as a JSON string; an object is accepted too.
+                    let json = (state as? String) ?? (JSONSerialization.isValidJSONObject(state)
+                        ? (try? JSONSerialization.data(withJSONObject: state)).flatMap { String(data: $0, encoding: .utf8) } : nil)
+                    if let json = json {
+                        coordinatedWrite(json, to: wingsPath)
+                        onWingsSaved?(json)
+                    }
                 }
             }
             return
@@ -282,6 +319,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         eventStore.requestFullAccessToEvents { [weak self] granted, _ in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.reloadSyncedEventIds()   // another page (a wing panel, the editor) may have saved one meanwhile
                 for item in items {
                     guard let id = item["id"] as? String else { continue }
                     if self.syncedEventIds.contains(id) { self.reportCalendar(id, true, ""); continue }
@@ -305,6 +343,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                         self.syncedEventIds.insert(id)
                         self.persistSyncedEventIds()
                         self.reportCalendar(id, true, "")
+                        self.onEventsSaved?()
                     } catch {
                         self.reportCalendar(id, false, error.localizedDescription)
                     }
@@ -317,6 +356,13 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         guard let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
               let json = String(data: data, encoding: .utf8) else { return "[]" }
         return json
+    }
+
+    private func reloadSyncedEventIds() {
+        if let raw = coordinatedRead(eventsPath), let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds.formUnion(ids)
+        }
     }
 
     private func persistSyncedEventIds() {
@@ -351,7 +397,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         call("setTheme('dark')")
         call("setFontSize(18)")
         call("setText(\(jsString(text)))")
-        if let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
+        if nativeWings && wingSide == nil { call("setNativeWings(true)") }
+        if wingSide == nil, let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
             call("setInk(\(jsString(inkJSON)))")
         }
         if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
@@ -359,7 +406,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         call("setCalendarAdded(\(jsString(syncedEventIdsJSON)))")
         if FileManager.default.fileExists(atPath: EditorHost.iPhoneMirroring.path) { call("enableWidget('iphone')") }
-        log("editor: new editor loaded (\(source))")
+        log(wingSide.map { "editor: \($0) wing panel loaded" } ?? "editor: new editor loaded (\(source))")
+        onLoad?()
     }
 
     /// The page's process died (memory pressure, a crash): load it again with the text native holds.
