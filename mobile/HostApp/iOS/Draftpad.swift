@@ -12,6 +12,7 @@ import SwiftUI
 import ShowsKit
 import WebKit
 import AVFoundation
+import EventKit
 import UniformTypeIdentifiers
 
 func log(_ s: String) { NSLog("draftpad: %@", s) }
@@ -26,6 +27,8 @@ final class DraftpadFile: ObservableObject {
     private(set) var lastInk = ""       // what this device last read or wrote for draftpad.ink.json
     var note: URL? { vault?.appendingPathComponent("draftpad.md") }
     var inkNote: URL? { vault?.appendingPathComponent("draftpad.ink.json") }
+    var eventsNote: URL? { vault?.appendingPathComponent("draftpad.events.json") }
+    var wingsNote: URL? { vault?.appendingPathComponent("draftpad.wings.json") }
 
     init() {
         guard let d = UserDefaults.standard.data(forKey: Self.key) else { return }
@@ -100,11 +103,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     private var pollTimer: Timer?
     private var lastPosted: String?
     private let speechSynthesizer = AVSpeechSynthesizer()
+    private let eventStore = EKEventStore()
+    private var syncedEventIds = Set<String>()
     var onAudioAction: (([String: Any]) -> Void)?
 
     init(file: DraftpadFile) {
         self.file = file
         let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()
         if let v = file.vault {
             let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("embeds")
             let f = EmbedFiles(vault: v, cache: cache)
@@ -113,8 +119,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         web = WKWebView(frame: .zero, configuration: cfg)
         super.init()
-        for name in ["editor", "link", "ui", "ink", "audio"] {
+        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
             cfg.userContentController.add(Weak(self), name: name)
+        }
+        if let p = file.eventsNote?.path,
+           let raw = coordinatedRead(p),
+           let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds = Set(ids)
         }
         web.navigationDelegate = self
         web.isOpaque = false
@@ -147,6 +159,9 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         let initialInk = file.loadInk()
         if !initialInk.isEmpty {
             call("setInk(\(jsLiteral(initialInk)))")
+        }
+        if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
+            call("setWingsState(\(jsLiteral(wingsJSON)))")
         }
         call("showPage(0)")
         // Another device's edit (the Mac, Obsidian) reaches the file through iCloud: merge it in while open.
@@ -196,11 +211,61 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 }
                 onAudioAction?(d)
             }
+        case "calendar":
+            if let d = m.body as? [String: Any],
+               (d["action"] as? String) == "addEvents",
+               let items = d["events"] as? [[String: Any]] {
+                syncEventsToAppleCalendar(items)
+            }
+        case "wings":
+            guard let wp = file.wingsNote?.path else { return }
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: wp)
+            } else if let d = m.body as? [String: Any],
+                      (d["action"] as? String) == "saveState",
+                      let state = d["state"],
+                      let data = try? JSONSerialization.data(withJSONObject: state),
+                      let json = String(data: data, encoding: .utf8) {
+                coordinatedWrite(json, to: wp)
+            }
         default:
             guard let s = m.body as? String else { return }
             lastPosted = s
             saveTimer?.invalidate()
             saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in self?.saveNow() }
+        }
+    }
+
+    private func syncEventsToAppleCalendar(_ items: [[String: Any]]) {
+        let iso = ISO8601DateFormatter()
+        let pending = items.filter { item in
+            guard let id = item["id"] as? String else { return false }
+            return !syncedEventIds.contains(id)
+        }
+        guard !pending.isEmpty else { return }
+        for item in pending {
+            if let id = item["id"] as? String { syncedEventIds.insert(id) }
+        }
+        if let p = file.eventsNote?.path,
+           let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+           let json = String(data: data, encoding: .utf8) {
+            coordinatedWrite(json, to: p)
+        }
+        eventStore.requestFullAccessToEvents { [weak self] granted, _ in
+            guard granted, let self = self, let cal = self.eventStore.defaultCalendarForNewEvents else { return }
+            for item in pending {
+                guard let title = item["title"] as? String,
+                      let startStr = item["startISO"] as? String,
+                      let startDate = iso.date(from: startStr) else { continue }
+                let endDate = (item["endISO"] as? String).flatMap { iso.date(from: $0) } ?? startDate.addingTimeInterval(3600)
+                let ev = EKEvent(eventStore: self.eventStore)
+                ev.calendar = cal
+                ev.title = title
+                ev.startDate = startDate
+                ev.endDate = endDate
+                ev.notes = item["rawLine"] as? String
+                try? self.eventStore.save(ev, span: .thisEvent)
+            }
         }
     }
 

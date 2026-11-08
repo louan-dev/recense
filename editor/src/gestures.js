@@ -273,6 +273,70 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: true, action: 'setInkTool', tool: 'eraser' };
   }
 
+  // 1b. Ambidextrous Dual Wings (check before bare directional left/right)
+  if (
+    hasPhrase('left wing') ||
+    hasPhrase('left sidebar') ||
+    hasPhrase('cánh trái') ||
+    hasPhrase('volet gauche')
+  ) {
+    if (typeof handlers.openWing === 'function') {
+      handlers.openWing('left');
+    }
+    return { matched: true, action: 'openWing', side: 'left' };
+  }
+
+  if (
+    hasPhrase('right wing') ||
+    hasPhrase('right sidebar') ||
+    hasPhrase('cánh phải') ||
+    hasPhrase('volet droit')
+  ) {
+    if (typeof handlers.openWing === 'function') {
+      handlers.openWing('right');
+    }
+    return { matched: true, action: 'openWing', side: 'right' };
+  }
+
+  if (
+    hasPhrase('both wings') ||
+    hasPhrase('dual sidebar') ||
+    hasPhrase('dual wings') ||
+    hasPhrase('hai bên') ||
+    hasPhrase('hai cánh') ||
+    hasPhrase('deux volets')
+  ) {
+    if (typeof handlers.openWing === 'function') {
+      handlers.openWing('both');
+    }
+    return { matched: true, action: 'openWing', side: 'both' };
+  }
+
+  if (
+    hasPhrase('close wings') ||
+    hasPhrase('close sidebars') ||
+    hasPhrase('đóng cánh') ||
+    hasPhrase('fermer les volets')
+  ) {
+    if (typeof handlers.closeWing === 'function') {
+      handlers.closeWing('both');
+    }
+    return { matched: true, action: 'closeWing', side: 'both' };
+  }
+
+  if (
+    hasPhrase('swap wings') ||
+    hasPhrase('flip sides') ||
+    hasPhrase('mirror wings') ||
+    hasPhrase('đổi bên') ||
+    hasWord('inverser')
+  ) {
+    if (typeof handlers.swapWings === 'function') {
+      handlers.swapWings();
+    }
+    return { matched: true, action: 'swapWings' };
+  }
+
   // 2. Navigation: swipe left (older) vs swipe right (newer) before bare left / right
   const rightToLeftKeywords = [
     'swipe left',

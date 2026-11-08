@@ -28,6 +28,17 @@ Offline-first Draftpad whiteboard and Markdown editor core built on CodeMirror 6
   - While audio plays, a zero-chrome transcript pane (`createTranscriptPane`) appears beside the page and highlights the active cue (`activeCueIndexAt`).
   - Double-tap or swipe a cue to bookmark (`bookmarkCue` → quiet `●` dot); dwell (`280 ms`), right-click, or press `Enter` to annotate (`annotateCue` → inserts `[@MM:SS] ...` into the active window); or draw directly on cues with Apple Pencil (`<svg class="rc-cue-ink-svg">`).
   - **On-device section audio summaries (`summarizeSectionOffline`, `speakSectionSummary`):** pure offline extractive summarizer for English, French, and Vietnamese legal/academic text (`§` sections, headings, and paragraphs), spoken via native `AVSpeechSynthesizer` on Mac and iOS with WebKit `speechSynthesis` fallback.
+- **Ambidextrous Dual Notification-Center Sidebars ("Dual Wings") & 4 Feathery Offline-First Widgets (`src/wings.js`):**
+  - **Symmetric Dual Sidebars (`.rc-wing-left` & `.rc-wing-right`):** slide in from the left edge (`L→R`) and right edge (`R→L`) with macOS Notification-Center spring kinetics (`320ms cubic-bezier(0.22, 1, 0.36, 1)`), sized for a 13" screen (`width: min(272px, 30vw)`) so either wing can open alone (`'left'`, `'right'`) or **both simultaneously (`'both'` bilateral mode)** without cramping the central 66ch Draftpad column.
+  - **True Ambidexterity:** `swapWings()` mirrors all widgets between left and right wings in one action when switching hands or posture; `moveWidget(id, side)` moves any widget to either wing; two-touch simultaneous inward edge swipes open both wings together; and multilingual voice commands (`"left wing"`, `"right wing"`, `"both wings"`, `"swap wings"`, `"close wings"`, `"cánh trái"`, `"hai bên"`, `"đổi bên"`, `"volet gauche"`, `"deux volets"`, `"inverser"`) drive the exact same moves.
+  - **4 Feathery Offline-First Widgets (Replacing Heavy Mac App Launches):**
+    - `preview`: Offline PDF/image exhibit viewer (`recense-file://...`) with one-tap Markdown citation into the active Draftpad window.
+    - `quicktime`: Offline `<video>`/`<audio>` media player with playback rate (`0.5x`–`2x`), A–B loop range (`setLoopRange`), and `[@MM:SS]` timestamp citation into Draftpad.
+    - `findmy`: 100% offline-first cached device/location viewer (`setFindMyItems`) with one-tap location citation (`zero FindMy.app launch`), plus persistent signed-in web session support (`openPersistentSession('findmy')` + `WKWebsiteDataStore.default()`).
+    - `mail`: 100% offline-first cached mail digest (`setMailMessages`) with one-tap blockquote citation (`> From: ...`, `zero Mail.app launch`), plus persistent signed-in web session support (`openPersistentSession('mail')` + `WKWebsiteDataStore.default()`).
+- **24/7 Multilingual Time & Date Extractor → Automatic Apple Calendar (`src/wings.js`, `strip/editorhost.swift`, `mobile/HostApp/iOS/Draftpad.swift`):**
+  - Continuously scans Draftpad text across all `<!-- page -->` windows in English, French (`le 14 novembre 2026 à 14h30`, `demain à 9h00`), and Vietnamese (`ngày 20/11/2026 lúc 08:30`, `ngày mai lúc 15:00`), ignoring bare standalone Draftpad page-header date lines.
+  - Deduplicates events via deterministic `hashEventId` (`cal-<8hex>`), populates the live `Agenda` widget (`calendar`) with one-tap jump to the source line, and automatically adds new events to Apple Calendar via native `EventKit` (`EKEventStore`) on both Mac and iOS, persisting synced IDs in `draftpad.events.json`.
 - **Find, Outline, Legal Numbering & Deletions Record (M2–M6):**
   - Instant case-insensitive Find/Replace (`⌘F`), slide-over Outline with heading folding and view-only **Newest first**, scoped legal list continuation and renumbering (`1.` → `1.1` → `(a)` → `(i)`), and transaction-filtered deletion history (`getRemoved()`).
 
@@ -37,11 +48,14 @@ Offline-first Draftpad whiteboard and Markdown editor core built on CodeMirror 6
 - **Window Navigation:** `step(delta)`, `swipeLeftToRight()`, `swipeRightToLeft()`, `openNewWindowOnLeft()`, `deleteEmptyWindow()`, `showPage(i)`, `currentPage()`, `pageCount()`, `setPageMode(on)`, `isPageMode()`, `voiceCommand(phrase)`.
 - **Whiteboard Ink:** `getInk()`, `setInk(json)`, `mergeInk(remoteJson)`, `getInkTool()`, `setInkTool(tool)`, `getInkColor()`, `setInkColor(color)`, `toggleEraser()`, `onPencilAction('squeeze' | 'doubleTap')`.
 - **Audio & Summaries:** `setAudioTranscript(json)`, `updateAudioTime(sec)`, `bookmarkAudioCue(idx, note)`, `annotateAudioCue(idx, text)`, `summarizeSection(idx)`, `summarizeAllSections()`.
+- **Dual Wings, Feathery Widgets & Calendar Extractor:** `openWing(side)`, `closeWing(side)`, `toggleWing(side)`, `isWingOpen(side)`, `swapWings()`, `moveWidget(id, side)`, `getWingLayout()`, `setPreviewTarget(src, caption)`, `setMediaSource(src, title)`, `setPlaybackRate(rate)`, `setLoopRange(start, end)`, `setFindMyItems(items)`, `setMailMessages(msgs)`, `extractCalendarEvents(text, opts)`, `getCalendarEvents()`, `setWingsState(json)`, `getWingsState()`.
 - **Page → Native (`window.webkit.messageHandlers`):**
   - `editor`: debounced (`300 ms`) full plain markdown string for `draftpad.md`.
   - `ink`: debounced (`300 ms`) JSON string for `draftpad.ink.json`.
   - `ui`: `{ haptic: 'snap' | 'edge' | 'open' | 'squeeze' | 'shapeSnap' | 'erase' }` and `'bounce'`.
   - `audio`: `{ action: 'seek' | 'bookmark' | 'unbookmark' | 'annotate' | 'speakSummary', ... }`.
+  - `calendar`: `{ action: 'addEvents' | 'jumpToLine', events: [...] }` → native `EventKit` (`EKEventStore`) sync + `draftpad.events.json`.
+  - `wings`: `{ action: 'saveState' | 'cite' | 'openSession', ... }` → persisted to `draftpad.wings.json`.
   - `link`: URL string to open externally on `⌘`-click.
 
 ## Build & Test

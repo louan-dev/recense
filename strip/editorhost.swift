@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import AVFoundation
+import EventKit
 
 // The new editor in the pad layer (D13, D33): a WKWebView running the CodeMirror core, editor/dist/editor.html,
 // copied into the bundle by build.sh. It speaks the bridge in .handoff/editor/INBOX.md (bar 8):
@@ -81,6 +82,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: EditorWebView
     let vault: URL
     var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
+    var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
+    var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
     private(set) var text = ""
     private var loaded = false
@@ -91,6 +94,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// Where the page came from, for the log: the CodeMirror core, or the stand-in.
     private(set) var source = ""
     private let speechSynthesizer = AVSpeechSynthesizer()
+    private let eventStore = EKEventStore()
+    private var syncedEventIds = Set<String>()
 
     /// The page bounced at its first or last page (the host plays the strip's bounce).
     var onBounce: (() -> Void)?
@@ -99,12 +104,18 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     init(frame: NSRect, vault: URL, cache: URL) {
         self.vault = vault
         let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()
         files = EmbedFiles(vault: vault, cache: cache)
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
-        for name in ["editor", "link", "ui", "ink", "audio"] {
+        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
             cfg.userContentController.add(WeakHandler(self), name: name)
+        }
+        if let raw = coordinatedRead(eventsPath),
+           let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds = Set(ids)
         }
         web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground")
@@ -218,11 +229,64 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             }
             return
         }
+        if m.name == "calendar" {
+            if let d = m.body as? [String: Any],
+               (d["action"] as? String) == "addEvents",
+               let items = d["events"] as? [[String: Any]] {
+                syncEventsToAppleCalendar(items)
+            }
+            return
+        }
+        if m.name == "wings" {
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: wingsPath)
+            } else if let d = m.body as? [String: Any] {
+                if (d["action"] as? String) == "saveState",
+                   let state = d["state"],
+                   let data = try? JSONSerialization.data(withJSONObject: state),
+                   let json = String(data: data, encoding: .utf8) {
+                    coordinatedWrite(json, to: wingsPath)
+                }
+            }
+            return
+        }
         // The bridge posts the full text; a {text: …} object is accepted too.
         let s = (m.body as? String) ?? ((m.body as? [String: Any])?["text"] as? String)
         guard let s = s, s != text else { return }
         text = s
         onChange?(s)
+    }
+
+    private func syncEventsToAppleCalendar(_ items: [[String: Any]]) {
+        let iso = ISO8601DateFormatter()
+        let pending = items.filter { item in
+            guard let id = item["id"] as? String else { return false }
+            return !syncedEventIds.contains(id)
+        }
+        guard !pending.isEmpty else { return }
+        for item in pending {
+            if let id = item["id"] as? String { syncedEventIds.insert(id) }
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+           let json = String(data: data, encoding: .utf8) {
+            coordinatedWrite(json, to: eventsPath)
+        }
+        eventStore.requestFullAccessToEvents { [weak self] granted, _ in
+            guard granted, let self = self, let cal = self.eventStore.defaultCalendarForNewEvents else { return }
+            for item in pending {
+                guard let title = item["title"] as? String,
+                      let startStr = item["startISO"] as? String,
+                      let startDate = iso.date(from: startStr) else { continue }
+                let endDate = (item["endISO"] as? String).flatMap { iso.date(from: $0) } ?? startDate.addingTimeInterval(3600)
+                let ev = EKEvent(eventStore: self.eventStore)
+                ev.calendar = cal
+                ev.title = title
+                ev.startDate = startDate
+                ev.endDate = endDate
+                ev.notes = item["rawLine"] as? String
+                try? self.eventStore.save(ev, span: .thisEvent)
+            }
+        }
     }
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
@@ -232,6 +296,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         call("setText(\(jsString(text)))")
         if let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
             call("setInk(\(jsString(inkJSON)))")
+        }
+        if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
+            call("setWingsState(\(jsString(wingsJSON)))")
         }
         log("editor: new editor loaded (\(source))")
     }

@@ -70,6 +70,14 @@ import {
   speakSectionSummary
 } from './audio.js';
 import {
+  DEFAULT_WIDGETS,
+  hashEventId,
+  formatTimestamp,
+  extractCalendarEvents,
+  createCalendarScanner,
+  createDualWings
+} from './wings.js';
+import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
   buildThemeExtension,
@@ -104,7 +112,13 @@ export {
   summarizeSectionOffline,
   summarizeAllSections,
   speakSectionSummary,
-  formatDroppedEmbed
+  formatDroppedEmbed,
+  DEFAULT_WIDGETS,
+  hashEventId,
+  formatTimestamp,
+  extractCalendarEvents,
+  createCalendarScanner,
+  createDualWings
 };
 
 export const MENU_ACTIONS = [
@@ -432,6 +446,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   let inkLayer = null;
   let audioSidecar = null;
+  let dualWings = null;
+  let calendarScanner = null;
 
   const { state, compartments } = createEditorState(initialDoc, {
     theme: currentTheme,
@@ -450,6 +466,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
           setToolbarFaded(true);
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
+        if (calendarScanner && dualWings) {
+          dualWings.setCalendarEvents(calendarScanner.scanText(update.state.doc.toString()));
+        }
       }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
@@ -487,6 +506,28 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onInsertToPage: insertBlock,
     globalObj: typeof window !== 'undefined' ? window : null
   });
+
+  dualWings = createDualWings(workspace, {
+    onInsertToPage: insertBlock,
+    onJumpToLine: lineNum => {
+      if (!view) return;
+      const safeLine = Math.max(1, Math.min(view.state.doc.lines, Number(lineNum) || 1));
+      const line = view.state.doc.line(safeLine);
+      jumpToOffset(view, line.from);
+    },
+    globalObj: typeof window !== 'undefined' ? window : null
+  });
+
+  calendarScanner = createCalendarScanner({
+    onNewEvents: (_, all) => {
+      if (dualWings) dualWings.setCalendarEvents(all);
+    },
+    globalObj: typeof window !== 'undefined' ? window : null
+  });
+
+  if (initialDoc) {
+    dualWings.setCalendarEvents(calendarScanner.scanText(initialDoc));
+  }
 
   function showOutline() {
     const wasVisible = outlineVisible;
@@ -580,7 +621,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     bookmarkAudio: (idx, note = '') => {
       const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
       return audioSidecar.bookmarkCue(targetIdx, note);
-    }
+    },
+    openWing: side => (dualWings ? dualWings.openWing(side) : null),
+    closeWing: side => (dualWings ? dualWings.closeWing(side) : null),
+    swapWings: () => (dualWings ? dualWings.swapWings() : null)
   };
 
   const voiceCommand = phrase => executeVoiceMove(phrase, voiceHandlers);
@@ -673,7 +717,24 @@ export function mountEditor(root = document.body, initialDoc = '') {
         const md = formatDroppedEmbed(pathOrUri, caption);
         if (md) insertBlock(md);
         return md;
-      }
+      },
+      openWing: side => (dualWings ? dualWings.openWing(side) : null),
+      closeWing: side => (dualWings ? dualWings.closeWing(side) : null),
+      toggleWing: side => (dualWings ? dualWings.toggleWing(side) : null),
+      isWingOpen: side => (dualWings ? dualWings.isWingOpen(side) : false),
+      swapWings: () => (dualWings ? dualWings.swapWings() : null),
+      moveWidget: (id, side) => (dualWings ? dualWings.moveWidget(id, side) : null),
+      getWingLayout: () => (dualWings ? dualWings.getWingLayout() : { left: [], right: [], leftOpen: false, rightOpen: false }),
+      setPreviewTarget: (src, caption) => (dualWings ? dualWings.setPreviewTarget(src, caption) : null),
+      setMediaSource: (src, title) => (dualWings ? dualWings.setMediaSource(src, title) : null),
+      setPlaybackRate: rate => (dualWings ? dualWings.setPlaybackRate(rate) : null),
+      setLoopRange: (start, end) => (dualWings ? dualWings.setLoopRange(start, end) : null),
+      setFindMyItems: items => (dualWings ? dualWings.setFindMyItems(typeof items === 'string' ? JSON.parse(items) : items) : null),
+      setMailMessages: msgs => (dualWings ? dualWings.setMailMessages(typeof msgs === 'string' ? JSON.parse(msgs) : msgs) : null),
+      extractCalendarEvents: (text, opts) => extractCalendarEvents(typeof text === 'string' ? text : view.state.doc.toString(), opts),
+      getCalendarEvents: () => (calendarScanner ? calendarScanner.getEvents() : []),
+      setWingsState: state => (dualWings ? dualWings.setState(state) : null),
+      getWingsState: () => (dualWings ? dualWings.getState() : null)
     }
   });
 
@@ -755,6 +816,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (e.key === 'Escape') {
       if (menuOpen) closeMenu();
       if (outlineVisible) hideOutline();
+      if (dualWings && dualWings.isWingOpen()) dualWings.closeWing('both');
     }
   });
 
@@ -790,6 +852,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
     bridge: bridge.api,
     inkLayer,
     audioSidecar,
+    dualWings,
+    calendarScanner,
     setTheme,
     setFontSize,
     setNewestFirst,

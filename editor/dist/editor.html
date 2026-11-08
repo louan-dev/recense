@@ -653,6 +653,180 @@ body {
   box-shadow: inset 0 3px 0 var(--rc-cyan);
 }
 
+/* Ambidextrous Dual Notification-Center Sidebars (Wings) */
+.rc-wing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 8;
+  width: min(272px, 30vw);
+  background: var(--rc-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-wing-left {
+  left: 0;
+  border-right: 1px solid var(--rc-border);
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.36);
+  transform: translateX(0);
+}
+
+.rc-wing-right {
+  right: 0;
+  border-left: 1px solid var(--rc-border);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.36);
+  transform: translateX(0);
+}
+
+.rc-wing[hidden] {
+  display: none !important;
+}
+
+.rc-wing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--rc-border);
+  border-radius: 10px;
+  background: var(--rc-surface);
+}
+
+.rc-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.rc-widget-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rc-blue);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rc-widget-meta {
+  font-size: 11px;
+  color: var(--rc-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rc-empty-state {
+  font-size: 12px;
+  color: var(--rc-muted);
+  padding: 4px 0;
+}
+
+.rc-preview-img,
+.rc-qt-video {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.rc-preview-pdf-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.08);
+  cursor: pointer;
+}
+
+.rc-badge-text {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--rc-surface);
+  background: var(--rc-cyan);
+}
+
+.rc-preview-filename {
+  font-size: 12px;
+  color: var(--rc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-qt-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--rc-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-findmy-item,
+.rc-mail-item,
+.rc-cal-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: rgba(91, 155, 213, 0.05);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.rc-findmy-item:hover,
+.rc-mail-item:hover,
+.rc-cal-item:hover {
+  border-color: var(--rc-cyan);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.rc-item-name,
+.rc-mail-subject,
+.rc-cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rc-text);
+}
+
+.rc-item-location,
+.rc-mail-snippet,
+.rc-cal-time {
+  font-size: 12px;
+  color: var(--rc-muted);
+}
+
+.rc-item-meta,
+.rc-mail-header,
+.rc-cal-loc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--rc-blue);
+}
+
 /* Calm, slow-visual-processing transitions */
 .rc-shell {
   transition: box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -30328,6 +30502,36 @@ ${PAGE_MARKER}
       }
       return { matched: true, action: "setInkTool", tool: "eraser" };
     }
+    if (hasPhrase("left wing") || hasPhrase("left sidebar") || hasPhrase("c\xE1nh tr\xE1i") || hasPhrase("volet gauche")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("left");
+      }
+      return { matched: true, action: "openWing", side: "left" };
+    }
+    if (hasPhrase("right wing") || hasPhrase("right sidebar") || hasPhrase("c\xE1nh ph\u1EA3i") || hasPhrase("volet droit")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("right");
+      }
+      return { matched: true, action: "openWing", side: "right" };
+    }
+    if (hasPhrase("both wings") || hasPhrase("dual sidebar") || hasPhrase("dual wings") || hasPhrase("hai b\xEAn") || hasPhrase("hai c\xE1nh") || hasPhrase("deux volets")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("both");
+      }
+      return { matched: true, action: "openWing", side: "both" };
+    }
+    if (hasPhrase("close wings") || hasPhrase("close sidebars") || hasPhrase("\u0111\xF3ng c\xE1nh") || hasPhrase("fermer les volets")) {
+      if (typeof handlers2.closeWing === "function") {
+        handlers2.closeWing("both");
+      }
+      return { matched: true, action: "closeWing", side: "both" };
+    }
+    if (hasPhrase("swap wings") || hasPhrase("flip sides") || hasPhrase("mirror wings") || hasPhrase("\u0111\u1ED5i b\xEAn") || hasWord("inverser")) {
+      if (typeof handlers2.swapWings === "function") {
+        handlers2.swapWings();
+      }
+      return { matched: true, action: "swapWings" };
+    }
     const rightToLeftKeywords = [
       "swipe left",
       "next topic",
@@ -32696,6 +32900,1095 @@ ${clean(nextLineText)}`;
     };
   }
 
+  // src/wings.js
+  var PAGE_MARKER2 = "<!-- page -->";
+  var DEFAULT_WIDGETS = [
+    "preview",
+    "quicktime",
+    "findmy",
+    "mail",
+    "calendar"
+  ];
+  var EN_MONTHS = {
+    january: 0,
+    jan: 0,
+    february: 1,
+    feb: 1,
+    march: 2,
+    mar: 2,
+    april: 3,
+    apr: 3,
+    may: 4,
+    june: 5,
+    jun: 5,
+    july: 6,
+    jul: 6,
+    august: 7,
+    aug: 7,
+    september: 8,
+    sep: 8,
+    sept: 8,
+    october: 9,
+    oct: 9,
+    november: 10,
+    nov: 10,
+    december: 11,
+    dec: 11
+  };
+  var FR_MONTHS = {
+    janvier: 0,
+    "f\xE9vrier": 1,
+    fevrier: 1,
+    mars: 2,
+    avril: 3,
+    mai: 4,
+    juin: 5,
+    juillet: 6,
+    "ao\xFBt": 7,
+    aout: 7,
+    septembre: 8,
+    octobre: 9,
+    novembre: 10,
+    "d\xE9cembre": 11,
+    decembre: 11
+  };
+  function hashEventId(title, startISO) {
+    const str = `${title ?? ""}${startISO ?? ""}`;
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return "cal-" + (h >>> 0).toString(16).padStart(8, "0");
+  }
+  function formatTimestamp2(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const totalSecs = Math.floor(s);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor(totalSecs % 3600 / 60);
+    const secs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function normalizeHours(h, ampm) {
+    let hour = Number(h);
+    if (ampm) {
+      const p = ampm.toLowerCase();
+      if (p === "pm" && hour < 12) hour += 12;
+      if (p === "am" && hour === 12) hour = 0;
+    }
+    return hour;
+  }
+  function parseTimeStr(str) {
+    if (!str) return null;
+    const m = str.trim().match(/^(\d{1,2})(?:[:h](\d{2}))?\s*(am|pm|AM|PM)?$/i);
+    if (!m) return null;
+    return {
+      hour: normalizeHours(m[1], m[3]),
+      minute: m[2] ? Number(m[2]) : 0
+    };
+  }
+  function cleanTitle(str) {
+    let s = String(str ?? "").trim();
+    s = s.replace(/^[-*+]\s+(\[[ xX]\]\s+)?/, "");
+    s = s.replace(/^\d+[.)]\s+/, "");
+    s = s.replace(/^[:\-–—,\s]+/, "").replace(/[:\-–—,\s]+$/, "");
+    return s.trim();
+  }
+  function extractCalendarEvents(docText, { referenceDate = /* @__PURE__ */ new Date() } = {}) {
+    if (typeof docText !== "string" || docText.trim().length === 0) {
+      return [];
+    }
+    const ref = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+    const refYear = !Number.isNaN(ref.getTime()) ? ref.getUTCFullYear() : (/* @__PURE__ */ new Date()).getUTCFullYear();
+    const refMonth = !Number.isNaN(ref.getTime()) ? ref.getUTCMonth() : (/* @__PURE__ */ new Date()).getUTCMonth();
+    const refDay = !Number.isNaN(ref.getTime()) ? ref.getUTCDate() : (/* @__PURE__ */ new Date()).getUTCDate();
+    const lines = docText.split(/\r?\n/);
+    const events = [];
+    let pageIndex = 0;
+    const reRelEn = /\b(today|tomorrow)\b(?:\s+(?:at\s+)?(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reRelFr = /\b(demain|aujourd\x27hui)\b(?:\s*(?:à\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|à)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reRelVi = /\b(ngày\s+mai|hôm\s+nay)\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reIso = /\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b(?:\s*(?:at|à|lúc|T|\s)\s*(\d{1,2}(?:[:h]\d{2})?(?::\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to|à|đến)\s*(\d{1,2}(?:[:h]\d{2})?(?::\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reViA = /\b(?:ngày\s+)?(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reViB = /\b(?:ngày\s+)?(\d{1,2})\s+tháng\s+(\d{1,2})(?:\s+năm\s+(\d{4}))?\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reFr = /\b(?:le\s+)?(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche),?\s+)?(\d{1,2})\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+(\d{4}))?\b(?:\s*(?:à\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|à)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reEn = /\b(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun),?\s+)?(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b(?:\s*(?:at\s*|\s+)(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reEnDayFirst = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{4})\b(?:\s*(?:at\s*|\s+)(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const rawLine = lines[lineIdx];
+      const lineNumber = lineIdx + 1;
+      if (rawLine.includes(PAGE_MARKER2)) {
+        pageIndex++;
+        continue;
+      }
+      const trimmed = rawLine.trim();
+      if (trimmed.length === 0) continue;
+      let parsed = null;
+      let m;
+      if (m = reRelEn.exec(rawLine)) {
+        const isTomorrow = m[1].toLowerCase() === "tomorrow";
+        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isTomorrow ? 1 : 0)));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reRelFr.exec(rawLine)) {
+        const isDemain = m[1].toLowerCase() === "demain";
+        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isDemain ? 1 : 0)));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reRelVi.exec(rawLine)) {
+        const isMai = m[1].toLowerCase().includes("mai");
+        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isMai ? 1 : 0)));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reIso.exec(rawLine)) {
+        const y = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const day = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reViA.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const y = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reViB.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reFr.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = FR_MONTHS[m[2].toLowerCase()];
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reEn.exec(rawLine)) {
+        const mon = EN_MONTHS[m[1].toLowerCase()];
+        const day = Number(m[2]);
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reEnDayFirst.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = EN_MONTHS[m[2].toLowerCase()];
+        const y = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      }
+      if (!parsed) continue;
+      const before = rawLine.slice(0, parsed.matchIdx);
+      const after = rawLine.slice(parsed.matchIdx + parsed.matchText.length);
+      const remainder = cleanTitle(before + " " + after);
+      const hasTime = parsed.time !== null;
+      const hasDesc = remainder.length > 0;
+      if (!hasTime && !hasDesc) {
+        continue;
+      }
+      const title = hasDesc ? remainder : cleanTitle(parsed.matchText);
+      const hour = parsed.time ? parsed.time.hour : 9;
+      const min = parsed.time ? parsed.time.minute : 0;
+      const startDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, hour, min, 0));
+      const startISO = startDate.toISOString();
+      let endDate;
+      if (parsed.endTime) {
+        endDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0));
+      } else {
+        endDate = new Date(startDate.getTime() + 60 * 60 * 1e3);
+      }
+      const endISO = endDate.toISOString();
+      const id2 = hashEventId(title, startISO);
+      events.push({
+        id: id2,
+        title,
+        startISO,
+        endISO,
+        lineNumber,
+        pageIndex,
+        rawLine
+      });
+    }
+    return events;
+  }
+  function createCalendarScanner(options = {}) {
+    const syncedIds = new Set(options.syncedIds || []);
+    let latestEvents = [];
+    const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
+    function scanText(docText, scanOpts = {}) {
+      const refDate = scanOpts.referenceDate || options.referenceDate || /* @__PURE__ */ new Date();
+      latestEvents = extractCalendarEvents(docText, { referenceDate: refDate });
+      const newEvents = latestEvents.filter((ev) => !syncedIds.has(ev.id));
+      if (newEvents.length > 0) {
+        for (const ev of newEvents) {
+          syncedIds.add(ev.id);
+        }
+        if (typeof options.onNewEvents === "function") {
+          options.onNewEvents(newEvents, latestEvents);
+        }
+        if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+          globalObj.webkit.messageHandlers.calendar.postMessage({
+            action: "addEvents",
+            events: newEvents
+          });
+        }
+      }
+      return latestEvents;
+    }
+    function getEvents() {
+      return latestEvents.slice();
+    }
+    function getSyncedIds() {
+      return new Set(syncedIds);
+    }
+    function markSynced(ids) {
+      if (Array.isArray(ids) || ids instanceof Set) {
+        for (const id2 of ids) {
+          syncedIds.add(id2);
+        }
+      } else if (typeof ids === "string") {
+        syncedIds.add(ids);
+      }
+    }
+    return {
+      scanText,
+      getEvents,
+      getSyncedIds,
+      markSynced
+    };
+  }
+  function createMockElement2(tag) {
+    const listeners = {};
+    const attributes = {};
+    const classListSet = /* @__PURE__ */ new Set();
+    const children = [];
+    const el2 = {
+      tagName: tag.toUpperCase(),
+      nodeName: tag.toUpperCase(),
+      hidden: false,
+      value: "",
+      textContent: "",
+      children,
+      childNodes: children,
+      firstChild: null,
+      parentElement: null,
+      parentNode: null,
+      dataset: {},
+      style: {},
+      classList: {
+        add(...classes) {
+          for (const c of classes) if (c) classListSet.add(c);
+        },
+        remove(...classes) {
+          for (const c of classes) classListSet.delete(c);
+        },
+        contains(c) {
+          return classListSet.has(c);
+        },
+        toggle(c, force) {
+          if (force === true) classListSet.add(c);
+          else if (force === false) classListSet.delete(c);
+          else if (classListSet.has(c)) classListSet.delete(c);
+          else classListSet.add(c);
+          return classListSet.has(c);
+        }
+      },
+      setAttribute(k, v) {
+        attributes[k] = String(v);
+        if (k === "hidden") el2.hidden = true;
+        if (k.startsWith("data-")) {
+          const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
+          el2.dataset[dKey] = String(v);
+        }
+        if (k === "class") {
+          classListSet.clear();
+          String(v).split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      },
+      getAttribute(k) {
+        return attributes[k] ?? null;
+      },
+      removeAttribute(k) {
+        delete attributes[k];
+        if (k === "hidden") el2.hidden = false;
+        if (k.startsWith("data-")) {
+          const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
+          delete el2.dataset[dKey];
+        }
+      },
+      hasAttribute(k) {
+        return k in attributes;
+      },
+      appendChild(child) {
+        if (child) {
+          children.push(child);
+          child.parentElement = el2;
+          child.parentNode = el2;
+          el2.firstChild = children[0] || null;
+        }
+        return child;
+      },
+      removeChild(child) {
+        const idx = children.indexOf(child);
+        if (idx !== -1) {
+          children.splice(idx, 1);
+          child.parentElement = null;
+          child.parentNode = null;
+          el2.firstChild = children[0] || null;
+        }
+        return child;
+      },
+      replaceChildren(...newChildren) {
+        while (children.length > 0) {
+          el2.removeChild(children[0]);
+        }
+        for (const c of newChildren) {
+          el2.appendChild(c);
+        }
+      },
+      addEventListener(type, fn) {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatchEvent(event) {
+        const type = event?.type || "click";
+        const fns = [...listeners[type] || []];
+        for (const fn of fns) {
+          fn(event);
+        }
+      },
+      querySelector(sel) {
+        return el2.querySelectorAll(sel)[0] || null;
+      },
+      querySelectorAll(sel) {
+        const matches = [];
+        function walk(node) {
+          for (const child of node.children || []) {
+            if (matchesSel(child, sel)) {
+              matches.push(child);
+            }
+            walk(child);
+          }
+        }
+        walk(el2);
+        return matches;
+      }
+    };
+    function matchesSel(target, sel) {
+      if (!target || !sel) return false;
+      if (sel.startsWith(".")) {
+        return target.classList?.contains(sel.slice(1));
+      }
+      if (sel.startsWith("[") && sel.endsWith("]")) {
+        const inner = sel.slice(1, -1);
+        const [k, v] = inner.split("=");
+        if (!v) return target.hasAttribute?.(k);
+        const cleanV = v.replace(/^["']|["']$/g, "");
+        return target.getAttribute?.(k) === cleanV;
+      }
+      return target.tagName === sel.toUpperCase();
+    }
+    Object.defineProperty(el2, "className", {
+      get() {
+        return Array.from(classListSet).join(" ");
+      },
+      set(v) {
+        classListSet.clear();
+        if (typeof v === "string") {
+          v.split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      }
+    });
+    return el2;
+  }
+  function makeDomElement2(doc2, tag, props = {}, attrs = {}) {
+    let el2;
+    if (doc2 && typeof doc2.createElement === "function") {
+      el2 = doc2.createElement(tag);
+    } else {
+      el2 = createMockElement2(tag);
+    }
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "style" && typeof v === "object") {
+        if (el2.style) Object.assign(el2.style, v);
+      } else {
+        el2[k] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== void 0 && v !== null) {
+        if (typeof el2.setAttribute === "function") {
+          el2.setAttribute(k, String(v));
+        } else {
+          el2[k] = String(v);
+        }
+      }
+    }
+    return el2;
+  }
+  function createDualWings(container, options = {}) {
+    const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
+    const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
+    let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["preview", "quicktime"];
+    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["calendar", "findmy", "mail"];
+    const leftEl = makeDomElement2(doc2, "aside", {}, {
+      class: "rc-wing rc-wing-left",
+      "data-side": "left"
+    });
+    leftEl.hidden = true;
+    const rightEl = makeDomElement2(doc2, "aside", {}, {
+      class: "rc-wing rc-wing-right",
+      "data-side": "right"
+    });
+    rightEl.hidden = true;
+    if (container?.appendChild) {
+      container.appendChild(leftEl);
+      container.appendChild(rightEl);
+    }
+    function postHaptic2(kind) {
+      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: kind });
+      }
+    }
+    const widgetElements = {};
+    let previewData = { src: "", caption: "" };
+    const previewCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-preview",
+      "data-widget": "preview",
+      role: "region"
+    });
+    widgetElements.preview = previewCard;
+    function updatePreviewCard() {
+      while (previewCard.firstChild) {
+        previewCard.removeChild(previewCard.firstChild);
+      }
+      previewCard.setAttribute("data-src", previewData.src || "");
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: previewData.caption || "Exhibit Preview" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      previewCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-preview-body", "data-src": previewData.src || "" });
+      if (previewData.src) {
+        if (previewData.src.endsWith(".pdf")) {
+          const badgeDiv = makeDomElement2(doc2, "div", {}, { class: "rc-preview-pdf-badge" });
+          const badge = makeDomElement2(doc2, "span", { textContent: "PDF" }, { class: "rc-badge-text" });
+          const filename = makeDomElement2(doc2, "span", { textContent: previewData.caption || previewData.src }, { class: "rc-preview-filename" });
+          badgeDiv.appendChild(badge);
+          badgeDiv.appendChild(filename);
+          body.appendChild(badgeDiv);
+        } else {
+          const img = makeDomElement2(doc2, "img", {}, {
+            class: "rc-preview-img",
+            src: previewData.src,
+            alt: previewData.caption || "Exhibit"
+          });
+          body.appendChild(img);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Exhibit Selected" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      body.addEventListener("click", () => {
+        if (!previewData.src) return;
+        const snippet2 = previewData.src.endsWith(".pdf") ? `[${previewData.caption || "Exhibit"}](${previewData.src})
+` : `![${previewData.caption || "Exhibit"}](${previewData.src})
+`;
+        if (typeof options.onInsertToPage === "function") {
+          options.onInsertToPage(snippet2);
+        }
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({
+            action: "cite",
+            type: "preview",
+            src: previewData.src,
+            caption: previewData.caption
+          });
+        }
+      });
+      previewCard.appendChild(body);
+    }
+    updatePreviewCard();
+    function setPreviewTarget(pathOrUrl, caption = "") {
+      previewData = { src: String(pathOrUrl || ""), caption: String(caption || "") };
+      updatePreviewCard();
+    }
+    let qtData = { src: "", title: "", playbackRate: 1, loopRange: [0, 0], currentTime: 0 };
+    const qtCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-quicktime",
+      "data-widget": "quicktime",
+      role: "region"
+    });
+    widgetElements.quicktime = qtCard;
+    function updateQuickTimeCard() {
+      while (qtCard.firstChild) {
+        qtCard.removeChild(qtCard.firstChild);
+      }
+      qtCard.setAttribute("data-src", qtData.src || "");
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: qtData.title || "QuickTime Media" }, { class: "rc-widget-title" });
+      const metaSpan = makeDomElement2(doc2, "span", { textContent: `${qtData.playbackRate}x` }, { class: "rc-widget-meta" });
+      header.appendChild(titleSpan);
+      header.appendChild(metaSpan);
+      qtCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-qt-body", "data-src": qtData.src || "" });
+      if (qtData.src) {
+        const video = makeDomElement2(doc2, "video", { playbackRate: qtData.playbackRate }, {
+          class: "rc-qt-video",
+          src: qtData.src,
+          playsinline: "true"
+        });
+        video.addEventListener("timeupdate", () => {
+          qtData.currentTime = video.currentTime || 0;
+          if (qtData.loopRange[1] > qtData.loopRange[0] && qtData.currentTime >= qtData.loopRange[1]) {
+            video.currentTime = qtData.loopRange[0];
+            qtData.currentTime = qtData.loopRange[0];
+          }
+        });
+        const controls = makeDomElement2(doc2, "div", {}, { class: "rc-qt-controls" });
+        const tsSpan = makeDomElement2(doc2, "span", { textContent: `[@${formatTimestamp2(qtData.currentTime)}]` }, { class: "rc-qt-timestamp" });
+        controls.appendChild(tsSpan);
+        body.appendChild(video);
+        body.appendChild(controls);
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Media Loaded" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      body.addEventListener("click", () => {
+        if (!qtData.src) return;
+        const ts = formatTimestamp2(qtData.currentTime);
+        const snippet2 = `[@${ts}] ${qtData.title || "Media reference"}
+`;
+        if (typeof options.onInsertToPage === "function") {
+          options.onInsertToPage(snippet2);
+        }
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({
+            action: "cite",
+            type: "quicktime",
+            src: qtData.src,
+            time: qtData.currentTime,
+            title: qtData.title
+          });
+        }
+      });
+      qtCard.appendChild(body);
+    }
+    updateQuickTimeCard();
+    function setMediaSource(pathOrUrl, title = "") {
+      qtData.src = String(pathOrUrl || "");
+      qtData.title = String(title || "");
+      updateQuickTimeCard();
+    }
+    function setPlaybackRate(rate) {
+      qtData.playbackRate = Number(rate) || 1;
+      const vid = qtCard.querySelector?.("video");
+      if (vid) vid.playbackRate = qtData.playbackRate;
+      updateQuickTimeCard();
+    }
+    function setLoopRange(startSec, endSec) {
+      qtData.loopRange = [Math.max(0, Number(startSec) || 0), Math.max(0, Number(endSec) || 0)];
+    }
+    let findMyItems = [];
+    const findMyCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-findmy",
+      "data-widget": "findmy",
+      role: "region"
+    });
+    widgetElements.findmy = findMyCard;
+    function updateFindMyCard() {
+      while (findMyCard.firstChild) {
+        findMyCard.removeChild(findMyCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Find My" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      findMyCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-findmy-list" });
+      if (findMyItems.length > 0) {
+        for (const item of findMyItems) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: "rc-findmy-item",
+            "data-id": item.id,
+            role: "button",
+            tabindex: "0"
+          });
+          const nameEl = makeDomElement2(doc2, "div", { textContent: item.name }, { class: "rc-item-name" });
+          const locEl = makeDomElement2(doc2, "div", { textContent: item.location }, { class: "rc-item-location" });
+          const metaEl = makeDomElement2(doc2, "div", {}, { class: "rc-item-meta" });
+          const batSpan = makeDomElement2(doc2, "span", { textContent: item.battery ?? "" }, { class: "rc-item-battery" });
+          const statusSpan = makeDomElement2(doc2, "span", { textContent: item.status ?? "" }, { class: "rc-item-status" });
+          const timeSpan = makeDomElement2(doc2, "span", { textContent: item.updatedAt ?? "" }, { class: "rc-item-time" });
+          metaEl.appendChild(batSpan);
+          metaEl.appendChild(statusSpan);
+          metaEl.appendChild(timeSpan);
+          itemRow.appendChild(nameEl);
+          itemRow.appendChild(locEl);
+          itemRow.appendChild(metaEl);
+          itemRow.addEventListener("click", () => {
+            const snippet2 = `${item.name}: ${item.location} (as of ${item.updatedAt})
+`;
+            if (typeof options.onInsertToPage === "function") {
+              options.onInsertToPage(snippet2);
+            }
+            if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+              globalObj.webkit.messageHandlers.wings.postMessage({
+                action: "cite",
+                type: "findmy",
+                item
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Find My Devices Cached" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      findMyCard.appendChild(body);
+    }
+    updateFindMyCard();
+    function setFindMyItems(items) {
+      findMyItems = Array.isArray(items) ? [...items] : [];
+      updateFindMyCard();
+    }
+    let mailMessages = [];
+    const mailCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-mail",
+      "data-widget": "mail",
+      role: "region"
+    });
+    widgetElements.mail = mailCard;
+    function updateMailCard() {
+      while (mailCard.firstChild) {
+        mailCard.removeChild(mailCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Mail Digest" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      mailCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-mail-list" });
+      if (mailMessages.length > 0) {
+        for (const msg of mailMessages) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: `rc-mail-item ${msg.unread ? "unread" : ""}`.trim(),
+            "data-id": msg.id,
+            role: "button",
+            tabindex: "0"
+          });
+          const mHeader = makeDomElement2(doc2, "div", {}, { class: "rc-mail-header" });
+          const fromSpan = makeDomElement2(doc2, "span", { textContent: msg.from }, { class: "rc-mail-from" });
+          const dateSpan = makeDomElement2(doc2, "span", { textContent: msg.date }, { class: "rc-mail-date" });
+          mHeader.appendChild(fromSpan);
+          mHeader.appendChild(dateSpan);
+          const subEl = makeDomElement2(doc2, "div", { textContent: msg.subject }, { class: "rc-mail-subject" });
+          const snipEl = makeDomElement2(doc2, "div", { textContent: msg.snippet }, { class: "rc-mail-snippet" });
+          itemRow.appendChild(mHeader);
+          itemRow.appendChild(subEl);
+          itemRow.appendChild(snipEl);
+          itemRow.addEventListener("click", () => {
+            const snippet2 = `> From: ${msg.from}
+> Subject: ${msg.subject}
+> ${msg.snippet}
+
+`;
+            if (typeof options.onInsertToPage === "function") {
+              options.onInsertToPage(snippet2);
+            }
+            if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+              globalObj.webkit.messageHandlers.wings.postMessage({
+                action: "cite",
+                type: "mail",
+                message: msg
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Mail Messages Cached" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      mailCard.appendChild(body);
+    }
+    updateMailCard();
+    function setMailMessages(messages) {
+      mailMessages = Array.isArray(messages) ? [...messages] : [];
+      updateMailCard();
+    }
+    let calendarEvents = [];
+    const calendarCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-calendar",
+      "data-widget": "calendar",
+      role: "region"
+    });
+    widgetElements.calendar = calendarCard;
+    function updateCalendarCard() {
+      while (calendarCard.firstChild) {
+        calendarCard.removeChild(calendarCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Agenda" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      calendarCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-calendar-list" });
+      if (calendarEvents.length > 0) {
+        for (const ev of calendarEvents) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: "rc-cal-item",
+            "data-id": ev.id,
+            "data-line": ev.lineNumber,
+            role: "button",
+            tabindex: "0"
+          });
+          const titleEl = makeDomElement2(doc2, "div", { textContent: ev.title }, { class: "rc-cal-title" });
+          const timeEl = makeDomElement2(doc2, "div", { textContent: ev.startISO.slice(0, 16).replace("T", " ") }, { class: "rc-cal-time" });
+          const locEl = makeDomElement2(doc2, "div", { textContent: `Line ${ev.lineNumber} (Page ${ev.pageIndex + 1})` }, { class: "rc-cal-loc" });
+          itemRow.appendChild(titleEl);
+          itemRow.appendChild(timeEl);
+          itemRow.appendChild(locEl);
+          itemRow.addEventListener("click", () => {
+            if (typeof options.onJumpToLine === "function") {
+              options.onJumpToLine(ev.lineNumber);
+            }
+            if (typeof options.onSelectEvent === "function") {
+              options.onSelectEvent(ev);
+            }
+            if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+              globalObj.webkit.messageHandlers.calendar.postMessage({
+                action: "jumpToLine",
+                lineNumber: ev.lineNumber,
+                event: ev
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Upcoming Agenda" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      calendarCard.appendChild(body);
+    }
+    updateCalendarCard();
+    function setCalendarEvents(events) {
+      calendarEvents = Array.isArray(events) ? [...events] : [];
+      updateCalendarCard();
+    }
+    function openPersistentSession(service) {
+      let url = "";
+      if (service === "findmy") {
+        url = "https://www.icloud.com/find";
+      } else if (service === "mail") {
+        url = "https://www.icloud.com/mail";
+      } else {
+        url = `https://www.icloud.com/${service}`;
+      }
+      if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+        globalObj.webkit.messageHandlers.wings.postMessage({
+          action: "openSession",
+          service,
+          url
+        });
+      }
+    }
+    function renderWidgets() {
+      while (leftEl.firstChild) {
+        leftEl.removeChild(leftEl.firstChild);
+      }
+      for (const wId of leftWidgets) {
+        const card = widgetElements[wId];
+        if (card && leftEl.appendChild) {
+          leftEl.appendChild(card);
+        }
+      }
+      while (rightEl.firstChild) {
+        rightEl.removeChild(rightEl.firstChild);
+      }
+      for (const wId of rightWidgets) {
+        const card = widgetElements[wId];
+        if (card && rightEl.appendChild) {
+          rightEl.appendChild(card);
+        }
+      }
+    }
+    renderWidgets();
+    function openWing(side) {
+      if (side === "left" || side === "both") {
+        leftEl.hidden = false;
+      }
+      if (side === "right" || side === "both") {
+        rightEl.hidden = false;
+      }
+      postHaptic2("open");
+    }
+    function closeWing(side) {
+      if (side === "left" || side === "both") {
+        leftEl.hidden = true;
+      }
+      if (side === "right" || side === "both") {
+        rightEl.hidden = true;
+      }
+    }
+    function toggleWing(side) {
+      if (side === "left") {
+        if (leftEl.hidden) openWing("left");
+        else closeWing("left");
+      } else if (side === "right") {
+        if (rightEl.hidden) openWing("right");
+        else closeWing("right");
+      } else if (side === "both") {
+        if (leftEl.hidden || rightEl.hidden) openWing("both");
+        else closeWing("both");
+      }
+    }
+    function isWingOpen(side) {
+      if (side === "left") return !leftEl.hidden;
+      if (side === "right") return !rightEl.hidden;
+      if (side === "both") return !leftEl.hidden && !rightEl.hidden;
+      return !leftEl.hidden || !rightEl.hidden;
+    }
+    function getState() {
+      return {
+        version: 1,
+        leftWidgets: [...leftWidgets],
+        rightWidgets: [...rightWidgets],
+        previewData: { ...previewData },
+        qtData: { ...qtData, loopRange: [...qtData.loopRange] },
+        findMyItems: [...findMyItems],
+        mailMessages: [...mailMessages]
+      };
+    }
+    function persistWingsState() {
+      if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+        globalObj.webkit.messageHandlers.wings.postMessage({
+          action: "saveState",
+          state: JSON.stringify(getState())
+        });
+      }
+    }
+    function setState(raw) {
+      if (!raw) return;
+      let parsed = raw;
+      if (typeof raw === "string") {
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return;
+        }
+      }
+      if (!parsed || typeof parsed !== "object") return;
+      if (Array.isArray(parsed.leftWidgets)) leftWidgets = [...parsed.leftWidgets];
+      if (Array.isArray(parsed.rightWidgets)) rightWidgets = [...parsed.rightWidgets];
+      if (parsed.previewData && typeof parsed.previewData === "object") {
+        previewData = {
+          src: String(parsed.previewData.src || ""),
+          caption: String(parsed.previewData.caption || "")
+        };
+        updatePreviewCard();
+      }
+      if (parsed.qtData && typeof parsed.qtData === "object") {
+        qtData = {
+          src: String(parsed.qtData.src || ""),
+          title: String(parsed.qtData.title || ""),
+          playbackRate: Number(parsed.qtData.playbackRate) || 1,
+          loopRange: Array.isArray(parsed.qtData.loopRange) ? [...parsed.qtData.loopRange] : [0, 0],
+          currentTime: Number(parsed.qtData.currentTime) || 0
+        };
+        updateQuickTimeCard();
+      }
+      if (Array.isArray(parsed.findMyItems)) {
+        findMyItems = [...parsed.findMyItems];
+        updateFindMyCard();
+      }
+      if (Array.isArray(parsed.mailMessages)) {
+        mailMessages = [...parsed.mailMessages];
+        updateMailCard();
+      }
+      renderWidgets();
+    }
+    function swapWings() {
+      const temp = leftWidgets;
+      leftWidgets = rightWidgets;
+      rightWidgets = temp;
+      renderWidgets();
+      postHaptic2("snap");
+      persistWingsState();
+    }
+    function moveWidget(widgetId, targetSide) {
+      if (targetSide === "left") {
+        if (!leftWidgets.includes(widgetId)) {
+          rightWidgets = rightWidgets.filter((w) => w !== widgetId);
+          leftWidgets.push(widgetId);
+          renderWidgets();
+          postHaptic2("snap");
+          persistWingsState();
+        }
+      } else if (targetSide === "right") {
+        if (!rightWidgets.includes(widgetId)) {
+          leftWidgets = leftWidgets.filter((w) => w !== widgetId);
+          rightWidgets.push(widgetId);
+          renderWidgets();
+          postHaptic2("snap");
+          persistWingsState();
+        }
+      }
+    }
+    function getWingLayout() {
+      return {
+        left: [...leftWidgets],
+        right: [...rightWidgets],
+        leftOpen: !leftEl.hidden,
+        rightOpen: !rightEl.hidden
+      };
+    }
+    const EDGE_THRESHOLD = options.edgeThreshold ?? 24;
+    const SWIPE_THRESHOLD = options.swipeThreshold ?? 36;
+    const activeTouches = /* @__PURE__ */ new Map();
+    let gestureHandled = false;
+    function getContainerWidth() {
+      return container?.clientWidth || (typeof container?.getBoundingClientRect === "function" ? container.getBoundingClientRect().width : 800) || 800;
+    }
+    function handleTouchStart(e) {
+      gestureHandled = false;
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        activeTouches.set(id2, {
+          startX: t2.clientX,
+          startY: t2.clientY,
+          currentX: t2.clientX,
+          currentY: t2.clientY
+        });
+      }
+    }
+    function handleTouchMove(e) {
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        const record = activeTouches.get(id2);
+        if (record) {
+          record.currentX = t2.clientX;
+          record.currentY = t2.clientY;
+        }
+      }
+      if (gestureHandled) return;
+      const width = getContainerWidth();
+      if (activeTouches.size >= 2) {
+        const records = Array.from(activeTouches.values());
+        const leftTouch = records.find((r) => r.startX <= EDGE_THRESHOLD && r.currentX - r.startX >= SWIPE_THRESHOLD);
+        const rightTouch = records.find((r) => r.startX >= width - EDGE_THRESHOLD && r.currentX - r.startX <= -SWIPE_THRESHOLD);
+        if (leftTouch && rightTouch) {
+          openWing("both");
+          gestureHandled = true;
+          return;
+        }
+      }
+      for (const record of activeTouches.values()) {
+        const dx = record.currentX - record.startX;
+        if (record.startX <= EDGE_THRESHOLD && dx >= SWIPE_THRESHOLD) {
+          openWing("left");
+          gestureHandled = true;
+          return;
+        }
+        if (record.startX >= width - EDGE_THRESHOLD && dx <= -SWIPE_THRESHOLD) {
+          openWing("right");
+          gestureHandled = true;
+          return;
+        }
+        if (!leftEl.hidden && dx <= -SWIPE_THRESHOLD) {
+          closeWing("left");
+          gestureHandled = true;
+          return;
+        }
+        if (!rightEl.hidden && dx >= SWIPE_THRESHOLD) {
+          closeWing("right");
+          gestureHandled = true;
+          return;
+        }
+      }
+    }
+    function handleTouchEnd(e) {
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        activeTouches.delete(id2);
+      }
+      if (activeTouches.size === 0) {
+        gestureHandled = false;
+      }
+    }
+    if (container?.addEventListener) {
+      container.addEventListener("touchstart", handleTouchStart);
+      container.addEventListener("touchmove", handleTouchMove);
+      container.addEventListener("touchend", handleTouchEnd);
+      container.addEventListener("touchcancel", handleTouchEnd);
+      container.addEventListener("pointerdown", handleTouchStart);
+      container.addEventListener("pointermove", handleTouchMove);
+      container.addEventListener("pointerup", handleTouchEnd);
+      container.addEventListener("pointercancel", handleTouchEnd);
+    }
+    function destroy() {
+      if (container?.removeEventListener) {
+        container.removeEventListener("touchstart", handleTouchStart);
+        container.removeEventListener("touchmove", handleTouchMove);
+        container.removeEventListener("touchend", handleTouchEnd);
+        container.removeEventListener("touchcancel", handleTouchEnd);
+        container.removeEventListener("pointerdown", handleTouchStart);
+        container.removeEventListener("pointermove", handleTouchMove);
+        container.removeEventListener("pointerup", handleTouchEnd);
+        container.removeEventListener("pointercancel", handleTouchEnd);
+      }
+      if (leftEl.parentNode?.removeChild) leftEl.parentNode.removeChild(leftEl);
+      if (rightEl.parentNode?.removeChild) rightEl.parentNode.removeChild(rightEl);
+    }
+    return {
+      openWing,
+      closeWing,
+      toggleWing,
+      isWingOpen,
+      swapWings,
+      moveWidget,
+      getWingLayout,
+      setPreviewTarget,
+      setMediaSource,
+      setPlaybackRate,
+      setLoopRange,
+      setFindMyItems,
+      setMailMessages,
+      setCalendarEvents,
+      openPersistentSession,
+      getState,
+      setState,
+      destroy,
+      leftEl,
+      rightEl,
+      container
+    };
+  }
+
   // src/theme.js
   var DEFAULT_FONT_SIZE = 18;
   var COLUMN_CHARS = 66;
@@ -33104,6 +34397,8 @@ ${clean(nextLineText)}`;
     }
     let inkLayer = null;
     let audioSidecar = null;
+    let dualWings = null;
+    let calendarScanner = null;
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
@@ -33121,6 +34416,9 @@ ${clean(nextLineText)}`;
             setToolbarFaded(true);
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
+          if (calendarScanner && dualWings) {
+            dualWings.setCalendarEvents(calendarScanner.scanText(update.state.doc.toString()));
+          }
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
@@ -33153,6 +34451,25 @@ ${String(text ?? "")}`;
       onInsertToPage: insertBlock,
       globalObj: typeof window !== "undefined" ? window : null
     });
+    dualWings = createDualWings(workspace, {
+      onInsertToPage: insertBlock,
+      onJumpToLine: (lineNum) => {
+        if (!view) return;
+        const safeLine = Math.max(1, Math.min(view.state.doc.lines, Number(lineNum) || 1));
+        const line = view.state.doc.line(safeLine);
+        jumpToOffset(view, line.from);
+      },
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    calendarScanner = createCalendarScanner({
+      onNewEvents: (_, all) => {
+        if (dualWings) dualWings.setCalendarEvents(all);
+      },
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    if (initialDoc) {
+      dualWings.setCalendarEvents(calendarScanner.scanText(initialDoc));
+    }
     function showOutline() {
       const wasVisible = outlineVisible;
       outlineVisible = true;
@@ -33236,7 +34553,10 @@ ${String(text ?? "")}`;
       bookmarkAudio: (idx, note = "") => {
         const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
         return audioSidecar.bookmarkCue(targetIdx, note);
-      }
+      },
+      openWing: (side) => dualWings ? dualWings.openWing(side) : null,
+      closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
+      swapWings: () => dualWings ? dualWings.swapWings() : null
     };
     const voiceCommand = (phrase2) => executeVoiceMove(phrase2, voiceHandlers);
     bridge = createEditorBridge({
@@ -33324,7 +34644,24 @@ ${String(text ?? "")}`;
           const md = formatDroppedEmbed(pathOrUri, caption);
           if (md) insertBlock(md);
           return md;
-        }
+        },
+        openWing: (side) => dualWings ? dualWings.openWing(side) : null,
+        closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
+        toggleWing: (side) => dualWings ? dualWings.toggleWing(side) : null,
+        isWingOpen: (side) => dualWings ? dualWings.isWingOpen(side) : false,
+        swapWings: () => dualWings ? dualWings.swapWings() : null,
+        moveWidget: (id2, side) => dualWings ? dualWings.moveWidget(id2, side) : null,
+        getWingLayout: () => dualWings ? dualWings.getWingLayout() : { left: [], right: [], leftOpen: false, rightOpen: false },
+        setPreviewTarget: (src, caption) => dualWings ? dualWings.setPreviewTarget(src, caption) : null,
+        setMediaSource: (src, title) => dualWings ? dualWings.setMediaSource(src, title) : null,
+        setPlaybackRate: (rate) => dualWings ? dualWings.setPlaybackRate(rate) : null,
+        setLoopRange: (start, end) => dualWings ? dualWings.setLoopRange(start, end) : null,
+        setFindMyItems: (items) => dualWings ? dualWings.setFindMyItems(typeof items === "string" ? JSON.parse(items) : items) : null,
+        setMailMessages: (msgs) => dualWings ? dualWings.setMailMessages(typeof msgs === "string" ? JSON.parse(msgs) : msgs) : null,
+        extractCalendarEvents: (text, opts) => extractCalendarEvents(typeof text === "string" ? text : view.state.doc.toString(), opts),
+        getCalendarEvents: () => calendarScanner ? calendarScanner.getEvents() : [],
+        setWingsState: (state2) => dualWings ? dualWings.setState(state2) : null,
+        getWingsState: () => dualWings ? dualWings.getState() : null
       }
     });
     menuBtn.addEventListener("click", (e) => {
@@ -33393,6 +34730,7 @@ ${String(text ?? "")}`;
       if (e.key === "Escape") {
         if (menuOpen) closeMenu();
         if (outlineVisible) hideOutline();
+        if (dualWings && dualWings.isWingOpen()) dualWings.closeWing("both");
       }
     });
     attachOutlineGestures(workspace, outlinePanel, {
@@ -33424,6 +34762,8 @@ ${String(text ?? "")}`;
       bridge: bridge.api,
       inkLayer,
       audioSidecar,
+      dualWings,
+      calendarScanner,
       setTheme,
       setFontSize,
       setNewestFirst,
