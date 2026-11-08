@@ -1107,16 +1107,26 @@ export function createDualWings(container, options = {}) {
       'aria-live': 'polite'
     });
   }
+  // While you write with the Recense layer on, a typed line takes the card (the caret paragraph's lens line, its
+  // source under it); the media's line comes back when the editor loses focus (recense.js).
+  let typedLine = null;
+  const cardLine = () => typedLine || recenseLine;
+  function setTypedLine(card) {
+    typedLine = card && (card.original || card.translation)
+      ? { original: String(card.original ?? ''), translation: String(card.translation ?? ''), typed: true } : null;
+    updateRecenseCards();
+    return Boolean(typedLine);
+  }
   function updateRecenseCards() {
     for (const card of Object.values(recenseCards)) {
       while (card.firstChild) card.removeChild(card.firstChild);
       const header = makeDomElement(doc, 'div', {}, { class: 'rc-widget-header' });
-      header.appendChild(makeDomElement(doc, 'span', { textContent: 'Recense' }, { class: 'rc-widget-title' }));
+      header.appendChild(makeDomElement(doc, 'span', { textContent: typedLine ? 'Recense · your text' : 'Recense' }, { class: 'rc-widget-title' }));
       card.appendChild(header);
-      if (recenseLine.original || recenseLine.translation) {
-        card.appendChild(makeDomElement(doc, 'div', { textContent: recenseLine.original }, { class: 'rc-recense-original' }));
-        if (recenseLine.translation) {
-          card.appendChild(makeDomElement(doc, 'div', { textContent: recenseLine.translation }, { class: 'rc-recense-translation' }));
+      if (cardLine().original || cardLine().translation) {
+        card.appendChild(makeDomElement(doc, 'div', { textContent: cardLine().original }, { class: 'rc-recense-original' }));
+        if (cardLine().translation) {
+          card.appendChild(makeDomElement(doc, 'div', { textContent: cardLine().translation }, { class: 'rc-recense-translation' }));
         }
       } else {
         card.appendChild(makeDomElement(doc, 'div', { textContent: 'Nothing playing' }, { class: 'rc-empty-state' }));
@@ -1143,8 +1153,8 @@ export function createDualWings(container, options = {}) {
   function preferredWidth() {
     const pad = 2 * 16 + 4;
     const w = Math.max(
-      textWidth(recenseLine.original, '600 19px -apple-system, system-ui, sans-serif'),
-      textWidth(recenseLine.translation, '400 17px -apple-system, system-ui, sans-serif')
+      textWidth(cardLine().original, '600 19px -apple-system, system-ui, sans-serif'),
+      textWidth(cardLine().translation, '400 17px -apple-system, system-ui, sans-serif')
     ) + pad;
     return Math.round(Math.min(WING_MAX, Math.max(WING_MIN, w)));
   }
@@ -1582,6 +1592,7 @@ export function createDualWings(container, options = {}) {
     reveal,
     setArranging,
     setRecenseLine,
+    setTypedLine,
     preferredWidth,
     openPersistentSession,
     getState,

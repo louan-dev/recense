@@ -187,6 +187,9 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
         case "ui":
             if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
+            // Recense what you typed (shared/recensetext.swift): lenses, translations, Recensed/<id>.json, power.
+            if let d = m.body as? [String: Any],
+               RecenseText.handle(d, vault: file.vault, js: { [weak self] in self?.call($0) }, quote: jsLiteral) { return }
             // Page library: playlists file, expired pages to the archive, read-aloud (shared/draftpadlibrary.swift).
             if let d = m.body as? [String: Any],
                DraftpadLibrary.handle(d, vault: file.vault, voice: voice, js: { [weak self] in self?.call($0) }, quote: jsLiteral) { return }

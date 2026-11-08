@@ -1538,3 +1538,87 @@ html.rc-wings-page body {
 .rc-cal-buttons { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .rc-cal-buttons button { flex: 1; padding: 11px 14px; font-size: 16px; }
 .rc-cal-more { margin: 0; font-size: 12px; color: var(--rc-muted); text-align: center; }
+
+/* ── Recense what you typed (recense.js): lens lines under your text, dimmed; never part of the file ─────────────── */
+.rc-recense-btn { font-size: 15px; min-width: 32px; color: var(--rc-muted); }
+.rc-recense-btn[aria-pressed="true"] { color: var(--rc-cyan); }
+.rc-menu-item[hidden] { display: none; }
+.rc-lens {
+  margin: 4px 0 10px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--rc-border);
+  font-size: 0.86em;
+  line-height: 1.45;
+  color: var(--rc-muted);
+  max-width: 34em;
+}
+.rc-lens-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
+.rc-lens-title { font-style: italic; color: var(--rc-text); opacity: 0.85; }
+.rc-lens-tag, .rc-lens-added {
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+  padding: 0 6px;
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  color: var(--rc-muted);
+}
+.rc-lens-added { margin-left: 6px; }
+.rc-lens-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.rc-lens-line:hover, .rc-lens-line:focus-visible { color: var(--rc-text); outline: none; }
+.rc-lens-role { font-weight: 600; margin-right: 6px; color: var(--rc-text); opacity: 0.7; }
+.rc-recense-cited { background: color-mix(in srgb, var(--rc-cyan) 22%, transparent); border-radius: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .rc-recense-cited { transition: background 160ms ease-out; }
+}
+
+/* Chapters tab: your headings, recensed titles (italic, ✦), the tail "New since"; gist dim under; listening time. */
+.rc-chapter { align-items: flex-start; }
+.rc-chapter-nested { padding-left: 12px; }
+.rc-chapter[aria-current="true"] { box-shadow: inset 2px 0 0 var(--rc-cyan); }
+.rc-chapter .rc-outline-jump-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; flex: 1; }
+.rc-chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.rc-chapter-recensed .rc-chapter-title { font-style: italic; }
+.rc-chapter-new .rc-chapter-title { color: var(--rc-muted); }
+.rc-chapter-recensed .rc-outline-fold-btn { color: var(--rc-cyan); opacity: 0.8; }
+.rc-chapter-gist {
+  font-size: 12px;
+  color: var(--rc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.rc-chapter-time { font-size: 11px; color: var(--rc-muted); opacity: 0.8; }
+.rc-chapter-more {
+  background: none;
+  border: 0;
+  color: var(--rc-muted);
+  font: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.rc-chapter-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px 28px; }
+.rc-chapter-action {
+  font: inherit;
+  font-size: 13px;
+  color: var(--rc-text);
+  background: var(--rc-surface);
+  border: 1px solid var(--rc-border);
+  border-radius: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+/* Three tabs on one line; "Newest first" (Chapters only) takes its own row under them when the column is narrow. */
+.rc-outline-header { flex-wrap: wrap; }
+.rc-panel-tabs { flex-wrap: nowrap; }
+.rc-panel-tab, #rc-newest-first-btn { white-space: nowrap; }

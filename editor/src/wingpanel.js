@@ -11,7 +11,7 @@
  *   (width: what the Recense card's line needs, 360–560),
  *   plus wings.js's own saveState / openApp / cite messages.
  * host → page: window.recenseEditor.setText, setWingsState, setCalendarAdded, calendarResult, enableWidget,
- *   setRecenseLine, setArranging, setTheme (the same names the editor page answers to, so one host class serves both).
+ *   setRecenseLine, setTypedLine, setArranging, setTheme (the same names the editor page answers to, so one host class serves both).
  * The wing stays open until its ×, its grabber slid toward the edge, the trackpad's three-finger swipe or the menu:
  * no Esc, no click outside.
  */
@@ -176,6 +176,12 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
       const w = wings.setRecenseLine(original, translation);
       schedule();
       return w;
+    },
+    // While you write with the Recense layer on: your text's lens line, its source under it (null: the media's again).
+    setTypedLine(card) {
+      const on = wings.setTypedLine(card);
+      schedule();
+      return on;
     },
     setArranging,
     layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), width: wings.preferredWidth(), glass: glassShapes() })

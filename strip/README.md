@@ -272,7 +272,9 @@ songs, talks and ambiguous titles (at most 2 requests a song, none for speech), 
 the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get; Draftpad's merge; and the editor
 host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact; the wings: three-finger sideways swipes fed with made-up trackpad frames (the open/tuck sequence below) and the two
 panels' mirrored places; the handwriting reader (Vision, on device) reading a hand-lettered French line; and the page
-library (expired pages archived once, the playlists file round trip, odd sidecar names refused).
+library (expired pages archived once, the playlists file round trip, odd sidecar names refused); and Recense what you
+typed (typed sentences as Lines with their language, the target language rule, the lens schemas, `Recensed/<id>.json`
+kept inside the vault, the power check, the `Line` → ShowsKit `TranscriptLine` mapping).
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).
@@ -343,3 +345,13 @@ Idle efficiency (file watchers over polling, clock ticks only while visible); st
 `<vault>/Draftpad expired/<YYYY-MM>.md` before the page removes them, and read-aloud with each word reported back.
 The calendar sheet's **Don't add** is kept as `x:<id>` in `draftpad.events.json`; a revised place and notes reach the
 event. See `editor/README.md` for what you see.
+
+## Recense what you typed (2026-11-08, M1)
+`shared/recensetext.swift` answers Draftpad's Recense layer on both apps, on the device only: the Source lens through
+Apple's Translation (installed languages), Gist and IRAC from Apple's on-device model (guided generation; each field's
+guide is in the schema, built at run time because the Command Line Tools ship no macro plugins; greedy, 700 tokens out
+at most, so it can't overflow the 4,096-token context), and `<vault>/Recensed/<id>.json` for saved pages. While you
+write, the wing panels' Recense card shows your text's lens line (`WingPanels.setTypedLine`).
+`shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
+`phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
+the same copy.

@@ -46,6 +46,8 @@ updates in place.
   picker samples any shade) and handwriting search (⌘F finds ink, read on the device by `shared/inkocr.swift`) are the
   Mac's, from the same page. So are saved pages (bookmark), the Saved and Playlists tabs, the 14-day expiry (archived to
   `Draftpad expired/` in the vault) and the calendar sheet (`shared/draftpadlibrary.swift`).
+  The Recense layer (✦: Gist, Reformat, Source under your text, each line citing its sentences) and the Chapters tab
+  run here too, on the device (`shared/recensetext.swift`; the model needs Apple Intelligence, iOS 26).
 - **Apple Pencil in Draftpad:** write into the text with Scribble (iPadOS turns handwriting into typed text).
   Squeeze (Apple Pencil Pro), double-tap, or the pencil button opens the ink layer: the Pencil draws, fingers still
   scroll, and the system palette follows the Pencil Pro (barrel roll, squeeze for the compact palette). **Done** saves

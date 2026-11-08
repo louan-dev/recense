@@ -90,6 +90,33 @@ Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
   a "✎ n" button beside the text count; it steps through ink matches and makes them glow. Accents and case are ignored.
 - **Paging:** a mouse drag in the margin selects text; Option + drag pages.
 
+## Recense what you typed; Chapters (2026-11-08, M1)
+Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text from yours (it never changes yours).
+- **The layer** (`src/recense.js`): off by default. Turn it on with ✦ in the toolbar, **··· › Recense layer**, or say
+  "recense". One lens at a time, dimmed under your text, never in the file:
+  - **Gist**: the chapter's title and one-line gist above a section, a line per paragraph after it;
+  - **Reformat**: the structure already there (IRAC for law, a timeline for dates, definitions, else an outline);
+  - **Source**: each sentence's translation (English → Vietnamese, anything else → English;
+    **Translate into** changes it for the page).
+  Change the lens from **··· › Lens** or say "gist", "reformat", "source".
+- **Citations**: tap a lens line and the sentences it comes from light up. A line that cites nothing says **added**.
+  A line whose words aren't in what it cites is dropped, never shown (`src/lenses.js`).
+- **When it runs**: a section untouched for 60 s, on power or with the battery above 30 %; or **··· › Recense now**
+  (or say "recense now"). Never while you type. Each section (≤ ~1,500 words, cut at your headings) is cached by a hash
+  of its sentences, so an edit redoes only that section; lines that cite untouched sentences stay meanwhile ("earlier").
+- **Engine**: Apple's on-device model (`shared/recensetext.swift`). Without it (Apple Intelligence off, or an
+  unsupported language) the lenses are extractive, your own most central sentences, labelled **extract**.
+- **Wing card**: while the layer is on and you're writing, the Recense card shows the caret paragraph's lens line with
+  its source under it; the playing media's line comes back when you leave the editor.
+- **Saved pages** write `<vault>/Recensed/<id>.json` (transcript Lines: the sentences, each lens, the chapters). Unsaved
+  pages keep their lenses in the app's cache only.
+- **Chapters tab** (`src/chapters.js`): your headings, live; for stretches without one, the recensed title in italics
+  with ✦ (never written into the page); text not yet recensed as one "New since HH:MM" entry. Each entry shows a dim gist
+  and its listening time (150 words a minute). Tap to jump; hold or ··· for **Play from here**, **Make heading** (the only
+  way a recensed title enters your page, as a `#` heading) and **Copy gist**. Titles hold still while the panel is open.
+- Tests: `test/p11-recense.test.mjs` (Line JSON, the citation check, only edited lines redone, titles held while
+  open, Make heading the only write, saved pages only, the wing card).
+
 ## Pages expire unless saved; Saved, Playlists, calendar sheet (2026-11-08)
 - **Ephemeral pages** (`src/library.js`): a page lives 14 days, like a new Recense episode (`Rules.newKeepDays`), from
   the later of its date heading and its last edit (kept per page in `draftpad.pages.json`). The newest page, the page
@@ -98,7 +125,7 @@ Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 - **Bookmark** (toolbar, the same icon as the player's bookmarks): tap to save the page ("N days left" shows until
   then). Tap again: the **Saved in** sheet (Saved pages, New playlist, your playlists; tick, then Done). A saved page
   carries one hidden line under its heading, `<!-- saved k3x9q2 -->` (Obsidian hides it too).
-- **Side panel tabs**: Outline · Saved (jump to a saved page) · Playlists (Listen reads the pages aloud in order;
+- **Side panel tabs**: Chapters (was Outline; see below) · Saved (jump to a saved page) · Playlists (Listen reads the pages aloud in order;
   Name & details; × removes with a toast, no confirmation). Format of `draftpad.playlists.json` is at the top of
   `src/library.js` (pages now; episodes and audio files share the same list later).
 - **Calendar sheet** (`src/calsheet.js`): every new future date in your notes opens a prefilled sheet once typing

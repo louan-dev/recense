@@ -1546,6 +1546,90 @@ html.rc-wings-page body {
 .rc-cal-buttons button { flex: 1; padding: 11px 14px; font-size: 16px; }
 .rc-cal-more { margin: 0; font-size: 12px; color: var(--rc-muted); text-align: center; }
 
+/* ── Recense what you typed (recense.js): lens lines under your text, dimmed; never part of the file ─────────────── */
+.rc-recense-btn { font-size: 15px; min-width: 32px; color: var(--rc-muted); }
+.rc-recense-btn[aria-pressed="true"] { color: var(--rc-cyan); }
+.rc-menu-item[hidden] { display: none; }
+.rc-lens {
+  margin: 4px 0 10px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--rc-border);
+  font-size: 0.86em;
+  line-height: 1.45;
+  color: var(--rc-muted);
+  max-width: 34em;
+}
+.rc-lens-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
+.rc-lens-title { font-style: italic; color: var(--rc-text); opacity: 0.85; }
+.rc-lens-tag, .rc-lens-added {
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+  padding: 0 6px;
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  color: var(--rc-muted);
+}
+.rc-lens-added { margin-left: 6px; }
+.rc-lens-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.rc-lens-line:hover, .rc-lens-line:focus-visible { color: var(--rc-text); outline: none; }
+.rc-lens-role { font-weight: 600; margin-right: 6px; color: var(--rc-text); opacity: 0.7; }
+.rc-recense-cited { background: color-mix(in srgb, var(--rc-cyan) 22%, transparent); border-radius: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .rc-recense-cited { transition: background 160ms ease-out; }
+}
+
+/* Chapters tab: your headings, recensed titles (italic, ✦), the tail "New since"; gist dim under; listening time. */
+.rc-chapter { align-items: flex-start; }
+.rc-chapter-nested { padding-left: 12px; }
+.rc-chapter[aria-current="true"] { box-shadow: inset 2px 0 0 var(--rc-cyan); }
+.rc-chapter .rc-outline-jump-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; flex: 1; }
+.rc-chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.rc-chapter-recensed .rc-chapter-title { font-style: italic; }
+.rc-chapter-new .rc-chapter-title { color: var(--rc-muted); }
+.rc-chapter-recensed .rc-outline-fold-btn { color: var(--rc-cyan); opacity: 0.8; }
+.rc-chapter-gist {
+  font-size: 12px;
+  color: var(--rc-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.rc-chapter-time { font-size: 11px; color: var(--rc-muted); opacity: 0.8; }
+.rc-chapter-more {
+  background: none;
+  border: 0;
+  color: var(--rc-muted);
+  font: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.rc-chapter-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px 28px; }
+.rc-chapter-action {
+  font: inherit;
+  font-size: 13px;
+  color: var(--rc-text);
+  background: var(--rc-surface);
+  border: 1px solid var(--rc-border);
+  border-radius: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+/* Three tabs on one line; "Newest first" (Chapters only) takes its own row under them when the column is narrow. */
+.rc-outline-header { flex-wrap: wrap; }
+.rc-panel-tabs { flex-wrap: nowrap; }
+.rc-panel-tab, #rc-newest-first-btn { white-space: nowrap; }
+
 </style>
 </head>
 <body>
@@ -20071,10 +20155,10 @@ html.rc-wings-page body {
       if (!/\S/.test(line.text))
         indent = 0;
       let cur = /^\s*/.exec(line.text)[0];
-      let norm = indentString(state, indent);
-      if (cur != norm || range.from < line.from + cur.length) {
+      let norm2 = indentString(state, indent);
+      if (cur != norm2 || range.from < line.from + cur.length) {
         updated[line.from] = indent;
-        changes2.push({ from: line.from, to: line.from + cur.length, insert: norm });
+        changes2.push({ from: line.from, to: line.from + cur.length, insert: norm2 });
       }
     });
     if (!changes.changes.empty)
@@ -28058,16 +28142,16 @@ ${PAGE_MARKER}
         }
         let str = fromCodePoint(next), start = this.bufferStart + this.bufferPos;
         this.bufferPos += codePointSize2(next);
-        let norm = this.normalize(str);
-        if (norm.length)
+        let norm2 = this.normalize(str);
+        if (norm2.length)
           for (let i = 0, pos = start, posPrecise = true; ; i++) {
-            let code = norm.charCodeAt(i);
-            let match = this.match(code, pos, posPrecise, this.bufferPos + this.bufferStart, i == norm.length - 1);
+            let code = norm2.charCodeAt(i);
+            let match = this.match(code, pos, posPrecise, this.bufferPos + this.bufferStart, i == norm2.length - 1);
             if (match) {
               this.value = match;
               return this;
             }
-            if (i == norm.length - 1)
+            if (i == norm2.length - 1)
               break;
             if (posPrecise && i < str.length && str.charCodeAt(i) == code)
               pos++;
@@ -30277,6 +30361,991 @@ ${PAGE_MARKER}
     ];
   }
 
+  // src/typedlines.js
+  var SECTION_WORDS = 1500;
+  function fnv1a(text) {
+    let h = 2166136261;
+    const s = String(text ?? "");
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  var norm = (s) => String(s).replace(/\s+/g, " ").trim();
+  var countWords = (s) => (norm(s).match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu) || []).length;
+  function splitSentences(text) {
+    const out = [];
+    const push = (seg, at) => {
+      const lead = seg.length - seg.trimStart().length;
+      const t2 = seg.trim();
+      if (t2 && /[\p{L}\p{N}]/u.test(t2)) out.push({ text: t2, from: at + lead, to: at + lead + t2.length });
+    };
+    if (typeof Intl !== "undefined" && Intl.Segmenter) {
+      for (const s of new Intl.Segmenter("und", { granularity: "sentence" }).segment(text)) push(s.segment, s.index);
+      return out;
+    }
+    const re = /[^.!?…]+(?:[.!?…]+["”’)]*|$)/g;
+    let m;
+    while ((m = re.exec(text)) && m[0]) push(m[0], m.index);
+    return out;
+  }
+  function pageSentences(pageText, base2 = 0) {
+    const sentences = [];
+    const seen = /* @__PURE__ */ new Map();
+    let p = -1, heading2 = "", inPara = false, offset = 0;
+    for (const raw of pageText.split("\n")) {
+      const line = raw.replace(/\r$/, "");
+      const at = base2 + offset;
+      offset += raw.length + 1;
+      const t2 = line.trim();
+      const h = parseHeadingLine(line);
+      if (!t2 || isMetaLine(t2) || isFullDateLine(t2) || t2.startsWith("<!--")) {
+        inPara = false;
+        continue;
+      }
+      if (h) {
+        heading2 = h.title;
+        inPara = false;
+        sentences.push({ isHeading: true, title: h.title, from: at, to: at + line.length });
+        continue;
+      }
+      if (!inPara) {
+        p++;
+        inPara = true;
+      }
+      for (const s of splitSentences(line)) {
+        const k = fnv1a(norm(s.text));
+        const n = (seen.get(k) || 0) + 1;
+        seen.set(k, n);
+        sentences.push({ key: n > 1 ? `${k}#${n}` : k, text: s.text, from: at + s.from, to: at + s.to, p, heading: heading2 });
+      }
+    }
+    return sentences;
+  }
+  function pageSections(pageText, { base: base2 = 0, pageIndex = 0, maxWords = SECTION_WORDS } = {}) {
+    const sections = [];
+    let cur = null;
+    const close = () => {
+      if (cur && cur.sentences.length) {
+        cur.key = fnv1a(cur.sentences.map((s) => s.key).join(" "));
+        cur.to = cur.sentences[cur.sentences.length - 1].to;
+        sections.push(cur);
+      }
+      cur = null;
+    };
+    let heading2 = "", headingFrom = -1;
+    for (const s of pageSentences(pageText, base2)) {
+      if (s.isHeading) {
+        close();
+        heading2 = s.title;
+        headingFrom = s.from;
+        continue;
+      }
+      if (cur && cur.words >= maxWords && s.p !== cur.lastP) close();
+      if (!cur) cur = { sentences: [], from: headingFrom >= 0 && heading2 ? headingFrom : s.from, words: 0, heading: heading2, pageIndex, lastP: s.p };
+      if (cur.sentences.length && cur.from === headingFrom) headingFrom = -1;
+      cur.sentences.push(s);
+      cur.words += countWords(s.text);
+      cur.lastP = s.p;
+    }
+    close();
+    for (const s of sections) delete s.lastP;
+    return sections;
+  }
+  function docSections(text, opts = {}) {
+    const out = [];
+    inspectDraftpadPages(text).forEach((pg, i) => {
+      out.push(...pageSections(text.slice(pg.from, pg.to), { ...opts, base: pg.from, pageIndex: i }));
+    });
+    return out;
+  }
+  function sentenceLine(sentence, id2) {
+    const words = (sentence.text.match(/[^\s]+/g) || []).map((w) => ({ text: w, start: 0, end: 0 }));
+    return { id: id2, words, english: null };
+  }
+  function lensLineToLine(lens, id2) {
+    const line = sentenceLine({ text: lens.text }, id2);
+    line.from = lens.from || [];
+    if (lens.added) line.added = true;
+    return line;
+  }
+  function reconcile(lines, liveKeys) {
+    const live2 = liveKeys instanceof Set ? liveKeys : new Set(liveKeys);
+    const kept = [], stale = [];
+    for (const l of lines) ((l.from || []).every((k) => live2.has(k)) ? kept : stale).push(l);
+    return { kept, stale };
+  }
+
+  // src/lenses.js
+  var STOP = new Set("the a an and or but if of to in on at by for with from as is are was were be been being it its this that these those there their they them he she his her we our you your i me my not no so than then also which who whom whose what when where how why all any each into over under about after before between because while would could should shall must may can will has have had do does did very more most such only own same other some just here out up down off again l\xE0 v\xE0 c\u1EE7a c\xE1c nh\u1EEFng m\u1ED9t cho v\u1EDBi trong \u0111\u01B0\u1EE3c kh\xF4ng c\xF3 n\xE0y \u0111\xF3 khi th\xEC \u0111\u1EC3 t\u1EEB theo nh\u01B0 ng\u01B0\u1EDDi c\u0169ng \u0111\xE3 s\u1EBD \u0111ang ra v\xE0o le la les un une des et ou de du en au aux est sont pour par avec dans sur que qui ne pas ce cette ces il elle ils".split(/\s+/));
+  function keyTerms(text) {
+    const out = [];
+    for (const m of String(text ?? "").toLowerCase().matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) {
+      const w = m[0].replace(/['’]s$/, "");
+      if (STOP.has(w)) continue;
+      if (/^\p{N}+$/u.test(w) || w.length >= 3 || /[^\x00-\x7f]/.test(w)) out.push(w);
+    }
+    return out;
+  }
+  var stem = (w) => w.length > 5 ? w.slice(0, 5) : w;
+  function coverage(text, sourceTexts) {
+    const terms = [...new Set(keyTerms(text))];
+    if (!terms.length) return 1;
+    const have = new Set(sourceTexts.flatMap(keyTerms).map(stem));
+    return terms.filter((t2) => have.has(stem(t2))).length / terms.length;
+  }
+  var MIN_COVERAGE = 0.6;
+  function checkLines(lines, sentences) {
+    const byKey = new Map(sentences.map((s) => [s.key, s.text]));
+    const kept = [], dropped = [];
+    for (const l of lines || []) {
+      const text = String(l?.text ?? "").trim();
+      if (!text) continue;
+      const from = (l.from || []).filter((k) => byKey.has(k));
+      if (from.length) {
+        if (coverage(text, from.map((k) => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
+        else {
+          const repaired2 = repair(text, sentences);
+          if (repaired2) kept.push({ ...l, text, from: repaired2 });
+          else if (/\?\s*$/.test(text)) kept.push({ ...l, text, from: [], added: true });
+          else dropped.push({ ...l, text, why: "its words are not in the sentences it cites" });
+        }
+        continue;
+      }
+      const repaired = repair(text, sentences);
+      kept.push(repaired ? { ...l, text, from: repaired } : { ...l, text, from: [], added: true });
+    }
+    return { kept, dropped };
+  }
+  function repair(text, sentences) {
+    const terms = [...new Set(keyTerms(text).map(stem))];
+    if (!terms.length) return null;
+    const sets = sentences.map((s) => ({ key: s.key, have: new Set(keyTerms(s.text).map(stem)) }));
+    const missing = new Set(terms), pick = [];
+    while (missing.size && pick.length < 4) {
+      let best = null, gain = 0;
+      for (const s of sets) {
+        const g = [...missing].filter((t2) => s.have.has(t2)).length;
+        if (g > gain) {
+          best = s;
+          gain = g;
+        }
+      }
+      if (!best) break;
+      pick.push(best.key);
+      for (const t2 of [...missing]) if (best.have.has(t2)) missing.delete(t2);
+    }
+    return (terms.length - missing.size) / terms.length >= MIN_COVERAGE ? pick : null;
+  }
+  var LAW_RE = /\b(v\.?|vs\.?|held|court|statute|article|art\.|section|rule|plaintiff|defendant|liable|tort|contract|clause|điều|khoản|luật|bộ luật|toà|tòa|arrêt|cour|loi|alinéa)\b|§/iu;
+  var DATE_RE = /\b(1[5-9]\d\d|20\d\d)\b|\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|tháng\s+\d{1,2}|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b/iu;
+  var DEF_RE = /^(.{2,60}?)\s+(means|is defined as|refers to|is called|nghĩa là|là việc|được hiểu là|désigne|s'entend de)\s+(.+)$/iu;
+  function reformatKind(sentences) {
+    const texts = sentences.map((s) => s.text);
+    if (texts.filter((t2) => DEF_RE.test(t2)).length >= 2) return "definitions";
+    if (texts.filter((t2) => DATE_RE.test(t2)).length >= 2 && texts.filter((t2) => DATE_RE.test(t2)).length >= texts.length / 2) return "timeline";
+    if (texts.some((t2) => LAW_RE.test(t2))) return "irac";
+    return "outline";
+  }
+  function patternReformat(sentences, kind = reformatKind(sentences)) {
+    if (kind === "timeline") {
+      return { kind, lines: sentences.filter((s) => DATE_RE.test(s.text)).map((s) => ({ text: `${s.text.match(DATE_RE)[0]} \xB7 ${s.text.replace(/[.;]\s*$/, "")}`, from: [s.key], role: "when" })) };
+    }
+    if (kind === "definitions") {
+      return { kind, lines: sentences.map((s) => [s, DEF_RE.exec(s.text)]).filter(([, m]) => m).map(([s, m]) => ({ text: `${m[1].trim()}: ${m[3].replace(/[.;]\s*$/, "")}`, from: [s.key], role: "term" })) };
+    }
+    const firsts = /* @__PURE__ */ new Map();
+    for (const s of sentences) if (!firsts.has(s.p)) firsts.set(s.p, s);
+    return { kind: "outline", lines: [...firsts.values()].map((s) => ({ text: s.text, from: [s.key], role: "point" })) };
+  }
+  function centrality(sentences) {
+    const terms = sentences.map((s) => new Set(keyTerms(s.text).map(stem)));
+    const df = /* @__PURE__ */ new Map();
+    for (const set of terms) for (const t2 of set) df.set(t2, (df.get(t2) || 0) + 1);
+    return sentences.map((s, i) => {
+      let score = 0;
+      for (const t2 of terms[i]) score += (df.get(t2) || 1) - 1;
+      return score / Math.sqrt(terms[i].size || 1) + (i === 0 ? 0.5 : 0);
+    });
+  }
+  function extractive(section, why = "") {
+    const ss = section.sentences;
+    const score = centrality(ss);
+    const best = /* @__PURE__ */ new Map();
+    ss.forEach((s, i) => {
+      if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] });
+    });
+    const gist = [...best.values()].slice(0, 6).map(({ s }) => ({ text: s.text, from: [s.key] }));
+    const top2 = ss.map((s, i) => [s, score[i]]).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const freq = /* @__PURE__ */ new Map(), cased = /* @__PURE__ */ new Map();
+    for (const s of ss) {
+      for (const m of s.text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) if (!cased.has(m[0].toLowerCase())) cased.set(m[0].toLowerCase(), m[0]);
+      for (const t2 of keyTerms(s.text)) if (t2.length > 3 && !/^\p{N}+$/u.test(t2)) freq.set(t2, (freq.get(t2) || 0) + 1);
+    }
+    const words = [...freq].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t2]) => cased.get(t2) || t2);
+    const title = words.length ? words.map((w, i) => i ? w : w[0].toUpperCase() + w.slice(1)).join(" \xB7 ") : "Untitled";
+    const kind = reformatKind(ss);
+    return {
+      key: section.key,
+      engine: "extract",
+      why,
+      title,
+      // The single most central sentence, unless a paragraph line already shows it.
+      whole: top2 && !gist.some((l) => l.from[0] === top2.key) ? { text: top2.text, from: [top2.key] } : null,
+      gist,
+      // No model: IRAC can't be written from patterns, so law sections show their outline instead.
+      reformat: patternReformat(ss, kind === "irac" ? "outline" : kind)
+    };
+  }
+  function settle(section, result) {
+    const r = result && result.engine === "model" ? result : extractive(section, result?.why || "");
+    const gist = checkLines(r.gist, section.sentences);
+    const whole = r.whole ? checkLines([r.whole], section.sentences) : { kept: [], dropped: [] };
+    let reformat = r.reformat;
+    if (!reformat || !reformat.lines?.length) {
+      const kind = reformatKind(section.sentences);
+      reformat = patternReformat(section.sentences, kind === "irac" ? "outline" : kind);
+    }
+    const ref = checkLines(reformat.lines, section.sentences);
+    return {
+      key: section.key,
+      engine: r.engine,
+      why: r.why || "",
+      title: String(r.title || "").trim(),
+      whole: whole.kept[0] || null,
+      gist: gist.kept,
+      reformat: { kind: reformat.kind, lines: ref.kept },
+      dropped: gist.dropped.length + whole.dropped.length + ref.dropped.length,
+      at: Date.now()
+    };
+  }
+
+  // src/library.js
+  var PAGE_KEEP_DAYS = 14;
+  var DAY_MS = 864e5;
+  var LISTEN_WPM = 150;
+  function newPageId(rand = Math.random) {
+    let s = "";
+    const abc = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 6; i++) s += abc[Math.floor(rand() * abc.length) % abc.length];
+    return s;
+  }
+  function pageSavedId(page) {
+    if (!page) return null;
+    for (const line of String(page.rawContent || "").split("\n")) {
+      const m = META_RE.exec(line.trim());
+      if (m) return m[1];
+    }
+    return null;
+  }
+  function pageBody(page) {
+    const lines = String(page?.rawContent || "").split("\n").filter((l) => !isMetaLine(l));
+    if (page?.dateLine) {
+      const k = lines.findIndex((l) => l.trim() === page.dateLine);
+      if (k >= 0) lines.splice(k, 1);
+    }
+    return lines.join("\n").trim();
+  }
+  function wordCount(text) {
+    const m = String(text || "").match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu);
+    return m ? m.length : 0;
+  }
+  function pageKey(pages, index) {
+    const p = pages[index];
+    if (!p || !p.dateLine) return null;
+    let n = 0;
+    for (let i = 0; i < index; i++) if (pages[i].dateLine === p.dateLine) n++;
+    return `${p.dateLine}#${n}`;
+  }
+  function editedMs(day) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : null;
+  }
+  function todayKey(now = Date.now()) {
+    const d = new Date(now);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function lifeStart(page, edited) {
+    const e = editedMs(edited);
+    return e !== null && e > page.dateMs ? e : page.dateMs;
+  }
+  function daysLeft(page, now = Date.now(), edited = null) {
+    if (!page || pageSavedId(page) || typeof page.dateMs !== "number") return null;
+    const end = lifeStart(page, edited) + PAGE_KEEP_DAYS * DAY_MS;
+    return Math.max(0, Math.ceil((end - now) / DAY_MS));
+  }
+  function mergeEdited(a = {}, b = {}) {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b || {})) if (!out[k] || String(v) > String(out[k])) out[k] = v;
+    return out;
+  }
+  function expiredPageIndices(text, { now = Date.now(), keepIndex = -1, edited = {} } = {}) {
+    const pages = inspectDraftpadPages(text);
+    const out = [];
+    for (const p of pages) {
+      if (p.index === 0 || p.index === keepIndex) continue;
+      if (typeof p.dateMs !== "number") continue;
+      if (pageSavedId(p)) continue;
+      const start = lifeStart(p, edited[pageKey(pages, p.index)]);
+      if (now - start >= PAGE_KEEP_DAYS * DAY_MS) out.push(p.index);
+    }
+    return out;
+  }
+  function setPageSaved(text, index, saved, { id: id2 = null, rand } = {}) {
+    const pages = inspectDraftpadPages(text);
+    const p = pages[index];
+    if (!p) return { text, id: null, changes: null };
+    const have = pageSavedId(p);
+    if (saved && have) return { text, id: have, changes: null };
+    if (!saved && !have) return { text, id: null, changes: null };
+    if (saved) {
+      const nid = id2 || newPageId(rand);
+      const line = `<!-- saved ${nid} -->`;
+      let at, insert2;
+      if (p.dateLine) {
+        const lineStart = text.indexOf(p.dateLine, p.from);
+        at = lineStart + p.dateLine.length;
+        const eol = text.indexOf("\n", at);
+        at = eol === -1 ? text.length : eol;
+        insert2 = "\n" + line;
+      } else {
+        at = p.from;
+        insert2 = line + "\n";
+      }
+      const changes2 = { from: at, to: at, insert: insert2 };
+      return { text: text.slice(0, at) + insert2 + text.slice(at), id: nid, changes: changes2 };
+    }
+    const re = new RegExp(`(^|\\n)<!-- saved ${have} -->(?=\\n|$)`);
+    const seg = text.slice(p.from, p.to);
+    const m = re.exec(seg);
+    if (!m) return { text, id: null, changes: null };
+    let from = p.from + m.index;
+    let to = from + m[0].length;
+    if (!m[1] && text[to] === "\n") to += 1;
+    const changes = { from, to, insert: "" };
+    return { text: text.slice(0, from) + text.slice(to), id: null, changes };
+  }
+  function savedPages(text) {
+    return inspectDraftpadPages(text).map((p) => ({ p, id: pageSavedId(p) })).filter((x) => x.id).map(({ p, id: id2 }) => ({ id: id2, index: p.index, title: pageTitle(p), dateMs: p.dateMs, words: wordCount(pageBody(p)) }));
+  }
+  function pageTitle(p) {
+    const body = pageBody(p).split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean);
+    return (body ? body.slice(0, 80) : "") || p.dateLine || `Page ${p.index + 1}`;
+  }
+  function findPageById(text, id2) {
+    if (!id2) return null;
+    return inspectDraftpadPages(text).find((p) => pageSavedId(p) === id2) || null;
+  }
+  function emptyPlaylists() {
+    return { version: 1, playlists: [] };
+  }
+  function parsePlaylists(json) {
+    try {
+      const d = typeof json === "string" ? JSON.parse(json) : json;
+      if (d && Array.isArray(d.playlists)) {
+        return { version: 1, ...d, playlists: d.playlists.filter((p) => p && p.id).map((p) => ({ items: [], ...p })) };
+      }
+    } catch {
+    }
+    return emptyPlaylists();
+  }
+  function createPlaylist(state, name2, { now = /* @__PURE__ */ new Date(), rand } = {}) {
+    const iso = now.toISOString();
+    const pl = {
+      id: "pl-" + newPageId(rand),
+      name: String(name2 || "").trim() || "New playlist",
+      description: "",
+      private: true,
+      owner: "me",
+      collaborators: [],
+      created: iso,
+      updated: iso,
+      items: []
+    };
+    return { state: { ...state, playlists: [...state.playlists, pl] }, playlist: pl };
+  }
+  function mapPlaylist(state, id2, f) {
+    return { ...state, playlists: state.playlists.map((p) => p.id === id2 ? f(p) : p) };
+  }
+  function addToPlaylist(state, id2, item, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => {
+      if (p.items.some((i) => i.kind === item.kind && i.ref === item.ref)) return p;
+      const iso = now.toISOString();
+      return { ...p, updated: iso, items: [...p.items, { kind: item.kind, ref: item.ref, added: iso, addedBy: "me", note: "" }] };
+    });
+  }
+  function removeFromPlaylist(state, id2, ref, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => ({ ...p, updated: now.toISOString(), items: p.items.filter((i) => i.ref !== ref) }));
+  }
+  function editPlaylist(state, id2, { name: name2, description }, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => ({
+      ...p,
+      updated: now.toISOString(),
+      name: name2 !== void 0 ? String(name2).trim() || p.name : p.name,
+      description: description !== void 0 ? String(description) : p.description
+    }));
+  }
+  function deletePlaylist(state, id2) {
+    return { ...state, playlists: state.playlists.filter((p) => p.id !== id2) };
+  }
+  function playlistsWith(state, ref) {
+    return state.playlists.filter((p) => p.items.some((i) => i.ref === ref)).map((p) => p.id);
+  }
+  function playlistSummary(pl, text) {
+    const pages = inspectDraftpadPages(text);
+    let words = 0, n = 0;
+    for (const it of pl.items) {
+      n++;
+      if (it.kind !== "page") continue;
+      const p = pages.find((pp) => pageSavedId(pp) === it.ref);
+      if (p) words += wordCount(pageBody(p));
+    }
+    const min = Math.max(n ? 1 : 0, Math.round(words / LISTEN_WPM));
+    const dur = min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min} min`;
+    return `${n} ${n === 1 ? "page" : "pages"} \xB7 ${dur}`;
+  }
+
+  // src/chapters.js
+  function listenLabel(words) {
+    if (!words) return "";
+    const min = words / LISTEN_WPM;
+    return min < 1 ? "< 1 min" : `${Math.round(min)} min`;
+  }
+  var hhmm = (ms) => {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  function chapterEntries(text, { sections = [], titles = /* @__PURE__ */ new Map(), lastDone = 0, caret = -1, newestFirst = false } = {}) {
+    const out = [];
+    for (const page of orderPagesForOutline(text, { newestFirst })) {
+      const secs = sections.filter((s) => s.pageIndex === page.index);
+      const entries = [];
+      for (const h of page.headings) {
+        const under = secs.find((s) => s.from === h.from);
+        entries.push({
+          kind: "heading",
+          title: h.kind === "section" ? `\xA7 ${h.title}` : h.title,
+          level: Math.min(2, h.level),
+          from: h.from,
+          gist: under ? titles.get(under.key)?.gist || "" : "",
+          section: under || null,
+          heading: h
+        });
+      }
+      let fresh = null;
+      for (const s of secs) {
+        if (s.heading) continue;
+        const t2 = titles.get(s.key);
+        if (t2?.title) entries.push({ kind: "recensed", title: t2.title, gist: t2.gist || "", level: 1, from: s.from, section: s });
+        else if (!fresh) fresh = s;
+      }
+      if (fresh) {
+        entries.push({
+          kind: "new",
+          title: lastDone ? `New since ${hhmm(lastDone)}` : "Not recensed yet",
+          gist: "",
+          level: 1,
+          from: fresh.from,
+          section: fresh
+        });
+      }
+      entries.sort((a, b) => a.from - b.from || (a.kind === "new") - (b.kind === "new"));
+      entries.forEach((e, i) => {
+        const end = i + 1 < entries.length ? entries[i + 1].from : page.to;
+        e.words = countWords(text.slice(e.from, Math.max(e.from, end)));
+        e.listen = listenLabel(e.words);
+      });
+      if (caret >= page.from && caret <= page.to) {
+        const cur = [...entries].reverse().find((e) => e.from <= caret);
+        if (cur) cur.current = true;
+      }
+      out.push({ page, entries });
+    }
+    return out;
+  }
+  function headingInsert(title) {
+    return `# ${String(title).replace(/\s+/g, " ").trim()}
+
+`;
+  }
+
+  // src/recense.js
+  var LENSES = ["gist", "reformat", "source"];
+  var LENS_NAMES = { gist: "Gist", reformat: "Reformat", source: "Source" };
+  var QUIET_MS = 6e4;
+  var MIN_BATTERY = 30;
+  var CACHE_MAX = 400;
+  var ROLE_NAMES = { issue: "Issue", rule: "Rule", application: "Application", conclusion: "Conclusion" };
+  var KIND_NAMES = { irac: "IRAC", timeline: "Timeline", definitions: "Definitions", outline: "Outline" };
+  var setRecenseDecos = StateEffect.define();
+  var recenseField = StateField.define({
+    create: () => Decoration.none,
+    update(value, tr) {
+      let v = value.map(tr.changes);
+      for (const e of tr.effects) if (e.is(setRecenseDecos)) v = e.value;
+      return v;
+    },
+    provide: (f) => EditorView.decorations.from(f)
+  });
+  var LensWidget = class extends WidgetType {
+    constructor(block, onTap) {
+      super();
+      this.block = block;
+      this.onTap = onTap;
+      this.sig = JSON.stringify(block);
+    }
+    eq(other) {
+      return other.sig === this.sig;
+    }
+    toDOM() {
+      const box = document.createElement("div");
+      box.className = `rc-lens rc-lens-${this.block.lens}`;
+      box.setAttribute("aria-label", `Recense ${LENS_NAMES[this.block.lens] || ""}`);
+      if (this.block.head || this.block.tag) {
+        const head = document.createElement("div");
+        head.className = "rc-lens-head";
+        if (this.block.head) head.append(Object.assign(document.createElement("span"), { className: "rc-lens-title", textContent: this.block.head }));
+        if (this.block.tag) head.append(Object.assign(document.createElement("span"), { className: "rc-lens-tag", textContent: this.block.tag, title: this.block.why || "" }));
+        box.appendChild(head);
+      }
+      for (const l of this.block.lines) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "rc-lens-line";
+        if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: ROLE_NAMES[l.role] }));
+        row.append(document.createTextNode(l.text));
+        if (l.added) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "added" }));
+        row.title = l.added ? "Recense added this: it is not in your text" : "Tap to light the sentences it comes from";
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          this.onTap?.(l.from || []);
+        });
+        box.appendChild(row);
+      }
+      return box;
+    }
+    ignoreEvent() {
+      return true;
+    }
+  };
+  var citedMark = Decoration.mark({ class: "rc-recense-cited" });
+  function lensBlocks(sections, lens, { results, translations = /* @__PURE__ */ new Map(), stale = /* @__PURE__ */ new Map() }) {
+    const blocks = [];
+    for (const s of sections) {
+      const byKey = new Map(s.sentences.map((x) => [x.key, x]));
+      const endOf = (keys) => Math.max(...keys.map((k) => byKey.get(k)?.to ?? -1));
+      if (lens === "source") {
+        const byPara = /* @__PURE__ */ new Map();
+        for (const x of s.sentences) {
+          const t2 = translations.get(x.key);
+          if (!t2) continue;
+          if (!byPara.has(x.p)) byPara.set(x.p, { at: x.to, lines: [] });
+          const g = byPara.get(x.p);
+          g.at = Math.max(g.at, x.to);
+          g.lines.push({ text: t2, from: [x.key] });
+        }
+        for (const g of byPara.values()) blocks.push({ at: g.at, side: 1, lens, lines: g.lines });
+        continue;
+      }
+      const r = results.get(s.key);
+      const tag = r ? r.engine === "model" ? "" : "extract" : stale.get(s.key) ? "earlier" : "";
+      if (!r) {
+        const kept = stale.get(s.key) || [];
+        if (kept.length) blocks.push({ at: s.to, side: 1, lens, tag: "earlier", why: "from before your last edit", lines: kept });
+        continue;
+      }
+      if (lens === "gist") {
+        const top2 = r.whole ? [r.whole] : [];
+        if (r.title || top2.length) blocks.push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? "" : r.title, tag, why: r.why, lines: top2 });
+        const groups = /* @__PURE__ */ new Map();
+        for (const l of r.gist) {
+          const at = l.from.length ? endOf(l.from) : s.to;
+          if (!groups.has(at)) groups.set(at, []);
+          groups.get(at).push(l);
+        }
+        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+      } else {
+        blocks.push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || "", tag, why: r.why, lines: r.reformat.lines });
+      }
+    }
+    return blocks;
+  }
+  function createRecense({
+    getText,
+    dispatch,
+    getCaret = () => -1,
+    hasFocus = () => false,
+    post = null,
+    storage = null,
+    now = () => Date.now(),
+    wingCard = null,
+    onChaptersChanged = null
+  }) {
+    const load = (k, d) => {
+      try {
+        const v = storage?.getItem(k);
+        return v == null ? d : JSON.parse(v);
+      } catch {
+        return d;
+      }
+    };
+    const save = (k, v) => {
+      try {
+        storage?.setItem(k, JSON.stringify(v));
+      } catch {
+      }
+    };
+    let enabled = Boolean(load("rc-recense-on", false));
+    let lens = LENSES.includes(load("rc-recense-lens", "gist")) ? load("rc-recense-lens", "gist") : "gist";
+    const results = new Map(load("rc-recense-cache", []));
+    const translations = new Map(load("rc-recense-tr", []));
+    const targets = load("rc-recense-targets", {});
+    const seen = /* @__PURE__ */ new Map();
+    const inflight = /* @__PURE__ */ new Map();
+    let lastDone = Number(load("rc-recense-last", 0)) || 0;
+    let power = { onPower: true, percent: 100, at: 0 };
+    let cited = [];
+    let frozen = null;
+    let lastCard = "null";
+    let reqN = 0;
+    let sections = [];
+    let sectionsFor = null;
+    function current() {
+      const text = getText();
+      if (text !== sectionsFor) {
+        sections = docSections(text).map((s) => ({ ...s, kind: reformatKind(s.sentences) }));
+        sectionsFor = text;
+        const t2 = now();
+        const live2 = new Set(sections.map((s) => s.key));
+        for (const s of sections) if (!seen.has(s.key)) seen.set(s.key, t2);
+        for (const k of [...seen.keys()]) if (!live2.has(k)) seen.delete(k);
+      }
+      return sections;
+    }
+    function persist() {
+      const entries = [...results].sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, CACHE_MAX);
+      save("rc-recense-cache", entries);
+      save("rc-recense-tr", [...translations].slice(-4 * CACHE_MAX));
+      save("rc-recense-last", lastDone);
+    }
+    function staleLines() {
+      const out = /* @__PURE__ */ new Map();
+      const sentenceOwner = /* @__PURE__ */ new Map();
+      for (const [key, r] of results) for (const l of [...r.gist, ...r.reformat?.lines || [], ...r.whole ? [r.whole] : []]) for (const k of l.from) sentenceOwner.set(k, key);
+      for (const s of current()) {
+        if (results.has(s.key)) continue;
+        const olds = new Set(s.sentences.map((x) => sentenceOwner.get(x.key)).filter(Boolean));
+        const live2 = new Set(s.sentences.map((x) => x.key));
+        const lines = [];
+        for (const k of olds) {
+          const r = results.get(k);
+          const pool = lens === "gist" ? r.gist : lens === "reformat" ? r.reformat.lines : [];
+          lines.push(...reconcile(pool.filter((l) => l.from.length), live2).kept);
+        }
+        if (lines.length) out.set(s.key, lines);
+      }
+      return out;
+    }
+    function targetFor(pageIndex) {
+      const pages = inspectDraftpadPages(getText());
+      const id2 = pages[pageIndex] ? pageSavedId(pages[pageIndex]) || `p${pageIndex}` : `p${pageIndex}`;
+      return targets[id2] || "";
+    }
+    function trKey(sentenceKey, pageIndex) {
+      return `${sentenceKey}>${targetFor(pageIndex) || "auto"}`;
+    }
+    function shownTranslations() {
+      const m = /* @__PURE__ */ new Map();
+      for (const s of current()) for (const x of s.sentences) {
+        const t2 = translations.get(trKey(x.key, s.pageIndex));
+        if (t2) m.set(x.key, t2);
+      }
+      return m;
+    }
+    function redraw() {
+      const ranges = [];
+      if (enabled) {
+        const blocks = lensBlocks(current(), lens, { results, translations: shownTranslations(), stale: staleLines() });
+        const text = getText();
+        for (const b of blocks) {
+          if (!b.lines.length && !b.head) continue;
+          let at = Math.max(0, Math.min(text.length, b.at));
+          if (b.side > 0) {
+            const nl = text.indexOf("\n", at);
+            at = nl < 0 ? text.length : nl;
+          } else at = text.lastIndexOf("\n", at - 1) + 1;
+          ranges.push(Decoration.widget({ widget: new LensWidget(b, tap), block: true, side: b.side }).range(at));
+        }
+        const byKey = new Map(current().flatMap((s) => s.sentences.map((x) => [x.key, x])));
+        for (const k of cited) {
+          const x = byKey.get(k);
+          if (x && x.to > x.from) ranges.push(citedMark.range(x.from, x.to));
+        }
+      }
+      dispatch({ effects: setRecenseDecos.of(Decoration.set(ranges, true)) });
+      updateCard();
+    }
+    let citedTimer = null;
+    function tap(keys) {
+      cited = keys;
+      redraw();
+      if (citedTimer) clearTimeout(citedTimer);
+      citedTimer = later(() => {
+        cited = [];
+        redraw();
+      }, 4e3);
+    }
+    function cardFor(caret) {
+      if (!enabled || caret < 0) return null;
+      const s = current().find((x) => caret >= x.from && caret <= x.to + 1);
+      if (!s) return null;
+      const para = s.sentences.find((x) => caret >= x.from && caret <= x.to + 1)?.p ?? s.sentences.at(-1).p;
+      const inPara = new Set(s.sentences.filter((x) => x.p === para).map((x) => x.key));
+      const text = new Map(s.sentences.map((x) => [x.key, x.text]));
+      let lines;
+      if (lens === "source") {
+        const tr = shownTranslations();
+        lines = [...inPara].filter((k) => tr.has(k)).map((k) => ({ text: tr.get(k), from: [k] }));
+      } else {
+        const r = results.get(s.key);
+        if (!r) return null;
+        const pool = lens === "gist" ? r.gist : r.reformat.lines;
+        lines = pool.filter((l) => l.from.some((k) => inPara.has(k)));
+      }
+      if (!lines.length) return null;
+      const from = [...new Set(lines.flatMap((l) => l.from))];
+      return { original: lines.map((l) => l.text).join(" "), translation: from.map((k) => text.get(k)).filter(Boolean).join(" ") };
+    }
+    function updateCard() {
+      const card = hasFocus() ? cardFor(getCaret()) : null;
+      const sig = JSON.stringify(card);
+      if (sig === lastCard) return;
+      lastCard = sig;
+      post?.({ recenseCard: card });
+      wingCard?.(card);
+    }
+    function powerOK() {
+      return power.onPower || power.percent > MIN_BATTERY;
+    }
+    function due(t2 = now()) {
+      const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
+      return current().filter((s) => !results.has(s.key) && !busy.has(s.key) && t2 - (seen.get(s.key) ?? t2) >= QUIET_MS);
+    }
+    function send(list) {
+      if (!list.length) return null;
+      const id2 = `r${++reqN}`;
+      inflight.set(id2, new Map(list.map((s) => [s.key, s])));
+      if (post) {
+        post({ recenseSections: { id: id2, sections: list.map((s) => ({ key: s.key, kind: s.kind, sentences: s.sentences.map((x) => ({ key: x.key, text: x.text, p: x.p })) })) } });
+      } else {
+        for (const s of list) setSection(id2, { key: s.key, engine: "none", why: "no Recense app here" });
+        done(id2);
+      }
+      return id2;
+    }
+    function tick() {
+      const list = due();
+      if (!list.length) return null;
+      if (!powerOK()) return null;
+      return send(list);
+    }
+    function recenseNow() {
+      const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
+      const id2 = send(current().filter((s) => !results.has(s.key) && !busy.has(s.key)));
+      if (lens === "source" && enabled) requestSource();
+      return id2;
+    }
+    function setSection(id2, json) {
+      const r = typeof json === "string" ? JSON.parse(json) : json;
+      const s = inflight.get(id2)?.get(r?.key) || current().find((x) => x.key === r?.key);
+      if (!s) return false;
+      const settled = settle(s, r);
+      results.set(s.key, settled);
+      persist();
+      saveRecensed(s.pageIndex);
+      redraw();
+      return true;
+    }
+    function done(id2) {
+      inflight.delete(id2);
+      lastDone = now();
+      persist();
+      onChaptersChanged?.();
+    }
+    const sourceReq = /* @__PURE__ */ new Map();
+    function requestSource() {
+      if (!post) return;
+      const byPage = /* @__PURE__ */ new Map();
+      for (const s of current()) for (const x of s.sentences) {
+        if (translations.has(trKey(x.key, s.pageIndex))) continue;
+        if (!byPage.has(s.pageIndex)) byPage.set(s.pageIndex, []);
+        byPage.get(s.pageIndex).push(x);
+      }
+      for (const [pageIndex, list] of byPage) {
+        const id2 = `s${++reqN}`;
+        sourceReq.set(id2, { pageIndex, keys: list.map((x) => x.key) });
+        post({ recenseSource: { id: id2, target: targetFor(pageIndex) || null, sentences: list.map((x) => ({ key: x.key, text: x.text })) } });
+      }
+    }
+    let missing = "";
+    function setSource(id2, json) {
+      const req = sourceReq.get(id2);
+      sourceReq.delete(id2);
+      const r = typeof json === "string" ? JSON.parse(json) : json;
+      if (!req || !r) return 0;
+      missing = r.missing || "";
+      let n = 0;
+      (r.keys || []).forEach((k, i) => {
+        const words = r.lines?.[i]?.english;
+        if (Array.isArray(words) && words.length) {
+          translations.set(trKey(k, req.pageIndex), words.map((w) => w.w).join(" "));
+          n++;
+        }
+      });
+      persist();
+      redraw();
+      return n;
+    }
+    function saveRecensed(pageIndex) {
+      if (!post) return;
+      const text = getText();
+      const page = inspectDraftpadPages(text)[pageIndex];
+      const pageId = page && pageSavedId(page);
+      if (!pageId) return;
+      const secs = current().filter((s) => s.pageIndex === pageIndex);
+      let n = 0;
+      const doc2 = {
+        version: 1,
+        pageId,
+        title: pageTitle(page),
+        updated: new Date(now()).toISOString(),
+        lines: secs.flatMap((s) => s.sentences.map((x) => ({ ...sentenceLine(x, n++), key: x.key }))),
+        chapters: secs.filter((s) => results.get(s.key)?.title).map((s) => ({ title: results.get(s.key).title, from: s.sentences.map((x) => x.key), start: 0 })),
+        sections: secs.filter((s) => results.has(s.key)).map((s) => {
+          const r = results.get(s.key);
+          let m = 0;
+          return {
+            key: s.key,
+            engine: r.engine,
+            title: r.title,
+            kind: r.reformat.kind,
+            gist: [r.whole, ...r.gist].filter(Boolean).map((l) => lensLineToLine(l, m++)),
+            reformat: r.reformat.lines.map((l) => ({ ...lensLineToLine(l, m++), role: l.role || null }))
+          };
+        })
+      };
+      post({ recenseSave: { pageId, json: JSON.stringify(doc2) } });
+    }
+    function liveTitles() {
+      const m = /* @__PURE__ */ new Map();
+      for (const [k, r] of results) if (r.title || r.whole) m.set(k, { title: r.title, gist: r.whole?.text || r.gist[0]?.text || "" });
+      return m;
+    }
+    function freeze() {
+      frozen = liveTitles();
+    }
+    function unfreeze() {
+      frozen = null;
+    }
+    function titles() {
+      return frozen || liveTitles();
+    }
+    function makeHeading(sectionKey) {
+      const s = current().find((x) => x.key === sectionKey);
+      const title = titles().get(sectionKey)?.title || results.get(sectionKey)?.title;
+      if (!s || !title || s.heading) return false;
+      const text = getText();
+      const at = text.lastIndexOf("\n", s.from - 1) + 1;
+      dispatch({ changes: { from: at, insert: headingInsert(title) }, userEvent: "input" });
+      return true;
+    }
+    function setEnabled(on) {
+      enabled = Boolean(on);
+      save("rc-recense-on", enabled);
+      if (enabled && lens === "source") requestSource();
+      redraw();
+      return enabled;
+    }
+    function setLens(name2) {
+      if (!LENSES.includes(name2)) return lens;
+      lens = name2;
+      save("rc-recense-lens", lens);
+      if (enabled && lens === "source") requestSource();
+      redraw();
+      return lens;
+    }
+    function nextLens() {
+      return setLens(LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length]);
+    }
+    function setTarget(pageIndex, lang) {
+      const pages = inspectDraftpadPages(getText());
+      const id2 = pages[pageIndex] ? pageSavedId(pages[pageIndex]) || `p${pageIndex}` : `p${pageIndex}`;
+      if (lang) targets[id2] = lang;
+      else delete targets[id2];
+      save("rc-recense-targets", targets);
+      if (enabled && lens === "source") requestSource();
+      redraw();
+      return targets[id2] || "";
+    }
+    let redrawTimer = null;
+    function later(fn, ms) {
+      const t2 = setTimeout(fn, ms);
+      t2?.unref?.();
+      return t2;
+    }
+    function docChanged() {
+      if (!enabled) return;
+      if (redrawTimer) clearTimeout(redrawTimer);
+      redrawTimer = later(() => {
+        redrawTimer = null;
+        redraw();
+      }, 400);
+    }
+    let cardTimer = null;
+    function cardSoon() {
+      if (!enabled && lastCard === "null") return;
+      if (cardTimer) clearTimeout(cardTimer);
+      cardTimer = later(() => {
+        cardTimer = null;
+        updateCard();
+      }, 250);
+    }
+    return {
+      docChanged,
+      tick,
+      recenseNow,
+      setSection,
+      recenseDone: done,
+      setSource,
+      redraw,
+      updateCard: cardSoon,
+      setEnabled,
+      isEnabled: () => enabled,
+      setLens,
+      nextLens,
+      getLens: () => lens,
+      setTarget,
+      getTarget: targetFor,
+      setPowerState: (onPower, percent2) => {
+        power = { onPower: Boolean(onPower), percent: Number(percent2) || 0, at: now() };
+      },
+      powerOK,
+      due,
+      sections: current,
+      results,
+      freeze,
+      unfreeze,
+      titles,
+      makeHeading,
+      lastDone: () => lastDone,
+      missing: () => missing,
+      cardFor,
+      inflight
+    };
+  }
+
   // src/removed.js
   var CONTEXT_RADIUS = 80;
   var recordedDeletionsAnnotation = Annotation.define();
@@ -31343,7 +32412,22 @@ ${PAGE_MARKER}
       }
       return { matched: true, action: "deleteEmptyWindow" };
     }
-    const outlineKeywords = ["outline", "topics", "m\u1EE5c l\u1EE5c", "sommaire"];
+    if (hasPhrase("recense now") || hasPhrase("recense l\u1EA1i") || hasPhrase("recenser maintenant")) {
+      if (typeof handlers2.recenseNow === "function") handlers2.recenseNow();
+      return { matched: true, action: "recenseNow" };
+    }
+    for (const [lens, words] of [["gist", ["gist", "\xFD ch\xEDnh"]], ["reformat", ["reformat", "irac", "tr\xECnh b\xE0y l\u1EA1i"]], ["source", ["source lens", "show source", "b\u1EA3n d\u1ECBch"]]]) {
+      if (words.some((w) => w.includes(" ") ? hasPhrase(w) : hasWord(w))) {
+        if (typeof handlers2.setRecenseLens === "function") handlers2.setRecenseLens(lens);
+        return { matched: true, action: "setRecenseLens", lens };
+      }
+    }
+    if (hasWord("recense")) {
+      const off = hasWord("off") || hasWord("hide") || hasWord("t\u1EAFt");
+      if (typeof handlers2.toggleRecense === "function") handlers2.toggleRecense(off ? false : hasWord("on") || hasWord("show") || hasWord("b\u1EADt") ? true : void 0);
+      return { matched: true, action: "toggleRecense" };
+    }
+    const outlineKeywords = ["outline", "chapters", "topics", "m\u1EE5c l\u1EE5c", "ch\u01B0\u01A1ng", "sommaire", "chapitres"];
     if (outlineKeywords.some((kw) => hasWord(kw))) {
       if (typeof handlers2.toggleOutline === "function") {
         handlers2.toggleOutline();
@@ -33713,8 +34797,8 @@ ${clean(nextLineText)}`;
       const pages = inspectDraftpadPages(source);
       const allSections = [];
       for (const page of pages) {
-        const pageSections = extractSectionsFromText(page.rawContent, page.index);
-        allSections.push(...pageSections);
+        const pageSections2 = extractSectionsFromText(page.rawContent, page.index);
+        allSections.push(...pageSections2);
       }
       return allSections;
     }
@@ -35063,16 +36147,23 @@ ${clean(nextLineText)}`;
         "aria-live": "polite"
       });
     }
+    let typedLine = null;
+    const cardLine = () => typedLine || recenseLine;
+    function setTypedLine(card) {
+      typedLine = card && (card.original || card.translation) ? { original: String(card.original ?? ""), translation: String(card.translation ?? ""), typed: true } : null;
+      updateRecenseCards();
+      return Boolean(typedLine);
+    }
     function updateRecenseCards() {
       for (const card of Object.values(recenseCards)) {
         while (card.firstChild) card.removeChild(card.firstChild);
         const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
-        header.appendChild(makeDomElement2(doc2, "span", { textContent: "Recense" }, { class: "rc-widget-title" }));
+        header.appendChild(makeDomElement2(doc2, "span", { textContent: typedLine ? "Recense \xB7 your text" : "Recense" }, { class: "rc-widget-title" }));
         card.appendChild(header);
-        if (recenseLine.original || recenseLine.translation) {
-          card.appendChild(makeDomElement2(doc2, "div", { textContent: recenseLine.original }, { class: "rc-recense-original" }));
-          if (recenseLine.translation) {
-            card.appendChild(makeDomElement2(doc2, "div", { textContent: recenseLine.translation }, { class: "rc-recense-translation" }));
+        if (cardLine().original || cardLine().translation) {
+          card.appendChild(makeDomElement2(doc2, "div", { textContent: cardLine().original }, { class: "rc-recense-original" }));
+          if (cardLine().translation) {
+            card.appendChild(makeDomElement2(doc2, "div", { textContent: cardLine().translation }, { class: "rc-recense-translation" }));
           }
         } else {
           card.appendChild(makeDomElement2(doc2, "div", { textContent: "Nothing playing" }, { class: "rc-empty-state" }));
@@ -35096,8 +36187,8 @@ ${clean(nextLineText)}`;
     function preferredWidth() {
       const pad2 = 2 * 16 + 4;
       const w = Math.max(
-        textWidth(recenseLine.original, "600 19px -apple-system, system-ui, sans-serif"),
-        textWidth(recenseLine.translation, "400 17px -apple-system, system-ui, sans-serif")
+        textWidth(cardLine().original, "600 19px -apple-system, system-ui, sans-serif"),
+        textWidth(cardLine().translation, "400 17px -apple-system, system-ui, sans-serif")
       ) + pad2;
       return Math.round(Math.min(WING_MAX, Math.max(WING_MIN, w)));
     }
@@ -35486,6 +36577,7 @@ ${clean(nextLineText)}`;
       reveal,
       setArranging,
       setRecenseLine,
+      setTypedLine,
       preferredWidth,
       openPersistentSession,
       getState,
@@ -35652,197 +36744,18 @@ ${clean(nextLineText)}`;
         schedule();
         return w;
       },
+      // While you write with the Recense layer on: your text's lens line, its source under it (null: the media's again).
+      setTypedLine(card) {
+        const on = wings.setTypedLine(card);
+        schedule();
+        return on;
+      },
       setArranging,
       layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), width: wings.preferredWidth(), glass: glassShapes() })
     };
     if (globalObj) globalObj.recenseEditor = api;
     schedule();
     return { api, wings, shell, setArranging };
-  }
-
-  // src/library.js
-  var PAGE_KEEP_DAYS = 14;
-  var DAY_MS = 864e5;
-  var LISTEN_WPM = 150;
-  function newPageId(rand = Math.random) {
-    let s = "";
-    const abc = "abcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 6; i++) s += abc[Math.floor(rand() * abc.length) % abc.length];
-    return s;
-  }
-  function pageSavedId(page) {
-    if (!page) return null;
-    for (const line of String(page.rawContent || "").split("\n")) {
-      const m = META_RE.exec(line.trim());
-      if (m) return m[1];
-    }
-    return null;
-  }
-  function pageBody(page) {
-    const lines = String(page?.rawContent || "").split("\n").filter((l) => !isMetaLine(l));
-    if (page?.dateLine) {
-      const k = lines.findIndex((l) => l.trim() === page.dateLine);
-      if (k >= 0) lines.splice(k, 1);
-    }
-    return lines.join("\n").trim();
-  }
-  function wordCount(text) {
-    const m = String(text || "").match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu);
-    return m ? m.length : 0;
-  }
-  function pageKey(pages, index) {
-    const p = pages[index];
-    if (!p || !p.dateLine) return null;
-    let n = 0;
-    for (let i = 0; i < index; i++) if (pages[i].dateLine === p.dateLine) n++;
-    return `${p.dateLine}#${n}`;
-  }
-  function editedMs(day) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
-    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : null;
-  }
-  function todayKey(now = Date.now()) {
-    const d = new Date(now);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-  function lifeStart(page, edited) {
-    const e = editedMs(edited);
-    return e !== null && e > page.dateMs ? e : page.dateMs;
-  }
-  function daysLeft(page, now = Date.now(), edited = null) {
-    if (!page || pageSavedId(page) || typeof page.dateMs !== "number") return null;
-    const end = lifeStart(page, edited) + PAGE_KEEP_DAYS * DAY_MS;
-    return Math.max(0, Math.ceil((end - now) / DAY_MS));
-  }
-  function mergeEdited(a = {}, b = {}) {
-    const out = { ...a };
-    for (const [k, v] of Object.entries(b || {})) if (!out[k] || String(v) > String(out[k])) out[k] = v;
-    return out;
-  }
-  function expiredPageIndices(text, { now = Date.now(), keepIndex = -1, edited = {} } = {}) {
-    const pages = inspectDraftpadPages(text);
-    const out = [];
-    for (const p of pages) {
-      if (p.index === 0 || p.index === keepIndex) continue;
-      if (typeof p.dateMs !== "number") continue;
-      if (pageSavedId(p)) continue;
-      const start = lifeStart(p, edited[pageKey(pages, p.index)]);
-      if (now - start >= PAGE_KEEP_DAYS * DAY_MS) out.push(p.index);
-    }
-    return out;
-  }
-  function setPageSaved(text, index, saved, { id: id2 = null, rand } = {}) {
-    const pages = inspectDraftpadPages(text);
-    const p = pages[index];
-    if (!p) return { text, id: null, changes: null };
-    const have = pageSavedId(p);
-    if (saved && have) return { text, id: have, changes: null };
-    if (!saved && !have) return { text, id: null, changes: null };
-    if (saved) {
-      const nid = id2 || newPageId(rand);
-      const line = `<!-- saved ${nid} -->`;
-      let at, insert2;
-      if (p.dateLine) {
-        const lineStart = text.indexOf(p.dateLine, p.from);
-        at = lineStart + p.dateLine.length;
-        const eol = text.indexOf("\n", at);
-        at = eol === -1 ? text.length : eol;
-        insert2 = "\n" + line;
-      } else {
-        at = p.from;
-        insert2 = line + "\n";
-      }
-      const changes2 = { from: at, to: at, insert: insert2 };
-      return { text: text.slice(0, at) + insert2 + text.slice(at), id: nid, changes: changes2 };
-    }
-    const re = new RegExp(`(^|\\n)<!-- saved ${have} -->(?=\\n|$)`);
-    const seg = text.slice(p.from, p.to);
-    const m = re.exec(seg);
-    if (!m) return { text, id: null, changes: null };
-    let from = p.from + m.index;
-    let to = from + m[0].length;
-    if (!m[1] && text[to] === "\n") to += 1;
-    const changes = { from, to, insert: "" };
-    return { text: text.slice(0, from) + text.slice(to), id: null, changes };
-  }
-  function savedPages(text) {
-    return inspectDraftpadPages(text).map((p) => ({ p, id: pageSavedId(p) })).filter((x) => x.id).map(({ p, id: id2 }) => ({ id: id2, index: p.index, title: pageTitle(p), dateMs: p.dateMs, words: wordCount(pageBody(p)) }));
-  }
-  function pageTitle(p) {
-    const body = pageBody(p).split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean);
-    return (body ? body.slice(0, 80) : "") || p.dateLine || `Page ${p.index + 1}`;
-  }
-  function findPageById(text, id2) {
-    if (!id2) return null;
-    return inspectDraftpadPages(text).find((p) => pageSavedId(p) === id2) || null;
-  }
-  function emptyPlaylists() {
-    return { version: 1, playlists: [] };
-  }
-  function parsePlaylists(json) {
-    try {
-      const d = typeof json === "string" ? JSON.parse(json) : json;
-      if (d && Array.isArray(d.playlists)) {
-        return { version: 1, ...d, playlists: d.playlists.filter((p) => p && p.id).map((p) => ({ items: [], ...p })) };
-      }
-    } catch {
-    }
-    return emptyPlaylists();
-  }
-  function createPlaylist(state, name2, { now = /* @__PURE__ */ new Date(), rand } = {}) {
-    const iso = now.toISOString();
-    const pl = {
-      id: "pl-" + newPageId(rand),
-      name: String(name2 || "").trim() || "New playlist",
-      description: "",
-      private: true,
-      owner: "me",
-      collaborators: [],
-      created: iso,
-      updated: iso,
-      items: []
-    };
-    return { state: { ...state, playlists: [...state.playlists, pl] }, playlist: pl };
-  }
-  function mapPlaylist(state, id2, f) {
-    return { ...state, playlists: state.playlists.map((p) => p.id === id2 ? f(p) : p) };
-  }
-  function addToPlaylist(state, id2, item, { now = /* @__PURE__ */ new Date() } = {}) {
-    return mapPlaylist(state, id2, (p) => {
-      if (p.items.some((i) => i.kind === item.kind && i.ref === item.ref)) return p;
-      const iso = now.toISOString();
-      return { ...p, updated: iso, items: [...p.items, { kind: item.kind, ref: item.ref, added: iso, addedBy: "me", note: "" }] };
-    });
-  }
-  function removeFromPlaylist(state, id2, ref, { now = /* @__PURE__ */ new Date() } = {}) {
-    return mapPlaylist(state, id2, (p) => ({ ...p, updated: now.toISOString(), items: p.items.filter((i) => i.ref !== ref) }));
-  }
-  function editPlaylist(state, id2, { name: name2, description }, { now = /* @__PURE__ */ new Date() } = {}) {
-    return mapPlaylist(state, id2, (p) => ({
-      ...p,
-      updated: now.toISOString(),
-      name: name2 !== void 0 ? String(name2).trim() || p.name : p.name,
-      description: description !== void 0 ? String(description) : p.description
-    }));
-  }
-  function deletePlaylist(state, id2) {
-    return { ...state, playlists: state.playlists.filter((p) => p.id !== id2) };
-  }
-  function playlistsWith(state, ref) {
-    return state.playlists.filter((p) => p.items.some((i) => i.ref === ref)).map((p) => p.id);
-  }
-  function playlistSummary(pl, text) {
-    const pages = inspectDraftpadPages(text);
-    let words = 0, n = 0;
-    for (const it of pl.items) {
-      n++;
-      if (it.kind !== "page") continue;
-      const p = pages.find((pp) => pageSavedId(pp) === it.ref);
-      if (p) words += wordCount(pageBody(p));
-    }
-    const min = Math.max(n ? 1 : 0, Math.round(words / LISTEN_WPM));
-    const dur = min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min} min`;
-    return `${n} ${n === 1 ? "page" : "pages"} \xB7 ${dur}`;
   }
 
   // src/libraryui.js
@@ -36085,7 +36998,7 @@ ${clean(nextLineText)}`;
       tabBar.append(b);
       tabs.set(id2, { btn: b, render });
     }
-    addTab("outline", "Outline", null);
+    addTab("outline", "Chapters", null);
     addTab("saved", "Saved", renderSaved);
     addTab("playlists", "Playlists", renderPlaylists);
     function openTab(id2) {
@@ -36816,7 +37729,11 @@ ${clean(nextLineText)}`;
       btn.textContent = label;
       return btn;
     }
-    const outlineToggleBtn = makeMenuItem("rc-outline-toggle-btn", "Outline", "Outline");
+    const outlineToggleBtn = makeMenuItem("rc-outline-toggle-btn", "Chapters", "Chapters, Saved and Playlists");
+    const recenseLayerBtn = makeMenuItem("rc-recense-layer-btn", "Recense layer", "Show recensed lines under your text");
+    const recenseLensBtn = makeMenuItem("rc-recense-lens-btn", "Lens: Gist", "Change the lens: Gist, Reformat, Source");
+    const recenseNowBtn = makeMenuItem("rc-recense-now-btn", "Recense now", "Recense every section not yet recensed");
+    const recenseIntoBtn = makeMenuItem("rc-recense-into-btn", "Translate into: Auto", "The Source lens\u2019s language for this page");
     const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
     const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "Newer page (\u2318[)");
     const nextPageBtn = makeMenuItem("rc-next-page-btn", "Older page", "Older page (\u2318])");
@@ -36830,6 +37747,10 @@ ${clean(nextLineText)}`;
     const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
     menu.append(
       outlineToggleBtn,
+      recenseLayerBtn,
+      recenseLensBtn,
+      recenseNowBtn,
+      recenseIntoBtn,
       searchBtn,
       prevPageBtn,
       nextPageBtn,
@@ -36844,12 +37765,12 @@ ${clean(nextLineText)}`;
     const outlinePanel = document.createElement("aside");
     outlinePanel.className = "rc-outline";
     outlinePanel.id = "rc-outline-panel";
-    outlinePanel.setAttribute("aria-label", "Document Outline");
+    outlinePanel.setAttribute("aria-label", "Chapters");
     outlinePanel.hidden = true;
     const outlineHeader = document.createElement("div");
     outlineHeader.className = "rc-outline-header";
     const outlineTitle = document.createElement("span");
-    outlineTitle.textContent = "Outline";
+    outlineTitle.textContent = "Chapters";
     const newestFirstBtn = document.createElement("button");
     newestFirstBtn.type = "button";
     newestFirstBtn.className = "rc-btn";
@@ -36869,83 +37790,132 @@ ${clean(nextLineText)}`;
     root.appendChild(shell);
     let view = null;
     let bridge = null;
-    function renderHeadingRow(h) {
+    let chapterActionsFor = -1;
+    function playFrom(from, to) {
+      const parts = view.state.doc.sliceString(from, to).split(/\n\s*\n/).map((t2) => t2.replace(/<!--[\s\S]*?-->/g, "").replace(/^#+\s+|^§\s+/gm, "").trim()).filter(Boolean);
+      if (parts.length && speaker) speaker.speak(parts, {});
+    }
+    function renderEntryRow(e, page) {
+      const wrap = document.createElement("div");
       const row = document.createElement("div");
-      row.className = "rc-outline-item";
-      row.style.paddingLeft = `${Math.max(0, (h.level - 1) * 12)}px`;
+      row.className = `rc-outline-item rc-chapter rc-chapter-${e.kind}${e.level > 1 ? " rc-chapter-nested" : ""}`;
+      if (e.current) row.setAttribute("aria-current", "true");
       const foldBtn = document.createElement("button");
       foldBtn.type = "button";
       foldBtn.className = "rc-outline-fold-btn";
-      const foldable2 = h.foldFrom !== null && h.foldTo !== null;
-      if (foldable2 && view) {
+      const h = e.heading;
+      if (h && h.foldFrom !== null && h.foldTo !== null) {
         const folded = isHeadingFolded(view.state, h);
         foldBtn.textContent = folded ? "\u25B8" : "\u25BE";
         foldBtn.title = folded ? "Unfold heading" : "Fold heading";
-        foldBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
+        foldBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
           toggleHeadingFold(view, h);
           renderOutline();
         });
       } else {
-        foldBtn.textContent = "\xB7";
+        foldBtn.textContent = e.kind === "recensed" ? "\u2726" : "\xB7";
+        if (e.kind === "recensed") foldBtn.title = "Recensed: a title Recense wrote; it is not in your page";
         foldBtn.disabled = true;
       }
       const jumpBtn = document.createElement("button");
       jumpBtn.type = "button";
       jumpBtn.className = "rc-outline-jump-btn";
-      jumpBtn.textContent = h.kind === "section" ? `\xA7 ${h.title}` : h.title;
+      const title = document.createElement("span");
+      title.className = "rc-chapter-title";
+      title.textContent = e.title;
+      jumpBtn.appendChild(title);
+      if (e.gist) jumpBtn.appendChild(Object.assign(document.createElement("span"), { className: "rc-chapter-gist", textContent: e.gist }));
+      if (e.listen) jumpBtn.appendChild(Object.assign(document.createElement("span"), { className: "rc-chapter-time", textContent: e.listen }));
+      let held = false, holdTimer = null;
+      jumpBtn.addEventListener("pointerdown", () => {
+        held = false;
+        holdTimer = setTimeout(() => {
+          held = true;
+          chapterActionsFor = e.from;
+          renderOutline();
+        }, 500);
+      });
+      const cancelHold = () => {
+        if (holdTimer) clearTimeout(holdTimer);
+        holdTimer = null;
+      };
+      jumpBtn.addEventListener("pointerup", cancelHold);
+      jumpBtn.addEventListener("pointerleave", cancelHold);
       jumpBtn.addEventListener("click", () => {
-        if (view) jumpToOffset(view, h.from);
+        if (held) return;
+        jumpToOffset(view, e.from);
         hideOutline();
       });
-      row.append(foldBtn, jumpBtn);
-      return row;
+      const moreBtn = document.createElement("button");
+      moreBtn.type = "button";
+      moreBtn.className = "rc-chapter-more";
+      moreBtn.textContent = "\xB7\xB7\xB7";
+      moreBtn.setAttribute("aria-label", `More for ${e.title}`);
+      moreBtn.setAttribute("aria-expanded", String(chapterActionsFor === e.from));
+      moreBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        chapterActionsFor = chapterActionsFor === e.from ? -1 : e.from;
+        renderOutline();
+      });
+      row.append(foldBtn, jumpBtn, moreBtn);
+      wrap.appendChild(row);
+      if (chapterActionsFor === e.from) {
+        const acts = document.createElement("div");
+        acts.className = "rc-chapter-actions";
+        const act = (label, fn) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "rc-chapter-action";
+          b.textContent = label;
+          b.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            chapterActionsFor = -1;
+            fn();
+          });
+          acts.appendChild(b);
+        };
+        act("Play from here", () => playFrom(e.from, page.to));
+        if (e.kind === "recensed" && recense) {
+          act("Make heading", () => {
+            if (recense.makeHeading(e.section.key)) library?.toast("Heading added to your page");
+          });
+        }
+        if (e.gist) {
+          act("Copy gist", () => {
+            try {
+              navigator.clipboard?.writeText(e.gist);
+            } catch {
+            }
+            library?.toast("Gist copied");
+          });
+        }
+        wrap.appendChild(acts);
+      }
+      return wrap;
     }
     function renderOutline() {
-      if (!view) return;
+      if (!view || !outlineVisible) return;
       const docText = view.state.doc.toString();
       outlineList.innerHTML = "";
-      if (newestFirst) {
-        const orderedPages = orderPagesForOutline(docText, { newestFirst: true });
-        if (orderedPages.length === 0) {
-          const empty2 = document.createElement("div");
-          empty2.className = "rc-outline-empty";
-          empty2.textContent = "No pages yet";
-          outlineList.appendChild(empty2);
-          return;
-        }
-        for (const page of orderedPages) {
-          const pageBlock = document.createElement("div");
-          pageBlock.className = "rc-outline-page";
-          const pageBtn = document.createElement("button");
-          pageBtn.type = "button";
-          pageBtn.className = "rc-outline-page-btn";
-          pageBtn.textContent = page.dateLine || page.title;
-          pageBtn.addEventListener("click", () => {
-            jumpToOffset(view, page.from);
-            hideOutline();
-          });
-          pageBlock.appendChild(pageBtn);
-          for (const h of page.headings) {
-            pageBlock.appendChild(renderHeadingRow(h));
-          }
-          outlineList.appendChild(pageBlock);
-        }
-        return;
-      }
-      const headings = extractHeadings(docText);
-      const pages = orderPagesForOutline(docText, { newestFirst: false });
-      if (headings.length === 0 && pages.length <= 1) {
+      const pages = chapterEntries(docText, {
+        sections: recense ? recense.sections() : [],
+        titles: recense ? recense.titles() : /* @__PURE__ */ new Map(),
+        lastDone: recense ? recense.lastDone() : 0,
+        caret: view.state.selection.main.head,
+        newestFirst
+      });
+      if (!pages.some((p) => p.entries.length) && pages.length <= 1) {
         const empty2 = document.createElement("div");
         empty2.className = "rc-outline-empty";
-        empty2.textContent = "No headings yet";
+        empty2.textContent = "No chapters yet";
         outlineList.appendChild(empty2);
         return;
       }
-      if (pages.length > 1) {
-        for (const page of pages) {
-          const pageBlock = document.createElement("div");
-          pageBlock.className = "rc-outline-page";
+      for (const { page, entries } of pages) {
+        const pageBlock = document.createElement("div");
+        pageBlock.className = "rc-outline-page";
+        if (pages.length > 1 || newestFirst) {
           const pageBtn = document.createElement("button");
           pageBtn.type = "button";
           pageBtn.className = "rc-outline-page-btn";
@@ -36955,15 +37925,9 @@ ${clean(nextLineText)}`;
             hideOutline();
           });
           pageBlock.appendChild(pageBtn);
-          for (const h of page.headings) {
-            pageBlock.appendChild(renderHeadingRow(h));
-          }
-          outlineList.appendChild(pageBlock);
         }
-      } else {
-        for (const h of headings) {
-          outlineList.appendChild(renderHeadingRow(h));
-        }
+        for (const e of entries) pageBlock.appendChild(renderEntryRow(e, page));
+        outlineList.appendChild(pageBlock);
       }
     }
     function updatePageIndicator(state2 = view ? view.state : null) {
@@ -36996,6 +37960,9 @@ ${clean(nextLineText)}`;
     }
     let inkLayer = null;
     let library = null;
+    let recense = null;
+    let recenseActions = null;
+    let speaker = null;
     let audioSidecar = null;
     let dualWings = null;
     let calendarScanner = null;
@@ -37027,6 +37994,7 @@ ${clean(nextLineText)}`;
       theme: currentTheme,
       fontSize: currentFontSize,
       onOpenFind: () => hideOutline(),
+      extraExtensions: [recenseField],
       onUpdate(update) {
         const findOpen = isFindReplaceOpen(update.state);
         searchBtn.setAttribute("aria-pressed", String(findOpen));
@@ -37043,7 +38011,9 @@ ${clean(nextLineText)}`;
           if (calendarScanner && dualWings) scheduleCalendarScan();
           if (isExternal) scheduleExpiry();
           else if (library) library.noteEdit();
+          if (recense) recense.docChanged();
         }
+        if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
           if (inkLayer) inkLayer.relayout();
@@ -37087,7 +38057,7 @@ ${String(text ?? "")}`;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
       }
     });
-    const speaker = createSpeaker(typeof window !== "undefined" ? window : null);
+    speaker = createSpeaker(typeof window !== "undefined" ? window : null);
     library = createLibraryUI({
       getView: () => view,
       toolbar,
@@ -37103,6 +38073,95 @@ ${String(text ?? "")}`;
       speaker
     });
     library.refresh();
+    const uiHost = () => typeof window !== "undefined" ? window.webkit?.messageHandlers?.ui : null;
+    let storage = null;
+    try {
+      storage = typeof localStorage !== "undefined" ? localStorage : null;
+    } catch {
+      storage = null;
+    }
+    recense = createRecense({
+      getText: () => view.state.doc.toString(),
+      dispatch: (spec) => view.dispatch(spec),
+      getCaret: () => view.state.selection.main.head,
+      hasFocus: () => view.hasFocus,
+      post: uiHost() ? (m) => uiHost().postMessage(m) : null,
+      storage,
+      // In-page wings (iOS, the browser) take the typed line directly; the Mac's wing panels get it from the host.
+      wingCard: (card) => dualWings ? dualWings.setTypedLine(card) : null,
+      onChaptersChanged: () => {
+        if (!outlineVisible) renderOutline();
+      }
+    });
+    const recenseBtn = document.createElement("button");
+    recenseBtn.type = "button";
+    recenseBtn.className = "rc-btn rc-recense-btn";
+    recenseBtn.textContent = "\u2726";
+    recenseBtn.title = "Recense layer";
+    recenseBtn.setAttribute("aria-label", "Recense layer");
+    toolbar.insertBefore(recenseBtn, menuWrap);
+    const INTO = ["", "en", "vi", "fr"];
+    const INTO_NAMES = { "": "Auto", en: "English", vi: "Vietnamese", fr: "French" };
+    function syncRecenseControls() {
+      const on = recense.isEnabled();
+      recenseBtn.setAttribute("aria-pressed", String(on));
+      recenseLayerBtn.setAttribute("aria-pressed", String(on));
+      recenseLensBtn.textContent = `Lens: ${LENS_NAMES[recense.getLens()]}`;
+      recenseLensBtn.hidden = !on;
+      recenseIntoBtn.hidden = !on || recense.getLens() !== "source";
+      recenseIntoBtn.textContent = `Translate into: ${INTO_NAMES[recense.getTarget(currentPage(view.state))] || "Auto"}`;
+    }
+    recenseActions = {
+      toggle: (on) => {
+        recense.setEnabled(on ?? !recense.isEnabled());
+        syncRecenseControls();
+        return recense.isEnabled();
+      },
+      lens: (name2) => {
+        if (!recense.isEnabled()) recense.setEnabled(true);
+        const l = name2 ? recense.setLens(name2) : recense.nextLens();
+        syncRecenseControls();
+        return l;
+      },
+      now: () => {
+        const id2 = recense.recenseNow();
+        library?.toast(id2 ? "Recensing in the background" : "Everything is recensed");
+        return id2;
+      },
+      into: () => {
+        const i = currentPage(view.state);
+        const next = INTO[(INTO.indexOf(recense.getTarget(i)) + 1) % INTO.length];
+        recense.setTarget(i, next);
+        syncRecenseControls();
+        return next;
+      }
+    };
+    recenseBtn.addEventListener("click", () => recenseActions.toggle());
+    recenseLayerBtn.addEventListener("click", () => {
+      closeMenu();
+      recenseActions.toggle();
+    });
+    recenseLensBtn.addEventListener("click", () => {
+      closeMenu();
+      recenseActions.lens();
+    });
+    recenseNowBtn.addEventListener("click", () => {
+      closeMenu();
+      recenseActions.now();
+    });
+    recenseIntoBtn.addEventListener("click", () => {
+      closeMenu();
+      recenseActions.into();
+    });
+    syncRecenseControls();
+    recense.redraw();
+    if (typeof setInterval === "function") {
+      setInterval(() => {
+        if (!recense.due().length) return;
+        if (uiHost()) uiHost().postMessage({ powerState: true });
+        else recense.tick();
+      }, 15e3)?.unref?.();
+    }
     setInkSearch({
       find: (q) => inkLayer ? inkLayer.findInk(q) : [],
       mark: (ids) => {
@@ -37149,12 +38208,16 @@ ${String(text ?? "")}`;
     function showOutline() {
       const wasVisible = outlineVisible;
       outlineVisible = true;
+      if (!wasVisible && recense) recense.freeze();
       outlinePanel.hidden = false;
       outlineToggleBtn.setAttribute("aria-pressed", "true");
+      if (!wasVisible) renderOutline();
       if (!wasVisible) postHaptic("open");
     }
     function hideOutline() {
       outlineVisible = false;
+      chapterActionsFor = -1;
+      if (recense) recense.unfreeze();
       outlinePanel.hidden = true;
       outlineToggleBtn.setAttribute("aria-pressed", "false");
     }
@@ -37227,7 +38290,10 @@ ${String(text ?? "")}`;
       },
       openWing: (side) => dualWings ? dualWings.openWing(side) : null,
       closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
-      swapWings: () => dualWings ? dualWings.swapWings() : null
+      swapWings: () => dualWings ? dualWings.swapWings() : null,
+      recenseNow: () => recenseActions?.now(),
+      toggleRecense: (on) => recenseActions?.toggle(on),
+      setRecenseLens: (name2) => recenseActions?.lens(name2)
     };
     const voiceCommand = (phrase2) => executeVoiceMove(phrase2, voiceHandlers);
     bridge = createEditorBridge({
@@ -37293,6 +38359,19 @@ ${String(text ?? "")}`;
         setSidecar: (name2, json) => library ? library.setSidecar(String(name2), String(json)) : null,
         pagesArchived: (token, ok) => library ? library.pagesArchived(String(token), Boolean(ok)) : 0,
         openLibrary: (tabName) => library ? library.openTab(String(tabName || "saved")) : null,
+        // Recense what you typed: the host's answers (shared/recensetext.swift).
+        setRecenseSection: (id2, json) => recense ? recense.setSection(String(id2), json) : false,
+        recenseDone: (id2) => recense ? recense.recenseDone(String(id2)) : null,
+        setRecenseSource: (id2, json) => recense ? recense.setSource(String(id2), json) : 0,
+        setRecensedList: () => null,
+        setPowerState: (onPower, percent2) => {
+          if (!recense) return null;
+          recense.setPowerState(onPower, percent2);
+          return recense.tick();
+        },
+        recenseNow: () => recenseActions?.now(),
+        setRecenseLayer: (on) => recenseActions?.toggle(Boolean(on)),
+        setRecenseLens: (name2) => recenseActions?.lens(String(name2 || "")),
         // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
         onPencilAction: (action) => {
           if ((action === "squeeze" || action === "doubleTap") && inkLayer) {

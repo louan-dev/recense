@@ -20,6 +20,8 @@ import {
   setInkSearch
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
+import { createRecense, recenseField, LENS_NAMES } from './recense.js';
+import { chapterEntries } from './chapters.js';
 import { createEditorBridge, externalSetTextAnnotation, postHaptic } from './bridge.js';
 import { removedRecordExtension, getRemoved } from './removed.js';
 import {
@@ -242,7 +244,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
     return btn;
   }
 
-  const outlineToggleBtn = makeMenuItem('rc-outline-toggle-btn', 'Outline', 'Outline');
+  const outlineToggleBtn = makeMenuItem('rc-outline-toggle-btn', 'Chapters', 'Chapters, Saved and Playlists');
+  // Recense what you typed (recense.js): the layer, its lens, and recensing now. Translate into: the Source lens's
+  // language for this page (Auto: English → Vietnamese, anything else → English).
+  const recenseLayerBtn = makeMenuItem('rc-recense-layer-btn', 'Recense layer', 'Show recensed lines under your text');
+  const recenseLensBtn = makeMenuItem('rc-recense-lens-btn', 'Lens: Gist', 'Change the lens: Gist, Reformat, Source');
+  const recenseNowBtn = makeMenuItem('rc-recense-now-btn', 'Recense now', 'Recense every section not yet recensed');
+  const recenseIntoBtn = makeMenuItem('rc-recense-into-btn', 'Translate into: Auto', 'The Source lens’s language for this page');
   const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
   const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'Newer page (⌘[)');
   const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'Older page (⌘])');
@@ -257,6 +265,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   menu.append(
     outlineToggleBtn,
+    recenseLayerBtn,
+    recenseLensBtn,
+    recenseNowBtn,
+    recenseIntoBtn,
     searchBtn,
     prevPageBtn,
     nextPageBtn,
@@ -273,14 +285,14 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const outlinePanel = document.createElement('aside');
   outlinePanel.className = 'rc-outline';
   outlinePanel.id = 'rc-outline-panel';
-  outlinePanel.setAttribute('aria-label', 'Document Outline');
+  outlinePanel.setAttribute('aria-label', 'Chapters');
   outlinePanel.hidden = true;
 
   const outlineHeader = document.createElement('div');
   outlineHeader.className = 'rc-outline-header';
 
   const outlineTitle = document.createElement('span');
-  outlineTitle.textContent = 'Outline';
+  outlineTitle.textContent = 'Chapters';
 
   const newestFirstBtn = document.createElement('button');
   newestFirstBtn.type = 'button';
@@ -308,112 +320,129 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let view = null;
   let bridge = null;
 
-  function renderHeadingRow(h) {
+  // ── Chapters: the side panel's first tab (chapters.js). Your headings live; recensed titles held while it's open. ──
+  let chapterActionsFor = -1;   // the entry (by offset) whose Play / Make heading / Copy gist row is open
+  function playFrom(from, to) {
+    const parts = view.state.doc.sliceString(from, to).split(/\n\s*\n/)
+      .map(t => t.replace(/<!--[\s\S]*?-->/g, '').replace(/^#+\s+|^§\s+/gm, '').trim()).filter(Boolean);
+    if (parts.length && speaker) speaker.speak(parts, {});
+  }
+
+  function renderEntryRow(e, page) {
+    const wrap = document.createElement('div');
     const row = document.createElement('div');
-    row.className = 'rc-outline-item';
-    row.style.paddingLeft = `${Math.max(0, (h.level - 1) * 12)}px`;
+    row.className = `rc-outline-item rc-chapter rc-chapter-${e.kind}${e.level > 1 ? ' rc-chapter-nested' : ''}`;
+    if (e.current) row.setAttribute('aria-current', 'true');
 
     const foldBtn = document.createElement('button');
     foldBtn.type = 'button';
     foldBtn.className = 'rc-outline-fold-btn';
-    const foldable = h.foldFrom !== null && h.foldTo !== null;
-    if (foldable && view) {
+    const h = e.heading;
+    if (h && h.foldFrom !== null && h.foldTo !== null) {
       const folded = isHeadingFolded(view.state, h);
       foldBtn.textContent = folded ? '▸' : '▾';
       foldBtn.title = folded ? 'Unfold heading' : 'Fold heading';
-      foldBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        toggleHeadingFold(view, h);
-        renderOutline();
-      });
+      foldBtn.addEventListener('click', ev => { ev.stopPropagation(); toggleHeadingFold(view, h); renderOutline(); });
     } else {
-      foldBtn.textContent = '·';
+      foldBtn.textContent = e.kind === 'recensed' ? '✦' : '·';
+      if (e.kind === 'recensed') foldBtn.title = 'Recensed: a title Recense wrote; it is not in your page';
       foldBtn.disabled = true;
     }
 
     const jumpBtn = document.createElement('button');
     jumpBtn.type = 'button';
     jumpBtn.className = 'rc-outline-jump-btn';
-    jumpBtn.textContent = h.kind === 'section' ? `§ ${h.title}` : h.title;
+    const title = document.createElement('span');
+    title.className = 'rc-chapter-title';
+    title.textContent = e.title;
+    jumpBtn.appendChild(title);
+    if (e.gist) jumpBtn.appendChild(Object.assign(document.createElement('span'), { className: 'rc-chapter-gist', textContent: e.gist }));
+    if (e.listen) jumpBtn.appendChild(Object.assign(document.createElement('span'), { className: 'rc-chapter-time', textContent: e.listen }));
+    let held = false, holdTimer = null;
+    jumpBtn.addEventListener('pointerdown', () => {
+      held = false;
+      holdTimer = setTimeout(() => { held = true; chapterActionsFor = e.from; renderOutline(); }, 500);
+    });
+    const cancelHold = () => { if (holdTimer) clearTimeout(holdTimer); holdTimer = null; };
+    jumpBtn.addEventListener('pointerup', cancelHold);
+    jumpBtn.addEventListener('pointerleave', cancelHold);
     jumpBtn.addEventListener('click', () => {
-      if (view) jumpToOffset(view, h.from);
+      if (held) return;
+      jumpToOffset(view, e.from);
       hideOutline();
     });
 
-    row.append(foldBtn, jumpBtn);
-    return row;
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'rc-chapter-more';
+    moreBtn.textContent = '···';
+    moreBtn.setAttribute('aria-label', `More for ${e.title}`);
+    moreBtn.setAttribute('aria-expanded', String(chapterActionsFor === e.from));
+    moreBtn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      chapterActionsFor = chapterActionsFor === e.from ? -1 : e.from;
+      renderOutline();
+    });
+
+    row.append(foldBtn, jumpBtn, moreBtn);
+    wrap.appendChild(row);
+    if (chapterActionsFor === e.from) {
+      const acts = document.createElement('div');
+      acts.className = 'rc-chapter-actions';
+      const act = (label, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rc-chapter-action';
+        b.textContent = label;
+        b.addEventListener('click', ev => { ev.stopPropagation(); chapterActionsFor = -1; fn(); });
+        acts.appendChild(b);
+      };
+      act('Play from here', () => playFrom(e.from, page.to));
+      if (e.kind === 'recensed' && recense) {
+        act('Make heading', () => { if (recense.makeHeading(e.section.key)) library?.toast('Heading added to your page'); });
+      }
+      if (e.gist) {
+        act('Copy gist', () => {
+          try { navigator.clipboard?.writeText(e.gist); } catch { /* no clipboard here */ }
+          library?.toast('Gist copied');
+        });
+      }
+      wrap.appendChild(acts);
+    }
+    return wrap;
   }
 
   function renderOutline() {
-    if (!view) return;
+    if (!view || !outlineVisible) return;
     const docText = view.state.doc.toString();
     outlineList.innerHTML = '';
-
-    if (newestFirst) {
-      const orderedPages = orderPagesForOutline(docText, { newestFirst: true });
-      if (orderedPages.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'rc-outline-empty';
-        empty.textContent = 'No pages yet';
-        outlineList.appendChild(empty);
-        return;
-      }
-      for (const page of orderedPages) {
-        const pageBlock = document.createElement('div');
-        pageBlock.className = 'rc-outline-page';
-
-        const pageBtn = document.createElement('button');
-        pageBtn.type = 'button';
-        pageBtn.className = 'rc-outline-page-btn';
-        pageBtn.textContent = page.dateLine || page.title;
-        pageBtn.addEventListener('click', () => {
-          jumpToOffset(view, page.from);
-          hideOutline();
-        });
-        pageBlock.appendChild(pageBtn);
-
-        for (const h of page.headings) {
-          pageBlock.appendChild(renderHeadingRow(h));
-        }
-        outlineList.appendChild(pageBlock);
-      }
-      return;
-    }
-
-    const headings = extractHeadings(docText);
-    const pages = orderPagesForOutline(docText, { newestFirst: false });
-    if (headings.length === 0 && pages.length <= 1) {
+    const pages = chapterEntries(docText, {
+      sections: recense ? recense.sections() : [],
+      titles: recense ? recense.titles() : new Map(),
+      lastDone: recense ? recense.lastDone() : 0,
+      caret: view.state.selection.main.head,
+      newestFirst
+    });
+    if (!pages.some(p => p.entries.length) && pages.length <= 1) {
       const empty = document.createElement('div');
       empty.className = 'rc-outline-empty';
-      empty.textContent = 'No headings yet';
+      empty.textContent = 'No chapters yet';
       outlineList.appendChild(empty);
       return;
     }
-
-    if (pages.length > 1) {
-      for (const page of pages) {
-        const pageBlock = document.createElement('div');
-        pageBlock.className = 'rc-outline-page';
-
+    for (const { page, entries } of pages) {
+      const pageBlock = document.createElement('div');
+      pageBlock.className = 'rc-outline-page';
+      if (pages.length > 1 || newestFirst) {
         const pageBtn = document.createElement('button');
         pageBtn.type = 'button';
         pageBtn.className = 'rc-outline-page-btn';
         pageBtn.textContent = page.dateLine || page.title;
-        pageBtn.addEventListener('click', () => {
-          jumpToOffset(view, page.from);
-          hideOutline();
-        });
+        pageBtn.addEventListener('click', () => { jumpToOffset(view, page.from); hideOutline(); });
         pageBlock.appendChild(pageBtn);
-
-        for (const h of page.headings) {
-          pageBlock.appendChild(renderHeadingRow(h));
-        }
-        outlineList.appendChild(pageBlock);
       }
-    } else {
-      for (const h of headings) {
-        outlineList.appendChild(renderHeadingRow(h));
-      }
+      for (const e of entries) pageBlock.appendChild(renderEntryRow(e, page));
+      outlineList.appendChild(pageBlock);
     }
   }
 
@@ -451,6 +480,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   let inkLayer = null;
   let library = null;
+  let recense = null;
+  let recenseActions = null;
+  let speaker = null;
   let audioSidecar = null;
   let dualWings = null;
   let calendarScanner = null;
@@ -488,6 +520,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     theme: currentTheme,
     fontSize: currentFontSize,
     onOpenFind: () => hideOutline(),
+    extraExtensions: [recenseField],
     onUpdate(update) {
       const findOpen = isFindReplaceOpen(update.state);
       searchBtn.setAttribute('aria-pressed', String(findOpen));
@@ -504,7 +537,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
         if (calendarScanner && dualWings) scheduleCalendarScan();
         if (isExternal) scheduleExpiry();
         else if (library) library.noteEdit();
+        if (recense) recense.docChanged();
       }
+      if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
         if (inkLayer) inkLayer.relayout();
@@ -552,7 +587,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   });
 
-  const speaker = createSpeaker(typeof window !== 'undefined' ? window : null);
+  speaker = createSpeaker(typeof window !== 'undefined' ? window : null);
   library = createLibraryUI({
     getView: () => view,
     toolbar,
@@ -568,6 +603,68 @@ export function mountEditor(root = document.body, initialDoc = '') {
     speaker
   });
   library.refresh();
+
+  // Recense what you typed (recense.js). Off until turned on (menu, toolbar's ✦, voice); recensing itself runs at rest
+  // for the Chapters tab either way: a section quiet for 60 s, on power or battery above 30 %, or "Recense now".
+  const uiHost = () => (typeof window !== 'undefined' ? window.webkit?.messageHandlers?.ui : null);
+  let storage = null;
+  try { storage = typeof localStorage !== 'undefined' ? localStorage : null; } catch { storage = null; }
+  recense = createRecense({
+    getText: () => view.state.doc.toString(),
+    dispatch: spec => view.dispatch(spec),
+    getCaret: () => view.state.selection.main.head,
+    hasFocus: () => view.hasFocus,
+    post: uiHost() ? m => uiHost().postMessage(m) : null,
+    storage,
+    // In-page wings (iOS, the browser) take the typed line directly; the Mac's wing panels get it from the host.
+    wingCard: card => (dualWings ? dualWings.setTypedLine(card) : null),
+    onChaptersChanged: () => { if (!outlineVisible) renderOutline(); }
+  });
+  const recenseBtn = document.createElement('button');
+  recenseBtn.type = 'button';
+  recenseBtn.className = 'rc-btn rc-recense-btn';
+  recenseBtn.textContent = '✦';
+  recenseBtn.title = 'Recense layer';
+  recenseBtn.setAttribute('aria-label', 'Recense layer');
+  toolbar.insertBefore(recenseBtn, menuWrap);
+  const INTO = ['', 'en', 'vi', 'fr'];
+  const INTO_NAMES = { '': 'Auto', en: 'English', vi: 'Vietnamese', fr: 'French' };
+  function syncRecenseControls() {
+    const on = recense.isEnabled();
+    recenseBtn.setAttribute('aria-pressed', String(on));
+    recenseLayerBtn.setAttribute('aria-pressed', String(on));
+    recenseLensBtn.textContent = `Lens: ${LENS_NAMES[recense.getLens()]}`;
+    recenseLensBtn.hidden = !on;
+    recenseIntoBtn.hidden = !on || recense.getLens() !== 'source';
+    recenseIntoBtn.textContent = `Translate into: ${INTO_NAMES[recense.getTarget(currentPage(view.state))] || 'Auto'}`;
+  }
+  recenseActions = {
+    toggle: on => { recense.setEnabled(on ?? !recense.isEnabled()); syncRecenseControls(); return recense.isEnabled(); },
+    lens: name => { if (!recense.isEnabled()) recense.setEnabled(true); const l = name ? recense.setLens(name) : recense.nextLens(); syncRecenseControls(); return l; },
+    now: () => { const id = recense.recenseNow(); library?.toast(id ? 'Recensing in the background' : 'Everything is recensed'); return id; },
+    into: () => {
+      const i = currentPage(view.state);
+      const next = INTO[(INTO.indexOf(recense.getTarget(i)) + 1) % INTO.length];
+      recense.setTarget(i, next);
+      syncRecenseControls();
+      return next;
+    }
+  };
+  recenseBtn.addEventListener('click', () => recenseActions.toggle());
+  recenseLayerBtn.addEventListener('click', () => { closeMenu(); recenseActions.toggle(); });
+  recenseLensBtn.addEventListener('click', () => { closeMenu(); recenseActions.lens(); });
+  recenseNowBtn.addEventListener('click', () => { closeMenu(); recenseActions.now(); });
+  recenseIntoBtn.addEventListener('click', () => { closeMenu(); recenseActions.into(); });
+  syncRecenseControls();
+  recense.redraw();
+  // Every 15 s, at rest: if a section has been quiet for a minute, ask the host about power, then recense.
+  if (typeof setInterval === 'function') {
+    setInterval(() => {
+      if (!recense.due().length) return;
+      if (uiHost()) uiHost().postMessage({ powerState: true });
+      else recense.tick();
+    }, 15_000)?.unref?.();
+  }
 
   // Find also looks in handwriting (read on this device; ink.js + the host's recogniser).
   setInkSearch({
@@ -619,13 +716,17 @@ export function mountEditor(root = document.body, initialDoc = '') {
   function showOutline() {
     const wasVisible = outlineVisible;
     outlineVisible = true;
+    if (!wasVisible && recense) recense.freeze();   // titles hold still while the panel is open
     outlinePanel.hidden = false;
     outlineToggleBtn.setAttribute('aria-pressed', 'true');
+    if (!wasVisible) renderOutline();
     if (!wasVisible) postHaptic('open');
   }
 
   function hideOutline() {
     outlineVisible = false;
+    chapterActionsFor = -1;
+    if (recense) recense.unfreeze();
     outlinePanel.hidden = true;
     outlineToggleBtn.setAttribute('aria-pressed', 'false');
   }
@@ -707,7 +808,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     },
     openWing: side => (dualWings ? dualWings.openWing(side) : null),
     closeWing: side => (dualWings ? dualWings.closeWing(side) : null),
-    swapWings: () => (dualWings ? dualWings.swapWings() : null)
+    swapWings: () => (dualWings ? dualWings.swapWings() : null),
+    recenseNow: () => recenseActions?.now(),
+    toggleRecense: on => recenseActions?.toggle(on),
+    setRecenseLens: name => recenseActions?.lens(name)
   };
 
   const voiceCommand = phrase => executeVoiceMove(phrase, voiceHandlers);
@@ -778,6 +882,19 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setSidecar: (name, json) => (library ? library.setSidecar(String(name), String(json)) : null),
       pagesArchived: (token, ok) => (library ? library.pagesArchived(String(token), Boolean(ok)) : 0),
       openLibrary: tabName => (library ? library.openTab(String(tabName || 'saved')) : null),
+      // Recense what you typed: the host's answers (shared/recensetext.swift).
+      setRecenseSection: (id, json) => (recense ? recense.setSection(String(id), json) : false),
+      recenseDone: id => (recense ? recense.recenseDone(String(id)) : null),
+      setRecenseSource: (id, json) => (recense ? recense.setSource(String(id), json) : 0),
+      setRecensedList: () => null,
+      setPowerState: (onPower, percent) => {
+        if (!recense) return null;
+        recense.setPowerState(onPower, percent);
+        return recense.tick();
+      },
+      recenseNow: () => recenseActions?.now(),
+      setRecenseLayer: on => recenseActions?.toggle(Boolean(on)),
+      setRecenseLens: name => recenseActions?.lens(String(name || '')),
       // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
       onPencilAction: action => {
         if ((action === 'squeeze' || action === 'doubleTap') && inkLayer) {

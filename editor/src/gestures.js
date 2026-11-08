@@ -416,8 +416,25 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: true, action: 'deleteEmptyWindow' };
   }
 
-  // 4. Outline
-  const outlineKeywords = ['outline', 'topics', 'mục lục', 'sommaire'];
+  // 3b. Recense what you typed: "recense now", "recense layer" (on/off), "gist" / "reformat" / "source" lens.
+  if (hasPhrase('recense now') || hasPhrase('recense lại') || hasPhrase('recenser maintenant')) {
+    if (typeof handlers.recenseNow === 'function') handlers.recenseNow();
+    return { matched: true, action: 'recenseNow' };
+  }
+  for (const [lens, words] of [['gist', ['gist', 'ý chính']], ['reformat', ['reformat', 'irac', 'trình bày lại']], ['source', ['source lens', 'show source', 'bản dịch']]]) {
+    if (words.some(w => (w.includes(' ') ? hasPhrase(w) : hasWord(w)))) {
+      if (typeof handlers.setRecenseLens === 'function') handlers.setRecenseLens(lens);
+      return { matched: true, action: 'setRecenseLens', lens };
+    }
+  }
+  if (hasWord('recense')) {
+    const off = hasWord('off') || hasWord('hide') || hasWord('tắt');
+    if (typeof handlers.toggleRecense === 'function') handlers.toggleRecense(off ? false : (hasWord('on') || hasWord('show') || hasWord('bật')) ? true : undefined);
+    return { matched: true, action: 'toggleRecense' };
+  }
+
+  // 4. Outline (the Chapters tab)
+  const outlineKeywords = ['outline', 'chapters', 'topics', 'mục lục', 'chương', 'sommaire', 'chapitres'];
   if (outlineKeywords.some(kw => hasWord(kw))) {
     if (typeof handlers.toggleOutline === 'function') {
       handlers.toggleOutline();

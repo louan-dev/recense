@@ -106,6 +106,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     /// The page bounced at its first or last page (the host plays the strip's bounce).
     var onBounce: (() -> Void)?
+    /// The Recense layer's line for the wing card while you write (lens line, its source), or nil on blur.
+    var onRecenseCard: (((String, String)?) -> Void)?
     let files: EmbedFiles
     /// nil for the editor; "left" or "right" for a wing panel's page (wingpanels.swift): the same bundled page,
     /// showing that one wing.
@@ -231,6 +233,15 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "ui" {
             if (m.body as? String) == "bounce" { onBounce?(); return }
+            // Recense what you typed (shared/recensetext.swift): lenses, translations, Recensed/<id>.json, power. The typed
+            // line for the wing card goes to the wing panels while the editor has focus (nil gives the media's back).
+            if let d = m.body as? [String: Any], wingSide == nil, d.keys.contains("recenseCard") {
+                let c = d["recenseCard"] as? [String: Any]
+                onRecenseCard?((c?["original"] as? String).map { ($0, c?["translation"] as? String ?? "") })
+                return
+            }
+            if let d = m.body as? [String: Any], wingSide == nil,
+               RecenseText.handle(d, vault: vault, js: { [weak self] in self?.send($0) }, quote: jsString) { return }
             // Page library: playlists file, expired pages to the archive, read-aloud (shared/draftpadlibrary.swift).
             if let d = m.body as? [String: Any],
                DraftpadLibrary.handle(d, vault: wingSide == nil ? vault : nil, voice: voice,
@@ -585,5 +596,46 @@ func librarySelftest() -> Bool {
     check(calls.count == 1 && calls[0].hasPrefix("setSidecar(\"playlists\""), "playlists come back on load; other names refused", calls)
     _ = DraftpadLibrary.handle(["archivePages": ["token": "x1", "pages": [page]]], vault: vault, voice: voice, js: { sent.append($0) }, quote: jsString)
     check(sent.last == "pagesArchived(\"x1\", true)", "answers the page after archiving", sent)
+    return ok
+}
+
+/// Recense what you typed (shared/recensetext.swift): the moved language rules, Lines from typed sentences, the lens
+/// schemas, and Recensed/<id>.json written for a saved page only (one name, no path tricks). No model call here
+/// (a lens takes 6–25 s on the M1); that was checked by hand and is in the M1 report.
+func recenseTextSelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String, _ got: Any = "") { print("\(pass ? "ok  " : "FAIL") recense text, \(what)\(pass ? "" : " — got \(got)")"); ok = ok && pass }
+    let ls = RecenseText.lines([.init(key: "a", text: "A contract needs an offer and acceptance."),
+                                .init(key: "b", text: "Theo Điều 385 Bộ luật Dân sự, hợp đồng là sự thỏa thuận giữa các bên.")])
+    check(ls.count == 2 && ls[0].words.count == 7, "a typed sentence becomes a Line of words", ls.map { $0.words.map(\.text) })
+    check(ls[0].words.first?.lang == "en" && ls[1].words.first?.lang == "vi", "each sentence's language, read per phrase",
+          ls.map { $0.words.first?.lang ?? "-" })
+    check(RecenseText.target(for: "en", requested: nil) == "vi" && RecenseText.target(for: "fr", requested: nil) == "en"
+          && RecenseText.target(for: "en", requested: "fr") == "fr", "English → Vietnamese, else → English; the page's pick wins")
+    check(languageName("vi") == "Vietnamese", "languageName moved to shared")
+    #if canImport(ShowsKit)
+    let tl = ls[0].transcriptLine(key: "a", chapter: "Offers")
+    check(tl.id == "a" && tl.text == "A contract needs an offer and acceptance." && tl.chapter == "Offers" && tl.words.count == 7,
+          "a Line maps to ShowsKit's TranscriptLine", tl.text)
+    #endif
+    #if canImport(FoundationModels)
+    if #available(macOS 26.0, *) {
+        check((try? RecenseText.gistSchema()) != nil && (try? RecenseText.iracSchema()) != nil, "the Gist and IRAC schemas build")
+    }
+    #endif
+    let vault = FileManager.default.temporaryDirectory.appendingPathComponent("recense-text-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: vault) }
+    var sent: [String] = []
+    _ = RecenseText.handle(["recenseSave": ["pageId": "abc123", "json": "{\"pageId\":\"abc123\",\"title\":\"Offers\",\"updated\":\"2026-11-08\"}"]],
+                           vault: vault, js: { sent.append($0) }, quote: jsString)
+    _ = RecenseText.handle(["recenseSave": ["pageId": "../../x", "json": "{}"]], vault: vault, js: { sent.append($0) }, quote: jsString)
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: vault.appendingPathComponent("Recensed").path))?.sorted() ?? []
+    check(names == ["abc123.json", "x.json"], "a saved page's lenses land in Recensed/<id>.json, never outside it", names)
+    check(sent.first?.contains("Offers") == true, "the list of recensed pages comes back", sent)
+    sent = []
+    check(RecenseText.handle(["powerState": true], vault: nil, js: { sent.append($0) }, quote: jsString)
+          && sent.first?.hasPrefix("setPowerState(") == true, "answers the power check", sent)
+    check(RecenseText.handle(["recenseCard": NSNull()], vault: nil, js: { _ in }, quote: jsString), "the wing card's line is taken")
     return ok
 }

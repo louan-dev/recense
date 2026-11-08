@@ -221,7 +221,7 @@ export function createLibraryUI({ getView, toolbar, before, panel, header, title
   // ── Side panel tabs ───────────────────────────────────────────────────────────────────────────────────────────────
   const tabBar = el('div', 'rc-panel-tabs');
   tabBar.setAttribute('role', 'tablist');
-  if (title) { header.insertBefore(tabBar, title); header.removeChild(title); }   // the "Outline" title becomes a tab
+  if (title) { header.insertBefore(tabBar, title); header.removeChild(title); }   // the "Chapters" title becomes a tab
   else header.appendChild(tabBar);
   const libList = el('div', 'rc-library-list');
   libList.hidden = true;
@@ -235,7 +235,7 @@ export function createLibraryUI({ getView, toolbar, before, panel, header, title
     tabBar.append(b);
     tabs.set(id, { btn: b, render });
   }
-  addTab('outline', 'Outline', null);
+  addTab('outline', 'Chapters', null);
   addTab('saved', 'Saved', renderSaved);
   addTab('playlists', 'Playlists', renderPlaylists);
 

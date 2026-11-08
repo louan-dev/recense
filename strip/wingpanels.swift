@@ -76,6 +76,13 @@ final class WingPanels {
         line = (original, translation)
         for w in wings.values { w.host.send("setRecenseLine(\(jsString(original)), \(jsString(translation)))") }
     }
+    /// While you write with the Recense layer on, the card shows your text's lens line instead (nil: the media's again).
+    private var typed: (String, String)?
+    func setTypedLine(_ t: (String, String)?) {
+        typed = t
+        let call = t.map { "setTypedLine({original: \(jsString($0.0)), translation: \(jsString($0.1))})" } ?? "setTypedLine(null)"
+        for w in wings.values { w.host.send(call) }
+    }
 
     /// Extra entries for a panel's right-click menu.
     var menuItems: () -> [NSMenuItem] = { [] }
@@ -115,6 +122,7 @@ final class WingPanels {
         w.host.setText(currentText())
         w.host.send("setArranging(false)")       // Move controls hidden at rest, every time it opens
         w.host.send("setRecenseLine(\(jsString(line.0)), \(jsString(line.1)))")
+        if let t = typed { w.host.send("setTypedLine({original: \(jsString(t.0)), translation: \(jsString(t.1))})") }
         guard w.ready else { pendingShow.insert(s); return }   // first time: once the page has laid itself out
         present(s)
     }
