@@ -1,0 +1,103 @@
+// The transcript's light and the scrubber's rules (Views/Transcript.swift, Views/Scrubber.swift), in English,
+// Vietnamese and French.
+import XCTest
+@testable import ShowsKit
+
+final class TranscriptTests: XCTestCase {
+    private func said(_ l: TranscriptLine, _ t: Double) -> String { String(l.text[..<TranscriptLight.spoken(l, at: t)]) }
+
+    func testActiveLineIsTheLastBegun() {
+        let ls = TranscriptLine.sample
+        XCTAssertNil(TranscriptLight.active(ls, at: -1))
+        XCTAssertEqual(TranscriptLight.active(ls, at: 0), 0)
+        XCTAssertEqual(TranscriptLight.active(ls, at: 12.9), 1)
+        XCTAssertEqual(TranscriptLight.active(ls, at: 13), 2)
+        XCTAssertEqual(TranscriptLight.active(ls, at: 999), ls.count - 1)
+    }
+
+    func testWordsLightByTheirOwnTimes() {
+        let en = TranscriptLine(id: "e", start: 0, end: 3, text: "The court held, plainly.", words: [
+            .init(text: "The", start: 0, end: 0.3), .init(text: "court", start: 0.3, end: 0.6),
+            .init(text: "held,", start: 0.6, end: 1), .init(text: "plainly.", start: 1.2, end: 2)])
+        XCTAssertEqual(said(en, 0.1), "The")
+        XCTAssertEqual(said(en, 0.7), "The court held,")
+        XCTAssertEqual(said(en, 5), "The court held, plainly.")
+        XCTAssertEqual(said(en, -1), "")
+    }
+
+    func testVietnameseWordsKeepTheirDiacriticsAndSyllables() {
+        // DictationTranscriber gives Vietnamese words of two syllables ("Tòa án", "phán quyết")
+        let vi = TranscriptLine(id: "v", start: 0, end: 3, text: "Tòa án đã phán quyết rằng hợp đồng vô hiệu.", words: [
+            .init(text: "Tòa án", start: 0, end: 0.5), .init(text: "đã", start: 0.5, end: 0.8), .init(text: "phán quyết", start: 0.8, end: 1.4),
+            .init(text: "rằng", start: 1.4, end: 1.6), .init(text: "hợp đồng", start: 1.6, end: 2.2), .init(text: "vô hiệu.", start: 2.2, end: 2.9)])
+        XCTAssertEqual(said(vi, 0.9), "Tòa án đã phán quyết")
+        XCTAssertEqual(said(vi, 1.7), "Tòa án đã phán quyết rằng hợp đồng")
+        // a word decomposed (NFD) still finds its place in a composed (NFC) line
+        var nfd = vi
+        nfd.words = vi.words.map { TranscriptWord(text: $0.text.decomposedStringWithCanonicalMapping, start: $0.start, end: $0.end) }
+        XCTAssertEqual(said(nfd, 0.9), "Tòa án đã phán quyết")
+        XCTAssertTrue(TranscriptLight.ranges(nfd).allSatisfy { $0 != nil })
+    }
+
+    func testFrenchElisionAndAccents() {
+        let fr = TranscriptLine(id: "f", start: 0, end: 2, text: "L'appel a été jugé irrecevable.", words: [
+            .init(text: "L'appel", start: 0, end: 0.4), .init(text: "a", start: 0.4, end: 0.5), .init(text: "été", start: 0.5, end: 0.8),
+            .init(text: "jugé", start: 0.8, end: 1.1), .init(text: "irrecevable.", start: 1.1, end: 1.9)])
+        XCTAssertEqual(said(fr, 0.85), "L'appel a été jugé")
+    }
+
+    func testAWordTheTextLacksIsSkippedNotMisplaced() {
+        let l = TranscriptLine(id: "x", start: 0, end: 2, text: "one two three", words: [
+            .init(text: "one", start: 0, end: 0.5), .init(text: "zwei", start: 0.5, end: 1), .init(text: "three", start: 1, end: 1.5)])
+        XCTAssertEqual(said(l, 0.7), "one")
+        XCTAssertEqual(said(l, 1.2), "one two three")
+    }
+
+    func testWithoutWordTimesTheLightStopsAtAWholeWord() {
+        let vi = TranscriptLine(id: "p", start: 10, end: 20, text: "Tuy nhiên, nguyên đơn đã kháng cáo lên tòa án cấp cao hơn.")
+        for t in stride(from: 10.0, through: 20, by: 0.5) {
+            let s = said(vi, t)
+            // the cut is never inside a word: what follows starts with a space or punctuation, or nothing
+            let cut = TranscriptLight.spoken(vi, at: t), rest = vi.text[cut...]
+            XCTAssertTrue(cut == vi.text.startIndex || rest.isEmpty || rest.first!.isWhitespace || rest.first!.isPunctuation, "cut inside a word at \(t): \(s)|\(rest)")
+        }
+        XCTAssertEqual(said(vi, 9), "")
+        XCTAssertEqual(said(vi, 21), vi.text)
+    }
+
+    func testClockAndCopy() {
+        XCTAssertEqual(TranscriptLight.clock(0), "0:00")
+        XCTAssertEqual(TranscriptLight.clock(754), "12:34")
+        XCTAssertEqual(TranscriptLight.clock(4521), "1:15:21")
+        let two = Array(TranscriptLine.sample.prefix(2))
+        let text = TranscriptLight.text(two, translations: true)
+        XCTAssertTrue(text.hasPrefix("[0:00] Welcome back."))
+        XCTAssertTrue(text.contains("\nTòa án phán quyết rằng hợp đồng vô hiệu"))
+        XCTAssertFalse(TranscriptLight.text(two, translations: false).contains("Chào mừng"))
+    }
+
+    func testScrubberMovesFromWhereItWasAndGoesFinerUpward() {
+        // slide: from the playhead, not to the finger (homebar.js beginSeek)
+        XCTAssertEqual(ScrubMath.time(t0: 600, dx: 100, width: 400, duration: 3600, level: 0), 1500)
+        XCTAssertEqual(ScrubMath.time(t0: 600, dx: 100, width: 400, duration: 3600, level: 1), 825)
+        XCTAssertEqual(ScrubMath.time(t0: 10, dx: -400, width: 400, duration: 3600, level: 0), 0, "never before the start")
+        XCTAssertEqual(ScrubMath.time(t0: 3500, dx: 400, width: 400, duration: 3600, level: 0), 3600, "never past the end")
+        // up: ×4, ×16, ×64, only while the window still spans 10 s
+        XCTAssertEqual(ScrubMath.level(up: 10, unit: 44, duration: 3600), 0)
+        XCTAssertEqual(ScrubMath.level(up: 60, unit: 44, duration: 3600), 1)
+        XCTAssertEqual(ScrubMath.level(up: 120, unit: 44, duration: 3600), 2)
+        XCTAssertEqual(ScrubMath.level(up: 500, unit: 44, duration: 3600), 3)
+        XCTAssertEqual(ScrubMath.level(up: 500, unit: 44, duration: 60), 1, "a minute goes no finer than ×4 (15 s)")
+        // tap: jumps there
+        XCTAssertEqual(ScrubMath.jump(x: 100, width: 400, duration: 3600), 900)
+    }
+
+    @MainActor func testOnePlayheadForScrubberAndLines() {
+        let t = SampleTransport(at: 8, playing: false)
+        XCTAssertEqual(TranscriptLight.active(TranscriptLine.sample, at: t.time), 1)
+        t.seek(to: 20)          // the scrubber (or a tapped line) seeks the transport the lines read
+        XCTAssertEqual(TranscriptLight.active(TranscriptLine.sample, at: t.time), 3)
+        t.skip(-15)
+        XCTAssertEqual(t.time, 5)
+    }
+}

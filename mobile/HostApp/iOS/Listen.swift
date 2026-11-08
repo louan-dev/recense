@@ -20,6 +20,7 @@ struct Sentence: Identifiable, Codable, Equatable, Hashable {
     var said: String
     var at: Double  // about where in the episode, in seconds of listening (iOS can't see the other app's clock)
     var t: Double? = nil  // the episode's own time, when the Mac wrote it (Recense, handoff.swift)
+    var words: [TranscriptWord]? = nil  // each word as SpeechAnalyzer timed it, in seconds since 1970 (the transcript lights them)
     var time: Double { t ?? at }
 }
 
@@ -52,7 +53,7 @@ final class Listener: NSObject, ObservableObject {
     @Published var error: String?
     @Published var episode: Episode?
     @Published var episodes: [Episode] = []  // every one kept on this device, newest first
-    @Published var heard = Captions.state().heard { didSet { var s = Captions.state(); s.heard = heard; Captions.put(s); retarget() } }
+    @Published var heard = Captions.state().heard { didSet { var s = Captions.state(); s.heard = heard; Captions.put(s); retarget(); Task { await readyEars() } } }
     @Published var into = UserDefaults.standard.string(forKey: "listen.into") ?? "en" { didSet { UserDefaults.standard.set(into, forKey: "listen.into"); retarget() } }
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
     // Float: the window goes over other apps when Gallery is left. Dock: it stays in Gallery and doesn't follow.
@@ -65,6 +66,10 @@ final class Listener: NSObject, ObservableObject {
     let layer = AVSampleBufferDisplayLayer()
     private var pip: AVPictureInPictureController?
     private var lines: [Int: String] = [:]       // what the extension heard, one entry per recognition request
+    private var lineWords: [Int: [TranscriptWord]] = [:]  // its words, timed (SpeechAnalyzer), in seconds since 1970
+    // how far the words arrive behind the voice: the transcript lights each word this long after it was said, at the
+    // voice's own pace (live captions can't be ahead of what they heard)
+    @Published var lag = 1.5
     private var skip: [Int: Int] = [:]           // sentences of a request that belong to the episode before
     private var map: [String: String] = [:]      // "request.sentence" → the episode sentence it is (or matched)
     private var added: Set<String> = []          // episode sentences this listening added (not matched to older ones)
@@ -84,6 +89,7 @@ final class Listener: NSObject, ObservableObject {
         if let k = UserDefaults.standard.string(forKey: "listen.episode") { episode = episodes.first { $0.key == k } }
         retarget()
         draw()
+        Task { await findEars() }
         // Darwin notifications can be missed while the app is between states: also look twice a second
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
@@ -120,10 +126,59 @@ final class Listener: NSObject, ObservableObject {
         SFSpeechRecognizer.requestAuthorization { _ in }
     }
 
-    // the languages this device can hear without sending audio anywhere
-    static let hearable: [Locale] = SFSpeechRecognizer.supportedLocales()
+    // the languages this device can hear without sending audio anywhere: SFSpeechRecognizer's on-device ones, and on
+    // iOS 26 SpeechAnalyzer's (shared/speechcore.swift), whose model is downloaded once, when the language is chosen
+    @Published var hearable: [Locale] = SFSpeechRecognizer.supportedLocales()
         .filter { SFSpeechRecognizer(locale: $0)?.supportsOnDeviceRecognition == true }
         .sorted { name($0.identifier) < name($1.identifier) }
+    @Published var ears = ""   // which ears hear the chosen language here, said under the picker
+
+    func findEars() async {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            let have = Set(hearable.map { $0.identifier(.bcp47) })
+            var more: [Locale] = []
+            for l in await SpeechTranscriber.supportedLocales + DictationTranscriber.supportedLocales where !have.contains(l.identifier(.bcp47)) {
+                if !more.contains(where: { $0.identifier(.bcp47) == l.identifier(.bcp47) }) { more.append(l) }
+            }
+            hearable = (hearable + more).sorted { Self.name($0.identifier) < Self.name($1.identifier) }
+            matchHeard()
+            await readyEars()
+            return
+        }
+        #endif
+        matchHeard()
+        ears = Self.legacyEars(heard)
+    }
+
+    /// "en_US" (the device's locale) and "en-US" (the recognizer's) are one language: the picker shows it chosen.
+    private func matchHeard() {
+        if !hearable.contains(where: { $0.identifier == heard }),
+           let same = hearable.first(where: { $0.identifier(.bcp47) == Locale(identifier: heard).identifier(.bcp47) }) { heard = same.identifier }
+    }
+
+    /// The chosen language's SpeechAnalyzer model, downloaded once (the one moment Listen needs a connection) so the
+    /// broadcast extension finds it on the device; said in a line under the picker.
+    func readyEars() async {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            let id = heard
+            guard let (m, l) = await SpeechEngine.module(id) else { ears = Self.legacyEars(id); return }
+            let kind = m == .speech ? "SpeechTranscriber" : "DictationTranscriber"
+            if await SpeechEngine.installed(m, l) { ears = "Heard on this device by \(kind), word by word."; _ = await SpeechEngine.prepare(m, l, download: false); return }
+            ears = "Downloading \(Self.name(id)) for \(kind), once…"
+            let ok = await SpeechEngine.prepare(m, l)
+            guard id == heard else { return }
+            ears = ok ? "Heard on this device by \(kind), word by word." : "\(kind)'s \(Self.name(id)) isn't downloaded yet (needs a connection once). " + Self.legacyEars(id)
+            return
+        }
+        #endif
+        ears = Self.legacyEars(heard)
+    }
+    static func legacyEars(_ id: String) -> String {
+        SFSpeechRecognizer(locale: Locale(identifier: id))?.supportsOnDeviceRecognition == true
+            ? "Heard on this device by SFSpeechRecognizer (no word times)." : "This device can't hear \(name(id)) offline."
+    }
     static let into = ["en", "vi", "fr"]  // Recense's tr/en|vi|fr
     static func name(_ id: String) -> String { Locale.current.localizedString(forIdentifier: id) ?? id }
 
@@ -134,7 +189,7 @@ final class Listener: NSObject, ObservableObject {
             on = s.live
             stopping = false
             if on {
-                lines = [:]; skip = [:]; map = [:]; added = []
+                lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []
                 if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
                 if floats { startPiP() } else { keepAwake(true) }
             } else {
@@ -300,6 +355,23 @@ final class Listener: NSObject, ObservableObject {
         return out
     }
 
+    /// The timed words of a line, shared out among its sentences (split()), each word to the sentence it sits in.
+    static func timed(_ text: String, _ words: [TranscriptWord]) -> [[TranscriptWord]] {
+        let sents = split(text)
+        var spans: [Range<String.Index>] = [], cur = text.startIndex
+        for s in sents {
+            if let r = text.range(of: s, range: cur..<text.endIndex) { spans.append(r); cur = r.upperBound } else { spans.append(cur..<cur) }
+        }
+        var out = Array(repeating: [TranscriptWord](), count: sents.count)
+        cur = text.startIndex
+        for w in words {
+            guard let r = text.range(of: w.text, range: cur..<text.endIndex) else { continue }
+            cur = r.upperBound
+            if let k = spans.firstIndex(where: { $0.contains(r.lowerBound) }) { out[k].append(w) }
+        }
+        return out
+    }
+
     static func overlap(_ a: Set<String>, _ b: Set<String>) -> Double {
         a.isEmpty || b.isEmpty ? 0 : Double(a.intersection(b).count) / Double(min(a.count, b.count))
     }
@@ -342,7 +414,9 @@ final class Listener: NSObject, ObservableObject {
     private func rebuild() {
         guard episode != nil else { draw(); return }
         for n in lines.keys.sorted() {
+            let timed = lineWords[n].map { Self.timed(lines[n] ?? "", $0) }
             for (k, text) in Self.split(lines[n] ?? "").enumerated() where k >= skip[n, default: 0] {
+                let ws = timed.flatMap { k < $0.count && !$0[k].isEmpty ? $0[k] : nil }
                 let lid = "\(n).\(k)"
                 if let sid = map[lid], let i = episode!.sentences.firstIndex(where: { $0.id == sid }) {
                     guard episode!.sentences[i].heard != text, added.contains(sid) else { continue }
@@ -354,6 +428,7 @@ final class Listener: NSObject, ObservableObject {
                         episode!.place = episode!.sentences.firstIndex { $0.id == keep } ?? episode!.place
                     } else {
                         episode!.sentences[i].heard = text
+                        if let ws { episode!.sentences[i].words = ws }
                         episode!.sentences[i].said = config == nil ? text : said[text] ?? episode!.sentences[i].said
                         translate(text)
                     }
@@ -368,7 +443,7 @@ final class Listener: NSObject, ObservableObject {
                     let at = episode!.sentences.isEmpty ? 0 : episode!.place + 1
                     let prev = at > 0 ? episode!.sentences[at - 1].at : 0
                     let s = Sentence(id: UUID().uuidString.prefix(12).lowercased(), heard: text, said: config == nil ? text : said[text] ?? "",
-                                     at: prev + min(30, Date().timeIntervalSince(lastHeard)))
+                                     at: prev + min(30, Date().timeIntervalSince(lastHeard)), words: ws)
                     episode!.sentences.insert(s, at: min(at, episode!.sentences.count))
                     episode!.place = min(at, episode!.sentences.count - 1)
                     map[lid] = s.id; added.insert(s.id)
@@ -388,6 +463,10 @@ final class Listener: NSObject, ObservableObject {
     private func take(_ l: Captions.Line) {
         last = l
         lines[l.n] = l.text
+        if let ws = l.words, let t0 = l.t0 {
+            lineWords[l.n] = ws.map { TranscriptWord(text: $0.text, start: t0 + $0.start, end: t0 + $0.end) }
+            if let w = ws.last { lag = 0.7 * lag + 0.3 * min(4, max(0.3, Date().timeIntervalSince1970 - (t0 + w.end))) }
+        }
         rebuild()
     }
 
@@ -670,18 +749,17 @@ struct ListenView: View {
                 Text(l.floats ? "Floats: leave Recense and the window stays on top of other apps. \(l.pipState)"
                               : "Docked: the window stays here in Recense and doesn't follow you out.")
             }
-            Section("Language") {
+            Section {
                 Picker("Hear in", selection: $l.heard) {
-                    ForEach(Listener.hearable, id: \.identifier) { Text(Listener.name($0.identifier)).tag($0.identifier) }
+                    ForEach(l.hearable, id: \.identifier) { Text(Listener.name($0.identifier)).tag($0.identifier) }
                 }
                 Picker("Show in", selection: $l.into) {
                     ForEach(Listener.into, id: \.self) { Text(Listener.name($0)).tag($0) }
                 }
-            }
+            } header: { Text("Language") } footer: { Text(l.ears) }
             Section {
-                ReadAlong(sentences: l.sentences, place: l.episode?.place, live: true, two: l.config != nil,
-                          expand: { full = true }, clear: { clearing = true })
-                    .frame(height: 380)
+                Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
+                    .frame(height: 420)
                     .listRowInsets(EdgeInsets())
             }
             if l.episodes.contains(where: { $0.key != l.episode?.key }) {
@@ -719,7 +797,7 @@ struct ListenView: View {
             }
         }
         .navigationDestination(for: Episode.self) { e in
-            ReadAlong(sentences: e.sentences, place: e.place, live: false, two: e.heard.prefix(2) != e.into.prefix(2), expand: nil, clear: nil)
+            Self.transcript(l, e.sentences, place: e.place, title: e.title, live: false, two: e.heard.prefix(2) != e.into.prefix(2))
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle(e.title).navigationBarTitleDisplayMode(.inline)
                 .tint(Theme.accent)
@@ -727,7 +805,7 @@ struct ListenView: View {
         }
         .fullScreenCover(isPresented: $full) {
             NavigationStack {
-                ReadAlong(sentences: l.sentences, place: l.episode?.place, live: true, two: l.config != nil, expand: nil, clear: nil)
+                Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(l.episode?.title ?? "").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { full = false } } }
@@ -800,85 +878,20 @@ struct EpisodePicker: View {
     }
 }
 
-// Spotify's read-along card: big bold sentences on a colour, a time every so often, opened at where the user is and
-// following it as it moves (live), the newest word lit. Every sentence can be selected; Copy takes the whole episode.
-struct ReadAlong: View {
-    var sentences: [Sentence]
-    var place: Int?
-    var live: Bool
-    var two: Bool
-    var expand: (() -> Void)?
-    var clear: (() -> Void)?
-    @State private var showOriginal = true
-
-    static let card = Color(red: 0.36, green: 0.45, blue: 0.49)
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 16) {
-                Text("Read along").font(.subheadline.weight(.bold))
-                Spacer()
-                if two { Button { showOriginal.toggle() } label: { Image(systemName: showOriginal ? "character.bubble.fill" : "character.bubble") } }
-                Button { UIPasteboard.general.string = Self.text(sentences, two: two) } label: { Image(systemName: "doc.on.doc") }
-                    .disabled(sentences.isEmpty)
-                if let clear { Button(action: clear) { Image(systemName: "trash") }.disabled(sentences.isEmpty) }
-                if let expand { Button(action: expand) { Image(systemName: "arrow.up.left.and.arrow.down.right") } }
-            }
-            .foregroundStyle(.white).buttonStyle(.plain)
-            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        if sentences.isEmpty {
-                            Text(live ? "What's heard shows up here." : "Nothing was heard.").font(.title3.weight(.bold)).foregroundStyle(.white.opacity(0.6))
-                        }
-                        ForEach(Array(sentences.enumerated()), id: \.element.id) { i, s in
-                            VStack(alignment: .leading, spacing: 4) {
-                                // a time over the first sentence of every minute
-                                if i == 0 || Int(s.time) / 60 != Int(sentences[i - 1].time) / 60 {
-                                    Text(Self.clock(s.time)).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.white.opacity(0.7))
-                                }
-                                // heard (up to where the user is) in white, the rest of the episode dimmer, as Spotify does
-                                // the sentence being heard shows only its words that have stopped changing (Settle)
-                                let hot = live && i == place
-                                TimelineView(.periodic(from: .now, by: hot ? 0.25 : 3600)) { tl in
-                                    let heard = hot ? Settle.text(s.heard, id: s.id, at: tl.date) : s.heard
-                                    let said = hot ? Settle.text(s.said, id: s.id + ".said", at: tl.date) : s.said
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Self.lit(two ? (said.isEmpty ? "…" : said) : heard, on: hot, after: i > (place ?? Int.max))
-                                            .font(.title3.weight(.semibold))
-                                        if two && showOriginal {
-                                            Text(heard).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(i > (place ?? Int.max) ? 0.35 : 0.6))
-                                        }
-                                    }
-                                    .animation(.easeOut(duration: 0.35), value: heard)
-                                }
-                            }
-                            .textSelection(.enabled)
-                            .id(s.id)
-                        }
-                    }
-                    .padding(.horizontal, 20).padding(.bottom, 24)
-                }
-                .onChange(of: place.flatMap { sentences.indices.contains($0) ? sentences[$0] : nil }) { _, s in
-                    if live, let s { withAnimation { proxy.scrollTo(s.id, anchor: .center) } }
-                }
-                .onAppear { if let p = place, sentences.indices.contains(p) { proxy.scrollTo(sentences[p].id, anchor: .center) } }
-            }
+extension ListenView {
+    /// What was heard, in the shared transcript view (ShowsKit's TranscriptView, the one Now Playing has): the
+    /// sentence being heard bold, its words lit at the voice's pace (SpeechAnalyzer's times, `lag` behind), the
+    /// translation under each line. Another app's audio can't be moved from here, so a line has no Play.
+    static func transcript(_ l: Listener, _ ss: [Sentence], place: Int?, title: String, live: Bool, two: Bool? = nil) -> some View {
+        let two = two ?? (l.config != nil)
+        let lines = ss.map { s in
+            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: s.words ?? [],
+                           translation: two && !s.said.isEmpty ? s.said : nil)
         }
-        .background(Self.card, in: RoundedRectangle(cornerRadius: expand != nil ? 12 : 0))
-    }
-
-    static func lit(_ text: String, on: Bool, after: Bool) -> Text {
-        let base = Color.white.opacity(after ? 0.45 : 1)
-        guard on, let r = text.range(of: #"\S+$"#, options: .regularExpression) else { return Text(text).foregroundColor(base) }
-        return Text(text[..<r.lowerBound]).foregroundColor(base) + Text(text[r]).foregroundColor(Color(Listener.lit))
-    }
-
-    static func clock(_ t: Double) -> String { String(format: "%02d:%02d", Int(t) / 60, Int(t) % 60) }
-
-    static func text(_ ss: [Sentence], two: Bool) -> String {
-        ss.map { two ? "[\(clock($0.time))] \($0.said)\n\($0.heard)" : "[\(clock($0.time))] \($0.heard)" }.joined(separator: "\n\n")
+        return TranscriptView(lines: lines, title: title, seed: title,
+                              time: { live && l.on ? Date().timeIntervalSince1970 - l.lag : nil }, ticking: live && l.on,
+                              active: place.flatMap { lines.indices.contains($0) ? $0 : nil }, seek: nil,
+                              empty: live ? "What's heard shows up here." : "Nothing was heard.")
     }
 }
 
@@ -912,26 +925,3 @@ private struct Listening: ViewModifier {
             .translationTask(l.config) { await l.serve($0) }
     }
 }
-
-/// Live speech recognition rewrites its last words again and again as it hears more. Read along shows a word only
-/// once it has stayed the same for a moment, so the sentence grows calmly instead of flickering (a word that
-/// changes goes back to waiting, with every word after it). The floating window keeps the live text.
-@MainActor enum Settle {
-    static let wait: TimeInterval = 0.9
-    private static var seen: [String: (words: [Substring], since: [Date])] = [:]
-
-    static func text(_ t: String, id: String, at now: Date) -> String {
-        let words = t.split(separator: " ", omittingEmptySubsequences: false)
-        var old = seen[id] ?? ([], [])
-        var keep = 0
-        while keep < min(words.count, old.words.count), words[keep] == old.words[keep] { keep += 1 }
-        if keep < words.count || keep < old.words.count {
-            old = (words, Array(old.since.prefix(keep)) + Array(repeating: now, count: words.count - keep))
-            seen[id] = old
-            if seen.count > 64 { seen = [id: old] }
-        }
-        let shown = old.since.prefix { now.timeIntervalSince($0) >= wait }.count
-        return words.prefix(shown).joined(separator: " ")
-    }
-}
-

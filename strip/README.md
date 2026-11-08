@@ -128,6 +128,9 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **Hears** on this Mac: Apple SpeechAnalyzer for each system language (corrections teach it), the open ears
   (Omnilingual ASR) for the rest, and the canon for recited texts. A song is heard in one script (Amharic in Ge'ez,
   not the Arabic letters the open ears drift into), and lines heard again keep the song's language.
+  The engine itself (models, hearing, word times) is shared with the iPhone and iPad (`../shared/speechcore.swift`).
+  Every stretch is heard after 0.5 s of silence: DictationTranscriber (Vietnamese) heard nothing ("RecogFailed") when
+  the voice began in a stretch's first instant, which a two-minute stretch cut mid-sentence does (measured 11-08).
   A corrected line keeps a typed space before `! ? ; :` (French writes `fini !`); the same rule as Gallery.
   When the open ears name a recording's language, Apple's ears for the listener's own languages hear it too and the
   surest is kept (an English lesson they named Arabic came out empty); a correction leaves unchanged words on the voice.
@@ -216,7 +219,8 @@ strip/
   soundengine.swift  process tap and EQ/Key/Space chain
   cadence.swift      the karaoke light's timing
   prosody.swift      prosody notation
-  speech.swift       on-device transcription (SpeechAnalyzer)
+  speech.swift       on-device transcription (SpeechAnalyzer): the Mac's choices (open ears, canon, lexicon)
+  speechcore.swift   link to ../shared/speechcore.swift: the engine both apps hear with (models, hearing, word times)
   openears.swift     the open ears (ears/omni.py)
   canon.swift        recited texts (canon/*.json)
   voiceprint.swift   voice matching

@@ -6,6 +6,7 @@ import ShowsKit
 
 struct RecenseRoot: View {
     @State private var launchPlace: Place?
+    @State private var sampleClock: SampleTransport?   // held here: the model's transport is weak
     @State private var model = ShowsModel(store: MemoryCatalog.sample(device: UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"))
 
     var body: some View {
@@ -26,6 +27,18 @@ struct RecenseRoot: View {
             }
             if let id = ProcessInfo.processInfo.environment["RECENSE_PLACE"] { launchPlace = RecensePlaces.all.first { $0.id == id } }
         }
+        .task {   // simulator checks: SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample opens Now Playing on the sample transcript, playing
+            guard ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == "sample" else { return }
+            await model.reload()
+            guard let e = model.recentlyPlayed.first?.episode ?? model.upNext.first?.episode else { return }
+            sampleClock = SampleTransport(at: 8)
+            model.transport = sampleClock
+            model.play(e)
+            model.transcript = TranscriptLine.sample
+            model.showsTranscript = true
+        }
+        // the playing episode heard on this device for its transcript (Ears.swift)
+        .onChange(of: model.playing?.id) { _, _ in if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == nil { PlaybackEars.shared.follow(model) } }
         .fullScreenCover(item: $launchPlace) { p in
             NavigationStack { p.screen() }.tint(Theme.accent)   // simulator checks: SIMCTL_CHILD_RECENSE_PLACE=<id>
         }

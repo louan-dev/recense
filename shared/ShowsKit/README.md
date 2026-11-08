@@ -24,10 +24,24 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `Views/Home.swift` (Up Next cards, Recently Played rows, `EntryList`), `Views/New.swift` (what landed in New as
     featured cards, a rail of shows per space), `Views/Library.swift` (rows: Shows, Study, Folio, Matters, Saved,
     Downloaded, Latest Episodes, then the app's places; Recently Updated), `Views/Search.swift` (field + filter bars),
-    `Views/ShowPage.swift`, `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`), `Views/Cards.swift`.
+    `Views/ShowPage.swift`, `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`; the quote button shows the
+    transcript in place of the player, with back 15 / play / forward 30 under it), `Views/Cards.swift`.
+  - `Views/Transcript.swift`: `TranscriptView`, the transcript as iOS Podcasts shows it (owner's screenshots in
+    `~/.claude/context/recense/research/podcasts-ios/`): serif lines on the show's dark colour, the line being heard bold
+    with its spoken words bright and the rest dim, the view following the playhead (a "Now" button after scrolling
+    away), tap a line to play from it, hold it for Play / Share from <time> / Copy / Select Text (the system's text
+    view: Look Up, Translate), the translation under each line, chapter headings inline; every action also in its menu.
+    Reduce Motion: it jumps instead of scrolling. `TranscriptLine` / `TranscriptWord` are its data; `TranscriptLight`
+    its rules (which line, how much of it is said: by word times, else by time at a whole word, in any language).
+    Used by iOS Listen and Now Playing.
+  - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
+    transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
+    landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.
   - `Feeds.swift`: Up Next, Recently Played, Saved, Downloaded, Latest, Recently Updated, built from the reads every
     store has (no store code needed).
-  - `Transport` (in `ShowsModel.swift`): play/pause/skip, given by B3's player; until then play opens Now Playing.
+  - `Transport` (in `ShowsModel.swift`): play/pause/skip, and `time` / `duration` / `seek(to:)` for the transcript and
+    scrubber (defaults: 0, nil, nothing), given by B3's player; until then play opens Now Playing. `ShowsModel.transcript`
+    is the playing episode's transcript, filled by the app's ears.
   - `Views/Theme.swift`: the look every screen shares, in ShowsKit and in each app's own places: `Theme` (accent,
     gutter, corners, readable width, `hues`), `Artwork`, `SectionHeader`, `LibraryRow`, `Place` (a screen the app adds
     to Library) and `.recenseScreen(title)`.
@@ -45,7 +59,7 @@ Recense/.trash/…                         → deletes, kept 30 days
 ```
 
 ## Build and test
-- Test: `swift test` in this folder (27 tests).
+- Test: `swift test` in this folder (36 tests; with Xcode's toolchain: the Command Line Tools have no XCTest).
 - Mac: `strip/Package.swift` depends on it by path; `zsh strip/build.sh` builds it in.
 - iOS: a local package of `mobile/ios/GalleryFiles.xcodeproj`. This folder is excluded from the project's
   synchronized `shared/` group, so its files compile only as the package.

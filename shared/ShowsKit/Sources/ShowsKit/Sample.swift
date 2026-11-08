@@ -48,3 +48,38 @@ public extension MemoryCatalog {
                              transcripts: [k("b1"): .ready, k("b2"): .ready, k("a1"): .transcribing], states: states, listens: listens)
     }
 }
+
+// A made-up transcript in the three languages, for previews, tests and simulator screenshots (RECENSE_TRANSCRIPT=sample):
+// words timed evenly through each line, the way SpeechAnalyzer times them.
+public extension TranscriptLine {
+    static func timed(_ id: String, _ start: Double, _ end: Double, _ text: String, translation: String? = nil, chapter: String? = nil) -> TranscriptLine {
+        let ws = text.split(separator: " ").map(String.init)
+        let step = (end - start) / Double(max(1, ws.count))
+        let words = ws.enumerated().map { i, w in TranscriptWord(text: w, start: start + Double(i) * step, end: start + Double(i + 1) * step) }
+        return TranscriptLine(id: id, start: start, end: end, text: text, words: words, translation: translation, chapter: chapter)
+    }
+
+    static let sample: [TranscriptLine] = [
+        .timed("1", 0, 6, "Welcome back. Today we read the court's opinion on the contract dispute.", translation: "Chào mừng trở lại. Hôm nay chúng ta đọc ý kiến của tòa về tranh chấp hợp đồng.", chapter: "The holding"),
+        .timed("2", 6, 13, "The court held that the contract was void, because the statute required it in writing.", translation: "Tòa án phán quyết rằng hợp đồng vô hiệu, vì luật yêu cầu phải lập thành văn bản."),
+        .timed("3", 13, 19, "Tòa án đã phán quyết rằng hợp đồng vô hiệu. Tuy nhiên, nguyên đơn đã kháng cáo.", translation: "The court ruled the contract void. However, the plaintiff appealed."),
+        .timed("4", 19, 26, "La cour a jugé que le contrat était nul. Néanmoins, le demandeur a fait appel.", translation: "The court found the contract void. Nevertheless, the plaintiff appealed."),
+        .timed("5", 26, 33, "So the question on appeal was narrower: did the writing requirement apply at all?", translation: "Vậy câu hỏi khi kháng cáo hẹp hơn: yêu cầu văn bản có áp dụng không?", chapter: "On appeal"),
+        .timed("6", 33, 40, "The higher court said yes, and it explained why in three short paragraphs.", translation: "Tòa cấp cao nói có, và giải thích lý do trong ba đoạn ngắn."),
+        .timed("7", 40, 47, "Let's take them one at a time, starting with the text of the statute itself.", translation: "Hãy xem từng đoạn, bắt đầu từ chính văn bản của luật."),
+    ]
+}
+
+/// A clock that plays the sample transcript (previews and simulator screenshots): it starts at `at` and runs.
+@MainActor public final class SampleTransport: Transport {
+    private var base: Double
+    private var since: Date?
+    public let length: Double
+    public init(at: Double = 8, length: Double = 47, playing: Bool = true) { base = at; self.length = length; since = playing ? Date() : nil }
+    public var isPlaying: Bool { since != nil }
+    public var time: Double { min(length, base + (since.map { Date().timeIntervalSince($0) } ?? 0)) }
+    public var duration: Double? { length }
+    public func toggle() { if let s = since { base += Date().timeIntervalSince(s); since = nil } else { since = Date() } }
+    public func skip(_ seconds: Double) { seek(to: time + seconds) }
+    public func seek(to seconds: Double) { base = min(length, max(0, seconds)); if since != nil { since = Date() } }
+}

@@ -72,7 +72,12 @@ struct NowPlaying<Player: View>: View {
                     }
                     .padding(.horizontal, Theme.gutter).padding(.vertical, 12)
                     .frame(maxWidth: Theme.readable)
-                    player(e).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // the player stays in place under the transcript (hiding it would stop what plays)
+                    ZStack {
+                        player(e).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if model.showsTranscript { transcript(e) }
+                    }
+                    if model.showsTranscript, let t = model.transport { Controls(transport: t) }
                     VerdictBar(chosen: e.state?.verdictValue) { v in Task { await model.setVerdict(v, for: e) } }
                 }
                 #if os(iOS)
@@ -80,6 +85,13 @@ struct NowPlaying<Player: View>: View {
                 #endif
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) { Button("Done") { model.nowPlayingOpen = false } }
+                    // Podcasts' quote button: the transcript in place of the player, and back
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { model.showsTranscript.toggle() } label: {
+                            Image(systemName: model.showsTranscript ? "quote.bubble.fill" : "quote.bubble")
+                        }
+                        .accessibilityLabel(model.showsTranscript ? "Hide Transcript" : "Show Transcript")
+                    }
                     ToolbarItem(placement: .primaryAction) { EpisodeMenu(model: model, episode: e) }
                 }
             }
@@ -88,6 +100,33 @@ struct NowPlaying<Player: View>: View {
         #if os(macOS)
         .frame(minWidth: 560, minHeight: 600)
         #endif
+    }
+}
+
+extension NowPlaying {
+    /// The transcript of what plays, its playhead the player's, its scrubber over the play controls.
+    func transcript(_ e: Episode) -> some View {
+        let t = model.transport
+        return TranscriptView(lines: model.transcript, title: e.title, seed: model.playingShow ?? e.title,
+                              time: { t?.time }, ticking: t?.isPlaying ?? false,
+                              seek: t.map { tr in { tr.seek(to: $0) } }, duration: t?.duration ?? e.duration,
+                              empty: model.transcriptNote ?? "No transcript yet.")
+    }
+}
+
+/// Back 15, play or pause, forward 30: under the transcript's scrubber, as in Podcasts (13, 17).
+struct Controls: View {
+    let transport: Transport
+    var body: some View {
+        HStack(spacing: 44) {
+            Button { transport.skip(-15) } label: { Image(systemName: "gobackward.15") }.accessibilityLabel("Back 15 seconds")
+            Button { transport.toggle() } label: { Image(systemName: transport.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 40)) }
+                .accessibilityLabel(transport.isPlaying ? "Pause" : "Play")
+            Button { transport.skip(30) } label: { Image(systemName: "goforward.30") }.accessibilityLabel("Forward 30 seconds")
+        }
+        .font(.system(size: 28)).buttonStyle(.plain).foregroundStyle(.white)
+        .frame(maxWidth: .infinity).padding(.vertical, 14)
+        .background(Color.black.opacity(0.92))
     }
 }
 
