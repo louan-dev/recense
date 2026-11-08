@@ -41,7 +41,9 @@ updates in place.
   within 3 s while it's open. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
   Links open in Safari; `![](file.pdf)` and images show inline (vault files directly, web files cached for offline,
   through `shared/embedfiles.swift`).
-  The wings' layout (cards moved between the two sides) saves to `draftpad.wings.json`, as on the Mac. Swipe in from
+  The wings' layout (cards moved between the two sides, pins) saves to `draftpad.wings.json`, as on the Mac. In a wing:
+  swipe a card left to Remove (Undo, 5 s) or right to Pin, with a haptic at the threshold; each card's ··· menu does the
+  same, plus Size (S–XL, also by dragging the bar on a card's bottom edge); **Show in wing…** at the top adds a card back (open by itself, keyboard up, when nothing plays). Swipe in from
   the screen's left or right edge to bring out that wing (no long hold). The ink palette, colour wheel (the system colour
   picker samples any shade) and handwriting search (⌘F finds ink, read on the device by `shared/inkocr.swift`) are the
   Mac's, from the same page. So are saved pages (bookmark), the Saved and Playlists tabs, the 14-day expiry (archived to

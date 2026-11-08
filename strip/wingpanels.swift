@@ -36,7 +36,8 @@ func wingSwipe(dir: Int, startX: Float, left: Bool, right: Bool) -> (side: WingS
 /// Read by the trackpad thread (app.swift): which wings are open, so a swipe toward that edge closes it.
 var gWingOpenLeft = false, gWingOpenRight = false
 
-/// Becomes key only when something in it needs typing (a click in a field), so opening it never moves focus.
+/// Becomes key only when something in it needs typing ("Show in wing…" open, or a click in a field), so a glance at a
+/// wing never moves focus.
 final class WingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -61,6 +62,10 @@ final class WingPanels {
     private(set) var open: Set<WingSide> = []
     private var pendingShow: Set<WingSide> = []
     private var transition: [WingSide: Int] = [:]
+    /// Sides whose "Show in wing…" field is open: that panel holds key focus while it is visible.
+    private var typing: Set<WingSide> = []
+    /// Recense's own window that was key before a wing took focus, to hand it back.
+    private weak var keyBefore: NSWindow?
 
     let vault: URL, cache: URL
     /// The pad's current text, for the Agenda card.
@@ -107,6 +112,8 @@ final class WingPanels {
             case "open": show(s)
             case "close": hide(s, "the page")
             case "toggle": toggle(s)
+            case "focus": typing.insert(s); takeKey(s)
+            case "unfocus": typing.remove(s); giveKeyBack(s)
             default: break
             }
         }
@@ -120,9 +127,11 @@ final class WingPanels {
         open.insert(s); syncFlags()
         transition[s, default: 0] += 1
         w.host.setText(currentText())
-        w.host.send("setArranging(false)")       // Move controls hidden at rest, every time it opens
         w.host.send("setRecenseLine(\(jsString(line.0)), \(jsString(line.1)))")
         if let t = typed { w.host.send("setTypedLine({original: \(jsString(t.0)), translation: \(jsString(t.1))})") }
+        // "The panel just opened" (after the line, so the page knows whether anything plays): with nothing playing it
+        // opens "Show in wing…" and asks for key focus (op "focus").
+        w.host.send("setArranging(false)")
         guard w.ready else { pendingShow.insert(s); return }   // first time: once the page has laid itself out
         present(s)
     }
@@ -150,11 +159,32 @@ final class WingPanels {
             }
         }
         log("wings: \(s.rawValue) open\(still ? " (still)" : "")")
+        if typing.contains(s) { takeKey(s) }
+    }
+
+    // MARK: Key focus (only while "Show in wing…" is open)
+
+    private func takeKey(_ s: WingSide) {
+        guard open.contains(s), let w = wings[s], w.panel.isVisible, !w.panel.isKeyWindow else { return }
+        if let k = NSApp.keyWindow, !(k is WingPanel) { keyBefore = k }
+        // A non-activating panel takes the keys without bringing Recense forward or moving the other app's window.
+        w.panel.makeKey()
+        w.panel.makeFirstResponder(w.host.web)
+        log("wings: \(s.rawValue) took key focus (Show in wing…)")
+    }
+
+    private func giveKeyBack(_ s: WingSide) {
+        guard let w = wings[s], w.panel.isKeyWindow else { return }
+        if let k = keyBefore, k.isVisible { k.makeKey() } else { w.panel.resignKey() }
+        keyBefore = nil
+        log("wings: \(s.rawValue) gave key focus back")
     }
 
     func hide(_ s: WingSide, _ why: String = "asked") {
         pendingShow.remove(s)
         guard open.contains(s), let w = wings[s] else { return }
+        giveKeyBack(s)
+        typing.remove(s)
         open.remove(s); syncFlags()
         transition[s, default: 0] += 1
         let t = transition[s]

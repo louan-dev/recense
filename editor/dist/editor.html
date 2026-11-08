@@ -1073,57 +1073,6 @@ html.rc-wings-page body {
   color: #f2f4f7;
 }
 
-.rc-wingpanel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 4px 0;
-}
-
-.rc-wingpanel-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
-.rc-wingpanel-close {
-  background: var(--rc-glass-tint);
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  line-height: 1;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wingpanel-foot {
-  display: flex;
-  justify-content: center;
-}
-
-.rc-wingpanel-arrange {
-  background: var(--rc-glass-tint);
-  padding: 5px 14px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wingpanel-close:focus-visible,
-.rc-wingpanel-arrange:focus-visible,
-.rc-wings-only .rc-wing-move:focus-visible {
-  outline: 2px solid var(--rc-cyan);
-  outline-offset: 2px;
-}
-
 .rc-wings-only .rc-wing {
   position: static;
   width: auto;
@@ -1166,23 +1115,6 @@ html.rc-wings-page body {
   font-weight: 400;
 }
 
-/* Move controls show only while arranging (the Arrange pill), so the cards are calm at rest. */
-.rc-wings-only .rc-wing-move {
-  background: var(--rc-glass-tint);
-  display: none;
-  align-self: center;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wings-only .rc-wing.rc-wings-arranging .rc-wing-move {
-  display: block;
-}
-
 /* The eraser's ring (ink.js ERASER_RADIUS): the pointer while an eraser is picked, at exactly the size it erases. */
 .rc-ink-eraser-ring {
   fill: none;
@@ -1190,13 +1122,12 @@ html.rc-wings-page body {
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
 
-/* The grabber: a short line on the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
+/* The grabber: a short line at the top of the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
 .rc-wing-grabber {
   position: absolute;
-  top: 50%;
+  top: 6px;
   width: 22px;
   height: 64px;
-  margin-top: -32px;
   cursor: grab;
   touch-action: none;
   z-index: 2;
@@ -1239,6 +1170,476 @@ html.rc-wings-page body {
 .rc-wings-only .rc-wing-right .rc-wing-grabber {
   left: -8px;
 }
+
+/* W2 card controls: "Show in wing…", the card slot (swipe reveal, pin mark, ··· menu) and the Undo toast. */
+.rc-wing-find {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Clear of the grabber, which sits at the top of the inner edge. */
+.rc-wing-right .rc-wing-find {
+  margin-left: 18px;
+}
+
+.rc-wing-left .rc-wing-find {
+  margin-right: 18px;
+}
+
+.rc-wing-find-pill {
+  align-self: center;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+  cursor: pointer;
+}
+
+.rc-wings-only .rc-wing-find-pill {
+  border: 0;
+}
+
+.rc-wing-find-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+  animation: rc-wing-dissolve 180ms ease-out;
+}
+
+.rc-wings-only .rc-wing-find-box {
+  border: 0;
+}
+
+.rc-wing-find-box[hidden],
+.rc-wing-find-pill[hidden],
+.rc-wing-find-results[hidden],
+.rc-wing-menu[hidden],
+.rc-wing-toast[hidden] {
+  display: none !important;
+}
+
+.rc-wing-find-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.rc-wing-find-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.rc-wing-find-results {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  animation: rc-wing-dissolve 180ms ease-out;
+}
+
+.rc-wing-find-item,
+.rc-wing-find-empty {
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.rc-wing-find-item {
+  cursor: pointer;
+}
+
+.rc-wing-find-item + .rc-wing-find-item {
+  border-top: 1px solid var(--rc-border);
+}
+
+.rc-wing-find-item:hover,
+.rc-wing-find-item:focus-visible {
+  background: rgba(127, 127, 127, 0.18);
+  outline: none;
+}
+
+.rc-wing-find-empty {
+  opacity: 0.65;
+}
+
+@keyframes rc-wing-dissolve {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rc-wing-slot {
+  position: relative;
+  touch-action: pan-y;
+  border-radius: 18px;
+}
+
+.rc-wing-slot > .rc-wing-card {
+  position: relative;
+  z-index: 1;
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.rc-wing-swipe-left > .rc-wing-card,
+.rc-wing-swipe-right > .rc-wing-card,
+.rc-wing-lifted > .rc-wing-card {
+  transition: none;
+}
+
+.rc-wing-lifted > .rc-wing-card {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.rc-wing-under {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-radius: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.rc-wing-under-pin,
+.rc-wing-under-remove {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.rc-wing-swipe-left > .rc-wing-under,
+.rc-wing-swipe-right > .rc-wing-under {
+  display: flex;
+}
+
+.rc-wing-swipe-left > .rc-wing-under {
+  justify-content: flex-end;
+  background: #b3261e;
+}
+
+.rc-wing-swipe-right > .rc-wing-under {
+  justify-content: flex-start;
+  background: #3a6ea5;
+}
+
+.rc-wing-swipe-left .rc-wing-under-remove,
+.rc-wing-swipe-right .rc-wing-under-pin {
+  display: flex;
+}
+
+.rc-wing-armed > .rc-wing-under {
+  filter: brightness(1.2);
+}
+
+/* Room for the ··· control (and the pin mark) at each card's top right. */
+.rc-wing-slot > .rc-wing-card .rc-widget-header {
+  padding-right: 52px;
+}
+
+.rc-wing-pinmark {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 44px;
+  display: none;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.rc-wing-pinmark svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rc-wing-pinned > .rc-wing-pinmark {
+  display: block;
+}
+
+.rc-wing-more {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 10px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.rc-wing-more:hover,
+.rc-wing-more:focus-visible {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.22);
+  outline: none;
+}
+
+/* In the flow under its card (not floating), so the wing and the Mac panel grow to show all of it. */
+.rc-wing-menu {
+  position: relative;
+  z-index: 3;
+  margin: 6px 0 0 auto;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-radius: 12px;
+  background: var(--rc-panel);
+  border: 1px solid var(--rc-border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+}
+
+.rc-wings-only .rc-wing-menu {
+  background: rgba(24, 26, 32, 0.92);
+  border: 0;
+}
+
+.rc-wing-menu-item {
+  padding: 9px 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.rc-wing-menu-item:hover,
+.rc-wing-menu-item:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-item[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rc-wing-menu-danger {
+  color: #ff6b62;
+}
+
+.rc-wing-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 15px;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+}
+
+.rc-wings-only .rc-wing-toast {
+  border: 0;
+}
+
+.rc-wing-toast-undo {
+  font-weight: 700;
+  color: var(--rc-cyan);
+  cursor: pointer;
+}
+
+.rc-wing-find-pill:focus-visible,
+.rc-wing-find-close:focus-visible,
+.rc-wing-toast-undo:focus-visible {
+  outline: 2px solid var(--rc-cyan);
+  outline-offset: 2px;
+}
+
+/* Reduce Motion: no dissolve, no slide; a swipe fades the card instead (wings.js). */
+@media (prefers-reduced-motion: reduce) {
+  .rc-wing-find-box,
+  .rc-wing-find-results {
+    animation: none;
+  }
+  .rc-wing-slot > .rc-wing-card {
+    transition: none;
+  }
+}
+
+/* W3 rows: a card is 1-4 rows tall (S, M, L, XL), so neighbours line up; one row is the small card. Height only:
+   the text keeps its size and what doesn't fit scrolls inside the card. */
+.rc-wing-slot {
+  --rc-row: 112px;
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='1'] {
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='2'] {
+  --rc-card-h: calc(var(--rc-row) * 2 + 10px);
+}
+
+.rc-wing-slot[data-rows='3'] {
+  --rc-card-h: calc(var(--rc-row) * 3 + 20px);
+}
+
+.rc-wing-slot[data-rows='4'] {
+  --rc-card-h: calc(var(--rc-row) * 4 + 30px);
+}
+
+.rc-wing-slot > .rc-wing-card {
+  box-sizing: border-box;
+  height: var(--rc-card-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rc-wing-slot > .rc-wing-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* Media takes the height the rows give it. */
+.rc-wing-slot .rc-preview-img,
+.rc-wing-slot .rc-qt-video {
+  max-height: calc(var(--rc-card-h) - 84px);
+}
+
+.rc-wing-slot .rc-preview-pdf {
+  height: calc(var(--rc-card-h) - 84px);
+}
+
+/* Recense: more rows, more of its line (S one line each, then 3 / 2, 5 / 3, 7 / 4). */
+.rc-wing-slot .rc-recense-original,
+.rc-wing-slot .rc-recense-translation {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-original {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-translation {
+  -webkit-line-clamp: 2;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-original {
+  -webkit-line-clamp: 5;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-translation {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-original {
+  -webkit-line-clamp: 7;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-translation {
+  -webkit-line-clamp: 4;
+}
+
+.rc-cal-more {
+  opacity: 0.7;
+  padding-top: 4px;
+}
+
+/* The bottom-edge grabber: a short bar on the card's lower edge; drag it to snap the height to rows. */
+.rc-wing-resize {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -7px;
+  width: 64px;
+  height: 18px;
+  margin-left: -32px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.rc-wing-resize::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.rc-wing-resize:hover::before,
+.rc-wing-resize:focus-visible::before {
+  opacity: 0.75;
+}
+
+.rc-wing-resize:focus-visible {
+  outline: none;
+}
+
+.rc-wing-menu-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 16px;
+  border-top: 1px solid var(--rc-border);
+  border-bottom: 1px solid var(--rc-border);
+  font-size: 15px;
+}
+
+.rc-wing-menu-size-label {
+  flex: 1;
+}
+
+.rc-wing-menu-size-opt {
+  min-width: 34px;
+  padding: 5px 0;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-wing-menu-size-opt:hover,
+.rc-wing-menu-size-opt:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-size-opt.rc-on {
+  background: var(--rc-cyan);
+  color: #0b1a22;
+}
+/* W3 rows end */
 
 /* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
    wing can widen to it (wings.js preferredWidth), else it wraps. */
@@ -35704,8 +36105,13 @@ ${clean(nextLineText)}`;
   function createDualWings(container, options = {}) {
     const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
     const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
-    let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["preview", "quicktime"];
-    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["calendar"];
+    let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["recense", "preview", "quicktime"];
+    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["recense", "calendar"];
+    const DEFAULT_ROWS = { preview: 3, quicktime: 3, calendar: 2 };
+    let sizes = { left: {}, right: {} };
+    const rowsOf = (side, id2) => sizes[side]?.[id2] || DEFAULT_ROWS[id2] || 1;
+    const AGENDA_PER_ROWS = [0, 1, 2, 3, 4];
+    const agendaSide = () => rightWidgets.includes("calendar") || !leftWidgets.includes("calendar") ? "right" : "left";
     const HOST_WIDGETS = /* @__PURE__ */ new Set(["iphone"]);
     const enabledHostWidgets = /* @__PURE__ */ new Set();
     const leftEl = makeDomElement2(doc2, "aside", {}, {
@@ -36074,8 +36480,9 @@ ${clean(nextLineText)}`;
       header.appendChild(titleSpan);
       calendarCard.appendChild(header);
       const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-calendar-list" });
+      const fits = AGENDA_PER_ROWS[rowsOf(agendaSide(), "calendar")] || 1;
       if (calendarEvents.length > 0) {
-        for (const ev of calendarEvents) {
+        for (const ev of calendarEvents.slice(0, fits)) {
           const itemRow = makeDomElement2(doc2, "div", {}, {
             class: "rc-cal-item",
             "data-id": ev.id,
@@ -36125,6 +36532,11 @@ ${clean(nextLineText)}`;
             }
           });
           body.appendChild(itemRow);
+        }
+        if (calendarEvents.length > fits) {
+          body.appendChild(makeDomElement2(doc2, "div", {
+            textContent: `${calendarEvents.length - fits} more \xB7 make the card taller to see them`
+          }, { class: "rc-cal-more" }));
         }
       } else {
         const empty2 = makeDomElement2(doc2, "div", { textContent: "No Upcoming Agenda" }, { class: "rc-empty-state" });
@@ -36285,6 +36697,7 @@ ${clean(nextLineText)}`;
     }
     const grabbers = { left: grabberFor("left"), right: grabberFor("right") };
     const WIDGET_NAMES = {
+      recense: "Recense",
       preview: "Preview",
       quicktime: "Player",
       findmy: "Find My",
@@ -36292,47 +36705,566 @@ ${clean(nextLineText)}`;
       calendar: "Agenda",
       iphone: "iPhone Mirroring"
     };
+    const CATALOG = ["recense", "preview", "quicktime", "calendar", "findmy", "mail", "iphone"];
+    const otherSide = (side) => side === "left" ? "right" : "left";
+    const CARD_SWIPE = options.cardSwipeThreshold ?? 96;
+    const HOLD_MS = 450;
+    const ROW_STEP = options.rowStep ?? 122;
+    const UNDO_MS = 5e3;
+    const later = (fn, ms) => globalObj?.setTimeout ? globalObj.setTimeout(fn, ms) : setTimeout(fn, ms);
+    const cancelLater = (t2) => globalObj?.clearTimeout ? globalObj.clearTimeout(t2) : clearTimeout(t2);
+    const cls = (el5, name2, on) => on ? el5?.classList?.add?.(name2) : el5?.classList?.remove?.(name2);
+    const reduceMotion = () => Boolean(globalObj?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+    const TRASH_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+    const PIN_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8"/></svg>';
     function shown(wId) {
-      return !HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId);
+      return (wId === "recense" || Boolean(widgetElements[wId])) && (!HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId));
     }
-    function moverFor(wId, side) {
-      const target = side === "left" ? "right" : "left";
-      const name2 = WIDGET_NAMES[wId] || wId;
-      const el5 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
-        class: "rc-wing-move",
-        "data-widget": wId,
-        "data-target": target,
+    let pinned = { left: [], right: [] };
+    const listOf = (side) => side === "left" ? leftWidgets : rightWidgets;
+    function setList(side, list) {
+      if (side === "left") leftWidgets = list;
+      else rightWidgets = list;
+    }
+    const isPinned = (side, id2) => pinned[side].includes(id2);
+    function settle2(side) {
+      const list = listOf(side);
+      pinned[side] = pinned[side].filter((id2) => list.includes(id2));
+      setList(side, [...pinned[side], ...list.filter((id2) => !isPinned(side, id2))]);
+    }
+    function takeOut(side, id2) {
+      setList(side, listOf(side).filter((x) => x !== id2));
+      pinned[side] = pinned[side].filter((x) => x !== id2);
+    }
+    function changed() {
+      renderWidgets();
+      persistWingsState();
+    }
+    function pinWidget(side, id2, on) {
+      if (!listOf(side).includes(id2)) return false;
+      const want = on === void 0 ? !isPinned(side, id2) : Boolean(on);
+      pinned[side] = pinned[side].filter((x) => x !== id2);
+      if (want) pinned[side].push(id2);
+      settle2(side);
+      postHaptic2("snap");
+      changed();
+      return want;
+    }
+    const SIZE_NAMES = ["", "S", "M", "L", "XL"];
+    function setSize(side, id2, rows, { quiet = false } = {}) {
+      if (!listOf(side).includes(id2)) return rowsOf(side, id2);
+      const n = Math.max(1, Math.min(4, Math.round(Number(rows) || 1)));
+      if (n === rowsOf(side, id2)) return n;
+      sizes[side] = { ...sizes[side], [id2]: n };
+      if (!quiet) postHaptic2("snap");
+      if (id2 === "calendar") updateCalendarCard();
+      changed();
+      return n;
+    }
+    let lastRemoved = null;
+    function removeWidget(side, id2) {
+      const index = listOf(side).indexOf(id2);
+      if (index < 0) return false;
+      if (lastRemoved) cancelLater(lastRemoved.timer);
+      lastRemoved = { side, id: id2, index, pinned: isPinned(side, id2), timer: null };
+      takeOut(side, id2);
+      lastRemoved.timer = later(() => {
+        lastRemoved = null;
+        renderWidgets();
+      }, UNDO_MS);
+      postHaptic2("close");
+      changed();
+      return true;
+    }
+    function undoRemove() {
+      const r = lastRemoved;
+      if (!r) return false;
+      cancelLater(r.timer);
+      lastRemoved = null;
+      if (r.id !== "recense") takeOut(otherSide(r.side), r.id);
+      const list = listOf(r.side).filter((x) => x !== r.id);
+      list.splice(Math.min(r.index, list.length), 0, r.id);
+      setList(r.side, list);
+      if (r.pinned && !isPinned(r.side, r.id)) pinned[r.side].push(r.id);
+      settle2(r.side);
+      postHaptic2("snap");
+      changed();
+      return true;
+    }
+    function moveWidgetBy(side, id2, delta) {
+      const list = [...listOf(side)];
+      const i = list.indexOf(id2);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= list.length || isPinned(side, list[j]) !== isPinned(side, id2)) return false;
+      [list[i], list[j]] = [list[j], list[i]];
+      if (isPinned(side, id2)) pinned[side] = list.filter((x) => isPinned(side, x));
+      setList(side, list);
+      postHaptic2("snap");
+      changed();
+      return true;
+    }
+    function reorderWidget(side, id2, toIndex) {
+      const list = listOf(side).filter((x) => x !== id2);
+      if (list.length === listOf(side).length) return false;
+      const pinCount = pinned[side].filter((x) => x !== id2).length;
+      const lo = isPinned(side, id2) ? 0 : pinCount;
+      const hi = isPinned(side, id2) ? pinCount : list.length;
+      list.splice(Math.max(lo, Math.min(hi, toIndex)), 0, id2);
+      if (isPinned(side, id2)) pinned[side] = list.filter((x) => isPinned(side, x));
+      setList(side, list);
+      postHaptic2("snap");
+      changed();
+      return true;
+    }
+    function catalogFor(side, query = "") {
+      const q = String(query || "").trim().toLowerCase();
+      return CATALOG.filter((id2) => shown(id2) && !listOf(side).includes(id2)).map((id2) => ({
+        id: id2,
+        name: WIDGET_NAMES[id2] || id2,
+        from: id2 !== "recense" && listOf(otherSide(side)).includes(id2) ? otherSide(side) : ""
+      })).filter((e) => !q || e.name.toLowerCase().includes(q) || e.id.includes(q));
+    }
+    function addWidget(side, id2) {
+      if (!CATALOG.includes(id2) || !shown(id2) || listOf(side).includes(id2)) return false;
+      if (id2 !== "recense") takeOut(otherSide(side), id2);
+      setList(side, [...listOf(side), id2]);
+      settle2(side);
+      postHaptic2("snap");
+      changed();
+      return true;
+    }
+    function findFor(side) {
+      const wrap = makeDomElement2(doc2, "div", {}, { class: "rc-wing-find" });
+      const pill = makeDomElement2(doc2, "div", { textContent: "Show in wing\u2026" }, {
+        class: "rc-wing-find-pill",
         role: "button",
         tabindex: "0",
-        "aria-label": `Move ${name2} to the ${target} sidebar`
+        "aria-label": "Show in wing: find a widget, an app or the Recense card"
       });
-      const go = (e) => {
-        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
-        moveWidget(wId, target);
-      };
-      el5.addEventListener("click", go);
-      el5.addEventListener("keydown", go);
-      return el5;
+      const box = makeDomElement2(doc2, "div", {}, { class: "rc-wing-find-box" });
+      const input = makeDomElement2(doc2, "input", {}, {
+        class: "rc-wing-find-input",
+        type: "search",
+        placeholder: "Show in wing\u2026",
+        "aria-label": "Show in wing",
+        autocomplete: "off",
+        spellcheck: "false"
+      });
+      const done = makeDomElement2(doc2, "div", { textContent: "\u2715" }, {
+        class: "rc-wing-find-close",
+        role: "button",
+        tabindex: "0",
+        "aria-label": "Close Show in wing"
+      });
+      const results = makeDomElement2(doc2, "div", {}, { class: "rc-wing-find-results", role: "listbox" });
+      box.appendChild(input);
+      box.appendChild(done);
+      wrap.appendChild(pill);
+      wrap.appendChild(box);
+      wrap.appendChild(results);
+      let isOpen = false;
+      function choose(id2) {
+        if (addWidget(side, id2)) close();
+      }
+      function refresh() {
+        while (results.firstChild) results.removeChild(results.firstChild);
+        if (!isOpen) return;
+        const items = catalogFor(side, input.value);
+        if (!items.length) {
+          results.appendChild(makeDomElement2(doc2, "div", {
+            textContent: input.value ? "Nothing by that name" : "Everything is already in this wing"
+          }, { class: "rc-wing-find-empty" }));
+          return;
+        }
+        for (const item of items) {
+          const row = makeDomElement2(doc2, "div", {
+            textContent: item.from ? `${item.name} \xB7 from the ${item.from} wing` : item.name
+          }, { class: "rc-wing-find-item", role: "option", tabindex: "0", "data-widget": item.id });
+          row.addEventListener("click", () => choose(item.id));
+          row.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault?.();
+              choose(item.id);
+            } else if (e.key === "Escape") close();
+          });
+          results.appendChild(row);
+        }
+      }
+      const tell = () => options.onFindChange?.(side, isOpen);
+      function open(focus = true) {
+        const was = isOpen;
+        isOpen = true;
+        pill.hidden = true;
+        box.hidden = false;
+        results.hidden = false;
+        wrap.classList.add("rc-wing-find-open");
+        refresh();
+        if (!was) tell();
+        if (focus && typeof input.focus === "function") input.focus();
+      }
+      function close() {
+        const was = isOpen;
+        isOpen = false;
+        input.value = "";
+        pill.hidden = false;
+        box.hidden = true;
+        results.hidden = true;
+        wrap.classList.remove("rc-wing-find-open");
+        refresh();
+        if (was) tell();
+      }
+      pill.addEventListener("click", () => open(true));
+      pill.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault?.();
+          open(true);
+        }
+      });
+      done.addEventListener("click", close);
+      done.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") close();
+      });
+      input.addEventListener("input", refresh);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault?.();
+          const first = catalogFor(side, input.value)[0];
+          if (first) choose(first.id);
+        } else if (e.key === "Escape") {
+          e.preventDefault?.();
+          close();
+        }
+      });
+      close();
+      return { wrap, input, open, close, refresh, tell, isOpen: () => isOpen };
     }
-    function renderWidgets() {
-      for (const [el5, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
-        while (el5.firstChild) {
-          el5.removeChild(el5.firstChild);
-        }
-        if (el5.appendChild) {
-          el5.appendChild(grabbers[side]);
-          el5.appendChild(recenseCards[side]);
-        }
-        for (const wId of list) {
-          const card = widgetElements[wId];
-          if (card && shown(wId) && el5.appendChild) {
-            el5.appendChild(moverFor(wId, side));
-            el5.appendChild(card);
+    const finds = { left: findFor("left"), right: findFor("right") };
+    function toastFor(side) {
+      const t2 = makeDomElement2(doc2, "div", {}, { class: "rc-wing-toast", role: "status", "aria-live": "polite" });
+      const text = makeDomElement2(doc2, "span", {}, { class: "rc-wing-toast-text" });
+      const undo2 = makeDomElement2(doc2, "div", { textContent: "Undo" }, {
+        class: "rc-wing-toast-undo",
+        role: "button",
+        tabindex: "0",
+        "aria-label": "Undo remove"
+      });
+      undo2.addEventListener("click", undoRemove);
+      undo2.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") undoRemove();
+      });
+      t2.appendChild(text);
+      t2.appendChild(undo2);
+      t2.hidden = true;
+      return { el: t2, text };
+    }
+    const toasts = { left: toastFor("left"), right: toastFor("right") };
+    function closeMenus() {
+      for (const side of ["left", "right"]) {
+        for (const s of Object.values(slots[side])) s.closeMenu();
+      }
+    }
+    const slots = { left: {}, right: {} };
+    function slotFor(side, id2) {
+      if (slots[side][id2]) return slots[side][id2];
+      const card = id2 === "recense" ? recenseCards[side] : widgetElements[id2];
+      const name2 = WIDGET_NAMES[id2] || id2;
+      const slot = makeDomElement2(doc2, "div", {}, { class: "rc-wing-slot", "data-widget": id2 });
+      const under = makeDomElement2(doc2, "div", {}, { class: "rc-wing-under", "aria-hidden": "true" });
+      const underPin = makeDomElement2(doc2, "span", {}, { class: "rc-wing-under-pin" });
+      const underRemove = makeDomElement2(doc2, "span", {}, { class: "rc-wing-under-remove" });
+      underPin.innerHTML = `${PIN_ICON}<span class="rc-wing-under-label"></span>`;
+      underRemove.innerHTML = `<span class="rc-wing-under-label">Remove</span>${TRASH_ICON}`;
+      under.appendChild(underPin);
+      under.appendChild(underRemove);
+      const mark = makeDomElement2(doc2, "div", {}, { class: "rc-wing-pinmark", "aria-hidden": "true" });
+      mark.innerHTML = PIN_ICON;
+      const more = makeDomElement2(doc2, "div", { textContent: "\xB7\xB7\xB7" }, {
+        class: "rc-wing-more",
+        role: "button",
+        tabindex: "0",
+        "aria-haspopup": "menu",
+        "aria-expanded": "false",
+        "aria-label": `${name2} options`
+      });
+      const menu = makeDomElement2(doc2, "div", {}, { class: "rc-wing-menu", role: "menu", "aria-label": `${name2} options` });
+      menu.hidden = true;
+      slot.appendChild(under);
+      if (card) slot.appendChild(card);
+      const resize = makeDomElement2(doc2, "div", {}, {
+        class: "rc-wing-resize",
+        role: "slider",
+        tabindex: "0",
+        "aria-orientation": "vertical",
+        "aria-valuemin": "1",
+        "aria-valuemax": "4",
+        "aria-label": `Height of ${name2}`
+      });
+      slot.appendChild(mark);
+      slot.appendChild(more);
+      slot.appendChild(resize);
+      slot.appendChild(menu);
+      let sizing = null;
+      resize.addEventListener("pointerdown", (e) => {
+        e.stopPropagation?.();
+        e.preventDefault?.();
+        sizing = { y: e.clientY, rows: rowsOf(side, id2), now: rowsOf(side, id2) };
+        if (typeof resize.setPointerCapture === "function" && e.pointerId !== void 0) {
+          try {
+            resize.setPointerCapture(e.pointerId);
+          } catch {
           }
         }
+      });
+      resize.addEventListener("pointermove", (e) => {
+        if (!sizing) return;
+        e.stopPropagation?.();
+        const n = Math.max(1, Math.min(4, sizing.rows + Math.round((e.clientY - sizing.y) / ROW_STEP)));
+        if (n !== sizing.now) {
+          sizing.now = n;
+          slot.setAttribute("data-rows", String(n));
+          postHaptic2("snap");
+        }
+      });
+      const endSizing = (e) => {
+        if (!sizing) return;
+        e?.stopPropagation?.();
+        const n = sizing.now;
+        sizing = null;
+        setSize(side, id2, n, { quiet: true });
+      };
+      resize.addEventListener("pointerup", endSizing);
+      resize.addEventListener("pointercancel", endSizing);
+      resize.addEventListener("keydown", (e) => {
+        const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault?.();
+        setSize(side, id2, rowsOf(side, id2) + d);
+      });
+      function closeMenu() {
+        menu.hidden = true;
+        more.setAttribute("aria-expanded", "false");
+      }
+      function openMenu() {
+        closeMenus();
+        while (menu.firstChild) menu.removeChild(menu.firstChild);
+        const list = listOf(side);
+        const i = list.indexOf(id2);
+        const p = isPinned(side, id2);
+        const items = [
+          ["Move up", () => moveWidgetBy(side, id2, -1), i > 0 && isPinned(side, list[i - 1]) === p],
+          ["Move down", () => moveWidgetBy(side, id2, 1), i < list.length - 1 && isPinned(side, list[i + 1]) === p],
+          [`Move to the ${otherSide(side)} wing`, () => moveWidget(id2, otherSide(side)), true],
+          [p ? "Unpin" : "Pin", () => pinWidget(side, id2), true],
+          ["Remove", () => removeWidget(side, id2), true]
+        ];
+        let first = null;
+        for (const [label, fn, enabled] of items) {
+          const item = makeDomElement2(doc2, "div", { textContent: label }, {
+            class: `rc-wing-menu-item${label === "Remove" ? " rc-wing-menu-danger" : ""}`,
+            role: "menuitem",
+            tabindex: enabled ? "0" : "-1",
+            "aria-disabled": enabled ? "false" : "true"
+          });
+          const go = (e) => {
+            if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") {
+              if (e.key === "Escape") closeMenu();
+              return;
+            }
+            if (!enabled) return;
+            closeMenu();
+            fn();
+          };
+          item.addEventListener("click", go);
+          item.addEventListener("keydown", go);
+          menu.appendChild(item);
+          if (enabled && !first) first = item;
+        }
+        const sizeRow = makeDomElement2(doc2, "div", {}, { class: "rc-wing-menu-size", role: "group", "aria-label": "Size" });
+        sizeRow.appendChild(makeDomElement2(doc2, "span", { textContent: "Size" }, { class: "rc-wing-menu-size-label" }));
+        for (let n = 1; n <= 4; n++) {
+          const on = rowsOf(side, id2) === n;
+          const opt = makeDomElement2(doc2, "div", { textContent: SIZE_NAMES[n] }, {
+            class: `rc-wing-menu-size-opt${on ? " rc-on" : ""}`,
+            role: "menuitemradio",
+            tabindex: "0",
+            "aria-checked": String(on),
+            "aria-label": `Size ${SIZE_NAMES[n]}, ${n} row${n > 1 ? "s" : ""}`
+          });
+          const pick = (e) => {
+            if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+            closeMenu();
+            setSize(side, id2, n);
+          };
+          opt.addEventListener("click", pick);
+          opt.addEventListener("keydown", pick);
+          sizeRow.appendChild(opt);
+        }
+        menu.insertBefore ? menu.insertBefore(sizeRow, menu.lastChild) : menu.appendChild(sizeRow);
+        menu.hidden = false;
+        more.setAttribute("aria-expanded", "true");
+        if (first && typeof first.focus === "function") first.focus();
+      }
+      const toggleMenu = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        if (menu.hidden) openMenu();
+        else closeMenu();
+      };
+      more.addEventListener("click", toggleMenu);
+      more.addEventListener("keydown", toggleMenu);
+      function showSwipe(dx) {
+        const armed = Math.abs(dx) >= CARD_SWIPE;
+        cls(slot, "rc-wing-swipe-left", dx < 0);
+        cls(slot, "rc-wing-swipe-right", dx > 0);
+        cls(slot, "rc-wing-armed", armed);
+        const label = underPin.querySelector?.(".rc-wing-under-label");
+        if (label) label.textContent = isPinned(side, id2) ? "Unpin" : "Pin";
+        if (card?.style) {
+          if (reduceMotion()) card.style.opacity = String(1 - Math.min(Math.abs(dx) / CARD_SWIPE, 1) * 0.6);
+          else card.style.transform = dx ? `translateX(${dx}px)` : "";
+        }
+        return armed;
+      }
+      function endSwipe(dx) {
+        showSwipe(0);
+        slot.classList.remove("rc-wing-swipe-left", "rc-wing-swipe-right", "rc-wing-armed");
+        if (card?.style) {
+          card.style.transform = "";
+          card.style.opacity = "";
+        }
+        if (dx <= -CARD_SWIPE) removeWidget(side, id2);
+        else if (dx >= CARD_SWIPE) pinWidget(side, id2);
+      }
+      let drag = null;
+      const SKIP = "input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-wing-resize, .rc-card-pick-btn";
+      slot.addEventListener("pointerdown", (e) => {
+        if ((e.button ?? 0) > 0 || e.target?.closest?.(SKIP)) return;
+        drag = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, mode: null, dx: 0, dy: 0, armed: false };
+        drag.hold = later(() => {
+          if (drag && !drag.mode) {
+            drag.mode = "reorder";
+            slot.classList.add("rc-wing-lifted");
+            postHaptic2("snap");
+          }
+        }, HOLD_MS);
+      });
+      slot.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        drag.dx = e.clientX - drag.x;
+        drag.dy = e.clientY - drag.y;
+        if (!drag.mode) {
+          if (Math.abs(drag.dx) < 10 && Math.abs(drag.dy) < 10) return;
+          cancelLater(drag.hold);
+          if (Math.abs(drag.dx) <= Math.abs(drag.dy) * 1.3) {
+            drag = null;
+            return;
+          }
+          drag.mode = "swipe";
+          if (typeof slot.setPointerCapture === "function" && drag.pointerId !== void 0) {
+            try {
+              slot.setPointerCapture(drag.pointerId);
+            } catch {
+            }
+          }
+        }
+        e.stopPropagation?.();
+        e.preventDefault?.();
+        if (drag.mode === "swipe") {
+          const armed = showSwipe(drag.dx);
+          if (armed && !drag.armed) postHaptic2("edge");
+          drag.armed = armed;
+        } else if (drag.mode === "reorder" && card?.style && !reduceMotion()) {
+          card.style.transform = `translateY(${drag.dy}px)`;
+        }
+      });
+      const finish = (e) => {
+        if (!drag) return;
+        cancelLater(drag.hold);
+        const d = drag;
+        drag = null;
+        if (d.mode === "swipe") endSwipe(d.dx);
+        else if (d.mode === "reorder") {
+          slot.classList.remove("rc-wing-lifted");
+          if (card?.style) card.style.transform = "";
+          if (e?.type === "pointerup") reorderWidget(side, id2, dropIndex(side, id2, e.clientY));
+        }
+      };
+      slot.addEventListener("pointerup", finish);
+      slot.addEventListener("pointercancel", finish);
+      slot.addEventListener("touchmove", (e) => {
+        if (drag?.mode) e.stopPropagation?.();
+      });
+      let wheel = null;
+      slot.addEventListener("wheel", (e) => {
+        const dx = Number(e.deltaX) || 0;
+        const dy = Number(e.deltaY) || 0;
+        if (!wheel && Math.abs(dx) <= Math.abs(dy)) return;
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        if (!wheel) wheel = { acc: 0, armed: false, timer: null };
+        wheel.acc -= dx;
+        const armed = showSwipe(wheel.acc);
+        if (armed && !wheel.armed) postHaptic2("edge");
+        wheel.armed = armed;
+        cancelLater(wheel.timer);
+        wheel.timer = later(() => {
+          const acc = wheel.acc;
+          wheel = null;
+          endSwipe(acc);
+        }, 160);
+      }, { passive: false });
+      const s = { slot, card, mark, more, resize, menu, openMenu, closeMenu, showSwipe, endSwipe };
+      slots[side][id2] = s;
+      return s;
+    }
+    function dropIndex(side, id2, clientY) {
+      let n = 0;
+      for (const other of listOf(side)) {
+        if (other === id2) continue;
+        const r = slots[side][other]?.slot?.getBoundingClientRect?.();
+        if (r && r.top + r.height / 2 < clientY) n += 1;
+      }
+      return n;
+    }
+    function renderWidgets() {
+      closeMenus();
+      for (const [el5, side] of [[leftEl, "left"], [rightEl, "right"]]) {
+        const fixed = [grabbers[side], finds[side].wrap, toasts[side].el];
+        for (const child of [...el5.children || el5.childNodes || []]) {
+          if (!fixed.includes(child)) el5.removeChild(child);
+        }
+        if (!el5.appendChild) continue;
+        if (![...el5.children || el5.childNodes || []].includes(grabbers[side])) for (const f of fixed) el5.appendChild(f);
+        for (const wId of listOf(side)) {
+          if (!shown(wId)) continue;
+          const s = slotFor(side, wId);
+          if (!s.card) continue;
+          cls(s.slot, "rc-wing-pinned", isPinned(side, wId));
+          const rows = rowsOf(side, wId);
+          s.slot.setAttribute("data-rows", String(rows));
+          s.resize.setAttribute("aria-valuenow", String(rows));
+          s.resize.setAttribute("aria-valuetext", `${SIZE_NAMES[rows]}, ${rows} row${rows > 1 ? "s" : ""}`);
+          el5.appendChild(s.slot);
+        }
+        const t2 = toasts[side];
+        const mine = lastRemoved && lastRemoved.side === side;
+        t2.el.hidden = !mine;
+        t2.text.textContent = mine ? `${WIDGET_NAMES[lastRemoved.id] || lastRemoved.id} removed` : "";
+        finds[side].refresh();
       }
     }
     renderWidgets();
+    const nothingPlaying = () => !qtData.src && !recenseLine.original && !recenseLine.translation;
+    function wingShown(side) {
+      closeMenus();
+      const f = finds[side];
+      if (!f) return false;
+      if (nothingPlaying()) {
+        const was = f.isOpen();
+        f.open(true);
+        if (was) f.tell();
+      } else if (!f.input.value) f.close();
+      return f.isOpen();
+    }
     function enableHostWidget(wId) {
       if (!HOST_WIDGETS.has(wId)) return;
       enabledHostWidgets.add(wId);
@@ -36351,10 +37283,6 @@ ${clean(nextLineText)}`;
       leftEl.hidden = side !== "left";
       rightEl.hidden = side !== "right";
     }
-    function setArranging(on) {
-      for (const el5 of [leftEl, rightEl]) el5.classList?.toggle("rc-wings-arranging", Boolean(on));
-      return Boolean(on);
-    }
     function openWing(side) {
       if (nativeWings) {
         nativeWings("open", side);
@@ -36366,6 +37294,8 @@ ${clean(nextLineText)}`;
       if (side === "right" || side === "both") {
         rightEl.hidden = false;
       }
+      if (side === "left" || side === "both") wingShown("left");
+      if (side === "right" || side === "both") wingShown("right");
       postHaptic2("open");
     }
     function closeWing(side) {
@@ -36404,9 +37334,11 @@ ${clean(nextLineText)}`;
     }
     function getState() {
       return {
-        version: 1,
+        version: 3,
         leftWidgets: [...leftWidgets],
         rightWidgets: [...rightWidgets],
+        pinned: { left: [...pinned.left], right: [...pinned.right] },
+        sizes: { left: { ...sizes.left }, right: { ...sizes.right } },
         previewData: { ...previewData },
         qtData: { ...qtData, loopRange: [...qtData.loopRange] },
         findMyItems: [...findMyItems],
@@ -36432,8 +37364,24 @@ ${clean(nextLineText)}`;
         }
       }
       if (!parsed || typeof parsed !== "object") return;
-      if (Array.isArray(parsed.leftWidgets)) leftWidgets = [...parsed.leftWidgets];
-      if (Array.isArray(parsed.rightWidgets)) rightWidgets = [...parsed.rightWidgets];
+      const v1 = !(Number(parsed.version) >= 2);
+      const lists = (list) => {
+        const ids = list.filter((id2) => typeof id2 === "string");
+        return v1 && !ids.includes("recense") ? ["recense", ...ids] : ids;
+      };
+      if (Array.isArray(parsed.leftWidgets)) leftWidgets = lists(parsed.leftWidgets);
+      if (Array.isArray(parsed.rightWidgets)) rightWidgets = lists(parsed.rightWidgets);
+      const p = parsed.pinned && typeof parsed.pinned === "object" ? parsed.pinned : {};
+      pinned = {
+        left: Array.isArray(p.left) ? p.left.filter((id2) => typeof id2 === "string") : [],
+        right: Array.isArray(p.right) ? p.right.filter((id2) => typeof id2 === "string") : []
+      };
+      settle2("left");
+      settle2("right");
+      const z = parsed.sizes && typeof parsed.sizes === "object" ? parsed.sizes : {};
+      const rowsIn = (o) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => typeof k === "string" && Number.isInteger(v) && v >= 1 && v <= 4));
+      sizes = { left: rowsIn(z.left), right: rowsIn(z.right) };
+      updateCalendarCard();
       if (parsed.previewData && typeof parsed.previewData === "object") {
         previewData = {
           src: String(parsed.previewData.src || ""),
@@ -36465,28 +37413,31 @@ ${clean(nextLineText)}`;
       const temp = leftWidgets;
       leftWidgets = rightWidgets;
       rightWidgets = temp;
+      pinned = { left: pinned.right, right: pinned.left };
+      sizes = { left: sizes.right, right: sizes.left };
       renderWidgets();
       postHaptic2("snap");
       persistWingsState();
     }
     function moveWidget(widgetId, targetSide) {
-      if (targetSide === "left") {
-        if (!leftWidgets.includes(widgetId)) {
-          rightWidgets = rightWidgets.filter((w) => w !== widgetId);
-          leftWidgets.push(widgetId);
-          renderWidgets();
+      if (targetSide !== "left" && targetSide !== "right") return;
+      const from = otherSide(targetSide);
+      if (listOf(targetSide).includes(widgetId)) {
+        if (widgetId === "recense" && listOf(from).includes("recense")) {
+          takeOut(from, "recense");
           postHaptic2("snap");
-          persistWingsState();
+          changed();
         }
-      } else if (targetSide === "right") {
-        if (!rightWidgets.includes(widgetId)) {
-          leftWidgets = leftWidgets.filter((w) => w !== widgetId);
-          rightWidgets.push(widgetId);
-          renderWidgets();
-          postHaptic2("snap");
-          persistWingsState();
-        }
+        return;
       }
+      const wasPinned = isPinned(from, widgetId);
+      if (sizes[from][widgetId]) sizes[targetSide] = { ...sizes[targetSide], [widgetId]: sizes[from][widgetId] };
+      takeOut(from, widgetId);
+      setList(targetSide, [...listOf(targetSide), widgetId]);
+      if (wasPinned) pinned[targetSide].push(widgetId);
+      settle2(targetSide);
+      postHaptic2("snap");
+      changed();
     }
     function getWingLayout() {
       return {
@@ -36619,7 +37570,20 @@ ${clean(nextLineText)}`;
       enableHostWidget,
       setNativeWings,
       reveal,
-      setArranging,
+      wingShown,
+      addWidget,
+      removeWidget,
+      undoRemove,
+      pinWidget,
+      moveWidgetBy,
+      reorderWidget,
+      catalogFor,
+      openFind: (side) => finds[side]?.open(true),
+      closeFind: (side) => finds[side]?.close(),
+      isFindOpen: (side) => Boolean(finds[side]?.isOpen()),
+      getPinned: () => ({ left: [...pinned.left], right: [...pinned.right] }),
+      setSize,
+      getSize: (side, id2) => rowsOf(side, id2),
       setRecenseLine,
       setTypedLine,
       preferredWidth,
@@ -36647,39 +37611,17 @@ ${clean(nextLineText)}`;
     for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
     return e;
   }
-  function pressable(node, fn) {
-    node.addEventListener("click", fn);
-    node.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        fn(e);
-      }
-    });
-    return node;
-  }
+  var GLASS = ".rc-wing-card, .rc-wing-find-pill, .rc-wing-find-box, .rc-wing-find-results, .rc-wing-menu, .rc-wing-toast";
   function mountWingPanel(root, side, { globalObj = typeof window !== "undefined" ? window : null } = {}) {
     const doc2 = root.ownerDocument || document;
     const post = (msg) => globalObj?.webkit?.messageHandlers?.wings?.postMessage?.(msg);
     doc2.documentElement.classList.add("rc-wings-page");
-    const shell = el2(doc2, "div", `rc-wings-only rc-wings-only-${side}`);
-    const head = el2(doc2, "div", "rc-wingpanel-head");
-    const title = el2(doc2, "span", "rc-wingpanel-title", side === "left" ? "Left Wing" : "Right Wing");
-    const close = pressable(
-      el2(doc2, "div", "rc-wingpanel-close rc-glass", "\xD7", { role: "button", tabindex: "0", "aria-label": "Close wing" }),
-      () => post({ action: "wing", op: "close", side })
-    );
-    if (side === "left") head.append(close, title);
-    else head.append(title, close);
-    const body = el2(doc2, "div", "rc-wingpanel-body");
-    const foot = el2(doc2, "div", "rc-wingpanel-foot");
-    const arrange = el2(doc2, "div", "rc-wingpanel-arrange rc-glass", "Arrange", {
-      role: "button",
-      tabindex: "0",
-      "aria-pressed": "false",
-      "aria-label": "Arrange cards: show Move to the other side"
+    const shell = el2(doc2, "div", `rc-wings-only rc-wings-only-${side}`, "", {
+      role: "region",
+      "aria-label": side === "left" ? "Left wing" : "Right wing"
     });
-    foot.append(arrange);
-    shell.append(head, body, foot);
+    const body = el2(doc2, "div", "rc-wingpanel-body");
+    shell.append(body);
     root.appendChild(shell);
     const scanner = createCalendarScanner({ globalObj });
     const wings = createDualWings(body, {
@@ -36687,22 +37629,19 @@ ${clean(nextLineText)}`;
       onJumpToLine: (line) => post({ action: "jumpToLine", line: Number(line) || 1 }),
       onAddEvent: (ev) => scanner.requestAdd(ev),
       gestures: false,
+      onFindChange: (s, open) => post({ action: "wing", op: open ? "focus" : "unfocus", side: s }),
       globalObj
     });
     wings.setNativeWings((op, s) => post({ action: "wing", op, side: s }));
     wings.reveal(side);
-    let arranging = false;
-    function setArranging(on) {
-      arranging = wings.setArranging(on);
-      arrange.textContent = arranging ? "Done" : "Arrange";
-      arrange.setAttribute("aria-pressed", String(arranging));
+    function setArranging() {
+      const open = wings.wingShown(side);
       schedule();
-      return arranging;
+      return open;
     }
-    pressable(arrange, () => setArranging(!arranging));
     function glassShapes() {
       const shown = side === "left" ? wings.leftEl : wings.rightEl;
-      const nodes = [...shell.querySelectorAll(".rc-glass"), ...shown.querySelectorAll(".rc-wing-card, .rc-wing-move")];
+      const nodes = [...shell.querySelectorAll(".rc-glass"), ...shown.querySelectorAll(GLASS)];
       const out = [];
       for (const n of nodes) {
         const r = n.getBoundingClientRect();
@@ -36763,7 +37702,6 @@ ${clean(nextLineText)}`;
       setWingsState(state) {
         wings.setState(state);
         wings.reveal(side);
-        wings.setArranging(arranging);
         schedule();
       },
       getWingsState: () => wings.getState(),

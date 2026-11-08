@@ -1066,57 +1066,6 @@ html.rc-wings-page body {
   color: #f2f4f7;
 }
 
-.rc-wingpanel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 4px 0;
-}
-
-.rc-wingpanel-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
-.rc-wingpanel-close {
-  background: var(--rc-glass-tint);
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  line-height: 1;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wingpanel-foot {
-  display: flex;
-  justify-content: center;
-}
-
-.rc-wingpanel-arrange {
-  background: var(--rc-glass-tint);
-  padding: 5px 14px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wingpanel-close:focus-visible,
-.rc-wingpanel-arrange:focus-visible,
-.rc-wings-only .rc-wing-move:focus-visible {
-  outline: 2px solid var(--rc-cyan);
-  outline-offset: 2px;
-}
-
 .rc-wings-only .rc-wing {
   position: static;
   width: auto;
@@ -1159,23 +1108,6 @@ html.rc-wings-page body {
   font-weight: 400;
 }
 
-/* Move controls show only while arranging (the Arrange pill), so the cards are calm at rest. */
-.rc-wings-only .rc-wing-move {
-  background: var(--rc-glass-tint);
-  display: none;
-  align-self: center;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e9edf2;
-  cursor: pointer;
-}
-
-.rc-wings-only .rc-wing.rc-wings-arranging .rc-wing-move {
-  display: block;
-}
-
 /* The eraser's ring (ink.js ERASER_RADIUS): the pointer while an eraser is picked, at exactly the size it erases. */
 .rc-ink-eraser-ring {
   fill: none;
@@ -1183,13 +1115,12 @@ html.rc-wings-page body {
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
 
-/* The grabber: a short line on the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
+/* The grabber: a short line at the top of the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
 .rc-wing-grabber {
   position: absolute;
-  top: 50%;
+  top: 6px;
   width: 22px;
   height: 64px;
-  margin-top: -32px;
   cursor: grab;
   touch-action: none;
   z-index: 2;
@@ -1232,6 +1163,476 @@ html.rc-wings-page body {
 .rc-wings-only .rc-wing-right .rc-wing-grabber {
   left: -8px;
 }
+
+/* W2 card controls: "Show in wing…", the card slot (swipe reveal, pin mark, ··· menu) and the Undo toast. */
+.rc-wing-find {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Clear of the grabber, which sits at the top of the inner edge. */
+.rc-wing-right .rc-wing-find {
+  margin-left: 18px;
+}
+
+.rc-wing-left .rc-wing-find {
+  margin-right: 18px;
+}
+
+.rc-wing-find-pill {
+  align-self: center;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+  cursor: pointer;
+}
+
+.rc-wings-only .rc-wing-find-pill {
+  border: 0;
+}
+
+.rc-wing-find-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+  animation: rc-wing-dissolve 180ms ease-out;
+}
+
+.rc-wings-only .rc-wing-find-box {
+  border: 0;
+}
+
+.rc-wing-find-box[hidden],
+.rc-wing-find-pill[hidden],
+.rc-wing-find-results[hidden],
+.rc-wing-menu[hidden],
+.rc-wing-toast[hidden] {
+  display: none !important;
+}
+
+.rc-wing-find-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.rc-wing-find-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.rc-wing-find-results {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  animation: rc-wing-dissolve 180ms ease-out;
+}
+
+.rc-wing-find-item,
+.rc-wing-find-empty {
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.rc-wing-find-item {
+  cursor: pointer;
+}
+
+.rc-wing-find-item + .rc-wing-find-item {
+  border-top: 1px solid var(--rc-border);
+}
+
+.rc-wing-find-item:hover,
+.rc-wing-find-item:focus-visible {
+  background: rgba(127, 127, 127, 0.18);
+  outline: none;
+}
+
+.rc-wing-find-empty {
+  opacity: 0.65;
+}
+
+@keyframes rc-wing-dissolve {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rc-wing-slot {
+  position: relative;
+  touch-action: pan-y;
+  border-radius: 18px;
+}
+
+.rc-wing-slot > .rc-wing-card {
+  position: relative;
+  z-index: 1;
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.rc-wing-swipe-left > .rc-wing-card,
+.rc-wing-swipe-right > .rc-wing-card,
+.rc-wing-lifted > .rc-wing-card {
+  transition: none;
+}
+
+.rc-wing-lifted > .rc-wing-card {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.rc-wing-under {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-radius: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.rc-wing-under-pin,
+.rc-wing-under-remove {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.rc-wing-swipe-left > .rc-wing-under,
+.rc-wing-swipe-right > .rc-wing-under {
+  display: flex;
+}
+
+.rc-wing-swipe-left > .rc-wing-under {
+  justify-content: flex-end;
+  background: #b3261e;
+}
+
+.rc-wing-swipe-right > .rc-wing-under {
+  justify-content: flex-start;
+  background: #3a6ea5;
+}
+
+.rc-wing-swipe-left .rc-wing-under-remove,
+.rc-wing-swipe-right .rc-wing-under-pin {
+  display: flex;
+}
+
+.rc-wing-armed > .rc-wing-under {
+  filter: brightness(1.2);
+}
+
+/* Room for the ··· control (and the pin mark) at each card's top right. */
+.rc-wing-slot > .rc-wing-card .rc-widget-header {
+  padding-right: 52px;
+}
+
+.rc-wing-pinmark {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 44px;
+  display: none;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.rc-wing-pinmark svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rc-wing-pinned > .rc-wing-pinmark {
+  display: block;
+}
+
+.rc-wing-more {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 10px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.rc-wing-more:hover,
+.rc-wing-more:focus-visible {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.22);
+  outline: none;
+}
+
+/* In the flow under its card (not floating), so the wing and the Mac panel grow to show all of it. */
+.rc-wing-menu {
+  position: relative;
+  z-index: 3;
+  margin: 6px 0 0 auto;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-radius: 12px;
+  background: var(--rc-panel);
+  border: 1px solid var(--rc-border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+}
+
+.rc-wings-only .rc-wing-menu {
+  background: rgba(24, 26, 32, 0.92);
+  border: 0;
+}
+
+.rc-wing-menu-item {
+  padding: 9px 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.rc-wing-menu-item:hover,
+.rc-wing-menu-item:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-item[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rc-wing-menu-danger {
+  color: #ff6b62;
+}
+
+.rc-wing-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 15px;
+  background: var(--rc-glass-tint, var(--rc-surface));
+  border: 1px solid var(--rc-border);
+}
+
+.rc-wings-only .rc-wing-toast {
+  border: 0;
+}
+
+.rc-wing-toast-undo {
+  font-weight: 700;
+  color: var(--rc-cyan);
+  cursor: pointer;
+}
+
+.rc-wing-find-pill:focus-visible,
+.rc-wing-find-close:focus-visible,
+.rc-wing-toast-undo:focus-visible {
+  outline: 2px solid var(--rc-cyan);
+  outline-offset: 2px;
+}
+
+/* Reduce Motion: no dissolve, no slide; a swipe fades the card instead (wings.js). */
+@media (prefers-reduced-motion: reduce) {
+  .rc-wing-find-box,
+  .rc-wing-find-results {
+    animation: none;
+  }
+  .rc-wing-slot > .rc-wing-card {
+    transition: none;
+  }
+}
+
+/* W3 rows: a card is 1-4 rows tall (S, M, L, XL), so neighbours line up; one row is the small card. Height only:
+   the text keeps its size and what doesn't fit scrolls inside the card. */
+.rc-wing-slot {
+  --rc-row: 112px;
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='1'] {
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='2'] {
+  --rc-card-h: calc(var(--rc-row) * 2 + 10px);
+}
+
+.rc-wing-slot[data-rows='3'] {
+  --rc-card-h: calc(var(--rc-row) * 3 + 20px);
+}
+
+.rc-wing-slot[data-rows='4'] {
+  --rc-card-h: calc(var(--rc-row) * 4 + 30px);
+}
+
+.rc-wing-slot > .rc-wing-card {
+  box-sizing: border-box;
+  height: var(--rc-card-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rc-wing-slot > .rc-wing-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* Media takes the height the rows give it. */
+.rc-wing-slot .rc-preview-img,
+.rc-wing-slot .rc-qt-video {
+  max-height: calc(var(--rc-card-h) - 84px);
+}
+
+.rc-wing-slot .rc-preview-pdf {
+  height: calc(var(--rc-card-h) - 84px);
+}
+
+/* Recense: more rows, more of its line (S one line each, then 3 / 2, 5 / 3, 7 / 4). */
+.rc-wing-slot .rc-recense-original,
+.rc-wing-slot .rc-recense-translation {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-original {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-translation {
+  -webkit-line-clamp: 2;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-original {
+  -webkit-line-clamp: 5;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-translation {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-original {
+  -webkit-line-clamp: 7;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-translation {
+  -webkit-line-clamp: 4;
+}
+
+.rc-cal-more {
+  opacity: 0.7;
+  padding-top: 4px;
+}
+
+/* The bottom-edge grabber: a short bar on the card's lower edge; drag it to snap the height to rows. */
+.rc-wing-resize {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -7px;
+  width: 64px;
+  height: 18px;
+  margin-left: -32px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.rc-wing-resize::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.rc-wing-resize:hover::before,
+.rc-wing-resize:focus-visible::before {
+  opacity: 0.75;
+}
+
+.rc-wing-resize:focus-visible {
+  outline: none;
+}
+
+.rc-wing-menu-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 16px;
+  border-top: 1px solid var(--rc-border);
+  border-bottom: 1px solid var(--rc-border);
+  font-size: 15px;
+}
+
+.rc-wing-menu-size-label {
+  flex: 1;
+}
+
+.rc-wing-menu-size-opt {
+  min-width: 34px;
+  padding: 5px 0;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-wing-menu-size-opt:hover,
+.rc-wing-menu-size-opt:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-size-opt.rc-on {
+  background: var(--rc-cyan);
+  color: #0b1a22;
+}
+/* W3 rows end */
 
 /* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
    wing can widen to it (wings.js preferredWidth), else it wraps. */

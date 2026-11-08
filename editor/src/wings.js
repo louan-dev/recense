@@ -537,10 +537,17 @@ export function createDualWings(container, options = {}) {
 
   let leftWidgets = Array.isArray(options.leftWidgets)
     ? [...options.leftWidgets]
-    : ['preview', 'quicktime'];
+    : ['recense', 'preview', 'quicktime'];
   let rightWidgets = Array.isArray(options.rightWidgets)
     ? [...options.rightWidgets]
-    : ['calendar'];
+    : ['recense', 'calendar'];
+  // Card heights in rows (W3): 1-4 = S, M, L, XL; one row is the small card. Defaults keep the look from before.
+  const DEFAULT_ROWS = { preview: 3, quicktime: 3, calendar: 2 };
+  let sizes = { left: {}, right: {} };
+  const rowsOf = (side, id) => sizes[side]?.[id] || DEFAULT_ROWS[id] || 1;
+  // The Agenda lists as many events as its rows hold; the rest are counted under them.
+  const AGENDA_PER_ROWS = [0, 1, 2, 3, 4]; // an event with its Add control is about one row tall
+  const agendaSide = () => (rightWidgets.includes('calendar') || !leftWidgets.includes('calendar') ? 'right' : 'left');
   // Widgets only some hosts can run (the Mac's iPhone Mirroring): shown once the host enables them.
   const HOST_WIDGETS = new Set(['iphone']);
   const enabledHostWidgets = new Set();
@@ -972,8 +979,9 @@ export function createDualWings(container, options = {}) {
     calendarCard.appendChild(header);
 
     const body = makeDomElement(doc, 'div', {}, { class: 'rc-widget-body rc-calendar-list' });
+    const fits = AGENDA_PER_ROWS[rowsOf(agendaSide(), 'calendar')] || 1;
     if (calendarEvents.length > 0) {
-      for (const ev of calendarEvents) {
+      for (const ev of calendarEvents.slice(0, fits)) {
         const itemRow = makeDomElement(doc, 'div', {}, {
           class: 'rc-cal-item',
           'data-id': ev.id,
@@ -1032,6 +1040,11 @@ export function createDualWings(container, options = {}) {
         });
 
         body.appendChild(itemRow);
+      }
+      if (calendarEvents.length > fits) {
+        body.appendChild(makeDomElement(doc, 'div', {
+          textContent: `${calendarEvents.length - fits} more · make the card taller to see them`
+        }, { class: 'rc-cal-more' }));
       }
     } else {
       const empty = makeDomElement(doc, 'div', { textContent: 'No Upcoming Agenda' }, { class: 'rc-empty-state' });
@@ -1169,7 +1182,7 @@ export function createDualWings(container, options = {}) {
   }
   updateRecenseCards();
 
-  // The grabber on each wing's inner edge: slide it toward the screen edge and the wing tucks in.
+  // The grabber at the top of each wing's inner edge: slide it toward the screen edge and the wing tucks in.
   function grabberFor(side) {
     const g = makeDomElement(doc, 'div', {}, {
       class: `rc-wing-grabber rc-wing-grabber-${side}`,
@@ -1206,54 +1219,588 @@ export function createDualWings(container, options = {}) {
   const grabbers = { left: grabberFor('left'), right: grabberFor('right') };
 
   const WIDGET_NAMES = {
-    preview: 'Preview', quicktime: 'Player', findmy: 'Find My', mail: 'Mail', calendar: 'Agenda', iphone: 'iPhone Mirroring'
+    recense: 'Recense', preview: 'Preview', quicktime: 'Player', findmy: 'Find My', mail: 'Mail', calendar: 'Agenda',
+    iphone: 'iPhone Mirroring'
   };
+  // Everything a wing can show, in the order the "Show in wing…" field lists it.
+  const CATALOG = ['recense', 'preview', 'quicktime', 'calendar', 'findmy', 'mail', 'iphone'];
+  const otherSide = side => (side === 'left' ? 'right' : 'left');
+  const CARD_SWIPE = options.cardSwipeThreshold ?? 96;
+  const HOLD_MS = 450;
+  const ROW_STEP = options.rowStep ?? 122; // one row (styles.css --rc-row, 112) + the gap between cards (10)
+  const UNDO_MS = 5000;
+  const later = (fn, ms) => (globalObj?.setTimeout ? globalObj.setTimeout(fn, ms) : setTimeout(fn, ms));
+  const cancelLater = t => (globalObj?.clearTimeout ? globalObj.clearTimeout(t) : clearTimeout(t));
+  // add / remove, not toggle(force): some hosts' element shims have only these two.
+  const cls = (el, name, on) => (on ? el?.classList?.add?.(name) : el?.classList?.remove?.(name));
+  const reduceMotion = () => Boolean(globalObj?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+  // Static icons (no user text), drawn in the text colour.
+  const TRASH_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+  const PIN_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8"/></svg>';
 
   function shown(wId) {
-    return !HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId);
+    return (wId === 'recense' || Boolean(widgetElements[wId])) && (!HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId));
   }
 
-  // One visible control per card: move it to the other wing (the same as moveWidget, voice or API).
-  function moverFor(wId, side) {
-    const target = side === 'left' ? 'right' : 'left';
-    const name = WIDGET_NAMES[wId] || wId;
-    const el = makeDomElement(doc, 'div', { textContent: side === 'left' ? 'Move to right ›' : '‹ Move to left' }, {
-      class: 'rc-wing-move',
-      'data-widget': wId,
-      'data-target': target,
-      role: 'button',
-      tabindex: '0',
-      'aria-label': `Move ${name} to the ${target} sidebar`
+  // Pins, per wing: pinned cards stay at the top, in the order they were pinned, and nothing replaces them.
+  let pinned = { left: [], right: [] };
+  const listOf = side => (side === 'left' ? leftWidgets : rightWidgets);
+  function setList(side, list) {
+    if (side === 'left') leftWidgets = list;
+    else rightWidgets = list;
+  }
+  const isPinned = (side, id) => pinned[side].includes(id);
+  /** Pinned cards first (in pin order), the rest after in their own order. */
+  function settle(side) {
+    const list = listOf(side);
+    pinned[side] = pinned[side].filter(id => list.includes(id));
+    setList(side, [...pinned[side], ...list.filter(id => !isPinned(side, id))]);
+  }
+  function takeOut(side, id) {
+    setList(side, listOf(side).filter(x => x !== id));
+    pinned[side] = pinned[side].filter(x => x !== id);
+  }
+  function changed() {
+    renderWidgets();
+    persistWingsState();
+  }
+
+  /** Pin or unpin a card (swipe right, its ··· menu, or the API). Returns whether it is pinned now. */
+  function pinWidget(side, id, on) {
+    if (!listOf(side).includes(id)) return false;
+    const want = on === undefined ? !isPinned(side, id) : Boolean(on);
+    pinned[side] = pinned[side].filter(x => x !== id);
+    if (want) pinned[side].push(id);
+    settle(side);
+    postHaptic('snap');
+    changed();
+    return want;
+  }
+
+  const SIZE_NAMES = ['', 'S', 'M', 'L', 'XL'];
+  /** A card's height in rows (1-4), from its bottom grabber, its ··· menu or the API. Returns the rows it has now. */
+  function setSize(side, id, rows, { quiet = false } = {}) {
+    if (!listOf(side).includes(id)) return rowsOf(side, id);
+    const n = Math.max(1, Math.min(4, Math.round(Number(rows) || 1)));
+    if (n === rowsOf(side, id)) return n;
+    sizes[side] = { ...sizes[side], [id]: n };
+    if (!quiet) postHaptic('snap');
+    if (id === 'calendar') updateCalendarCard();
+    changed();
+    return n;
+  }
+
+  // The last removal, kept 5 s for Undo.
+  let lastRemoved = null;
+  function removeWidget(side, id) {
+    const index = listOf(side).indexOf(id);
+    if (index < 0) return false;
+    if (lastRemoved) cancelLater(lastRemoved.timer);
+    lastRemoved = { side, id, index, pinned: isPinned(side, id), timer: null };
+    takeOut(side, id);
+    lastRemoved.timer = later(() => {
+      lastRemoved = null;
+      renderWidgets();
+    }, UNDO_MS);
+    postHaptic('close');
+    changed();
+    return true;
+  }
+  /** Undo the last removal: the card comes back to the same wing, place and pin. */
+  function undoRemove() {
+    const r = lastRemoved;
+    if (!r) return false;
+    cancelLater(r.timer);
+    lastRemoved = null;
+    if (r.id !== 'recense') takeOut(otherSide(r.side), r.id);
+    const list = listOf(r.side).filter(x => x !== r.id);
+    list.splice(Math.min(r.index, list.length), 0, r.id);
+    setList(r.side, list);
+    if (r.pinned && !isPinned(r.side, r.id)) pinned[r.side].push(r.id);
+    settle(r.side);
+    postHaptic('snap');
+    changed();
+    return true;
+  }
+
+  /** Move a card one place up (-1) or down (+1) within its group (pinned or not). */
+  function moveWidgetBy(side, id, delta) {
+    const list = [...listOf(side)];
+    const i = list.indexOf(id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= list.length || isPinned(side, list[j]) !== isPinned(side, id)) return false;
+    [list[i], list[j]] = [list[j], list[i]];
+    if (isPinned(side, id)) pinned[side] = list.filter(x => isPinned(side, x));
+    setList(side, list);
+    postHaptic('snap');
+    changed();
+    return true;
+  }
+
+  /** Put a card at an index (hold and drag), kept inside its group so pins stay on top. */
+  function reorderWidget(side, id, toIndex) {
+    const list = listOf(side).filter(x => x !== id);
+    if (list.length === listOf(side).length) return false;
+    const pinCount = pinned[side].filter(x => x !== id).length;
+    const lo = isPinned(side, id) ? 0 : pinCount;
+    const hi = isPinned(side, id) ? pinCount : list.length;
+    list.splice(Math.max(lo, Math.min(hi, toIndex)), 0, id);
+    if (isPinned(side, id)) pinned[side] = list.filter(x => isPinned(side, x));
+    setList(side, list);
+    postHaptic('snap');
+    changed();
+    return true;
+  }
+
+  /** What "Show in wing…" can add to this wing: everything not on it, filtered by the typed text. */
+  function catalogFor(side, query = '') {
+    const q = String(query || '').trim().toLowerCase();
+    return CATALOG
+      .filter(id => shown(id) && !listOf(side).includes(id))
+      .map(id => ({
+        id,
+        name: WIDGET_NAMES[id] || id,
+        from: id !== 'recense' && listOf(otherSide(side)).includes(id) ? otherSide(side) : ''
+      }))
+      .filter(e => !q || e.name.toLowerCase().includes(q) || e.id.includes(q));
+  }
+
+  /** Add a card to a wing (a widget on the other wing moves over; Recense can be in both). */
+  function addWidget(side, id) {
+    if (!CATALOG.includes(id) || !shown(id) || listOf(side).includes(id)) return false;
+    if (id !== 'recense') takeOut(otherSide(side), id);
+    setList(side, [...listOf(side), id]);
+    settle(side);
+    postHaptic('snap');
+    changed();
+    return true;
+  }
+
+  // "Show in wing…": a pill that dissolves into a typing field (Reduce Motion: a plain swap, styles.css).
+  function findFor(side) {
+    const wrap = makeDomElement(doc, 'div', {}, { class: 'rc-wing-find' });
+    const pill = makeDomElement(doc, 'div', { textContent: 'Show in wing…' }, {
+      class: 'rc-wing-find-pill', role: 'button', tabindex: '0',
+      'aria-label': 'Show in wing: find a widget, an app or the Recense card'
     });
-    const go = e => {
-      if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
-      moveWidget(wId, target);
-    };
-    el.addEventListener('click', go);
-    el.addEventListener('keydown', go);
-    return el;
+    const box = makeDomElement(doc, 'div', {}, { class: 'rc-wing-find-box' });
+    const input = makeDomElement(doc, 'input', {}, {
+      class: 'rc-wing-find-input', type: 'search', placeholder: 'Show in wing…', 'aria-label': 'Show in wing',
+      autocomplete: 'off', spellcheck: 'false'
+    });
+    const done = makeDomElement(doc, 'div', { textContent: '✕' }, {
+      class: 'rc-wing-find-close', role: 'button', tabindex: '0', 'aria-label': 'Close Show in wing'
+    });
+    const results = makeDomElement(doc, 'div', {}, { class: 'rc-wing-find-results', role: 'listbox' });
+    box.appendChild(input);
+    box.appendChild(done);
+    wrap.appendChild(pill);
+    wrap.appendChild(box);
+    wrap.appendChild(results);
+    let isOpen = false;
+
+    function choose(id) {
+      if (addWidget(side, id)) close();
+    }
+    function refresh() {
+      while (results.firstChild) results.removeChild(results.firstChild);
+      if (!isOpen) return;
+      const items = catalogFor(side, input.value);
+      if (!items.length) {
+        results.appendChild(makeDomElement(doc, 'div', {
+          textContent: input.value ? 'Nothing by that name' : 'Everything is already in this wing'
+        }, { class: 'rc-wing-find-empty' }));
+        return;
+      }
+      for (const item of items) {
+        const row = makeDomElement(doc, 'div', {
+          textContent: item.from ? `${item.name} · from the ${item.from} wing` : item.name
+        }, { class: 'rc-wing-find-item', role: 'option', tabindex: '0', 'data-widget': item.id });
+        row.addEventListener('click', () => choose(item.id));
+        row.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault?.();
+            choose(item.id);
+          } else if (e.key === 'Escape') close();
+        });
+        results.appendChild(row);
+      }
+    }
+    // The host hears when the field opens or closes (the Mac panel takes key focus only while it is open).
+    const tell = () => options.onFindChange?.(side, isOpen);
+    function open(focus = true) {
+      const was = isOpen;
+      isOpen = true;
+      pill.hidden = true;
+      box.hidden = false;
+      results.hidden = false;
+      wrap.classList.add('rc-wing-find-open');
+      refresh();
+      if (!was) tell();
+      if (focus && typeof input.focus === 'function') input.focus();
+    }
+    function close() {
+      const was = isOpen;
+      isOpen = false;
+      input.value = '';
+      pill.hidden = false;
+      box.hidden = true;
+      results.hidden = true;
+      wrap.classList.remove('rc-wing-find-open');
+      refresh();
+      if (was) tell();
+    }
+    pill.addEventListener('click', () => open(true));
+    pill.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault?.();
+        open(true);
+      }
+    });
+    done.addEventListener('click', close);
+    done.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') close();
+    });
+    input.addEventListener('input', refresh);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault?.();
+        const first = catalogFor(side, input.value)[0];
+        if (first) choose(first.id);
+      } else if (e.key === 'Escape') {
+        e.preventDefault?.();
+        close();
+      }
+    });
+    close();
+    return { wrap, input, open, close, refresh, tell, isOpen: () => isOpen };
+  }
+  const finds = { left: findFor('left'), right: findFor('right') };
+
+  // The Undo toast: 5 s after a removal, in the wing it was removed from.
+  function toastFor(side) {
+    const t = makeDomElement(doc, 'div', {}, { class: 'rc-wing-toast', role: 'status', 'aria-live': 'polite' });
+    const text = makeDomElement(doc, 'span', {}, { class: 'rc-wing-toast-text' });
+    const undo = makeDomElement(doc, 'div', { textContent: 'Undo' }, {
+      class: 'rc-wing-toast-undo', role: 'button', tabindex: '0', 'aria-label': 'Undo remove'
+    });
+    undo.addEventListener('click', undoRemove);
+    undo.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') undoRemove();
+    });
+    t.appendChild(text);
+    t.appendChild(undo);
+    t.hidden = true;
+    return { el: t, text };
+  }
+  const toasts = { left: toastFor('left'), right: toastFor('right') };
+
+  function closeMenus() {
+    for (const side of ['left', 'right']) {
+      for (const s of Object.values(slots[side])) s.closeMenu();
+    }
   }
 
-  // Render widget cards into wings
-  function renderWidgets() {
-    for (const [el, list, side] of [[leftEl, leftWidgets, 'left'], [rightEl, rightWidgets, 'right']]) {
-      while (el.firstChild) {
-        el.removeChild(el.firstChild);
+  // Each card sits in a slot: what a swipe reveals under it, its pin mark, its ··· control and menu.
+  const slots = { left: {}, right: {} };
+  function slotFor(side, id) {
+    if (slots[side][id]) return slots[side][id];
+    const card = id === 'recense' ? recenseCards[side] : widgetElements[id];
+    const name = WIDGET_NAMES[id] || id;
+    const slot = makeDomElement(doc, 'div', {}, { class: 'rc-wing-slot', 'data-widget': id });
+    const under = makeDomElement(doc, 'div', {}, { class: 'rc-wing-under', 'aria-hidden': 'true' });
+    const underPin = makeDomElement(doc, 'span', {}, { class: 'rc-wing-under-pin' });
+    const underRemove = makeDomElement(doc, 'span', {}, { class: 'rc-wing-under-remove' });
+    underPin.innerHTML = `${PIN_ICON}<span class="rc-wing-under-label"></span>`;
+    underRemove.innerHTML = `<span class="rc-wing-under-label">Remove</span>${TRASH_ICON}`;
+    under.appendChild(underPin);
+    under.appendChild(underRemove);
+    const mark = makeDomElement(doc, 'div', {}, { class: 'rc-wing-pinmark', 'aria-hidden': 'true' });
+    mark.innerHTML = PIN_ICON;
+    const more = makeDomElement(doc, 'div', { textContent: '···' }, {
+      class: 'rc-wing-more', role: 'button', tabindex: '0', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      'aria-label': `${name} options`
+    });
+    const menu = makeDomElement(doc, 'div', {}, { class: 'rc-wing-menu', role: 'menu', 'aria-label': `${name} options` });
+    menu.hidden = true;
+    slot.appendChild(under);
+    if (card) slot.appendChild(card);
+    // The bottom-edge grabber: drag to snap the card's height to 1-4 rows (a haptic per row); ↑ / ↓ from the keyboard.
+    const resize = makeDomElement(doc, 'div', {}, {
+      class: 'rc-wing-resize', role: 'slider', tabindex: '0', 'aria-orientation': 'vertical',
+      'aria-valuemin': '1', 'aria-valuemax': '4', 'aria-label': `Height of ${name}`
+    });
+    slot.appendChild(mark);
+    slot.appendChild(more);
+    slot.appendChild(resize);
+    slot.appendChild(menu);
+    let sizing = null;
+    resize.addEventListener('pointerdown', e => {
+      e.stopPropagation?.();
+      e.preventDefault?.();
+      sizing = { y: e.clientY, rows: rowsOf(side, id), now: rowsOf(side, id) };
+      if (typeof resize.setPointerCapture === 'function' && e.pointerId !== undefined) {
+        try { resize.setPointerCapture(e.pointerId); } catch { /* capture is a nicety */ }
       }
-      if (el.appendChild) {
-        el.appendChild(grabbers[side]);
-        el.appendChild(recenseCards[side]);
+    });
+    resize.addEventListener('pointermove', e => {
+      if (!sizing) return;
+      e.stopPropagation?.();
+      const n = Math.max(1, Math.min(4, sizing.rows + Math.round((e.clientY - sizing.y) / ROW_STEP)));
+      if (n !== sizing.now) {
+        sizing.now = n;
+        slot.setAttribute('data-rows', String(n)); // live, before it is saved on release
+        postHaptic('snap');
       }
-      for (const wId of list) {
-        const card = widgetElements[wId];
-        if (card && shown(wId) && el.appendChild) {
-          el.appendChild(moverFor(wId, side));
-          el.appendChild(card);
+    });
+    const endSizing = e => {
+      if (!sizing) return;
+      e?.stopPropagation?.();
+      const n = sizing.now;
+      sizing = null;
+      setSize(side, id, n, { quiet: true });
+    };
+    resize.addEventListener('pointerup', endSizing);
+    resize.addEventListener('pointercancel', endSizing);
+    resize.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      e.preventDefault?.();
+      setSize(side, id, rowsOf(side, id) + d);
+    });
+
+    function closeMenu() {
+      menu.hidden = true;
+      more.setAttribute('aria-expanded', 'false');
+    }
+    function openMenu() {
+      closeMenus();
+      while (menu.firstChild) menu.removeChild(menu.firstChild);
+      const list = listOf(side);
+      const i = list.indexOf(id);
+      const p = isPinned(side, id);
+      const items = [
+        ['Move up', () => moveWidgetBy(side, id, -1), i > 0 && isPinned(side, list[i - 1]) === p],
+        ['Move down', () => moveWidgetBy(side, id, 1), i < list.length - 1 && isPinned(side, list[i + 1]) === p],
+        [`Move to the ${otherSide(side)} wing`, () => moveWidget(id, otherSide(side)), true],
+        [p ? 'Unpin' : 'Pin', () => pinWidget(side, id), true],
+        ['Remove', () => removeWidget(side, id), true]
+      ];
+      let first = null;
+      for (const [label, fn, enabled] of items) {
+        const item = makeDomElement(doc, 'div', { textContent: label }, {
+          class: `rc-wing-menu-item${label === 'Remove' ? ' rc-wing-menu-danger' : ''}`,
+          role: 'menuitem', tabindex: enabled ? '0' : '-1', 'aria-disabled': enabled ? 'false' : 'true'
+        });
+        const go = e => {
+          if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') {
+            if (e.key === 'Escape') closeMenu();
+            return;
+          }
+          if (!enabled) return;
+          closeMenu();
+          fn();
+        };
+        item.addEventListener('click', go);
+        item.addEventListener('keydown', go);
+        menu.appendChild(item);
+        if (enabled && !first) first = item;
+      }
+      // Size: S / M / L / XL, the current one checked.
+      const sizeRow = makeDomElement(doc, 'div', {}, { class: 'rc-wing-menu-size', role: 'group', 'aria-label': 'Size' });
+      sizeRow.appendChild(makeDomElement(doc, 'span', { textContent: 'Size' }, { class: 'rc-wing-menu-size-label' }));
+      for (let n = 1; n <= 4; n++) {
+        const on = rowsOf(side, id) === n;
+        const opt = makeDomElement(doc, 'div', { textContent: SIZE_NAMES[n] }, {
+          class: `rc-wing-menu-size-opt${on ? ' rc-on' : ''}`, role: 'menuitemradio', tabindex: '0',
+          'aria-checked': String(on), 'aria-label': `Size ${SIZE_NAMES[n]}, ${n} row${n > 1 ? 's' : ''}`
+        });
+        const pick = e => {
+          if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+          closeMenu();
+          setSize(side, id, n);
+        };
+        opt.addEventListener('click', pick);
+        opt.addEventListener('keydown', pick);
+        sizeRow.appendChild(opt);
+      }
+      menu.insertBefore ? menu.insertBefore(sizeRow, menu.lastChild) : menu.appendChild(sizeRow);
+      menu.hidden = false;
+      more.setAttribute('aria-expanded', 'true');
+      if (first && typeof first.focus === 'function') first.focus();
+    }
+    const toggleMenu = e => {
+      if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+      if (menu.hidden) openMenu();
+      else closeMenu();
+    };
+    more.addEventListener('click', toggleMenu);
+    more.addEventListener('keydown', toggleMenu);
+
+    // Swipe: left = Remove, right = Pin / Unpin. Past the threshold it acts (with a haptic as it arms).
+    function showSwipe(dx) {
+      const armed = Math.abs(dx) >= CARD_SWIPE;
+      cls(slot, 'rc-wing-swipe-left', dx < 0);
+      cls(slot, 'rc-wing-swipe-right', dx > 0);
+      cls(slot, 'rc-wing-armed', armed);
+      const label = underPin.querySelector?.('.rc-wing-under-label');
+      if (label) label.textContent = isPinned(side, id) ? 'Unpin' : 'Pin';
+      if (card?.style) {
+        if (reduceMotion()) card.style.opacity = String(1 - Math.min(Math.abs(dx) / CARD_SWIPE, 1) * 0.6);
+        else card.style.transform = dx ? `translateX(${dx}px)` : '';
+      }
+      return armed;
+    }
+    function endSwipe(dx) {
+      showSwipe(0);
+      slot.classList.remove('rc-wing-swipe-left', 'rc-wing-swipe-right', 'rc-wing-armed');
+      if (card?.style) {
+        card.style.transform = '';
+        card.style.opacity = '';
+      }
+      if (dx <= -CARD_SWIPE) removeWidget(side, id);
+      else if (dx >= CARD_SWIPE) pinWidget(side, id);
+    }
+
+    let drag = null;
+    const SKIP = 'input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-wing-resize, .rc-card-pick-btn';
+    slot.addEventListener('pointerdown', e => {
+      if ((e.button ?? 0) > 0 || e.target?.closest?.(SKIP)) return;
+      drag = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, mode: null, dx: 0, dy: 0, armed: false };
+      drag.hold = later(() => {
+        if (drag && !drag.mode) {
+          drag.mode = 'reorder';
+          slot.classList.add('rc-wing-lifted');
+          postHaptic('snap');
+        }
+      }, HOLD_MS);
+    });
+    slot.addEventListener('pointermove', e => {
+      if (!drag) return;
+      drag.dx = e.clientX - drag.x;
+      drag.dy = e.clientY - drag.y;
+      if (!drag.mode) {
+        if (Math.abs(drag.dx) < 10 && Math.abs(drag.dy) < 10) return;
+        cancelLater(drag.hold);
+        if (Math.abs(drag.dx) <= Math.abs(drag.dy) * 1.3) {
+          drag = null; // a vertical move: the wing scrolls
+          return;
+        }
+        drag.mode = 'swipe';
+        if (typeof slot.setPointerCapture === 'function' && drag.pointerId !== undefined) {
+          try { slot.setPointerCapture(drag.pointerId); } catch { /* capture is a nicety */ }
         }
       }
+      // The card's swipe, not the wing's: the wing's own close swipe must not see it.
+      e.stopPropagation?.();
+      e.preventDefault?.();
+      if (drag.mode === 'swipe') {
+        const armed = showSwipe(drag.dx);
+        if (armed && !drag.armed) postHaptic('edge');
+        drag.armed = armed;
+      } else if (drag.mode === 'reorder' && card?.style && !reduceMotion()) {
+        card.style.transform = `translateY(${drag.dy}px)`;
+      }
+    });
+    const finish = e => {
+      if (!drag) return;
+      cancelLater(drag.hold);
+      const d = drag;
+      drag = null;
+      if (d.mode === 'swipe') endSwipe(d.dx);
+      else if (d.mode === 'reorder') {
+        slot.classList.remove('rc-wing-lifted');
+        if (card?.style) card.style.transform = '';
+        if (e?.type === 'pointerup') reorderWidget(side, id, dropIndex(side, id, e.clientY));
+      }
+    };
+    slot.addEventListener('pointerup', finish);
+    slot.addEventListener('pointercancel', finish);
+    // iOS also sends touch events: keep a card's swipe away from the wing's own close swipe.
+    slot.addEventListener('touchmove', e => {
+      if (drag?.mode) e.stopPropagation?.();
+    });
+
+    // Mac: a two-finger horizontal swipe on the trackpad does the same (wheel deltaX; fingers left = deltaX > 0).
+    let wheel = null;
+    slot.addEventListener('wheel', e => {
+      const dx = Number(e.deltaX) || 0;
+      const dy = Number(e.deltaY) || 0;
+      if (!wheel && Math.abs(dx) <= Math.abs(dy)) return;
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      if (!wheel) wheel = { acc: 0, armed: false, timer: null };
+      wheel.acc -= dx;
+      const armed = showSwipe(wheel.acc);
+      if (armed && !wheel.armed) postHaptic('edge');
+      wheel.armed = armed;
+      cancelLater(wheel.timer);
+      wheel.timer = later(() => {
+        const acc = wheel.acc;
+        wheel = null;
+        endSwipe(acc);
+      }, 160);
+    }, { passive: false });
+
+    const s = { slot, card, mark, more, resize, menu, openMenu, closeMenu, showSwipe, endSwipe };
+    slots[side][id] = s;
+    return s;
+  }
+
+  /** Where a held card lands: the number of other cards whose middle is above the pointer. */
+  function dropIndex(side, id, clientY) {
+    let n = 0;
+    for (const other of listOf(side)) {
+      if (other === id) continue;
+      const r = slots[side][other]?.slot?.getBoundingClientRect?.();
+      if (r && r.top + r.height / 2 < clientY) n += 1;
+    }
+    return n;
+  }
+
+  // Render widget cards into wings: the grabber, "Show in wing…" and the Undo toast stay put; the cards follow.
+  function renderWidgets() {
+    closeMenus();
+    for (const [el, side] of [[leftEl, 'left'], [rightEl, 'right']]) {
+      const fixed = [grabbers[side], finds[side].wrap, toasts[side].el];
+      for (const child of [...(el.children || el.childNodes || [])]) {
+        if (!fixed.includes(child)) el.removeChild(child);
+      }
+      if (!el.appendChild) continue;
+      if (![...(el.children || el.childNodes || [])].includes(grabbers[side])) for (const f of fixed) el.appendChild(f);
+      for (const wId of listOf(side)) {
+        if (!shown(wId)) continue;
+        const s = slotFor(side, wId);
+        if (!s.card) continue;
+        cls(s.slot, 'rc-wing-pinned', isPinned(side, wId));
+        const rows = rowsOf(side, wId);
+        s.slot.setAttribute('data-rows', String(rows));
+        s.resize.setAttribute('aria-valuenow', String(rows));
+        s.resize.setAttribute('aria-valuetext', `${SIZE_NAMES[rows]}, ${rows} row${rows > 1 ? 's' : ''}`);
+        el.appendChild(s.slot);
+      }
+      const t = toasts[side];
+      const mine = lastRemoved && lastRemoved.side === side;
+      t.el.hidden = !mine;
+      t.text.textContent = mine ? `${WIDGET_NAMES[lastRemoved.id] || lastRemoved.id} removed` : '';
+      finds[side].refresh();
     }
   }
   renderWidgets();
+
+  /** A wing just came into view: with nothing playing, "Show in wing…" opens by itself, cursor in it. */
+  const nothingPlaying = () => !qtData.src && !recenseLine.original && !recenseLine.translation;
+  function wingShown(side) {
+    closeMenus();
+    const f = finds[side];
+    if (!f) return false;
+    if (nothingPlaying()) {
+      const was = f.isOpen();
+      f.open(true);
+      if (was) f.tell(); // still open from last time: the host takes focus again for this opening
+    } else if (!f.input.value) f.close();
+    return f.isOpen();
+  }
 
   /** The host turns on a widget only it can run (the Mac: 'iphone'). First time: it goes in the left wing. */
   function enableHostWidget(wId) {
@@ -1280,12 +1827,6 @@ export function createDualWings(container, options = {}) {
     rightEl.hidden = side !== 'right';
   }
 
-  /** The "Arrange" pill: shows each card's Move control only while arranging, so they don't clutter at rest. */
-  function setArranging(on) {
-    for (const el of [leftEl, rightEl]) el.classList?.toggle('rc-wings-arranging', Boolean(on));
-    return Boolean(on);
-  }
-
   // Symmetric ambidextrous controls
   function openWing(side) {
     if (nativeWings) {
@@ -1298,6 +1839,8 @@ export function createDualWings(container, options = {}) {
     if (side === 'right' || side === 'both') {
       rightEl.hidden = false;
     }
+    if (side === 'left' || side === 'both') wingShown('left');
+    if (side === 'right' || side === 'both') wingShown('right');
     postHaptic('open');
   }
 
@@ -1340,9 +1883,11 @@ export function createDualWings(container, options = {}) {
 
   function getState() {
     return {
-      version: 1,
+      version: 3,
       leftWidgets: [...leftWidgets],
       rightWidgets: [...rightWidgets],
+      pinned: { left: [...pinned.left], right: [...pinned.right] },
+      sizes: { left: { ...sizes.left }, right: { ...sizes.right } },
       previewData: { ...previewData },
       qtData: { ...qtData, loopRange: [...qtData.loopRange] },
       findMyItems: [...findMyItems],
@@ -1370,8 +1915,27 @@ export function createDualWings(container, options = {}) {
       }
     }
     if (!parsed || typeof parsed !== 'object') return;
-    if (Array.isArray(parsed.leftWidgets)) leftWidgets = [...parsed.leftWidgets];
-    if (Array.isArray(parsed.rightWidgets)) rightWidgets = [...parsed.rightWidgets];
+    // Version 1 had the Recense card fixed at the top of both wings; from version 2 it is a card like the others.
+    const v1 = !(Number(parsed.version) >= 2);
+    const lists = list => {
+      const ids = list.filter(id => typeof id === 'string');
+      return v1 && !ids.includes('recense') ? ['recense', ...ids] : ids;
+    };
+    if (Array.isArray(parsed.leftWidgets)) leftWidgets = lists(parsed.leftWidgets);
+    if (Array.isArray(parsed.rightWidgets)) rightWidgets = lists(parsed.rightWidgets);
+    const p = parsed.pinned && typeof parsed.pinned === 'object' ? parsed.pinned : {};
+    pinned = {
+      left: Array.isArray(p.left) ? p.left.filter(id => typeof id === 'string') : [],
+      right: Array.isArray(p.right) ? p.right.filter(id => typeof id === 'string') : []
+    };
+    settle('left');
+    settle('right');
+    // Version 3 adds sizes (rows per card); older files get the default heights.
+    const z = parsed.sizes && typeof parsed.sizes === 'object' ? parsed.sizes : {};
+    const rowsIn = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {})
+      .filter(([k, v]) => typeof k === 'string' && Number.isInteger(v) && v >= 1 && v <= 4));
+    sizes = { left: rowsIn(z.left), right: rowsIn(z.right) };
+    updateCalendarCard();
     if (parsed.previewData && typeof parsed.previewData === 'object') {
       previewData = {
         src: String(parsed.previewData.src || ''),
@@ -1404,29 +1968,34 @@ export function createDualWings(container, options = {}) {
     const temp = leftWidgets;
     leftWidgets = rightWidgets;
     rightWidgets = temp;
+    pinned = { left: pinned.right, right: pinned.left };
+    sizes = { left: sizes.right, right: sizes.left };
     renderWidgets();
     postHaptic('snap');
     persistWingsState();
   }
 
+  /** Move a card to the other wing (its ··· menu, voice or API). A pinned card stays pinned there. */
   function moveWidget(widgetId, targetSide) {
-    if (targetSide === 'left') {
-      if (!leftWidgets.includes(widgetId)) {
-        rightWidgets = rightWidgets.filter(w => w !== widgetId);
-        leftWidgets.push(widgetId);
-        renderWidgets();
+    if (targetSide !== 'left' && targetSide !== 'right') return;
+    const from = otherSide(targetSide);
+    if (listOf(targetSide).includes(widgetId)) {
+      // Recense can be in both wings: moving it from one where the other has it already just leaves that one.
+      if (widgetId === 'recense' && listOf(from).includes('recense')) {
+        takeOut(from, 'recense');
         postHaptic('snap');
-        persistWingsState();
+        changed();
       }
-    } else if (targetSide === 'right') {
-      if (!rightWidgets.includes(widgetId)) {
-        leftWidgets = leftWidgets.filter(w => w !== widgetId);
-        rightWidgets.push(widgetId);
-        renderWidgets();
-        postHaptic('snap');
-        persistWingsState();
-      }
+      return;
     }
+    const wasPinned = isPinned(from, widgetId);
+    if (sizes[from][widgetId]) sizes[targetSide] = { ...sizes[targetSide], [widgetId]: sizes[from][widgetId] };
+    takeOut(from, widgetId);
+    setList(targetSide, [...listOf(targetSide), widgetId]);
+    if (wasPinned) pinned[targetSide].push(widgetId);
+    settle(targetSide);
+    postHaptic('snap');
+    changed();
   }
 
   function getWingLayout() {
@@ -1590,7 +2159,20 @@ export function createDualWings(container, options = {}) {
     enableHostWidget,
     setNativeWings,
     reveal,
-    setArranging,
+    wingShown,
+    addWidget,
+    removeWidget,
+    undoRemove,
+    pinWidget,
+    moveWidgetBy,
+    reorderWidget,
+    catalogFor,
+    openFind: side => finds[side]?.open(true),
+    closeFind: side => finds[side]?.close(),
+    isFindOpen: side => Boolean(finds[side]?.isOpen()),
+    getPinned: () => ({ left: [...pinned.left], right: [...pinned.right] }),
+    setSize,
+    getSize: (side, id) => rowsOf(side, id),
     setRecenseLine,
     setTypedLine,
     preferredWidth,

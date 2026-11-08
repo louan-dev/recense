@@ -289,17 +289,27 @@ commands with the same variable set, e.g. `RECENSE_INSTANCE=try .build-sdk27/rel
 
 Draftpad's wings (the widget cards: Preview, Player, Agenda, iPhone Mirroring, …) open in two floating panels at
 Notification Center's place: the right one just below the menu bar, 8 pt in from the right edge, 360 pt wide, as tall
-as its cards; the left one its exact mirror. They float above every window and on every Space, and opening one never
-takes typing focus. Each card sits on frosted glass with the desktop showing between, under a title and a ×; the
-**Arrange** pill at the bottom shows each card's "Move to the other side" control (Done hides them again). Layout and
-cards are one state across both panels and the editor (`draftpad.wings.json`).
+as its cards; the left one its exact mirror. They float above every window and on every Space. Each card sits on
+frosted glass with the desktop showing between; no title and no × (VoiceOver still names each wing). Layout, pins and
+cards are one state across both panels and the editor (`draftpad.wings.json`, version 2; a version 1 file loads as it was).
+
+- **Show in wing…:** the pill at the top dissolves into a typing field; type to filter the widgets, apps and the
+  Recense card that aren't in this wing yet; Return or a tap adds one. With nothing playing, the wing opens with the
+  field already open and takes the keys (the panel becomes key only then, and hands focus back when the field or the
+  wing closes). Esc or ✕ turns it back into the pill. Reduce Motion: a plain swap.
+- **Cards:** swipe left (or two fingers left on the trackpad) to **Remove**, with Undo for 5 s; swipe right to **Pin**
+  (pinned cards stay on top with a pin mark; swipe right again to unpin). Hold a card and drag to reorder. Each card's
+  ··· menu has the same: Move up, Move down, Move to the other wing, Pin / Unpin, Size, Remove.
+- **Card heights:** each card is 1–4 rows tall (S, M, L, XL), so neighbours line up; drag the bar on its bottom edge
+  (it snaps per row) or pick Size in its ··· menu. More rows show more (the Agenda one event per row, Recense more of its
+  line); the text never scales and what doesn't fit scrolls inside the card. Saved per card (`draftpad.wings.json` v3).
 
 - **Open (no Recense window needed):** three fingers right → left brings out the right wing; three fingers left → right
   brings out the left wing; both can stay open. Also: Recense menu or the editor's right-click menu → Show Left Wing /
   Show Right Wing; `./recense wing-left|wing-right`; the editor's voice moves ("left wing", "right wing", "both wings").
 - **Tuck in:** with both open, three fingers starting mid-trackpad toward the left tuck the left wing; then three fingers
-  toward the right tuck the right wing. Also: the × on the panel, or slide the grabber on the wing's inner edge toward
-  the screen edge.
+  toward the right tuck the right wing. Also: slide (or press) the grabber at the top of the wing's inner edge toward
+  the screen edge; Recense menu → Hide Left / Right Wing; right-click the panel → Close.
 - **Locked open:** a wing stays out until you tuck it in, whatever Recense does (sleep, pulled up, hidden). No Esc or
   outside click closes it. No long holds.
 - **Recense in the wings:** the first card on each side shows the current line (original and translation); the panel
