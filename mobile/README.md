@@ -41,6 +41,7 @@ updates in place.
   within 3 s while it's open. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
   Links open in Safari; `![](file.pdf)` and images show inline (vault files directly, web files cached for offline,
   through `shared/embedfiles.swift`).
+  The wings' layout (cards moved between the two sides) saves to `draftpad.wings.json`, as on the Mac.
 - **Apple Pencil in Draftpad:** write into the text with Scribble (iPadOS turns handwriting into typed text).
   Squeeze (Apple Pencil Pro), double-tap, or the pencil button opens the ink layer: the Pencil draws, fingers still
   scroll, and the system palette follows the Pencil Pro (barrel roll, squeeze for the compact palette). **Done** saves

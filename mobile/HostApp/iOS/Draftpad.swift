@@ -222,10 +222,12 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 coordinatedWrite(json, to: wp)
             } else if let d = m.body as? [String: Any],
                       (d["action"] as? String) == "saveState",
-                      let state = d["state"],
-                      let data = try? JSONSerialization.data(withJSONObject: state),
-                      let json = String(data: data, encoding: .utf8) {
-                coordinatedWrite(json, to: wp)
+                      let state = d["state"] {
+                // wings.js posts the state already as a JSON string; data(withJSONObject:) on a String throws an
+                // Objective-C exception that try? can't catch, so moving a card crashed the app. An object is accepted too.
+                let json = (state as? String) ?? (JSONSerialization.isValidJSONObject(state)
+                    ? (try? JSONSerialization.data(withJSONObject: state)).flatMap { String(data: $0, encoding: .utf8) } : nil)
+                if let json = json { coordinatedWrite(json, to: wp) }
             }
         default:
             guard let s = m.body as? String else { return }

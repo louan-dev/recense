@@ -94,6 +94,8 @@ test('Mac host: wing panels load the same page per side and share state, calenda
   // Regression (2026-11-08): wings.js posts saveState's state as a JSON string; JSONSerialization.data(withJSONObject:)
   // on a String throws an Objective-C exception that try? can't catch, so moving a card crashed the app.
   assert.ok(host.includes('(state as? String)'), 'the saved wings state is taken as the JSON string it is');
+  const ios = fs.readFileSync(path.resolve(__dirname, '../../mobile/HostApp/iOS/Draftpad.swift'), 'utf8');
+  assert.ok(ios.includes('(state as? String)'), 'iOS takes the saved wings state as the JSON string it is (same crash)');
   assert.ok(panels.includes('NSVisualEffectView'), 'frosted glass behind each card');
   assert.ok(panels.includes('.canJoinAllSpaces') && panels.includes('.nonactivatingPanel'), 'floats on every Space, never takes focus');
   assert.ok(panels.includes('accessibilityDisplayShouldReduceMotion'), 'Reduce Motion: no slide, no fan');
