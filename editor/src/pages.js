@@ -42,6 +42,15 @@ export function isFullDateLine(line) {
   return parseDateLine(line) !== null;
 }
 
+export function isWindowEmpty(rawContent) {
+  if (typeof rawContent !== 'string') return true;
+  const trimmed = rawContent.trim();
+  if (trimmed.length === 0) return true;
+  // A window holding only an auto-inserted full date heading and no body text is also treated as empty.
+  if (!trimmed.includes('\n') && isFullDateLine(trimmed)) return true;
+  return false;
+}
+
 /**
  * Splits a Draftpad document into pages without altering the underlying string.
  * Matches Draftpad's `parsePages` / `pageJoiner` (`\n\n<!-- page -->\n\n`) byte-for-byte
@@ -73,6 +82,17 @@ export function inspectDraftpadPages(text) {
       ) {
         trailTrim++;
       }
+    }
+    if (i > 0 && i < parts.length - 1 && leadTrim === part.length && part.length >= 2) {
+      trailTrim = Math.min(2, Math.floor(part.length / 2));
+      if (
+        trailTrim > 0 &&
+        part[part.length - trailTrim - 1] === '\r' &&
+        part[part.length - trailTrim] === '\n'
+      ) {
+        trailTrim = Math.min(part.length - 2, trailTrim + 1);
+      }
+      leadTrim = part.length - trailTrim;
     }
 
     const from = cursor + leadTrim;

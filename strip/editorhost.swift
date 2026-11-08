@@ -1,5 +1,8 @@
 import AppKit
 import WebKit
+import AVFoundation
+import EventKit
+import NaturalLanguage
 
 // The new editor in the pad layer (D13, D33): a WKWebView running the CodeMirror core, editor/dist/editor.html,
 // copied into the bundle by build.sh. It speaks the bridge in .handoff/editor/INBOX.md (bar 8):
@@ -78,27 +81,45 @@ final class EditorWebView: WKWebView {
 
 final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: EditorWebView
+    let vault: URL
+    var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
+    var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
+    var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
     private(set) var text = ""
     private var loaded = false
     /// Called on the main thread with the full text after each (debounced) change in the page.
     var onChange: ((String) -> Void)?
+    /// Called when the transcript sidecar posts a seek, bookmark, or annotation action.
+    var onAudioAction: (([String: Any]) -> Void)?
     /// Where the page came from, for the log: the CodeMirror core, or the stand-in.
     private(set) var source = ""
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    /// macOS's own iPhone Mirroring app (macOS 15+), opened from its wing card.
+    static let iPhoneMirroring = URL(fileURLWithPath: "/System/Applications/iPhone Mirroring.app")
+    private let eventStore = EKEventStore()
+    private var syncedEventIds = Set<String>()
 
     /// The page bounced at its first or last page (the host plays the strip's bounce).
     var onBounce: (() -> Void)?
     let files: EmbedFiles
 
     init(frame: NSRect, vault: URL, cache: URL) {
+        self.vault = vault
         let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()
         files = EmbedFiles(vault: vault, cache: cache)
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
-        cfg.userContentController.add(WeakHandler(self), name: "editor")
-        cfg.userContentController.add(WeakHandler(self), name: "link")
-        cfg.userContentController.add(WeakHandler(self), name: "ui")
+        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
+            cfg.userContentController.add(WeakHandler(self), name: name)
+        }
+        if let raw = coordinatedRead(eventsPath),
+           let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds = Set(ids)
+        }
         web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground")
         if let url = EditorHost.pageURL() {
@@ -138,6 +159,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     func showPage(_ i: Int) { if loaded { call("showPage(\(i))") } }
     func setCursor(_ offset: Int) { if loaded { call("setCursor(\(offset))") } }
+    func setAudioTranscript(_ json: String) { if loaded { call("setAudioTranscript(\(jsString(json)))") } }
+    func updateAudioTime(_ sec: Double) { if loaded { call("updateAudioTime(\(sec))") } }
+    func executeVoiceCommand(_ phrase: String) { if loaded { call("voiceCommand(\(jsString(phrase)))") } }
 
     private var flushing: [(String) -> Void] = []
     /// Asks the page for its text right now (skipping the 300 ms debounce), then calls back with it. One question at a
@@ -178,10 +202,57 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 let p = NSHapticFeedbackManager.defaultPerformer
                 switch kind {
-                case "snap": p.perform(.alignment, performanceTime: .now)
+                case "snap", "shapeSnap": p.perform(.alignment, performanceTime: .now)
                 case "edge": p.perform(.levelChange, performanceTime: .now); onBounce?()
-                case "open": p.perform(.generic, performanceTime: .now)
+                case "open", "squeeze", "erase": p.perform(.generic, performanceTime: .now)
                 default: break
+                }
+            }
+            return
+        }
+        if m.name == "ink" {
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: inkPath)
+            } else if let obj = m.body as? [String: Any],
+                      let data = try? JSONSerialization.data(withJSONObject: obj),
+                      let json = String(data: data, encoding: .utf8) {
+                coordinatedWrite(json, to: inkPath)
+            }
+            return
+        }
+        if m.name == "audio" {
+            if let d = m.body as? [String: Any] {
+                if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
+                    speak(summaryText)
+                }
+                onAudioAction?(d)
+            }
+            return
+        }
+        if m.name == "calendar" {
+            if let d = m.body as? [String: Any],
+               (d["action"] as? String) == "addEvents",
+               let items = d["events"] as? [[String: Any]] {
+                saveEvents(items)
+            }
+            return
+        }
+        if m.name == "wings" {
+            if let d = m.body as? [String: Any], (d["action"] as? String) == "openApp",
+               (d["app"] as? String) == "iphone-mirroring" {
+                NSWorkspace.shared.openApplication(at: EditorHost.iPhoneMirroring, configuration: NSWorkspace.OpenConfiguration()) { _, err in
+                    if let err = err { log("editor: iPhone Mirroring didn't open: \(err.localizedDescription)") }
+                }
+                return
+            }
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: wingsPath)
+            } else if let d = m.body as? [String: Any] {
+                if (d["action"] as? String) == "saveState",
+                   let state = d["state"],
+                   let data = try? JSONSerialization.data(withJSONObject: state),
+                   let json = String(data: data, encoding: .utf8) {
+                    coordinatedWrite(json, to: wingsPath)
                 }
             }
             return
@@ -193,11 +264,101 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         onChange?(s)
     }
 
+    /// The page's dates come from JavaScript's toISOString(), which always has milliseconds ("…T21:00:00.000Z").
+    /// ISO8601DateFormatter's default options return nil for those, so every save failed silently (E2 review).
+    private static let isoDate: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func pageDate(_ s: String?) -> Date? {
+        guard let s = s else { return nil }
+        return isoDate.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+
+    /// Saves the events the owner confirmed in the Agenda card (never on its own), and reports each one back to the
+    /// page: saved, or the reason in words. An id counts as saved only after EventKit accepted it.
+    private func saveEvents(_ items: [[String: Any]]) {
+        eventStore.requestFullAccessToEvents { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for item in items {
+                    guard let id = item["id"] as? String else { continue }
+                    if self.syncedEventIds.contains(id) { self.reportCalendar(id, true, ""); continue }
+                    guard granted else { self.reportCalendar(id, false, "Calendar access is off (System Settings > Privacy & Security > Calendars > Recense)"); continue }
+                    guard let cal = self.eventStore.defaultCalendarForNewEvents else {
+                        self.reportCalendar(id, false, "no default calendar"); continue
+                    }
+                    guard let title = item["title"] as? String, !title.isEmpty,
+                          let start = EditorHost.pageDate(item["startISO"] as? String) else {
+                        self.reportCalendar(id, false, "couldn't read the date"); continue
+                    }
+                    let ev = EKEvent(eventStore: self.eventStore)
+                    ev.calendar = cal
+                    ev.title = title
+                    ev.startDate = start
+                    ev.endDate = EditorHost.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
+                    ev.isAllDay = (item["allDay"] as? Bool) == true
+                    ev.notes = item["rawLine"] as? String
+                    do {
+                        try self.eventStore.save(ev, span: .thisEvent)
+                        self.syncedEventIds.insert(id)
+                        self.persistSyncedEventIds()
+                        self.reportCalendar(id, true, "")
+                    } catch {
+                        self.reportCalendar(id, false, error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+
+    private var syncedEventIdsJSON: String {
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    private func persistSyncedEventIds() {
+        let json = syncedEventIdsJSON
+        coordinatedWrite(json, to: eventsPath)
+    }
+
+    private func reportCalendar(_ id: String, _ ok: Bool, _ message: String) {
+        call("calendarResult(\(jsString(id)), \(ok), \(jsString(message)))")
+    }
+
+    /// Speaks in the text's own language with the best installed voice for it (E2 review #6). Every utterance goes
+    /// through here, so a neural voice can replace the system ones in one place later.
+    func speak(_ text: String) {
+        if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
+        let u = AVSpeechUtterance(string: text)
+        u.rate = AVSpeechUtteranceDefaultSpeechRate
+        u.voice = EditorHost.bestVoice(for: text)
+        speechSynthesizer.speak(u)
+    }
+
+    static func bestVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let r = NLLanguageRecognizer()
+        r.processString(text)
+        guard let lang = r.dominantLanguage?.rawValue else { return nil }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
+        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
+    }
+
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         loaded = true
         call("setTheme('dark')")
         call("setFontSize(18)")
         call("setText(\(jsString(text)))")
+        if let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
+            call("setInk(\(jsString(inkJSON)))")
+        }
+        if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
+            call("setWingsState(\(jsString(wingsJSON)))")
+        }
+        call("setCalendarAdded(\(jsString(syncedEventIdsJSON)))")
+        if FileManager.default.fileExists(atPath: EditorHost.iPhoneMirroring.path) { call("enableWidget('iphone')") }
         log("editor: new editor loaded (\(source))")
     }
 

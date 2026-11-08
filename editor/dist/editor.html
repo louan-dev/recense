@@ -70,11 +70,12 @@ body {
   background: var(--rc-panel);
   flex-shrink: 0;
   opacity: 1;
-  transition: opacity 220ms ease;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .rc-toolbar.rc-toolbar-faded {
   opacity: 0;
+  pointer-events: none;
 }
 
 .rc-page-indicator {
@@ -301,8 +302,176 @@ body {
 }
 
 .rc-editor-Mount .cm-scroller {
+  position: relative;
   overflow: auto;
   font-family: inherit;
+}
+
+.rc-ink-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.rc-ink-palette {
+  position: sticky;
+  top: 8px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--rc-border);
+  border-radius: 999px;
+  background: var(--rc-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-ink-palette[hidden] {
+  display: none !important;
+}
+
+.rc-ink-color-dot,
+.rc-ink-tool-dot {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--rc-border);
+  background: var(--rc-muted);
+  cursor: pointer;
+  transition: transform 200ms ease, border-color 200ms ease;
+}
+
+.rc-ink-tool-dot {
+  border-radius: 4px;
+  background: transparent;
+}
+
+.rc-ink-color-dot.rc-active,
+.rc-ink-tool-dot.rc-active {
+  transform: scale(1.22);
+  border-color: var(--rc-cyan);
+}
+
+/* Live audio transcript side panel beside the page */
+.rc-transcript-pane {
+  width: min(320px, 38%);
+  border-left: 1px solid var(--rc-border);
+  background: var(--rc-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-transcript-pane[hidden] {
+  display: none !important;
+}
+
+.rc-transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rc-border);
+}
+
+.rc-transcript-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rc-blue);
+  letter-spacing: 0.02em;
+}
+
+.rc-transcript-close {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rc-muted);
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.rc-transcript-cues {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rc-transcript-cue {
+  position: relative;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--rc-muted);
+  cursor: pointer;
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+.rc-transcript-cue.rc-transcript-cue-active {
+  color: var(--rc-text);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.rc-transcript-cue.is-bookmarked {
+  border-left: 2px solid var(--rc-cyan);
+}
+
+.rc-transcript-cue-time {
+  font-size: 11px;
+  color: var(--rc-blue);
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-transcript-cue-dot {
+  color: var(--rc-cyan);
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.rc-transcript-cue-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--rc-cyan);
+}
+
+.rc-cue-ink-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.rc-transcript-annot-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 3px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--rc-cyan);
+  background: transparent;
+  color: var(--rc-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
 }
 
 /* Thin divider over `<!-- page -->` lines without altering the document text */
@@ -459,13 +628,232 @@ body {
   margin: 0 auto;
 }
 
+/* Ambient haptic edge cues with calm progressive disclosure */
+.rc-zone-active-left,
+.rc-zone-active-right,
+.rc-zone-active-top {
+  pointer-events: none;
+}
+
+.rc-shell.rc-zone-active-left,
+.rc-shell.rc-zone-active-right,
+.rc-shell.rc-zone-active-top {
+  pointer-events: auto;
+}
+
+.rc-shell.rc-zone-active-left {
+  box-shadow: inset 3px 0 0 var(--rc-cyan);
+}
+
+.rc-shell.rc-zone-active-right {
+  box-shadow: inset -3px 0 0 var(--rc-cyan);
+}
+
+.rc-shell.rc-zone-active-top {
+  box-shadow: inset 0 3px 0 var(--rc-cyan);
+}
+
+/* Ambidextrous Dual Notification-Center Sidebars (Wings) */
+.rc-wing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 8;
+  width: min(272px, 30vw);
+  background: var(--rc-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-wing-left {
+  left: 0;
+  border-right: 1px solid var(--rc-border);
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.36);
+  transform: translateX(0);
+}
+
+.rc-wing-right {
+  right: 0;
+  border-left: 1px solid var(--rc-border);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.36);
+  transform: translateX(0);
+}
+
+.rc-wing[hidden] {
+  display: none !important;
+}
+
+.rc-wing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--rc-border);
+  border-radius: 10px;
+  background: var(--rc-surface);
+}
+
+.rc-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.rc-widget-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rc-blue);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rc-widget-meta {
+  font-size: 11px;
+  color: var(--rc-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rc-empty-state {
+  font-size: 12px;
+  color: var(--rc-muted);
+  padding: 4px 0;
+}
+
+.rc-preview-img,
+.rc-qt-video {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.rc-preview-pdf-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.08);
+  cursor: pointer;
+}
+
+.rc-badge-text {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--rc-surface);
+  background: var(--rc-cyan);
+}
+
+.rc-preview-filename {
+  font-size: 12px;
+  color: var(--rc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-qt-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--rc-cyan);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-findmy-item,
+.rc-mail-item,
+.rc-cal-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: rgba(91, 155, 213, 0.05);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.rc-findmy-item:hover,
+.rc-mail-item:hover,
+.rc-cal-item:hover {
+  border-color: var(--rc-cyan);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.rc-item-name,
+.rc-mail-subject,
+.rc-cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rc-text);
+}
+
+.rc-item-location,
+.rc-mail-snippet,
+.rc-cal-time {
+  font-size: 12px;
+  color: var(--rc-muted);
+}
+
+.rc-item-meta,
+.rc-mail-header,
+.rc-cal-loc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--rc-blue);
+}
+
+/* Calm, slow-visual-processing transitions */
+.rc-shell {
+  transition: box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-outline {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 (() => {
-  // node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../editor/editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -539,7 +927,7 @@ body {
     return code < 65536 ? 1 : 2;
   }
 
-  // node_modules/@codemirror/state/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -3951,7 +4339,7 @@ body {
     return strict === true ? -1 : string2.length;
   }
 
-  // node_modules/style-mod/src/style-mod.js
+  // ../../editor/editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -4087,7 +4475,7 @@ body {
     }
   };
 
-  // node_modules/w3c-keyname/index.js
+  // ../../editor/editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -4193,7 +4581,7 @@ body {
     return name2;
   }
 
-  // node_modules/crelt/index.js
+  // ../../editor/editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -4222,7 +4610,7 @@ body {
     }
   }
 
-  // node_modules/@codemirror/view/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -13722,7 +14110,7 @@ body {
     return true;
   }
 
-  // node_modules/@lezer/common/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -15783,7 +16171,7 @@ body {
     return result;
   }
 
-  // node_modules/@lezer/highlight/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -16507,7 +16895,7 @@ body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // node_modules/@codemirror/language/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -17993,7 +18381,7 @@ body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // node_modules/@codemirror/commands/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -19087,7 +19475,7 @@ body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -19552,7 +19940,7 @@ body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // node_modules/@lezer/markdown/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -21640,7 +22028,7 @@ body {
     }]
   };
 
-  // node_modules/@lezer/lr/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -23418,7 +23806,7 @@ body {
     return spec.get;
   }
 
-  // node_modules/@lezer/html/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -23762,7 +24150,7 @@ body {
     });
   }
 
-  // node_modules/@lezer/css/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -23942,7 +24330,7 @@ body {
     tokenPrec: 2433
   });
 
-  // node_modules/@codemirror/lang-css/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -24803,7 +25191,7 @@ body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // node_modules/@lezer/javascript/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -25015,7 +25403,7 @@ body {
     tokenPrec: 15205
   });
 
-  // node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -25327,7 +25715,7 @@ body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-html/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -26067,7 +26455,7 @@ body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -26539,6 +26927,13 @@ ${PAGE_MARKER}
   function isFullDateLine(line) {
     return parseDateLine(line) !== null;
   }
+  function isWindowEmpty(rawContent) {
+    if (typeof rawContent !== "string") return true;
+    const trimmed = rawContent.trim();
+    if (trimmed.length === 0) return true;
+    if (!trimmed.includes("\n") && isFullDateLine(trimmed)) return true;
+    return false;
+  }
   function inspectDraftpadPages(text) {
     const source = typeof text === "string" ? text : "";
     const parts = source.split(PAGE_MARKER);
@@ -26557,6 +26952,13 @@ ${PAGE_MARKER}
         while (trailTrim < part.length - leadTrim && (part[part.length - 1 - trailTrim] === "\n" || part[part.length - 1 - trailTrim] === "\r")) {
           trailTrim++;
         }
+      }
+      if (i > 0 && i < parts.length - 1 && leadTrim === part.length && part.length >= 2) {
+        trailTrim = Math.min(2, Math.floor(part.length / 2));
+        if (trailTrim > 0 && part[part.length - trailTrim - 1] === "\r" && part[part.length - trailTrim] === "\n") {
+          trailTrim = Math.min(part.length - 2, trailTrim + 1);
+        }
+        leadTrim = part.length - trailTrim;
       }
       const from = cursor + leadTrim;
       const to = cursor + part.length - trailTrim;
@@ -26882,7 +27284,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // node_modules/@codemirror/search/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -29186,6 +29588,18 @@ ${PAGE_MARKER}
   // src/pagemode.js
   var setPageMode = StateEffect.define();
   var setPageIndex = StateEffect.define();
+  var viewMemory = /* @__PURE__ */ new WeakMap();
+  function getMemory(view) {
+    if (!view || typeof view !== "object") {
+      return { cursors: /* @__PURE__ */ new Map(), scrolls: /* @__PURE__ */ new Map(), dragX: 0, dragging: false, settling: false };
+    }
+    let m = viewMemory.get(view);
+    if (!m) {
+      m = { cursors: /* @__PURE__ */ new Map(), scrolls: /* @__PURE__ */ new Map(), dragX: 0, dragging: false, settling: false };
+      viewMemory.set(view, m);
+    }
+    return m;
+  }
   function pageAt(pages, pos) {
     for (let i = 0; i < pages.length; i++) {
       const next = pages[i + 1];
@@ -29200,25 +29614,65 @@ ${PAGE_MARKER}
     }
     return page.from;
   }
+  function hiddenRanges(text, index) {
+    const pages = inspectDraftpadPages(text);
+    if (pages.length <= 1) return [];
+    const i = Math.max(0, Math.min(pages.length - 1, index));
+    const { from, to } = pages[i];
+    const out = [];
+    if (from > 0) {
+      let beforeEnd = from - 1;
+      if (beforeEnd > 0 && text[beforeEnd - 1] === "\r" && text[beforeEnd] === "\n") {
+        beforeEnd -= 1;
+      }
+      out.push({ from: 0, to: beforeEnd });
+    }
+    if (to < text.length) {
+      let afterStart = to + 1;
+      if (text[to] === "\r" && text[to + 1] === "\n") {
+        afterStart = to + 2;
+      }
+      if (afterStart <= text.length) {
+        out.push({ from: afterStart, to: text.length });
+      }
+    }
+    return out.filter((r) => r.to >= r.from);
+  }
+  var hiddenPageDeco = Decoration.replace({ block: true });
+  function buildPageDecos(docText, on, index) {
+    if (!on) return Decoration.none;
+    const ranges = hiddenRanges(docText, index);
+    if (ranges.length === 0) return Decoration.none;
+    return Decoration.set(
+      ranges.map((r) => hiddenPageDeco.range(r.from, r.to)),
+      true
+    );
+  }
   var pageModeField = StateField.define({
-    create() {
-      return { on: true, index: 0, decos: Decoration.none };
+    create(state) {
+      const text = state.doc.toString();
+      return { on: true, index: 0, decos: buildPageDecos(text, true, 0) };
     },
     update(v, tr) {
       let on = v.on;
       let index = v.index;
+      let explicitIndex = false;
       for (const e of tr.effects) {
         if (e.is(setPageMode)) on = Boolean(e.value);
-        if (e.is(setPageIndex)) index = e.value;
+        if (e.is(setPageIndex)) {
+          index = e.value;
+          explicitIndex = true;
+        }
       }
-      const pages = inspectDraftpadPages(tr.state.doc.toString());
+      const text = tr.state.doc.toString();
+      const pages = inspectDraftpadPages(text);
       index = Math.max(0, Math.min(pages.length - 1, index));
-      if (on && tr.selection && !tr.effects.some((e) => e.is(setPageIndex))) {
+      if (on && tr.selection && !explicitIndex) {
         const at = pageAt(pages, tr.state.selection.main.head);
         if (at !== index) index = at;
       }
-      if (on === v.on && index === v.index) return v;
-      return { on, index, decos: Decoration.none };
+      if (!tr.docChanged && on === v.on && index === v.index) return v;
+      return { on, index, decos: buildPageDecos(text, on, index) };
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.decos)
   });
@@ -29235,8 +29689,53 @@ ${PAGE_MARKER}
   function pageCount(state) {
     return inspectDraftpadPages(state.doc.toString()).length;
   }
+  function saveCurrentWindowMemory(view) {
+    if (!view || !view.state) return;
+    const mem = getMemory(view);
+    const idx = currentPage(view.state);
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const page = pages[idx];
+    if (page) {
+      const relCursor = Math.max(0, Math.min(page.to - page.from, view.state.selection.main.head - page.from));
+      mem.cursors.set(idx, relCursor);
+    }
+    if (view.scrollDOM && typeof view.scrollDOM.scrollTop === "number") {
+      mem.scrolls.set(idx, Math.max(0, view.scrollDOM.scrollTop));
+    }
+  }
+  function shiftWindowMemoryOnPrepend(mem, totalBefore) {
+    const nextCursors = /* @__PURE__ */ new Map();
+    const nextScrolls = /* @__PURE__ */ new Map();
+    for (let i = 0; i < totalBefore; i++) {
+      if (mem.cursors.has(i)) nextCursors.set(i + 1, mem.cursors.get(i));
+      if (mem.scrolls.has(i)) nextScrolls.set(i + 1, mem.scrolls.get(i));
+    }
+    nextCursors.set(0, 0);
+    nextScrolls.set(0, 0);
+    mem.cursors = nextCursors;
+    mem.scrolls = nextScrolls;
+  }
+  function shiftWindowMemoryOnDelete(mem, deletedIndex, totalBefore) {
+    const nextCursors = /* @__PURE__ */ new Map();
+    const nextScrolls = /* @__PURE__ */ new Map();
+    for (let i = 0; i < totalBefore; i++) {
+      if (i === deletedIndex) continue;
+      const dst = i > deletedIndex ? i - 1 : i;
+      if (mem.cursors.has(i)) nextCursors.set(dst, mem.cursors.get(i));
+      if (mem.scrolls.has(i)) nextScrolls.set(dst, mem.scrolls.get(i));
+    }
+    mem.cursors = nextCursors;
+    mem.scrolls = nextScrolls;
+  }
   function syncPageFromScroll(view, { onSnap = null, globalObj } = {}) {
-    if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
+    if (!view || !view.state) return 0;
+    if (isPageMode(view.state)) {
+      if (view.scrollDOM && typeof view.scrollDOM.scrollTop === "number") {
+        getMemory(view).scrolls.set(currentPage(view.state), Math.max(0, view.scrollDOM.scrollTop));
+      }
+      return currentPage(view.state);
+    }
+    if (!view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
       return currentPage(view);
     }
     const pages = inspectDraftpadPages(view.state.doc.toString());
@@ -29251,79 +29750,235 @@ ${PAGE_MARKER}
     }
     return at;
   }
-  function showPage(view, index) {
+  function showPage(view, index, { preserveMemory = true } = {}) {
+    if (preserveMemory) saveCurrentWindowMemory(view);
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const i = Math.max(0, Math.min(pages.length - 1, index));
-    const targetPos = pageHeadingOffset(view.state.doc, pages[i]);
+    const page = pages[i];
+    const mem = getMemory(view);
+    const pageLen = page ? Math.max(0, page.to - page.from) : 0;
+    const savedRel = mem.cursors.has(i) ? Math.min(mem.cursors.get(i), pageLen) : null;
+    const targetPos = savedRel !== null ? page.from + savedRel : pageHeadingOffset(view.state.doc, page);
     view.dispatch({
       selection: { anchor: targetPos },
       effects: [setPageIndex.of(i), EditorView.scrollIntoView(targetPos, { y: "start", yMargin: 8 })]
     });
     if (view.scrollDOM) {
-      const targetTop = i === 0 ? 0 : typeof view.lineBlockAt === "function" ? Math.max(0, view.lineBlockAt(targetPos).top) : i * 240;
+      const savedScroll = mem.scrolls.has(i) ? mem.scrolls.get(i) : 0;
       if (typeof view.scrollDOM.scrollTo === "function") {
-        view.scrollDOM.scrollTo({ top: targetTop, behavior: "smooth" });
+        view.scrollDOM.scrollTo({ top: savedScroll, behavior: "smooth" });
       } else {
-        view.scrollDOM.scrollTop = targetTop;
+        view.scrollDOM.scrollTop = savedScroll;
       }
     }
     return i;
   }
-  function stepPage(view, delta, { onSnap = null, onBounce = null, globalObj } = {}) {
-    if (!isPageMode(view.state)) return false;
-    const target = currentPage(view.state) + delta;
-    if (target < 0 || target >= pageCount(view.state)) {
+  function deleteEmptyWindow(view, index = currentPage(view.state), { onSnap = null, globalObj } = {}) {
+    const docText = view.state.doc.toString();
+    const pages = inspectDraftpadPages(docText);
+    if (pages.length <= 1) return false;
+    const i = Math.max(0, Math.min(pages.length - 1, index));
+    if (!isWindowEmpty(pages[i].rawContent)) return false;
+    const mem = getMemory(view);
+    const delFrom = i === 0 ? 0 : pages[i - 1].to;
+    const delTo = i === 0 ? pages[1].from : pages[i].to;
+    shiftWindowMemoryOnDelete(mem, i, pages.length);
+    const nextCount = pages.length - 1;
+    const nextIndex = Math.min(i, nextCount - 1);
+    const nextDocPreview = docText.slice(0, delFrom) + docText.slice(delTo);
+    const nextPages = inspectDraftpadPages(nextDocPreview);
+    const nextPage = nextPages[nextIndex];
+    const nextPageLen = nextPage ? Math.max(0, nextPage.to - nextPage.from) : 0;
+    const savedRel = mem.cursors.has(nextIndex) ? Math.min(mem.cursors.get(nextIndex), nextPageLen) : 0;
+    const nextAnchor = nextPage ? nextPage.from + savedRel : 0;
+    view.dispatch({
+      changes: { from: delFrom, to: delTo, insert: "" },
+      selection: { anchor: nextAnchor },
+      effects: [setPageIndex.of(nextIndex), EditorView.scrollIntoView(nextAnchor, { y: "start", yMargin: 8 })],
+      userEvent: "delete.page"
+    });
+    if (view.scrollDOM) {
+      const savedScroll = mem.scrolls.get(nextIndex) || 0;
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: savedScroll, behavior: "smooth" });
+      } else {
+        view.scrollDOM.scrollTop = savedScroll;
+      }
+    }
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(nextIndex);
+    return true;
+  }
+  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+    const docText = view.state.doc.toString();
+    const pages = inspectDraftpadPages(docText);
+    if (pages.length > 0 && isWindowEmpty(pages[0].rawContent)) {
       postHaptic("edge", globalObj);
       if (typeof onBounce === "function") onBounce();
       return false;
     }
-    showPage(view, target);
+    saveCurrentWindowMemory(view);
+    const mem = getMemory(view);
+    shiftWindowMemoryOnPrepend(mem, pages.length);
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: PAGE_JOINER },
+      selection: { anchor: 0 },
+      effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: "start", yMargin: 8 })],
+      userEvent: "input.page"
+    });
+    if (view.scrollDOM) {
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        view.scrollDOM.scrollTop = 0;
+      }
+    }
     postHaptic("snap", globalObj);
-    if (typeof onSnap === "function") onSnap(target);
+    if (typeof onSnap === "function") onSnap(0);
     return true;
+  }
+  function swipeLeftToRight(view, { allowCreate = true, onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const cur = currentPage(view.state);
+    if (cur > 0 && cur === pages.length - 1 && isWindowEmpty(pages[cur].rawContent)) {
+      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
+    }
+    if (cur > 0) {
+      showPage(view, cur - 1);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(cur - 1);
+      return true;
+    }
+    if (allowCreate && !isWindowEmpty(pages[0].rawContent)) {
+      return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+    }
+    postHaptic("edge", globalObj);
+    if (typeof onBounce === "function") onBounce();
+    return false;
+  }
+  function swipeRightToLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const cur = currentPage(view.state);
+    if (pages.length > 1 && isWindowEmpty(pages[cur].rawContent)) {
+      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
+    }
+    if (cur < pages.length - 1) {
+      showPage(view, cur + 1);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(cur + 1);
+      return true;
+    }
+    postHaptic("edge", globalObj);
+    if (typeof onBounce === "function") onBounce();
+    return false;
+  }
+  function stepPage(view, delta, { allowCreate = false, allowDeleteEmpty = true, onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    if (delta < 0) {
+      return swipeLeftToRight(view, { allowCreate, onSnap, onBounce, globalObj });
+    }
+    if (delta > 0) {
+      if (allowDeleteEmpty) {
+        return swipeRightToLeft(view, { onSnap, onBounce, globalObj });
+      }
+      const target = currentPage(view.state) + delta;
+      if (target >= pageCount(view.state)) {
+        postHaptic("edge", globalObj);
+        if (typeof onBounce === "function") onBounce();
+        return false;
+      }
+      showPage(view, target);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(target);
+      return true;
+    }
+    return false;
+  }
+  function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
+    const w = Math.max(120, Number(viewportWidth) || 400);
+    const pages = inspectDraftpadPages(state.doc.toString());
+    const idx = currentPage(state);
+    const curEmpty = isWindowEmpty(pages[idx] ? pages[idx].rawContent : "");
+    let v = Number(dragX) || 0;
+    if (v > 0 && idx <= 0 && curEmpty) v *= 0.25;
+    if (v < 0 && idx >= pages.length - 1 && (!curEmpty || pages.length <= 1)) v *= 0.25;
+    return Math.max(-w, Math.min(w, v));
   }
   function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     return [
       pageModeField,
       Prec.highest(keymap.of([
         { key: "Mod-]", run: (v) => {
-          stepPage(v, 1, { onSnap, onBounce });
+          swipeRightToLeft(v, { onSnap, onBounce });
           return true;
         } },
         { key: "Mod-[", run: (v) => {
-          stepPage(v, -1, { onSnap, onBounce });
+          swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce });
           return true;
         } }
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null } = {}) {
-    let acc = 0;
-    let spent = false;
-    let timer = null;
-    let suppressScrollUntil = 0;
-    const stepWithGlide = (delta) => {
-      suppressScrollUntil = Date.now() + 380;
-      return stepPage(view, delta, { onSnap, onBounce });
-    };
+  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
+    let wheelAcc = 0;
+    let wheelSpent = false;
+    let wheelTimer = null;
+    let axis = null;
+    const targetEl = () => view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null;
+    const widthOf = () => view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400;
+    function renderDrag(dx) {
+      const el2 = targetEl();
+      if (!el2 || !el2.style) return 0;
+      const eff = computeEffectiveDrag(view.state, dx, widthOf());
+      el2.style.transition = "none";
+      el2.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
+      return eff;
+    }
+    function settleDrag(dx) {
+      const el2 = targetEl();
+      const limit = Math.min(threshold, widthOf() * 0.2);
+      if (dx >= limit) {
+        swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
+      } else if (dx <= -limit) {
+        swipeRightToLeft(view, { onSnap, onBounce });
+      }
+      if (el2 && el2.style) {
+        el2.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+        el2.style.transform = "translateX(0px)";
+      }
+    }
     view.scrollDOM.addEventListener("wheel", (e) => {
       if (!isPageMode(view.state)) return;
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        acc = 0;
-        spent = false;
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelAcc = 0;
+        wheelSpent = false;
+        axis = null;
+        renderDrag(0);
       }, quietMs);
-      if (spent) return;
-      acc += e.deltaX;
-      if (Math.abs(acc) >= threshold) {
-        spent = true;
-        stepWithGlide(acc > 0 ? 1 : -1);
+      if (axis === null) {
+        if (e.deltaX === 0 && e.deltaY === 0) return;
+        axis = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? "h" : "v";
+      }
+      if (axis === "v") return;
+      e.preventDefault();
+      if (wheelSpent) return;
+      const dx = e.isDirectionInvertedFromDevice === false ? e.deltaX : -e.deltaX;
+      wheelAcc += dx;
+      renderDrag(wheelAcc);
+      const limit = Math.min(threshold, widthOf() * 0.2);
+      if (Math.abs(wheelAcc) >= limit) {
+        wheelSpent = true;
+        const finalDx = wheelAcc;
+        wheelAcc = 0;
+        settleDrag(finalDx);
       }
     }, { passive: false });
     let touchStartX = null;
     let touchStartY = null;
+    let touchAxis = null;
     view.scrollDOM.addEventListener("touchstart", (e) => {
       if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
         touchStartX = null;
@@ -29331,25 +29986,93 @@ ${PAGE_MARKER}
       }
       const t2 = e.touches[0];
       if (t2.clientX <= edgePx) {
+        if (typeof onEdgeZone === "function") onEdgeZone("left");
         touchStartX = null;
         return;
       }
       touchStartX = t2.clientX;
       touchStartY = t2.clientY;
+      touchAxis = null;
+    }, { passive: true });
+    view.scrollDOM.addEventListener("touchmove", (e) => {
+      if (touchStartX === null || !e.touches || e.touches.length !== 1) return;
+      const t2 = e.touches[0];
+      const dx = t2.clientX - touchStartX;
+      const dy = t2.clientY - touchStartY;
+      if (touchAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        touchAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "h" : "v";
+      }
+      if (touchAxis === "h") {
+        renderDrag(dx);
+      }
     }, { passive: true });
     view.scrollDOM.addEventListener("touchend", (e) => {
       if (touchStartX === null || !e.changedTouches || e.changedTouches.length === 0) return;
       const t2 = e.changedTouches[0];
       const dx = t2.clientX - touchStartX;
       const dy = t2.clientY - touchStartY;
+      const wasHorizontal = touchAxis === "h" || Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2;
       touchStartX = null;
       touchStartY = null;
-      if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.4) {
-        stepWithGlide(dx < 0 ? 1 : -1);
+      touchAxis = null;
+      if (wasHorizontal) {
+        settleDrag(dx);
+      } else {
+        renderDrag(0);
       }
     }, { passive: true });
+    view.scrollDOM.addEventListener("touchcancel", () => {
+      touchStartX = null;
+      touchStartY = null;
+      touchAxis = null;
+      renderDrag(0);
+    }, { passive: true });
+    let ptrId = null;
+    let ptrStartX = null;
+    let ptrStartY = null;
+    let ptrAxis = null;
+    view.scrollDOM.addEventListener("pointerdown", (e) => {
+      if (!isPageMode(view.state)) return;
+      if (e.pointerType === "touch") return;
+      const w = widthOf();
+      const x = Number(e.clientX) || 0;
+      const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
+      if (!inEdgeZone && !e.altKey) return;
+      if (typeof onEdgeZone === "function") onEdgeZone(x <= edgePx * 1.5 ? "left" : "right");
+      ptrId = e.pointerId;
+      ptrStartX = x;
+      ptrStartY = Number(e.clientY) || 0;
+      ptrAxis = null;
+    });
+    view.scrollDOM.addEventListener("pointermove", (e) => {
+      if (ptrId === null || e.pointerId !== ptrId) return;
+      const dx = (Number(e.clientX) || 0) - ptrStartX;
+      const dy = (Number(e.clientY) || 0) - ptrStartY;
+      if (ptrAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        ptrAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "h" : "v";
+      }
+      if (ptrAxis === "h") {
+        renderDrag(dx);
+      }
+    });
+    const finishPointer = (e) => {
+      if (ptrId === null || e && e.pointerId !== void 0 && e.pointerId !== ptrId) return;
+      const dx = e ? (Number(e.clientX) || 0) - ptrStartX : 0;
+      const dy = e ? (Number(e.clientY) || 0) - ptrStartY : 0;
+      const wasHorizontal = e && e.type !== "pointercancel" && (ptrAxis === "h" || Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2);
+      ptrId = null;
+      ptrStartX = null;
+      ptrStartY = null;
+      ptrAxis = null;
+      if (wasHorizontal) {
+        settleDrag(dx);
+      } else {
+        renderDrag(0);
+      }
+    };
+    view.scrollDOM.addEventListener("pointerup", finishPointer);
+    view.scrollDOM.addEventListener("pointercancel", finishPointer);
     view.scrollDOM.addEventListener("scroll", () => {
-      if (Date.now() < suppressScrollUntil) return;
       syncPageFromScroll(view, { onSnap });
     }, { passive: true });
   }
@@ -29375,14 +30098,15 @@ ${PAGE_MARKER}
     return `recense-file://vault/${target.split("/").map(encodeURIComponent).join("/")}`;
   }
   var EmbedWidget = class extends WidgetType {
-    constructor(kind, src, caption) {
+    constructor(kind, src, caption, rawTarget = "") {
       super();
       this.kind = kind;
       this.src = src;
       this.caption = caption;
+      this.rawTarget = rawTarget;
     }
     eq(other) {
-      return other.kind === this.kind && other.src === this.src;
+      return other.kind === this.kind && other.src === this.src && other.rawTarget === this.rawTarget;
     }
     get estimatedHeight() {
       return this.kind === "pdf" ? 520 : 320;
@@ -29390,6 +30114,7 @@ ${PAGE_MARKER}
     toDOM() {
       const wrap = document.createElement("div");
       wrap.className = `cm-embed cm-embed-${this.kind}`;
+      if (this.rawTarget) wrap.setAttribute("data-embed-target", this.rawTarget);
       if (this.kind === "pdf") {
         const frame = document.createElement("iframe");
         frame.src = this.src;
@@ -29409,6 +30134,15 @@ ${PAGE_MARKER}
       return true;
     }
   };
+  function formatDroppedEmbed(nameOrPath, explicitCaption = null) {
+    const raw = String(nameOrPath ?? "").trim();
+    if (!raw) return null;
+    if (!PDF_RE.test(raw) && !IMAGE_RE.test(raw)) return null;
+    const base2 = raw.split(/[\\/]/).pop().replace(/[?#].*$/, "");
+    const caption = explicitCaption !== null ? String(explicitCaption) : base2.replace(/\.[^.]+$/, "");
+    const target = /\s/.test(raw) ? `<${raw}>` : raw;
+    return `![${caption}](${target})`;
+  }
   function findEmbeds(text) {
     const out = [];
     let offset = 0;
@@ -29420,7 +30154,7 @@ ${PAGE_MARKER}
     return out;
   }
   function build(doc2) {
-    const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption), block: true, side: 1 }).range(e.end));
+    const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption, e.target), block: true, side: 1 }).range(e.end));
     return Decoration.set(items);
   }
   var embedField = StateField.define({
@@ -29428,8 +30162,46 @@ ${PAGE_MARKER}
     update: (decos, tr) => tr.docChanged ? build(tr.state.doc) : decos,
     provide: (f) => EditorView.decorations.from(f)
   });
+  var embedDropHandler = EditorView.domEventHandlers({
+    dragover(event) {
+      const dt = event?.dataTransfer;
+      if (dt && (dt.files?.length > 0 || dt.types?.includes?.("Files"))) {
+        event.preventDefault();
+        return true;
+      }
+      return false;
+    },
+    drop(event, view) {
+      const dt = event?.dataTransfer;
+      if (!dt) return false;
+      const embeds = [];
+      if (dt.files && dt.files.length > 0) {
+        for (const f of Array.from(dt.files)) {
+          const md = formatDroppedEmbed(f.path || f.name, f.name ? f.name.replace(/\.[^.]+$/, "") : null);
+          if (md) embeds.push(md);
+        }
+      } else if (typeof dt.getData === "function") {
+        const uri = dt.getData("text/uri-list") || dt.getData("text/plain");
+        const md = formatDroppedEmbed(uri);
+        if (md) embeds.push(md);
+      }
+      if (embeds.length === 0) return false;
+      event.preventDefault();
+      const pos = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(pos);
+      const prefix = line.text.trim().length > 0 ? "\n" : "";
+      const insert2 = `${prefix}${embeds.join("\n")}`;
+      view.dispatch({
+        changes: { from: line.to, insert: insert2 },
+        selection: { anchor: line.to + insert2.length },
+        scrollIntoView: true,
+        userEvent: "input.drop"
+      });
+      return true;
+    }
+  });
   function embedsExtension() {
-    return [embedField];
+    return [embedField, embedDropHandler];
   }
 
   // src/links.js
@@ -29512,6 +30284,3823 @@ ${PAGE_MARKER}
   });
   function linksExtension() {
     return [decorations2, clicks];
+  }
+
+  // src/gestures.js
+  var HAPTIC_ZONES = Object.freeze({
+    top: 44,
+    edge: 32,
+    dwellMs: 280
+  });
+  function formatDotIndicator(index, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safeIndex = Math.max(0, Math.min(safeTotal - 1, Number(index) || 0));
+    if (safeTotal <= 8) {
+      const dots2 = [];
+      for (let i = 0; i < safeTotal; i++) {
+        dots2.push(i === safeIndex ? "\u25CF" : "\u25CB");
+      }
+      return dots2.join(" ");
+    }
+    const windowSize = 8;
+    const start = Math.max(0, Math.min(safeTotal - windowSize, safeIndex - Math.floor(windowSize / 2)));
+    const dots = [];
+    for (let i = start; i < start + windowSize; i++) {
+      dots.push(i === safeIndex ? "\u25CF" : "\u25CB");
+    }
+    return dots.join(" ");
+  }
+  function detectHapticZone(x, y, width, height, zones = HAPTIC_ZONES) {
+    if (typeof x !== "number" || typeof y !== "number") return null;
+    const w = Number(width) || 0;
+    const h = Number(height) || 0;
+    if (x < 0 || y < 0 || x > w || y > h) return null;
+    const topZone = Number(zones?.top ?? HAPTIC_ZONES.top);
+    const edgeZone = Number(zones?.edge ?? HAPTIC_ZONES.edge);
+    if (y <= topZone) return "top";
+    if (x <= edgeZone) return "left";
+    if (x >= w - edgeZone) return "right";
+    return null;
+  }
+  function attachHapticZones(container, {
+    onZoneEnter = null,
+    onZoneDwell = null,
+    onZoneLeave = null,
+    zones = HAPTIC_ZONES,
+    globalObj = typeof window !== "undefined" ? window : null
+  } = {}) {
+    if (!container || typeof container.addEventListener !== "function") {
+      return () => {
+      };
+    }
+    const activeZones = {
+      top: Number(zones?.top ?? HAPTIC_ZONES.top),
+      edge: Number(zones?.edge ?? HAPTIC_ZONES.edge),
+      dwellMs: Number(zones?.dwellMs ?? HAPTIC_ZONES.dwellMs)
+    };
+    let currentZone = null;
+    let dwellTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let dragged = false;
+    function clearDwellTimer() {
+      if (dwellTimer !== null) {
+        clearTimeout(dwellTimer);
+        dwellTimer = null;
+      }
+    }
+    function getCoords(e) {
+      let cx = e.clientX;
+      let cy = e.clientY;
+      if (e.touches && e.touches.length > 0) {
+        cx = e.touches[0].clientX;
+        cy = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        cx = e.changedTouches[0].clientX;
+        cy = e.changedTouches[0].clientY;
+      }
+      if (typeof cx !== "number" || typeof cy !== "number") {
+        return null;
+      }
+      const rect = typeof container.getBoundingClientRect === "function" ? container.getBoundingClientRect() : null;
+      const left = rect ? rect.left : 0;
+      const top2 = rect ? rect.top : 0;
+      const width = rect && rect.width ? rect.width : container.clientWidth || 800;
+      const height = rect && rect.height ? rect.height : container.clientHeight || 600;
+      return {
+        x: cx - left,
+        y: cy - top2,
+        width,
+        height
+      };
+    }
+    function updateZone(relX, relY, width, height) {
+      const newZone = detectHapticZone(relX, relY, width, height, activeZones);
+      if (newZone !== currentZone) {
+        const prevZone = currentZone;
+        clearDwellTimer();
+        dragged = false;
+        if (prevZone) {
+          if (container.classList && typeof container.classList.remove === "function") {
+            container.classList.remove(`rc-zone-active-${prevZone}`);
+          }
+          if (typeof onZoneLeave === "function") {
+            onZoneLeave(prevZone);
+          }
+        }
+        currentZone = newZone;
+        if (newZone) {
+          if (container.classList && typeof container.classList.add === "function") {
+            container.classList.add(`rc-zone-active-${newZone}`);
+          }
+          postHaptic("snap", globalObj);
+          if (typeof onZoneEnter === "function") {
+            onZoneEnter(newZone);
+          }
+          if (newZone === "left" || newZone === "right") {
+            startX = relX;
+            startY = relY;
+            dragged = false;
+            dwellTimer = setTimeout(() => {
+              dwellTimer = null;
+              if (!dragged && currentZone === newZone) {
+                if (typeof onZoneDwell === "function") {
+                  onZoneDwell(newZone);
+                }
+              }
+            }, activeZones.dwellMs);
+          }
+        }
+      } else if (currentZone === "left" || currentZone === "right") {
+        const dist2 = Math.hypot(relX - startX, relY - startY);
+        if (dist2 > 10) {
+          dragged = true;
+          clearDwellTimer();
+        }
+      }
+    }
+    function handlePointerMove(e) {
+      const coords = getCoords(e);
+      if (!coords) return;
+      updateZone(coords.x, coords.y, coords.width, coords.height);
+    }
+    function handlePointerDown(e) {
+      const coords = getCoords(e);
+      if (!coords) return;
+      startX = coords.x;
+      startY = coords.y;
+      dragged = false;
+      updateZone(coords.x, coords.y, coords.width, coords.height);
+    }
+    function handleLeave() {
+      clearDwellTimer();
+      dragged = false;
+      if (currentZone) {
+        const prevZone = currentZone;
+        currentZone = null;
+        if (container.classList && typeof container.classList.remove === "function") {
+          container.classList.remove(`rc-zone-active-${prevZone}`);
+        }
+        if (typeof onZoneLeave === "function") {
+          onZoneLeave(prevZone);
+        }
+      }
+    }
+    container.addEventListener("pointermove", handlePointerMove);
+    container.addEventListener("pointerdown", handlePointerDown);
+    container.addEventListener("touchstart", handlePointerDown, { passive: true });
+    container.addEventListener("touchmove", handlePointerMove, { passive: true });
+    container.addEventListener("touchend", handleLeave);
+    container.addEventListener("touchcancel", handleLeave);
+    container.addEventListener("pointerleave", handleLeave);
+    container.addEventListener("pointerup", handleLeave);
+    function destroy() {
+      clearDwellTimer();
+      handleLeave();
+      container.removeEventListener("pointermove", handlePointerMove);
+      container.removeEventListener("pointerdown", handlePointerDown);
+      container.removeEventListener("touchstart", handlePointerDown);
+      container.removeEventListener("touchmove", handlePointerMove);
+      container.removeEventListener("touchend", handleLeave);
+      container.removeEventListener("touchcancel", handleLeave);
+      container.removeEventListener("pointerleave", handleLeave);
+      container.removeEventListener("pointerup", handleLeave);
+    }
+    destroy.destroy = destroy;
+    return destroy;
+  }
+  function executeVoiceMove(commandStr, handlers2 = {}) {
+    if (typeof commandStr !== "string") {
+      return { matched: false, action: null };
+    }
+    const raw = commandStr.trim().toLowerCase().replace(/[.,!?;:'"()[\]{}]/g, "").replace(/\s+/g, " ");
+    if (!raw) {
+      return { matched: false, action: null };
+    }
+    function hasWord(token) {
+      const escaped = token.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+      return new RegExp(`(^|\\s)${escaped}(\\s|$)`, "i").test(raw);
+    }
+    function hasPhrase(phrase2) {
+      return raw.includes(phrase2);
+    }
+    if (hasPhrase("whole eraser") || hasPhrase("t\u1EA9y to\xE0n b\u1ED9") || hasPhrase("gomme enti\xE8re")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("whole eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "whole eraser" };
+    }
+    if (hasPhrase("partial eraser") || hasPhrase("t\u1EA9y m\u1ED9t ph\u1EA7n") || hasPhrase("gomme partielle")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("partial eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "partial eraser" };
+    }
+    if (hasWord("eraser") || hasWord("t\u1EA9y") || hasWord("g\xF4m") || hasWord("gomme")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "eraser" };
+    }
+    if (hasPhrase("left wing") || hasPhrase("left sidebar") || hasPhrase("c\xE1nh tr\xE1i") || hasPhrase("volet gauche")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("left");
+      }
+      return { matched: true, action: "openWing", side: "left" };
+    }
+    if (hasPhrase("right wing") || hasPhrase("right sidebar") || hasPhrase("c\xE1nh ph\u1EA3i") || hasPhrase("volet droit")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("right");
+      }
+      return { matched: true, action: "openWing", side: "right" };
+    }
+    if (hasPhrase("both wings") || hasPhrase("dual sidebar") || hasPhrase("dual wings") || hasPhrase("hai b\xEAn") || hasPhrase("hai c\xE1nh") || hasPhrase("deux volets")) {
+      if (typeof handlers2.openWing === "function") {
+        handlers2.openWing("both");
+      }
+      return { matched: true, action: "openWing", side: "both" };
+    }
+    if (hasPhrase("close wings") || hasPhrase("close sidebars") || hasPhrase("\u0111\xF3ng c\xE1nh") || hasPhrase("fermer les volets")) {
+      if (typeof handlers2.closeWing === "function") {
+        handlers2.closeWing("both");
+      }
+      return { matched: true, action: "closeWing", side: "both" };
+    }
+    if (hasPhrase("swap wings") || hasPhrase("flip sides") || hasPhrase("mirror wings") || hasPhrase("\u0111\u1ED5i b\xEAn") || hasWord("inverser")) {
+      if (typeof handlers2.swapWings === "function") {
+        handlers2.swapWings();
+      }
+      return { matched: true, action: "swapWings" };
+    }
+    const rightToLeftKeywords = [
+      "swipe left",
+      "next topic",
+      "next window",
+      "next page",
+      "older page",
+      "older",
+      "page suivante",
+      "suivant",
+      "suivante",
+      "trang ti\u1EBFp",
+      "ti\u1EBFp t\u1EE5c",
+      "ti\u1EBFp"
+    ];
+    const hasSwipeLeftIntent = rightToLeftKeywords.some(
+      (kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw)
+    );
+    if (hasSwipeLeftIntent) {
+      if (typeof handlers2.swipeRightToLeft === "function") {
+        handlers2.swipeRightToLeft();
+      }
+      return { matched: true, action: "swipeRightToLeft" };
+    }
+    const leftToRightKeywords = [
+      "swipe right",
+      "new topic",
+      "new window",
+      "new page",
+      "nouveau sujet",
+      "nouvelle page",
+      "nouveau",
+      "ch\u1EE7 \u0111\u1EC1 m\u1EDBi",
+      "trang m\u1EDBi",
+      "m\u1EDBi"
+    ];
+    const hasSwipeRightIntent = leftToRightKeywords.some(
+      (kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw)
+    ) || hasWord("new") && hasWord("left") || hasWord("open") && hasWord("left");
+    if (hasSwipeRightIntent) {
+      if (typeof handlers2.swipeLeftToRight === "function") {
+        handlers2.swipeLeftToRight();
+      }
+      return { matched: true, action: "swipeLeftToRight" };
+    }
+    if (hasWord("left") && !hasPhrase("swipe left")) {
+      if (typeof handlers2.swipeLeftToRight === "function") {
+        handlers2.swipeLeftToRight();
+      }
+      return { matched: true, action: "swipeLeftToRight" };
+    }
+    if (hasWord("right") && !hasPhrase("swipe right")) {
+      if (typeof handlers2.swipeRightToLeft === "function") {
+        handlers2.swipeRightToLeft();
+      }
+      return { matched: true, action: "swipeRightToLeft" };
+    }
+    const deleteKeywords = [
+      "delete window",
+      "delete page",
+      "delete topic",
+      "delete this",
+      "remove empty",
+      "remove window",
+      "remove page",
+      "supprimer la page",
+      "x\xF3a trang",
+      "x\xF3a c\u1EEDa s\u1ED5",
+      "delete",
+      "supprimer",
+      "x\xF3a"
+    ];
+    if (deleteKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
+      if (typeof handlers2.deleteEmptyWindow === "function") {
+        handlers2.deleteEmptyWindow();
+      }
+      return { matched: true, action: "deleteEmptyWindow" };
+    }
+    const outlineKeywords = ["outline", "topics", "m\u1EE5c l\u1EE5c", "sommaire"];
+    if (outlineKeywords.some((kw) => hasWord(kw))) {
+      if (typeof handlers2.toggleOutline === "function") {
+        handlers2.toggleOutline();
+      }
+      return { matched: true, action: "toggleOutline" };
+    }
+    const findKeywords = ["find", "search", "t\xECm ki\u1EBFm", "t\xECm", "rechercher"];
+    if (findKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
+      if (typeof handlers2.openFind === "function") {
+        handlers2.openFind();
+      }
+      return { matched: true, action: "openFind" };
+    }
+    if (hasWord("highlighter") || hasPhrase("b\xFAt d\u1EA1") || hasWord("surligneur")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("highlighter");
+      }
+      return { matched: true, action: "setInkTool", tool: "highlighter" };
+    }
+    if (hasWord("underline") || hasPhrase("g\u1EA1ch ch\xE2n") || hasWord("souligner")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("underline");
+      }
+      return { matched: true, action: "setInkTool", tool: "underline" };
+    }
+    if (hasWord("circle") || hasPhrase("khoanh tr\xF2n") || hasWord("entourer")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("circle");
+      }
+      return { matched: true, action: "setInkTool", tool: "circle" };
+    }
+    if (hasWord("pen") || hasWord("b\xFAt") || hasWord("stylo")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("pen");
+      }
+      return { matched: true, action: "setInkTool", tool: "pen" };
+    }
+    const summaryKeywords = [
+      "audio summary",
+      "summarize",
+      "summary",
+      "t\xF3m t\u1EAFt \xE2m thanh",
+      "t\xF3m t\u1EAFt",
+      "r\xE9sumer",
+      "r\xE9sum\xE9"
+    ];
+    if (summaryKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
+      if (typeof handlers2.summarizeSection === "function") {
+        handlers2.summarizeSection();
+      }
+      return { matched: true, action: "summarizeSection" };
+    }
+    const bookmarkKeywords = [
+      "bookmark",
+      "annotate",
+      "\u0111\xE1nh d\u1EA5u",
+      "ch\xFA th\xEDch",
+      "signet",
+      "annoter"
+    ];
+    if (bookmarkKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
+      if (typeof handlers2.bookmarkAudio === "function") {
+        handlers2.bookmarkAudio();
+      }
+      return { matched: true, action: "bookmarkAudio" };
+    }
+    return { matched: false, action: null };
+  }
+
+  // src/ink.js
+  var INK_TOOLS = [
+    "pen",
+    "highlighter",
+    "underline",
+    "circle",
+    "eraser-whole",
+    "eraser-partial"
+  ];
+  var INK_COLORS = [
+    "#38bdf8",
+    "#facc15",
+    "#4ade80",
+    "#f472b6",
+    "#a78bfa",
+    "#fb923c",
+    "#f87171",
+    "#e6edf3"
+  ];
+  var DEFAULT_LINE_HEIGHT = 28;
+  var DEFAULT_DEBOUNCE_MS = 300;
+  var EMBED_RE2 = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
+  function parseEmbedTarget(line) {
+    if (typeof line !== "string") return null;
+    const m = EMBED_RE2.exec(line.trim());
+    if (!m) return null;
+    return m[2] ?? m[3] ?? null;
+  }
+  function hashLineContext(lineText = "", prevLineText = "", nextLineText = "") {
+    const clean = (s) => typeof s === "string" ? s.replace(/\r$/, "") : "";
+    const str = `${clean(prevLineText)}
+${clean(lineText)}
+${clean(nextLineText)}`;
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  function getDocumentPages(docText) {
+    const rawLines = typeof docText === "string" ? docText.split(/\r?\n/) : [""];
+    const pages = [];
+    let curStartLine = 1;
+    let curLines = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = typeof rawLines[i] === "string" ? rawLines[i].replace(/\r$/, "") : "";
+      if (line.trim() === "<!-- page -->") {
+        pages.push({
+          index: pages.length,
+          startLine: curStartLine,
+          endLine: i,
+          lines: curLines
+        });
+        curStartLine = i + 2;
+        curLines = [];
+      } else {
+        curLines.push(line);
+      }
+    }
+    pages.push({
+      index: pages.length,
+      startLine: curStartLine,
+      endLine: rawLines.length,
+      lines: curLines
+    });
+    return pages;
+  }
+  function anchorStrokeToDoc(stroke, docText = "", lineHeight = DEFAULT_LINE_HEIGHT, pageIndex = null) {
+    const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+    let minX = 0;
+    let minY = 0;
+    if (points.length > 0) {
+      minX = Math.min(...points.map((p) => p[0]));
+      minY = Math.min(...points.map((p) => p[1]));
+    }
+    const rawLines = typeof docText === "string" ? docText.split(/\r?\n/) : [""];
+    const pages = getDocumentPages(docText);
+    let pIdx = 0;
+    if (typeof pageIndex === "number" && pageIndex >= 0) {
+      pIdx = Math.min(pages.length - 1, pageIndex);
+    } else if (stroke?.anchor && typeof stroke.anchor.pageIndex === "number") {
+      pIdx = Math.min(pages.length - 1, stroke.anchor.pageIndex);
+    } else {
+      const globalLineIdx = Math.max(0, Math.min(rawLines.length - 1, Math.floor(minY / lineHeight)));
+      const targetLineNumber = globalLineIdx + 1;
+      for (const p of pages) {
+        if (targetLineNumber >= p.startLine && targetLineNumber <= p.endLine) {
+          pIdx = p.index;
+          break;
+        }
+      }
+    }
+    const targetPage = pages[pIdx] || pages[0];
+    const lineCountInPage = Math.max(1, targetPage.lines.length);
+    const lineIndexInPage = Math.max(0, Math.min(lineCountInPage - 1, Math.floor(minY / lineHeight)));
+    const lineNumber = targetPage.startLine + lineIndexInPage;
+    const lineText = targetPage.lines[lineIndexInPage] ?? "";
+    const prevLineText = lineIndexInPage > 0 ? targetPage.lines[lineIndexInPage - 1] : "";
+    const nextLineText = lineIndexInPage < targetPage.lines.length - 1 ? targetPage.lines[lineIndexInPage + 1] : "";
+    const lineHash = hashLineContext(lineText, prevLineText, nextLineText);
+    const embedTarget = parseEmbedTarget(lineText);
+    const relX = minX;
+    const relY = minY - lineIndexInPage * lineHeight;
+    const anchor = {
+      pageIndex: pIdx,
+      lineHash,
+      lineText,
+      lineNumber,
+      offsetInPage: lineIndexInPage,
+      embedTarget,
+      relX,
+      relY
+    };
+    if (stroke && typeof stroke === "object") {
+      stroke.anchor = anchor;
+    }
+    return anchor;
+  }
+  function resolveStrokeAnchor(stroke, docText = "", lineHeight = DEFAULT_LINE_HEIGHT) {
+    const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+    const anchor = stroke?.anchor;
+    if (!anchor || typeof anchor !== "object") {
+      return {
+        points: points.map((p) => [...p]),
+        orphaned: true,
+        pageIndex: 0,
+        deltaY: 0,
+        shape: stroke?.shape ? { ...stroke.shape } : null
+      };
+    }
+    const pages = getDocumentPages(docText);
+    const targetPageIndex = typeof anchor.pageIndex === "number" ? anchor.pageIndex : 0;
+    function findLineInPage(p) {
+      if (!p) return -1;
+      if (anchor.embedTarget) {
+        for (let i = 0; i < p.lines.length; i++) {
+          if (parseEmbedTarget(p.lines[i]) === anchor.embedTarget) return i;
+        }
+      }
+      if (anchor.lineHash) {
+        for (let i = 0; i < p.lines.length; i++) {
+          const prev = i > 0 ? p.lines[i - 1] : "";
+          const next = i < p.lines.length - 1 ? p.lines[i + 1] : "";
+          if (hashLineContext(p.lines[i], prev, next) === anchor.lineHash) return i;
+        }
+      }
+      if (typeof anchor.lineText === "string") {
+        const candidates = [];
+        for (let i = 0; i < p.lines.length; i++) {
+          if (p.lines[i] === anchor.lineText) candidates.push(i);
+        }
+        if (candidates.length === 1) return candidates[0];
+        if (candidates.length > 1) {
+          const target = anchor.offsetInPage ?? 0;
+          candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+          return candidates[0];
+        }
+      }
+      if (typeof anchor.lineText === "string" && anchor.lineText.trim().length > 0) {
+        const trimmed = anchor.lineText.trim();
+        const candidates = [];
+        for (let i = 0; i < p.lines.length; i++) {
+          if (p.lines[i].trim() === trimmed) candidates.push(i);
+        }
+        if (candidates.length > 0) {
+          const target = anchor.offsetInPage ?? 0;
+          candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+          return candidates[0];
+        }
+      }
+      return -1;
+    }
+    let matchedPageIndex = targetPageIndex;
+    let matchedLineIdxInPage = -1;
+    if (pages[targetPageIndex]) {
+      matchedLineIdxInPage = findLineInPage(pages[targetPageIndex]);
+    }
+    if (matchedLineIdxInPage === -1) {
+      for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+        if (pIdx === targetPageIndex) continue;
+        const idx = findLineInPage(pages[pIdx]);
+        if (idx !== -1) {
+          matchedPageIndex = pIdx;
+          matchedLineIdxInPage = idx;
+          break;
+        }
+      }
+    }
+    if (matchedLineIdxInPage === -1) {
+      return {
+        points: points.map((p) => [...p]),
+        orphaned: true,
+        pageIndex: targetPageIndex,
+        deltaY: 0,
+        shape: stroke?.shape ? { ...stroke.shape } : null
+      };
+    }
+    const deltaLines = matchedLineIdxInPage - (anchor.offsetInPage ?? 0);
+    const deltaY = deltaLines * lineHeight;
+    const shiftedPoints = points.map(([x, y, p, t2]) => [x, y + deltaY, p, t2]);
+    let updatedShape = null;
+    if (stroke?.shape) {
+      if (stroke.shape.kind === "ellipse") {
+        updatedShape = { ...stroke.shape, cy: stroke.shape.cy + deltaY };
+      } else if (stroke.shape.kind === "line") {
+        updatedShape = {
+          ...stroke.shape,
+          y1: stroke.shape.y1 + deltaY,
+          y2: stroke.shape.y2 + deltaY
+        };
+      } else {
+        updatedShape = { ...stroke.shape };
+      }
+    }
+    return {
+      points: shiftedPoints,
+      orphaned: false,
+      pageIndex: matchedPageIndex,
+      deltaY,
+      shape: updatedShape
+    };
+  }
+  function mergeInkDocuments(localDoc, remoteDoc) {
+    const localStrokes = Array.isArray(localDoc?.strokes) ? localDoc.strokes : [];
+    const remoteStrokes = Array.isArray(remoteDoc?.strokes) ? remoteDoc.strokes : [];
+    const localRemoved = Array.isArray(localDoc?.removed) ? localDoc.removed : [];
+    const remoteRemoved = Array.isArray(remoteDoc?.removed) ? remoteDoc.removed : [];
+    const removedSet = /* @__PURE__ */ new Set([...localRemoved, ...remoteRemoved]);
+    const strokesById = /* @__PURE__ */ new Map();
+    for (const s of localStrokes) {
+      if (s && s.id && !removedSet.has(s.id)) {
+        strokesById.set(s.id, s);
+      }
+    }
+    for (const s of remoteStrokes) {
+      if (s && s.id && !removedSet.has(s.id)) {
+        const existing = strokesById.get(s.id);
+        if (!existing) {
+          strokesById.set(s.id, s);
+        } else {
+          const existingAt = typeof existing.at === "number" ? existing.at : 0;
+          const remoteAt = typeof s.at === "number" ? s.at : 0;
+          if (remoteAt >= existingAt) {
+            strokesById.set(s.id, s);
+          }
+        }
+      }
+    }
+    const strokes = Array.from(strokesById.values());
+    strokes.sort((a, b) => {
+      const diff = (a.at || 0) - (b.at || 0);
+      if (diff !== 0) return diff;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    return {
+      version: 1,
+      strokes,
+      removed: Array.from(removedSet).sort()
+    };
+  }
+  function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
+    if (!Array.isArray(points) || points.length === 0) return [];
+    if (points.length === 1) {
+      const pt = points[0];
+      return [
+        [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0],
+        [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0]
+      ];
+    }
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+    const snapY = avgY;
+    const pStart = points[0][2] ?? 0.5;
+    const pEnd = points[points.length - 1][2] ?? pStart;
+    const tStart = points[0][3] ?? 0;
+    const tEnd = points[points.length - 1][3] ?? tStart;
+    return [
+      [minX, snapY, pStart, tStart],
+      [maxX, snapY, pEnd, tEnd]
+    ];
+  }
+  function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = false } = {}) {
+    if (!Array.isArray(points) || points.length === 0) {
+      return { snapped: false, shape: null, points: [] };
+    }
+    if (points.length < 2) {
+      return { snapped: false, shape: null, points: points.map((p) => [...p]) };
+    }
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const w = maxX - minX;
+    const h = maxY - minY;
+    let perimeter = 0;
+    for (let i = 1; i < points.length; i++) {
+      perimeter += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+    }
+    const chord = Math.hypot(
+      points[points.length - 1][0] - points[0][0],
+      points[points.length - 1][1] - points[0][1]
+    );
+    const aspect = h > 0 ? w / h : 1;
+    const isClosedLoop = perimeter > 0 && chord < 0.28 * perimeter && aspect >= 0.45 && aspect <= 2.2;
+    function makeEllipse() {
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const rx = Math.max(1, w / 2);
+      const ry = Math.max(1, h / 2);
+      const snappedPoints = [];
+      const pAvg = points.reduce((sum, p) => sum + (p[2] ?? 0.5), 0) / points.length;
+      const t02 = points[0]?.[3] ?? 0;
+      const t12 = points[points.length - 1]?.[3] ?? t02;
+      for (let i = 0; i < 48; i++) {
+        const theta = i / 48 * (2 * Math.PI);
+        const x = cx + rx * Math.cos(theta);
+        const y = cy + ry * Math.sin(theta);
+        const t2 = t02 + (t12 - t02) * (i / 48);
+        snappedPoints.push([x, y, pAvg, t2]);
+      }
+      return {
+        snapped: true,
+        shape: { kind: "ellipse", cx, cy, rx, ry },
+        points: snappedPoints
+      };
+    }
+    if (forceCircle) {
+      return makeEllipse();
+    }
+    if (holdDurationMs < 320) {
+      return {
+        snapped: false,
+        shape: null,
+        points: points.map((p) => [...p])
+      };
+    }
+    const isCurved = isClosedLoop || perimeter > chord * 1.35 && w >= 10 && h >= 10 && aspect >= 0.35 && aspect <= 2.8;
+    if (isCurved) {
+      return makeEllipse();
+    }
+    const x1 = points[0][0];
+    const y1 = points[0][1];
+    const x2 = points[points.length - 1][0];
+    const y2 = points[points.length - 1][1];
+    const p1 = points[0][2] ?? 0.5;
+    const p2 = points[points.length - 1][2] ?? p1;
+    const t0 = points[0][3] ?? 0;
+    const t1 = points[points.length - 1][3] ?? t0;
+    return {
+      snapped: true,
+      shape: { kind: "line", x1, y1, x2, y2 },
+      points: [
+        [x1, y1, p1, t0],
+        [x2, y2, p2, t1]
+      ]
+    };
+  }
+  function distToSegmentSquared(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const l2 = dx * dx + dy * dy;
+    if (l2 === 0) {
+      const ex2 = px - x1;
+      const ey2 = py - y1;
+      return ex2 * ex2 + ey2 * ey2;
+    }
+    let t2 = ((px - x1) * dx + (py - y1) * dy) / l2;
+    t2 = Math.max(0, Math.min(1, t2));
+    const cx = x1 + t2 * dx;
+    const cy = y1 + t2 * dy;
+    const ex = px - cx;
+    const ey = py - cy;
+    return ex * ex + ey * ey;
+  }
+  function strokeIntersectsEraser(stroke, eraserPoints, radius) {
+    const r2 = radius * radius;
+    const pts = stroke.points || [];
+    if (pts.length === 0) return false;
+    for (const ep of eraserPoints) {
+      const epx = ep[0];
+      const epy = ep[1];
+      if (pts.length === 1) {
+        const dx = pts[0][0] - epx;
+        const dy = pts[0][1] - epy;
+        if (dx * dx + dy * dy <= r2) return true;
+        continue;
+      }
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d2 = distToSegmentSquared(epx, epy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+        if (d2 <= r2) return true;
+      }
+    }
+    return false;
+  }
+  function eraseWholeStrokes(strokes, eraserPoints, radius = 12) {
+    const list = Array.isArray(strokes) ? strokes : [];
+    const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+    const remaining = [];
+    const removedIds = [];
+    for (const stroke of list) {
+      if (strokeIntersectsEraser(stroke, eps, radius)) {
+        if (stroke.id) removedIds.push(stroke.id);
+      } else {
+        remaining.push(stroke);
+      }
+    }
+    const out = { remaining, removedIds };
+    out[Symbol.iterator] = function* () {
+      yield* remaining;
+    };
+    Object.defineProperty(out, "length", { get: () => remaining.length });
+    return out;
+  }
+  function isPointInEraser(x, y, eraserPoints, radius) {
+    const r2 = radius * radius;
+    for (const ep of eraserPoints) {
+      const dx = x - ep[0];
+      const dy = y - ep[1];
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+  function erasePartialStrokes(strokes, eraserPoints, radius = 10, docText = "", lineHeight = DEFAULT_LINE_HEIGHT, pageIndex = null) {
+    const list = Array.isArray(strokes) ? strokes : [];
+    const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+    const remaining = [];
+    const removedIds = [];
+    for (const stroke of list) {
+      const pts = stroke.points || [];
+      if (pts.length === 0) continue;
+      if (!strokeIntersectsEraser(stroke, eps, radius)) {
+        remaining.push(stroke);
+        continue;
+      }
+      if (stroke.id) {
+        removedIds.push(stroke.id);
+      }
+      const sampled = [];
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0) {
+          sampled.push(pts[0]);
+        } else {
+          const p1 = pts[i - 1];
+          const p2 = pts[i];
+          const dist2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+          const steps = Math.max(1, Math.ceil(dist2 / 3));
+          for (let s = 1; s <= steps; s++) {
+            const frac = s / steps;
+            const x = p1[0] + (p2[0] - p1[0]) * frac;
+            const y = p1[1] + (p2[1] - p1[1]) * frac;
+            const p = (p1[2] ?? 0.5) + ((p2[2] ?? 0.5) - (p1[2] ?? 0.5)) * frac;
+            const t2 = (p1[3] ?? 0) + ((p2[3] ?? 0) - (p1[3] ?? 0)) * frac;
+            sampled.push([x, y, p, t2]);
+          }
+        }
+      }
+      const runs = [];
+      let currentRun = [];
+      for (const pt of sampled) {
+        if (!isPointInEraser(pt[0], pt[1], eps, radius)) {
+          currentRun.push(pt);
+        } else {
+          if (currentRun.length > 0) {
+            runs.push(currentRun);
+            currentRun = [];
+          }
+        }
+      }
+      if (currentRun.length > 0) {
+        runs.push(currentRun);
+      }
+      let subIndex = 0;
+      for (const run of runs) {
+        if (run.length === 0) continue;
+        subIndex++;
+        const subStroke = {
+          ...stroke,
+          id: `${stroke.id}-part-${subIndex}`,
+          points: run,
+          shape: null,
+          at: stroke.at ?? Date.now()
+        };
+        if (docText) {
+          anchorStrokeToDoc(subStroke, docText, lineHeight, pageIndex ?? stroke.anchor?.pageIndex);
+        } else if (stroke.anchor) {
+          const subMinX = Math.min(...run.map((p) => p[0]));
+          const subMinY = Math.min(...run.map((p) => p[1]));
+          const lineTopY = (stroke.anchor.offsetInPage ?? 0) * lineHeight;
+          subStroke.anchor = {
+            ...stroke.anchor,
+            relX: subMinX,
+            relY: subMinY - lineTopY
+          };
+        }
+        remaining.push(subStroke);
+      }
+    }
+    const out = { remaining, removedIds };
+    out[Symbol.iterator] = function* () {
+      yield* remaining;
+    };
+    Object.defineProperty(out, "length", { get: () => remaining.length });
+    return out;
+  }
+  function getToolDefaultWidth(tool) {
+    switch (tool) {
+      case "highlighter":
+        return 18;
+      case "underline":
+        return 3;
+      case "circle":
+        return 2.5;
+      case "pen":
+      default:
+        return 2.5;
+    }
+  }
+  function createInkLayer(view, options = {}) {
+    const {
+      lineHeight = DEFAULT_LINE_HEIGHT,
+      initialInk = null,
+      debounceMs = DEFAULT_DEBOUNCE_MS,
+      globalObj = typeof window !== "undefined" ? window : null,
+      onInkChange = null,
+      allowMouse = true,
+      getPageIndex = null,
+      activePageIndex = 0
+    } = options;
+    let inkDoc = initialInk && typeof initialInk === "object" ? {
+      version: 1,
+      strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
+      removed: Array.isArray(initialInk.removed) ? [...initialInk.removed] : []
+    } : { version: 1, strokes: [], removed: [] };
+    let currentTool = "pen";
+    let previousDrawingTool = "pen";
+    let currentColor = INK_COLORS[0];
+    let isDrawing = false;
+    let activePoints = [];
+    let strokeStartTime = 0;
+    let debounceTimer = null;
+    const docNode = globalObj?.document || (typeof document !== "undefined" ? document : null);
+    const scrollDOM = view?.scrollDOM || (view instanceof (globalObj?.HTMLElement || Object) ? view : null);
+    let svg = null;
+    let highlightGroup = null;
+    let penGroup = null;
+    let activeGroup = null;
+    let palette = null;
+    const colorDots = [];
+    const toolDots = [];
+    function getCurrentPageIndex() {
+      if (typeof getPageIndex === "function") {
+        return getPageIndex();
+      }
+      return activePageIndex ?? 0;
+    }
+    function getDocText() {
+      if (view && view.state && view.state.doc && typeof view.state.doc.toString === "function") {
+        return view.state.doc.toString();
+      }
+      return "";
+    }
+    if (docNode && scrollDOM && typeof docNode.createElementNS === "function") {
+      svg = docNode.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "rc-ink-svg");
+      svg.style.position = "absolute";
+      svg.style.top = "0";
+      svg.style.left = "0";
+      svg.style.width = "100%";
+      svg.style.height = "100%";
+      svg.style.pointerEvents = "none";
+      svg.style.zIndex = "3";
+      highlightGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      highlightGroup.setAttribute("class", "rc-ink-highlight-group");
+      highlightGroup.style.mixBlendMode = "multiply";
+      penGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      penGroup.setAttribute("class", "rc-ink-pen-group");
+      activeGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      activeGroup.setAttribute("class", "rc-ink-active-group");
+      svg.appendChild(highlightGroup);
+      svg.appendChild(penGroup);
+      svg.appendChild(activeGroup);
+      if (typeof scrollDOM.appendChild === "function") {
+        scrollDOM.appendChild(svg);
+      }
+    }
+    if (docNode && typeof docNode.createElement === "function") {
+      palette = docNode.createElement("div");
+      palette.className = "rc-ink-palette";
+      palette.hidden = true;
+      palette.setAttribute("aria-label", "Ink palette");
+      for (const color of INK_COLORS) {
+        const dot2 = docNode.createElement("button");
+        dot2.className = `rc-ink-color-dot${color === currentColor ? " rc-active" : ""}`;
+        dot2.setAttribute("type", "button");
+        dot2.setAttribute("data-color", color);
+        dot2.setAttribute("aria-label", color);
+        dot2.style.backgroundColor = color;
+        dot2.textContent = "";
+        dot2.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          setColor(color);
+        });
+        palette.appendChild(dot2);
+        colorDots.push(dot2);
+      }
+      for (const tool of INK_TOOLS) {
+        const dot2 = docNode.createElement("button");
+        dot2.className = `rc-ink-tool-dot${tool === currentTool ? " rc-active" : ""}`;
+        dot2.setAttribute("type", "button");
+        dot2.setAttribute("data-tool", tool);
+        dot2.setAttribute("aria-label", tool);
+        dot2.textContent = "";
+        dot2.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          setTool(tool);
+        });
+        palette.appendChild(dot2);
+        toolDots.push(dot2);
+      }
+      if (scrollDOM && typeof scrollDOM.appendChild === "function") {
+        scrollDOM.appendChild(palette);
+      }
+    }
+    function updatePaletteActive() {
+      for (const dot2 of colorDots) {
+        const c = dot2.getAttribute("data-color");
+        if (c === currentColor) {
+          dot2.className = "rc-ink-color-dot rc-active";
+        } else {
+          dot2.className = "rc-ink-color-dot";
+        }
+      }
+      for (const dot2 of toolDots) {
+        const t2 = dot2.getAttribute("data-tool");
+        if (t2 === currentTool) {
+          dot2.className = "rc-ink-tool-dot rc-active";
+        } else {
+          dot2.className = "rc-ink-tool-dot";
+        }
+      }
+    }
+    function showPalette() {
+      if (palette) {
+        palette.hidden = false;
+        palette.style.display = "flex";
+      }
+    }
+    function hidePalette() {
+      if (palette) {
+        palette.hidden = true;
+      }
+    }
+    function schedulePost() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        const data2 = getInk();
+        const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ink;
+        if (handler && typeof handler.postMessage === "function") {
+          handler.postMessage(JSON.stringify(data2));
+        }
+        if (typeof onInkChange === "function") {
+          onInkChange(data2);
+        }
+      }, debounceMs);
+    }
+    function renderStrokeElement(stroke, targetGroup) {
+      if (!docNode || !targetGroup || typeof docNode.createElementNS !== "function") return;
+      const pts = stroke.points || [];
+      if (pts.length === 0) return;
+      const isHighlighter = stroke.tool === "highlighter";
+      const isOrphaned = Boolean(stroke.orphaned);
+      const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
+      if (stroke.shape?.kind === "ellipse") {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        el2.setAttribute("cx", String(stroke.shape.cx));
+        el2.setAttribute("cy", String(stroke.shape.cy));
+        el2.setAttribute("rx", String(stroke.shape.rx));
+        el2.setAttribute("ry", String(stroke.shape.ry));
+        el2.setAttribute("fill", "none");
+        el2.setAttribute("stroke", stroke.color || currentColor);
+        el2.setAttribute("stroke-width", String(strokeWidth));
+        el2.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      if (stroke.shape?.kind === "line") {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
+        el2.setAttribute("x1", String(stroke.shape.x1));
+        el2.setAttribute("y1", String(stroke.shape.y1));
+        el2.setAttribute("x2", String(stroke.shape.x2));
+        el2.setAttribute("y2", String(stroke.shape.y2));
+        el2.setAttribute("stroke", stroke.color || currentColor);
+        el2.setAttribute("stroke-width", String(strokeWidth));
+        el2.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      if (pts.length === 1) {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+        el2.setAttribute("cx", String(pts[0][0]));
+        el2.setAttribute("cy", String(pts[0][1]));
+        el2.setAttribute("r", String(strokeWidth / 2));
+        el2.setAttribute("fill", stroke.color || currentColor);
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      const path = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
+      let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+      for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i][0].toFixed(2)} ${pts[i][1].toFixed(2)}`;
+      }
+      path.setAttribute("d", d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", stroke.color || currentColor);
+      path.setAttribute("stroke-width", String(strokeWidth));
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      if (isHighlighter) path.setAttribute("opacity", "0.45");
+      else if (isOrphaned) path.setAttribute("opacity", "0.38");
+      targetGroup.appendChild(path);
+    }
+    function render() {
+      if (!docNode) return;
+      if (highlightGroup) highlightGroup.innerHTML = "";
+      if (penGroup) penGroup.innerHTML = "";
+      if (activeGroup) activeGroup.innerHTML = "";
+      const activePage = getCurrentPageIndex();
+      for (const stroke of inkDoc.strokes) {
+        if (stroke.anchor && typeof stroke.anchor.pageIndex === "number" && stroke.anchor.pageIndex !== activePage) {
+          continue;
+        }
+        const targetGroup = stroke.tool === "highlighter" ? highlightGroup : penGroup;
+        renderStrokeElement(stroke, targetGroup);
+      }
+    }
+    function renderActiveStroke() {
+      if (!docNode || !activeGroup) return;
+      activeGroup.innerHTML = "";
+      if (activePoints.length === 0) return;
+      const stroke = {
+        tool: currentTool,
+        color: currentColor,
+        width: getToolDefaultWidth(currentTool),
+        points: activePoints
+      };
+      renderStrokeElement(stroke, activeGroup);
+    }
+    function relayout() {
+      const docText = getDocText();
+      for (const stroke of inkDoc.strokes) {
+        const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+        stroke.points = res.points;
+        stroke.orphaned = res.orphaned;
+        if (stroke.anchor) {
+          stroke.anchor.pageIndex = res.pageIndex;
+        }
+        if (res.shape) {
+          stroke.shape = res.shape;
+        }
+      }
+      render();
+    }
+    function getInk() {
+      return {
+        version: 1,
+        strokes: inkDoc.strokes.map((s) => ({
+          ...s,
+          points: s.points ? s.points.map((p) => [...p]) : [],
+          anchor: s.anchor ? { ...s.anchor } : null,
+          shape: s.shape ? { ...s.shape } : null
+        })),
+        removed: [...inkDoc.removed]
+      };
+    }
+    function setInk(data2) {
+      inkDoc = data2 && typeof data2 === "object" ? {
+        version: 1,
+        strokes: Array.isArray(data2.strokes) ? [...data2.strokes] : [],
+        removed: Array.isArray(data2.removed) ? [...data2.removed] : []
+      } : { version: 1, strokes: [], removed: [] };
+      render();
+    }
+    function addStroke(stroke) {
+      if (!stroke || typeof stroke !== "object") return;
+      if (!stroke.id) {
+        stroke.id = `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      }
+      if (!stroke.at) {
+        stroke.at = Date.now();
+      }
+      if (!stroke.tool) {
+        stroke.tool = currentTool;
+      }
+      if (!stroke.color) {
+        stroke.color = currentColor;
+      }
+      if (!stroke.width) {
+        stroke.width = getToolDefaultWidth(stroke.tool);
+      }
+      if (!stroke.anchor) {
+        anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      }
+      inkDoc.strokes.push(stroke);
+      render();
+      schedulePost();
+    }
+    function eraseAt(points, mode = null) {
+      const effectiveMode = mode || (currentTool === "eraser-partial" ? "partial" : "whole");
+      const docText = getDocText();
+      let res;
+      if (effectiveMode === "partial" || effectiveMode === "eraser-partial") {
+        res = erasePartialStrokes(inkDoc.strokes, points, 10, docText, lineHeight, getCurrentPageIndex());
+      } else {
+        res = eraseWholeStrokes(inkDoc.strokes, points, 12);
+      }
+      inkDoc.strokes = res.remaining;
+      if (res.removedIds && res.removedIds.length > 0) {
+        const set = /* @__PURE__ */ new Set([...inkDoc.removed, ...res.removedIds]);
+        inkDoc.removed = Array.from(set);
+      }
+      render();
+      schedulePost();
+    }
+    function setTool(tool) {
+      if (!INK_TOOLS.includes(tool)) return;
+      if (!tool.startsWith("eraser")) {
+        previousDrawingTool = tool;
+      }
+      currentTool = tool;
+      updatePaletteActive();
+    }
+    function getTool() {
+      return currentTool;
+    }
+    function setColor(color) {
+      if (INK_COLORS.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
+        currentColor = color;
+        updatePaletteActive();
+      }
+    }
+    function getColor() {
+      return currentColor;
+    }
+    function toggleEraser() {
+      if (currentTool.startsWith("eraser")) {
+        currentTool = previousDrawingTool;
+      } else {
+        currentTool = "eraser-whole";
+      }
+      updatePaletteActive();
+      return currentTool;
+    }
+    function onPointerDown(e) {
+      if (e.pointerType === "touch") return;
+      if (!allowMouse && e.pointerType === "mouse") return;
+      isDrawing = true;
+      strokeStartTime = e.timeStamp || Date.now();
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      const scrollLeft = scrollDOM?.scrollLeft || 0;
+      const scrollTop = scrollDOM?.scrollTop || 0;
+      const x = e.clientX - rect.left + scrollLeft;
+      const y = e.clientY - rect.top + scrollTop;
+      const p = typeof e.pressure === "number" && e.pressure > 0 ? e.pressure : 0.5;
+      const t2 = strokeStartTime;
+      activePoints = [[x, y, p, t2]];
+      if (currentTool.startsWith("eraser")) {
+        eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
+      } else {
+        renderActiveStroke();
+      }
+      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+        e.preventDefault();
+      }
+    }
+    function onPointerMove(e) {
+      if (!isDrawing) return;
+      if (e.pointerType === "touch") return;
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      const scrollLeft = scrollDOM?.scrollLeft || 0;
+      const scrollTop = scrollDOM?.scrollTop || 0;
+      const rawEvents = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
+      const events = Array.isArray(rawEvents) && rawEvents.length > 0 ? rawEvents : [e];
+      for (const ev of events) {
+        const x = ev.clientX - rect.left + scrollLeft;
+        const y = ev.clientY - rect.top + scrollTop;
+        const p = typeof ev.pressure === "number" && ev.pressure > 0 ? ev.pressure : 0.5;
+        const t2 = ev.timeStamp || Date.now();
+        activePoints.push([x, y, p, t2]);
+        if (currentTool.startsWith("eraser")) {
+          eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
+        }
+      }
+      if (!currentTool.startsWith("eraser")) {
+        renderActiveStroke();
+      }
+      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+        e.preventDefault();
+      }
+    }
+    function onPointerUp(e) {
+      if (!isDrawing) return;
+      isDrawing = false;
+      if (e.pointerType === "touch") return;
+      if (currentTool.startsWith("eraser")) {
+        activePoints = [];
+        if (activeGroup) activeGroup.innerHTML = "";
+        return;
+      }
+      if (activePoints.length === 0) return;
+      const holdDurationMs = (e.timeStamp || Date.now()) - strokeStartTime;
+      let finalPoints = activePoints;
+      let finalShape = null;
+      if (currentTool === "underline") {
+        finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+        finalShape = null;
+      } else if (currentTool === "circle") {
+        const res = detectAndSnapShape(activePoints, { forceCircle: true });
+        finalPoints = res.points;
+        finalShape = res.shape;
+      } else {
+        const res = detectAndSnapShape(activePoints, { holdDurationMs, forceCircle: false });
+        finalPoints = res.points;
+        finalShape = res.shape;
+      }
+      const stroke = {
+        id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tool: currentTool,
+        color: currentColor,
+        width: getToolDefaultWidth(currentTool),
+        points: finalPoints,
+        shape: finalShape,
+        device: e.pointerType || "pen",
+        at: Date.now()
+      };
+      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      inkDoc.strokes.push(stroke);
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = "";
+      render();
+      schedulePost();
+    }
+    function onPointerCancel() {
+      isDrawing = false;
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = "";
+    }
+    function onPointerDownCapture(e) {
+      if (e.pointerType === "pen") {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        onPointerDown(e);
+      }
+    }
+    function onPointerEnterCapture(e) {
+      if (e.pointerType === "pen" && e.buttons > 0) {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+        if (typeof e.preventDefault === "function") e.preventDefault();
+      }
+    }
+    if (scrollDOM && typeof scrollDOM.addEventListener === "function") {
+      scrollDOM.addEventListener("pointerdown", onPointerDownCapture, true);
+      scrollDOM.addEventListener("pointerenter", onPointerEnterCapture, true);
+      scrollDOM.addEventListener("pointerdown", onPointerDown);
+      scrollDOM.addEventListener("pointermove", onPointerMove);
+      scrollDOM.addEventListener("pointerup", onPointerUp);
+      scrollDOM.addEventListener("pointercancel", onPointerCancel);
+    }
+    function destroy() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      if (scrollDOM && typeof scrollDOM.removeEventListener === "function") {
+        scrollDOM.removeEventListener("pointerdown", onPointerDownCapture, true);
+        scrollDOM.removeEventListener("pointerenter", onPointerEnterCapture, true);
+        scrollDOM.removeEventListener("pointerdown", onPointerDown);
+        scrollDOM.removeEventListener("pointermove", onPointerMove);
+        scrollDOM.removeEventListener("pointerup", onPointerUp);
+        scrollDOM.removeEventListener("pointercancel", onPointerCancel);
+      }
+      if (svg && svg.parentNode && typeof svg.parentNode.removeChild === "function") {
+        svg.parentNode.removeChild(svg);
+      }
+      if (palette && palette.parentNode && typeof palette.parentNode.removeChild === "function") {
+        palette.parentNode.removeChild(palette);
+      }
+    }
+    render();
+    return {
+      getInk,
+      setInk,
+      addStroke,
+      eraseAt,
+      setTool,
+      getTool,
+      setColor,
+      getColor,
+      toggleEraser,
+      relayout,
+      destroy,
+      svg,
+      palette,
+      showPalette,
+      hidePalette
+    };
+  }
+
+  // src/audio.js
+  function formatTimestamp(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const totalSecs = Math.floor(s);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor(totalSecs % 3600 / 60);
+    const secs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function normalizeCues(cues) {
+    if (!Array.isArray(cues)) return [];
+    return cues.map((c, i) => ({
+      id: c.id ? String(c.id) : `cue-${i}-${Math.round((Number(c.start) || 0) * 1e3)}`,
+      start: Math.max(0, Number(c.start) || 0),
+      end: Math.max(0, Number(c.end) || 0),
+      text: String(c.text ?? "").trim(),
+      speaker: String(c.speaker ?? "").trim(),
+      bookmarked: Boolean(c.bookmarked),
+      annotation: String(c.annotation ?? "").trim(),
+      inkStrokes: Array.isArray(c.inkStrokes) ? c.inkStrokes : []
+    }));
+  }
+  function activeCueIndexAt(cues, timeSec) {
+    if (!Array.isArray(cues) || cues.length === 0) return -1;
+    const t2 = Number(timeSec) || 0;
+    if (t2 < cues[0].start) return -1;
+    for (let i = 0; i < cues.length; i++) {
+      const cue = cues[i];
+      if (t2 >= cue.start && t2 <= cue.end) {
+        return i;
+      }
+    }
+    let latestIdx = -1;
+    for (let i = 0; i < cues.length; i++) {
+      if (cues[i].start <= t2) {
+        latestIdx = i;
+      } else {
+        break;
+      }
+    }
+    return latestIdx;
+  }
+  function bookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    cue.bookmarked = true;
+    if (!Array.isArray(state.bookmarks)) {
+      state.bookmarks = [];
+    }
+    const noteStr = String(note ?? "").trim();
+    let bookmark = state.bookmarks.find((b) => b.cueId === cue.id);
+    if (bookmark) {
+      bookmark.note = noteStr;
+      bookmark.time = cue.start;
+      bookmark.text = cue.text;
+    } else {
+      bookmark = {
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr,
+        createdAt: Date.now()
+      };
+      state.bookmarks.push(bookmark);
+    }
+    if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+      globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "bookmark",
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr
+      });
+    }
+    return bookmark;
+  }
+  function toggleBookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    if (cue.bookmarked) {
+      cue.bookmarked = false;
+      if (Array.isArray(state.bookmarks)) {
+        state.bookmarks = state.bookmarks.filter((b) => b.cueId !== cue.id);
+      }
+      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+      }
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({
+          action: "unbookmark",
+          cueId: cue.id,
+          time: cue.start
+        });
+      }
+      return null;
+    }
+    return bookmarkCue(state, cueIndex, note, { globalObj });
+  }
+  function annotateCue(state, cueIndex, annotationText, { onInsertToPage = null, globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    const textStr = String(annotationText ?? "").trim();
+    cue.annotation = textStr;
+    const timestamp = formatTimestamp(cue.start);
+    const reference = textStr.length > 0 ? `[@${timestamp}] ${cue.text} \u2014 ${textStr}` : `[@${timestamp}] ${cue.text}`;
+    if (typeof onInsertToPage === "function") {
+      onInsertToPage(reference);
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "annotate",
+        cueId: cue.id,
+        time: cue.start,
+        annotation: textStr
+      });
+    }
+    return { cue, reference };
+  }
+  function createMockElement(tag) {
+    const listeners = {};
+    const attributes = {};
+    const classListSet = /* @__PURE__ */ new Set();
+    const el2 = {
+      tagName: tag.toUpperCase(),
+      hidden: false,
+      value: "",
+      textContent: "",
+      innerHTML: "",
+      children: [],
+      style: {},
+      classList: {
+        add(...classes) {
+          for (const c of classes) if (c) classListSet.add(c);
+        },
+        remove(...classes) {
+          for (const c of classes) classListSet.delete(c);
+        },
+        contains(c) {
+          return classListSet.has(c);
+        },
+        toggle(c, force) {
+          if (force === true) classListSet.add(c);
+          else if (force === false) classListSet.delete(c);
+          else if (classListSet.has(c)) classListSet.delete(c);
+          else classListSet.add(c);
+          return classListSet.has(c);
+        }
+      },
+      setAttribute(k, v) {
+        attributes[k] = String(v);
+        if (k === "hidden") el2.hidden = true;
+        if (k === "class") {
+          classListSet.clear();
+          String(v).split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      },
+      getAttribute(k) {
+        return attributes[k] ?? null;
+      },
+      removeAttribute(k) {
+        delete attributes[k];
+        if (k === "hidden") el2.hidden = false;
+      },
+      hasAttribute(k) {
+        return k in attributes;
+      },
+      appendChild(child) {
+        el2.children.push(child);
+        child.parentElement = el2;
+        return child;
+      },
+      removeChild(child) {
+        const idx = el2.children.indexOf(child);
+        if (idx !== -1) {
+          el2.children.splice(idx, 1);
+          child.parentElement = null;
+        }
+        return child;
+      },
+      replaceChildren(...newChildren) {
+        el2.children = [];
+        for (const c of newChildren) {
+          el2.appendChild(c);
+        }
+      },
+      addEventListener(type, fn) {
+        if (!listeners[type]) listeners[type] = [];
+        listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatchEvent(event) {
+        const type = event?.type || "click";
+        const fns = [...listeners[type] || []];
+        for (const fn of fns) {
+          fn(event);
+        }
+      },
+      scrollIntoView() {
+      },
+      focus() {
+      }
+    };
+    Object.defineProperty(el2, "className", {
+      get() {
+        return Array.from(classListSet).join(" ");
+      },
+      set(v) {
+        classListSet.clear();
+        if (typeof v === "string") {
+          v.split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      }
+    });
+    return el2;
+  }
+  function makeDomElement(doc2, tag, props = {}, attrs = {}) {
+    const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
+    let el2;
+    if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
+      el2 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
+    } else if (doc2 && typeof doc2.createElement === "function") {
+      el2 = doc2.createElement(tag);
+    } else {
+      el2 = createMockElement(tag);
+    }
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "style" && typeof v === "object") {
+        if (el2.style) Object.assign(el2.style, v);
+      } else {
+        el2[k] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== void 0 && v !== null) {
+        if (typeof el2.setAttribute === "function") {
+          el2.setAttribute(k, String(v));
+        } else {
+          el2[k] = String(v);
+        }
+      }
+    }
+    return el2;
+  }
+  function strokeToPathData(stroke) {
+    if (stroke?.d) return stroke.d;
+    const pts = stroke?.points || [];
+    if (pts.length === 0) return "";
+    const getX = (p) => Array.isArray(p) ? p[0] : p?.x ?? 0;
+    const getY = (p) => Array.isArray(p) ? p[1] : p?.y ?? 0;
+    let d = `M ${getX(pts[0])} ${getY(pts[0])}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${getX(pts[i])} ${getY(pts[i])}`;
+    }
+    return d;
+  }
+  function renderCueInkStroke(doc2, stroke) {
+    const d = strokeToPathData(stroke);
+    if (!d) return null;
+    const path = makeDomElement(doc2, "path", {}, {
+      d,
+      fill: "none",
+      stroke: stroke.color || "#38bdf8",
+      "stroke-width": String(stroke.width || 2),
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    });
+    return path;
+  }
+  function createTranscriptPane(container, options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const doc2 = options.doc ?? container?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const onSeek = options.onSeek ?? null;
+    const onClose = options.onClose ?? null;
+    const sidecar = options.sidecar ?? null;
+    const pane = makeDomElement(doc2, "aside", { className: "rc-transcript-pane", hidden: true }, {
+      "aria-label": "Live audio transcript",
+      role: "complementary"
+    });
+    const header = makeDomElement(doc2, "header", { className: "rc-transcript-header" });
+    const titleEl = makeDomElement(doc2, "h3", {
+      className: "rc-transcript-title",
+      textContent: "Live Transcript"
+    });
+    const closeControl = makeDomElement(doc2, "span", {
+      className: "rc-transcript-close",
+      textContent: ""
+    }, {
+      "aria-label": "Close transcript",
+      role: "button",
+      tabindex: "0"
+    });
+    header.appendChild(titleEl);
+    header.appendChild(closeControl);
+    pane.appendChild(header);
+    const cuesContainer = makeDomElement(doc2, "div", { className: "rc-transcript-cues" }, {
+      role: "feed",
+      "aria-label": "Transcript cues"
+    });
+    pane.appendChild(cuesContainer);
+    let activeIndex = -1;
+    let currentCues = [];
+    let cueElements = [];
+    function handleSeek(timeSec) {
+      if (typeof onSeek === "function") {
+        onSeek(timeSec);
+      }
+      if (sidecar && typeof sidecar.seek === "function") {
+        sidecar.seek(timeSec);
+      } else if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time: timeSec });
+      }
+    }
+    function handleBookmarkToggle(cueIndex, note = "") {
+      if (sidecar && typeof sidecar.toggleBookmarkCue === "function") {
+        sidecar.toggleBookmarkCue(cueIndex, note);
+      } else if (sidecar && typeof sidecar.bookmarkCue === "function") {
+        const st = sidecar.getState();
+        toggleBookmarkCue(st, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      } else if (options.state) {
+        toggleBookmarkCue(options.state, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function handleAnnotate(cueIndex, text, insert2 = false) {
+      const insertFn = insert2 ? onInsertToPage : null;
+      if (sidecar && typeof sidecar.annotateCue === "function") {
+        sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn });
+      } else if (options.state) {
+        annotateCue(options.state, cueIndex, text, { onInsertToPage: insertFn, globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function buildCueElement(cue, index) {
+      const cueEl = makeDomElement(doc2, "article", {
+        className: `rc-transcript-cue${cue.bookmarked ? " is-bookmarked" : ""}`
+      }, {
+        "data-cue-index": index,
+        "data-cue-id": cue.id,
+        tabindex: "0"
+      });
+      const timeEl = makeDomElement(doc2, "time", {
+        className: "rc-transcript-cue-time",
+        textContent: formatTimestamp(cue.start)
+      }, {
+        "data-start": cue.start
+      });
+      cueEl.appendChild(timeEl);
+      if (cue.speaker) {
+        const speakerEl = makeDomElement(doc2, "span", {
+          className: "rc-transcript-cue-speaker",
+          textContent: `${cue.speaker}: `
+        });
+        cueEl.appendChild(speakerEl);
+      }
+      const textEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-text",
+        textContent: cue.text
+      });
+      cueEl.appendChild(textEl);
+      const dotEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-dot",
+        textContent: cue.bookmarked ? "\u25CF" : ""
+      }, {
+        "aria-hidden": "true"
+      });
+      cueEl.appendChild(dotEl);
+      const noteEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-note",
+        textContent: cue.annotation || "",
+        hidden: !cue.annotation
+      }, {
+        ...cue.annotation ? {} : { hidden: "true" }
+      });
+      cueEl.appendChild(noteEl);
+      const inkSvg = makeDomElement(doc2, "svg", {
+        className: "rc-cue-ink-svg"
+      });
+      if (Array.isArray(cue.inkStrokes)) {
+        for (const stroke of cue.inkStrokes) {
+          const path = renderCueInkStroke(doc2, stroke);
+          if (path) inkSvg.appendChild(path);
+        }
+      }
+      cueEl.appendChild(inkSvg);
+      const annotInput = makeDomElement(doc2, "input", {
+        className: "rc-transcript-annot-input",
+        type: "text",
+        value: cue.annotation || "",
+        hidden: true
+      }, {
+        hidden: "true",
+        "aria-label": "Cue annotation"
+      });
+      cueEl.appendChild(annotInput);
+      function revealInput() {
+        annotInput.hidden = false;
+        annotInput.removeAttribute("hidden");
+        annotInput.focus();
+      }
+      function commitAnnotation() {
+        const val = annotInput.value.trim();
+        annotInput.hidden = true;
+        annotInput.setAttribute("hidden", "true");
+        handleAnnotate(index, val, true);
+        noteEl.textContent = val;
+        if (val) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+      let activePenPoints = null;
+      let activePathEl = null;
+      cueEl.addEventListener("pointerdown", (e) => {
+        if (e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints = [[x, y, p, Date.now()]];
+          activePathEl = makeDomElement(doc2, "path", {}, {
+            d: `M ${x} ${y}`,
+            fill: "none",
+            stroke: "#38bdf8",
+            "stroke-width": "2",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round"
+          });
+          inkSvg.appendChild(activePathEl);
+          return;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("pointermove", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints.push([x, y, p, Date.now()]);
+          let d = `M ${activePenPoints[0][0]} ${activePenPoints[0][1]}`;
+          for (let i = 1; i < activePenPoints.length; i++) {
+            d += ` L ${activePenPoints[i][0]} ${activePenPoints[i][1]}`;
+          }
+          activePathEl?.setAttribute("d", d);
+          return;
+        }
+      });
+      cueEl.addEventListener("pointerup", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const stroke = {
+            id: `cue-ink-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            points: activePenPoints,
+            tool: "pen",
+            color: "#38bdf8",
+            width: 2,
+            device: "pen",
+            at: Date.now()
+          };
+          if (!Array.isArray(cue.inkStrokes)) {
+            cue.inkStrokes = [];
+          }
+          cue.inkStrokes.push(stroke);
+          activePenPoints = null;
+          activePathEl = null;
+          if (!cue.annotation) {
+            cue.annotation = "[ink annotation]";
+            noteEl.textContent = cue.annotation;
+            noteEl.hidden = false;
+            noteEl.removeAttribute("hidden");
+          }
+          handleAnnotate(index, cue.annotation, false);
+          return;
+        }
+        clearDwellTimer();
+      });
+      cueEl.addEventListener("pointercancel", () => {
+        activePenPoints = null;
+        activePathEl = null;
+        clearDwellTimer();
+      });
+      let dwellTimer = null;
+      let didDwell = false;
+      function startDwellTimer() {
+        didDwell = false;
+        if (dwellTimer !== null) clearTimeout(dwellTimer);
+        dwellTimer = setTimeout(() => {
+          didDwell = true;
+          revealInput();
+        }, 280);
+      }
+      function clearDwellTimer() {
+        if (dwellTimer !== null) {
+          clearTimeout(dwellTimer);
+          dwellTimer = null;
+        }
+      }
+      cueEl.addEventListener("contextmenu", (e) => {
+        e?.preventDefault?.();
+        revealInput();
+      });
+      cueEl.addEventListener("keydown", (e) => {
+        if (e?.key === "Enter") {
+          if (e.target === annotInput) {
+            e.preventDefault?.();
+            commitAnnotation();
+          } else {
+            e.preventDefault?.();
+            revealInput();
+          }
+        }
+      });
+      annotInput.addEventListener("blur", () => {
+        commitAnnotation();
+      });
+      cueEl.addEventListener("click", (e) => {
+        if (e?.target === annotInput || didDwell) {
+          didDwell = false;
+          return;
+        }
+        handleSeek(cue.start);
+      });
+      cueEl.addEventListener("dblclick", () => {
+        handleBookmarkToggle(index);
+      });
+      let touchStartX = null;
+      let touchStartY = null;
+      let lastTap = 0;
+      cueEl.addEventListener("touchstart", (e) => {
+        const t2 = e.touches && e.touches[0];
+        if (t2) {
+          touchStartX = t2.clientX;
+          touchStartY = t2.clientY;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("touchend", (e) => {
+        clearDwellTimer();
+        const now = Date.now();
+        if (now - lastTap < 350) {
+          handleBookmarkToggle(index);
+          lastTap = 0;
+          return;
+        }
+        lastTap = now;
+        if (touchStartX !== null) {
+          const t2 = e.changedTouches && e.changedTouches[0];
+          if (t2) {
+            const dx = t2.clientX - touchStartX;
+            const dy = t2.clientY - (touchStartY ?? t2.clientY);
+            if (dx >= 36 && Math.abs(dy) < 30) {
+              handleBookmarkToggle(index);
+            }
+          }
+        }
+        touchStartX = null;
+        touchStartY = null;
+      });
+      cueEl.addEventListener("touchcancel", () => {
+        clearDwellTimer();
+        touchStartX = null;
+        touchStartY = null;
+      });
+      return cueEl;
+    }
+    function updateCue(index) {
+      if (index < 0 || index >= currentCues.length) return;
+      const cue = currentCues[index];
+      const el2 = cueElements[index];
+      if (!el2) return;
+      if (cue.bookmarked) {
+        el2.classList.add("is-bookmarked");
+      } else {
+        el2.classList.remove("is-bookmarked");
+      }
+      const dotEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-dot") : null);
+      if (dotEl) {
+        dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
+      }
+      const noteEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-note") : null);
+      if (noteEl) {
+        noteEl.textContent = cue.annotation || "";
+        if (cue.annotation) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+    }
+    function highlightCue(index) {
+      if (index === activeIndex) return;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.remove("rc-transcript-cue-active");
+        cueElements[activeIndex].removeAttribute("aria-current");
+      }
+      activeIndex = index;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.add("rc-transcript-cue-active");
+        cueElements[activeIndex].setAttribute("aria-current", "true");
+        if (typeof cueElements[activeIndex].scrollIntoView === "function") {
+          cueElements[activeIndex].scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      }
+    }
+    function update(state) {
+      if (!state) return;
+      if (state.title && titleEl) {
+        titleEl.textContent = state.title;
+      }
+      currentCues = Array.isArray(state.cues) ? state.cues : [];
+      if (state.playing && currentCues.length > 0) {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      } else if (currentCues.length === 0) {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      }
+      if (typeof cuesContainer.replaceChildren === "function") {
+        cueElements = currentCues.map((c, i) => buildCueElement(c, i));
+        cuesContainer.replaceChildren(...cueElements);
+      } else {
+        cuesContainer.children = [];
+        cueElements = currentCues.map((c, i) => {
+          const el2 = buildCueElement(c, i);
+          cuesContainer.appendChild(el2);
+          return el2;
+        });
+      }
+      const active = activeCueIndexAt(currentCues, state.currentTime || 0);
+      highlightCue(active);
+    }
+    closeControl.addEventListener("click", () => {
+      pane.hidden = true;
+      pane.setAttribute("hidden", "true");
+      if (typeof onClose === "function") {
+        onClose();
+      }
+    });
+    if (container && typeof container.appendChild === "function") {
+      container.appendChild(pane);
+    }
+    return {
+      element: pane,
+      update,
+      updateCue,
+      highlightCue,
+      show() {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      },
+      hide() {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      },
+      destroy() {
+        if (pane.parentElement && typeof pane.parentElement.removeChild === "function") {
+          pane.parentElement.removeChild(pane);
+        }
+      }
+    };
+  }
+  function createAudioSidecar(options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const state = {
+      playing: false,
+      currentTime: 0,
+      title: String(options.title || ""),
+      sourceKey: String(options.sourceKey || ""),
+      cues: normalizeCues(options.cues),
+      bookmarks: Array.isArray(options.bookmarks) ? [...options.bookmarks] : []
+    };
+    let pane = null;
+    function setAudioTranscript(data2 = {}) {
+      if (typeof data2.playing === "boolean") {
+        state.playing = data2.playing;
+      }
+      if (typeof data2.currentTime === "number") {
+        state.currentTime = data2.currentTime;
+      }
+      if (typeof data2.title === "string") {
+        state.title = data2.title;
+      }
+      if (typeof data2.sourceKey === "string") {
+        state.sourceKey = data2.sourceKey;
+      }
+      if (Array.isArray(data2.cues)) {
+        state.cues = normalizeCues(data2.cues);
+      }
+      if (Array.isArray(data2.bookmarks)) {
+        state.bookmarks = [...data2.bookmarks];
+      }
+      if (pane) {
+        pane.update(state);
+      }
+    }
+    function updateTime(timeSec) {
+      state.currentTime = Number(timeSec) || 0;
+      const activeIdx = activeCueIndexAt(state.cues, state.currentTime);
+      if (pane) {
+        pane.highlightCue(activeIdx);
+      }
+      return activeIdx;
+    }
+    function bookmark(cueIndex, note = "") {
+      const res = bookmarkCue(state, cueIndex, note, { globalObj });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function toggleBookmark(cueIndex, note = "") {
+      const res = toggleBookmarkCue(state, cueIndex, note, { globalObj });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function annotate(cueIndex, annotationText, opts = {}) {
+      const insertFn = opts.onInsertToPage !== void 0 ? opts.onInsertToPage : onInsertToPage;
+      const res = annotateCue(state, cueIndex, annotationText, {
+        onInsertToPage: insertFn,
+        globalObj
+      });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function seek(time) {
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time });
+      }
+      updateTime(time);
+    }
+    const sidecarApi = {
+      getState: () => state,
+      setAudioTranscript,
+      updateTime,
+      bookmarkCue: bookmark,
+      toggleBookmarkCue: toggleBookmark,
+      annotateCue: annotate,
+      seek,
+      activeCueIndexAt: (t2) => activeCueIndexAt(state.cues, t2 !== void 0 ? t2 : state.currentTime),
+      getActiveCueIndex: () => activeCueIndexAt(state.cues, state.currentTime),
+      get pane() {
+        return pane;
+      },
+      createTranscriptPane(container) {
+        pane = createTranscriptPane(container, {
+          sidecar: sidecarApi,
+          globalObj,
+          onInsertToPage
+        });
+        pane.update(state);
+        return pane;
+      }
+    };
+    if (options.container) {
+      sidecarApi.createTranscriptPane(options.container);
+    }
+    return sidecarApi;
+  }
+  function extractDocumentSections(docText, pageIndex = null) {
+    const source = typeof docText === "string" ? docText : "";
+    if (!source.trim()) return [];
+    if (pageIndex !== null) {
+      const pages = inspectDraftpadPages(source);
+      const targetPage = pages.find((p) => p.index === pageIndex);
+      if (!targetPage) return [];
+      return extractSectionsFromText(targetPage.rawContent, targetPage.index);
+    }
+    if (source.includes(PAGE_MARKER)) {
+      const pages = inspectDraftpadPages(source);
+      const allSections = [];
+      for (const page of pages) {
+        const pageSections = extractSectionsFromText(page.rawContent, page.index);
+        allSections.push(...pageSections);
+      }
+      return allSections;
+    }
+    return extractSectionsFromText(source, 0);
+  }
+  function extractSectionsFromText(rawText, pageIndex) {
+    const lines = rawText.split("\n");
+    const headings = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
+      const parsed = parseHeadingLine(line);
+      if (parsed) {
+        headings.push({
+          lineIndex: i,
+          ...parsed
+        });
+      }
+    }
+    if (headings.length > 0) {
+      const sections2 = [];
+      if (headings[0].lineIndex > 0) {
+        const preambleLines = lines.slice(0, headings[0].lineIndex).filter((l) => !isFullDateLine(l.trim()));
+        const preambleText = preambleLines.join("\n").trim();
+        if (preambleText.length > 0) {
+          sections2.push({
+            id: `sec-${pageIndex}-preamble`,
+            title: "Introduction",
+            level: 1,
+            kind: "preamble",
+            text: preambleText,
+            pageIndex
+          });
+        }
+      }
+      for (let k = 0; k < headings.length; k++) {
+        const h = headings[k];
+        const nextLineIdx = k + 1 < headings.length ? headings[k + 1].lineIndex : lines.length;
+        const bodyLines = lines.slice(h.lineIndex + 1, nextLineIdx);
+        const sectionText = bodyLines.join("\n").trim();
+        sections2.push({
+          id: `sec-${pageIndex}-${k}`,
+          title: h.title,
+          level: h.level,
+          kind: h.kind,
+          marker: h.marker,
+          text: sectionText,
+          pageIndex
+        });
+      }
+      return sections2;
+    }
+    const paragraphs = rawText.split(/\n\s*\n+/).map((p) => p.trim()).filter((p) => p.length > 0 && !isFullDateLine(p));
+    const sections = [];
+    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+      const p = paragraphs[pIdx];
+      const firstSentenceMatch = p.match(/^([^.!?…\n]+[.!?…])/);
+      const firstSentence = firstSentenceMatch ? firstSentenceMatch[1].trim() : p.slice(0, 50).trim();
+      const title = firstSentence.length > 60 ? `${firstSentence.slice(0, 57)}\u2026` : firstSentence;
+      sections.push({
+        id: `sec-${pageIndex}-p${pIdx}`,
+        title,
+        level: 1,
+        kind: "paragraph",
+        text: p,
+        pageIndex
+      });
+    }
+    return sections;
+  }
+  var LEGAL_RULE_MARKERS = [
+    // English holding, obligation, conclusion
+    /\bheld\b/i,
+    /\bhold\b/i,
+    /\bholds\b/i,
+    /\bholding\b/i,
+    /\brule\b/i,
+    /\brules\b/i,
+    /\bmust\b/i,
+    /\bshall\b/i,
+    /\brequired\b/i,
+    /\bprohibited\b/i,
+    /\bbecause\b/i,
+    /\btherefore\b/i,
+    /\bthus\b/i,
+    /\bconcludes\b/i,
+    /\bconcluded\b/i,
+    /\bconclusion\b/i,
+    /\bfinding\b/i,
+    /\bfinds\b/i,
+    /\bfound\b/i,
+    /\bliable\b/i,
+    /\bliability\b/i,
+    /\baffirmed\b/i,
+    /\breversed\b/i,
+    /\bstatute\b/i,
+    /§/,
+    /\bsection\b/i,
+    // French obligation and judicial rulings
+    /\btenu\b/i,
+    /\bjugé\b/i,
+    /\brègle\b/i,
+    /\bdoit\b/i,
+    /\bdoivent\b/i,
+    /\bobligatoire\b/i,
+    /\bparce que\b/i,
+    /\bdonc\b/i,
+    /\ben conséquence\b/i,
+    /\bil résulte\b/i,
+    /\bconclut\b/i,
+    /\bconsidérant\b/i,
+    /\bstipule\b/i,
+    /\bresponsabilité\b/i,
+    /\bpréjudice\b/i,
+    // Vietnamese statutory obligations and judicial conclusions
+    /\bquy định\b/i,
+    /\bphải\b/i,
+    /\bbắt buộc\b/i,
+    /\bkhông được\b/i,
+    /\bkết luận\b/i,
+    /\bdo đó\b/i,
+    /\bvì vậy\b/i,
+    /\bcho nên\b/i,
+    /\bnguyên tắc\b/i,
+    /\btrách nhiệm\b/i,
+    /\btòa án\b/i,
+    /\bbồi thường\b/i,
+    /\bvi phạm\b/i,
+    /\btheo đó\b/i,
+    /\báp dụng\b/i,
+    /\bkhoản\b/i,
+    /\bđiều\b/i
+  ];
+  var STOP_WORDS = /* @__PURE__ */ new Set([
+    // EN
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "was",
+    "are",
+    "were",
+    "been",
+    "be",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "should",
+    "can",
+    "could",
+    "may",
+    "might",
+    "that",
+    "this",
+    "these",
+    "those",
+    "it",
+    "its",
+    "they",
+    "their",
+    "we",
+    "our",
+    "you",
+    "your",
+    // FR
+    "le",
+    "la",
+    "les",
+    "un",
+    "une",
+    "des",
+    "et",
+    "ou",
+    "mais",
+    "dans",
+    "en",
+    "sur",
+    "\xE0",
+    "pour",
+    "avec",
+    "par",
+    "de",
+    "du",
+    "ce",
+    "cette",
+    "ces",
+    "est",
+    "sont",
+    "\xE9t\xE9",
+    "\xEAtre",
+    "qui",
+    "que",
+    "il",
+    "ils",
+    "elle",
+    "elles",
+    // VI
+    "v\xE0",
+    "ho\u1EB7c",
+    "nh\u01B0ng",
+    "trong",
+    "tr\xEAn",
+    "t\u1EA1i",
+    "cho",
+    "c\u1EE7a",
+    "v\u1EDBi",
+    "b\u1EDFi",
+    "t\u1EEB",
+    "l\xE0",
+    "\u0111\xE3",
+    "\u0111ang",
+    "s\u1EBD",
+    "c\xF3",
+    "\u0111\u01B0\u1EE3c",
+    "b\u1ECB",
+    "n\xE0y",
+    "\u0111\xF3",
+    "nh\u1EEFng",
+    "c\xE1c",
+    "m\u1ED9t",
+    "khi",
+    "\u0111\u1EC3"
+  ]);
+  function tokenizeWords(text) {
+    if (!text) return [];
+    const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s§]/gu, " ").split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+    return words;
+  }
+  function cleanSpokenSentence(raw) {
+    let s = raw.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/!\[([^\]]*)\]\([^)]+\)/g, "").replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/^(\s*[-*•]\s+|\s*\d+\.\s+|\s*\([a-zA-Z0-9]+\)\s+)/, "").replace(/^#+\s+/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+    if (s.length > 0 && !/[.!?…]$/.test(s)) {
+      s += ".";
+    }
+    return s;
+  }
+  function summarizeSectionOffline(sectionInput, { maxSentences = 2 } = {}) {
+    let title = "";
+    let text = "";
+    if (typeof sectionInput === "string") {
+      text = sectionInput.trim();
+      const firstLineEnd = text.indexOf("\n");
+      const firstLine = firstLineEnd !== -1 ? text.slice(0, firstLineEnd).trim() : text;
+      const parsedHeading = parseHeadingLine(firstLine);
+      if (parsedHeading) {
+        title = parsedHeading.title;
+        text = firstLineEnd !== -1 ? text.slice(firstLineEnd).trim() : "";
+      }
+    } else if (sectionInput && typeof sectionInput === "object") {
+      title = String(sectionInput.title || "").trim();
+      text = String(sectionInput.text ?? sectionInput.content ?? sectionInput.body ?? "").trim();
+    }
+    if (!text && !title) {
+      return { summary: "", bullets: [] };
+    }
+    const rawParagraphs = text.split(/\n\s*\n+/);
+    const candidateSentences = [];
+    for (const para of rawParagraphs) {
+      const trimmedPara = para.trim();
+      if (!trimmedPara) continue;
+      const tokens = trimmedPara.replace(/([.!?…])\s+(?=[A-ZÀ-ỸÁ-Ỵ\d"“'§])/g, "$1\n").split("\n");
+      for (const t2 of tokens) {
+        const s = t2.trim();
+        if (s.length > 0) {
+          candidateSentences.push(s);
+        }
+      }
+    }
+    if (candidateSentences.length === 0) {
+      const single = cleanSpokenSentence(title);
+      return {
+        summary: single,
+        bullets: single ? [single.replace(/[.!?…]$/, "")] : []
+      };
+    }
+    const allWords = tokenizeWords(`${title} ${text}`);
+    const wordFreq = /* @__PURE__ */ new Map();
+    for (const w of allWords) {
+      wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
+    }
+    const titleWords = new Set(tokenizeWords(title));
+    const totalSentences = candidateSentences.length;
+    const scored = candidateSentences.map((rawSentence, index) => {
+      const cleaned = cleanSpokenSentence(rawSentence);
+      const sentWords = tokenizeWords(cleaned);
+      let tfScore = 0;
+      for (const w of sentWords) {
+        tfScore += (wordFreq.get(w) || 0) / (allWords.length || 1);
+      }
+      const normalizedTf = sentWords.length > 0 ? tfScore / Math.sqrt(sentWords.length) : 0;
+      let headingMatches = 0;
+      for (const w of sentWords) {
+        if (titleWords.has(w)) headingMatches++;
+      }
+      const headingScore = headingMatches * 1.2;
+      let markerMatches = 0;
+      for (const marker of LEGAL_RULE_MARKERS) {
+        if (marker.test(cleaned)) markerMatches++;
+      }
+      const markerScore = markerMatches * 1.8;
+      let positionScore = 0.5;
+      if (index === 0) {
+        positionScore = 1.4;
+      } else if (index === totalSentences - 1 && totalSentences > 1) {
+        positionScore = 1.2;
+      } else {
+        positionScore = 1 / (1 + 0.15 * index);
+      }
+      const totalScore = normalizedTf + headingScore + markerScore + positionScore;
+      return {
+        index,
+        raw: rawSentence,
+        cleaned,
+        score: totalScore
+      };
+    });
+    const limit = Math.max(1, Number(maxSentences) || 2);
+    const topScored = [...scored].sort((a, b) => b.score - a.score).slice(0, limit);
+    topScored.sort((a, b) => a.index - b.index);
+    const summary = topScored.map((s) => s.cleaned).join(" ");
+    const bullets = topScored.map((s) => s.cleaned.replace(/[.!?…]$/, ""));
+    return {
+      summary,
+      bullets
+    };
+  }
+  function summarizeAllSections(docText, options = {}) {
+    const sections = extractDocumentSections(docText, options.pageIndex ?? null);
+    return sections.map((sec) => {
+      const res = summarizeSectionOffline(sec, options);
+      return {
+        ...sec,
+        summary: res.summary,
+        bullets: res.bullets
+      };
+    });
+  }
+  function speakSectionSummary(section, { globalObj = typeof window !== "undefined" ? window : null, lang = "en-US" } = {}) {
+    if (!section) return null;
+    let summaryText = section.summary;
+    let titleText = section.title || "";
+    let sectionId = section.id || "sec-0";
+    if (!summaryText) {
+      const rawBody = section.text ?? section.content ?? section.body;
+      const res = summarizeSectionOffline(
+        rawBody !== void 0 ? { ...section, text: rawBody } : section
+      );
+      summaryText = res.summary;
+    }
+    if (!summaryText) return null;
+    let spokenVia = "none";
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "speakSummary",
+        sectionId,
+        title: titleText,
+        text: summaryText
+      });
+      spokenVia = "native";
+    } else if (globalObj?.speechSynthesis && typeof globalObj.SpeechSynthesisUtterance === "function") {
+      try {
+        const utterance = new globalObj.SpeechSynthesisUtterance(summaryText);
+        utterance.lang = lang;
+        const voices = globalObj.speechSynthesis.getVoices?.() || [];
+        const localVoice = voices.find((v) => v.localService === true && (!lang || v.lang?.startsWith(lang.slice(0, 2)))) || voices.find((v) => v.localService === true) || voices[0];
+        if (localVoice) {
+          utterance.voice = localVoice;
+        }
+        globalObj.speechSynthesis.speak(utterance);
+        spokenVia = "speechSynthesis";
+      } catch {
+        spokenVia = "none";
+      }
+    }
+    return {
+      sectionId,
+      title: titleText,
+      text: summaryText,
+      spokenVia
+    };
+  }
+
+  // src/wings.js
+  var PAGE_MARKER2 = "<!-- page -->";
+  var DEFAULT_WIDGETS = [
+    "preview",
+    "quicktime",
+    "findmy",
+    "mail",
+    "calendar"
+  ];
+  var EN_MONTHS = {
+    january: 0,
+    jan: 0,
+    february: 1,
+    feb: 1,
+    march: 2,
+    mar: 2,
+    april: 3,
+    apr: 3,
+    may: 4,
+    june: 5,
+    jun: 5,
+    july: 6,
+    jul: 6,
+    august: 7,
+    aug: 7,
+    september: 8,
+    sep: 8,
+    sept: 8,
+    october: 9,
+    oct: 9,
+    november: 10,
+    nov: 10,
+    december: 11,
+    dec: 11
+  };
+  var FR_MONTHS = {
+    janvier: 0,
+    "f\xE9vrier": 1,
+    fevrier: 1,
+    mars: 2,
+    avril: 3,
+    mai: 4,
+    juin: 5,
+    juillet: 6,
+    "ao\xFBt": 7,
+    aout: 7,
+    septembre: 8,
+    octobre: 9,
+    novembre: 10,
+    "d\xE9cembre": 11,
+    decembre: 11
+  };
+  function hashEventId(title, startISO) {
+    const str = `${title ?? ""}${startISO ?? ""}`;
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return "cal-" + (h >>> 0).toString(16).padStart(8, "0");
+  }
+  function formatTimestamp2(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const totalSecs = Math.floor(s);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor(totalSecs % 3600 / 60);
+    const secs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function normalizeHours(h, ampm) {
+    let hour = Number(h);
+    if (ampm) {
+      const p = ampm.toLowerCase();
+      if (p === "pm" && hour < 12) hour += 12;
+      if (p === "am" && hour === 12) hour = 0;
+    }
+    return hour;
+  }
+  function parseTimeStr(str) {
+    if (!str) return null;
+    const m = str.trim().match(/^(\d{1,2})(?:[:h](\d{2}))?\s*(am|pm|AM|PM)?$/i);
+    if (!m) return null;
+    return {
+      hour: normalizeHours(m[1], m[3]),
+      minute: m[2] ? Number(m[2]) : 0
+    };
+  }
+  function cleanTitle(str) {
+    let s = String(str ?? "").trim();
+    s = s.replace(/^[-*+]\s+(\[[ xX]\]\s+)?/, "");
+    s = s.replace(/^\d+[.)]\s+/, "");
+    s = s.replace(/^[:\-–—,\s]+/, "").replace(/[:\-–—,\s]+$/, "");
+    return s.trim();
+  }
+  function extractCalendarEvents(docText, { referenceDate = /* @__PURE__ */ new Date() } = {}) {
+    if (typeof docText !== "string" || docText.trim().length === 0) {
+      return [];
+    }
+    const ref = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+    const base2 = !Number.isNaN(ref.getTime()) ? ref : /* @__PURE__ */ new Date();
+    const refYear = base2.getFullYear();
+    const refMonth = base2.getMonth();
+    const refDay = base2.getDate();
+    const lines = docText.split(/\r?\n/);
+    const events = [];
+    const seenIds = /* @__PURE__ */ new Set();
+    let pageIndex = 0;
+    const reRelEn = /\b(today|tomorrow)\b(?:\s+(?:at\s+)?(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reRelFr = /\b(demain|aujourd\x27hui)\b(?:\s*(?:à\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|à)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reRelVi = /\b(ngày\s+mai|hôm\s+nay)\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reIso = /\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b(?:\s*(?:at|à|lúc|T|\s)\s*(\d{1,2}(?:[:h]\d{2})?(?::\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to|à|đến)\s*(\d{1,2}(?:[:h]\d{2})?(?::\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reViA = /\b(?:ngày\s+)?(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reViB = /\b(?:ngày\s+)?(\d{1,2})\s+tháng\s+(\d{1,2})(?:\s+năm\s+(\d{4}))?\b(?:\s*(?:lúc\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|đến)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reFr = /\b(?:le\s+)?(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche),?\s+)?(\d{1,2})\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+(\d{4}))?\b(?:\s*(?:à\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|à)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
+    const reEn = /\b(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun),?\s+)?(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b(?:\s*(?:at\s*|\s+)(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    const reEnDayFirst = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{4})\b(?:\s*(?:at\s*|\s+)(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const rawLine = lines[lineIdx];
+      const lineNumber = lineIdx + 1;
+      if (rawLine.includes(PAGE_MARKER2)) {
+        pageIndex++;
+        continue;
+      }
+      const trimmed = rawLine.trim();
+      if (trimmed.length === 0) continue;
+      let parsed = null;
+      let m;
+      if (m = reRelEn.exec(rawLine)) {
+        const isTomorrow = m[1].toLowerCase() === "tomorrow";
+        const d = new Date(refYear, refMonth, refDay + (isTomorrow ? 1 : 0));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
+      } else if (m = reRelFr.exec(rawLine)) {
+        const isDemain = m[1].toLowerCase() === "demain";
+        const d = new Date(refYear, refMonth, refDay + (isDemain ? 1 : 0));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
+      } else if (m = reRelVi.exec(rawLine)) {
+        const isMai = m[1].toLowerCase().includes("mai");
+        const d = new Date(refYear, refMonth, refDay + (isMai ? 1 : 0));
+        const t2 = parseTimeStr(m[2]);
+        const tEnd = parseTimeStr(m[3]);
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
+      } else if (m = reIso.exec(rawLine)) {
+        const y = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const day = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reViA.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const y = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reViB.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = Number(m[2]) - 1;
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reFr.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = FR_MONTHS[m[2].toLowerCase()];
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reEn.exec(rawLine)) {
+        const mon = EN_MONTHS[m[1].toLowerCase()];
+        const day = Number(m[2]);
+        const y = m[3] ? Number(m[3]) : refYear;
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      } else if (m = reEnDayFirst.exec(rawLine)) {
+        const day = Number(m[1]);
+        const mon = EN_MONTHS[m[2].toLowerCase()];
+        const y = Number(m[3]);
+        const t2 = parseTimeStr(m[4]);
+        const tEnd = parseTimeStr(m[5]);
+        parsed = { year: y, month: mon, day, time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      }
+      if (!parsed) continue;
+      const before = rawLine.slice(0, parsed.matchIdx);
+      const after = rawLine.slice(parsed.matchIdx + parsed.matchText.length);
+      const remainder = cleanTitle(before + " " + after);
+      const hasTime = parsed.time !== null;
+      const hasDesc = remainder.length > 0;
+      if (!hasTime && !hasDesc) {
+        continue;
+      }
+      if (parsed.relative && !hasTime) {
+        continue;
+      }
+      if (!hasTime && /:\s*$/.test(before) && after.trim() === "" && remainder.split(/\s+/).length <= 2) {
+        continue;
+      }
+      const title = hasDesc ? remainder : cleanTitle(parsed.matchText);
+      const allDay = !hasTime;
+      let startDate;
+      let endDate;
+      if (allDay) {
+        startDate = new Date(parsed.year, parsed.month, parsed.day);
+        endDate = new Date(parsed.year, parsed.month, parsed.day + 1);
+      } else {
+        startDate = new Date(parsed.year, parsed.month, parsed.day, parsed.time.hour, parsed.time.minute, 0);
+        if (parsed.endTime) {
+          endDate = new Date(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0);
+          if (endDate <= startDate) endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1e3);
+        } else {
+          endDate = new Date(startDate.getTime() + 60 * 60 * 1e3);
+        }
+      }
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const id2 = hashEventId(title, startISO);
+      if (seenIds.has(id2)) continue;
+      seenIds.add(id2);
+      events.push({
+        id: id2,
+        title,
+        startISO,
+        endISO,
+        allDay,
+        lineNumber,
+        pageIndex,
+        rawLine
+      });
+    }
+    return events;
+  }
+  function createCalendarScanner(options = {}) {
+    const syncedIds = new Set(options.syncedIds || []);
+    let latestEvents = [];
+    const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
+    function scanText(docText, scanOpts = {}) {
+      const refDate = scanOpts.referenceDate || options.referenceDate || /* @__PURE__ */ new Date();
+      latestEvents = extractCalendarEvents(docText, { referenceDate: refDate }).map((ev) => ({ ...ev, added: syncedIds.has(ev.id) }));
+      if (typeof options.onScan === "function") {
+        options.onScan(latestEvents);
+      }
+      return latestEvents;
+    }
+    function requestAdd(ev) {
+      if (!ev || syncedIds.has(ev.id)) return false;
+      if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+        globalObj.webkit.messageHandlers.calendar.postMessage({ action: "addEvents", events: [ev] });
+      }
+      return true;
+    }
+    function getEvents() {
+      return latestEvents.slice();
+    }
+    function getSyncedIds() {
+      return new Set(syncedIds);
+    }
+    function markSynced(ids) {
+      if (Array.isArray(ids) || ids instanceof Set) {
+        for (const id2 of ids) {
+          syncedIds.add(id2);
+        }
+      } else if (typeof ids === "string") {
+        syncedIds.add(ids);
+      }
+      latestEvents = latestEvents.map((ev) => ({ ...ev, added: syncedIds.has(ev.id) }));
+    }
+    return {
+      scanText,
+      requestAdd,
+      getEvents,
+      getSyncedIds,
+      markSynced
+    };
+  }
+  function createMockElement2(tag) {
+    const listeners = {};
+    const attributes = {};
+    const classListSet = /* @__PURE__ */ new Set();
+    const children = [];
+    const el2 = {
+      tagName: tag.toUpperCase(),
+      nodeName: tag.toUpperCase(),
+      hidden: false,
+      value: "",
+      textContent: "",
+      children,
+      childNodes: children,
+      firstChild: null,
+      parentElement: null,
+      parentNode: null,
+      dataset: {},
+      style: {},
+      classList: {
+        add(...classes) {
+          for (const c of classes) if (c) classListSet.add(c);
+        },
+        remove(...classes) {
+          for (const c of classes) classListSet.delete(c);
+        },
+        contains(c) {
+          return classListSet.has(c);
+        },
+        toggle(c, force) {
+          if (force === true) classListSet.add(c);
+          else if (force === false) classListSet.delete(c);
+          else if (classListSet.has(c)) classListSet.delete(c);
+          else classListSet.add(c);
+          return classListSet.has(c);
+        }
+      },
+      setAttribute(k, v) {
+        attributes[k] = String(v);
+        if (k === "hidden") el2.hidden = true;
+        if (k.startsWith("data-")) {
+          const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
+          el2.dataset[dKey] = String(v);
+        }
+        if (k === "class") {
+          classListSet.clear();
+          String(v).split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      },
+      getAttribute(k) {
+        return attributes[k] ?? null;
+      },
+      removeAttribute(k) {
+        delete attributes[k];
+        if (k === "hidden") el2.hidden = false;
+        if (k.startsWith("data-")) {
+          const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
+          delete el2.dataset[dKey];
+        }
+      },
+      hasAttribute(k) {
+        return k in attributes;
+      },
+      appendChild(child) {
+        if (child) {
+          children.push(child);
+          child.parentElement = el2;
+          child.parentNode = el2;
+          el2.firstChild = children[0] || null;
+        }
+        return child;
+      },
+      removeChild(child) {
+        const idx = children.indexOf(child);
+        if (idx !== -1) {
+          children.splice(idx, 1);
+          child.parentElement = null;
+          child.parentNode = null;
+          el2.firstChild = children[0] || null;
+        }
+        return child;
+      },
+      replaceChildren(...newChildren) {
+        while (children.length > 0) {
+          el2.removeChild(children[0]);
+        }
+        for (const c of newChildren) {
+          el2.appendChild(c);
+        }
+      },
+      addEventListener(type, fn) {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatchEvent(event) {
+        const type = event?.type || "click";
+        const fns = [...listeners[type] || []];
+        for (const fn of fns) {
+          fn(event);
+        }
+      },
+      querySelector(sel) {
+        return el2.querySelectorAll(sel)[0] || null;
+      },
+      querySelectorAll(sel) {
+        const matches = [];
+        function walk(node) {
+          for (const child of node.children || []) {
+            if (matchesSel(child, sel)) {
+              matches.push(child);
+            }
+            walk(child);
+          }
+        }
+        walk(el2);
+        return matches;
+      }
+    };
+    function matchesSel(target, sel) {
+      if (!target || !sel) return false;
+      if (sel.startsWith(".")) {
+        return target.classList?.contains(sel.slice(1));
+      }
+      if (sel.startsWith("[") && sel.endsWith("]")) {
+        const inner = sel.slice(1, -1);
+        const [k, v] = inner.split("=");
+        if (!v) return target.hasAttribute?.(k);
+        const cleanV = v.replace(/^["']|["']$/g, "");
+        return target.getAttribute?.(k) === cleanV;
+      }
+      return target.tagName === sel.toUpperCase();
+    }
+    Object.defineProperty(el2, "className", {
+      get() {
+        return Array.from(classListSet).join(" ");
+      },
+      set(v) {
+        classListSet.clear();
+        if (typeof v === "string") {
+          v.split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      }
+    });
+    return el2;
+  }
+  function makeDomElement2(doc2, tag, props = {}, attrs = {}) {
+    let el2;
+    if (doc2 && typeof doc2.createElement === "function") {
+      el2 = doc2.createElement(tag);
+    } else {
+      el2 = createMockElement2(tag);
+    }
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "style" && typeof v === "object") {
+        if (el2.style) Object.assign(el2.style, v);
+      } else {
+        el2[k] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== void 0 && v !== null) {
+        if (typeof el2.setAttribute === "function") {
+          el2.setAttribute(k, String(v));
+        } else {
+          el2[k] = String(v);
+        }
+      }
+    }
+    return el2;
+  }
+  function createDualWings(container, options = {}) {
+    const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
+    const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
+    let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["preview", "quicktime"];
+    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["calendar"];
+    const HOST_WIDGETS = /* @__PURE__ */ new Set(["iphone"]);
+    const enabledHostWidgets = /* @__PURE__ */ new Set();
+    const leftEl = makeDomElement2(doc2, "aside", {}, {
+      class: "rc-wing rc-wing-left",
+      "data-side": "left"
+    });
+    leftEl.hidden = true;
+    const rightEl = makeDomElement2(doc2, "aside", {}, {
+      class: "rc-wing rc-wing-right",
+      "data-side": "right"
+    });
+    rightEl.hidden = true;
+    if (container?.appendChild) {
+      container.appendChild(leftEl);
+      container.appendChild(rightEl);
+    }
+    function postHaptic2(kind) {
+      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: kind });
+      }
+    }
+    const widgetElements = {};
+    let previewData = { src: "", caption: "" };
+    const previewCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-preview",
+      "data-widget": "preview",
+      role: "region"
+    });
+    widgetElements.preview = previewCard;
+    function updatePreviewCard() {
+      while (previewCard.firstChild) {
+        previewCard.removeChild(previewCard.firstChild);
+      }
+      previewCard.setAttribute("data-src", previewData.src || "");
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: previewData.caption || "Exhibit Preview" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      previewCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-preview-body", "data-src": previewData.src || "" });
+      if (previewData.src) {
+        if (previewData.src.endsWith(".pdf")) {
+          const badgeDiv = makeDomElement2(doc2, "div", {}, { class: "rc-preview-pdf-badge" });
+          const badge = makeDomElement2(doc2, "span", { textContent: "PDF" }, { class: "rc-badge-text" });
+          const filename = makeDomElement2(doc2, "span", { textContent: previewData.caption || previewData.src }, { class: "rc-preview-filename" });
+          badgeDiv.appendChild(badge);
+          badgeDiv.appendChild(filename);
+          body.appendChild(badgeDiv);
+        } else {
+          const img = makeDomElement2(doc2, "img", {}, {
+            class: "rc-preview-img",
+            src: previewData.src,
+            alt: previewData.caption || "Exhibit"
+          });
+          body.appendChild(img);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Exhibit Selected" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      body.addEventListener("click", () => {
+        if (!previewData.src) return;
+        const snippet2 = previewData.src.endsWith(".pdf") ? `[${previewData.caption || "Exhibit"}](${previewData.src})
+` : `![${previewData.caption || "Exhibit"}](${previewData.src})
+`;
+        if (typeof options.onInsertToPage === "function") {
+          options.onInsertToPage(snippet2);
+        }
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({
+            action: "cite",
+            type: "preview",
+            src: previewData.src,
+            caption: previewData.caption
+          });
+        }
+      });
+      previewCard.appendChild(body);
+    }
+    updatePreviewCard();
+    function setPreviewTarget(pathOrUrl, caption = "") {
+      previewData = { src: String(pathOrUrl || ""), caption: String(caption || "") };
+      updatePreviewCard();
+    }
+    let qtData = { src: "", title: "", playbackRate: 1, loopRange: [0, 0], currentTime: 0 };
+    const qtCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-quicktime",
+      "data-widget": "quicktime",
+      role: "region"
+    });
+    widgetElements.quicktime = qtCard;
+    function updateQuickTimeCard() {
+      while (qtCard.firstChild) {
+        qtCard.removeChild(qtCard.firstChild);
+      }
+      qtCard.setAttribute("data-src", qtData.src || "");
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: qtData.title || "QuickTime Media" }, { class: "rc-widget-title" });
+      const metaSpan = makeDomElement2(doc2, "span", { textContent: `${qtData.playbackRate}x` }, { class: "rc-widget-meta" });
+      header.appendChild(titleSpan);
+      header.appendChild(metaSpan);
+      qtCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-qt-body", "data-src": qtData.src || "" });
+      if (qtData.src) {
+        const video = makeDomElement2(doc2, "video", { playbackRate: qtData.playbackRate }, {
+          class: "rc-qt-video",
+          src: qtData.src,
+          playsinline: "true"
+        });
+        video.addEventListener("timeupdate", () => {
+          qtData.currentTime = video.currentTime || 0;
+          if (qtData.loopRange[1] > qtData.loopRange[0] && qtData.currentTime >= qtData.loopRange[1]) {
+            video.currentTime = qtData.loopRange[0];
+            qtData.currentTime = qtData.loopRange[0];
+          }
+        });
+        const controls = makeDomElement2(doc2, "div", {}, { class: "rc-qt-controls" });
+        const tsSpan = makeDomElement2(doc2, "span", { textContent: `[@${formatTimestamp2(qtData.currentTime)}]` }, { class: "rc-qt-timestamp" });
+        controls.appendChild(tsSpan);
+        body.appendChild(video);
+        body.appendChild(controls);
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Media Loaded" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      body.addEventListener("click", () => {
+        if (!qtData.src) return;
+        const ts = formatTimestamp2(qtData.currentTime);
+        const snippet2 = `[@${ts}] ${qtData.title || "Media reference"}
+`;
+        if (typeof options.onInsertToPage === "function") {
+          options.onInsertToPage(snippet2);
+        }
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({
+            action: "cite",
+            type: "quicktime",
+            src: qtData.src,
+            time: qtData.currentTime,
+            title: qtData.title
+          });
+        }
+      });
+      qtCard.appendChild(body);
+    }
+    updateQuickTimeCard();
+    function setMediaSource(pathOrUrl, title = "") {
+      qtData.src = String(pathOrUrl || "");
+      qtData.title = String(title || "");
+      updateQuickTimeCard();
+    }
+    function setPlaybackRate(rate) {
+      qtData.playbackRate = Number(rate) || 1;
+      const vid = qtCard.querySelector?.("video");
+      if (vid) vid.playbackRate = qtData.playbackRate;
+      updateQuickTimeCard();
+    }
+    function setLoopRange(startSec, endSec) {
+      qtData.loopRange = [Math.max(0, Number(startSec) || 0), Math.max(0, Number(endSec) || 0)];
+    }
+    let findMyItems = [];
+    const findMyCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-findmy",
+      "data-widget": "findmy",
+      role: "region"
+    });
+    widgetElements.findmy = findMyCard;
+    function updateFindMyCard() {
+      while (findMyCard.firstChild) {
+        findMyCard.removeChild(findMyCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Find My" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      findMyCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-findmy-list" });
+      if (findMyItems.length > 0) {
+        for (const item of findMyItems) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: "rc-findmy-item",
+            "data-id": item.id,
+            role: "button",
+            tabindex: "0"
+          });
+          const nameEl = makeDomElement2(doc2, "div", { textContent: item.name }, { class: "rc-item-name" });
+          const locEl = makeDomElement2(doc2, "div", { textContent: item.location }, { class: "rc-item-location" });
+          const metaEl = makeDomElement2(doc2, "div", {}, { class: "rc-item-meta" });
+          const batSpan = makeDomElement2(doc2, "span", { textContent: item.battery ?? "" }, { class: "rc-item-battery" });
+          const statusSpan = makeDomElement2(doc2, "span", { textContent: item.status ?? "" }, { class: "rc-item-status" });
+          const timeSpan = makeDomElement2(doc2, "span", { textContent: item.updatedAt ?? "" }, { class: "rc-item-time" });
+          metaEl.appendChild(batSpan);
+          metaEl.appendChild(statusSpan);
+          metaEl.appendChild(timeSpan);
+          itemRow.appendChild(nameEl);
+          itemRow.appendChild(locEl);
+          itemRow.appendChild(metaEl);
+          itemRow.addEventListener("click", () => {
+            const snippet2 = `${item.name}: ${item.location} (as of ${item.updatedAt})
+`;
+            if (typeof options.onInsertToPage === "function") {
+              options.onInsertToPage(snippet2);
+            }
+            if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+              globalObj.webkit.messageHandlers.wings.postMessage({
+                action: "cite",
+                type: "findmy",
+                item
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Find My Devices Cached" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      findMyCard.appendChild(body);
+    }
+    updateFindMyCard();
+    function setFindMyItems(items) {
+      findMyItems = Array.isArray(items) ? [...items] : [];
+      updateFindMyCard();
+    }
+    let mailMessages = [];
+    const mailCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-mail",
+      "data-widget": "mail",
+      role: "region"
+    });
+    widgetElements.mail = mailCard;
+    function updateMailCard() {
+      while (mailCard.firstChild) {
+        mailCard.removeChild(mailCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Mail Digest" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      mailCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-mail-list" });
+      if (mailMessages.length > 0) {
+        for (const msg of mailMessages) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: `rc-mail-item ${msg.unread ? "unread" : ""}`.trim(),
+            "data-id": msg.id,
+            role: "button",
+            tabindex: "0"
+          });
+          const mHeader = makeDomElement2(doc2, "div", {}, { class: "rc-mail-header" });
+          const fromSpan = makeDomElement2(doc2, "span", { textContent: msg.from }, { class: "rc-mail-from" });
+          const dateSpan = makeDomElement2(doc2, "span", { textContent: msg.date }, { class: "rc-mail-date" });
+          mHeader.appendChild(fromSpan);
+          mHeader.appendChild(dateSpan);
+          const subEl = makeDomElement2(doc2, "div", { textContent: msg.subject }, { class: "rc-mail-subject" });
+          const snipEl = makeDomElement2(doc2, "div", { textContent: msg.snippet }, { class: "rc-mail-snippet" });
+          itemRow.appendChild(mHeader);
+          itemRow.appendChild(subEl);
+          itemRow.appendChild(snipEl);
+          itemRow.addEventListener("click", () => {
+            const snippet2 = `> From: ${msg.from}
+> Subject: ${msg.subject}
+> ${msg.snippet}
+
+`;
+            if (typeof options.onInsertToPage === "function") {
+              options.onInsertToPage(snippet2);
+            }
+            if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+              globalObj.webkit.messageHandlers.wings.postMessage({
+                action: "cite",
+                type: "mail",
+                message: msg
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Mail Messages Cached" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      mailCard.appendChild(body);
+    }
+    updateMailCard();
+    function setMailMessages(messages) {
+      mailMessages = Array.isArray(messages) ? [...messages] : [];
+      updateMailCard();
+    }
+    let calendarEvents = [];
+    const calendarStatus = /* @__PURE__ */ new Map();
+    function formatEventTime(ev) {
+      const d = new Date(ev.startISO);
+      if (Number.isNaN(d.getTime())) return "";
+      try {
+        if (ev.allDay) {
+          return new Intl.DateTimeFormat(void 0, { weekday: "short", day: "numeric", month: "short" }).format(d) + " \xB7 all day";
+        }
+        return new Intl.DateTimeFormat(void 0, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(d);
+      } catch {
+        return d.toLocaleString();
+      }
+    }
+    function setCalendarStatus(id2, status, message = "") {
+      calendarStatus.set(id2, { status, message });
+      if (status === "added") {
+        calendarEvents = calendarEvents.map((ev) => ev.id === id2 ? { ...ev, added: true } : ev);
+      }
+      updateCalendarCard();
+    }
+    const calendarCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-calendar",
+      "data-widget": "calendar",
+      role: "region"
+    });
+    widgetElements.calendar = calendarCard;
+    function updateCalendarCard() {
+      while (calendarCard.firstChild) {
+        calendarCard.removeChild(calendarCard.firstChild);
+      }
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      const titleSpan = makeDomElement2(doc2, "span", { textContent: "Agenda" }, { class: "rc-widget-title" });
+      header.appendChild(titleSpan);
+      calendarCard.appendChild(header);
+      const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-calendar-list" });
+      if (calendarEvents.length > 0) {
+        for (const ev of calendarEvents) {
+          const itemRow = makeDomElement2(doc2, "div", {}, {
+            class: "rc-cal-item",
+            "data-id": ev.id,
+            "data-line": ev.lineNumber,
+            role: "button",
+            tabindex: "0"
+          });
+          const titleEl = makeDomElement2(doc2, "div", { textContent: ev.title }, { class: "rc-cal-title" });
+          const timeEl = makeDomElement2(doc2, "div", { textContent: formatEventTime(ev) }, { class: "rc-cal-time" });
+          const locEl = makeDomElement2(doc2, "div", { textContent: `Line ${ev.lineNumber} (Page ${ev.pageIndex + 1})` }, { class: "rc-cal-loc" });
+          itemRow.appendChild(titleEl);
+          itemRow.appendChild(timeEl);
+          itemRow.appendChild(locEl);
+          const st = ev.added ? { status: "added" } : calendarStatus.get(ev.id) || { status: "proposed" };
+          const label = st.status === "added" ? "Added to Calendar" : st.status === "saving" ? "Adding\u2026" : st.status === "error" ? `Not added: ${st.message || "unknown error"} \xB7 Try again` : "Add to Calendar";
+          const addEl = makeDomElement2(doc2, "div", { textContent: label }, {
+            class: `rc-cal-add rc-cal-${st.status}`,
+            "data-id": ev.id,
+            role: st.status === "added" || st.status === "saving" ? "status" : "button",
+            tabindex: st.status === "added" || st.status === "saving" ? "-1" : "0"
+          });
+          if (st.status === "proposed" || st.status === "error") {
+            const add2 = (e) => {
+              if (e?.stopPropagation) e.stopPropagation();
+              if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+              calendarStatus.set(ev.id, { status: "saving" });
+              updateCalendarCard();
+              if (typeof options.onAddEvent === "function") options.onAddEvent(ev);
+            };
+            addEl.addEventListener("click", add2);
+            addEl.addEventListener("keydown", add2);
+          }
+          itemRow.appendChild(addEl);
+          itemRow.addEventListener("click", () => {
+            if (typeof options.onJumpToLine === "function") {
+              options.onJumpToLine(ev.lineNumber);
+            }
+            if (typeof options.onSelectEvent === "function") {
+              options.onSelectEvent(ev);
+            }
+            if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+              globalObj.webkit.messageHandlers.calendar.postMessage({
+                action: "jumpToLine",
+                lineNumber: ev.lineNumber,
+                event: ev
+              });
+            }
+          });
+          body.appendChild(itemRow);
+        }
+      } else {
+        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Upcoming Agenda" }, { class: "rc-empty-state" });
+        body.appendChild(empty2);
+      }
+      calendarCard.appendChild(body);
+    }
+    updateCalendarCard();
+    function setCalendarEvents(events) {
+      calendarEvents = Array.isArray(events) ? [...events] : [];
+      updateCalendarCard();
+    }
+    function openPersistentSession(service) {
+      let url = "";
+      if (service === "findmy") {
+        url = "https://www.icloud.com/find";
+      } else if (service === "mail") {
+        url = "https://www.icloud.com/mail";
+      } else {
+        url = `https://www.icloud.com/${service}`;
+      }
+      if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+        globalObj.webkit.messageHandlers.wings.postMessage({
+          action: "openSession",
+          service,
+          url
+        });
+      }
+    }
+    const iphoneCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-iphone",
+      "data-widget": "iphone",
+      role: "region"
+    });
+    widgetElements.iphone = iphoneCard;
+    {
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      header.appendChild(makeDomElement2(doc2, "span", { textContent: "iPhone Mirroring" }, { class: "rc-widget-title" }));
+      iphoneCard.appendChild(header);
+      const openEl = makeDomElement2(doc2, "div", { textContent: "Open iPhone Mirroring" }, {
+        class: "rc-widget-action rc-iphone-open",
+        role: "button",
+        tabindex: "0"
+      });
+      const open = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        postHaptic2("open");
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({ action: "openApp", app: "iphone-mirroring" });
+        }
+      };
+      openEl.addEventListener("click", open);
+      openEl.addEventListener("keydown", open);
+      iphoneCard.appendChild(openEl);
+    }
+    const WIDGET_NAMES = {
+      preview: "Preview",
+      quicktime: "Player",
+      findmy: "Find My",
+      mail: "Mail",
+      calendar: "Agenda",
+      iphone: "iPhone Mirroring"
+    };
+    function shown(wId) {
+      return !HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId);
+    }
+    function moverFor(wId, side) {
+      const target = side === "left" ? "right" : "left";
+      const name2 = WIDGET_NAMES[wId] || wId;
+      const el2 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
+        class: "rc-wing-move",
+        "data-widget": wId,
+        "data-target": target,
+        role: "button",
+        tabindex: "0",
+        "aria-label": `Move ${name2} to the ${target} sidebar`
+      });
+      const go = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        moveWidget(wId, target);
+      };
+      el2.addEventListener("click", go);
+      el2.addEventListener("keydown", go);
+      return el2;
+    }
+    function renderWidgets() {
+      for (const [el2, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
+        while (el2.firstChild) {
+          el2.removeChild(el2.firstChild);
+        }
+        for (const wId of list) {
+          const card = widgetElements[wId];
+          if (card && shown(wId) && el2.appendChild) {
+            el2.appendChild(moverFor(wId, side));
+            el2.appendChild(card);
+          }
+        }
+      }
+    }
+    renderWidgets();
+    function enableHostWidget(wId) {
+      if (!HOST_WIDGETS.has(wId)) return;
+      enabledHostWidgets.add(wId);
+      if (!leftWidgets.includes(wId) && !rightWidgets.includes(wId)) leftWidgets.push(wId);
+      renderWidgets();
+    }
+    function openWing(side) {
+      if (side === "left" || side === "both") {
+        leftEl.hidden = false;
+      }
+      if (side === "right" || side === "both") {
+        rightEl.hidden = false;
+      }
+      postHaptic2("open");
+    }
+    function closeWing(side) {
+      if (side === "left" || side === "both") {
+        leftEl.hidden = true;
+      }
+      if (side === "right" || side === "both") {
+        rightEl.hidden = true;
+      }
+    }
+    function toggleWing(side) {
+      if (side === "left") {
+        if (leftEl.hidden) openWing("left");
+        else closeWing("left");
+      } else if (side === "right") {
+        if (rightEl.hidden) openWing("right");
+        else closeWing("right");
+      } else if (side === "both") {
+        if (leftEl.hidden || rightEl.hidden) openWing("both");
+        else closeWing("both");
+      }
+    }
+    function isWingOpen(side) {
+      if (side === "left") return !leftEl.hidden;
+      if (side === "right") return !rightEl.hidden;
+      if (side === "both") return !leftEl.hidden && !rightEl.hidden;
+      return !leftEl.hidden || !rightEl.hidden;
+    }
+    function getState() {
+      return {
+        version: 1,
+        leftWidgets: [...leftWidgets],
+        rightWidgets: [...rightWidgets],
+        previewData: { ...previewData },
+        qtData: { ...qtData, loopRange: [...qtData.loopRange] },
+        findMyItems: [...findMyItems],
+        mailMessages: [...mailMessages]
+      };
+    }
+    function persistWingsState() {
+      if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+        globalObj.webkit.messageHandlers.wings.postMessage({
+          action: "saveState",
+          state: JSON.stringify(getState())
+        });
+      }
+    }
+    function setState(raw) {
+      if (!raw) return;
+      let parsed = raw;
+      if (typeof raw === "string") {
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return;
+        }
+      }
+      if (!parsed || typeof parsed !== "object") return;
+      if (Array.isArray(parsed.leftWidgets)) leftWidgets = [...parsed.leftWidgets];
+      if (Array.isArray(parsed.rightWidgets)) rightWidgets = [...parsed.rightWidgets];
+      if (parsed.previewData && typeof parsed.previewData === "object") {
+        previewData = {
+          src: String(parsed.previewData.src || ""),
+          caption: String(parsed.previewData.caption || "")
+        };
+        updatePreviewCard();
+      }
+      if (parsed.qtData && typeof parsed.qtData === "object") {
+        qtData = {
+          src: String(parsed.qtData.src || ""),
+          title: String(parsed.qtData.title || ""),
+          playbackRate: Number(parsed.qtData.playbackRate) || 1,
+          loopRange: Array.isArray(parsed.qtData.loopRange) ? [...parsed.qtData.loopRange] : [0, 0],
+          currentTime: Number(parsed.qtData.currentTime) || 0
+        };
+        updateQuickTimeCard();
+      }
+      if (Array.isArray(parsed.findMyItems)) {
+        findMyItems = [...parsed.findMyItems];
+        updateFindMyCard();
+      }
+      if (Array.isArray(parsed.mailMessages)) {
+        mailMessages = [...parsed.mailMessages];
+        updateMailCard();
+      }
+      renderWidgets();
+    }
+    function swapWings() {
+      const temp = leftWidgets;
+      leftWidgets = rightWidgets;
+      rightWidgets = temp;
+      renderWidgets();
+      postHaptic2("snap");
+      persistWingsState();
+    }
+    function moveWidget(widgetId, targetSide) {
+      if (targetSide === "left") {
+        if (!leftWidgets.includes(widgetId)) {
+          rightWidgets = rightWidgets.filter((w) => w !== widgetId);
+          leftWidgets.push(widgetId);
+          renderWidgets();
+          postHaptic2("snap");
+          persistWingsState();
+        }
+      } else if (targetSide === "right") {
+        if (!rightWidgets.includes(widgetId)) {
+          leftWidgets = leftWidgets.filter((w) => w !== widgetId);
+          rightWidgets.push(widgetId);
+          renderWidgets();
+          postHaptic2("snap");
+          persistWingsState();
+        }
+      }
+    }
+    function getWingLayout() {
+      return {
+        left: [...leftWidgets],
+        right: [...rightWidgets],
+        leftOpen: !leftEl.hidden,
+        rightOpen: !rightEl.hidden
+      };
+    }
+    const EDGE_THRESHOLD = options.edgeThreshold ?? 24;
+    const SWIPE_THRESHOLD = options.swipeThreshold ?? 36;
+    const activeTouches = /* @__PURE__ */ new Map();
+    let gestureHandled = false;
+    function getContainerWidth() {
+      return container?.clientWidth || (typeof container?.getBoundingClientRect === "function" ? container.getBoundingClientRect().width : 800) || 800;
+    }
+    function handleTouchStart(e) {
+      gestureHandled = false;
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        activeTouches.set(id2, {
+          startX: t2.clientX,
+          startY: t2.clientY,
+          currentX: t2.clientX,
+          currentY: t2.clientY
+        });
+      }
+    }
+    function handleTouchMove(e) {
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        const record = activeTouches.get(id2);
+        if (record) {
+          record.currentX = t2.clientX;
+          record.currentY = t2.clientY;
+        }
+      }
+      if (gestureHandled) return;
+      const width = getContainerWidth();
+      if (activeTouches.size >= 2) {
+        const records = Array.from(activeTouches.values());
+        const leftTouch = records.find((r) => r.startX <= EDGE_THRESHOLD && r.currentX - r.startX >= SWIPE_THRESHOLD);
+        const rightTouch = records.find((r) => r.startX >= width - EDGE_THRESHOLD && r.currentX - r.startX <= -SWIPE_THRESHOLD);
+        if (leftTouch && rightTouch) {
+          openWing("both");
+          gestureHandled = true;
+          return;
+        }
+      }
+      for (const record of activeTouches.values()) {
+        const dx = record.currentX - record.startX;
+        if (record.startX <= EDGE_THRESHOLD && dx >= SWIPE_THRESHOLD) {
+          openWing("left");
+          gestureHandled = true;
+          return;
+        }
+        if (record.startX >= width - EDGE_THRESHOLD && dx <= -SWIPE_THRESHOLD) {
+          openWing("right");
+          gestureHandled = true;
+          return;
+        }
+        if (!leftEl.hidden && dx <= -SWIPE_THRESHOLD) {
+          closeWing("left");
+          gestureHandled = true;
+          return;
+        }
+        if (!rightEl.hidden && dx >= SWIPE_THRESHOLD) {
+          closeWing("right");
+          gestureHandled = true;
+          return;
+        }
+      }
+    }
+    function handleTouchEnd(e) {
+      const touches = e.changedTouches || (e.clientX !== void 0 ? [e] : []);
+      for (let i = 0; i < touches.length; i++) {
+        const t2 = touches[i];
+        const id2 = t2.identifier !== void 0 ? t2.identifier : t2.pointerId !== void 0 ? t2.pointerId : "single";
+        activeTouches.delete(id2);
+      }
+      if (activeTouches.size === 0) {
+        gestureHandled = false;
+      }
+    }
+    if (container?.addEventListener) {
+      container.addEventListener("touchstart", handleTouchStart);
+      container.addEventListener("touchmove", handleTouchMove);
+      container.addEventListener("touchend", handleTouchEnd);
+      container.addEventListener("touchcancel", handleTouchEnd);
+      container.addEventListener("pointerdown", handleTouchStart);
+      container.addEventListener("pointermove", handleTouchMove);
+      container.addEventListener("pointerup", handleTouchEnd);
+      container.addEventListener("pointercancel", handleTouchEnd);
+    }
+    function destroy() {
+      if (container?.removeEventListener) {
+        container.removeEventListener("touchstart", handleTouchStart);
+        container.removeEventListener("touchmove", handleTouchMove);
+        container.removeEventListener("touchend", handleTouchEnd);
+        container.removeEventListener("touchcancel", handleTouchEnd);
+        container.removeEventListener("pointerdown", handleTouchStart);
+        container.removeEventListener("pointermove", handleTouchMove);
+        container.removeEventListener("pointerup", handleTouchEnd);
+        container.removeEventListener("pointercancel", handleTouchEnd);
+      }
+      if (leftEl.parentNode?.removeChild) leftEl.parentNode.removeChild(leftEl);
+      if (rightEl.parentNode?.removeChild) rightEl.parentNode.removeChild(rightEl);
+    }
+    return {
+      openWing,
+      closeWing,
+      toggleWing,
+      isWingOpen,
+      swapWings,
+      moveWidget,
+      getWingLayout,
+      setPreviewTarget,
+      setMediaSource,
+      setPlaybackRate,
+      setLoopRange,
+      setFindMyItems,
+      setMailMessages,
+      setCalendarEvents,
+      setCalendarStatus,
+      enableHostWidget,
+      openPersistentSession,
+      getState,
+      setState,
+      destroy,
+      leftEl,
+      rightEl,
+      container
+    };
   }
 
   // src/theme.js
@@ -29704,15 +34293,17 @@ ${PAGE_MARKER}
     let newestFirst = false;
     let outlineVisible = false;
     let menuOpen = false;
-    let toolbarFaded = false;
+    let toolbarFaded = true;
     const shell = document.createElement("div");
     shell.className = "rc-shell";
     const toolbar = document.createElement("header");
-    toolbar.className = "rc-toolbar";
+    toolbar.className = "rc-toolbar rc-toolbar-faded";
     const pageIndicator = document.createElement("span");
     pageIndicator.className = "rc-page-indicator";
     pageIndicator.id = "rc-page-indicator";
-    pageIndicator.textContent = formatPageIndicator(0, 1);
+    pageIndicator.textContent = formatDotIndicator(0, 1);
+    pageIndicator.setAttribute("data-dots", formatDotIndicator(0, 1));
+    pageIndicator.setAttribute("data-label", formatPageIndicator(0, 1));
     const menuWrap = document.createElement("div");
     menuWrap.className = "rc-menu-wrap";
     const menuBtn = document.createElement("button");
@@ -29892,7 +34483,12 @@ ${PAGE_MARKER}
     }
     function updatePageIndicator(state2 = view ? view.state : null) {
       if (!state2) return;
-      pageIndicator.textContent = formatPageIndicator(currentPage(state2), pageCount(state2));
+      const cur = currentPage(state2);
+      const count2 = pageCount(state2);
+      const dots = formatDotIndicator(cur, count2);
+      pageIndicator.textContent = dots;
+      pageIndicator.setAttribute("data-dots", dots);
+      pageIndicator.setAttribute("data-label", formatPageIndicator(cur, count2));
     }
     function setToolbarFaded(faded) {
       toolbarFaded = Boolean(faded);
@@ -29913,6 +34509,20 @@ ${PAGE_MARKER}
       menuBtn.setAttribute("aria-expanded", String(menuOpen));
       if (menuOpen) setToolbarFaded(false);
     }
+    let inkLayer = null;
+    let audioSidecar = null;
+    let dualWings = null;
+    let calendarScanner = null;
+    let calendarScanTimer = null;
+    function scheduleCalendarScan() {
+      if (calendarScanTimer) clearTimeout(calendarScanTimer);
+      calendarScanTimer = setTimeout(() => {
+        calendarScanTimer = null;
+        if (view && calendarScanner && dualWings) {
+          dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+        }
+      }, 800);
+    }
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
@@ -29930,9 +34540,11 @@ ${PAGE_MARKER}
             setToolbarFaded(true);
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
+          if (calendarScanner && dualWings) scheduleCalendarScan();
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
+          if (inkLayer) inkLayer.relayout();
         }
       }
     });
@@ -29941,6 +34553,45 @@ ${PAGE_MARKER}
       parent: editorHost
     });
     attachSwipePaging(view);
+    function insertBlock(text) {
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      const insert2 = `
+${String(text ?? "")}`;
+      view.dispatch({
+        changes: { from: line.to, insert: insert2 },
+        selection: { anchor: line.to + insert2.length },
+        scrollIntoView: true,
+        userEvent: "input"
+      });
+    }
+    inkLayer = createInkLayer(view, {
+      getPageIndex: () => view ? currentPage(view.state) : 0,
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    audioSidecar = createAudioSidecar({
+      container: workspace,
+      onInsertToPage: insertBlock,
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    dualWings = createDualWings(workspace, {
+      onInsertToPage: insertBlock,
+      onJumpToLine: (lineNum) => {
+        if (!view) return;
+        const safeLine = Math.max(1, Math.min(view.state.doc.lines, Number(lineNum) || 1));
+        const line = view.state.doc.line(safeLine);
+        jumpToOffset(view, line.from);
+      },
+      onAddEvent: (ev) => {
+        if (calendarScanner) calendarScanner.requestAdd(ev);
+      },
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    calendarScanner = createCalendarScanner({
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    if (initialDoc) {
+      dualWings.setCalendarEvents(calendarScanner.scanText(initialDoc));
+    }
     function showOutline() {
       const wasVisible = outlineVisible;
       outlineVisible = true;
@@ -29958,17 +34609,6 @@ ${PAGE_MARKER}
       pagesBtn.setAttribute("aria-pressed", String(isPageMode(view.state)));
       if (on) showPage(view, currentPage(view.state));
       updatePageIndicator();
-    }
-    function insertBlock(text) {
-      const line = view.state.doc.lineAt(view.state.selection.main.head);
-      const insert2 = `
-${String(text ?? "")}`;
-      view.dispatch({
-        changes: { from: line.to, insert: insert2 },
-        selection: { anchor: line.to + insert2.length },
-        scrollIntoView: true,
-        userEvent: "input"
-      });
     }
     function setCursor(offset) {
       const at = Math.max(0, Math.min(view.state.doc.length, Number(offset) || 0));
@@ -30000,6 +34640,47 @@ ${String(text ?? "")}`;
       newestFirstMenuBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
+    function normalizeInkToolName(tool) {
+      const t2 = String(tool ?? "pen").trim().toLowerCase();
+      if (t2 === "whole eraser" || t2 === "eraser") return "eraser-whole";
+      if (t2 === "partial eraser") return "eraser-partial";
+      return t2;
+    }
+    let currentInkTool = "pen";
+    const voiceHandlers = {
+      swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+      swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
+      deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
+      toggleOutline: () => {
+        if (outlineVisible) hideOutline();
+        else showOutline();
+      },
+      openFind: () => {
+        hideOutline();
+        return openFindReplace(view);
+      },
+      setInkTool: (tool) => {
+        currentInkTool = tool;
+        const mapped = normalizeInkToolName(tool);
+        if (inkLayer) inkLayer.setTool(mapped);
+        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
+        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: mapped });
+        return tool;
+      },
+      summarizeSection: (idx) => {
+        const secs = extractDocumentSections(view.state.doc.toString(), currentPage(view.state));
+        const sec = secs[idx ?? 0] || { title: "", text: view.state.doc.toString() };
+        return speakSectionSummary(sec);
+      },
+      bookmarkAudio: (idx, note = "") => {
+        const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+        return audioSidecar.bookmarkCue(targetIdx, note);
+      },
+      openWing: (side) => dualWings ? dualWings.openWing(side) : null,
+      closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
+      swapWings: () => dualWings ? dualWings.swapWings() : null
+    };
+    const voiceCommand = (phrase2) => executeVoiceMove(phrase2, voiceHandlers);
     bridge = createEditorBridge({
       getState: () => view ? view.state : null,
       dispatch: (spec) => {
@@ -30019,14 +34700,105 @@ ${String(text ?? "")}`;
       setFontSize,
       getRemoved: () => view ? getRemoved(view.state) : [],
       extra: {
-        step: (delta) => stepPage(view, Number(delta) || 0) ? "ok" : "bounce",
+        step: (delta) => stepPage(view, Number(delta) || 0, { allowCreate: true }) ? "ok" : "bounce",
+        swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+        swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
+        openNewWindowOnLeft: () => openNewWindowOnLeft(view) ? "ok" : "bounce",
+        deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
         showPage: (i) => showPage(view, Number(i) || 0),
         currentPage: () => currentPage(view.state),
         pageCount: () => pageCount(view.state),
         setPageMode: (on) => setPages(on),
         isPageMode: () => isPageMode(view.state),
         setCursor,
-        insertBlock
+        insertBlock,
+        voiceCommand,
+        getInk: () => inkLayer ? inkLayer.getInk() : { version: 1, strokes: [], removed: [] },
+        setInk: (data2) => {
+          if (!inkLayer) return;
+          const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          inkLayer.setInk(parsed);
+          inkLayer.relayout();
+        },
+        mergeInk: (remote) => {
+          if (!inkLayer) return null;
+          const parsed = typeof remote === "string" ? JSON.parse(remote) : remote;
+          const merged = mergeInkDocuments(inkLayer.getInk(), parsed);
+          inkLayer.setInk(merged);
+          inkLayer.relayout();
+          return merged;
+        },
+        getInkTool: () => currentInkTool,
+        setInkTool: (tool) => voiceHandlers.setInkTool(tool),
+        getInkColor: () => inkLayer ? inkLayer.getColor() : INK_COLORS[0],
+        setInkColor: (color) => {
+          if (inkLayer) inkLayer.setColor(color);
+          return inkLayer ? inkLayer.getColor() : color;
+        },
+        toggleEraser: () => {
+          currentInkTool = inkLayer ? inkLayer.toggleEraser() : "eraser-whole";
+          return currentInkTool;
+        },
+        onPencilAction: (action) => {
+          if (action === "squeeze" || action === "doubleTap") {
+            postHaptic("squeeze");
+            if (inkLayer) {
+              inkLayer.showPalette();
+              currentInkTool = inkLayer.toggleEraser();
+              return currentInkTool;
+            }
+          }
+          return currentInkTool;
+        },
+        setAudioTranscript: (data2) => {
+          const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          audioSidecar.setAudioTranscript(parsed);
+        },
+        // The host's report on one calendar add: saved, or the reason it wasn't.
+        calendarResult: (id2, ok, message) => {
+          if (ok && calendarScanner) calendarScanner.markSynced(id2);
+          if (dualWings) dualWings.setCalendarStatus(id2, ok ? "added" : "error", message || "");
+        },
+        // At load: the ids the host already saved (draftpad.events.json), so they show as added.
+        setCalendarAdded: (data2) => {
+          const ids = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          if (calendarScanner && Array.isArray(ids)) calendarScanner.markSynced(ids);
+          if (view && calendarScanner && dualWings) {
+            dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+          }
+        },
+        // A widget only this host can run (the Mac: 'iphone').
+        enableWidget: (id2) => dualWings ? dualWings.enableHostWidget(id2) : null,
+        updateAudioTime: (sec) => audioSidecar.updateTime(sec),
+        bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
+        annotateAudioCue: (idx, text) => {
+          const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+          return audioSidecar.annotateCue(targetIdx, text);
+        },
+        summarizeSection: (idx) => voiceHandlers.summarizeSection(idx),
+        summarizeAllSections: () => summarizeAllSections(view.state.doc.toString(), { pageIndex: currentPage(view.state) }),
+        dropFile: (pathOrUri, caption) => {
+          const md = formatDroppedEmbed(pathOrUri, caption);
+          if (md) insertBlock(md);
+          return md;
+        },
+        openWing: (side) => dualWings ? dualWings.openWing(side) : null,
+        closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
+        toggleWing: (side) => dualWings ? dualWings.toggleWing(side) : null,
+        isWingOpen: (side) => dualWings ? dualWings.isWingOpen(side) : false,
+        swapWings: () => dualWings ? dualWings.swapWings() : null,
+        moveWidget: (id2, side) => dualWings ? dualWings.moveWidget(id2, side) : null,
+        getWingLayout: () => dualWings ? dualWings.getWingLayout() : { left: [], right: [], leftOpen: false, rightOpen: false },
+        setPreviewTarget: (src, caption) => dualWings ? dualWings.setPreviewTarget(src, caption) : null,
+        setMediaSource: (src, title) => dualWings ? dualWings.setMediaSource(src, title) : null,
+        setPlaybackRate: (rate) => dualWings ? dualWings.setPlaybackRate(rate) : null,
+        setLoopRange: (start, end) => dualWings ? dualWings.setLoopRange(start, end) : null,
+        setFindMyItems: (items) => dualWings ? dualWings.setFindMyItems(typeof items === "string" ? JSON.parse(items) : items) : null,
+        setMailMessages: (msgs) => dualWings ? dualWings.setMailMessages(typeof msgs === "string" ? JSON.parse(msgs) : msgs) : null,
+        extractCalendarEvents: (text, opts) => extractCalendarEvents(typeof text === "string" ? text : view.state.doc.toString(), opts),
+        getCalendarEvents: () => calendarScanner ? calendarScanner.getEvents() : [],
+        setWingsState: (state2) => dualWings ? dualWings.setState(state2) : null,
+        getWingsState: () => dualWings ? dualWings.getState() : null
       }
     });
     menuBtn.addEventListener("click", (e) => {
@@ -30095,12 +34867,28 @@ ${String(text ?? "")}`;
       if (e.key === "Escape") {
         if (menuOpen) closeMenu();
         if (outlineVisible) hideOutline();
+        if (dualWings && dualWings.isWingOpen()) dualWings.closeWing("both");
       }
     });
     attachOutlineGestures(workspace, outlinePanel, {
       isOpen: () => outlineVisible,
       onOpen: () => showOutline(),
       onClose: () => hideOutline()
+    });
+    attachHapticZones(shell, {
+      onZoneEnter(zone) {
+        if (zone === "top") {
+          setToolbarFaded(false);
+          if (inkLayer) inkLayer.showPalette();
+        }
+      },
+      onZoneLeave(zone) {
+        if (zone === "top" && !menuOpen) {
+          setToolbarFaded(true);
+          if (inkLayer) inkLayer.hidePalette();
+        }
+      },
+      globalObj: typeof window !== "undefined" ? window : null
     });
     setTheme(currentTheme);
     setFontSize(currentFontSize);
@@ -30109,6 +34897,10 @@ ${String(text ?? "")}`;
     return {
       view,
       bridge: bridge.api,
+      inkLayer,
+      audioSidecar,
+      dualWings,
+      calendarScanner,
       setTheme,
       setFontSize,
       setNewestFirst,
@@ -30120,6 +34912,9 @@ ${String(text ?? "")}`;
         hideOutline();
         return openFindReplace(view);
       },
+      voiceCommand,
+      getInkTool: () => currentInkTool,
+      setInkTool: (tool) => voiceHandlers.setInkTool(tool),
       getTheme: () => currentTheme,
       getFontSize: () => currentFontSize,
       isNewestFirst: () => newestFirst

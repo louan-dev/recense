@@ -31,17 +31,19 @@ export function embedSource(target, host = hasHost()) {
 }
 
 class EmbedWidget extends WidgetType {
-  constructor(kind, src, caption) {
+  constructor(kind, src, caption, rawTarget = '') {
     super();
     this.kind = kind;
     this.src = src;
     this.caption = caption;
+    this.rawTarget = rawTarget;
   }
-  eq(other) { return other.kind === this.kind && other.src === this.src; }
+  eq(other) { return other.kind === this.kind && other.src === this.src && other.rawTarget === this.rawTarget; }
   get estimatedHeight() { return this.kind === 'pdf' ? 520 : 320; }
   toDOM() {
     const wrap = document.createElement('div');
     wrap.className = `cm-embed cm-embed-${this.kind}`;
+    if (this.rawTarget) wrap.setAttribute('data-embed-target', this.rawTarget);
     if (this.kind === 'pdf') {
       const frame = document.createElement('iframe');
       frame.src = this.src;
@@ -60,6 +62,18 @@ class EmbedWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+export function formatDroppedEmbed(nameOrPath, explicitCaption = null) {
+  const raw = String(nameOrPath ?? '').trim();
+  if (!raw) return null;
+  if (!PDF_RE.test(raw) && !IMAGE_RE.test(raw)) return null;
+  const base = raw.split(/[\\/]/).pop().replace(/[?#].*$/, '');
+  const caption = explicitCaption !== null
+    ? String(explicitCaption)
+    : base.replace(/\.[^.]+$/, '');
+  const target = /\s/.test(raw) ? `<${raw}>` : raw;
+  return `![${caption}](${target})`;
+}
+
 export function findEmbeds(text) {
   const out = [];
   let offset = 0;
@@ -73,7 +87,7 @@ export function findEmbeds(text) {
 
 function build(doc) {
   const items = findEmbeds(doc.toString()).map(e =>
-    Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption), block: true, side: 1 })
+    Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption, e.target), block: true, side: 1 })
       .range(e.end));
   return Decoration.set(items);
 }
@@ -84,6 +98,45 @@ const embedField = StateField.define({
   provide: f => EditorView.decorations.from(f)
 });
 
+const embedDropHandler = EditorView.domEventHandlers({
+  dragover(event) {
+    const dt = event?.dataTransfer;
+    if (dt && (dt.files?.length > 0 || dt.types?.includes?.('Files'))) {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  },
+  drop(event, view) {
+    const dt = event?.dataTransfer;
+    if (!dt) return false;
+    const embeds = [];
+    if (dt.files && dt.files.length > 0) {
+      for (const f of Array.from(dt.files)) {
+        const md = formatDroppedEmbed(f.path || f.name, f.name ? f.name.replace(/\.[^.]+$/, '') : null);
+        if (md) embeds.push(md);
+      }
+    } else if (typeof dt.getData === 'function') {
+      const uri = dt.getData('text/uri-list') || dt.getData('text/plain');
+      const md = formatDroppedEmbed(uri);
+      if (md) embeds.push(md);
+    }
+    if (embeds.length === 0) return false;
+    event.preventDefault();
+    const pos = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(pos);
+    const prefix = line.text.trim().length > 0 ? '\n' : '';
+    const insert = `${prefix}${embeds.join('\n')}`;
+    view.dispatch({
+      changes: { from: line.to, insert },
+      selection: { anchor: line.to + insert.length },
+      scrollIntoView: true,
+      userEvent: 'input.drop'
+    });
+    return true;
+  }
+});
+
 export function embedsExtension() {
-  return [embedField];
+  return [embedField, embedDropHandler];
 }

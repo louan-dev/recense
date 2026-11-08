@@ -1,30 +1,35 @@
 // Draftpad on iPad and iPhone: the same editor as the Mac (editor/dist/editor.html, bundled), on the same
-// draftpad.md in the Obsidian vault, saved through the same 3-way merge (strip/notesync.swift), so an edit from the
-// Mac or from Obsidian is merged, never overwritten. Embeds load through the same recense-file: scheme
-// (strip/embedfiles.swift): vault files directly, web files from a cache, so they open offline after the first time.
+// draftpad.md and draftpad.ink.json in the Obsidian vault, saved through the same 3-way merge (strip/notesync.swift),
+// so an edit from the Mac or from Obsidian is merged, never overwritten. Embeds load through the same recense-file:
+// scheme (strip/embedfiles.swift): vault files directly, web files from a cache, so they open offline after the first time.
 //
-// Apple Pencil:
-// - Write into the text with Scribble: iPadOS turns handwriting into typed text in the editor.
-// - Ink: squeeze (Apple Pencil Pro), double-tap (2nd generation and Pro) or the pencil button opens the ink layer.
-//   Draw with the Pencil (fingers still scroll); the tool palette follows the Pencil Pro (barrel roll, squeeze for
-//   the compact palette). Done saves the drawing next to draftpad.md, in "Draftpad ink/", as a PNG (what the editor
-//   and Obsidian show) plus its PencilKit .drawing, and puts ![](<Draftpad ink/…png>) under the cursor's line.
+// Whiteboard & Apple Pencil Pro:
+// - Type and write with an Apple Pencil Pro on the same surface with no mode switch and no Done button.
+// - Ink sits on the words and moves with them, stored as plain JSON anchored to lines of text in draftpad.ink.json.
+// - Squeeze or double-tap on Apple Pencil Pro toggles the eraser and reveals the pure-dot colour/tool palette with
+//   Freeform-grade haptics.
 import SwiftUI
 import ShowsKit
 import WebKit
-import PencilKit
+import AVFoundation
+import EventKit
+import NaturalLanguage
 import UniformTypeIdentifiers
 
 func log(_ s: String) { NSLog("draftpad: %@", s) }
 
 // MARK: The file
 
-/// The vault folder you picked once (a security-scoped bookmark), and draftpad.md inside it.
+/// The vault folder you picked once (a security-scoped bookmark), with draftpad.md and draftpad.ink.json inside it.
 final class DraftpadFile: ObservableObject {
     static let key = "draftpadVaultBookmark"
     @Published private(set) var vault: URL?
     private(set) var base = ""          // what this device last read or wrote: the merge's base
+    private(set) var lastInk = ""       // what this device last read or wrote for draftpad.ink.json
     var note: URL? { vault?.appendingPathComponent("draftpad.md") }
+    var inkNote: URL? { vault?.appendingPathComponent("draftpad.ink.json") }
+    var eventsNote: URL? { vault?.appendingPathComponent("draftpad.events.json") }
+    var wingsNote: URL? { vault?.appendingPathComponent("draftpad.wings.json") }
 
     init() {
         guard let d = UserDefaults.standard.data(forKey: Self.key) else { return }
@@ -49,6 +54,21 @@ final class DraftpadFile: ObservableObject {
         return s
     }
 
+    /// Reads the line-anchored ink sidecar JSON from the vault folder.
+    func loadInk() -> String {
+        guard let p = inkNote?.path else { return "" }
+        let s = coordinatedRead(p) ?? ""
+        lastInk = s
+        return s
+    }
+
+    /// Writes the line-anchored ink sidecar JSON to the vault folder.
+    func saveInkJSON(_ json: String) {
+        guard let p = inkNote?.path, json != lastInk else { return }
+        coordinatedWrite(json, to: p)
+        lastInk = json
+    }
+
     /// Saves `mine`, merging any edit that reached the file meanwhile. Returns the text the editor should show when
     /// that differs from `mine` (a merge, or a newer file adopted), else nil.
     func save(_ mine: String) -> String? {
@@ -71,31 +91,6 @@ final class DraftpadFile: ObservableObject {
             return nil
         }
     }
-
-    /// Writes a drawing into "Draftpad ink/" and returns the vault-relative path of its PNG.
-    func saveInk(_ drawing: PKDrawing) -> String? {
-        guard let vault = vault, !drawing.bounds.isEmpty else { return nil }
-        let dir = vault.appendingPathComponent("Draftpad ink")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HHmmss"
-        let name = f.string(from: Date())
-        // Dark ink on paper, so the drawing reads the same in the dark editor, in Obsidian and in a light theme.
-        let bounds = drawing.bounds.insetBy(dx: -16, dy: -16)
-        var ink = UIImage()
-        UITraitCollection(userInterfaceStyle: .light).performAsCurrent { ink = drawing.image(from: bounds, scale: 2) }
-        let png = UIGraphicsImageRenderer(size: bounds.size).pngData { ctx in
-            UIColor.white.setFill(); ctx.fill(CGRect(origin: .zero, size: bounds.size))
-            ink.draw(at: .zero)
-        }
-        let pngURL = dir.appendingPathComponent("\(name).png")
-        var ok = false
-        var err: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: pngURL, options: .forReplacing, error: &err) { u in
-            ok = (try? png.write(to: u)) != nil
-        }
-        try? drawing.dataRepresentation().write(to: dir.appendingPathComponent("\(name).drawing"))
-        return ok ? "Draftpad ink/\(name).png" : nil
-    }
 }
 
 // MARK: The editor
@@ -108,10 +103,15 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     private var saveTimer: Timer?
     private var pollTimer: Timer?
     private var lastPosted: String?
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    private let eventStore = EKEventStore()
+    private var syncedEventIds = Set<String>()
+    var onAudioAction: (([String: Any]) -> Void)?
 
     init(file: DraftpadFile) {
         self.file = file
         let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()
         if let v = file.vault {
             let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("embeds")
             let f = EmbedFiles(vault: v, cache: cache)
@@ -120,7 +120,15 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         web = WKWebView(frame: .zero, configuration: cfg)
         super.init()
-        for name in ["editor", "link", "ui"] { cfg.userContentController.add(Weak(self), name: name) }
+        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
+            cfg.userContentController.add(Weak(self), name: name)
+        }
+        if let p = file.eventsNote?.path,
+           let raw = coordinatedRead(p),
+           let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds = Set(ids)
+        }
         web.navigationDelegate = self
         web.isOpaque = false
         web.backgroundColor = .clear
@@ -149,6 +157,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         call("setTheme('dark')")
         call("setFontSize(\(UIDevice.current.userInterfaceIdiom == .pad ? 19 : 17))")
         call("setText(\(jsLiteral(file.load())))")
+        let initialInk = file.loadInk()
+        if !initialInk.isEmpty {
+            call("setInk(\(jsLiteral(initialInk)))")
+        }
+        if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
+            call("setWingsState(\(jsLiteral(wingsJSON)))")
+        }
+        call("setCalendarAdded(\(jsLiteral(syncedEventIdsJSON)))")
         call("showPage(0)")
         // Another device's edit (the Mac, Obsidian) reaches the file through iCloud: merge it in while open.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.pollExternal() }
@@ -171,11 +187,45 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 switch kind {
-                case "snap": UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                case "snap": UISelectionFeedbackGenerator().selectionChanged()
+                case "shapeSnap": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 case "edge": UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                case "open": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                case "open", "squeeze": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                case "erase": UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 default: break
                 }
+            }
+        case "ink":
+            if let json = m.body as? String {
+                file.saveInkJSON(json)
+            } else if let obj = m.body as? [String: Any],
+                      let data = try? JSONSerialization.data(withJSONObject: obj),
+                      let json = String(data: data, encoding: .utf8) {
+                file.saveInkJSON(json)
+            }
+        case "audio":
+            if let d = m.body as? [String: Any] {
+                if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
+                    speak(summaryText)
+                }
+                onAudioAction?(d)
+            }
+        case "calendar":
+            if let d = m.body as? [String: Any],
+               (d["action"] as? String) == "addEvents",
+               let items = d["events"] as? [[String: Any]] {
+                saveEvents(items)
+            }
+        case "wings":
+            guard let wp = file.wingsNote?.path else { return }
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: wp)
+            } else if let d = m.body as? [String: Any],
+                      (d["action"] as? String) == "saveState",
+                      let state = d["state"],
+                      let data = try? JSONSerialization.data(withJSONObject: state),
+                      let json = String(data: data, encoding: .utf8) {
+                coordinatedWrite(json, to: wp)
             }
         default:
             guard let s = m.body as? String else { return }
@@ -183,6 +233,88 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             saveTimer?.invalidate()
             saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in self?.saveNow() }
         }
+    }
+
+    /// The page's dates come from JavaScript's toISOString(), which always has milliseconds ("…T21:00:00.000Z").
+    /// ISO8601DateFormatter's default options return nil for those, so every save failed silently (E2 review).
+    private static let isoDate: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func pageDate(_ s: String?) -> Date? {
+        guard let s = s else { return nil }
+        return isoDate.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+
+    /// Saves the events the owner confirmed in the Agenda card (never on its own), and reports each one back to the
+    /// page: saved, or the reason in words. An id counts as saved only after EventKit accepted it.
+    private func saveEvents(_ items: [[String: Any]]) {
+        eventStore.requestWriteOnlyAccessToEvents { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for item in items {
+                    guard let id = item["id"] as? String else { continue }
+                    if self.syncedEventIds.contains(id) { self.reportCalendar(id, true, ""); continue }
+                    guard granted else { self.reportCalendar(id, false, "Calendar access is off (Settings > Privacy & Security > Calendars > Recense)"); continue }
+                    guard let cal = self.eventStore.defaultCalendarForNewEvents else {
+                        self.reportCalendar(id, false, "no default calendar"); continue
+                    }
+                    guard let title = item["title"] as? String, !title.isEmpty,
+                          let start = DraftpadWeb.pageDate(item["startISO"] as? String) else {
+                        self.reportCalendar(id, false, "couldn't read the date"); continue
+                    }
+                    let ev = EKEvent(eventStore: self.eventStore)
+                    ev.calendar = cal
+                    ev.title = title
+                    ev.startDate = start
+                    ev.endDate = DraftpadWeb.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
+                    ev.isAllDay = (item["allDay"] as? Bool) == true
+                    ev.notes = item["rawLine"] as? String
+                    do {
+                        try self.eventStore.save(ev, span: .thisEvent)
+                        self.syncedEventIds.insert(id)
+                        self.persistSyncedEventIds()
+                        self.reportCalendar(id, true, "")
+                    } catch {
+                        self.reportCalendar(id, false, error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+
+    private var syncedEventIdsJSON: String {
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    private func persistSyncedEventIds() {
+        let json = syncedEventIdsJSON
+        if let p = file.eventsNote?.path { coordinatedWrite(json, to: p) }
+    }
+
+    private func reportCalendar(_ id: String, _ ok: Bool, _ message: String) {
+        call("calendarResult(\(jsLiteral(id)), \(ok), \(jsLiteral(message)))")
+    }
+
+    /// Speaks in the text's own language with the best installed voice for it (E2 review #6). Every utterance goes
+    /// through here, so a neural voice can replace the system ones in one place later.
+    func speak(_ text: String) {
+        if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
+        let u = AVSpeechUtterance(string: text)
+        u.rate = AVSpeechUtteranceDefaultSpeechRate
+        u.voice = DraftpadWeb.bestVoice(for: text)
+        speechSynthesizer.speak(u)
+    }
+
+    static func bestVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let r = NLLanguageRecognizer()
+        r.processString(text)
+        guard let lang = r.dominantLanguage?.rawValue else { return nil }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
+        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
     }
 
     func saveNow() {
@@ -201,9 +333,19 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     }
 
     private func pollExternal() {
-        guard saveTimer == nil, let p = file.note?.path, let now = coordinatedRead(p), now != file.base else { return }
-        flushAndSave()
-        if lastPosted == nil { if let shown = file.save(file.base) { call("setText(\(jsLiteral(shown)))") } }
+        if saveTimer == nil, let p = file.note?.path, let now = coordinatedRead(p), now != file.base {
+            flushAndSave()
+            if lastPosted == nil { if let shown = file.save(file.base) { call("setText(\(jsLiteral(shown)))") } }
+        }
+        if let inkPath = file.inkNote?.path, let remoteInk = coordinatedRead(inkPath), !remoteInk.isEmpty, remoteInk != file.lastInk {
+            call("mergeInk(\(jsLiteral(remoteInk)))") { [weak self] merged in
+                guard let self = self,
+                      let obj = merged,
+                      let data = try? JSONSerialization.data(withJSONObject: obj),
+                      let json = String(data: data, encoding: .utf8) else { return }
+                self.file.saveInkJSON(json)
+            }
+        }
     }
 
     func step(_ delta: Int) {
@@ -212,7 +354,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
     }
 
-    func insertInk(_ path: String) { call("insertBlock(\(jsLiteral("![](<\(path)>)")))") }
+    func handlePencilAction(_ action: String) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        call("onPencilAction(\(jsLiteral(action)))")
+    }
+
+    func setAudioTranscript(_ json: String) { call("setAudioTranscript(\(jsLiteral(json)))") }
+    func updateAudioTime(_ sec: Double) { call("updateAudioTime(\(sec))") }
+    func executeVoiceCommand(_ phrase: String) { call("voiceCommand(\(jsLiteral(phrase)))") }
 
     func stop() { pollTimer?.invalidate(); flushAndSave() }
 }
@@ -225,58 +374,29 @@ func jsLiteral(_ s: String) -> String {
 
 // MARK: Pencil
 
-/// The web view, with Apple Pencil's squeeze and double-tap wired to the ink layer.
+/// The unified whiteboard web view, with Apple Pencil Pro squeeze and double-tap wired directly to the inline ink layer.
 struct EditorSurface: UIViewRepresentable {
     let web: WKWebView
-    let onPencil: () -> Void
+    let onPencilAction: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPencil) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction) }
 
     func makeUIView(context: Context) -> WKWebView {
         let i = UIPencilInteraction(delegate: context.coordinator)
         web.addInteraction(i)
         return web
     }
-    func updateUIView(_ v: WKWebView, context: Context) { context.coordinator.onPencil = onPencil }
+    func updateUIView(_ v: WKWebView, context: Context) { context.coordinator.onPencilAction = onPencilAction }
 
     final class Coordinator: NSObject, UIPencilInteractionDelegate {
-        var onPencil: () -> Void
-        init(_ f: @escaping () -> Void) { onPencil = f }
+        var onPencilAction: (String) -> Void
+        init(_ f: @escaping (String) -> Void) { onPencilAction = f }
         func pencilInteraction(_ i: UIPencilInteraction, didReceiveSqueeze s: UIPencilInteraction.Squeeze) {
-            if s.phase == .ended { onPencil() }
+            if s.phase == .ended { onPencilAction("squeeze") }
         }
-        func pencilInteraction(_ i: UIPencilInteraction, didReceiveTap t: UIPencilInteraction.Tap) { onPencil() }
-    }
-}
-
-/// The ink layer: a PencilKit canvas over the page with the system tool palette. Fingers scroll; the Pencil draws.
-struct InkLayer: UIViewRepresentable {
-    @Binding var drawing: PKDrawing
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeUIView(context: Context) -> PKCanvasView {
-        let c = PKCanvasView()
-        c.drawingPolicy = .pencilOnly
-        c.backgroundColor = UIColor.black.withAlphaComponent(0.12)
-        c.isOpaque = false
-        c.drawing = drawing
-        c.delegate = context.coordinator
-        c.overrideUserInterfaceStyle = .dark
-        let picker = PKToolPicker()
-        picker.setVisible(true, forFirstResponder: c)
-        picker.addObserver(c)
-        context.coordinator.picker = picker
-        DispatchQueue.main.async { c.becomeFirstResponder() }
-        return c
-    }
-    func updateUIView(_ c: PKCanvasView, context: Context) {}
-
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
-        let parent: InkLayer
-        var picker: PKToolPicker?
-        init(_ p: InkLayer) { parent = p }
-        func canvasViewDrawingDidChange(_ c: PKCanvasView) { parent.drawing = c.drawing }
+        func pencilInteraction(_ i: UIPencilInteraction, didReceiveTap t: UIPencilInteraction.Tap) {
+            onPencilAction("doubleTap")
+        }
     }
 }
 
@@ -312,8 +432,6 @@ struct ChooseVault: View {
 struct DraftpadEditor: View {
     @ObservedObject var file: DraftpadFile
     @StateObject private var editor: DraftpadWebBox
-    @State private var inking = false
-    @State private var drawing = PKDrawing()
     @Environment(\.scenePhase) private var phase
 
     init(file: DraftpadFile) {
@@ -324,40 +442,13 @@ struct DraftpadEditor: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            EditorSurface(web: editor.web.web) { toggleInk() }
-            if inking { InkLayer(drawing: $drawing).ignoresSafeArea(edges: .bottom) }
-        }
-        // the editor is a web page that never scrolls the bar away: an inline title, as the web places have
-        .navigationTitle("Draftpad").navigationBarTitleDisplayMode(.inline)
-        .tint(Theme.accent)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if inking {
-                    Button("Cancel", role: .cancel) { drawing = PKDrawing(); inking = false }
-                    Button("Done") { finishInk() }.bold()
-                } else {
-                    Button { editor.web.step(-1) } label: { Label("Newer page", systemImage: "chevron.left") }.glassCircle()
-                        .keyboardShortcut("[", modifiers: .command)
-                    Button { editor.web.step(1) } label: { Label("Older page", systemImage: "chevron.right") }.glassCircle()
-                        .keyboardShortcut("]", modifiers: .command)
-                    MoreMenu {
-                        Button { editor.web.step(-1) } label: { Label("Newer Page", systemImage: "chevron.left") }
-                        Button { editor.web.step(1) } label: { Label("Older Page", systemImage: "chevron.right") }
-                        Button { toggleInk() } label: { Label("Draw", systemImage: "pencil.tip.crop.circle") }
-                    }
-                }
+            EditorSurface(web: editor.web.web) { action in
+                editor.web.handlePencilAction(action)
             }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .onChange(of: phase) { _, p in if p != .active { editor.web.flushAndSave() } }
         .onDisappear { editor.web.stop() }
-    }
-
-    func toggleInk() { if inking { finishInk() } else { drawing = PKDrawing(); inking = true } }
-
-    func finishInk() {
-        if let path = file.saveInk(drawing) { editor.web.insertInk(path) }
-        drawing = PKDrawing()
-        inking = false
     }
 }
 
