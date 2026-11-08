@@ -9,7 +9,7 @@ Gallery Worker (`../library/`) only through its API, so a push here never redepl
 |---|---|
 | `ios/` | the Xcode project (`GalleryFiles.xcodeproj`, bundle `com.chauphan.galleryfiles`), assets, entitlements, `build.sh` |
 | `HostApp/iOS/` | the app: Browser (sidebar), Draftpad, Player, Listen, Captions |
-| `ios/Broadcast/` | the screen-broadcast extension: hears other apps' audio, transcribes on the device |
+| `ios/Broadcast/` | the screen-broadcast extension: hears other apps' audio, transcribes on the device (SpeechAnalyzer on iOS 26 through `../shared/speechcore.swift`, listed by hand in the project; SFSpeechRecognizer before) |
 | `Extension/`, `FileProviderCore/` | the File Provider: Archive in the Files app (and Finder, for the Mac app) |
 | `macos/`, `HostApp/macOS/` | Gallery for the Mac (retiring) |
 | `Icon/` | the icon's source (`icon.swift`) |
@@ -28,7 +28,13 @@ updates in place.
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
   Sample shows until B1's pool store; our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
-  skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place.
+  skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place,
+  `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
+- **Now Playing's transcript** (11-08): the quote button in Now Playing's toolbar shows the episode's transcript in
+  place of the player (which keeps playing under it): ShowsKit's `TranscriptView`, our scrubber under it and back 15 /
+  play / forward 30 under that. `Ears.swift` hears the playing episode's file on this device with the shared engine
+  (`../shared/speechcore.swift`, two-minute stretches, the playhead's first) in Listen's "Hear in" language. It needs
+  the file on the device (B1's pool) and a player that tells its time (B3's `Transport.time`); until then it says so.
 - **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
   The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
   Saves go through the Mac's 3-way merge (`shared/notesync.swift`), and an edit from the Mac or Obsidian is merged in
@@ -48,11 +54,16 @@ updates in place.
 - **Listen**: Recense on the iPhone and iPad. Start it from Control Center › Screen Recording › Gallery; the broadcast
   extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
-  in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, Read along
-  with Copy, Clear and full screen. What's heard is kept per episode in the same transcript store as the Mac.
+  in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, the shared
+  transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
+  at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
+  under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
+  kept per episode in the same transcript store as the Mac (each sentence's timed words too).
+  Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (the only time Listen needs a
+  connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
+  day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
   The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
-  its middle button holds the words where they are and play shows the newest. Read along shows a word only once
-  speech recognition has stopped rewriting it (Settle), so sentences grow calmly.
+  its middle button holds the words where they are and play shows the newest.
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).

@@ -9,6 +9,17 @@ import Observation
     var isPlaying: Bool { get }
     func toggle()
     func skip(_ seconds: Double)
+    /// Where the player is, in seconds, and how long the episode is: the transcript's playhead and the scrubber's.
+    var time: Double { get }
+    var duration: Double? { get }
+    func seek(to seconds: Double)
+}
+
+/// A player that can't yet say where it is (B3's first cut) still drives play, pause and skip.
+public extension Transport {
+    var time: Double { 0 }
+    var duration: Double? { nil }
+    func seek(to seconds: Double) {}
 }
 
 public struct UpdatedShow: Identifiable, Hashable, Sendable {
@@ -36,6 +47,12 @@ public final class ShowsModel {
     public var nowPlayingOpen = false
     public var problem: String?
     public weak var transport: Transport?
+    /// The playing episode's transcript, as far as it has been heard (the app's ears fill it: shared/speechcore.swift),
+    /// and a word on how that's going ("Hearing 2:00 to 4:00…", "This device can't hear Vietnamese offline.").
+    public var transcript: [TranscriptLine] = []
+    public var transcriptNote: String?
+    /// Now Playing shows the transcript (Podcasts' quote button) rather than the player.
+    public var showsTranscript = false
     private var clock: HLCClock
 
     public init(store: any CatalogStore, gate: Gate? = nil) {
