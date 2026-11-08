@@ -29,10 +29,22 @@ import {
   currentPage,
   isPageMode,
   setPageMode,
-  pageCount
+  pageCount,
+  swipeLeftToRight,
+  swipeRightToLeft,
+  openNewWindowOnLeft,
+  deleteEmptyWindow,
+  computeEffectiveDrag
 } from './pagemode.js';
 import { embedsExtension } from './embeds.js';
 import { linksExtension } from './links.js';
+import {
+  formatDotIndicator,
+  detectHapticZone,
+  attachHapticZones,
+  executeVoiceMove,
+  HAPTIC_ZONES
+} from './gestures.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -41,6 +53,14 @@ import {
   normalizeThemeName,
   normalizeFontSize
 } from './theme.js';
+
+export {
+  formatDotIndicator,
+  detectHapticZone,
+  attachHapticZones,
+  executeVoiceMove,
+  HAPTIC_ZONES
+};
 
 export const MENU_ACTIONS = [
   'outline',
@@ -112,18 +132,19 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let newestFirst = false;
   let outlineVisible = false;
   let menuOpen = false;
-  let toolbarFaded = false;
+  let toolbarFaded = true;
 
   const shell = document.createElement('div');
   shell.className = 'rc-shell';
 
   const toolbar = document.createElement('header');
-  toolbar.className = 'rc-toolbar';
+  toolbar.className = 'rc-toolbar rc-toolbar-faded';
 
   const pageIndicator = document.createElement('span');
   pageIndicator.className = 'rc-page-indicator';
   pageIndicator.id = 'rc-page-indicator';
   pageIndicator.textContent = formatPageIndicator(0, 1);
+  pageIndicator.setAttribute('data-dots', formatDotIndicator(0, 1));
 
   const menuWrap = document.createElement('div');
   menuWrap.className = 'rc-menu-wrap';
@@ -333,7 +354,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   function updatePageIndicator(state = view ? view.state : null) {
     if (!state) return;
-    pageIndicator.textContent = formatPageIndicator(currentPage(state), pageCount(state));
+    const cur = currentPage(state);
+    const count = pageCount(state);
+    pageIndicator.textContent = formatPageIndicator(cur, count);
+    pageIndicator.setAttribute('data-dots', formatDotIndicator(cur, count));
   }
 
   function setToolbarFaded(faded) {
@@ -457,6 +481,39 @@ export function mountEditor(root = document.body, initialDoc = '') {
     renderOutline();
   }
 
+  let currentInkTool = 'pen';
+  const voiceHandlers = {
+    swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
+    swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
+    deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
+    toggleOutline: () => {
+      if (outlineVisible) hideOutline();
+      else showOutline();
+    },
+    openFind: () => {
+      hideOutline();
+      return openFindReplace(view);
+    },
+    setInkTool: tool => {
+      currentInkTool = tool;
+      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
+      if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
+      return tool;
+    },
+    summarizeSection: () => {
+      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.audio;
+      if (h && typeof h.postMessage === 'function') h.postMessage({ action: 'summarize' });
+      return 'summarize';
+    },
+    bookmarkAudio: () => {
+      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.audio;
+      if (h && typeof h.postMessage === 'function') h.postMessage({ action: 'bookmark' });
+      return 'bookmark';
+    }
+  };
+
+  const voiceCommand = phrase => executeVoiceMove(phrase, voiceHandlers);
+
   bridge = createEditorBridge({
     getState: () => (view ? view.state : null),
     dispatch: spec => {
@@ -479,14 +536,21 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setFontSize,
     getRemoved: () => (view ? getRemoved(view.state) : []),
     extra: {
-      step: delta => (stepPage(view, Number(delta) || 0) ? 'ok' : 'bounce'),
+      step: delta => (stepPage(view, Number(delta) || 0, { allowCreate: true }) ? 'ok' : 'bounce'),
+      swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
+      swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
+      openNewWindowOnLeft: () => (openNewWindowOnLeft(view) ? 'ok' : 'bounce'),
+      deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
       showPage: i => showPage(view, Number(i) || 0),
       currentPage: () => currentPage(view.state),
       pageCount: () => pageCount(view.state),
       setPageMode: on => setPages(on),
       isPageMode: () => isPageMode(view.state),
       setCursor,
-      insertBlock
+      insertBlock,
+      voiceCommand,
+      getInkTool: () => currentInkTool,
+      setInkTool: tool => voiceHandlers.setInkTool(tool)
     }
   });
 
@@ -577,6 +641,20 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onClose: () => hideOutline()
   });
 
+  attachHapticZones(shell, {
+    onZoneEnter(zone) {
+      if (zone === 'top') {
+        setToolbarFaded(false);
+      }
+    },
+    onZoneLeave(zone) {
+      if (zone === 'top' && !menuOpen) {
+        setToolbarFaded(true);
+      }
+    },
+    globalObj: typeof window !== 'undefined' ? window : null
+  });
+
   setTheme(currentTheme);
   setFontSize(currentFontSize);
   updatePageIndicator();
@@ -596,6 +674,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
       hideOutline();
       return openFindReplace(view);
     },
+    voiceCommand,
+    getInkTool: () => currentInkTool,
+    setInkTool: tool => voiceHandlers.setInkTool(tool),
     getTheme: () => currentTheme,
     getFontSize: () => currentFontSize,
     isNewestFirst: () => newestFirst

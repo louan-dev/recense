@@ -70,7 +70,7 @@ body {
   background: var(--rc-panel);
   flex-shrink: 0;
   opacity: 1;
-  transition: opacity 220ms ease;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .rc-toolbar.rc-toolbar-faded {
@@ -457,6 +457,51 @@ body {
   max-width: 100%;
   max-height: 480px;
   margin: 0 auto;
+}
+
+/* Ambient haptic edge cues with calm progressive disclosure */
+.rc-zone-active-left,
+.rc-zone-active-right,
+.rc-zone-active-top {
+  pointer-events: none;
+}
+
+.rc-shell.rc-zone-active-left,
+.rc-shell.rc-zone-active-right,
+.rc-shell.rc-zone-active-top {
+  pointer-events: auto;
+}
+
+.rc-shell.rc-zone-active-left {
+  box-shadow: inset 3px 0 0 var(--rc-cyan);
+}
+
+.rc-shell.rc-zone-active-right {
+  box-shadow: inset -3px 0 0 var(--rc-cyan);
+}
+
+.rc-shell.rc-zone-active-top {
+  box-shadow: inset 0 3px 0 var(--rc-cyan);
+}
+
+/* Calm, slow-visual-processing transitions */
+.rc-shell {
+  transition: box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-outline {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 </style>
@@ -26539,6 +26584,13 @@ ${PAGE_MARKER}
   function isFullDateLine(line) {
     return parseDateLine(line) !== null;
   }
+  function isWindowEmpty(rawContent) {
+    if (typeof rawContent !== "string") return true;
+    const trimmed = rawContent.trim();
+    if (trimmed.length === 0) return true;
+    if (!trimmed.includes("\n") && isFullDateLine(trimmed)) return true;
+    return false;
+  }
   function inspectDraftpadPages(text) {
     const source = typeof text === "string" ? text : "";
     const parts = source.split(PAGE_MARKER);
@@ -26557,6 +26609,13 @@ ${PAGE_MARKER}
         while (trailTrim < part.length - leadTrim && (part[part.length - 1 - trailTrim] === "\n" || part[part.length - 1 - trailTrim] === "\r")) {
           trailTrim++;
         }
+      }
+      if (i > 0 && i < parts.length - 1 && leadTrim === part.length && part.length >= 2) {
+        trailTrim = Math.min(2, Math.floor(part.length / 2));
+        if (trailTrim > 0 && part[part.length - trailTrim - 1] === "\r" && part[part.length - trailTrim] === "\n") {
+          trailTrim = Math.min(part.length - 2, trailTrim + 1);
+        }
+        leadTrim = part.length - trailTrim;
       }
       const from = cursor + leadTrim;
       const to = cursor + part.length - trailTrim;
@@ -29186,6 +29245,18 @@ ${PAGE_MARKER}
   // src/pagemode.js
   var setPageMode = StateEffect.define();
   var setPageIndex = StateEffect.define();
+  var viewMemory = /* @__PURE__ */ new WeakMap();
+  function getMemory(view) {
+    if (!view || typeof view !== "object") {
+      return { cursors: /* @__PURE__ */ new Map(), scrolls: /* @__PURE__ */ new Map(), dragX: 0, dragging: false, settling: false };
+    }
+    let m = viewMemory.get(view);
+    if (!m) {
+      m = { cursors: /* @__PURE__ */ new Map(), scrolls: /* @__PURE__ */ new Map(), dragX: 0, dragging: false, settling: false };
+      viewMemory.set(view, m);
+    }
+    return m;
+  }
   function pageAt(pages, pos) {
     for (let i = 0; i < pages.length; i++) {
       const next = pages[i + 1];
@@ -29200,25 +29271,65 @@ ${PAGE_MARKER}
     }
     return page.from;
   }
+  function hiddenRanges(text, index) {
+    const pages = inspectDraftpadPages(text);
+    if (pages.length <= 1) return [];
+    const i = Math.max(0, Math.min(pages.length - 1, index));
+    const { from, to } = pages[i];
+    const out = [];
+    if (from > 0) {
+      let beforeEnd = from - 1;
+      if (beforeEnd > 0 && text[beforeEnd - 1] === "\r" && text[beforeEnd] === "\n") {
+        beforeEnd -= 1;
+      }
+      out.push({ from: 0, to: beforeEnd });
+    }
+    if (to < text.length) {
+      let afterStart = to + 1;
+      if (text[to] === "\r" && text[to + 1] === "\n") {
+        afterStart = to + 2;
+      }
+      if (afterStart <= text.length) {
+        out.push({ from: afterStart, to: text.length });
+      }
+    }
+    return out.filter((r) => r.to >= r.from);
+  }
+  var hiddenPageDeco = Decoration.replace({ block: true });
+  function buildPageDecos(docText, on, index) {
+    if (!on) return Decoration.none;
+    const ranges = hiddenRanges(docText, index);
+    if (ranges.length === 0) return Decoration.none;
+    return Decoration.set(
+      ranges.map((r) => hiddenPageDeco.range(r.from, r.to)),
+      true
+    );
+  }
   var pageModeField = StateField.define({
-    create() {
-      return { on: true, index: 0, decos: Decoration.none };
+    create(state) {
+      const text = state.doc.toString();
+      return { on: true, index: 0, decos: buildPageDecos(text, true, 0) };
     },
     update(v, tr) {
       let on = v.on;
       let index = v.index;
+      let explicitIndex = false;
       for (const e of tr.effects) {
         if (e.is(setPageMode)) on = Boolean(e.value);
-        if (e.is(setPageIndex)) index = e.value;
+        if (e.is(setPageIndex)) {
+          index = e.value;
+          explicitIndex = true;
+        }
       }
-      const pages = inspectDraftpadPages(tr.state.doc.toString());
+      const text = tr.state.doc.toString();
+      const pages = inspectDraftpadPages(text);
       index = Math.max(0, Math.min(pages.length - 1, index));
-      if (on && tr.selection && !tr.effects.some((e) => e.is(setPageIndex))) {
+      if (on && tr.selection && !explicitIndex) {
         const at = pageAt(pages, tr.state.selection.main.head);
         if (at !== index) index = at;
       }
-      if (on === v.on && index === v.index) return v;
-      return { on, index, decos: Decoration.none };
+      if (!tr.docChanged && on === v.on && index === v.index) return v;
+      return { on, index, decos: buildPageDecos(text, on, index) };
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.decos)
   });
@@ -29235,8 +29346,53 @@ ${PAGE_MARKER}
   function pageCount(state) {
     return inspectDraftpadPages(state.doc.toString()).length;
   }
+  function saveCurrentWindowMemory(view) {
+    if (!view || !view.state) return;
+    const mem = getMemory(view);
+    const idx = currentPage(view.state);
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const page = pages[idx];
+    if (page) {
+      const relCursor = Math.max(0, Math.min(page.to - page.from, view.state.selection.main.head - page.from));
+      mem.cursors.set(idx, relCursor);
+    }
+    if (view.scrollDOM && typeof view.scrollDOM.scrollTop === "number") {
+      mem.scrolls.set(idx, Math.max(0, view.scrollDOM.scrollTop));
+    }
+  }
+  function shiftWindowMemoryOnPrepend(mem, totalBefore) {
+    const nextCursors = /* @__PURE__ */ new Map();
+    const nextScrolls = /* @__PURE__ */ new Map();
+    for (let i = 0; i < totalBefore; i++) {
+      if (mem.cursors.has(i)) nextCursors.set(i + 1, mem.cursors.get(i));
+      if (mem.scrolls.has(i)) nextScrolls.set(i + 1, mem.scrolls.get(i));
+    }
+    nextCursors.set(0, 0);
+    nextScrolls.set(0, 0);
+    mem.cursors = nextCursors;
+    mem.scrolls = nextScrolls;
+  }
+  function shiftWindowMemoryOnDelete(mem, deletedIndex, totalBefore) {
+    const nextCursors = /* @__PURE__ */ new Map();
+    const nextScrolls = /* @__PURE__ */ new Map();
+    for (let i = 0; i < totalBefore; i++) {
+      if (i === deletedIndex) continue;
+      const dst = i > deletedIndex ? i - 1 : i;
+      if (mem.cursors.has(i)) nextCursors.set(dst, mem.cursors.get(i));
+      if (mem.scrolls.has(i)) nextScrolls.set(dst, mem.scrolls.get(i));
+    }
+    mem.cursors = nextCursors;
+    mem.scrolls = nextScrolls;
+  }
   function syncPageFromScroll(view, { onSnap = null, globalObj } = {}) {
-    if (!view || !view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
+    if (!view || !view.state) return 0;
+    if (isPageMode(view.state)) {
+      if (view.scrollDOM && typeof view.scrollDOM.scrollTop === "number") {
+        getMemory(view).scrolls.set(currentPage(view.state), Math.max(0, view.scrollDOM.scrollTop));
+      }
+      return currentPage(view.state);
+    }
+    if (!view.scrollDOM || typeof view.lineBlockAtHeight !== "function") {
       return currentPage(view);
     }
     const pages = inspectDraftpadPages(view.state.doc.toString());
@@ -29251,79 +29407,235 @@ ${PAGE_MARKER}
     }
     return at;
   }
-  function showPage(view, index) {
+  function showPage(view, index, { preserveMemory = true } = {}) {
+    if (preserveMemory) saveCurrentWindowMemory(view);
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const i = Math.max(0, Math.min(pages.length - 1, index));
-    const targetPos = pageHeadingOffset(view.state.doc, pages[i]);
+    const page = pages[i];
+    const mem = getMemory(view);
+    const pageLen = page ? Math.max(0, page.to - page.from) : 0;
+    const savedRel = mem.cursors.has(i) ? Math.min(mem.cursors.get(i), pageLen) : null;
+    const targetPos = savedRel !== null ? page.from + savedRel : pageHeadingOffset(view.state.doc, page);
     view.dispatch({
       selection: { anchor: targetPos },
       effects: [setPageIndex.of(i), EditorView.scrollIntoView(targetPos, { y: "start", yMargin: 8 })]
     });
     if (view.scrollDOM) {
-      const targetTop = i === 0 ? 0 : typeof view.lineBlockAt === "function" ? Math.max(0, view.lineBlockAt(targetPos).top) : i * 240;
+      const savedScroll = mem.scrolls.has(i) ? mem.scrolls.get(i) : 0;
       if (typeof view.scrollDOM.scrollTo === "function") {
-        view.scrollDOM.scrollTo({ top: targetTop, behavior: "smooth" });
+        view.scrollDOM.scrollTo({ top: savedScroll, behavior: "smooth" });
       } else {
-        view.scrollDOM.scrollTop = targetTop;
+        view.scrollDOM.scrollTop = savedScroll;
       }
     }
     return i;
   }
-  function stepPage(view, delta, { onSnap = null, onBounce = null, globalObj } = {}) {
-    if (!isPageMode(view.state)) return false;
-    const target = currentPage(view.state) + delta;
-    if (target < 0 || target >= pageCount(view.state)) {
+  function deleteEmptyWindow(view, index = currentPage(view.state), { onSnap = null, globalObj } = {}) {
+    const docText = view.state.doc.toString();
+    const pages = inspectDraftpadPages(docText);
+    if (pages.length <= 1) return false;
+    const i = Math.max(0, Math.min(pages.length - 1, index));
+    if (!isWindowEmpty(pages[i].rawContent)) return false;
+    const mem = getMemory(view);
+    const delFrom = i === 0 ? 0 : pages[i - 1].to;
+    const delTo = i === 0 ? pages[1].from : pages[i].to;
+    shiftWindowMemoryOnDelete(mem, i, pages.length);
+    const nextCount = pages.length - 1;
+    const nextIndex = Math.min(i, nextCount - 1);
+    const nextDocPreview = docText.slice(0, delFrom) + docText.slice(delTo);
+    const nextPages = inspectDraftpadPages(nextDocPreview);
+    const nextPage = nextPages[nextIndex];
+    const nextPageLen = nextPage ? Math.max(0, nextPage.to - nextPage.from) : 0;
+    const savedRel = mem.cursors.has(nextIndex) ? Math.min(mem.cursors.get(nextIndex), nextPageLen) : 0;
+    const nextAnchor = nextPage ? nextPage.from + savedRel : 0;
+    view.dispatch({
+      changes: { from: delFrom, to: delTo, insert: "" },
+      selection: { anchor: nextAnchor },
+      effects: [setPageIndex.of(nextIndex), EditorView.scrollIntoView(nextAnchor, { y: "start", yMargin: 8 })],
+      userEvent: "delete.page"
+    });
+    if (view.scrollDOM) {
+      const savedScroll = mem.scrolls.get(nextIndex) || 0;
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: savedScroll, behavior: "smooth" });
+      } else {
+        view.scrollDOM.scrollTop = savedScroll;
+      }
+    }
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(nextIndex);
+    return true;
+  }
+  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+    const docText = view.state.doc.toString();
+    const pages = inspectDraftpadPages(docText);
+    if (pages.length > 0 && isWindowEmpty(pages[0].rawContent)) {
       postHaptic("edge", globalObj);
       if (typeof onBounce === "function") onBounce();
       return false;
     }
-    showPage(view, target);
+    saveCurrentWindowMemory(view);
+    const mem = getMemory(view);
+    shiftWindowMemoryOnPrepend(mem, pages.length);
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: PAGE_JOINER },
+      selection: { anchor: 0 },
+      effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: "start", yMargin: 8 })],
+      userEvent: "input.page"
+    });
+    if (view.scrollDOM) {
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        view.scrollDOM.scrollTop = 0;
+      }
+    }
     postHaptic("snap", globalObj);
-    if (typeof onSnap === "function") onSnap(target);
+    if (typeof onSnap === "function") onSnap(0);
     return true;
+  }
+  function swipeLeftToRight(view, { allowCreate = true, onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const cur = currentPage(view.state);
+    if (cur > 0 && cur === pages.length - 1 && isWindowEmpty(pages[cur].rawContent)) {
+      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
+    }
+    if (cur > 0) {
+      showPage(view, cur - 1);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(cur - 1);
+      return true;
+    }
+    if (allowCreate && !isWindowEmpty(pages[0].rawContent)) {
+      return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+    }
+    postHaptic("edge", globalObj);
+    if (typeof onBounce === "function") onBounce();
+    return false;
+  }
+  function swipeRightToLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    const pages = inspectDraftpadPages(view.state.doc.toString());
+    const cur = currentPage(view.state);
+    if (pages.length > 1 && isWindowEmpty(pages[cur].rawContent)) {
+      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
+    }
+    if (cur < pages.length - 1) {
+      showPage(view, cur + 1);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(cur + 1);
+      return true;
+    }
+    postHaptic("edge", globalObj);
+    if (typeof onBounce === "function") onBounce();
+    return false;
+  }
+  function stepPage(view, delta, { allowCreate = false, allowDeleteEmpty = true, onSnap = null, onBounce = null, globalObj } = {}) {
+    if (!isPageMode(view.state)) return false;
+    if (delta < 0) {
+      return swipeLeftToRight(view, { allowCreate, onSnap, onBounce, globalObj });
+    }
+    if (delta > 0) {
+      if (allowDeleteEmpty) {
+        return swipeRightToLeft(view, { onSnap, onBounce, globalObj });
+      }
+      const target = currentPage(view.state) + delta;
+      if (target >= pageCount(view.state)) {
+        postHaptic("edge", globalObj);
+        if (typeof onBounce === "function") onBounce();
+        return false;
+      }
+      showPage(view, target);
+      postHaptic("snap", globalObj);
+      if (typeof onSnap === "function") onSnap(target);
+      return true;
+    }
+    return false;
+  }
+  function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
+    const w = Math.max(120, Number(viewportWidth) || 400);
+    const pages = inspectDraftpadPages(state.doc.toString());
+    const idx = currentPage(state);
+    const curEmpty = isWindowEmpty(pages[idx] ? pages[idx].rawContent : "");
+    let v = Number(dragX) || 0;
+    if (v > 0 && idx <= 0 && curEmpty) v *= 0.25;
+    if (v < 0 && idx >= pages.length - 1 && (!curEmpty || pages.length <= 1)) v *= 0.25;
+    return Math.max(-w, Math.min(w, v));
   }
   function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     return [
       pageModeField,
       Prec.highest(keymap.of([
         { key: "Mod-]", run: (v) => {
-          stepPage(v, 1, { onSnap, onBounce });
+          swipeRightToLeft(v, { onSnap, onBounce });
           return true;
         } },
         { key: "Mod-[", run: (v) => {
-          stepPage(v, -1, { onSnap, onBounce });
+          swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce });
           return true;
         } }
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null } = {}) {
-    let acc = 0;
-    let spent = false;
-    let timer = null;
-    let suppressScrollUntil = 0;
-    const stepWithGlide = (delta) => {
-      suppressScrollUntil = Date.now() + 380;
-      return stepPage(view, delta, { onSnap, onBounce });
-    };
+  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
+    let wheelAcc = 0;
+    let wheelSpent = false;
+    let wheelTimer = null;
+    let axis = null;
+    const targetEl = () => view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null;
+    const widthOf = () => view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400;
+    function renderDrag(dx) {
+      const el2 = targetEl();
+      if (!el2 || !el2.style) return 0;
+      const eff = computeEffectiveDrag(view.state, dx, widthOf());
+      el2.style.transition = "none";
+      el2.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
+      return eff;
+    }
+    function settleDrag(dx) {
+      const el2 = targetEl();
+      const limit = Math.min(threshold, widthOf() * 0.2);
+      if (dx >= limit) {
+        swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
+      } else if (dx <= -limit) {
+        swipeRightToLeft(view, { onSnap, onBounce });
+      }
+      if (el2 && el2.style) {
+        el2.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+        el2.style.transform = "translateX(0px)";
+      }
+    }
     view.scrollDOM.addEventListener("wheel", (e) => {
       if (!isPageMode(view.state)) return;
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        acc = 0;
-        spent = false;
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelAcc = 0;
+        wheelSpent = false;
+        axis = null;
+        renderDrag(0);
       }, quietMs);
-      if (spent) return;
-      acc += e.deltaX;
-      if (Math.abs(acc) >= threshold) {
-        spent = true;
-        stepWithGlide(acc > 0 ? 1 : -1);
+      if (axis === null) {
+        if (e.deltaX === 0 && e.deltaY === 0) return;
+        axis = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? "h" : "v";
+      }
+      if (axis === "v") return;
+      e.preventDefault();
+      if (wheelSpent) return;
+      const dx = e.isDirectionInvertedFromDevice === false ? e.deltaX : -e.deltaX;
+      wheelAcc += dx;
+      renderDrag(wheelAcc);
+      const limit = Math.min(threshold, widthOf() * 0.2);
+      if (Math.abs(wheelAcc) >= limit) {
+        wheelSpent = true;
+        const finalDx = wheelAcc;
+        wheelAcc = 0;
+        settleDrag(finalDx);
       }
     }, { passive: false });
     let touchStartX = null;
     let touchStartY = null;
+    let touchAxis = null;
     view.scrollDOM.addEventListener("touchstart", (e) => {
       if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
         touchStartX = null;
@@ -29331,25 +29643,93 @@ ${PAGE_MARKER}
       }
       const t2 = e.touches[0];
       if (t2.clientX <= edgePx) {
+        if (typeof onEdgeZone === "function") onEdgeZone("left");
         touchStartX = null;
         return;
       }
       touchStartX = t2.clientX;
       touchStartY = t2.clientY;
+      touchAxis = null;
+    }, { passive: true });
+    view.scrollDOM.addEventListener("touchmove", (e) => {
+      if (touchStartX === null || !e.touches || e.touches.length !== 1) return;
+      const t2 = e.touches[0];
+      const dx = t2.clientX - touchStartX;
+      const dy = t2.clientY - touchStartY;
+      if (touchAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        touchAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "h" : "v";
+      }
+      if (touchAxis === "h") {
+        renderDrag(dx);
+      }
     }, { passive: true });
     view.scrollDOM.addEventListener("touchend", (e) => {
       if (touchStartX === null || !e.changedTouches || e.changedTouches.length === 0) return;
       const t2 = e.changedTouches[0];
       const dx = t2.clientX - touchStartX;
       const dy = t2.clientY - touchStartY;
+      const wasHorizontal = touchAxis === "h" || Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2;
       touchStartX = null;
       touchStartY = null;
-      if (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.4) {
-        stepWithGlide(dx < 0 ? 1 : -1);
+      touchAxis = null;
+      if (wasHorizontal) {
+        settleDrag(dx);
+      } else {
+        renderDrag(0);
       }
     }, { passive: true });
+    view.scrollDOM.addEventListener("touchcancel", () => {
+      touchStartX = null;
+      touchStartY = null;
+      touchAxis = null;
+      renderDrag(0);
+    }, { passive: true });
+    let ptrId = null;
+    let ptrStartX = null;
+    let ptrStartY = null;
+    let ptrAxis = null;
+    view.scrollDOM.addEventListener("pointerdown", (e) => {
+      if (!isPageMode(view.state)) return;
+      if (e.pointerType === "touch") return;
+      const w = widthOf();
+      const x = Number(e.clientX) || 0;
+      const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
+      if (!inEdgeZone && !e.altKey) return;
+      if (typeof onEdgeZone === "function") onEdgeZone(x <= edgePx * 1.5 ? "left" : "right");
+      ptrId = e.pointerId;
+      ptrStartX = x;
+      ptrStartY = Number(e.clientY) || 0;
+      ptrAxis = null;
+    });
+    view.scrollDOM.addEventListener("pointermove", (e) => {
+      if (ptrId === null || e.pointerId !== ptrId) return;
+      const dx = (Number(e.clientX) || 0) - ptrStartX;
+      const dy = (Number(e.clientY) || 0) - ptrStartY;
+      if (ptrAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        ptrAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "h" : "v";
+      }
+      if (ptrAxis === "h") {
+        renderDrag(dx);
+      }
+    });
+    const finishPointer = (e) => {
+      if (ptrId === null || e && e.pointerId !== void 0 && e.pointerId !== ptrId) return;
+      const dx = e ? (Number(e.clientX) || 0) - ptrStartX : 0;
+      const dy = e ? (Number(e.clientY) || 0) - ptrStartY : 0;
+      const wasHorizontal = e && e.type !== "pointercancel" && (ptrAxis === "h" || Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2);
+      ptrId = null;
+      ptrStartX = null;
+      ptrStartY = null;
+      ptrAxis = null;
+      if (wasHorizontal) {
+        settleDrag(dx);
+      } else {
+        renderDrag(0);
+      }
+    };
+    view.scrollDOM.addEventListener("pointerup", finishPointer);
+    view.scrollDOM.addEventListener("pointercancel", finishPointer);
     view.scrollDOM.addEventListener("scroll", () => {
-      if (Date.now() < suppressScrollUntil) return;
       syncPageFromScroll(view, { onSnap });
     }, { passive: true });
   }
@@ -29512,6 +29892,342 @@ ${PAGE_MARKER}
   });
   function linksExtension() {
     return [decorations2, clicks];
+  }
+
+  // src/gestures.js
+  var HAPTIC_ZONES = Object.freeze({
+    top: 44,
+    edge: 32,
+    dwellMs: 280
+  });
+  function formatDotIndicator(index, total) {
+    const safeTotal = Math.max(1, Number(total) || 1);
+    const safeIndex = Math.max(0, Math.min(safeTotal - 1, Number(index) || 0));
+    if (safeTotal <= 8) {
+      const dots2 = [];
+      for (let i = 0; i < safeTotal; i++) {
+        dots2.push(i === safeIndex ? "\u25CF" : "\u25CB");
+      }
+      return dots2.join(" ");
+    }
+    const windowSize = 8;
+    const start = Math.max(0, Math.min(safeTotal - windowSize, safeIndex - Math.floor(windowSize / 2)));
+    const dots = [];
+    for (let i = start; i < start + windowSize; i++) {
+      dots.push(i === safeIndex ? "\u25CF" : "\u25CB");
+    }
+    return dots.join(" ");
+  }
+  function detectHapticZone(x, y, width, height, zones = HAPTIC_ZONES) {
+    if (typeof x !== "number" || typeof y !== "number") return null;
+    const w = Number(width) || 0;
+    const h = Number(height) || 0;
+    if (x < 0 || y < 0 || x > w || y > h) return null;
+    const topZone = Number(zones?.top ?? HAPTIC_ZONES.top);
+    const edgeZone = Number(zones?.edge ?? HAPTIC_ZONES.edge);
+    if (y <= topZone) return "top";
+    if (x <= edgeZone) return "left";
+    if (x >= w - edgeZone) return "right";
+    return null;
+  }
+  function attachHapticZones(container, {
+    onZoneEnter = null,
+    onZoneDwell = null,
+    onZoneLeave = null,
+    zones = HAPTIC_ZONES,
+    globalObj = typeof window !== "undefined" ? window : null
+  } = {}) {
+    if (!container || typeof container.addEventListener !== "function") {
+      return () => {
+      };
+    }
+    const activeZones = {
+      top: Number(zones?.top ?? HAPTIC_ZONES.top),
+      edge: Number(zones?.edge ?? HAPTIC_ZONES.edge),
+      dwellMs: Number(zones?.dwellMs ?? HAPTIC_ZONES.dwellMs)
+    };
+    let currentZone = null;
+    let dwellTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let dragged = false;
+    function clearDwellTimer() {
+      if (dwellTimer !== null) {
+        clearTimeout(dwellTimer);
+        dwellTimer = null;
+      }
+    }
+    function getCoords(e) {
+      let cx = e.clientX;
+      let cy = e.clientY;
+      if (e.touches && e.touches.length > 0) {
+        cx = e.touches[0].clientX;
+        cy = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        cx = e.changedTouches[0].clientX;
+        cy = e.changedTouches[0].clientY;
+      }
+      if (typeof cx !== "number" || typeof cy !== "number") {
+        return null;
+      }
+      const rect = typeof container.getBoundingClientRect === "function" ? container.getBoundingClientRect() : null;
+      const left = rect ? rect.left : 0;
+      const top2 = rect ? rect.top : 0;
+      const width = rect && rect.width ? rect.width : container.clientWidth || 800;
+      const height = rect && rect.height ? rect.height : container.clientHeight || 600;
+      return {
+        x: cx - left,
+        y: cy - top2,
+        width,
+        height
+      };
+    }
+    function updateZone(relX, relY, width, height) {
+      const newZone = detectHapticZone(relX, relY, width, height, activeZones);
+      if (newZone !== currentZone) {
+        const prevZone = currentZone;
+        clearDwellTimer();
+        dragged = false;
+        if (prevZone) {
+          if (container.classList && typeof container.classList.remove === "function") {
+            container.classList.remove(`rc-zone-active-${prevZone}`);
+          }
+          if (typeof onZoneLeave === "function") {
+            onZoneLeave(prevZone);
+          }
+        }
+        currentZone = newZone;
+        if (newZone) {
+          if (container.classList && typeof container.classList.add === "function") {
+            container.classList.add(`rc-zone-active-${newZone}`);
+          }
+          postHaptic("snap", globalObj);
+          if (typeof onZoneEnter === "function") {
+            onZoneEnter(newZone);
+          }
+          if (newZone === "left" || newZone === "right") {
+            startX = relX;
+            startY = relY;
+            dragged = false;
+            dwellTimer = setTimeout(() => {
+              dwellTimer = null;
+              if (!dragged && currentZone === newZone) {
+                if (typeof onZoneDwell === "function") {
+                  onZoneDwell(newZone);
+                }
+              }
+            }, activeZones.dwellMs);
+          }
+        }
+      } else if (currentZone === "left" || currentZone === "right") {
+        const dist2 = Math.hypot(relX - startX, relY - startY);
+        if (dist2 > 10) {
+          dragged = true;
+          clearDwellTimer();
+        }
+      }
+    }
+    function handlePointerMove(e) {
+      const coords = getCoords(e);
+      if (!coords) return;
+      updateZone(coords.x, coords.y, coords.width, coords.height);
+    }
+    function handlePointerDown(e) {
+      const coords = getCoords(e);
+      if (!coords) return;
+      startX = coords.x;
+      startY = coords.y;
+      dragged = false;
+      updateZone(coords.x, coords.y, coords.width, coords.height);
+    }
+    function handleLeave() {
+      clearDwellTimer();
+      dragged = false;
+      if (currentZone) {
+        const prevZone = currentZone;
+        currentZone = null;
+        if (container.classList && typeof container.classList.remove === "function") {
+          container.classList.remove(`rc-zone-active-${prevZone}`);
+        }
+        if (typeof onZoneLeave === "function") {
+          onZoneLeave(prevZone);
+        }
+      }
+    }
+    container.addEventListener("pointermove", handlePointerMove);
+    container.addEventListener("pointerdown", handlePointerDown);
+    container.addEventListener("touchstart", handlePointerDown, { passive: true });
+    container.addEventListener("touchmove", handlePointerMove, { passive: true });
+    container.addEventListener("touchend", handleLeave);
+    container.addEventListener("touchcancel", handleLeave);
+    container.addEventListener("pointerleave", handleLeave);
+    container.addEventListener("pointerup", handleLeave);
+    function destroy() {
+      clearDwellTimer();
+      handleLeave();
+      container.removeEventListener("pointermove", handlePointerMove);
+      container.removeEventListener("pointerdown", handlePointerDown);
+      container.removeEventListener("touchstart", handlePointerDown);
+      container.removeEventListener("touchmove", handlePointerMove);
+      container.removeEventListener("touchend", handleLeave);
+      container.removeEventListener("touchcancel", handleLeave);
+      container.removeEventListener("pointerleave", handleLeave);
+      container.removeEventListener("pointerup", handleLeave);
+    }
+    destroy.destroy = destroy;
+    return destroy;
+  }
+  function executeVoiceMove(commandStr, handlers2 = {}) {
+    if (typeof commandStr !== "string") {
+      return { matched: false, action: null };
+    }
+    const raw = commandStr.trim().toLowerCase().replace(/[.,!?;:'"()[\]{}]/g, "").replace(/\s+/g, " ");
+    if (!raw) {
+      return { matched: false, action: null };
+    }
+    const leftToRightPhrases = [
+      "new topic",
+      "new window",
+      "new page",
+      "swipe right",
+      "left",
+      "nouveau",
+      "nouvelle page",
+      "nouveau sujet",
+      "m\u1EDBi",
+      "trang m\u1EDBi",
+      "ch\u1EE7 \u0111\u1EC1 m\u1EDBi"
+    ];
+    if (leftToRightPhrases.includes(raw)) {
+      if (typeof handlers2.swipeLeftToRight === "function") {
+        handlers2.swipeLeftToRight();
+      }
+      return { matched: true, action: "swipeLeftToRight" };
+    }
+    const rightToLeftPhrases = [
+      "next topic",
+      "next window",
+      "next page",
+      "older",
+      "older page",
+      "swipe left",
+      "right",
+      "suivant",
+      "suivante",
+      "page suivante",
+      "ti\u1EBFp",
+      "trang ti\u1EBFp",
+      "ti\u1EBFp t\u1EE5c"
+    ];
+    if (rightToLeftPhrases.includes(raw)) {
+      if (typeof handlers2.swipeRightToLeft === "function") {
+        handlers2.swipeRightToLeft();
+      }
+      return { matched: true, action: "swipeRightToLeft" };
+    }
+    const deletePhrases = [
+      "delete",
+      "delete window",
+      "delete page",
+      "remove empty",
+      "supprimer",
+      "supprimer la page",
+      "x\xF3a",
+      "x\xF3a trang",
+      "x\xF3a c\u1EEDa s\u1ED5"
+    ];
+    if (deletePhrases.includes(raw)) {
+      if (typeof handlers2.deleteEmptyWindow === "function") {
+        handlers2.deleteEmptyWindow();
+      }
+      return { matched: true, action: "deleteEmptyWindow" };
+    }
+    const outlinePhrases = [
+      "outline",
+      "topics",
+      "m\u1EE5c l\u1EE5c",
+      "sommaire"
+    ];
+    if (outlinePhrases.includes(raw)) {
+      if (typeof handlers2.toggleOutline === "function") {
+        handlers2.toggleOutline();
+      }
+      return { matched: true, action: "toggleOutline" };
+    }
+    const findPhrases = [
+      "find",
+      "search",
+      "t\xECm",
+      "t\xECm ki\u1EBFm",
+      "rechercher"
+    ];
+    if (findPhrases.includes(raw)) {
+      if (typeof handlers2.openFind === "function") {
+        handlers2.openFind();
+      }
+      return { matched: true, action: "openFind" };
+    }
+    const inkToolMap = {
+      "pen": "pen",
+      "b\xFAt": "pen",
+      "stylo": "pen",
+      "highlighter": "highlighter",
+      "b\xFAt d\u1EA1": "highlighter",
+      "surligneur": "highlighter",
+      "underline": "underline",
+      "g\u1EA1ch ch\xE2n": "underline",
+      "souligner": "underline",
+      "circle": "circle",
+      "khoanh tr\xF2n": "circle",
+      "entourer": "circle",
+      "eraser": "eraser",
+      "t\u1EA9y": "eraser",
+      "g\xF4m": "eraser",
+      "gomme": "eraser",
+      "whole eraser": "whole eraser",
+      "t\u1EA9y to\xE0n b\u1ED9": "whole eraser",
+      "gomme enti\xE8re": "whole eraser",
+      "partial eraser": "partial eraser",
+      "t\u1EA9y m\u1ED9t ph\u1EA7n": "partial eraser",
+      "gomme partielle": "partial eraser"
+    };
+    if (inkToolMap[raw]) {
+      const toolName = inkToolMap[raw];
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool(toolName);
+      }
+      return { matched: true, action: "setInkTool", tool: toolName };
+    }
+    const summaryPhrases = [
+      "summarize",
+      "summary",
+      "audio summary",
+      "t\xF3m t\u1EAFt",
+      "t\xF3m t\u1EAFt \xE2m thanh",
+      "r\xE9sumer",
+      "r\xE9sum\xE9"
+    ];
+    if (summaryPhrases.includes(raw)) {
+      if (typeof handlers2.summarizeSection === "function") {
+        handlers2.summarizeSection();
+      }
+      return { matched: true, action: "summarizeSection" };
+    }
+    const bookmarkPhrases = [
+      "bookmark",
+      "annotate",
+      "\u0111\xE1nh d\u1EA5u",
+      "ch\xFA th\xEDch",
+      "signet",
+      "annoter"
+    ];
+    if (bookmarkPhrases.includes(raw)) {
+      if (typeof handlers2.bookmarkAudio === "function") {
+        handlers2.bookmarkAudio();
+      }
+      return { matched: true, action: "bookmarkAudio" };
+    }
+    return { matched: false, action: null };
   }
 
   // src/theme.js
@@ -29704,15 +30420,16 @@ ${PAGE_MARKER}
     let newestFirst = false;
     let outlineVisible = false;
     let menuOpen = false;
-    let toolbarFaded = false;
+    let toolbarFaded = true;
     const shell = document.createElement("div");
     shell.className = "rc-shell";
     const toolbar = document.createElement("header");
-    toolbar.className = "rc-toolbar";
+    toolbar.className = "rc-toolbar rc-toolbar-faded";
     const pageIndicator = document.createElement("span");
     pageIndicator.className = "rc-page-indicator";
     pageIndicator.id = "rc-page-indicator";
     pageIndicator.textContent = formatPageIndicator(0, 1);
+    pageIndicator.setAttribute("data-dots", formatDotIndicator(0, 1));
     const menuWrap = document.createElement("div");
     menuWrap.className = "rc-menu-wrap";
     const menuBtn = document.createElement("button");
@@ -29892,7 +30609,10 @@ ${PAGE_MARKER}
     }
     function updatePageIndicator(state2 = view ? view.state : null) {
       if (!state2) return;
-      pageIndicator.textContent = formatPageIndicator(currentPage(state2), pageCount(state2));
+      const cur = currentPage(state2);
+      const count2 = pageCount(state2);
+      pageIndicator.textContent = formatPageIndicator(cur, count2);
+      pageIndicator.setAttribute("data-dots", formatDotIndicator(cur, count2));
     }
     function setToolbarFaded(faded) {
       toolbarFaded = Boolean(faded);
@@ -30000,6 +30720,37 @@ ${String(text ?? "")}`;
       newestFirstMenuBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
+    let currentInkTool = "pen";
+    const voiceHandlers = {
+      swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+      swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
+      deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
+      toggleOutline: () => {
+        if (outlineVisible) hideOutline();
+        else showOutline();
+      },
+      openFind: () => {
+        hideOutline();
+        return openFindReplace(view);
+      },
+      setInkTool: (tool) => {
+        currentInkTool = tool;
+        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
+        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+        return tool;
+      },
+      summarizeSection: () => {
+        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.audio;
+        if (h && typeof h.postMessage === "function") h.postMessage({ action: "summarize" });
+        return "summarize";
+      },
+      bookmarkAudio: () => {
+        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.audio;
+        if (h && typeof h.postMessage === "function") h.postMessage({ action: "bookmark" });
+        return "bookmark";
+      }
+    };
+    const voiceCommand = (phrase2) => executeVoiceMove(phrase2, voiceHandlers);
     bridge = createEditorBridge({
       getState: () => view ? view.state : null,
       dispatch: (spec) => {
@@ -30019,14 +30770,21 @@ ${String(text ?? "")}`;
       setFontSize,
       getRemoved: () => view ? getRemoved(view.state) : [],
       extra: {
-        step: (delta) => stepPage(view, Number(delta) || 0) ? "ok" : "bounce",
+        step: (delta) => stepPage(view, Number(delta) || 0, { allowCreate: true }) ? "ok" : "bounce",
+        swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+        swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
+        openNewWindowOnLeft: () => openNewWindowOnLeft(view) ? "ok" : "bounce",
+        deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
         showPage: (i) => showPage(view, Number(i) || 0),
         currentPage: () => currentPage(view.state),
         pageCount: () => pageCount(view.state),
         setPageMode: (on) => setPages(on),
         isPageMode: () => isPageMode(view.state),
         setCursor,
-        insertBlock
+        insertBlock,
+        voiceCommand,
+        getInkTool: () => currentInkTool,
+        setInkTool: (tool) => voiceHandlers.setInkTool(tool)
       }
     });
     menuBtn.addEventListener("click", (e) => {
@@ -30102,6 +30860,19 @@ ${String(text ?? "")}`;
       onOpen: () => showOutline(),
       onClose: () => hideOutline()
     });
+    attachHapticZones(shell, {
+      onZoneEnter(zone) {
+        if (zone === "top") {
+          setToolbarFaded(false);
+        }
+      },
+      onZoneLeave(zone) {
+        if (zone === "top" && !menuOpen) {
+          setToolbarFaded(true);
+        }
+      },
+      globalObj: typeof window !== "undefined" ? window : null
+    });
     setTheme(currentTheme);
     setFontSize(currentFontSize);
     updatePageIndicator();
@@ -30120,6 +30891,9 @@ ${String(text ?? "")}`;
         hideOutline();
         return openFindReplace(view);
       },
+      voiceCommand,
+      getInkTool: () => currentInkTool,
+      setInkTool: (tool) => voiceHandlers.setInkTool(tool),
       getTheme: () => currentTheme,
       getFontSize: () => currentFontSize,
       isNewestFirst: () => newestFirst
