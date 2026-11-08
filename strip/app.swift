@@ -4189,14 +4189,14 @@ func menuBarColor(on s: NSScreen, below wid: CGWindowID) -> NSColor? {
     return NSColor(srgbRed: r / n, green: g / n, blue: b / n, alpha: 1)
 }
 
-/// The player's round glass button: a translucent white disc, a hairline rim, and white pause bars or a play
-/// triangle. Each press flips it with a small spring. (macOS no longer tells apps what's playing, so it flips on
-/// your press rather than following the player.)
+/// The player's round glass button: an SF Symbol (`pause.circle` / `play.circle` by default, like QuickTime's
+/// menu-bar control) or a template mark, glowing under the pointer. Each press flips it with a small spring.
 final class GlassPauseButton: NSButton {
     private var hover = false
     var showsPlay = false { didSet { needsDisplay = true } }
     var symbol: String?                 // a round glass button with an SF Symbol instead of play/pause
     var mark: NSImage?                  // or with a template image (drawn white), such as Recense's mark
+    var glyphSymbol: String { symbol ?? (showsPlay ? "play.circle" : "pause.circle") }
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
@@ -4205,6 +4205,7 @@ final class GlassPauseButton: NSButton {
     override func mouseEntered(with e: NSEvent) { hover = true; needsDisplay = true; onHover?(true) }
     override func mouseExited(with e: NSEvent) { hover = false; needsDisplay = true; onHover?(false) }
     func bounce() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         wantsLayer = true
         guard let l = layer else { return }
         l.anchorPoint = CGPoint(x: 0.5, y: 0.5); l.position = CGPoint(x: frame.midX, y: frame.midY)
@@ -4231,24 +4232,12 @@ final class GlassPauseButton: NSButton {
             tinted.draw(in: r)
             return
         }
-        if let sym = symbol, let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: d * 0.72, weight: .semibold).applying(.init(paletteColors: [tone]))) {
+        let sym = glyphSymbol
+        let weight: NSFont.Weight = symbol == nil ? .regular : .semibold
+        let size = symbol == nil ? d * 0.78 : d * 0.72
+        if let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: size, weight: weight).applying(.init(paletteColors: [tone]))) {
             img.draw(in: NSRect(x: c.midX - img.size.width / 2, y: c.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
-            return
-        }
-        tone.setFill()
-        if showsPlay {
-            let t = NSBezierPath()
-            let s = d * 0.66
-            t.move(to: NSPoint(x: c.midX - s * 0.38, y: c.midY - s / 2))
-            t.line(to: NSPoint(x: c.midX - s * 0.38, y: c.midY + s / 2))
-            t.line(to: NSPoint(x: c.midX + s * 0.55, y: c.midY))
-            t.close(); t.fill()
-        } else {
-            let bw = d * 0.2, bh = d * 0.66, gap = d * 0.16
-            for x in [c.midX - gap / 2 - bw, c.midX + gap / 2] {
-                NSBezierPath(roundedRect: NSRect(x: x, y: c.midY - bh / 2, width: bw, height: bh), xRadius: bw / 2, yRadius: bw / 2).fill()
-            }
         }
     }
 }
@@ -7126,10 +7115,29 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     func snapshot() {
         // Also the top of the screen around the strip, exactly as it looks (menu bar included).
         if let scr = NSScreen.main {
+            let wasOpen = rest.expanded
+            if !panel.isVisible && !wasOpen {
+                rest.refresh(visible: true)
+                rest.setBand(open: true, animated: false)
+                rest.window.displayIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            }
             let r = CGRect(x: scr.frame.midX - 480, y: 0, width: 960, height: 60)
             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
                     .write(to: URL(fileURLWithPath: "/tmp/recense-menubar.png"))
+            }
+            rest.pause.showsPlay.toggle()
+            rest.pause.displayIfNeeded(); rest.window.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+                try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: "/tmp/recense-menubar-alt.png"))
+            }
+            rest.pause.showsPlay.toggle()
+            if !panel.isVisible && !wasOpen {
+                rest.setBand(open: false, animated: false)
+                rest.window.displayIfNeeded()
             }
         }
         // What's actually on screen (Recense has Screen Recording permission), falling back to an offscreen render.
@@ -7800,10 +7808,20 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
                 "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go"]
 
+func stripSelftest() -> Bool {
+    let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+    let p0 = b.glyphSymbol == "pause.circle"
+    b.showsPlay = true
+    let p1 = b.glyphSymbol == "play.circle"
+    let ok = p0 && p1
+    print("\(ok ? "ok  " : "FAIL") strip, play/pause button draws pause.circle and play.circle")
+    return ok
+}
+
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
-    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest()
-    exit(a && b && c && d && e ? 0 : 1)
+    let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
+    exit(a && b && c && d && e && f ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
