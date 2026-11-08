@@ -119,12 +119,15 @@ export function extractCalendarEvents(docText, { referenceDate = new Date() } = 
   }
 
   const ref = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
-  const refYear = !Number.isNaN(ref.getTime()) ? ref.getUTCFullYear() : new Date().getUTCFullYear();
-  const refMonth = !Number.isNaN(ref.getTime()) ? ref.getUTCMonth() : new Date().getUTCMonth();
-  const refDay = !Number.isNaN(ref.getTime()) ? ref.getUTCDate() : new Date().getUTCDate();
+  // Dates are read in the Mac's or iPhone's own time zone: "1pm" means 1 PM here (E2 review #2).
+  const base = !Number.isNaN(ref.getTime()) ? ref : new Date();
+  const refYear = base.getFullYear();
+  const refMonth = base.getMonth();
+  const refDay = base.getDate();
 
   const lines = docText.split(/\r?\n/);
   const events = [];
+  const seenIds = new Set();
   let pageIndex = 0;
 
   // Regex rules
@@ -155,22 +158,22 @@ export function extractCalendarEvents(docText, { referenceDate = new Date() } = 
 
     if ((m = reRelEn.exec(rawLine))) {
       const isTomorrow = m[1].toLowerCase() === 'tomorrow';
-      const d = new Date(Date.UTC(refYear, refMonth, refDay + (isTomorrow ? 1 : 0)));
+      const d = new Date(refYear, refMonth, refDay + (isTomorrow ? 1 : 0));
       const t = parseTimeStr(m[2]);
       const tEnd = parseTimeStr(m[3]);
-      parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
     } else if ((m = reRelFr.exec(rawLine))) {
       const isDemain = m[1].toLowerCase() === 'demain';
-      const d = new Date(Date.UTC(refYear, refMonth, refDay + (isDemain ? 1 : 0)));
+      const d = new Date(refYear, refMonth, refDay + (isDemain ? 1 : 0));
       const t = parseTimeStr(m[2]);
       const tEnd = parseTimeStr(m[3]);
-      parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
     } else if ((m = reRelVi.exec(rawLine))) {
       const isMai = m[1].toLowerCase().includes('mai');
-      const d = new Date(Date.UTC(refYear, refMonth, refDay + (isMai ? 1 : 0)));
+      const d = new Date(refYear, refMonth, refDay + (isMai ? 1 : 0));
       const t = parseTimeStr(m[2]);
       const tEnd = parseTimeStr(m[3]);
-      parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+      parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
     } else if ((m = reIso.exec(rawLine))) {
       const y = Number(m[1]);
       const mon = Number(m[2]) - 1;
@@ -228,28 +231,45 @@ export function extractCalendarEvents(docText, { referenceDate = new Date() } = 
     if (!hasTime && !hasDesc) {
       continue;
     }
+    // "today" / "tomorrow" / "demain" / "ngày mai" turn up in ordinary sentences: only with a time is it an event.
+    if (parsed.relative && !hasTime) {
+      continue;
+    }
+    // A field such as "Date: October 9, 2026" (a label, a colon, the date) is a header, not an appointment.
+    if (!hasTime && /:\s*$/.test(before) && after.trim() === '' && remainder.split(/\s+/).length <= 2) {
+      continue;
+    }
 
     const title = hasDesc ? remainder : cleanTitle(parsed.matchText);
-    const hour = parsed.time ? parsed.time.hour : 9;
-    const min = parsed.time ? parsed.time.minute : 0;
-    const startDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, hour, min, 0));
-    const startISO = startDate.toISOString();
-
+    // No time written means an all-day event, never an invented 9 AM.
+    const allDay = !hasTime;
+    let startDate;
     let endDate;
-    if (parsed.endTime) {
-      endDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0));
+    if (allDay) {
+      startDate = new Date(parsed.year, parsed.month, parsed.day);
+      endDate = new Date(parsed.year, parsed.month, parsed.day + 1);
     } else {
-      endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      startDate = new Date(parsed.year, parsed.month, parsed.day, parsed.time.hour, parsed.time.minute, 0);
+      if (parsed.endTime) {
+        endDate = new Date(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0);
+        if (endDate <= startDate) endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000); // "10pm - 1am"
+      } else {
+        endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      }
     }
+    const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();
 
     const id = hashEventId(title, startISO);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
 
     events.push({
       id,
       title,
       startISO,
       endISO,
+      allDay,
       lineNumber,
       pageIndex,
       rawLine
@@ -260,8 +280,9 @@ export function extractCalendarEvents(docText, { referenceDate = new Date() } = 
 }
 
 /**
- * 24/7 Continuous Calendar Scanner.
- * Deduplicates parsed events via `syncedIds` and notifies native bridge + callback.
+ * Calendar scanner: finds dated lines and proposes them. It never writes to the calendar by itself.
+ * An event is saved only through `requestAdd` (the owner's click, tap or voice), and counts as added only once the
+ * host reports the save (`markSynced`). Each scan marks events already added with `added: true`.
  */
 export function createCalendarScanner(options = {}) {
   const syncedIds = new Set(options.syncedIds || []);
@@ -270,24 +291,21 @@ export function createCalendarScanner(options = {}) {
 
   function scanText(docText, scanOpts = {}) {
     const refDate = scanOpts.referenceDate || options.referenceDate || new Date();
-    latestEvents = extractCalendarEvents(docText, { referenceDate: refDate });
-
-    const newEvents = latestEvents.filter(ev => !syncedIds.has(ev.id));
-    if (newEvents.length > 0) {
-      for (const ev of newEvents) {
-        syncedIds.add(ev.id);
-      }
-      if (typeof options.onNewEvents === 'function') {
-        options.onNewEvents(newEvents, latestEvents);
-      }
-      if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
-        globalObj.webkit.messageHandlers.calendar.postMessage({
-          action: 'addEvents',
-          events: newEvents
-        });
-      }
+    latestEvents = extractCalendarEvents(docText, { referenceDate: refDate })
+      .map(ev => ({ ...ev, added: syncedIds.has(ev.id) }));
+    if (typeof options.onScan === 'function') {
+      options.onScan(latestEvents);
     }
     return latestEvents;
+  }
+
+  /** The owner confirmed this event: ask the host to save it. Returns false if it was already added. */
+  function requestAdd(ev) {
+    if (!ev || syncedIds.has(ev.id)) return false;
+    if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+      globalObj.webkit.messageHandlers.calendar.postMessage({ action: 'addEvents', events: [ev] });
+    }
+    return true;
   }
 
   function getEvents() {
@@ -306,10 +324,12 @@ export function createCalendarScanner(options = {}) {
     } else if (typeof ids === 'string') {
       syncedIds.add(ids);
     }
+    latestEvents = latestEvents.map(ev => ({ ...ev, added: syncedIds.has(ev.id) }));
   }
 
   return {
     scanText,
+    requestAdd,
     getEvents,
     getSyncedIds,
     markSynced
@@ -520,7 +540,10 @@ export function createDualWings(container, options = {}) {
     : ['preview', 'quicktime'];
   let rightWidgets = Array.isArray(options.rightWidgets)
     ? [...options.rightWidgets]
-    : ['calendar', 'findmy', 'mail'];
+    : ['calendar'];
+  // Widgets only some hosts can run (the Mac's iPhone Mirroring): shown once the host enables them.
+  const HOST_WIDGETS = new Set(['iphone']);
+  const enabledHostWidgets = new Set();
 
   // Left Wing aside
   const leftEl = makeDomElement(doc, 'aside', {}, {
@@ -856,6 +879,29 @@ export function createDualWings(container, options = {}) {
 
   // 5. Calendar Agenda Widget
   let calendarEvents = [];
+  const calendarStatus = new Map(); // id → { status: 'saving' | 'added' | 'error', message }
+
+  function formatEventTime(ev) {
+    const d = new Date(ev.startISO);
+    if (Number.isNaN(d.getTime())) return '';
+    try {
+      if (ev.allDay) {
+        return new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(d) + ' · all day';
+      }
+      return new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(d);
+    } catch {
+      return d.toLocaleString();
+    }
+  }
+
+  /** The host's answer to an add: 'added', or 'error' with the reason in words. */
+  function setCalendarStatus(id, status, message = '') {
+    calendarStatus.set(id, { status, message });
+    if (status === 'added') {
+      calendarEvents = calendarEvents.map(ev => (ev.id === id ? { ...ev, added: true } : ev));
+    }
+    updateCalendarCard();
+  }
   const calendarCard = makeDomElement(doc, 'section', {}, {
     class: 'rc-wing-card rc-widget-calendar',
     'data-widget': 'calendar',
@@ -885,12 +931,37 @@ export function createDualWings(container, options = {}) {
         });
 
         const titleEl = makeDomElement(doc, 'div', { textContent: ev.title }, { class: 'rc-cal-title' });
-        const timeEl = makeDomElement(doc, 'div', { textContent: ev.startISO.slice(0, 16).replace('T', ' ') }, { class: 'rc-cal-time' });
+        const timeEl = makeDomElement(doc, 'div', { textContent: formatEventTime(ev) }, { class: 'rc-cal-time' });
         const locEl = makeDomElement(doc, 'div', { textContent: `Line ${ev.lineNumber} (Page ${ev.pageIndex + 1})` }, { class: 'rc-cal-loc' });
 
         itemRow.appendChild(titleEl);
         itemRow.appendChild(timeEl);
         itemRow.appendChild(locEl);
+
+        // The confirm step: nothing reaches the calendar until this is pressed (or "add it" is said).
+        const st = ev.added ? { status: 'added' } : (calendarStatus.get(ev.id) || { status: 'proposed' });
+        const label = st.status === 'added' ? 'Added to Calendar'
+          : st.status === 'saving' ? 'Adding…'
+          : st.status === 'error' ? `Not added: ${st.message || 'unknown error'} · Try again`
+          : 'Add to Calendar';
+        const addEl = makeDomElement(doc, 'div', { textContent: label }, {
+          class: `rc-cal-add rc-cal-${st.status}`,
+          'data-id': ev.id,
+          role: st.status === 'added' || st.status === 'saving' ? 'status' : 'button',
+          tabindex: st.status === 'added' || st.status === 'saving' ? '-1' : '0'
+        });
+        if (st.status === 'proposed' || st.status === 'error') {
+          const add = e => {
+            if (e?.stopPropagation) e.stopPropagation();
+            if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+            calendarStatus.set(ev.id, { status: 'saving' });
+            updateCalendarCard();
+            if (typeof options.onAddEvent === 'function') options.onAddEvent(ev);
+          };
+          addEl.addEventListener('click', add);
+          addEl.addEventListener('keydown', add);
+        }
+        itemRow.appendChild(addEl);
 
         itemRow.addEventListener('click', () => {
           if (typeof options.onJumpToLine === 'function') {
@@ -943,29 +1014,87 @@ export function createDualWings(container, options = {}) {
     }
   }
 
+  // 6. iPhone Mirroring (Mac only): opens macOS's own iPhone Mirroring app; the host enables it.
+  const iphoneCard = makeDomElement(doc, 'section', {}, {
+    class: 'rc-wing-card rc-widget-iphone',
+    'data-widget': 'iphone',
+    role: 'region'
+  });
+  widgetElements.iphone = iphoneCard;
+  {
+    const header = makeDomElement(doc, 'div', {}, { class: 'rc-widget-header' });
+    header.appendChild(makeDomElement(doc, 'span', { textContent: 'iPhone Mirroring' }, { class: 'rc-widget-title' }));
+    iphoneCard.appendChild(header);
+    const openEl = makeDomElement(doc, 'div', { textContent: 'Open iPhone Mirroring' }, {
+      class: 'rc-widget-action rc-iphone-open',
+      role: 'button',
+      tabindex: '0'
+    });
+    const open = e => {
+      if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+      postHaptic('open');
+      if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+        globalObj.webkit.messageHandlers.wings.postMessage({ action: 'openApp', app: 'iphone-mirroring' });
+      }
+    };
+    openEl.addEventListener('click', open);
+    openEl.addEventListener('keydown', open);
+    iphoneCard.appendChild(openEl);
+  }
+
+  const WIDGET_NAMES = {
+    preview: 'Preview', quicktime: 'Player', findmy: 'Find My', mail: 'Mail', calendar: 'Agenda', iphone: 'iPhone Mirroring'
+  };
+
+  function shown(wId) {
+    return !HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId);
+  }
+
+  // One visible control per card: move it to the other wing (the same as moveWidget, voice or API).
+  function moverFor(wId, side) {
+    const target = side === 'left' ? 'right' : 'left';
+    const name = WIDGET_NAMES[wId] || wId;
+    const el = makeDomElement(doc, 'div', { textContent: side === 'left' ? 'Move to right ›' : '‹ Move to left' }, {
+      class: 'rc-wing-move',
+      'data-widget': wId,
+      'data-target': target,
+      role: 'button',
+      tabindex: '0',
+      'aria-label': `Move ${name} to the ${target} sidebar`
+    });
+    const go = e => {
+      if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+      moveWidget(wId, target);
+    };
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', go);
+    return el;
+  }
+
   // Render widget cards into wings
   function renderWidgets() {
-    while (leftEl.firstChild) {
-      leftEl.removeChild(leftEl.firstChild);
-    }
-    for (const wId of leftWidgets) {
-      const card = widgetElements[wId];
-      if (card && leftEl.appendChild) {
-        leftEl.appendChild(card);
+    for (const [el, list, side] of [[leftEl, leftWidgets, 'left'], [rightEl, rightWidgets, 'right']]) {
+      while (el.firstChild) {
+        el.removeChild(el.firstChild);
       }
-    }
-
-    while (rightEl.firstChild) {
-      rightEl.removeChild(rightEl.firstChild);
-    }
-    for (const wId of rightWidgets) {
-      const card = widgetElements[wId];
-      if (card && rightEl.appendChild) {
-        rightEl.appendChild(card);
+      for (const wId of list) {
+        const card = widgetElements[wId];
+        if (card && shown(wId) && el.appendChild) {
+          el.appendChild(moverFor(wId, side));
+          el.appendChild(card);
+        }
       }
     }
   }
   renderWidgets();
+
+  /** The host turns on a widget only it can run (the Mac: 'iphone'). First time: it goes in the left wing. */
+  function enableHostWidget(wId) {
+    if (!HOST_WIDGETS.has(wId)) return;
+    enabledHostWidgets.add(wId);
+    if (!leftWidgets.includes(wId) && !rightWidgets.includes(wId)) leftWidgets.push(wId);
+    renderWidgets();
+  }
 
   // Symmetric ambidextrous controls
   function openWing(side) {
@@ -1253,6 +1382,8 @@ export function createDualWings(container, options = {}) {
     setFindMyItems,
     setMailMessages,
     setCalendarEvents,
+    setCalendarStatus,
+    enableHostWidget,
     openPersistentSession,
     getState,
     setState,

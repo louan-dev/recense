@@ -2,6 +2,7 @@ import AppKit
 import WebKit
 import AVFoundation
 import EventKit
+import NaturalLanguage
 
 // The new editor in the pad layer (D13, D33): a WKWebView running the CodeMirror core, editor/dist/editor.html,
 // copied into the bundle by build.sh. It speaks the bridge in .handoff/editor/INBOX.md (bar 8):
@@ -94,6 +95,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// Where the page came from, for the log: the CodeMirror core, or the stand-in.
     private(set) var source = ""
     private let speechSynthesizer = AVSpeechSynthesizer()
+    /// macOS's own iPhone Mirroring app (macOS 15+), opened from its wing card.
+    static let iPhoneMirroring = URL(fileURLWithPath: "/System/Applications/iPhone Mirroring.app")
     private let eventStore = EKEventStore()
     private var syncedEventIds = Set<String>()
 
@@ -220,10 +223,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         if m.name == "audio" {
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
-                    if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
-                    let utterance = AVSpeechUtterance(string: summaryText)
-                    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-                    speechSynthesizer.speak(utterance)
+                    speak(summaryText)
                 }
                 onAudioAction?(d)
             }
@@ -233,11 +233,18 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             if let d = m.body as? [String: Any],
                (d["action"] as? String) == "addEvents",
                let items = d["events"] as? [[String: Any]] {
-                syncEventsToAppleCalendar(items)
+                saveEvents(items)
             }
             return
         }
         if m.name == "wings" {
+            if let d = m.body as? [String: Any], (d["action"] as? String) == "openApp",
+               (d["app"] as? String) == "iphone-mirroring" {
+                NSWorkspace.shared.openApplication(at: EditorHost.iPhoneMirroring, configuration: NSWorkspace.OpenConfiguration()) { _, err in
+                    if let err = err { log("editor: iPhone Mirroring didn't open: \(err.localizedDescription)") }
+                }
+                return
+            }
             if let json = m.body as? String {
                 coordinatedWrite(json, to: wingsPath)
             } else if let d = m.body as? [String: Any] {
@@ -257,36 +264,86 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         onChange?(s)
     }
 
-    private func syncEventsToAppleCalendar(_ items: [[String: Any]]) {
-        let iso = ISO8601DateFormatter()
-        let pending = items.filter { item in
-            guard let id = item["id"] as? String else { return false }
-            return !syncedEventIds.contains(id)
-        }
-        guard !pending.isEmpty else { return }
-        for item in pending {
-            if let id = item["id"] as? String { syncedEventIds.insert(id) }
-        }
-        if let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
-           let json = String(data: data, encoding: .utf8) {
-            coordinatedWrite(json, to: eventsPath)
-        }
+    /// The page's dates come from JavaScript's toISOString(), which always has milliseconds ("…T21:00:00.000Z").
+    /// ISO8601DateFormatter's default options return nil for those, so every save failed silently (E2 review).
+    private static let isoDate: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func pageDate(_ s: String?) -> Date? {
+        guard let s = s else { return nil }
+        return isoDate.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+
+    /// Saves the events the owner confirmed in the Agenda card (never on its own), and reports each one back to the
+    /// page: saved, or the reason in words. An id counts as saved only after EventKit accepted it.
+    private func saveEvents(_ items: [[String: Any]]) {
         eventStore.requestFullAccessToEvents { [weak self] granted, _ in
-            guard granted, let self = self, let cal = self.eventStore.defaultCalendarForNewEvents else { return }
-            for item in pending {
-                guard let title = item["title"] as? String,
-                      let startStr = item["startISO"] as? String,
-                      let startDate = iso.date(from: startStr) else { continue }
-                let endDate = (item["endISO"] as? String).flatMap { iso.date(from: $0) } ?? startDate.addingTimeInterval(3600)
-                let ev = EKEvent(eventStore: self.eventStore)
-                ev.calendar = cal
-                ev.title = title
-                ev.startDate = startDate
-                ev.endDate = endDate
-                ev.notes = item["rawLine"] as? String
-                try? self.eventStore.save(ev, span: .thisEvent)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for item in items {
+                    guard let id = item["id"] as? String else { continue }
+                    if self.syncedEventIds.contains(id) { self.reportCalendar(id, true, ""); continue }
+                    guard granted else { self.reportCalendar(id, false, "Calendar access is off (System Settings > Privacy & Security > Calendars > Recense)"); continue }
+                    guard let cal = self.eventStore.defaultCalendarForNewEvents else {
+                        self.reportCalendar(id, false, "no default calendar"); continue
+                    }
+                    guard let title = item["title"] as? String, !title.isEmpty,
+                          let start = EditorHost.pageDate(item["startISO"] as? String) else {
+                        self.reportCalendar(id, false, "couldn't read the date"); continue
+                    }
+                    let ev = EKEvent(eventStore: self.eventStore)
+                    ev.calendar = cal
+                    ev.title = title
+                    ev.startDate = start
+                    ev.endDate = EditorHost.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
+                    ev.isAllDay = (item["allDay"] as? Bool) == true
+                    ev.notes = item["rawLine"] as? String
+                    do {
+                        try self.eventStore.save(ev, span: .thisEvent)
+                        self.syncedEventIds.insert(id)
+                        self.persistSyncedEventIds()
+                        self.reportCalendar(id, true, "")
+                    } catch {
+                        self.reportCalendar(id, false, error.localizedDescription)
+                    }
+                }
             }
         }
+    }
+
+    private var syncedEventIdsJSON: String {
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    private func persistSyncedEventIds() {
+        let json = syncedEventIdsJSON
+        coordinatedWrite(json, to: eventsPath)
+    }
+
+    private func reportCalendar(_ id: String, _ ok: Bool, _ message: String) {
+        call("calendarResult(\(jsString(id)), \(ok), \(jsString(message)))")
+    }
+
+    /// Speaks in the text's own language with the best installed voice for it (E2 review #6). Every utterance goes
+    /// through here, so a neural voice can replace the system ones in one place later.
+    func speak(_ text: String) {
+        if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
+        let u = AVSpeechUtterance(string: text)
+        u.rate = AVSpeechUtteranceDefaultSpeechRate
+        u.voice = EditorHost.bestVoice(for: text)
+        speechSynthesizer.speak(u)
+    }
+
+    static func bestVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let r = NLLanguageRecognizer()
+        r.processString(text)
+        guard let lang = r.dominantLanguage?.rawValue else { return nil }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
+        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
     }
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
@@ -300,6 +357,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
             call("setWingsState(\(jsString(wingsJSON)))")
         }
+        call("setCalendarAdded(\(jsString(syncedEventIdsJSON)))")
+        if FileManager.default.fileExists(atPath: EditorHost.iPhoneMirroring.path) { call("enableWidget('iphone')") }
         log("editor: new editor loaded (\(source))")
     }
 

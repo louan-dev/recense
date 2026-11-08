@@ -449,6 +449,18 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let dualWings = null;
   let calendarScanner = null;
 
+  // The agenda rescans once typing settles (0.8 s), never mid-word; scanning only proposes (E2 review #1).
+  let calendarScanTimer = null;
+  function scheduleCalendarScan() {
+    if (calendarScanTimer) clearTimeout(calendarScanTimer);
+    calendarScanTimer = setTimeout(() => {
+      calendarScanTimer = null;
+      if (view && calendarScanner && dualWings) {
+        dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+      }
+    }, 800);
+  }
+
   const { state, compartments } = createEditorState(initialDoc, {
     theme: currentTheme,
     fontSize: currentFontSize,
@@ -466,9 +478,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
           setToolbarFaded(true);
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
-        if (calendarScanner && dualWings) {
-          dualWings.setCalendarEvents(calendarScanner.scanText(update.state.doc.toString()));
-        }
+        if (calendarScanner && dualWings) scheduleCalendarScan();
       }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
@@ -515,13 +525,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
       const line = view.state.doc.line(safeLine);
       jumpToOffset(view, line.from);
     },
+    onAddEvent: ev => {
+      if (calendarScanner) calendarScanner.requestAdd(ev);
+    },
     globalObj: typeof window !== 'undefined' ? window : null
   });
 
   calendarScanner = createCalendarScanner({
-    onNewEvents: (_, all) => {
-      if (dualWings) dualWings.setCalendarEvents(all);
-    },
     globalObj: typeof window !== 'undefined' ? window : null
   });
 
@@ -705,6 +715,21 @@ export function mountEditor(root = document.body, initialDoc = '') {
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         audioSidecar.setAudioTranscript(parsed);
       },
+      // The host's report on one calendar add: saved, or the reason it wasn't.
+      calendarResult: (id, ok, message) => {
+        if (ok && calendarScanner) calendarScanner.markSynced(id);
+        if (dualWings) dualWings.setCalendarStatus(id, ok ? 'added' : 'error', message || '');
+      },
+      // At load: the ids the host already saved (draftpad.events.json), so they show as added.
+      setCalendarAdded: data => {
+        const ids = typeof data === 'string' ? JSON.parse(data) : data;
+        if (calendarScanner && Array.isArray(ids)) calendarScanner.markSynced(ids);
+        if (view && calendarScanner && dualWings) {
+          dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+        }
+      },
+      // A widget only this host can run (the Mac: 'iphone').
+      enableWidget: id => (dualWings ? dualWings.enableHostWidget(id) : null),
       updateAudioTime: sec => audioSidecar.updateTime(sec),
       bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
       annotateAudioCue: (idx, text) => {

@@ -853,7 +853,7 @@ body {
 <div id="app"></div>
 <script>
 (() => {
-  // node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../editor/editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -927,7 +927,7 @@ body {
     return code < 65536 ? 1 : 2;
   }
 
-  // node_modules/@codemirror/state/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -4339,7 +4339,7 @@ body {
     return strict === true ? -1 : string2.length;
   }
 
-  // node_modules/style-mod/src/style-mod.js
+  // ../../editor/editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -4475,7 +4475,7 @@ body {
     }
   };
 
-  // node_modules/w3c-keyname/index.js
+  // ../../editor/editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -4581,7 +4581,7 @@ body {
     return name2;
   }
 
-  // node_modules/crelt/index.js
+  // ../../editor/editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -4610,7 +4610,7 @@ body {
     }
   }
 
-  // node_modules/@codemirror/view/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -14110,7 +14110,7 @@ body {
     return true;
   }
 
-  // node_modules/@lezer/common/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -16171,7 +16171,7 @@ body {
     return result;
   }
 
-  // node_modules/@lezer/highlight/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -16895,7 +16895,7 @@ body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // node_modules/@codemirror/language/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -18381,7 +18381,7 @@ body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // node_modules/@codemirror/commands/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -19475,7 +19475,7 @@ body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -19940,7 +19940,7 @@ body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // node_modules/@lezer/markdown/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -22028,7 +22028,7 @@ body {
     }]
   };
 
-  // node_modules/@lezer/lr/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -23806,7 +23806,7 @@ body {
     return spec.get;
   }
 
-  // node_modules/@lezer/html/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -24150,7 +24150,7 @@ body {
     });
   }
 
-  // node_modules/@lezer/css/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -24330,7 +24330,7 @@ body {
     tokenPrec: 2433
   });
 
-  // node_modules/@codemirror/lang-css/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -25191,7 +25191,7 @@ body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // node_modules/@lezer/javascript/dist/index.js
+  // ../../editor/editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -25403,7 +25403,7 @@ body {
     tokenPrec: 15205
   });
 
-  // node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -25715,7 +25715,7 @@ body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-html/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -26455,7 +26455,7 @@ body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -27284,7 +27284,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // node_modules/@codemirror/search/dist/index.js
+  // ../../editor/editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -33002,11 +33002,13 @@ ${clean(nextLineText)}`;
       return [];
     }
     const ref = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
-    const refYear = !Number.isNaN(ref.getTime()) ? ref.getUTCFullYear() : (/* @__PURE__ */ new Date()).getUTCFullYear();
-    const refMonth = !Number.isNaN(ref.getTime()) ? ref.getUTCMonth() : (/* @__PURE__ */ new Date()).getUTCMonth();
-    const refDay = !Number.isNaN(ref.getTime()) ? ref.getUTCDate() : (/* @__PURE__ */ new Date()).getUTCDate();
+    const base2 = !Number.isNaN(ref.getTime()) ? ref : /* @__PURE__ */ new Date();
+    const refYear = base2.getFullYear();
+    const refMonth = base2.getMonth();
+    const refDay = base2.getDate();
     const lines = docText.split(/\r?\n/);
     const events = [];
+    const seenIds = /* @__PURE__ */ new Set();
     let pageIndex = 0;
     const reRelEn = /\b(today|tomorrow)\b(?:\s+(?:at\s+)?(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?(?:\s*(?:-|–|—|to)\s*(\d{1,2}(?:[:h]\d{2})?\s*(?:am|pm|AM|PM)?))?/i;
     const reRelFr = /\b(demain|aujourd\x27hui)\b(?:\s*(?:à\s*|\s+)(\d{1,2}(?:[h:]\d{2})?))?(?:\s*(?:-|–|—|à)\s*(\d{1,2}(?:[h:]\d{2})?))?/i;
@@ -33030,22 +33032,22 @@ ${clean(nextLineText)}`;
       let m;
       if (m = reRelEn.exec(rawLine)) {
         const isTomorrow = m[1].toLowerCase() === "tomorrow";
-        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isTomorrow ? 1 : 0)));
+        const d = new Date(refYear, refMonth, refDay + (isTomorrow ? 1 : 0));
         const t2 = parseTimeStr(m[2]);
         const tEnd = parseTimeStr(m[3]);
-        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
       } else if (m = reRelFr.exec(rawLine)) {
         const isDemain = m[1].toLowerCase() === "demain";
-        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isDemain ? 1 : 0)));
+        const d = new Date(refYear, refMonth, refDay + (isDemain ? 1 : 0));
         const t2 = parseTimeStr(m[2]);
         const tEnd = parseTimeStr(m[3]);
-        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
       } else if (m = reRelVi.exec(rawLine)) {
         const isMai = m[1].toLowerCase().includes("mai");
-        const d = new Date(Date.UTC(refYear, refMonth, refDay + (isMai ? 1 : 0)));
+        const d = new Date(refYear, refMonth, refDay + (isMai ? 1 : 0));
         const t2 = parseTimeStr(m[2]);
         const tEnd = parseTimeStr(m[3]);
-        parsed = { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index };
+        parsed = { year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), time: t2, endTime: tEnd, matchText: m[0], matchIdx: m.index, relative: true };
       } else if (m = reIso.exec(rawLine)) {
         const y = Number(m[1]);
         const mon = Number(m[2]) - 1;
@@ -33098,24 +33100,39 @@ ${clean(nextLineText)}`;
       if (!hasTime && !hasDesc) {
         continue;
       }
-      const title = hasDesc ? remainder : cleanTitle(parsed.matchText);
-      const hour = parsed.time ? parsed.time.hour : 9;
-      const min = parsed.time ? parsed.time.minute : 0;
-      const startDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, hour, min, 0));
-      const startISO = startDate.toISOString();
-      let endDate;
-      if (parsed.endTime) {
-        endDate = new Date(Date.UTC(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0));
-      } else {
-        endDate = new Date(startDate.getTime() + 60 * 60 * 1e3);
+      if (parsed.relative && !hasTime) {
+        continue;
       }
+      if (!hasTime && /:\s*$/.test(before) && after.trim() === "" && remainder.split(/\s+/).length <= 2) {
+        continue;
+      }
+      const title = hasDesc ? remainder : cleanTitle(parsed.matchText);
+      const allDay = !hasTime;
+      let startDate;
+      let endDate;
+      if (allDay) {
+        startDate = new Date(parsed.year, parsed.month, parsed.day);
+        endDate = new Date(parsed.year, parsed.month, parsed.day + 1);
+      } else {
+        startDate = new Date(parsed.year, parsed.month, parsed.day, parsed.time.hour, parsed.time.minute, 0);
+        if (parsed.endTime) {
+          endDate = new Date(parsed.year, parsed.month, parsed.day, parsed.endTime.hour, parsed.endTime.minute, 0);
+          if (endDate <= startDate) endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1e3);
+        } else {
+          endDate = new Date(startDate.getTime() + 60 * 60 * 1e3);
+        }
+      }
+      const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
       const id2 = hashEventId(title, startISO);
+      if (seenIds.has(id2)) continue;
+      seenIds.add(id2);
       events.push({
         id: id2,
         title,
         startISO,
         endISO,
+        allDay,
         lineNumber,
         pageIndex,
         rawLine
@@ -33129,23 +33146,18 @@ ${clean(nextLineText)}`;
     const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
     function scanText(docText, scanOpts = {}) {
       const refDate = scanOpts.referenceDate || options.referenceDate || /* @__PURE__ */ new Date();
-      latestEvents = extractCalendarEvents(docText, { referenceDate: refDate });
-      const newEvents = latestEvents.filter((ev) => !syncedIds.has(ev.id));
-      if (newEvents.length > 0) {
-        for (const ev of newEvents) {
-          syncedIds.add(ev.id);
-        }
-        if (typeof options.onNewEvents === "function") {
-          options.onNewEvents(newEvents, latestEvents);
-        }
-        if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
-          globalObj.webkit.messageHandlers.calendar.postMessage({
-            action: "addEvents",
-            events: newEvents
-          });
-        }
+      latestEvents = extractCalendarEvents(docText, { referenceDate: refDate }).map((ev) => ({ ...ev, added: syncedIds.has(ev.id) }));
+      if (typeof options.onScan === "function") {
+        options.onScan(latestEvents);
       }
       return latestEvents;
+    }
+    function requestAdd(ev) {
+      if (!ev || syncedIds.has(ev.id)) return false;
+      if (globalObj?.webkit?.messageHandlers?.calendar?.postMessage) {
+        globalObj.webkit.messageHandlers.calendar.postMessage({ action: "addEvents", events: [ev] });
+      }
+      return true;
     }
     function getEvents() {
       return latestEvents.slice();
@@ -33161,9 +33173,11 @@ ${clean(nextLineText)}`;
       } else if (typeof ids === "string") {
         syncedIds.add(ids);
       }
+      latestEvents = latestEvents.map((ev) => ({ ...ev, added: syncedIds.has(ev.id) }));
     }
     return {
       scanText,
+      requestAdd,
       getEvents,
       getSyncedIds,
       markSynced
@@ -33350,7 +33364,9 @@ ${clean(nextLineText)}`;
     const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
     const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
     let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["preview", "quicktime"];
-    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["calendar", "findmy", "mail"];
+    let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["calendar"];
+    const HOST_WIDGETS = /* @__PURE__ */ new Set(["iphone"]);
+    const enabledHostWidgets = /* @__PURE__ */ new Set();
     const leftEl = makeDomElement2(doc2, "aside", {}, {
       class: "rc-wing rc-wing-left",
       "data-side": "left"
@@ -33636,6 +33652,26 @@ ${clean(nextLineText)}`;
       updateMailCard();
     }
     let calendarEvents = [];
+    const calendarStatus = /* @__PURE__ */ new Map();
+    function formatEventTime(ev) {
+      const d = new Date(ev.startISO);
+      if (Number.isNaN(d.getTime())) return "";
+      try {
+        if (ev.allDay) {
+          return new Intl.DateTimeFormat(void 0, { weekday: "short", day: "numeric", month: "short" }).format(d) + " \xB7 all day";
+        }
+        return new Intl.DateTimeFormat(void 0, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(d);
+      } catch {
+        return d.toLocaleString();
+      }
+    }
+    function setCalendarStatus(id2, status, message = "") {
+      calendarStatus.set(id2, { status, message });
+      if (status === "added") {
+        calendarEvents = calendarEvents.map((ev) => ev.id === id2 ? { ...ev, added: true } : ev);
+      }
+      updateCalendarCard();
+    }
     const calendarCard = makeDomElement2(doc2, "section", {}, {
       class: "rc-wing-card rc-widget-calendar",
       "data-widget": "calendar",
@@ -33661,11 +33697,31 @@ ${clean(nextLineText)}`;
             tabindex: "0"
           });
           const titleEl = makeDomElement2(doc2, "div", { textContent: ev.title }, { class: "rc-cal-title" });
-          const timeEl = makeDomElement2(doc2, "div", { textContent: ev.startISO.slice(0, 16).replace("T", " ") }, { class: "rc-cal-time" });
+          const timeEl = makeDomElement2(doc2, "div", { textContent: formatEventTime(ev) }, { class: "rc-cal-time" });
           const locEl = makeDomElement2(doc2, "div", { textContent: `Line ${ev.lineNumber} (Page ${ev.pageIndex + 1})` }, { class: "rc-cal-loc" });
           itemRow.appendChild(titleEl);
           itemRow.appendChild(timeEl);
           itemRow.appendChild(locEl);
+          const st = ev.added ? { status: "added" } : calendarStatus.get(ev.id) || { status: "proposed" };
+          const label = st.status === "added" ? "Added to Calendar" : st.status === "saving" ? "Adding\u2026" : st.status === "error" ? `Not added: ${st.message || "unknown error"} \xB7 Try again` : "Add to Calendar";
+          const addEl = makeDomElement2(doc2, "div", { textContent: label }, {
+            class: `rc-cal-add rc-cal-${st.status}`,
+            "data-id": ev.id,
+            role: st.status === "added" || st.status === "saving" ? "status" : "button",
+            tabindex: st.status === "added" || st.status === "saving" ? "-1" : "0"
+          });
+          if (st.status === "proposed" || st.status === "error") {
+            const add2 = (e) => {
+              if (e?.stopPropagation) e.stopPropagation();
+              if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+              calendarStatus.set(ev.id, { status: "saving" });
+              updateCalendarCard();
+              if (typeof options.onAddEvent === "function") options.onAddEvent(ev);
+            };
+            addEl.addEventListener("click", add2);
+            addEl.addEventListener("keydown", add2);
+          }
+          itemRow.appendChild(addEl);
           itemRow.addEventListener("click", () => {
             if (typeof options.onJumpToLine === "function") {
               options.onJumpToLine(ev.lineNumber);
@@ -33711,27 +33767,83 @@ ${clean(nextLineText)}`;
         });
       }
     }
-    function renderWidgets() {
-      while (leftEl.firstChild) {
-        leftEl.removeChild(leftEl.firstChild);
-      }
-      for (const wId of leftWidgets) {
-        const card = widgetElements[wId];
-        if (card && leftEl.appendChild) {
-          leftEl.appendChild(card);
+    const iphoneCard = makeDomElement2(doc2, "section", {}, {
+      class: "rc-wing-card rc-widget-iphone",
+      "data-widget": "iphone",
+      role: "region"
+    });
+    widgetElements.iphone = iphoneCard;
+    {
+      const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+      header.appendChild(makeDomElement2(doc2, "span", { textContent: "iPhone Mirroring" }, { class: "rc-widget-title" }));
+      iphoneCard.appendChild(header);
+      const openEl = makeDomElement2(doc2, "div", { textContent: "Open iPhone Mirroring" }, {
+        class: "rc-widget-action rc-iphone-open",
+        role: "button",
+        tabindex: "0"
+      });
+      const open = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        postHaptic2("open");
+        if (globalObj?.webkit?.messageHandlers?.wings?.postMessage) {
+          globalObj.webkit.messageHandlers.wings.postMessage({ action: "openApp", app: "iphone-mirroring" });
         }
-      }
-      while (rightEl.firstChild) {
-        rightEl.removeChild(rightEl.firstChild);
-      }
-      for (const wId of rightWidgets) {
-        const card = widgetElements[wId];
-        if (card && rightEl.appendChild) {
-          rightEl.appendChild(card);
+      };
+      openEl.addEventListener("click", open);
+      openEl.addEventListener("keydown", open);
+      iphoneCard.appendChild(openEl);
+    }
+    const WIDGET_NAMES = {
+      preview: "Preview",
+      quicktime: "Player",
+      findmy: "Find My",
+      mail: "Mail",
+      calendar: "Agenda",
+      iphone: "iPhone Mirroring"
+    };
+    function shown(wId) {
+      return !HOST_WIDGETS.has(wId) || enabledHostWidgets.has(wId);
+    }
+    function moverFor(wId, side) {
+      const target = side === "left" ? "right" : "left";
+      const name2 = WIDGET_NAMES[wId] || wId;
+      const el2 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
+        class: "rc-wing-move",
+        "data-widget": wId,
+        "data-target": target,
+        role: "button",
+        tabindex: "0",
+        "aria-label": `Move ${name2} to the ${target} sidebar`
+      });
+      const go = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        moveWidget(wId, target);
+      };
+      el2.addEventListener("click", go);
+      el2.addEventListener("keydown", go);
+      return el2;
+    }
+    function renderWidgets() {
+      for (const [el2, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
+        while (el2.firstChild) {
+          el2.removeChild(el2.firstChild);
+        }
+        for (const wId of list) {
+          const card = widgetElements[wId];
+          if (card && shown(wId) && el2.appendChild) {
+            el2.appendChild(moverFor(wId, side));
+            el2.appendChild(card);
+          }
         }
       }
     }
     renderWidgets();
+    function enableHostWidget(wId) {
+      if (!HOST_WIDGETS.has(wId)) return;
+      enabledHostWidgets.add(wId);
+      if (!leftWidgets.includes(wId) && !rightWidgets.includes(wId)) leftWidgets.push(wId);
+      renderWidgets();
+    }
     function openWing(side) {
       if (side === "left" || side === "both") {
         leftEl.hidden = false;
@@ -33979,6 +34091,8 @@ ${clean(nextLineText)}`;
       setFindMyItems,
       setMailMessages,
       setCalendarEvents,
+      setCalendarStatus,
+      enableHostWidget,
       openPersistentSession,
       getState,
       setState,
@@ -34399,6 +34513,16 @@ ${clean(nextLineText)}`;
     let audioSidecar = null;
     let dualWings = null;
     let calendarScanner = null;
+    let calendarScanTimer = null;
+    function scheduleCalendarScan() {
+      if (calendarScanTimer) clearTimeout(calendarScanTimer);
+      calendarScanTimer = setTimeout(() => {
+        calendarScanTimer = null;
+        if (view && calendarScanner && dualWings) {
+          dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+        }
+      }, 800);
+    }
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
@@ -34416,9 +34540,7 @@ ${clean(nextLineText)}`;
             setToolbarFaded(true);
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
-          if (calendarScanner && dualWings) {
-            dualWings.setCalendarEvents(calendarScanner.scanText(update.state.doc.toString()));
-          }
+          if (calendarScanner && dualWings) scheduleCalendarScan();
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
@@ -34459,12 +34581,12 @@ ${String(text ?? "")}`;
         const line = view.state.doc.line(safeLine);
         jumpToOffset(view, line.from);
       },
+      onAddEvent: (ev) => {
+        if (calendarScanner) calendarScanner.requestAdd(ev);
+      },
       globalObj: typeof window !== "undefined" ? window : null
     });
     calendarScanner = createCalendarScanner({
-      onNewEvents: (_, all) => {
-        if (dualWings) dualWings.setCalendarEvents(all);
-      },
       globalObj: typeof window !== "undefined" ? window : null
     });
     if (initialDoc) {
@@ -34632,6 +34754,21 @@ ${String(text ?? "")}`;
           const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
           audioSidecar.setAudioTranscript(parsed);
         },
+        // The host's report on one calendar add: saved, or the reason it wasn't.
+        calendarResult: (id2, ok, message) => {
+          if (ok && calendarScanner) calendarScanner.markSynced(id2);
+          if (dualWings) dualWings.setCalendarStatus(id2, ok ? "added" : "error", message || "");
+        },
+        // At load: the ids the host already saved (draftpad.events.json), so they show as added.
+        setCalendarAdded: (data2) => {
+          const ids = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          if (calendarScanner && Array.isArray(ids)) calendarScanner.markSynced(ids);
+          if (view && calendarScanner && dualWings) {
+            dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
+          }
+        },
+        // A widget only this host can run (the Mac: 'iphone').
+        enableWidget: (id2) => dualWings ? dualWings.enableHostWidget(id2) : null,
         updateAudioTime: (sec) => audioSidecar.updateTime(sec),
         bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
         annotateAudioCue: (idx, text) => {

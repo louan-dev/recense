@@ -1,3 +1,4 @@
+process.env.TZ = 'America/Los_Angeles';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -16,6 +17,13 @@ import {
 import { executeVoiceMove } from '../src/gestures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// An ISO instant as local wall-clock time, YYYY-MM-DDTHH:MM.
+function local(iso) {
+  const d = new Date(iso);
+  const z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+}
 
 function countTags(el, tag) {
   if (!el) return 0;
@@ -122,26 +130,27 @@ test('P6 Extractor: ISO dates with optional time, range, and standalone header f
   assert.equal(events.length, 4, 'Must extract 4 events and ignore 1 standalone date line');
 
   // Event 1: 2026-11-15 14:00
-  assert.equal(events[0].startISO, '2026-11-15T14:00:00.000Z');
-  assert.equal(events[0].endISO, '2026-11-15T15:00:00.000Z');
+  assert.equal(local(events[0].startISO), '2026-11-15T14:00');
+  assert.equal(local(events[0].endISO), '2026-11-15T15:00');
   assert.equal(events[0].lineNumber, 1);
   assert.equal(events[0].pageIndex, 0);
 
   // Event 2: 2026-11-15 at 2:30 PM
-  assert.equal(events[1].startISO, '2026-11-15T14:30:00.000Z');
-  assert.equal(events[1].endISO, '2026-11-15T15:30:00.000Z');
+  assert.equal(local(events[1].startISO), '2026-11-15T14:30');
+  assert.equal(local(events[1].endISO), '2026-11-15T15:30');
   assert.equal(events[1].lineNumber, 2);
 
   // Event 3: 2026-11-15 14:00 - 15:30 Team sync
   assert.equal(events[2].title, 'Team sync');
-  assert.equal(events[2].startISO, '2026-11-15T14:00:00.000Z');
-  assert.equal(events[2].endISO, '2026-11-15T15:30:00.000Z');
+  assert.equal(local(events[2].startISO), '2026-11-15T14:00');
+  assert.equal(local(events[2].endISO), '2026-11-15T15:30');
   assert.equal(events[2].lineNumber, 3);
 
   // Event 4: 2026-11-16 Strategy session
   assert.equal(events[3].title, 'Strategy session');
-  assert.equal(events[3].startISO, '2026-11-16T09:00:00.000Z');
-  assert.equal(events[3].endISO, '2026-11-16T10:00:00.000Z');
+  assert.equal(local(events[3].startISO), '2026-11-16T00:00');
+  assert.equal(local(events[3].endISO), '2026-11-17T00:00');
+  assert.equal(events[3].allDay, true);
   assert.equal(events[3].lineNumber, 5);
 });
 
@@ -160,21 +169,22 @@ test('P6 Extractor: English month-name dates and standalone Draftpad header filt
   const events = extractCalendarEvents(doc, { referenceDate: refDate });
   assert.equal(events.length, 5, 'Must extract 5 events and ignore standalone page header date line');
 
-  assert.equal(events[0].startISO, '2026-11-13T14:00:00.000Z');
-  assert.equal(events[0].endISO, '2026-11-13T15:00:00.000Z');
+  assert.equal(local(events[0].startISO), '2026-11-13T14:00');
+  assert.equal(local(events[0].endISO), '2026-11-13T15:00');
 
-  assert.equal(events[1].startISO, '2026-11-13T09:30:00.000Z');
-  assert.equal(events[1].endISO, '2026-11-13T10:30:00.000Z');
+  assert.equal(local(events[1].startISO), '2026-11-13T09:30');
+  assert.equal(local(events[1].endISO), '2026-11-13T10:30');
 
-  assert.equal(events[2].startISO, '2026-11-13T14:00:00.000Z');
-  assert.equal(events[2].endISO, '2026-11-13T15:00:00.000Z');
+  assert.equal(local(events[2].startISO), '2026-11-13T14:00');
+  assert.equal(local(events[2].endISO), '2026-11-13T15:00');
 
   assert.equal(events[3].title, 'Discovery conference');
-  assert.equal(events[3].startISO, '2026-11-13T09:00:00.000Z');
+  assert.equal(local(events[3].startISO), '2026-11-13T00:00');
+  assert.equal(events[3].allDay, true);
 
   assert.equal(events[4].title, 'Oral Argument');
-  assert.equal(events[4].startISO, '2026-11-13T09:30:00.000Z');
-  assert.equal(events[4].endISO, '2026-11-13T10:45:00.000Z');
+  assert.equal(local(events[4].startISO), '2026-11-13T09:30');
+  assert.equal(local(events[4].endISO), '2026-11-13T10:45');
 });
 
 test('P6 Extractor: French date expressions (le DD mois YYYY, demain, ranges)', () => {
@@ -191,19 +201,19 @@ test('P6 Extractor: French date expressions (le DD mois YYYY, demain, ranges)', 
   const events = extractCalendarEvents(doc, { referenceDate: refDate });
   assert.equal(events.length, 4, 'Must extract 4 French events and ignore 1 standalone date line');
 
-  assert.equal(events[0].startISO, '2026-11-18T10:30:00.000Z');
-  assert.equal(events[0].endISO, '2026-11-18T11:30:00.000Z');
+  assert.equal(local(events[0].startISO), '2026-11-18T10:30');
+  assert.equal(local(events[0].endISO), '2026-11-18T11:30');
 
-  assert.equal(events[1].startISO, '2026-11-18T14:00:00.000Z');
-  assert.equal(events[1].endISO, '2026-11-18T15:00:00.000Z');
+  assert.equal(local(events[1].startISO), '2026-11-18T14:00');
+  assert.equal(local(events[1].endISO), '2026-11-18T15:00');
 
   // Tomorrow from Nov 17 is Nov 18
-  assert.equal(events[2].startISO, '2026-11-18T14:30:00.000Z');
-  assert.equal(events[2].endISO, '2026-11-18T15:30:00.000Z');
+  assert.equal(local(events[2].startISO), '2026-11-18T14:30');
+  assert.equal(local(events[2].endISO), '2026-11-18T15:30');
 
   assert.equal(events[3].title, 'Audience préliminaire');
-  assert.equal(events[3].startISO, '2026-11-18T10:30:00.000Z');
-  assert.equal(events[3].endISO, '2026-11-18T12:00:00.000Z');
+  assert.equal(local(events[3].startISO), '2026-11-18T10:30');
+  assert.equal(local(events[3].endISO), '2026-11-18T12:00');
 });
 
 test('P6 Extractor: Vietnamese date expressions (ngày DD/MM, ngày mai, ranges)', () => {
@@ -220,19 +230,19 @@ test('P6 Extractor: Vietnamese date expressions (ngày DD/MM, ngày mai, ranges)
   const events = extractCalendarEvents(doc, { referenceDate: refDate });
   assert.equal(events.length, 4, 'Must extract 4 Vietnamese events and ignore 1 standalone date line');
 
-  assert.equal(events[0].startISO, '2026-11-20T15:00:00.000Z');
-  assert.equal(events[0].endISO, '2026-11-20T16:00:00.000Z');
+  assert.equal(local(events[0].startISO), '2026-11-20T15:00');
+  assert.equal(local(events[0].endISO), '2026-11-20T16:00');
 
-  assert.equal(events[1].startISO, '2026-11-20T09:30:00.000Z');
-  assert.equal(events[1].endISO, '2026-11-20T10:30:00.000Z');
+  assert.equal(local(events[1].startISO), '2026-11-20T09:30');
+  assert.equal(local(events[1].endISO), '2026-11-20T10:30');
 
   // Ngày mai from Nov 19 is Nov 20
-  assert.equal(events[2].startISO, '2026-11-20T08:30:00.000Z');
-  assert.equal(events[2].endISO, '2026-11-20T09:30:00.000Z');
+  assert.equal(local(events[2].startISO), '2026-11-20T08:30');
+  assert.equal(local(events[2].endISO), '2026-11-20T09:30');
 
   assert.equal(events[3].title, 'Ký kết hợp đồng thương mại');
-  assert.equal(events[3].startISO, '2026-11-20T15:00:00.000Z');
-  assert.equal(events[3].endISO, '2026-11-20T17:00:00.000Z');
+  assert.equal(local(events[3].startISO), '2026-11-20T15:00');
+  assert.equal(local(events[3].endISO), '2026-11-20T17:00');
 });
 
 test('P6 Extractor: Relative English dates (today, tomorrow, title remainder)', () => {
@@ -249,19 +259,19 @@ test('P6 Extractor: Relative English dates (today, tomorrow, title remainder)', 
   assert.equal(events.length, 4);
 
   // Today Nov 10
-  assert.equal(events[0].startISO, '2026-11-10T17:00:00.000Z');
-  assert.equal(events[0].endISO, '2026-11-10T18:00:00.000Z');
+  assert.equal(local(events[0].startISO), '2026-11-10T17:00');
+  assert.equal(local(events[0].endISO), '2026-11-10T18:00');
 
   // Tomorrow Nov 11
-  assert.equal(events[1].startISO, '2026-11-11T09:30:00.000Z');
-  assert.equal(events[1].endISO, '2026-11-11T10:30:00.000Z');
+  assert.equal(local(events[1].startISO), '2026-11-11T09:30');
+  assert.equal(local(events[1].endISO), '2026-11-11T10:30');
 
   assert.equal(events[2].title, 'Client call');
-  assert.equal(events[2].startISO, '2026-11-11T09:30:00.000Z');
+  assert.equal(local(events[2].startISO), '2026-11-11T09:30');
 
   assert.equal(events[3].title, 'Filing deadline');
-  assert.equal(events[3].startISO, '2026-11-10T17:00:00.000Z');
-  assert.equal(events[3].endISO, '2026-11-10T18:00:00.000Z');
+  assert.equal(local(events[3].startISO), '2026-11-10T17:00');
+  assert.equal(local(events[3].endISO), '2026-11-10T18:00');
 });
 
 test('P6 Extractor: Multi-page Draftpad document tracks exact pageIndex and line numbers', () => {
@@ -323,60 +333,66 @@ test('P6 Extractor: Deterministic hash ID (cal-<8hex>) guarantees duplicate-free
 // Requirement 2: 24/7 Continuous Calendar Scanner
 // ============================================================================
 
-test('P6 Scanner: tracks syncedIds, invokes onNewEvents, and posts to webkit calendar handler', () => {
+test('P6 Scanner: scanning only proposes; requestAdd posts one event; markSynced marks it added', () => {
   const { fakeGlobal, messages } = setupMockDom();
-  const notifiedEvents = [];
+  const scans = [];
+  const scanner = createCalendarScanner({ globalObj: fakeGlobal, onScan: evs => scans.push(evs) });
 
-  const scanner = createCalendarScanner({
-    globalObj: fakeGlobal,
-    onNewEvents(newEvents, allEvents) {
-      notifiedEvents.push({ newEvents, allEvents });
-    }
-  });
-
-  const doc1 = [
-    '2026-11-15 14:00 First Meeting',
-    '2026-11-16 10:00 Second Meeting'
-  ].join('\n');
-
-  // 1. Initial scan discovers 2 new events
+  const doc1 = ['2026-11-15 14:00 First Meeting', '2026-11-16 10:00 Second Meeting'].join('\n');
   const res1 = scanner.scanText(doc1);
   assert.equal(res1.length, 2);
-  assert.equal(notifiedEvents.length, 1);
-  assert.equal(notifiedEvents[0].newEvents.length, 2);
+  assert.equal(scans.length, 1);
+  assert.equal(messages.calendar.length, 0, 'a scan never writes to the calendar');
+  assert.equal(res1[0].added, false);
+
+  assert.equal(scanner.requestAdd(res1[0]), true);
   assert.equal(messages.calendar.length, 1);
   assert.equal(messages.calendar[0].action, 'addEvents');
-  assert.equal(messages.calendar[0].events.length, 2);
+  assert.deepEqual(messages.calendar[0].events.map(e => e.id), [res1[0].id]);
+  assert.equal(scanner.getSyncedIds().size, 0, 'not added until the host reports the save');
 
-  const syncedSet = scanner.getSyncedIds();
-  assert.equal(syncedSet.size, 2);
-  assert.ok(syncedSet.has(res1[0].id));
-  assert.ok(syncedSet.has(res1[1].id));
-
-  // 2. Re-scanning same document does NOT fire new events or post messages
+  scanner.markSynced(res1[0].id);
   const res2 = scanner.scanText(doc1);
-  assert.equal(res2.length, 2);
-  assert.equal(notifiedEvents.length, 1, 'onNewEvents must not fire when no new events');
-  assert.equal(messages.calendar.length, 1, 'postMessage must not fire when no new events');
+  assert.equal(res2[0].added, true);
+  assert.equal(res2[1].added, false);
+  assert.equal(scanner.requestAdd(res2[0]), false, 'an added event is not sent twice');
+  assert.equal(messages.calendar.length, 1);
+});
 
-  // 3. Document gains 1 new event
-  const doc2 = [
-    ...doc1.split('\n'),
-    '2026-11-17 16:30 Third Meeting'
+test('E2 review #1 regression: typing an event line sends nothing to the calendar', () => {
+  const { fakeGlobal, messages } = setupMockDom();
+  const scanner = createCalendarScanner({ globalObj: fakeGlobal });
+  const ref = new Date('2026-11-08T09:00:00');
+  const line = 'Lunch with Mai tomorrow at 1pm';
+  for (let i = 1; i <= line.length; i++) scanner.scanText('# Page\n' + line.slice(0, i), { referenceDate: ref });
+  scanner.scanText('# Page\nLunch with Mai tomorrow at 2pm', { referenceDate: ref });
+  assert.equal(messages.calendar.length, 0);
+  const evs = scanner.scanText('# Page\n' + line, { referenceDate: ref });
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].title, 'Lunch with Mai');
+});
+
+test('E2 review #2 regression: "1pm" is 1 PM local time, not 1 PM UTC', () => {
+  const ref = new Date('2026-11-08T09:00:00');
+  const [ev] = extractCalendarEvents('Lunch with Mai tomorrow at 1pm', { referenceDate: ref });
+  assert.equal(local(ev.startISO), '2026-11-09T13:00');
+  assert.equal(ev.startISO, '2026-11-09T21:00:00.000Z', 'PST is UTC-8 in November');
+  const [late] = extractCalendarEvents('2026-11-20 22:00 - 01:00 Moot court prep', { referenceDate: ref });
+  assert.equal(local(late.endISO), '2026-11-21T01:00', 'a range past midnight ends the next day');
+});
+
+test('E2 review #3 regression: header fields and everyday "today" sentences are not events; no duplicates', () => {
+  const ref = new Date('2026-11-08T09:00:00');
+  const doc = [
+    'Date: October 9, 2026',
+    'help me reprioritize today, your job is to make a spec',
+    'Date: October 9, 2026',
+    'ngày mai đi học',
+    'Hearing 2026-11-20 at 9:30am',
+    'Hearing 2026-11-20 at 9:30am'
   ].join('\n');
-
-  const res3 = scanner.scanText(doc2);
-  assert.equal(res3.length, 3);
-  assert.equal(notifiedEvents.length, 2);
-  assert.equal(notifiedEvents[1].newEvents.length, 1);
-  assert.equal(notifiedEvents[1].newEvents[0].title, 'Third Meeting');
-  assert.equal(messages.calendar.length, 2);
-  assert.equal(messages.calendar[1].events.length, 1);
-
-  // 4. markSynced manually works
-  scanner.markSynced('manual-id-123');
-  assert.ok(scanner.getSyncedIds().has('manual-id-123'));
-  assert.equal(scanner.getEvents().length, 3);
+  const evs = extractCalendarEvents(doc, { referenceDate: ref });
+  assert.deepEqual(evs.map(e => e.title), ['Hearing']);
 });
 
 // ============================================================================
@@ -490,6 +506,7 @@ test('P6 Feathery Offline Widgets: Preview exhibits and citation into page', () 
 
   const wings = createDualWings(container, {
     globalObj: fakeGlobal,
+    rightWidgets: ['calendar', 'findmy', 'mail'],
     onInsertToPage(snippet) {
       inserted.push(snippet);
     }
@@ -524,6 +541,7 @@ test('P6 Feathery Offline Widgets: QuickTime player, rate, loop, and timestamp c
 
   const wings = createDualWings(container, {
     globalObj: fakeGlobal,
+    rightWidgets: ['calendar', 'findmy', 'mail'],
     onInsertToPage(snippet) {
       inserted.push(snippet);
     }
@@ -553,6 +571,7 @@ test('P6 Feathery Offline Widgets: Find My 100% offline cache and persistent ses
 
   const wings = createDualWings(container, {
     globalObj: fakeGlobal,
+    rightWidgets: ['calendar', 'findmy', 'mail'],
     onInsertToPage(snippet) {
       inserted.push(snippet);
     }
@@ -591,6 +610,7 @@ test('P6 Feathery Offline Widgets: Mail digest 100% offline cache and persistent
 
   const wings = createDualWings(container, {
     globalObj: fakeGlobal,
+    rightWidgets: ['calendar', 'findmy', 'mail'],
     onInsertToPage(snippet) {
       inserted.push(snippet);
     }
@@ -802,7 +822,7 @@ test('P6 Voice & State Persistence: multilingual voice commands and getState/set
     matched: true,
     action: 'swapWings'
   });
-  assert.deepEqual(wings.getWingLayout().left, ['calendar', 'findmy', 'mail']);
+  assert.deepEqual(wings.getWingLayout().left, ['calendar']);
 
   assert.deepEqual(executeVoiceMove('fermer les volets', handlers), {
     matched: true,
@@ -818,7 +838,7 @@ test('P6 Voice & State Persistence: multilingual voice commands and getState/set
 
   const wings2 = createDualWings(container, { globalObj: fakeGlobal });
   wings2.setState(saved);
-  assert.deepEqual(wings2.getWingLayout().left, ['calendar', 'findmy', 'mail']);
+  assert.deepEqual(wings2.getWingLayout().left, ['calendar']);
 
   wings.destroy();
   wings2.destroy();
@@ -835,6 +855,61 @@ test('P6 Native Host Parity: strip/editorhost.swift and mobile/HostApp/iOS/Draft
     assert.ok(src.includes('cfg.websiteDataStore = .default()'), `${label} must keep web sessions signed in via .default()`);
     assert.ok(src.includes('"calendar"'), `${label} must register calendar WKScriptMessageHandler`);
     assert.ok(src.includes('"wings"'), `${label} must register wings WKScriptMessageHandler`);
-    assert.ok(src.includes('syncEventsToAppleCalendar'), `${label} must implement syncEventsToAppleCalendar`);
+    assert.ok(src.includes('private func saveEvents('), `${label} must save only confirmed events (saveEvents)`);
+    assert.ok(src.includes('.withFractionalSeconds'), `${label} must read JS toISOString() dates (milliseconds), E2 review regression`);
+    assert.ok(src.includes('calendarResult('), `${label} must report each save back to the page`);
+    assert.ok(src.includes('NLLanguageRecognizer'), `${label} must pick the read-aloud voice from the text's language`);
+    assert.ok(!src.includes('try? self.eventStore.save'), `${label} must not drop calendar save errors`);
   }
+});
+
+test('Widgets move between wings with one visible control per card', () => {
+  const { container, fakeGlobal } = setupMockDom();
+  const wings = createDualWings(container, { globalObj: fakeGlobal });
+  assert.deepEqual(wings.getWingLayout().left, ['preview', 'quicktime']);
+  assert.deepEqual(wings.getWingLayout().right, ['calendar']);
+  const movers = wings.leftEl.querySelectorAll('.rc-wing-move');
+  assert.equal(movers.length, 2, 'one mover per card');
+  assert.equal(countTags(wings.leftEl, 'button'), 0, 'still zero <button> chrome');
+  const cal = wings.rightEl.querySelectorAll('.rc-wing-move')[0];
+  assert.equal(cal.getAttribute('aria-label'), 'Move Agenda to the left sidebar');
+  cal.dispatchEvent({ type: 'click' });
+  assert.deepEqual(wings.getWingLayout().left, ['preview', 'quicktime', 'calendar']);
+  assert.deepEqual(wings.getWingLayout().right, []);
+  const back = wings.leftEl.querySelectorAll('.rc-wing-move')[2];
+  back.dispatchEvent({ type: 'keydown', key: 'Enter' });
+  assert.deepEqual(wings.getWingLayout().right, ['calendar']);
+  wings.destroy();
+});
+
+test('iPhone Mirroring card: hidden until the host enables it, opens the app, and moves like any card', () => {
+  const { container, fakeGlobal, messages } = setupMockDom();
+  const wings = createDualWings(container, { globalObj: fakeGlobal, leftWidgets: ['preview', 'iphone'] });
+  assert.equal(wings.leftEl.querySelectorAll('.rc-widget-iphone').length, 0, 'iOS never calls enableHostWidget');
+  wings.enableHostWidget('iphone');
+  const card = wings.leftEl.querySelectorAll('.rc-widget-iphone');
+  assert.equal(card.length, 1);
+  card[0].querySelectorAll('.rc-iphone-open')[0].dispatchEvent({ type: 'click' });
+  assert.ok(messages.wings.some(m => m.action === 'openApp' && m.app === 'iphone-mirroring'));
+  wings.moveWidget('iphone', 'right');
+  assert.equal(wings.rightEl.querySelectorAll('.rc-widget-iphone').length, 1);
+  wings.destroy();
+});
+
+test('Agenda card: Add is the confirm step and shows the host\'s result', () => {
+  const { container, fakeGlobal } = setupMockDom();
+  const asked = [];
+  const wings = createDualWings(container, { globalObj: fakeGlobal, onAddEvent: ev => asked.push(ev.id) });
+  const [ev] = extractCalendarEvents('Hearing 2026-11-20 at 9:30am', { referenceDate: new Date('2026-11-08T09:00:00') });
+  wings.setCalendarEvents([ev]);
+  const add = () => wings.rightEl.querySelectorAll('.rc-cal-add')[0];
+  assert.equal(add().textContent, 'Add to Calendar');
+  add().dispatchEvent({ type: 'click' });
+  assert.deepEqual(asked, [ev.id]);
+  assert.equal(add().textContent, 'Adding…');
+  wings.setCalendarStatus(ev.id, 'error', 'Calendar access is off');
+  assert.equal(add().textContent, 'Not added: Calendar access is off · Try again');
+  wings.setCalendarStatus(ev.id, 'added');
+  assert.equal(add().textContent, 'Added to Calendar');
+  wings.destroy();
 });

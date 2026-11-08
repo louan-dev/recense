@@ -13,6 +13,7 @@ import ShowsKit
 import WebKit
 import AVFoundation
 import EventKit
+import NaturalLanguage
 import UniformTypeIdentifiers
 
 func log(_ s: String) { NSLog("draftpad: %@", s) }
@@ -163,6 +164,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
             call("setWingsState(\(jsLiteral(wingsJSON)))")
         }
+        call("setCalendarAdded(\(jsLiteral(syncedEventIdsJSON)))")
         call("showPage(0)")
         // Another device's edit (the Mac, Obsidian) reaches the file through iCloud: merge it in while open.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.pollExternal() }
@@ -204,10 +206,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         case "audio":
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
-                    if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
-                    let utterance = AVSpeechUtterance(string: summaryText)
-                    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-                    speechSynthesizer.speak(utterance)
+                    speak(summaryText)
                 }
                 onAudioAction?(d)
             }
@@ -215,7 +214,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             if let d = m.body as? [String: Any],
                (d["action"] as? String) == "addEvents",
                let items = d["events"] as? [[String: Any]] {
-                syncEventsToAppleCalendar(items)
+                saveEvents(items)
             }
         case "wings":
             guard let wp = file.wingsNote?.path else { return }
@@ -236,37 +235,86 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
     }
 
-    private func syncEventsToAppleCalendar(_ items: [[String: Any]]) {
-        let iso = ISO8601DateFormatter()
-        let pending = items.filter { item in
-            guard let id = item["id"] as? String else { return false }
-            return !syncedEventIds.contains(id)
-        }
-        guard !pending.isEmpty else { return }
-        for item in pending {
-            if let id = item["id"] as? String { syncedEventIds.insert(id) }
-        }
-        if let p = file.eventsNote?.path,
-           let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
-           let json = String(data: data, encoding: .utf8) {
-            coordinatedWrite(json, to: p)
-        }
-        eventStore.requestFullAccessToEvents { [weak self] granted, _ in
-            guard granted, let self = self, let cal = self.eventStore.defaultCalendarForNewEvents else { return }
-            for item in pending {
-                guard let title = item["title"] as? String,
-                      let startStr = item["startISO"] as? String,
-                      let startDate = iso.date(from: startStr) else { continue }
-                let endDate = (item["endISO"] as? String).flatMap { iso.date(from: $0) } ?? startDate.addingTimeInterval(3600)
-                let ev = EKEvent(eventStore: self.eventStore)
-                ev.calendar = cal
-                ev.title = title
-                ev.startDate = startDate
-                ev.endDate = endDate
-                ev.notes = item["rawLine"] as? String
-                try? self.eventStore.save(ev, span: .thisEvent)
+    /// The page's dates come from JavaScript's toISOString(), which always has milliseconds ("…T21:00:00.000Z").
+    /// ISO8601DateFormatter's default options return nil for those, so every save failed silently (E2 review).
+    private static let isoDate: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func pageDate(_ s: String?) -> Date? {
+        guard let s = s else { return nil }
+        return isoDate.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+
+    /// Saves the events the owner confirmed in the Agenda card (never on its own), and reports each one back to the
+    /// page: saved, or the reason in words. An id counts as saved only after EventKit accepted it.
+    private func saveEvents(_ items: [[String: Any]]) {
+        eventStore.requestWriteOnlyAccessToEvents { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for item in items {
+                    guard let id = item["id"] as? String else { continue }
+                    if self.syncedEventIds.contains(id) { self.reportCalendar(id, true, ""); continue }
+                    guard granted else { self.reportCalendar(id, false, "Calendar access is off (Settings > Privacy & Security > Calendars > Recense)"); continue }
+                    guard let cal = self.eventStore.defaultCalendarForNewEvents else {
+                        self.reportCalendar(id, false, "no default calendar"); continue
+                    }
+                    guard let title = item["title"] as? String, !title.isEmpty,
+                          let start = DraftpadWeb.pageDate(item["startISO"] as? String) else {
+                        self.reportCalendar(id, false, "couldn't read the date"); continue
+                    }
+                    let ev = EKEvent(eventStore: self.eventStore)
+                    ev.calendar = cal
+                    ev.title = title
+                    ev.startDate = start
+                    ev.endDate = DraftpadWeb.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
+                    ev.isAllDay = (item["allDay"] as? Bool) == true
+                    ev.notes = item["rawLine"] as? String
+                    do {
+                        try self.eventStore.save(ev, span: .thisEvent)
+                        self.syncedEventIds.insert(id)
+                        self.persistSyncedEventIds()
+                        self.reportCalendar(id, true, "")
+                    } catch {
+                        self.reportCalendar(id, false, error.localizedDescription)
+                    }
+                }
             }
         }
+    }
+
+    private var syncedEventIdsJSON: String {
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(syncedEventIds).sorted()),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    private func persistSyncedEventIds() {
+        let json = syncedEventIdsJSON
+        if let p = file.eventsNote?.path { coordinatedWrite(json, to: p) }
+    }
+
+    private func reportCalendar(_ id: String, _ ok: Bool, _ message: String) {
+        call("calendarResult(\(jsLiteral(id)), \(ok), \(jsLiteral(message)))")
+    }
+
+    /// Speaks in the text's own language with the best installed voice for it (E2 review #6). Every utterance goes
+    /// through here, so a neural voice can replace the system ones in one place later.
+    func speak(_ text: String) {
+        if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
+        let u = AVSpeechUtterance(string: text)
+        u.rate = AVSpeechUtteranceDefaultSpeechRate
+        u.voice = DraftpadWeb.bestVoice(for: text)
+        speechSynthesizer.speak(u)
+    }
+
+    static func bestVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        let r = NLLanguageRecognizer()
+        r.processString(text)
+        guard let lang = r.dominantLanguage?.rawValue else { return nil }
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
+        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
     }
 
     func saveNow() {
