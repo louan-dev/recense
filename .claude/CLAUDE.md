@@ -83,8 +83,11 @@ The tests don't reach these; check them whenever the change does:
 - Pushing `library/**` to `main` deploys Gallery (`.github/workflows/library.yml`), so push only after
   `npm test` in `library/` passed.
 - **Coordinator out of reach (owner, 2026-11-08):** read `.handoff/coordinator/PLAYBOOK.md`. Decide as it says,
-  act on the decision without waiting, and log it in `.handoff/coordinator/DECISIONS.md`. Its §0 names the acting
-  coordinator (merges included); its §4 lists what still goes to the owner.
+  act on the decision without waiting, and log it in the playbook's §5. Its §0 names the acting coordinator (merges
+  included); its §4 lists what still goes to the owner.
+- **The coordinator's memory is that one file, kept current and short:** each decision goes into its §3 in the same
+  turn it's made; when a milestone passes its Done checks and merges, its lines collapse to one line (outcome + any
+  rule that still binds). A Stop hook (`~/.local/bin/coordinator-memory-check`) enforces both (cap 150 lines).
 
 ## One app (settled 2026-10-28; renamed Sill → Recense 2026-11-03)
 **Recense is the only app, and it is the project's name.** It was called Sill until 2026-11-03; the strip, window, audio
