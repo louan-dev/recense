@@ -36,7 +36,7 @@ import {
   deleteEmptyWindow,
   computeEffectiveDrag
 } from './pagemode.js';
-import { embedsExtension } from './embeds.js';
+import { embedsExtension, formatDroppedEmbed } from './embeds.js';
 import { linksExtension } from './links.js';
 import {
   formatDotIndicator,
@@ -45,6 +45,30 @@ import {
   executeVoiceMove,
   HAPTIC_ZONES
 } from './gestures.js';
+import {
+  INK_TOOLS,
+  INK_COLORS,
+  anchorStrokeToDoc,
+  resolveStrokeAnchor,
+  mergeInkDocuments,
+  snapUnderlineStroke,
+  detectAndSnapShape,
+  eraseWholeStrokes,
+  erasePartialStrokes,
+  createInkLayer
+} from './ink.js';
+import {
+  activeCueIndexAt,
+  bookmarkCue,
+  toggleBookmarkCue,
+  annotateCue,
+  createTranscriptPane,
+  createAudioSidecar,
+  extractDocumentSections,
+  summarizeSectionOffline,
+  summarizeAllSections,
+  speakSectionSummary
+} from './audio.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -59,7 +83,28 @@ export {
   detectHapticZone,
   attachHapticZones,
   executeVoiceMove,
-  HAPTIC_ZONES
+  HAPTIC_ZONES,
+  INK_TOOLS,
+  INK_COLORS,
+  anchorStrokeToDoc,
+  resolveStrokeAnchor,
+  mergeInkDocuments,
+  snapUnderlineStroke,
+  detectAndSnapShape,
+  eraseWholeStrokes,
+  erasePartialStrokes,
+  createInkLayer,
+  activeCueIndexAt,
+  bookmarkCue,
+  toggleBookmarkCue,
+  annotateCue,
+  createTranscriptPane,
+  createAudioSidecar,
+  extractDocumentSections,
+  summarizeSectionOffline,
+  summarizeAllSections,
+  speakSectionSummary,
+  formatDroppedEmbed
 };
 
 export const MENU_ACTIONS = [
@@ -143,8 +188,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const pageIndicator = document.createElement('span');
   pageIndicator.className = 'rc-page-indicator';
   pageIndicator.id = 'rc-page-indicator';
-  pageIndicator.textContent = formatPageIndicator(0, 1);
+  pageIndicator.textContent = formatDotIndicator(0, 1);
   pageIndicator.setAttribute('data-dots', formatDotIndicator(0, 1));
+  pageIndicator.setAttribute('data-label', formatPageIndicator(0, 1));
 
   const menuWrap = document.createElement('div');
   menuWrap.className = 'rc-menu-wrap';
@@ -356,8 +402,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (!state) return;
     const cur = currentPage(state);
     const count = pageCount(state);
-    pageIndicator.textContent = formatPageIndicator(cur, count);
-    pageIndicator.setAttribute('data-dots', formatDotIndicator(cur, count));
+    const dots = formatDotIndicator(cur, count);
+    pageIndicator.textContent = dots;
+    pageIndicator.setAttribute('data-dots', dots);
+    pageIndicator.setAttribute('data-label', formatPageIndicator(cur, count));
   }
 
   function setToolbarFaded(faded) {
@@ -382,6 +430,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (menuOpen) setToolbarFaded(false);
   }
 
+  let inkLayer = null;
+  let audioSidecar = null;
+
   const { state, compartments } = createEditorState(initialDoc, {
     theme: currentTheme,
     fontSize: currentFontSize,
@@ -402,6 +453,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
+        if (inkLayer) inkLayer.relayout();
       }
     }
   });
@@ -412,6 +464,29 @@ export function mountEditor(root = document.body, initialDoc = '') {
   });
 
   attachSwipePaging(view);
+
+  /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
+  function insertBlock(text) {
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    const insert = `\n${String(text ?? '')}`;
+    view.dispatch({
+      changes: { from: line.to, insert },
+      selection: { anchor: line.to + insert.length },
+      scrollIntoView: true,
+      userEvent: 'input'
+    });
+  }
+
+  inkLayer = createInkLayer(view, {
+    getPageIndex: () => (view ? currentPage(view.state) : 0),
+    globalObj: typeof window !== 'undefined' ? window : null
+  });
+
+  audioSidecar = createAudioSidecar({
+    container: workspace,
+    onInsertToPage: insertBlock,
+    globalObj: typeof window !== 'undefined' ? window : null
+  });
 
   function showOutline() {
     const wasVisible = outlineVisible;
@@ -432,18 +507,6 @@ export function mountEditor(root = document.body, initialDoc = '') {
     pagesBtn.setAttribute('aria-pressed', String(isPageMode(view.state)));
     if (on) showPage(view, currentPage(view.state));
     updatePageIndicator();
-  }
-
-  /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
-  function insertBlock(text) {
-    const line = view.state.doc.lineAt(view.state.selection.main.head);
-    const insert = `\n${String(text ?? '')}`;
-    view.dispatch({
-      changes: { from: line.to, insert },
-      selection: { anchor: line.to + insert.length },
-      scrollIntoView: true,
-      userEvent: 'input'
-    });
   }
 
   /** Places the cursor at `offset` (clamped), shows its page, and focuses the editor. */
@@ -481,6 +544,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
     renderOutline();
   }
 
+  function normalizeInkToolName(tool) {
+    const t = String(tool ?? 'pen').trim().toLowerCase();
+    if (t === 'whole eraser' || t === 'eraser') return 'eraser-whole';
+    if (t === 'partial eraser') return 'eraser-partial';
+    return t;
+  }
+
   let currentInkTool = 'pen';
   const voiceHandlers = {
     swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
@@ -496,19 +566,20 @@ export function mountEditor(root = document.body, initialDoc = '') {
     },
     setInkTool: tool => {
       currentInkTool = tool;
+      const mapped = normalizeInkToolName(tool);
+      if (inkLayer) inkLayer.setTool(mapped);
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
-      if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
+      if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: mapped });
       return tool;
     },
-    summarizeSection: () => {
-      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.audio;
-      if (h && typeof h.postMessage === 'function') h.postMessage({ action: 'summarize' });
-      return 'summarize';
+    summarizeSection: idx => {
+      const secs = extractDocumentSections(view.state.doc.toString(), currentPage(view.state));
+      const sec = secs[idx ?? 0] || { title: '', text: view.state.doc.toString() };
+      return speakSectionSummary(sec);
     },
-    bookmarkAudio: () => {
-      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.audio;
-      if (h && typeof h.postMessage === 'function') h.postMessage({ action: 'bookmark' });
-      return 'bookmark';
+    bookmarkAudio: (idx, note = '') => {
+      const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+      return audioSidecar.bookmarkCue(targetIdx, note);
     }
   };
 
@@ -549,8 +620,60 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setCursor,
       insertBlock,
       voiceCommand,
+      getInk: () => (inkLayer ? inkLayer.getInk() : { version: 1, strokes: [], removed: [] }),
+      setInk: data => {
+        if (!inkLayer) return;
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        inkLayer.setInk(parsed);
+        inkLayer.relayout();
+      },
+      mergeInk: remote => {
+        if (!inkLayer) return null;
+        const parsed = typeof remote === 'string' ? JSON.parse(remote) : remote;
+        const merged = mergeInkDocuments(inkLayer.getInk(), parsed);
+        inkLayer.setInk(merged);
+        inkLayer.relayout();
+        return merged;
+      },
       getInkTool: () => currentInkTool,
-      setInkTool: tool => voiceHandlers.setInkTool(tool)
+      setInkTool: tool => voiceHandlers.setInkTool(tool),
+      getInkColor: () => (inkLayer ? inkLayer.getColor() : INK_COLORS[0]),
+      setInkColor: color => {
+        if (inkLayer) inkLayer.setColor(color);
+        return inkLayer ? inkLayer.getColor() : color;
+      },
+      toggleEraser: () => {
+        currentInkTool = inkLayer ? inkLayer.toggleEraser() : 'eraser-whole';
+        return currentInkTool;
+      },
+      onPencilAction: action => {
+        if (action === 'squeeze' || action === 'doubleTap') {
+          postHaptic('squeeze');
+          if (inkLayer) {
+            inkLayer.showPalette();
+            currentInkTool = inkLayer.toggleEraser();
+            return currentInkTool;
+          }
+        }
+        return currentInkTool;
+      },
+      setAudioTranscript: data => {
+        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        audioSidecar.setAudioTranscript(parsed);
+      },
+      updateAudioTime: sec => audioSidecar.updateTime(sec),
+      bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
+      annotateAudioCue: (idx, text) => {
+        const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+        return audioSidecar.annotateCue(targetIdx, text);
+      },
+      summarizeSection: idx => voiceHandlers.summarizeSection(idx),
+      summarizeAllSections: () => summarizeAllSections(view.state.doc.toString(), { pageIndex: currentPage(view.state) }),
+      dropFile: (pathOrUri, caption) => {
+        const md = formatDroppedEmbed(pathOrUri, caption);
+        if (md) insertBlock(md);
+        return md;
+      }
     }
   });
 
@@ -645,11 +768,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onZoneEnter(zone) {
       if (zone === 'top') {
         setToolbarFaded(false);
+        if (inkLayer) inkLayer.showPalette();
       }
     },
     onZoneLeave(zone) {
       if (zone === 'top' && !menuOpen) {
         setToolbarFaded(true);
+        if (inkLayer) inkLayer.hidePalette();
       }
     },
     globalObj: typeof window !== 'undefined' ? window : null
@@ -663,6 +788,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
   return {
     view,
     bridge: bridge.api,
+    inkLayer,
+    audioSidecar,
     setTheme,
     setFontSize,
     setNewestFirst,

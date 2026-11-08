@@ -1,0 +1,1261 @@
+// Notability-style line-anchored ink whiteboard.
+// Line-anchored plain JSON storage, shape snapping, whole/partial erasers,
+// and CRDT-safe multi-device merge.
+
+export const INK_TOOLS = [
+  'pen',
+  'highlighter',
+  'underline',
+  'circle',
+  'eraser-whole',
+  'eraser-partial'
+];
+
+export const INK_COLORS = [
+  '#38bdf8',
+  '#facc15',
+  '#4ade80',
+  '#f472b6',
+  '#a78bfa',
+  '#fb923c',
+  '#f87171',
+  '#e6edf3'
+];
+
+export const DEFAULT_LINE_HEIGHT = 28;
+export const DEFAULT_DEBOUNCE_MS = 300;
+
+const EMBED_RE = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
+
+export function parseEmbedTarget(line) {
+  if (typeof line !== 'string') return null;
+  const m = EMBED_RE.exec(line.trim());
+  if (!m) return null;
+  return m[2] ?? m[3] ?? null;
+}
+
+/**
+ * Deterministic fast 32-bit FNV-1a string hash for line context.
+ * Captures lineText, prevLineText, and nextLineText so the anchor
+ * stays stable even when other distant lines move.
+ */
+export function hashLineContext(lineText = '', prevLineText = '', nextLineText = '') {
+  const clean = s => (typeof s === 'string' ? s.replace(/\r$/, '') : '');
+  const str = `${clean(prevLineText)}\n${clean(lineText)}\n${clean(nextLineText)}`;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * Splits document into isolated window pages demarcated by `<!-- page -->`.
+ */
+export function getDocumentPages(docText) {
+  const rawLines = typeof docText === 'string' ? docText.split(/\r?\n/) : [''];
+  const pages = [];
+  let curStartLine = 1;
+  let curLines = [];
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = typeof rawLines[i] === 'string' ? rawLines[i].replace(/\r$/, '') : '';
+    if (line.trim() === '<!-- page -->') {
+      pages.push({
+        index: pages.length,
+        startLine: curStartLine,
+        endLine: i,
+        lines: curLines
+      });
+      curStartLine = i + 2;
+      curLines = [];
+    } else {
+      curLines.push(line);
+    }
+  }
+
+  pages.push({
+    index: pages.length,
+    startLine: curStartLine,
+    endLine: rawLines.length,
+    lines: curLines
+  });
+
+  return pages;
+}
+
+/**
+ * Computes anchor from the stroke's top-left point and the current document lines.
+ * In isolated mini-document windows, each window pageIndex starts at Y = 0 at page.startLine.
+ * Stores lineIndexInPage = lineNumber - page.startLine in anchor.offsetInPage.
+ */
+export function anchorStrokeToDoc(
+  stroke,
+  docText = '',
+  lineHeight = DEFAULT_LINE_HEIGHT,
+  pageIndex = null
+) {
+  const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+  let minX = 0;
+  let minY = 0;
+  if (points.length > 0) {
+    minX = Math.min(...points.map(p => p[0]));
+    minY = Math.min(...points.map(p => p[1]));
+  }
+
+  const rawLines = typeof docText === 'string' ? docText.split(/\r?\n/) : [''];
+  const pages = getDocumentPages(docText);
+
+  let pIdx = 0;
+  if (typeof pageIndex === 'number' && pageIndex >= 0) {
+    pIdx = Math.min(pages.length - 1, pageIndex);
+  } else if (stroke?.anchor && typeof stroke.anchor.pageIndex === 'number') {
+    pIdx = Math.min(pages.length - 1, stroke.anchor.pageIndex);
+  } else {
+    // If minY exceeds total lines in doc, find which page contains that line
+    const globalLineIdx = Math.max(0, Math.min(rawLines.length - 1, Math.floor(minY / lineHeight)));
+    const targetLineNumber = globalLineIdx + 1;
+    for (const p of pages) {
+      if (targetLineNumber >= p.startLine && targetLineNumber <= p.endLine) {
+        pIdx = p.index;
+        break;
+      }
+    }
+  }
+
+  const targetPage = pages[pIdx] || pages[0];
+  const lineCountInPage = Math.max(1, targetPage.lines.length);
+  const lineIndexInPage = Math.max(0, Math.min(lineCountInPage - 1, Math.floor(minY / lineHeight)));
+  const lineNumber = targetPage.startLine + lineIndexInPage;
+
+  const lineText = targetPage.lines[lineIndexInPage] ?? '';
+  const prevLineText = lineIndexInPage > 0 ? targetPage.lines[lineIndexInPage - 1] : '';
+  const nextLineText = lineIndexInPage < targetPage.lines.length - 1 ? targetPage.lines[lineIndexInPage + 1] : '';
+
+  const lineHash = hashLineContext(lineText, prevLineText, nextLineText);
+  const embedTarget = parseEmbedTarget(lineText);
+
+  const relX = minX;
+  const relY = minY - lineIndexInPage * lineHeight;
+
+  const anchor = {
+    pageIndex: pIdx,
+    lineHash,
+    lineText,
+    lineNumber,
+    offsetInPage: lineIndexInPage,
+    embedTarget,
+    relX,
+    relY
+  };
+
+  if (stroke && typeof stroke === 'object') {
+    stroke.anchor = anchor;
+  }
+  return anchor;
+}
+
+/**
+ * Re-computes vertical deltaY when lines are typed or deleted within the anchored page.
+ * Matches stroke within its anchor.pageIndex (or across pages if reordered).
+ * Computes deltaLines = newLineIndexInPage - (anchor.offsetInPage ?? 0) so changes
+ * in earlier/later windows do NOT shift this window's ink!
+ */
+export function resolveStrokeAnchor(stroke, docText = '', lineHeight = DEFAULT_LINE_HEIGHT) {
+  const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+  const anchor = stroke?.anchor;
+
+  if (!anchor || typeof anchor !== 'object') {
+    return {
+      points: points.map(p => [...p]),
+      orphaned: true,
+      pageIndex: 0,
+      deltaY: 0,
+      shape: stroke?.shape ? { ...stroke.shape } : null
+    };
+  }
+
+  const pages = getDocumentPages(docText);
+  const targetPageIndex = typeof anchor.pageIndex === 'number' ? anchor.pageIndex : 0;
+
+  function findLineInPage(p) {
+    if (!p) return -1;
+    // 1. embedTarget
+    if (anchor.embedTarget) {
+      for (let i = 0; i < p.lines.length; i++) {
+        if (parseEmbedTarget(p.lines[i]) === anchor.embedTarget) return i;
+      }
+    }
+    // 2. exact context hash
+    if (anchor.lineHash) {
+      for (let i = 0; i < p.lines.length; i++) {
+        const prev = i > 0 ? p.lines[i - 1] : '';
+        const next = i < p.lines.length - 1 ? p.lines[i + 1] : '';
+        if (hashLineContext(p.lines[i], prev, next) === anchor.lineHash) return i;
+      }
+    }
+    // 3. exact line text
+    if (typeof anchor.lineText === 'string') {
+      const candidates = [];
+      for (let i = 0; i < p.lines.length; i++) {
+        if (p.lines[i] === anchor.lineText) candidates.push(i);
+      }
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1) {
+        const target = anchor.offsetInPage ?? 0;
+        candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+        return candidates[0];
+      }
+    }
+    // 4. trimmed line text
+    if (typeof anchor.lineText === 'string' && anchor.lineText.trim().length > 0) {
+      const trimmed = anchor.lineText.trim();
+      const candidates = [];
+      for (let i = 0; i < p.lines.length; i++) {
+        if (p.lines[i].trim() === trimmed) candidates.push(i);
+      }
+      if (candidates.length > 0) {
+        const target = anchor.offsetInPage ?? 0;
+        candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+        return candidates[0];
+      }
+    }
+    return -1;
+  }
+
+  let matchedPageIndex = targetPageIndex;
+  let matchedLineIdxInPage = -1;
+
+  if (pages[targetPageIndex]) {
+    matchedLineIdxInPage = findLineInPage(pages[targetPageIndex]);
+  }
+
+  // If not found in original pageIndex, search other pages in case pages were prepended/reordered
+  if (matchedLineIdxInPage === -1) {
+    for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+      if (pIdx === targetPageIndex) continue;
+      const idx = findLineInPage(pages[pIdx]);
+      if (idx !== -1) {
+        matchedPageIndex = pIdx;
+        matchedLineIdxInPage = idx;
+        break;
+      }
+    }
+  }
+
+  // If still not found anywhere, keep stroke orphaned at last spot
+  if (matchedLineIdxInPage === -1) {
+    return {
+      points: points.map(p => [...p]),
+      orphaned: true,
+      pageIndex: targetPageIndex,
+      deltaY: 0,
+      shape: stroke?.shape ? { ...stroke.shape } : null
+    };
+  }
+
+  const deltaLines = matchedLineIdxInPage - (anchor.offsetInPage ?? 0);
+  const deltaY = deltaLines * lineHeight;
+  const shiftedPoints = points.map(([x, y, p, t]) => [x, y + deltaY, p, t]);
+
+  let updatedShape = null;
+  if (stroke?.shape) {
+    if (stroke.shape.kind === 'ellipse') {
+      updatedShape = { ...stroke.shape, cy: stroke.shape.cy + deltaY };
+    } else if (stroke.shape.kind === 'line') {
+      updatedShape = {
+        ...stroke.shape,
+        y1: stroke.shape.y1 + deltaY,
+        y2: stroke.shape.y2 + deltaY
+      };
+    } else {
+      updatedShape = { ...stroke.shape };
+    }
+  }
+
+  return {
+    points: shiftedPoints,
+    orphaned: false,
+    pageIndex: matchedPageIndex,
+    deltaY,
+    shape: updatedShape
+  };
+}
+
+/**
+ * CRDT-safe union of strokes by id plus union of removed tombstone IDs.
+ */
+export function mergeInkDocuments(localDoc, remoteDoc) {
+  const localStrokes = Array.isArray(localDoc?.strokes) ? localDoc.strokes : [];
+  const remoteStrokes = Array.isArray(remoteDoc?.strokes) ? remoteDoc.strokes : [];
+  const localRemoved = Array.isArray(localDoc?.removed) ? localDoc.removed : [];
+  const remoteRemoved = Array.isArray(remoteDoc?.removed) ? remoteDoc.removed : [];
+
+  const removedSet = new Set([...localRemoved, ...remoteRemoved]);
+  const strokesById = new Map();
+
+  for (const s of localStrokes) {
+    if (s && s.id && !removedSet.has(s.id)) {
+      strokesById.set(s.id, s);
+    }
+  }
+
+  for (const s of remoteStrokes) {
+    if (s && s.id && !removedSet.has(s.id)) {
+      const existing = strokesById.get(s.id);
+      if (!existing) {
+        strokesById.set(s.id, s);
+      } else {
+        const existingAt = typeof existing.at === 'number' ? existing.at : 0;
+        const remoteAt = typeof s.at === 'number' ? s.at : 0;
+        if (remoteAt >= existingAt) {
+          strokesById.set(s.id, s);
+        }
+      }
+    }
+  }
+
+  const strokes = Array.from(strokesById.values());
+  strokes.sort((a, b) => {
+    const diff = (a.at || 0) - (b.at || 0);
+    if (diff !== 0) return diff;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  return {
+    version: 1,
+    strokes,
+    removed: Array.from(removedSet).sort()
+  };
+}
+
+/**
+ * Snaps a horizontal-ish stroke to a clean, level underline [ [minX, snapY, p, t], [maxX, snapY, p, t] ].
+ */
+export function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  if (points.length === 1) {
+    const pt = points[0];
+    return [
+      [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0],
+      [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0]
+    ];
+  }
+
+  const xs = points.map(p => p[0]);
+  const ys = points.map(p => p[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+
+  const snapY = avgY;
+  const pStart = points[0][2] ?? 0.5;
+  const pEnd = points[points.length - 1][2] ?? pStart;
+  const tStart = points[0][3] ?? 0;
+  const tEnd = points[points.length - 1][3] ?? tStart;
+
+  return [
+    [minX, snapY, pStart, tStart],
+    [maxX, snapY, pEnd, tEnd]
+  ];
+}
+
+/**
+ * Snaps to geometric ellipse or line.
+ * - forceCircle === true: always snaps to ellipse.
+ * - forceCircle === false: NEVER snaps unless holdDurationMs >= 320 (draw-and-hold at stroke end).
+ *   A quick 'o' (holdDurationMs < 320) returns { snapped: false, shape: null, points }.
+ * - When holdDurationMs >= 320:
+ *   If isClosedLoop or perimeter > chord * 1.35 (curved path, w >= 10, h >= 10, aspect 0.35..2.8):
+ *     snaps to ellipse (48 perimeter points).
+ *   If perimeter <= chord * 1.35:
+ *     snaps to line.
+ */
+export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = false } = {}) {
+  if (!Array.isArray(points) || points.length === 0) {
+    return { snapped: false, shape: null, points: [] };
+  }
+  if (points.length < 2) {
+    return { snapped: false, shape: null, points: points.map(p => [...p]) };
+  }
+
+  const xs = points.map(p => p[0]);
+  const ys = points.map(p => p[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const w = maxX - minX;
+  const h = maxY - minY;
+
+  let perimeter = 0;
+  for (let i = 1; i < points.length; i++) {
+    perimeter += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+  }
+
+  const chord = Math.hypot(
+    points[points.length - 1][0] - points[0][0],
+    points[points.length - 1][1] - points[0][1]
+  );
+
+  const aspect = h > 0 ? w / h : 1;
+  const isClosedLoop =
+    perimeter > 0 &&
+    chord < 0.28 * perimeter &&
+    aspect >= 0.45 &&
+    aspect <= 2.2;
+
+  function makeEllipse() {
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const rx = Math.max(1, w / 2);
+    const ry = Math.max(1, h / 2);
+
+    const snappedPoints = [];
+    const pAvg = points.reduce((sum, p) => sum + (p[2] ?? 0.5), 0) / points.length;
+    const t0 = points[0]?.[3] ?? 0;
+    const t1 = points[points.length - 1]?.[3] ?? t0;
+
+    for (let i = 0; i < 48; i++) {
+      const theta = (i / 48) * (2 * Math.PI);
+      const x = cx + rx * Math.cos(theta);
+      const y = cy + ry * Math.sin(theta);
+      const t = t0 + (t1 - t0) * (i / 48);
+      snappedPoints.push([x, y, pAvg, t]);
+    }
+
+    return {
+      snapped: true,
+      shape: { kind: 'ellipse', cx, cy, rx, ry },
+      points: snappedPoints
+    };
+  }
+
+  if (forceCircle) {
+    return makeEllipse();
+  }
+
+  // Draw-and-hold check: NEVER snap freehand strokes unless held for >= 320ms!
+  if (holdDurationMs < 320) {
+    return {
+      snapped: false,
+      shape: null,
+      points: points.map(p => [...p])
+    };
+  }
+
+  // Held at end (holdDurationMs >= 320): check if curved or straight
+  const isCurved =
+    isClosedLoop ||
+    (perimeter > chord * 1.35 && w >= 10 && h >= 10 && aspect >= 0.35 && aspect <= 2.8);
+
+  if (isCurved) {
+    return makeEllipse();
+  }
+
+  // Genuinely straight line
+  const x1 = points[0][0];
+  const y1 = points[0][1];
+  const x2 = points[points.length - 1][0];
+  const y2 = points[points.length - 1][1];
+  const p1 = points[0][2] ?? 0.5;
+  const p2 = points[points.length - 1][2] ?? p1;
+  const t0 = points[0][3] ?? 0;
+  const t1 = points[points.length - 1][3] ?? t0;
+
+  return {
+    snapped: true,
+    shape: { kind: 'line', x1, y1, x2, y2 },
+    points: [
+      [x1, y1, p1, t0],
+      [x2, y2, p2, t1]
+    ]
+  };
+}
+
+function distToSegmentSquared(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) {
+    const ex = px - x1;
+    const ey = py - y1;
+    return ex * ex + ey * ey;
+  }
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  const ex = px - cx;
+  const ey = py - cy;
+  return ex * ex + ey * ey;
+}
+
+function strokeIntersectsEraser(stroke, eraserPoints, radius) {
+  const r2 = radius * radius;
+  const pts = stroke.points || [];
+  if (pts.length === 0) return false;
+
+  for (const ep of eraserPoints) {
+    const epx = ep[0];
+    const epy = ep[1];
+
+    if (pts.length === 1) {
+      const dx = pts[0][0] - epx;
+      const dy = pts[0][1] - epy;
+      if (dx * dx + dy * dy <= r2) return true;
+      continue;
+    }
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const d2 = distToSegmentSquared(epx, epy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+      if (d2 <= r2) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Removes any stroke whose segments intersect eraserPoints within radius.
+ * Returns { remaining, removedIds }.
+ */
+export function eraseWholeStrokes(strokes, eraserPoints, radius = 12) {
+  const list = Array.isArray(strokes) ? strokes : [];
+  const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+  const remaining = [];
+  const removedIds = [];
+
+  for (const stroke of list) {
+    if (strokeIntersectsEraser(stroke, eps, radius)) {
+      if (stroke.id) removedIds.push(stroke.id);
+    } else {
+      remaining.push(stroke);
+    }
+  }
+
+  const out = { remaining, removedIds };
+  out[Symbol.iterator] = function* () { yield* remaining; };
+  Object.defineProperty(out, 'length', { get: () => remaining.length });
+  return out;
+}
+
+function isPointInEraser(x, y, eraserPoints, radius) {
+  const r2 = radius * radius;
+  for (const ep of eraserPoints) {
+    const dx = x - ep[0];
+    const dy = y - ep[1];
+    if (dx * dx + dy * dy <= r2) return true;
+  }
+  return false;
+}
+
+/**
+ * Splits any intersected stroke at the erased points into 0, 1, or 2+ clean sub-strokes
+ * (each with a fresh deterministic id and updated anchor), removing only the erased segment.
+ * Returns { remaining, removedIds }.
+ */
+export function erasePartialStrokes(
+  strokes,
+  eraserPoints,
+  radius = 10,
+  docText = '',
+  lineHeight = DEFAULT_LINE_HEIGHT,
+  pageIndex = null
+) {
+  const list = Array.isArray(strokes) ? strokes : [];
+  const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+  const remaining = [];
+  const removedIds = [];
+
+  for (const stroke of list) {
+    const pts = stroke.points || [];
+    if (pts.length === 0) continue;
+
+    if (!strokeIntersectsEraser(stroke, eps, radius)) {
+      remaining.push(stroke);
+      continue;
+    }
+
+    if (stroke.id) {
+      removedIds.push(stroke.id);
+    }
+
+    const sampled = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (i === 0) {
+        sampled.push(pts[0]);
+      } else {
+        const p1 = pts[i - 1];
+        const p2 = pts[i];
+        const dist = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+        const steps = Math.max(1, Math.ceil(dist / 3));
+        for (let s = 1; s <= steps; s++) {
+          const frac = s / steps;
+          const x = p1[0] + (p2[0] - p1[0]) * frac;
+          const y = p1[1] + (p2[1] - p1[1]) * frac;
+          const p = (p1[2] ?? 0.5) + ((p2[2] ?? 0.5) - (p1[2] ?? 0.5)) * frac;
+          const t = (p1[3] ?? 0) + ((p2[3] ?? 0) - (p1[3] ?? 0)) * frac;
+          sampled.push([x, y, p, t]);
+        }
+      }
+    }
+
+    const runs = [];
+    let currentRun = [];
+    for (const pt of sampled) {
+      if (!isPointInEraser(pt[0], pt[1], eps, radius)) {
+        currentRun.push(pt);
+      } else {
+        if (currentRun.length > 0) {
+          runs.push(currentRun);
+          currentRun = [];
+        }
+      }
+    }
+    if (currentRun.length > 0) {
+      runs.push(currentRun);
+    }
+
+    let subIndex = 0;
+    for (const run of runs) {
+      if (run.length === 0) continue;
+      subIndex++;
+      const subStroke = {
+        ...stroke,
+        id: `${stroke.id}-part-${subIndex}`,
+        points: run,
+        shape: null,
+        at: stroke.at ?? Date.now()
+      };
+
+      if (docText) {
+        anchorStrokeToDoc(subStroke, docText, lineHeight, pageIndex ?? stroke.anchor?.pageIndex);
+      } else if (stroke.anchor) {
+        const subMinX = Math.min(...run.map(p => p[0]));
+        const subMinY = Math.min(...run.map(p => p[1]));
+        const lineTopY = (stroke.anchor.offsetInPage ?? 0) * lineHeight;
+        subStroke.anchor = {
+          ...stroke.anchor,
+          relX: subMinX,
+          relY: subMinY - lineTopY
+        };
+      }
+
+      remaining.push(subStroke);
+    }
+  }
+
+  const out = { remaining, removedIds };
+  out[Symbol.iterator] = function* () { yield* remaining; };
+  Object.defineProperty(out, 'length', { get: () => remaining.length });
+  return out;
+}
+
+export function getToolDefaultWidth(tool) {
+  switch (tool) {
+    case 'highlighter':
+      return 18;
+    case 'underline':
+      return 3;
+    case 'circle':
+      return 2.5;
+    case 'pen':
+    default:
+      return 2.5;
+  }
+}
+
+/**
+ * Creates and mounts the SVG ink layer and palette inside view.scrollDOM.
+ */
+export function createInkLayer(view, options = {}) {
+  const {
+    lineHeight = DEFAULT_LINE_HEIGHT,
+    initialInk = null,
+    debounceMs = DEFAULT_DEBOUNCE_MS,
+    globalObj = typeof window !== 'undefined' ? window : null,
+    onInkChange = null,
+    allowMouse = true,
+    getPageIndex = null,
+    activePageIndex = 0
+  } = options;
+
+  let inkDoc = initialInk && typeof initialInk === 'object'
+    ? {
+        version: 1,
+        strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
+        removed: Array.isArray(initialInk.removed) ? [...initialInk.removed] : []
+      }
+    : { version: 1, strokes: [], removed: [] };
+
+  let currentTool = 'pen';
+  let previousDrawingTool = 'pen';
+  let currentColor = INK_COLORS[0];
+  let isDrawing = false;
+  let activePoints = [];
+  let strokeStartTime = 0;
+  let debounceTimer = null;
+
+  const docNode = globalObj?.document || (typeof document !== 'undefined' ? document : null);
+  const scrollDOM = view?.scrollDOM || (view instanceof (globalObj?.HTMLElement || Object) ? view : null);
+
+  let svg = null;
+  let highlightGroup = null;
+  let penGroup = null;
+  let activeGroup = null;
+  let palette = null;
+  const colorDots = [];
+  const toolDots = [];
+
+  function getCurrentPageIndex() {
+    if (typeof getPageIndex === 'function') {
+      return getPageIndex();
+    }
+    return activePageIndex ?? 0;
+  }
+
+  function getDocText() {
+    if (view && view.state && view.state.doc && typeof view.state.doc.toString === 'function') {
+      return view.state.doc.toString();
+    }
+    return '';
+  }
+
+  // 1. Build SVG Layer
+  if (docNode && scrollDOM && typeof docNode.createElementNS === 'function') {
+    svg = docNode.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'rc-ink-svg');
+    svg.style.position = 'absolute';
+    svg.style.top = '0';
+    svg.style.left = '0';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.pointerEvents = 'none';
+    svg.style.zIndex = '3';
+
+    highlightGroup = docNode.createElementNS('http://www.w3.org/2000/svg', 'g');
+    highlightGroup.setAttribute('class', 'rc-ink-highlight-group');
+    highlightGroup.style.mixBlendMode = 'multiply';
+
+    penGroup = docNode.createElementNS('http://www.w3.org/2000/svg', 'g');
+    penGroup.setAttribute('class', 'rc-ink-pen-group');
+
+    activeGroup = docNode.createElementNS('http://www.w3.org/2000/svg', 'g');
+    activeGroup.setAttribute('class', 'rc-ink-active-group');
+
+    svg.appendChild(highlightGroup);
+    svg.appendChild(penGroup);
+    svg.appendChild(activeGroup);
+
+    if (typeof scrollDOM.appendChild === 'function') {
+      scrollDOM.appendChild(svg);
+    }
+  }
+
+  // 2. Build Palette DOM (Pure dot colours and tool row, zero text/words, no Done button)
+  if (docNode && typeof docNode.createElement === 'function') {
+    palette = docNode.createElement('div');
+    palette.className = 'rc-ink-palette';
+    palette.hidden = true;
+    palette.setAttribute('aria-label', 'Ink palette');
+
+    // 8 colour dots
+    for (const color of INK_COLORS) {
+      const dot = docNode.createElement('button');
+      dot.className = `rc-ink-color-dot${color === currentColor ? ' rc-active' : ''}`;
+      dot.setAttribute('type', 'button');
+      dot.setAttribute('data-color', color);
+      dot.setAttribute('aria-label', color);
+      dot.style.backgroundColor = color;
+      dot.textContent = '';
+      dot.addEventListener('click', e => {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        setColor(color);
+      });
+      palette.appendChild(dot);
+      colorDots.push(dot);
+    }
+
+    // 6 tool dots
+    for (const tool of INK_TOOLS) {
+      const dot = docNode.createElement('button');
+      dot.className = `rc-ink-tool-dot${tool === currentTool ? ' rc-active' : ''}`;
+      dot.setAttribute('type', 'button');
+      dot.setAttribute('data-tool', tool);
+      dot.setAttribute('aria-label', tool);
+      dot.textContent = '';
+      dot.addEventListener('click', e => {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        setTool(tool);
+      });
+      palette.appendChild(dot);
+      toolDots.push(dot);
+    }
+
+    if (scrollDOM && typeof scrollDOM.appendChild === 'function') {
+      scrollDOM.appendChild(palette);
+    }
+  }
+
+  function updatePaletteActive() {
+    for (const dot of colorDots) {
+      const c = dot.getAttribute('data-color');
+      if (c === currentColor) {
+        dot.className = 'rc-ink-color-dot rc-active';
+      } else {
+        dot.className = 'rc-ink-color-dot';
+      }
+    }
+    for (const dot of toolDots) {
+      const t = dot.getAttribute('data-tool');
+      if (t === currentTool) {
+        dot.className = 'rc-ink-tool-dot rc-active';
+      } else {
+        dot.className = 'rc-ink-tool-dot';
+      }
+    }
+  }
+
+  function showPalette() {
+    if (palette) {
+      palette.hidden = false;
+      palette.style.display = 'flex';
+    }
+  }
+
+  function hidePalette() {
+    if (palette) {
+      palette.hidden = true;
+    }
+  }
+
+  function schedulePost() {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      const data = getInk();
+      const handler =
+        globalObj &&
+        globalObj.webkit &&
+        globalObj.webkit.messageHandlers &&
+        globalObj.webkit.messageHandlers.ink;
+      if (handler && typeof handler.postMessage === 'function') {
+        handler.postMessage(JSON.stringify(data));
+      }
+      if (typeof onInkChange === 'function') {
+        onInkChange(data);
+      }
+    }, debounceMs);
+  }
+
+  function renderStrokeElement(stroke, targetGroup) {
+    if (!docNode || !targetGroup || typeof docNode.createElementNS !== 'function') return;
+    const pts = stroke.points || [];
+    if (pts.length === 0) return;
+
+    const isHighlighter = stroke.tool === 'highlighter';
+    const isOrphaned = Boolean(stroke.orphaned);
+    const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
+
+    if (stroke.shape?.kind === 'ellipse') {
+      const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      el.setAttribute('cx', String(stroke.shape.cx));
+      el.setAttribute('cy', String(stroke.shape.cy));
+      el.setAttribute('rx', String(stroke.shape.rx));
+      el.setAttribute('ry', String(stroke.shape.ry));
+      el.setAttribute('fill', 'none');
+      el.setAttribute('stroke', stroke.color || currentColor);
+      el.setAttribute('stroke-width', String(strokeWidth));
+      el.setAttribute('stroke-linecap', 'round');
+      if (isHighlighter) el.setAttribute('opacity', '0.45');
+      else if (isOrphaned) el.setAttribute('opacity', '0.38');
+      targetGroup.appendChild(el);
+      return;
+    }
+
+    if (stroke.shape?.kind === 'line') {
+      const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'line');
+      el.setAttribute('x1', String(stroke.shape.x1));
+      el.setAttribute('y1', String(stroke.shape.y1));
+      el.setAttribute('x2', String(stroke.shape.x2));
+      el.setAttribute('y2', String(stroke.shape.y2));
+      el.setAttribute('stroke', stroke.color || currentColor);
+      el.setAttribute('stroke-width', String(strokeWidth));
+      el.setAttribute('stroke-linecap', 'round');
+      if (isHighlighter) el.setAttribute('opacity', '0.45');
+      else if (isOrphaned) el.setAttribute('opacity', '0.38');
+      targetGroup.appendChild(el);
+      return;
+    }
+
+    if (pts.length === 1) {
+      const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      el.setAttribute('cx', String(pts[0][0]));
+      el.setAttribute('cy', String(pts[0][1]));
+      el.setAttribute('r', String(strokeWidth / 2));
+      el.setAttribute('fill', stroke.color || currentColor);
+      if (isHighlighter) el.setAttribute('opacity', '0.45');
+      else if (isOrphaned) el.setAttribute('opacity', '0.38');
+      targetGroup.appendChild(el);
+      return;
+    }
+
+    const path = docNode.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${pts[i][0].toFixed(2)} ${pts[i][1].toFixed(2)}`;
+    }
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', stroke.color || currentColor);
+    path.setAttribute('stroke-width', String(strokeWidth));
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    if (isHighlighter) path.setAttribute('opacity', '0.45');
+    else if (isOrphaned) path.setAttribute('opacity', '0.38');
+    targetGroup.appendChild(path);
+  }
+
+  function render() {
+    if (!docNode) return;
+    if (highlightGroup) highlightGroup.innerHTML = '';
+    if (penGroup) penGroup.innerHTML = '';
+    if (activeGroup) activeGroup.innerHTML = '';
+
+    const activePage = getCurrentPageIndex();
+
+    for (const stroke of inkDoc.strokes) {
+      // Filter by active page window so Window 0 ink only shows on Window 0
+      if (
+        stroke.anchor &&
+        typeof stroke.anchor.pageIndex === 'number' &&
+        stroke.anchor.pageIndex !== activePage
+      ) {
+        continue;
+      }
+
+      const targetGroup = stroke.tool === 'highlighter' ? highlightGroup : penGroup;
+      renderStrokeElement(stroke, targetGroup);
+    }
+  }
+
+  function renderActiveStroke() {
+    if (!docNode || !activeGroup) return;
+    activeGroup.innerHTML = '';
+    if (activePoints.length === 0) return;
+
+    const stroke = {
+      tool: currentTool,
+      color: currentColor,
+      width: getToolDefaultWidth(currentTool),
+      points: activePoints
+    };
+    renderStrokeElement(stroke, activeGroup);
+  }
+
+  function relayout() {
+    const docText = getDocText();
+    for (const stroke of inkDoc.strokes) {
+      const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+      stroke.points = res.points;
+      stroke.orphaned = res.orphaned;
+      if (stroke.anchor) {
+        stroke.anchor.pageIndex = res.pageIndex;
+      }
+      if (res.shape) {
+        stroke.shape = res.shape;
+      }
+    }
+    render();
+  }
+
+  function getInk() {
+    return {
+      version: 1,
+      strokes: inkDoc.strokes.map(s => ({
+        ...s,
+        points: s.points ? s.points.map(p => [...p]) : [],
+        anchor: s.anchor ? { ...s.anchor } : null,
+        shape: s.shape ? { ...s.shape } : null
+      })),
+      removed: [...inkDoc.removed]
+    };
+  }
+
+  function setInk(data) {
+    inkDoc = data && typeof data === 'object'
+      ? {
+          version: 1,
+          strokes: Array.isArray(data.strokes) ? [...data.strokes] : [],
+          removed: Array.isArray(data.removed) ? [...data.removed] : []
+        }
+      : { version: 1, strokes: [], removed: [] };
+    render();
+  }
+
+  function addStroke(stroke) {
+    if (!stroke || typeof stroke !== 'object') return;
+    if (!stroke.id) {
+      stroke.id = `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+    if (!stroke.at) {
+      stroke.at = Date.now();
+    }
+    if (!stroke.tool) {
+      stroke.tool = currentTool;
+    }
+    if (!stroke.color) {
+      stroke.color = currentColor;
+    }
+    if (!stroke.width) {
+      stroke.width = getToolDefaultWidth(stroke.tool);
+    }
+    if (!stroke.anchor) {
+      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+    }
+    inkDoc.strokes.push(stroke);
+    render();
+    schedulePost();
+  }
+
+  function eraseAt(points, mode = null) {
+    const effectiveMode = mode || (currentTool === 'eraser-partial' ? 'partial' : 'whole');
+    const docText = getDocText();
+    let res;
+    if (effectiveMode === 'partial' || effectiveMode === 'eraser-partial') {
+      res = erasePartialStrokes(inkDoc.strokes, points, 10, docText, lineHeight, getCurrentPageIndex());
+    } else {
+      res = eraseWholeStrokes(inkDoc.strokes, points, 12);
+    }
+
+    inkDoc.strokes = res.remaining;
+    if (res.removedIds && res.removedIds.length > 0) {
+      const set = new Set([...inkDoc.removed, ...res.removedIds]);
+      inkDoc.removed = Array.from(set);
+    }
+    render();
+    schedulePost();
+  }
+
+  function setTool(tool) {
+    if (!INK_TOOLS.includes(tool)) return;
+    if (!tool.startsWith('eraser')) {
+      previousDrawingTool = tool;
+    }
+    currentTool = tool;
+    updatePaletteActive();
+  }
+
+  function getTool() {
+    return currentTool;
+  }
+
+  function setColor(color) {
+    if (INK_COLORS.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
+      currentColor = color;
+      updatePaletteActive();
+    }
+  }
+
+  function getColor() {
+    return currentColor;
+  }
+
+  function toggleEraser() {
+    if (currentTool.startsWith('eraser')) {
+      currentTool = previousDrawingTool;
+    } else {
+      currentTool = 'eraser-whole';
+    }
+    updatePaletteActive();
+    return currentTool;
+  }
+
+  function onPointerDown(e) {
+    if (e.pointerType === 'touch') return;
+    if (!allowMouse && e.pointerType === 'mouse') return;
+
+    isDrawing = true;
+    strokeStartTime = e.timeStamp || Date.now();
+
+    const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+    const scrollLeft = scrollDOM?.scrollLeft || 0;
+    const scrollTop = scrollDOM?.scrollTop || 0;
+    const x = e.clientX - rect.left + scrollLeft;
+    const y = e.clientY - rect.top + scrollTop;
+    const p = typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 0.5;
+    const t = strokeStartTime;
+
+    activePoints = [[x, y, p, t]];
+
+    if (currentTool.startsWith('eraser')) {
+      eraseAt([[x, y]], currentTool === 'eraser-partial' ? 'partial' : 'whole');
+    } else {
+      renderActiveStroke();
+    }
+
+    if (typeof e.preventDefault === 'function' && e.pointerType === 'pen') {
+      e.preventDefault();
+    }
+  }
+
+  function onPointerMove(e) {
+    if (!isDrawing) return;
+    if (e.pointerType === 'touch') return;
+
+    const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+    const scrollLeft = scrollDOM?.scrollLeft || 0;
+    const scrollTop = scrollDOM?.scrollTop || 0;
+
+    // 240Hz Apple Pencil Pro: capture every coalesced event sample
+    const rawEvents = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e];
+    const events = Array.isArray(rawEvents) && rawEvents.length > 0 ? rawEvents : [e];
+
+    for (const ev of events) {
+      const x = ev.clientX - rect.left + scrollLeft;
+      const y = ev.clientY - rect.top + scrollTop;
+      const p = typeof ev.pressure === 'number' && ev.pressure > 0 ? ev.pressure : 0.5;
+      const t = ev.timeStamp || Date.now();
+
+      activePoints.push([x, y, p, t]);
+
+      if (currentTool.startsWith('eraser')) {
+        eraseAt([[x, y]], currentTool === 'eraser-partial' ? 'partial' : 'whole');
+      }
+    }
+
+    if (!currentTool.startsWith('eraser')) {
+      renderActiveStroke();
+    }
+
+    if (typeof e.preventDefault === 'function' && e.pointerType === 'pen') {
+      e.preventDefault();
+    }
+  }
+
+  function onPointerUp(e) {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (e.pointerType === 'touch') return;
+
+    if (currentTool.startsWith('eraser')) {
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = '';
+      return;
+    }
+
+    if (activePoints.length === 0) return;
+
+    const holdDurationMs = (e.timeStamp || Date.now()) - strokeStartTime;
+    let finalPoints = activePoints;
+    let finalShape = null;
+
+    if (currentTool === 'underline') {
+      finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+      finalShape = null;
+    } else if (currentTool === 'circle') {
+      const res = detectAndSnapShape(activePoints, { forceCircle: true });
+      finalPoints = res.points;
+      finalShape = res.shape;
+    } else {
+      const res = detectAndSnapShape(activePoints, { holdDurationMs, forceCircle: false });
+      finalPoints = res.points;
+      finalShape = res.shape;
+    }
+
+    const stroke = {
+      id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      tool: currentTool,
+      color: currentColor,
+      width: getToolDefaultWidth(currentTool),
+      points: finalPoints,
+      shape: finalShape,
+      device: e.pointerType || 'pen',
+      at: Date.now()
+    };
+
+    anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+    inkDoc.strokes.push(stroke);
+
+    activePoints = [];
+    if (activeGroup) activeGroup.innerHTML = '';
+    render();
+    schedulePost();
+  }
+
+  function onPointerCancel() {
+    isDrawing = false;
+    activePoints = [];
+    if (activeGroup) activeGroup.innerHTML = '';
+  }
+
+  // Intercept Pencil events over .cm-embed with capture listeners
+  function onPointerDownCapture(e) {
+    if (e.pointerType === 'pen') {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      onPointerDown(e);
+    }
+  }
+
+  function onPointerEnterCapture(e) {
+    if (e.pointerType === 'pen' && e.buttons > 0) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
+  }
+
+  if (scrollDOM && typeof scrollDOM.addEventListener === 'function') {
+    scrollDOM.addEventListener('pointerdown', onPointerDownCapture, true);
+    scrollDOM.addEventListener('pointerenter', onPointerEnterCapture, true);
+    scrollDOM.addEventListener('pointerdown', onPointerDown);
+    scrollDOM.addEventListener('pointermove', onPointerMove);
+    scrollDOM.addEventListener('pointerup', onPointerUp);
+    scrollDOM.addEventListener('pointercancel', onPointerCancel);
+  }
+
+  function destroy() {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (scrollDOM && typeof scrollDOM.removeEventListener === 'function') {
+      scrollDOM.removeEventListener('pointerdown', onPointerDownCapture, true);
+      scrollDOM.removeEventListener('pointerenter', onPointerEnterCapture, true);
+      scrollDOM.removeEventListener('pointerdown', onPointerDown);
+      scrollDOM.removeEventListener('pointermove', onPointerMove);
+      scrollDOM.removeEventListener('pointerup', onPointerUp);
+      scrollDOM.removeEventListener('pointercancel', onPointerCancel);
+    }
+    if (svg && svg.parentNode && typeof svg.parentNode.removeChild === 'function') {
+      svg.parentNode.removeChild(svg);
+    }
+    if (palette && palette.parentNode && typeof palette.parentNode.removeChild === 'function') {
+      palette.parentNode.removeChild(palette);
+    }
+  }
+
+  // Initial render
+  render();
+
+  return {
+    getInk,
+    setInk,
+    addStroke,
+    eraseAt,
+    setTool,
+    getTool,
+    setColor,
+    getColor,
+    toggleEraser,
+    relayout,
+    destroy,
+    svg,
+    palette,
+    showPalette,
+    hidePalette
+  };
+}

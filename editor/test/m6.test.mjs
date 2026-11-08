@@ -80,11 +80,11 @@ test('E1 pages: a page step glides (smooth scrollTo) and never cancels it with a
   assert.equal(stepPage(fakeView, 1), true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].behavior, 'smooth');
-  assert.ok(calls[0].top > 0);
+  assert.equal(calls[0].top, 0);
   assert.equal(jumps, 0, 'no scrollTop write after the smooth scrollTo');
 });
 
-test('E1 pages: page step lands on the next page heading in one continuous scroll with no hidden ranges', () => {
+test('E1 pages: page step isolates the active window with hiddenRanges and never scrolls into other topics', () => {
   let { state } = createEditorState(doc);
   const pages = inspectDraftpadPages(doc);
 
@@ -105,24 +105,26 @@ test('E1 pages: page step lands on the next page heading in one continuous scrol
     }
   };
 
-  assert.equal(state.field(pageModeField).decos.size, 0, 'no hidden ranges in pageModeField');
+  assert.ok(state.field(pageModeField).decos.size > 0, 'other windows are hidden in pageModeField');
   const moved1 = stepPage(fakeView, 1);
   assert.equal(moved1, true);
   assert.equal(currentPage(state), 1);
-  assert.equal(state.selection.main.head, pages[1].from, 'lands on the next page date heading');
-  assert.equal(state.field(pageModeField).decos.size, 0, 'still no hidden ranges after stepping');
-  assert.ok(fakeView.scrollDOM.scrollTop > 0, 'glides scrollTop to page 1 heading');
+  assert.equal(state.selection.main.head, pages[1].from, 'lands on the next window date heading');
+  assert.ok(state.field(pageModeField).decos.size > 0, 'other windows remain hidden after stepping');
 
-  // Continuous scroll updates currentPage from the scroll position
-  fakeView.scrollDOM.scrollTop = (state.doc.lineAt(pages[2].from).number - 1) * 28;
-  assert.equal(syncPageFromScroll(fakeView), 2);
+  // Vertical scrolling stays inside the active window and never crosses to another page
+  fakeView.scrollDOM.scrollTop = 420;
+  assert.equal(syncPageFromScroll(fakeView), 1);
+  assert.equal(currentPage(state), 1);
+
+  // Stepping to page 2 succeeds, then at the last page stepping deeper returns false
+  assert.equal(stepPage(fakeView, 1), true);
   assert.equal(currentPage(state), 2);
-
-  // At the last page, stepping deeper returns false
   assert.equal(stepPage(fakeView, 1), false);
-  // Stepping back glides to page 1, then page 0
+  // Stepping back returns to page 1, with its saved scrollTop (420)
   assert.equal(stepPage(fakeView, -1), true);
   assert.equal(currentPage(state), 1);
+  assert.equal(fakeView.scrollDOM.scrollTop, 420);
   assert.equal(showPage(fakeView, 0), 0);
   assert.equal(fakeView.scrollDOM.scrollTop, 0);
 });

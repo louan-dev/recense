@@ -219,6 +219,17 @@ test('Zero-chrome resting state: toolbar starts faded, formatDotIndicator has ze
   assert.ok(mounted.bridge, 'Bridge API exposed');
   assert.ok(typeof mounted.voiceCommand === 'function', 'voiceCommand exposed on return');
   assert.ok(typeof mounted.bridge.voiceCommand === 'function', 'voiceCommand exposed on bridge');
+
+  // Verify pageIndicator rendered textContent has zero words or digits
+  const shell = root.children[0];
+  const toolbar = shell?.children[0];
+  const indicator = toolbar?.children[0];
+  if (indicator) {
+    assert.equal(indicator.textContent, '● ○');
+    assert.equal(/[a-zA-Z0-9]/.test(indicator.textContent), false, 'pageIndicator.textContent must contain zero words or digits');
+    assert.equal(indicator.getAttribute('data-dots'), '● ○');
+    assert.equal(indicator.getAttribute('data-label'), 'Page 1 of 2');
+  }
 });
 
 test('Hand-neutral symmetric left/right/top haptic zones: detection and haptic dwell disclosure', async () => {
@@ -451,7 +462,55 @@ test('Touch, Pencil, and Voice parity: executeVoiceMove and voiceCommand dispatc
   executeVoiceMove('annotate', handlers);
   assert.equal(actionsRun.filter(a => a === 'bookmarkAudio').length, 2);
 
-  // 8. Unknown command
+  // 8. Natural spoken sentence matching (Piece 2 critic findings)
+  const nat1 = executeVoiceMove('open a new topic on the left', handlers);
+  assert.equal(nat1.matched, true);
+  assert.equal(nat1.action, 'swipeLeftToRight');
+
+  const nat2 = executeVoiceMove('switch to highlighter', handlers);
+  assert.equal(nat2.matched, true);
+  assert.equal(nat2.action, 'setInkTool');
+  assert.equal(nat2.tool, 'highlighter');
+
+  const nat3 = executeVoiceMove('delete this empty window', handlers);
+  assert.equal(nat3.matched, true);
+  assert.equal(nat3.action, 'deleteEmptyWindow');
+
+  const nat4 = executeVoiceMove('show the outline', handlers);
+  assert.equal(nat4.matched, true);
+  assert.equal(nat4.action, 'toggleOutline');
+
+  const nat5 = executeVoiceMove('give me an audio summary', handlers);
+  assert.equal(nat5.matched, true);
+  assert.equal(nat5.action, 'summarizeSection');
+
+  const nat6 = executeVoiceMove('bookmark this line', handlers);
+  assert.equal(nat6.matched, true);
+  assert.equal(nat6.action, 'bookmarkAudio');
+
+  // Verify modifier priority: whole / partial eraser before generic eraser
+  const partRes = executeVoiceMove('use partial eraser please', handlers);
+  assert.equal(partRes.matched, true);
+  assert.equal(partRes.tool, 'partial eraser');
+
+  const wholeRes = executeVoiceMove('switch to whole eraser', handlers);
+  assert.equal(wholeRes.matched, true);
+  assert.equal(wholeRes.tool, 'whole eraser');
+
+  const genericEraser = executeVoiceMove('please select the eraser', handlers);
+  assert.equal(genericEraser.matched, true);
+  assert.equal(genericEraser.tool, 'eraser');
+
+  // Directional priority: swipe left vs swipe right before bare left / right
+  const swipeLeftRes = executeVoiceMove('please swipe left', handlers);
+  assert.equal(swipeLeftRes.matched, true);
+  assert.equal(swipeLeftRes.action, 'swipeRightToLeft');
+
+  const swipeRightRes = executeVoiceMove('please swipe right', handlers);
+  assert.equal(swipeRightRes.matched, true);
+  assert.equal(swipeRightRes.action, 'swipeLeftToRight');
+
+  // 9. Unknown command
   const rUnknown = executeVoiceMove('unrecognized command foo bar', handlers);
   assert.equal(rUnknown.matched, false);
   assert.equal(rUnknown.action, null);
@@ -496,6 +555,10 @@ test('CSS verification: calm slow-visual transitions, edge cues, and reduced mot
   const cssPath = path.resolve(__dirname, '../src/styles.css');
   const css = fs.readFileSync(cssPath, 'utf8');
 
+  assert.ok(
+    /\.rc-toolbar\.rc-toolbar-faded\s*\{[^}]*pointer-events:\s*none/.test(css),
+    '.rc-toolbar.rc-toolbar-faded must have pointer-events: none'
+  );
   assert.ok(
     css.includes('320ms cubic-bezier(0.22, 1, 0.36, 1)'),
     'Styles must include calm 320ms cubic-bezier transition'

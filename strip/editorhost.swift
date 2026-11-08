@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import AVFoundation
 
 // The new editor in the pad layer (D13, D33): a WKWebView running the CodeMirror core, editor/dist/editor.html,
 // copied into the bundle by build.sh. It speaks the bridge in .handoff/editor/INBOX.md (bar 8):
@@ -78,27 +79,33 @@ final class EditorWebView: WKWebView {
 
 final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: EditorWebView
+    let vault: URL
+    var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
     private(set) var text = ""
     private var loaded = false
     /// Called on the main thread with the full text after each (debounced) change in the page.
     var onChange: ((String) -> Void)?
+    /// Called when the transcript sidecar posts a seek, bookmark, or annotation action.
+    var onAudioAction: (([String: Any]) -> Void)?
     /// Where the page came from, for the log: the CodeMirror core, or the stand-in.
     private(set) var source = ""
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     /// The page bounced at its first or last page (the host plays the strip's bounce).
     var onBounce: (() -> Void)?
     let files: EmbedFiles
 
     init(frame: NSRect, vault: URL, cache: URL) {
+        self.vault = vault
         let cfg = WKWebViewConfiguration()
         files = EmbedFiles(vault: vault, cache: cache)
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
-        cfg.userContentController.add(WeakHandler(self), name: "editor")
-        cfg.userContentController.add(WeakHandler(self), name: "link")
-        cfg.userContentController.add(WeakHandler(self), name: "ui")
+        for name in ["editor", "link", "ui", "ink", "audio"] {
+            cfg.userContentController.add(WeakHandler(self), name: name)
+        }
         web.navigationDelegate = self
         web.setValue(false, forKey: "drawsBackground")
         if let url = EditorHost.pageURL() {
@@ -138,6 +145,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     func showPage(_ i: Int) { if loaded { call("showPage(\(i))") } }
     func setCursor(_ offset: Int) { if loaded { call("setCursor(\(offset))") } }
+    func setAudioTranscript(_ json: String) { if loaded { call("setAudioTranscript(\(jsString(json)))") } }
+    func updateAudioTime(_ sec: Double) { if loaded { call("updateAudioTime(\(sec))") } }
+    func executeVoiceCommand(_ phrase: String) { if loaded { call("voiceCommand(\(jsString(phrase)))") } }
 
     private var flushing: [(String) -> Void] = []
     /// Asks the page for its text right now (skipping the 300 ms debounce), then calls back with it. One question at a
@@ -178,11 +188,33 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 let p = NSHapticFeedbackManager.defaultPerformer
                 switch kind {
-                case "snap": p.perform(.alignment, performanceTime: .now)
+                case "snap", "shapeSnap": p.perform(.alignment, performanceTime: .now)
                 case "edge": p.perform(.levelChange, performanceTime: .now); onBounce?()
-                case "open": p.perform(.generic, performanceTime: .now)
+                case "open", "squeeze", "erase": p.perform(.generic, performanceTime: .now)
                 default: break
                 }
+            }
+            return
+        }
+        if m.name == "ink" {
+            if let json = m.body as? String {
+                coordinatedWrite(json, to: inkPath)
+            } else if let obj = m.body as? [String: Any],
+                      let data = try? JSONSerialization.data(withJSONObject: obj),
+                      let json = String(data: data, encoding: .utf8) {
+                coordinatedWrite(json, to: inkPath)
+            }
+            return
+        }
+        if m.name == "audio" {
+            if let d = m.body as? [String: Any] {
+                if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
+                    if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
+                    let utterance = AVSpeechUtterance(string: summaryText)
+                    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+                    speechSynthesizer.speak(utterance)
+                }
+                onAudioAction?(d)
             }
             return
         }
@@ -198,6 +230,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         call("setTheme('dark')")
         call("setFontSize(18)")
         call("setText(\(jsString(text)))")
+        if let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
+            call("setInk(\(jsString(inkJSON)))")
+        }
         log("editor: new editor loaded (\(source))")
     }
 

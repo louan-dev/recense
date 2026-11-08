@@ -225,7 +225,7 @@ export function attachHapticZones(container, {
 
 /**
  * Normalizes spoken phrases (English & multilingual equivalents) and dispatches
- * the exact same moves as touch and Pencil.
+ * the exact same moves as touch and Pencil, matching natural spoken sentences.
  */
 export function executeVoiceMove(commandStr, handlers = {}) {
   if (typeof commandStr !== 'string') {
@@ -242,44 +242,93 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: false, action: null };
   }
 
-  // 1. Swipe Left-to-Right (New topic/window/page on left)
-  const leftToRightPhrases = [
+  function hasWord(token) {
+    const escaped = token.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    return new RegExp(`(^|\\s)${escaped}(\\s|$)`, 'i').test(raw);
+  }
+
+  function hasPhrase(phrase) {
+    return raw.includes(phrase);
+  }
+
+  // 1. Eraser tools: check specific compound erasers before generic eraser
+  if (hasPhrase('whole eraser') || hasPhrase('tẩy toàn bộ') || hasPhrase('gomme entière')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('whole eraser');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'whole eraser' };
+  }
+
+  if (hasPhrase('partial eraser') || hasPhrase('tẩy một phần') || hasPhrase('gomme partielle')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('partial eraser');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'partial eraser' };
+  }
+
+  if (hasWord('eraser') || hasWord('tẩy') || hasWord('gôm') || hasWord('gomme')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('eraser');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'eraser' };
+  }
+
+  // 2. Navigation: swipe left (older) vs swipe right (newer) before bare left / right
+  const rightToLeftKeywords = [
+    'swipe left',
+    'next topic',
+    'next window',
+    'next page',
+    'older page',
+    'older',
+    'page suivante',
+    'suivant',
+    'suivante',
+    'trang tiếp',
+    'tiếp tục',
+    'tiếp'
+  ];
+  const hasSwipeLeftIntent = rightToLeftKeywords.some(kw =>
+    kw.includes(' ') ? hasPhrase(kw) : hasWord(kw)
+  );
+  if (hasSwipeLeftIntent) {
+    if (typeof handlers.swipeRightToLeft === 'function') {
+      handlers.swipeRightToLeft();
+    }
+    return { matched: true, action: 'swipeRightToLeft' };
+  }
+
+  const leftToRightKeywords = [
+    'swipe right',
     'new topic',
     'new window',
     'new page',
-    'swipe right',
-    'left',
-    'nouveau',
-    'nouvelle page',
     'nouveau sujet',
-    'mới',
+    'nouvelle page',
+    'nouveau',
+    'chủ đề mới',
     'trang mới',
-    'chủ đề mới'
+    'mới'
   ];
-  if (leftToRightPhrases.includes(raw)) {
+  const hasSwipeRightIntent = leftToRightKeywords.some(kw =>
+    kw.includes(' ') ? hasPhrase(kw) : hasWord(kw)
+  ) || (hasWord('new') && hasWord('left')) || (hasWord('open') && hasWord('left'));
+  if (hasSwipeRightIntent) {
     if (typeof handlers.swipeLeftToRight === 'function') {
       handlers.swipeLeftToRight();
     }
     return { matched: true, action: 'swipeLeftToRight' };
   }
 
-  // 2. Swipe Right-to-Left (Next / older topic to right)
-  const rightToLeftPhrases = [
-    'next topic',
-    'next window',
-    'next page',
-    'older',
-    'older page',
-    'swipe left',
-    'right',
-    'suivant',
-    'suivante',
-    'page suivante',
-    'tiếp',
-    'trang tiếp',
-    'tiếp tục'
-  ];
-  if (rightToLeftPhrases.includes(raw)) {
+  // Bare directional commands (left = newer window on left, right = older window on right)
+  if (hasWord('left') && !hasPhrase('swipe left')) {
+    if (typeof handlers.swipeLeftToRight === 'function') {
+      handlers.swipeLeftToRight();
+    }
+    return { matched: true, action: 'swipeLeftToRight' };
+  }
+
+  if (hasWord('right') && !hasPhrase('swipe right')) {
     if (typeof handlers.swipeRightToLeft === 'function') {
       handlers.swipeRightToLeft();
     }
@@ -287,32 +336,31 @@ export function executeVoiceMove(commandStr, handlers = {}) {
   }
 
   // 3. Delete empty window
-  const deletePhrases = [
-    'delete',
+  const deleteKeywords = [
     'delete window',
     'delete page',
+    'delete topic',
+    'delete this',
     'remove empty',
-    'supprimer',
+    'remove window',
+    'remove page',
     'supprimer la page',
-    'xóa',
     'xóa trang',
-    'xóa cửa sổ'
+    'xóa cửa sổ',
+    'delete',
+    'supprimer',
+    'xóa'
   ];
-  if (deletePhrases.includes(raw)) {
+  if (deleteKeywords.some(kw => kw.includes(' ') ? hasPhrase(kw) : hasWord(kw))) {
     if (typeof handlers.deleteEmptyWindow === 'function') {
       handlers.deleteEmptyWindow();
     }
     return { matched: true, action: 'deleteEmptyWindow' };
   }
 
-  // 4. Outline toggle
-  const outlinePhrases = [
-    'outline',
-    'topics',
-    'mục lục',
-    'sommaire'
-  ];
-  if (outlinePhrases.includes(raw)) {
+  // 4. Outline
+  const outlineKeywords = ['outline', 'topics', 'mục lục', 'sommaire'];
+  if (outlineKeywords.some(kw => hasWord(kw))) {
     if (typeof handlers.toggleOutline === 'function') {
       handlers.toggleOutline();
     }
@@ -320,64 +368,54 @@ export function executeVoiceMove(commandStr, handlers = {}) {
   }
 
   // 5. Find / Search
-  const findPhrases = [
-    'find',
-    'search',
-    'tìm',
-    'tìm kiếm',
-    'rechercher'
-  ];
-  if (findPhrases.includes(raw)) {
+  const findKeywords = ['find', 'search', 'tìm kiếm', 'tìm', 'rechercher'];
+  if (findKeywords.some(kw => kw.includes(' ') ? hasPhrase(kw) : hasWord(kw))) {
     if (typeof handlers.openFind === 'function') {
       handlers.openFind();
     }
     return { matched: true, action: 'openFind' };
   }
 
-  // 6. Ink tools
-  const inkToolMap = {
-    'pen': 'pen',
-    'bút': 'pen',
-    'stylo': 'pen',
-    'highlighter': 'highlighter',
-    'bút dạ': 'highlighter',
-    'surligneur': 'highlighter',
-    'underline': 'underline',
-    'gạch chân': 'underline',
-    'souligner': 'underline',
-    'circle': 'circle',
-    'khoanh tròn': 'circle',
-    'entourer': 'circle',
-    'eraser': 'eraser',
-    'tẩy': 'eraser',
-    'gôm': 'eraser',
-    'gomme': 'eraser',
-    'whole eraser': 'whole eraser',
-    'tẩy toàn bộ': 'whole eraser',
-    'gomme entière': 'whole eraser',
-    'partial eraser': 'partial eraser',
-    'tẩy một phần': 'partial eraser',
-    'gomme partielle': 'partial eraser'
-  };
-  if (inkToolMap[raw]) {
-    const toolName = inkToolMap[raw];
+  // 6. Other Ink tools
+  if (hasWord('highlighter') || hasPhrase('bút dạ') || hasWord('surligneur')) {
     if (typeof handlers.setInkTool === 'function') {
-      handlers.setInkTool(toolName);
+      handlers.setInkTool('highlighter');
     }
-    return { matched: true, action: 'setInkTool', tool: toolName };
+    return { matched: true, action: 'setInkTool', tool: 'highlighter' };
+  }
+
+  if (hasWord('underline') || hasPhrase('gạch chân') || hasWord('souligner')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('underline');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'underline' };
+  }
+
+  if (hasWord('circle') || hasPhrase('khoanh tròn') || hasWord('entourer')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('circle');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'circle' };
+  }
+
+  if (hasWord('pen') || hasWord('bút') || hasWord('stylo')) {
+    if (typeof handlers.setInkTool === 'function') {
+      handlers.setInkTool('pen');
+    }
+    return { matched: true, action: 'setInkTool', tool: 'pen' };
   }
 
   // 7. Audio summary
-  const summaryPhrases = [
+  const summaryKeywords = [
+    'audio summary',
     'summarize',
     'summary',
-    'audio summary',
-    'tóm tắt',
     'tóm tắt âm thanh',
+    'tóm tắt',
     'résumer',
     'résumé'
   ];
-  if (summaryPhrases.includes(raw)) {
+  if (summaryKeywords.some(kw => kw.includes(' ') ? hasPhrase(kw) : hasWord(kw))) {
     if (typeof handlers.summarizeSection === 'function') {
       handlers.summarizeSection();
     }
@@ -385,7 +423,7 @@ export function executeVoiceMove(commandStr, handlers = {}) {
   }
 
   // 8. Bookmark audio
-  const bookmarkPhrases = [
+  const bookmarkKeywords = [
     'bookmark',
     'annotate',
     'đánh dấu',
@@ -393,7 +431,7 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     'signet',
     'annoter'
   ];
-  if (bookmarkPhrases.includes(raw)) {
+  if (bookmarkKeywords.some(kw => kw.includes(' ') ? hasPhrase(kw) : hasWord(kw))) {
     if (typeof handlers.bookmarkAudio === 'function') {
       handlers.bookmarkAudio();
     }

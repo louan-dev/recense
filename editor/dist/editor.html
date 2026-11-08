@@ -75,6 +75,7 @@ body {
 
 .rc-toolbar.rc-toolbar-faded {
   opacity: 0;
+  pointer-events: none;
 }
 
 .rc-page-indicator {
@@ -301,8 +302,176 @@ body {
 }
 
 .rc-editor-Mount .cm-scroller {
+  position: relative;
   overflow: auto;
   font-family: inherit;
+}
+
+.rc-ink-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.rc-ink-palette {
+  position: sticky;
+  top: 8px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--rc-border);
+  border-radius: 999px;
+  background: var(--rc-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-ink-palette[hidden] {
+  display: none !important;
+}
+
+.rc-ink-color-dot,
+.rc-ink-tool-dot {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--rc-border);
+  background: var(--rc-muted);
+  cursor: pointer;
+  transition: transform 200ms ease, border-color 200ms ease;
+}
+
+.rc-ink-tool-dot {
+  border-radius: 4px;
+  background: transparent;
+}
+
+.rc-ink-color-dot.rc-active,
+.rc-ink-tool-dot.rc-active {
+  transform: scale(1.22);
+  border-color: var(--rc-cyan);
+}
+
+/* Live audio transcript side panel beside the page */
+.rc-transcript-pane {
+  width: min(320px, 38%);
+  border-left: 1px solid var(--rc-border);
+  background: var(--rc-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rc-transcript-pane[hidden] {
+  display: none !important;
+}
+
+.rc-transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rc-border);
+}
+
+.rc-transcript-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rc-blue);
+  letter-spacing: 0.02em;
+}
+
+.rc-transcript-close {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rc-muted);
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.rc-transcript-cues {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rc-transcript-cue {
+  position: relative;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--rc-muted);
+  cursor: pointer;
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+.rc-transcript-cue.rc-transcript-cue-active {
+  color: var(--rc-text);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.rc-transcript-cue.is-bookmarked {
+  border-left: 2px solid var(--rc-cyan);
+}
+
+.rc-transcript-cue-time {
+  font-size: 11px;
+  color: var(--rc-blue);
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-transcript-cue-dot {
+  color: var(--rc-cyan);
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.rc-transcript-cue-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--rc-cyan);
+}
+
+.rc-cue-ink-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.rc-transcript-annot-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 3px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--rc-cyan);
+  background: transparent;
+  color: var(--rc-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
 }
 
 /* Thin divider over `<!-- page -->` lines without altering the document text */
@@ -29755,14 +29924,15 @@ ${PAGE_MARKER}
     return `recense-file://vault/${target.split("/").map(encodeURIComponent).join("/")}`;
   }
   var EmbedWidget = class extends WidgetType {
-    constructor(kind, src, caption) {
+    constructor(kind, src, caption, rawTarget = "") {
       super();
       this.kind = kind;
       this.src = src;
       this.caption = caption;
+      this.rawTarget = rawTarget;
     }
     eq(other) {
-      return other.kind === this.kind && other.src === this.src;
+      return other.kind === this.kind && other.src === this.src && other.rawTarget === this.rawTarget;
     }
     get estimatedHeight() {
       return this.kind === "pdf" ? 520 : 320;
@@ -29770,6 +29940,7 @@ ${PAGE_MARKER}
     toDOM() {
       const wrap = document.createElement("div");
       wrap.className = `cm-embed cm-embed-${this.kind}`;
+      if (this.rawTarget) wrap.setAttribute("data-embed-target", this.rawTarget);
       if (this.kind === "pdf") {
         const frame = document.createElement("iframe");
         frame.src = this.src;
@@ -29789,6 +29960,15 @@ ${PAGE_MARKER}
       return true;
     }
   };
+  function formatDroppedEmbed(nameOrPath, explicitCaption = null) {
+    const raw = String(nameOrPath ?? "").trim();
+    if (!raw) return null;
+    if (!PDF_RE.test(raw) && !IMAGE_RE.test(raw)) return null;
+    const base2 = raw.split(/[\\/]/).pop().replace(/[?#].*$/, "");
+    const caption = explicitCaption !== null ? String(explicitCaption) : base2.replace(/\.[^.]+$/, "");
+    const target = /\s/.test(raw) ? `<${raw}>` : raw;
+    return `![${caption}](${target})`;
+  }
   function findEmbeds(text) {
     const out = [];
     let offset = 0;
@@ -29800,7 +29980,7 @@ ${PAGE_MARKER}
     return out;
   }
   function build(doc2) {
-    const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption), block: true, side: 1 }).range(e.end));
+    const items = findEmbeds(doc2.toString()).map((e) => Decoration.widget({ widget: new EmbedWidget(e.kind, embedSource(e.target), e.caption, e.target), block: true, side: 1 }).range(e.end));
     return Decoration.set(items);
   }
   var embedField = StateField.define({
@@ -29808,8 +29988,46 @@ ${PAGE_MARKER}
     update: (decos, tr) => tr.docChanged ? build(tr.state.doc) : decos,
     provide: (f) => EditorView.decorations.from(f)
   });
+  var embedDropHandler = EditorView.domEventHandlers({
+    dragover(event) {
+      const dt = event?.dataTransfer;
+      if (dt && (dt.files?.length > 0 || dt.types?.includes?.("Files"))) {
+        event.preventDefault();
+        return true;
+      }
+      return false;
+    },
+    drop(event, view) {
+      const dt = event?.dataTransfer;
+      if (!dt) return false;
+      const embeds = [];
+      if (dt.files && dt.files.length > 0) {
+        for (const f of Array.from(dt.files)) {
+          const md = formatDroppedEmbed(f.path || f.name, f.name ? f.name.replace(/\.[^.]+$/, "") : null);
+          if (md) embeds.push(md);
+        }
+      } else if (typeof dt.getData === "function") {
+        const uri = dt.getData("text/uri-list") || dt.getData("text/plain");
+        const md = formatDroppedEmbed(uri);
+        if (md) embeds.push(md);
+      }
+      if (embeds.length === 0) return false;
+      event.preventDefault();
+      const pos = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(pos);
+      const prefix = line.text.trim().length > 0 ? "\n" : "";
+      const insert2 = `${prefix}${embeds.join("\n")}`;
+      view.dispatch({
+        changes: { from: line.to, insert: insert2 },
+        selection: { anchor: line.to + insert2.length },
+        scrollIntoView: true,
+        userEvent: "input.drop"
+      });
+      return true;
+    }
+  });
   function embedsExtension() {
-    return [embedField];
+    return [embedField, embedDropHandler];
   }
 
   // src/links.js
@@ -30085,135 +30303,162 @@ ${PAGE_MARKER}
     if (!raw) {
       return { matched: false, action: null };
     }
-    const leftToRightPhrases = [
-      "new topic",
-      "new window",
-      "new page",
-      "swipe right",
-      "left",
-      "nouveau",
-      "nouvelle page",
-      "nouveau sujet",
-      "m\u1EDBi",
-      "trang m\u1EDBi",
-      "ch\u1EE7 \u0111\u1EC1 m\u1EDBi"
-    ];
-    if (leftToRightPhrases.includes(raw)) {
-      if (typeof handlers2.swipeLeftToRight === "function") {
-        handlers2.swipeLeftToRight();
-      }
-      return { matched: true, action: "swipeLeftToRight" };
+    function hasWord(token) {
+      const escaped = token.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+      return new RegExp(`(^|\\s)${escaped}(\\s|$)`, "i").test(raw);
     }
-    const rightToLeftPhrases = [
+    function hasPhrase(phrase2) {
+      return raw.includes(phrase2);
+    }
+    if (hasPhrase("whole eraser") || hasPhrase("t\u1EA9y to\xE0n b\u1ED9") || hasPhrase("gomme enti\xE8re")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("whole eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "whole eraser" };
+    }
+    if (hasPhrase("partial eraser") || hasPhrase("t\u1EA9y m\u1ED9t ph\u1EA7n") || hasPhrase("gomme partielle")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("partial eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "partial eraser" };
+    }
+    if (hasWord("eraser") || hasWord("t\u1EA9y") || hasWord("g\xF4m") || hasWord("gomme")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("eraser");
+      }
+      return { matched: true, action: "setInkTool", tool: "eraser" };
+    }
+    const rightToLeftKeywords = [
+      "swipe left",
       "next topic",
       "next window",
       "next page",
-      "older",
       "older page",
-      "swipe left",
-      "right",
+      "older",
+      "page suivante",
       "suivant",
       "suivante",
-      "page suivante",
-      "ti\u1EBFp",
       "trang ti\u1EBFp",
-      "ti\u1EBFp t\u1EE5c"
+      "ti\u1EBFp t\u1EE5c",
+      "ti\u1EBFp"
     ];
-    if (rightToLeftPhrases.includes(raw)) {
+    const hasSwipeLeftIntent = rightToLeftKeywords.some(
+      (kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw)
+    );
+    if (hasSwipeLeftIntent) {
       if (typeof handlers2.swipeRightToLeft === "function") {
         handlers2.swipeRightToLeft();
       }
       return { matched: true, action: "swipeRightToLeft" };
     }
-    const deletePhrases = [
-      "delete",
+    const leftToRightKeywords = [
+      "swipe right",
+      "new topic",
+      "new window",
+      "new page",
+      "nouveau sujet",
+      "nouvelle page",
+      "nouveau",
+      "ch\u1EE7 \u0111\u1EC1 m\u1EDBi",
+      "trang m\u1EDBi",
+      "m\u1EDBi"
+    ];
+    const hasSwipeRightIntent = leftToRightKeywords.some(
+      (kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw)
+    ) || hasWord("new") && hasWord("left") || hasWord("open") && hasWord("left");
+    if (hasSwipeRightIntent) {
+      if (typeof handlers2.swipeLeftToRight === "function") {
+        handlers2.swipeLeftToRight();
+      }
+      return { matched: true, action: "swipeLeftToRight" };
+    }
+    if (hasWord("left") && !hasPhrase("swipe left")) {
+      if (typeof handlers2.swipeLeftToRight === "function") {
+        handlers2.swipeLeftToRight();
+      }
+      return { matched: true, action: "swipeLeftToRight" };
+    }
+    if (hasWord("right") && !hasPhrase("swipe right")) {
+      if (typeof handlers2.swipeRightToLeft === "function") {
+        handlers2.swipeRightToLeft();
+      }
+      return { matched: true, action: "swipeRightToLeft" };
+    }
+    const deleteKeywords = [
       "delete window",
       "delete page",
+      "delete topic",
+      "delete this",
       "remove empty",
-      "supprimer",
+      "remove window",
+      "remove page",
       "supprimer la page",
-      "x\xF3a",
       "x\xF3a trang",
-      "x\xF3a c\u1EEDa s\u1ED5"
+      "x\xF3a c\u1EEDa s\u1ED5",
+      "delete",
+      "supprimer",
+      "x\xF3a"
     ];
-    if (deletePhrases.includes(raw)) {
+    if (deleteKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
       if (typeof handlers2.deleteEmptyWindow === "function") {
         handlers2.deleteEmptyWindow();
       }
       return { matched: true, action: "deleteEmptyWindow" };
     }
-    const outlinePhrases = [
-      "outline",
-      "topics",
-      "m\u1EE5c l\u1EE5c",
-      "sommaire"
-    ];
-    if (outlinePhrases.includes(raw)) {
+    const outlineKeywords = ["outline", "topics", "m\u1EE5c l\u1EE5c", "sommaire"];
+    if (outlineKeywords.some((kw) => hasWord(kw))) {
       if (typeof handlers2.toggleOutline === "function") {
         handlers2.toggleOutline();
       }
       return { matched: true, action: "toggleOutline" };
     }
-    const findPhrases = [
-      "find",
-      "search",
-      "t\xECm",
-      "t\xECm ki\u1EBFm",
-      "rechercher"
-    ];
-    if (findPhrases.includes(raw)) {
+    const findKeywords = ["find", "search", "t\xECm ki\u1EBFm", "t\xECm", "rechercher"];
+    if (findKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
       if (typeof handlers2.openFind === "function") {
         handlers2.openFind();
       }
       return { matched: true, action: "openFind" };
     }
-    const inkToolMap = {
-      "pen": "pen",
-      "b\xFAt": "pen",
-      "stylo": "pen",
-      "highlighter": "highlighter",
-      "b\xFAt d\u1EA1": "highlighter",
-      "surligneur": "highlighter",
-      "underline": "underline",
-      "g\u1EA1ch ch\xE2n": "underline",
-      "souligner": "underline",
-      "circle": "circle",
-      "khoanh tr\xF2n": "circle",
-      "entourer": "circle",
-      "eraser": "eraser",
-      "t\u1EA9y": "eraser",
-      "g\xF4m": "eraser",
-      "gomme": "eraser",
-      "whole eraser": "whole eraser",
-      "t\u1EA9y to\xE0n b\u1ED9": "whole eraser",
-      "gomme enti\xE8re": "whole eraser",
-      "partial eraser": "partial eraser",
-      "t\u1EA9y m\u1ED9t ph\u1EA7n": "partial eraser",
-      "gomme partielle": "partial eraser"
-    };
-    if (inkToolMap[raw]) {
-      const toolName = inkToolMap[raw];
+    if (hasWord("highlighter") || hasPhrase("b\xFAt d\u1EA1") || hasWord("surligneur")) {
       if (typeof handlers2.setInkTool === "function") {
-        handlers2.setInkTool(toolName);
+        handlers2.setInkTool("highlighter");
       }
-      return { matched: true, action: "setInkTool", tool: toolName };
+      return { matched: true, action: "setInkTool", tool: "highlighter" };
     }
-    const summaryPhrases = [
+    if (hasWord("underline") || hasPhrase("g\u1EA1ch ch\xE2n") || hasWord("souligner")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("underline");
+      }
+      return { matched: true, action: "setInkTool", tool: "underline" };
+    }
+    if (hasWord("circle") || hasPhrase("khoanh tr\xF2n") || hasWord("entourer")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("circle");
+      }
+      return { matched: true, action: "setInkTool", tool: "circle" };
+    }
+    if (hasWord("pen") || hasWord("b\xFAt") || hasWord("stylo")) {
+      if (typeof handlers2.setInkTool === "function") {
+        handlers2.setInkTool("pen");
+      }
+      return { matched: true, action: "setInkTool", tool: "pen" };
+    }
+    const summaryKeywords = [
+      "audio summary",
       "summarize",
       "summary",
-      "audio summary",
-      "t\xF3m t\u1EAFt",
       "t\xF3m t\u1EAFt \xE2m thanh",
+      "t\xF3m t\u1EAFt",
       "r\xE9sumer",
       "r\xE9sum\xE9"
     ];
-    if (summaryPhrases.includes(raw)) {
+    if (summaryKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
       if (typeof handlers2.summarizeSection === "function") {
         handlers2.summarizeSection();
       }
       return { matched: true, action: "summarizeSection" };
     }
-    const bookmarkPhrases = [
+    const bookmarkKeywords = [
       "bookmark",
       "annotate",
       "\u0111\xE1nh d\u1EA5u",
@@ -30221,13 +30466,2234 @@ ${PAGE_MARKER}
       "signet",
       "annoter"
     ];
-    if (bookmarkPhrases.includes(raw)) {
+    if (bookmarkKeywords.some((kw) => kw.includes(" ") ? hasPhrase(kw) : hasWord(kw))) {
       if (typeof handlers2.bookmarkAudio === "function") {
         handlers2.bookmarkAudio();
       }
       return { matched: true, action: "bookmarkAudio" };
     }
     return { matched: false, action: null };
+  }
+
+  // src/ink.js
+  var INK_TOOLS = [
+    "pen",
+    "highlighter",
+    "underline",
+    "circle",
+    "eraser-whole",
+    "eraser-partial"
+  ];
+  var INK_COLORS = [
+    "#38bdf8",
+    "#facc15",
+    "#4ade80",
+    "#f472b6",
+    "#a78bfa",
+    "#fb923c",
+    "#f87171",
+    "#e6edf3"
+  ];
+  var DEFAULT_LINE_HEIGHT = 28;
+  var DEFAULT_DEBOUNCE_MS = 300;
+  var EMBED_RE2 = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
+  function parseEmbedTarget(line) {
+    if (typeof line !== "string") return null;
+    const m = EMBED_RE2.exec(line.trim());
+    if (!m) return null;
+    return m[2] ?? m[3] ?? null;
+  }
+  function hashLineContext(lineText = "", prevLineText = "", nextLineText = "") {
+    const clean = (s) => typeof s === "string" ? s.replace(/\r$/, "") : "";
+    const str = `${clean(prevLineText)}
+${clean(lineText)}
+${clean(nextLineText)}`;
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  function getDocumentPages(docText) {
+    const rawLines = typeof docText === "string" ? docText.split(/\r?\n/) : [""];
+    const pages = [];
+    let curStartLine = 1;
+    let curLines = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = typeof rawLines[i] === "string" ? rawLines[i].replace(/\r$/, "") : "";
+      if (line.trim() === "<!-- page -->") {
+        pages.push({
+          index: pages.length,
+          startLine: curStartLine,
+          endLine: i,
+          lines: curLines
+        });
+        curStartLine = i + 2;
+        curLines = [];
+      } else {
+        curLines.push(line);
+      }
+    }
+    pages.push({
+      index: pages.length,
+      startLine: curStartLine,
+      endLine: rawLines.length,
+      lines: curLines
+    });
+    return pages;
+  }
+  function anchorStrokeToDoc(stroke, docText = "", lineHeight = DEFAULT_LINE_HEIGHT, pageIndex = null) {
+    const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+    let minX = 0;
+    let minY = 0;
+    if (points.length > 0) {
+      minX = Math.min(...points.map((p) => p[0]));
+      minY = Math.min(...points.map((p) => p[1]));
+    }
+    const rawLines = typeof docText === "string" ? docText.split(/\r?\n/) : [""];
+    const pages = getDocumentPages(docText);
+    let pIdx = 0;
+    if (typeof pageIndex === "number" && pageIndex >= 0) {
+      pIdx = Math.min(pages.length - 1, pageIndex);
+    } else if (stroke?.anchor && typeof stroke.anchor.pageIndex === "number") {
+      pIdx = Math.min(pages.length - 1, stroke.anchor.pageIndex);
+    } else {
+      const globalLineIdx = Math.max(0, Math.min(rawLines.length - 1, Math.floor(minY / lineHeight)));
+      const targetLineNumber = globalLineIdx + 1;
+      for (const p of pages) {
+        if (targetLineNumber >= p.startLine && targetLineNumber <= p.endLine) {
+          pIdx = p.index;
+          break;
+        }
+      }
+    }
+    const targetPage = pages[pIdx] || pages[0];
+    const lineCountInPage = Math.max(1, targetPage.lines.length);
+    const lineIndexInPage = Math.max(0, Math.min(lineCountInPage - 1, Math.floor(minY / lineHeight)));
+    const lineNumber = targetPage.startLine + lineIndexInPage;
+    const lineText = targetPage.lines[lineIndexInPage] ?? "";
+    const prevLineText = lineIndexInPage > 0 ? targetPage.lines[lineIndexInPage - 1] : "";
+    const nextLineText = lineIndexInPage < targetPage.lines.length - 1 ? targetPage.lines[lineIndexInPage + 1] : "";
+    const lineHash = hashLineContext(lineText, prevLineText, nextLineText);
+    const embedTarget = parseEmbedTarget(lineText);
+    const relX = minX;
+    const relY = minY - lineIndexInPage * lineHeight;
+    const anchor = {
+      pageIndex: pIdx,
+      lineHash,
+      lineText,
+      lineNumber,
+      offsetInPage: lineIndexInPage,
+      embedTarget,
+      relX,
+      relY
+    };
+    if (stroke && typeof stroke === "object") {
+      stroke.anchor = anchor;
+    }
+    return anchor;
+  }
+  function resolveStrokeAnchor(stroke, docText = "", lineHeight = DEFAULT_LINE_HEIGHT) {
+    const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
+    const anchor = stroke?.anchor;
+    if (!anchor || typeof anchor !== "object") {
+      return {
+        points: points.map((p) => [...p]),
+        orphaned: true,
+        pageIndex: 0,
+        deltaY: 0,
+        shape: stroke?.shape ? { ...stroke.shape } : null
+      };
+    }
+    const pages = getDocumentPages(docText);
+    const targetPageIndex = typeof anchor.pageIndex === "number" ? anchor.pageIndex : 0;
+    function findLineInPage(p) {
+      if (!p) return -1;
+      if (anchor.embedTarget) {
+        for (let i = 0; i < p.lines.length; i++) {
+          if (parseEmbedTarget(p.lines[i]) === anchor.embedTarget) return i;
+        }
+      }
+      if (anchor.lineHash) {
+        for (let i = 0; i < p.lines.length; i++) {
+          const prev = i > 0 ? p.lines[i - 1] : "";
+          const next = i < p.lines.length - 1 ? p.lines[i + 1] : "";
+          if (hashLineContext(p.lines[i], prev, next) === anchor.lineHash) return i;
+        }
+      }
+      if (typeof anchor.lineText === "string") {
+        const candidates = [];
+        for (let i = 0; i < p.lines.length; i++) {
+          if (p.lines[i] === anchor.lineText) candidates.push(i);
+        }
+        if (candidates.length === 1) return candidates[0];
+        if (candidates.length > 1) {
+          const target = anchor.offsetInPage ?? 0;
+          candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+          return candidates[0];
+        }
+      }
+      if (typeof anchor.lineText === "string" && anchor.lineText.trim().length > 0) {
+        const trimmed = anchor.lineText.trim();
+        const candidates = [];
+        for (let i = 0; i < p.lines.length; i++) {
+          if (p.lines[i].trim() === trimmed) candidates.push(i);
+        }
+        if (candidates.length > 0) {
+          const target = anchor.offsetInPage ?? 0;
+          candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+          return candidates[0];
+        }
+      }
+      return -1;
+    }
+    let matchedPageIndex = targetPageIndex;
+    let matchedLineIdxInPage = -1;
+    if (pages[targetPageIndex]) {
+      matchedLineIdxInPage = findLineInPage(pages[targetPageIndex]);
+    }
+    if (matchedLineIdxInPage === -1) {
+      for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+        if (pIdx === targetPageIndex) continue;
+        const idx = findLineInPage(pages[pIdx]);
+        if (idx !== -1) {
+          matchedPageIndex = pIdx;
+          matchedLineIdxInPage = idx;
+          break;
+        }
+      }
+    }
+    if (matchedLineIdxInPage === -1) {
+      return {
+        points: points.map((p) => [...p]),
+        orphaned: true,
+        pageIndex: targetPageIndex,
+        deltaY: 0,
+        shape: stroke?.shape ? { ...stroke.shape } : null
+      };
+    }
+    const deltaLines = matchedLineIdxInPage - (anchor.offsetInPage ?? 0);
+    const deltaY = deltaLines * lineHeight;
+    const shiftedPoints = points.map(([x, y, p, t2]) => [x, y + deltaY, p, t2]);
+    let updatedShape = null;
+    if (stroke?.shape) {
+      if (stroke.shape.kind === "ellipse") {
+        updatedShape = { ...stroke.shape, cy: stroke.shape.cy + deltaY };
+      } else if (stroke.shape.kind === "line") {
+        updatedShape = {
+          ...stroke.shape,
+          y1: stroke.shape.y1 + deltaY,
+          y2: stroke.shape.y2 + deltaY
+        };
+      } else {
+        updatedShape = { ...stroke.shape };
+      }
+    }
+    return {
+      points: shiftedPoints,
+      orphaned: false,
+      pageIndex: matchedPageIndex,
+      deltaY,
+      shape: updatedShape
+    };
+  }
+  function mergeInkDocuments(localDoc, remoteDoc) {
+    const localStrokes = Array.isArray(localDoc?.strokes) ? localDoc.strokes : [];
+    const remoteStrokes = Array.isArray(remoteDoc?.strokes) ? remoteDoc.strokes : [];
+    const localRemoved = Array.isArray(localDoc?.removed) ? localDoc.removed : [];
+    const remoteRemoved = Array.isArray(remoteDoc?.removed) ? remoteDoc.removed : [];
+    const removedSet = /* @__PURE__ */ new Set([...localRemoved, ...remoteRemoved]);
+    const strokesById = /* @__PURE__ */ new Map();
+    for (const s of localStrokes) {
+      if (s && s.id && !removedSet.has(s.id)) {
+        strokesById.set(s.id, s);
+      }
+    }
+    for (const s of remoteStrokes) {
+      if (s && s.id && !removedSet.has(s.id)) {
+        const existing = strokesById.get(s.id);
+        if (!existing) {
+          strokesById.set(s.id, s);
+        } else {
+          const existingAt = typeof existing.at === "number" ? existing.at : 0;
+          const remoteAt = typeof s.at === "number" ? s.at : 0;
+          if (remoteAt >= existingAt) {
+            strokesById.set(s.id, s);
+          }
+        }
+      }
+    }
+    const strokes = Array.from(strokesById.values());
+    strokes.sort((a, b) => {
+      const diff = (a.at || 0) - (b.at || 0);
+      if (diff !== 0) return diff;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    return {
+      version: 1,
+      strokes,
+      removed: Array.from(removedSet).sort()
+    };
+  }
+  function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
+    if (!Array.isArray(points) || points.length === 0) return [];
+    if (points.length === 1) {
+      const pt = points[0];
+      return [
+        [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0],
+        [pt[0], pt[1], pt[2] ?? 0.5, pt[3] ?? 0]
+      ];
+    }
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+    const snapY = avgY;
+    const pStart = points[0][2] ?? 0.5;
+    const pEnd = points[points.length - 1][2] ?? pStart;
+    const tStart = points[0][3] ?? 0;
+    const tEnd = points[points.length - 1][3] ?? tStart;
+    return [
+      [minX, snapY, pStart, tStart],
+      [maxX, snapY, pEnd, tEnd]
+    ];
+  }
+  function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = false } = {}) {
+    if (!Array.isArray(points) || points.length === 0) {
+      return { snapped: false, shape: null, points: [] };
+    }
+    if (points.length < 2) {
+      return { snapped: false, shape: null, points: points.map((p) => [...p]) };
+    }
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const w = maxX - minX;
+    const h = maxY - minY;
+    let perimeter = 0;
+    for (let i = 1; i < points.length; i++) {
+      perimeter += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+    }
+    const chord = Math.hypot(
+      points[points.length - 1][0] - points[0][0],
+      points[points.length - 1][1] - points[0][1]
+    );
+    const aspect = h > 0 ? w / h : 1;
+    const isClosedLoop = perimeter > 0 && chord < 0.28 * perimeter && aspect >= 0.45 && aspect <= 2.2;
+    function makeEllipse() {
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const rx = Math.max(1, w / 2);
+      const ry = Math.max(1, h / 2);
+      const snappedPoints = [];
+      const pAvg = points.reduce((sum, p) => sum + (p[2] ?? 0.5), 0) / points.length;
+      const t02 = points[0]?.[3] ?? 0;
+      const t12 = points[points.length - 1]?.[3] ?? t02;
+      for (let i = 0; i < 48; i++) {
+        const theta = i / 48 * (2 * Math.PI);
+        const x = cx + rx * Math.cos(theta);
+        const y = cy + ry * Math.sin(theta);
+        const t2 = t02 + (t12 - t02) * (i / 48);
+        snappedPoints.push([x, y, pAvg, t2]);
+      }
+      return {
+        snapped: true,
+        shape: { kind: "ellipse", cx, cy, rx, ry },
+        points: snappedPoints
+      };
+    }
+    if (forceCircle) {
+      return makeEllipse();
+    }
+    if (holdDurationMs < 320) {
+      return {
+        snapped: false,
+        shape: null,
+        points: points.map((p) => [...p])
+      };
+    }
+    const isCurved = isClosedLoop || perimeter > chord * 1.35 && w >= 10 && h >= 10 && aspect >= 0.35 && aspect <= 2.8;
+    if (isCurved) {
+      return makeEllipse();
+    }
+    const x1 = points[0][0];
+    const y1 = points[0][1];
+    const x2 = points[points.length - 1][0];
+    const y2 = points[points.length - 1][1];
+    const p1 = points[0][2] ?? 0.5;
+    const p2 = points[points.length - 1][2] ?? p1;
+    const t0 = points[0][3] ?? 0;
+    const t1 = points[points.length - 1][3] ?? t0;
+    return {
+      snapped: true,
+      shape: { kind: "line", x1, y1, x2, y2 },
+      points: [
+        [x1, y1, p1, t0],
+        [x2, y2, p2, t1]
+      ]
+    };
+  }
+  function distToSegmentSquared(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const l2 = dx * dx + dy * dy;
+    if (l2 === 0) {
+      const ex2 = px - x1;
+      const ey2 = py - y1;
+      return ex2 * ex2 + ey2 * ey2;
+    }
+    let t2 = ((px - x1) * dx + (py - y1) * dy) / l2;
+    t2 = Math.max(0, Math.min(1, t2));
+    const cx = x1 + t2 * dx;
+    const cy = y1 + t2 * dy;
+    const ex = px - cx;
+    const ey = py - cy;
+    return ex * ex + ey * ey;
+  }
+  function strokeIntersectsEraser(stroke, eraserPoints, radius) {
+    const r2 = radius * radius;
+    const pts = stroke.points || [];
+    if (pts.length === 0) return false;
+    for (const ep of eraserPoints) {
+      const epx = ep[0];
+      const epy = ep[1];
+      if (pts.length === 1) {
+        const dx = pts[0][0] - epx;
+        const dy = pts[0][1] - epy;
+        if (dx * dx + dy * dy <= r2) return true;
+        continue;
+      }
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d2 = distToSegmentSquared(epx, epy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+        if (d2 <= r2) return true;
+      }
+    }
+    return false;
+  }
+  function eraseWholeStrokes(strokes, eraserPoints, radius = 12) {
+    const list = Array.isArray(strokes) ? strokes : [];
+    const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+    const remaining = [];
+    const removedIds = [];
+    for (const stroke of list) {
+      if (strokeIntersectsEraser(stroke, eps, radius)) {
+        if (stroke.id) removedIds.push(stroke.id);
+      } else {
+        remaining.push(stroke);
+      }
+    }
+    const out = { remaining, removedIds };
+    out[Symbol.iterator] = function* () {
+      yield* remaining;
+    };
+    Object.defineProperty(out, "length", { get: () => remaining.length });
+    return out;
+  }
+  function isPointInEraser(x, y, eraserPoints, radius) {
+    const r2 = radius * radius;
+    for (const ep of eraserPoints) {
+      const dx = x - ep[0];
+      const dy = y - ep[1];
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  }
+  function erasePartialStrokes(strokes, eraserPoints, radius = 10, docText = "", lineHeight = DEFAULT_LINE_HEIGHT, pageIndex = null) {
+    const list = Array.isArray(strokes) ? strokes : [];
+    const eps = Array.isArray(eraserPoints) ? eraserPoints : [];
+    const remaining = [];
+    const removedIds = [];
+    for (const stroke of list) {
+      const pts = stroke.points || [];
+      if (pts.length === 0) continue;
+      if (!strokeIntersectsEraser(stroke, eps, radius)) {
+        remaining.push(stroke);
+        continue;
+      }
+      if (stroke.id) {
+        removedIds.push(stroke.id);
+      }
+      const sampled = [];
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0) {
+          sampled.push(pts[0]);
+        } else {
+          const p1 = pts[i - 1];
+          const p2 = pts[i];
+          const dist2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+          const steps = Math.max(1, Math.ceil(dist2 / 3));
+          for (let s = 1; s <= steps; s++) {
+            const frac = s / steps;
+            const x = p1[0] + (p2[0] - p1[0]) * frac;
+            const y = p1[1] + (p2[1] - p1[1]) * frac;
+            const p = (p1[2] ?? 0.5) + ((p2[2] ?? 0.5) - (p1[2] ?? 0.5)) * frac;
+            const t2 = (p1[3] ?? 0) + ((p2[3] ?? 0) - (p1[3] ?? 0)) * frac;
+            sampled.push([x, y, p, t2]);
+          }
+        }
+      }
+      const runs = [];
+      let currentRun = [];
+      for (const pt of sampled) {
+        if (!isPointInEraser(pt[0], pt[1], eps, radius)) {
+          currentRun.push(pt);
+        } else {
+          if (currentRun.length > 0) {
+            runs.push(currentRun);
+            currentRun = [];
+          }
+        }
+      }
+      if (currentRun.length > 0) {
+        runs.push(currentRun);
+      }
+      let subIndex = 0;
+      for (const run of runs) {
+        if (run.length === 0) continue;
+        subIndex++;
+        const subStroke = {
+          ...stroke,
+          id: `${stroke.id}-part-${subIndex}`,
+          points: run,
+          shape: null,
+          at: stroke.at ?? Date.now()
+        };
+        if (docText) {
+          anchorStrokeToDoc(subStroke, docText, lineHeight, pageIndex ?? stroke.anchor?.pageIndex);
+        } else if (stroke.anchor) {
+          const subMinX = Math.min(...run.map((p) => p[0]));
+          const subMinY = Math.min(...run.map((p) => p[1]));
+          const lineTopY = (stroke.anchor.offsetInPage ?? 0) * lineHeight;
+          subStroke.anchor = {
+            ...stroke.anchor,
+            relX: subMinX,
+            relY: subMinY - lineTopY
+          };
+        }
+        remaining.push(subStroke);
+      }
+    }
+    const out = { remaining, removedIds };
+    out[Symbol.iterator] = function* () {
+      yield* remaining;
+    };
+    Object.defineProperty(out, "length", { get: () => remaining.length });
+    return out;
+  }
+  function getToolDefaultWidth(tool) {
+    switch (tool) {
+      case "highlighter":
+        return 18;
+      case "underline":
+        return 3;
+      case "circle":
+        return 2.5;
+      case "pen":
+      default:
+        return 2.5;
+    }
+  }
+  function createInkLayer(view, options = {}) {
+    const {
+      lineHeight = DEFAULT_LINE_HEIGHT,
+      initialInk = null,
+      debounceMs = DEFAULT_DEBOUNCE_MS,
+      globalObj = typeof window !== "undefined" ? window : null,
+      onInkChange = null,
+      allowMouse = true,
+      getPageIndex = null,
+      activePageIndex = 0
+    } = options;
+    let inkDoc = initialInk && typeof initialInk === "object" ? {
+      version: 1,
+      strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
+      removed: Array.isArray(initialInk.removed) ? [...initialInk.removed] : []
+    } : { version: 1, strokes: [], removed: [] };
+    let currentTool = "pen";
+    let previousDrawingTool = "pen";
+    let currentColor = INK_COLORS[0];
+    let isDrawing = false;
+    let activePoints = [];
+    let strokeStartTime = 0;
+    let debounceTimer = null;
+    const docNode = globalObj?.document || (typeof document !== "undefined" ? document : null);
+    const scrollDOM = view?.scrollDOM || (view instanceof (globalObj?.HTMLElement || Object) ? view : null);
+    let svg = null;
+    let highlightGroup = null;
+    let penGroup = null;
+    let activeGroup = null;
+    let palette = null;
+    const colorDots = [];
+    const toolDots = [];
+    function getCurrentPageIndex() {
+      if (typeof getPageIndex === "function") {
+        return getPageIndex();
+      }
+      return activePageIndex ?? 0;
+    }
+    function getDocText() {
+      if (view && view.state && view.state.doc && typeof view.state.doc.toString === "function") {
+        return view.state.doc.toString();
+      }
+      return "";
+    }
+    if (docNode && scrollDOM && typeof docNode.createElementNS === "function") {
+      svg = docNode.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "rc-ink-svg");
+      svg.style.position = "absolute";
+      svg.style.top = "0";
+      svg.style.left = "0";
+      svg.style.width = "100%";
+      svg.style.height = "100%";
+      svg.style.pointerEvents = "none";
+      svg.style.zIndex = "3";
+      highlightGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      highlightGroup.setAttribute("class", "rc-ink-highlight-group");
+      highlightGroup.style.mixBlendMode = "multiply";
+      penGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      penGroup.setAttribute("class", "rc-ink-pen-group");
+      activeGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      activeGroup.setAttribute("class", "rc-ink-active-group");
+      svg.appendChild(highlightGroup);
+      svg.appendChild(penGroup);
+      svg.appendChild(activeGroup);
+      if (typeof scrollDOM.appendChild === "function") {
+        scrollDOM.appendChild(svg);
+      }
+    }
+    if (docNode && typeof docNode.createElement === "function") {
+      palette = docNode.createElement("div");
+      palette.className = "rc-ink-palette";
+      palette.hidden = true;
+      palette.setAttribute("aria-label", "Ink palette");
+      for (const color of INK_COLORS) {
+        const dot2 = docNode.createElement("button");
+        dot2.className = `rc-ink-color-dot${color === currentColor ? " rc-active" : ""}`;
+        dot2.setAttribute("type", "button");
+        dot2.setAttribute("data-color", color);
+        dot2.setAttribute("aria-label", color);
+        dot2.style.backgroundColor = color;
+        dot2.textContent = "";
+        dot2.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          setColor(color);
+        });
+        palette.appendChild(dot2);
+        colorDots.push(dot2);
+      }
+      for (const tool of INK_TOOLS) {
+        const dot2 = docNode.createElement("button");
+        dot2.className = `rc-ink-tool-dot${tool === currentTool ? " rc-active" : ""}`;
+        dot2.setAttribute("type", "button");
+        dot2.setAttribute("data-tool", tool);
+        dot2.setAttribute("aria-label", tool);
+        dot2.textContent = "";
+        dot2.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          setTool(tool);
+        });
+        palette.appendChild(dot2);
+        toolDots.push(dot2);
+      }
+      if (scrollDOM && typeof scrollDOM.appendChild === "function") {
+        scrollDOM.appendChild(palette);
+      }
+    }
+    function updatePaletteActive() {
+      for (const dot2 of colorDots) {
+        const c = dot2.getAttribute("data-color");
+        if (c === currentColor) {
+          dot2.className = "rc-ink-color-dot rc-active";
+        } else {
+          dot2.className = "rc-ink-color-dot";
+        }
+      }
+      for (const dot2 of toolDots) {
+        const t2 = dot2.getAttribute("data-tool");
+        if (t2 === currentTool) {
+          dot2.className = "rc-ink-tool-dot rc-active";
+        } else {
+          dot2.className = "rc-ink-tool-dot";
+        }
+      }
+    }
+    function showPalette() {
+      if (palette) {
+        palette.hidden = false;
+        palette.style.display = "flex";
+      }
+    }
+    function hidePalette() {
+      if (palette) {
+        palette.hidden = true;
+      }
+    }
+    function schedulePost() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        const data2 = getInk();
+        const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ink;
+        if (handler && typeof handler.postMessage === "function") {
+          handler.postMessage(JSON.stringify(data2));
+        }
+        if (typeof onInkChange === "function") {
+          onInkChange(data2);
+        }
+      }, debounceMs);
+    }
+    function renderStrokeElement(stroke, targetGroup) {
+      if (!docNode || !targetGroup || typeof docNode.createElementNS !== "function") return;
+      const pts = stroke.points || [];
+      if (pts.length === 0) return;
+      const isHighlighter = stroke.tool === "highlighter";
+      const isOrphaned = Boolean(stroke.orphaned);
+      const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
+      if (stroke.shape?.kind === "ellipse") {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        el2.setAttribute("cx", String(stroke.shape.cx));
+        el2.setAttribute("cy", String(stroke.shape.cy));
+        el2.setAttribute("rx", String(stroke.shape.rx));
+        el2.setAttribute("ry", String(stroke.shape.ry));
+        el2.setAttribute("fill", "none");
+        el2.setAttribute("stroke", stroke.color || currentColor);
+        el2.setAttribute("stroke-width", String(strokeWidth));
+        el2.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      if (stroke.shape?.kind === "line") {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
+        el2.setAttribute("x1", String(stroke.shape.x1));
+        el2.setAttribute("y1", String(stroke.shape.y1));
+        el2.setAttribute("x2", String(stroke.shape.x2));
+        el2.setAttribute("y2", String(stroke.shape.y2));
+        el2.setAttribute("stroke", stroke.color || currentColor);
+        el2.setAttribute("stroke-width", String(strokeWidth));
+        el2.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      if (pts.length === 1) {
+        const el2 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+        el2.setAttribute("cx", String(pts[0][0]));
+        el2.setAttribute("cy", String(pts[0][1]));
+        el2.setAttribute("r", String(strokeWidth / 2));
+        el2.setAttribute("fill", stroke.color || currentColor);
+        if (isHighlighter) el2.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el2.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el2);
+        return;
+      }
+      const path = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
+      let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+      for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i][0].toFixed(2)} ${pts[i][1].toFixed(2)}`;
+      }
+      path.setAttribute("d", d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", stroke.color || currentColor);
+      path.setAttribute("stroke-width", String(strokeWidth));
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      if (isHighlighter) path.setAttribute("opacity", "0.45");
+      else if (isOrphaned) path.setAttribute("opacity", "0.38");
+      targetGroup.appendChild(path);
+    }
+    function render() {
+      if (!docNode) return;
+      if (highlightGroup) highlightGroup.innerHTML = "";
+      if (penGroup) penGroup.innerHTML = "";
+      if (activeGroup) activeGroup.innerHTML = "";
+      const activePage = getCurrentPageIndex();
+      for (const stroke of inkDoc.strokes) {
+        if (stroke.anchor && typeof stroke.anchor.pageIndex === "number" && stroke.anchor.pageIndex !== activePage) {
+          continue;
+        }
+        const targetGroup = stroke.tool === "highlighter" ? highlightGroup : penGroup;
+        renderStrokeElement(stroke, targetGroup);
+      }
+    }
+    function renderActiveStroke() {
+      if (!docNode || !activeGroup) return;
+      activeGroup.innerHTML = "";
+      if (activePoints.length === 0) return;
+      const stroke = {
+        tool: currentTool,
+        color: currentColor,
+        width: getToolDefaultWidth(currentTool),
+        points: activePoints
+      };
+      renderStrokeElement(stroke, activeGroup);
+    }
+    function relayout() {
+      const docText = getDocText();
+      for (const stroke of inkDoc.strokes) {
+        const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+        stroke.points = res.points;
+        stroke.orphaned = res.orphaned;
+        if (stroke.anchor) {
+          stroke.anchor.pageIndex = res.pageIndex;
+        }
+        if (res.shape) {
+          stroke.shape = res.shape;
+        }
+      }
+      render();
+    }
+    function getInk() {
+      return {
+        version: 1,
+        strokes: inkDoc.strokes.map((s) => ({
+          ...s,
+          points: s.points ? s.points.map((p) => [...p]) : [],
+          anchor: s.anchor ? { ...s.anchor } : null,
+          shape: s.shape ? { ...s.shape } : null
+        })),
+        removed: [...inkDoc.removed]
+      };
+    }
+    function setInk(data2) {
+      inkDoc = data2 && typeof data2 === "object" ? {
+        version: 1,
+        strokes: Array.isArray(data2.strokes) ? [...data2.strokes] : [],
+        removed: Array.isArray(data2.removed) ? [...data2.removed] : []
+      } : { version: 1, strokes: [], removed: [] };
+      render();
+    }
+    function addStroke(stroke) {
+      if (!stroke || typeof stroke !== "object") return;
+      if (!stroke.id) {
+        stroke.id = `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      }
+      if (!stroke.at) {
+        stroke.at = Date.now();
+      }
+      if (!stroke.tool) {
+        stroke.tool = currentTool;
+      }
+      if (!stroke.color) {
+        stroke.color = currentColor;
+      }
+      if (!stroke.width) {
+        stroke.width = getToolDefaultWidth(stroke.tool);
+      }
+      if (!stroke.anchor) {
+        anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      }
+      inkDoc.strokes.push(stroke);
+      render();
+      schedulePost();
+    }
+    function eraseAt(points, mode = null) {
+      const effectiveMode = mode || (currentTool === "eraser-partial" ? "partial" : "whole");
+      const docText = getDocText();
+      let res;
+      if (effectiveMode === "partial" || effectiveMode === "eraser-partial") {
+        res = erasePartialStrokes(inkDoc.strokes, points, 10, docText, lineHeight, getCurrentPageIndex());
+      } else {
+        res = eraseWholeStrokes(inkDoc.strokes, points, 12);
+      }
+      inkDoc.strokes = res.remaining;
+      if (res.removedIds && res.removedIds.length > 0) {
+        const set = /* @__PURE__ */ new Set([...inkDoc.removed, ...res.removedIds]);
+        inkDoc.removed = Array.from(set);
+      }
+      render();
+      schedulePost();
+    }
+    function setTool(tool) {
+      if (!INK_TOOLS.includes(tool)) return;
+      if (!tool.startsWith("eraser")) {
+        previousDrawingTool = tool;
+      }
+      currentTool = tool;
+      updatePaletteActive();
+    }
+    function getTool() {
+      return currentTool;
+    }
+    function setColor(color) {
+      if (INK_COLORS.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
+        currentColor = color;
+        updatePaletteActive();
+      }
+    }
+    function getColor() {
+      return currentColor;
+    }
+    function toggleEraser() {
+      if (currentTool.startsWith("eraser")) {
+        currentTool = previousDrawingTool;
+      } else {
+        currentTool = "eraser-whole";
+      }
+      updatePaletteActive();
+      return currentTool;
+    }
+    function onPointerDown(e) {
+      if (e.pointerType === "touch") return;
+      if (!allowMouse && e.pointerType === "mouse") return;
+      isDrawing = true;
+      strokeStartTime = e.timeStamp || Date.now();
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      const scrollLeft = scrollDOM?.scrollLeft || 0;
+      const scrollTop = scrollDOM?.scrollTop || 0;
+      const x = e.clientX - rect.left + scrollLeft;
+      const y = e.clientY - rect.top + scrollTop;
+      const p = typeof e.pressure === "number" && e.pressure > 0 ? e.pressure : 0.5;
+      const t2 = strokeStartTime;
+      activePoints = [[x, y, p, t2]];
+      if (currentTool.startsWith("eraser")) {
+        eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
+      } else {
+        renderActiveStroke();
+      }
+      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+        e.preventDefault();
+      }
+    }
+    function onPointerMove(e) {
+      if (!isDrawing) return;
+      if (e.pointerType === "touch") return;
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      const scrollLeft = scrollDOM?.scrollLeft || 0;
+      const scrollTop = scrollDOM?.scrollTop || 0;
+      const rawEvents = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
+      const events = Array.isArray(rawEvents) && rawEvents.length > 0 ? rawEvents : [e];
+      for (const ev of events) {
+        const x = ev.clientX - rect.left + scrollLeft;
+        const y = ev.clientY - rect.top + scrollTop;
+        const p = typeof ev.pressure === "number" && ev.pressure > 0 ? ev.pressure : 0.5;
+        const t2 = ev.timeStamp || Date.now();
+        activePoints.push([x, y, p, t2]);
+        if (currentTool.startsWith("eraser")) {
+          eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
+        }
+      }
+      if (!currentTool.startsWith("eraser")) {
+        renderActiveStroke();
+      }
+      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+        e.preventDefault();
+      }
+    }
+    function onPointerUp(e) {
+      if (!isDrawing) return;
+      isDrawing = false;
+      if (e.pointerType === "touch") return;
+      if (currentTool.startsWith("eraser")) {
+        activePoints = [];
+        if (activeGroup) activeGroup.innerHTML = "";
+        return;
+      }
+      if (activePoints.length === 0) return;
+      const holdDurationMs = (e.timeStamp || Date.now()) - strokeStartTime;
+      let finalPoints = activePoints;
+      let finalShape = null;
+      if (currentTool === "underline") {
+        finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+        finalShape = null;
+      } else if (currentTool === "circle") {
+        const res = detectAndSnapShape(activePoints, { forceCircle: true });
+        finalPoints = res.points;
+        finalShape = res.shape;
+      } else {
+        const res = detectAndSnapShape(activePoints, { holdDurationMs, forceCircle: false });
+        finalPoints = res.points;
+        finalShape = res.shape;
+      }
+      const stroke = {
+        id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tool: currentTool,
+        color: currentColor,
+        width: getToolDefaultWidth(currentTool),
+        points: finalPoints,
+        shape: finalShape,
+        device: e.pointerType || "pen",
+        at: Date.now()
+      };
+      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      inkDoc.strokes.push(stroke);
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = "";
+      render();
+      schedulePost();
+    }
+    function onPointerCancel() {
+      isDrawing = false;
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = "";
+    }
+    function onPointerDownCapture(e) {
+      if (e.pointerType === "pen") {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        onPointerDown(e);
+      }
+    }
+    function onPointerEnterCapture(e) {
+      if (e.pointerType === "pen" && e.buttons > 0) {
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+        if (typeof e.preventDefault === "function") e.preventDefault();
+      }
+    }
+    if (scrollDOM && typeof scrollDOM.addEventListener === "function") {
+      scrollDOM.addEventListener("pointerdown", onPointerDownCapture, true);
+      scrollDOM.addEventListener("pointerenter", onPointerEnterCapture, true);
+      scrollDOM.addEventListener("pointerdown", onPointerDown);
+      scrollDOM.addEventListener("pointermove", onPointerMove);
+      scrollDOM.addEventListener("pointerup", onPointerUp);
+      scrollDOM.addEventListener("pointercancel", onPointerCancel);
+    }
+    function destroy() {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      if (scrollDOM && typeof scrollDOM.removeEventListener === "function") {
+        scrollDOM.removeEventListener("pointerdown", onPointerDownCapture, true);
+        scrollDOM.removeEventListener("pointerenter", onPointerEnterCapture, true);
+        scrollDOM.removeEventListener("pointerdown", onPointerDown);
+        scrollDOM.removeEventListener("pointermove", onPointerMove);
+        scrollDOM.removeEventListener("pointerup", onPointerUp);
+        scrollDOM.removeEventListener("pointercancel", onPointerCancel);
+      }
+      if (svg && svg.parentNode && typeof svg.parentNode.removeChild === "function") {
+        svg.parentNode.removeChild(svg);
+      }
+      if (palette && palette.parentNode && typeof palette.parentNode.removeChild === "function") {
+        palette.parentNode.removeChild(palette);
+      }
+    }
+    render();
+    return {
+      getInk,
+      setInk,
+      addStroke,
+      eraseAt,
+      setTool,
+      getTool,
+      setColor,
+      getColor,
+      toggleEraser,
+      relayout,
+      destroy,
+      svg,
+      palette,
+      showPalette,
+      hidePalette
+    };
+  }
+
+  // src/audio.js
+  function formatTimestamp(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const totalSecs = Math.floor(s);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor(totalSecs % 3600 / 60);
+    const secs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function normalizeCues(cues) {
+    if (!Array.isArray(cues)) return [];
+    return cues.map((c, i) => ({
+      id: c.id ? String(c.id) : `cue-${i}-${Math.round((Number(c.start) || 0) * 1e3)}`,
+      start: Math.max(0, Number(c.start) || 0),
+      end: Math.max(0, Number(c.end) || 0),
+      text: String(c.text ?? "").trim(),
+      speaker: String(c.speaker ?? "").trim(),
+      bookmarked: Boolean(c.bookmarked),
+      annotation: String(c.annotation ?? "").trim(),
+      inkStrokes: Array.isArray(c.inkStrokes) ? c.inkStrokes : []
+    }));
+  }
+  function activeCueIndexAt(cues, timeSec) {
+    if (!Array.isArray(cues) || cues.length === 0) return -1;
+    const t2 = Number(timeSec) || 0;
+    if (t2 < cues[0].start) return -1;
+    for (let i = 0; i < cues.length; i++) {
+      const cue = cues[i];
+      if (t2 >= cue.start && t2 <= cue.end) {
+        return i;
+      }
+    }
+    let latestIdx = -1;
+    for (let i = 0; i < cues.length; i++) {
+      if (cues[i].start <= t2) {
+        latestIdx = i;
+      } else {
+        break;
+      }
+    }
+    return latestIdx;
+  }
+  function bookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    cue.bookmarked = true;
+    if (!Array.isArray(state.bookmarks)) {
+      state.bookmarks = [];
+    }
+    const noteStr = String(note ?? "").trim();
+    let bookmark = state.bookmarks.find((b) => b.cueId === cue.id);
+    if (bookmark) {
+      bookmark.note = noteStr;
+      bookmark.time = cue.start;
+      bookmark.text = cue.text;
+    } else {
+      bookmark = {
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr,
+        createdAt: Date.now()
+      };
+      state.bookmarks.push(bookmark);
+    }
+    if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+      globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "bookmark",
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr
+      });
+    }
+    return bookmark;
+  }
+  function toggleBookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    if (cue.bookmarked) {
+      cue.bookmarked = false;
+      if (Array.isArray(state.bookmarks)) {
+        state.bookmarks = state.bookmarks.filter((b) => b.cueId !== cue.id);
+      }
+      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+      }
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({
+          action: "unbookmark",
+          cueId: cue.id,
+          time: cue.start
+        });
+      }
+      return null;
+    }
+    return bookmarkCue(state, cueIndex, note, { globalObj });
+  }
+  function annotateCue(state, cueIndex, annotationText, { onInsertToPage = null, globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    const textStr = String(annotationText ?? "").trim();
+    cue.annotation = textStr;
+    const timestamp = formatTimestamp(cue.start);
+    const reference = textStr.length > 0 ? `[@${timestamp}] ${cue.text} \u2014 ${textStr}` : `[@${timestamp}] ${cue.text}`;
+    if (typeof onInsertToPage === "function") {
+      onInsertToPage(reference);
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "annotate",
+        cueId: cue.id,
+        time: cue.start,
+        annotation: textStr
+      });
+    }
+    return { cue, reference };
+  }
+  function createMockElement(tag) {
+    const listeners = {};
+    const attributes = {};
+    const classListSet = /* @__PURE__ */ new Set();
+    const el2 = {
+      tagName: tag.toUpperCase(),
+      hidden: false,
+      value: "",
+      textContent: "",
+      innerHTML: "",
+      children: [],
+      style: {},
+      classList: {
+        add(...classes) {
+          for (const c of classes) if (c) classListSet.add(c);
+        },
+        remove(...classes) {
+          for (const c of classes) classListSet.delete(c);
+        },
+        contains(c) {
+          return classListSet.has(c);
+        },
+        toggle(c, force) {
+          if (force === true) classListSet.add(c);
+          else if (force === false) classListSet.delete(c);
+          else if (classListSet.has(c)) classListSet.delete(c);
+          else classListSet.add(c);
+          return classListSet.has(c);
+        }
+      },
+      setAttribute(k, v) {
+        attributes[k] = String(v);
+        if (k === "hidden") el2.hidden = true;
+        if (k === "class") {
+          classListSet.clear();
+          String(v).split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      },
+      getAttribute(k) {
+        return attributes[k] ?? null;
+      },
+      removeAttribute(k) {
+        delete attributes[k];
+        if (k === "hidden") el2.hidden = false;
+      },
+      hasAttribute(k) {
+        return k in attributes;
+      },
+      appendChild(child) {
+        el2.children.push(child);
+        child.parentElement = el2;
+        return child;
+      },
+      removeChild(child) {
+        const idx = el2.children.indexOf(child);
+        if (idx !== -1) {
+          el2.children.splice(idx, 1);
+          child.parentElement = null;
+        }
+        return child;
+      },
+      replaceChildren(...newChildren) {
+        el2.children = [];
+        for (const c of newChildren) {
+          el2.appendChild(c);
+        }
+      },
+      addEventListener(type, fn) {
+        if (!listeners[type]) listeners[type] = [];
+        listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatchEvent(event) {
+        const type = event?.type || "click";
+        const fns = [...listeners[type] || []];
+        for (const fn of fns) {
+          fn(event);
+        }
+      },
+      scrollIntoView() {
+      },
+      focus() {
+      }
+    };
+    Object.defineProperty(el2, "className", {
+      get() {
+        return Array.from(classListSet).join(" ");
+      },
+      set(v) {
+        classListSet.clear();
+        if (typeof v === "string") {
+          v.split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      }
+    });
+    return el2;
+  }
+  function makeDomElement(doc2, tag, props = {}, attrs = {}) {
+    const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
+    let el2;
+    if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
+      el2 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
+    } else if (doc2 && typeof doc2.createElement === "function") {
+      el2 = doc2.createElement(tag);
+    } else {
+      el2 = createMockElement(tag);
+    }
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "style" && typeof v === "object") {
+        if (el2.style) Object.assign(el2.style, v);
+      } else {
+        el2[k] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== void 0 && v !== null) {
+        if (typeof el2.setAttribute === "function") {
+          el2.setAttribute(k, String(v));
+        } else {
+          el2[k] = String(v);
+        }
+      }
+    }
+    return el2;
+  }
+  function strokeToPathData(stroke) {
+    if (stroke?.d) return stroke.d;
+    const pts = stroke?.points || [];
+    if (pts.length === 0) return "";
+    const getX = (p) => Array.isArray(p) ? p[0] : p?.x ?? 0;
+    const getY = (p) => Array.isArray(p) ? p[1] : p?.y ?? 0;
+    let d = `M ${getX(pts[0])} ${getY(pts[0])}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${getX(pts[i])} ${getY(pts[i])}`;
+    }
+    return d;
+  }
+  function renderCueInkStroke(doc2, stroke) {
+    const d = strokeToPathData(stroke);
+    if (!d) return null;
+    const path = makeDomElement(doc2, "path", {}, {
+      d,
+      fill: "none",
+      stroke: stroke.color || "#38bdf8",
+      "stroke-width": String(stroke.width || 2),
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    });
+    return path;
+  }
+  function createTranscriptPane(container, options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const doc2 = options.doc ?? container?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const onSeek = options.onSeek ?? null;
+    const onClose = options.onClose ?? null;
+    const sidecar = options.sidecar ?? null;
+    const pane = makeDomElement(doc2, "aside", { className: "rc-transcript-pane", hidden: true }, {
+      "aria-label": "Live audio transcript",
+      role: "complementary"
+    });
+    const header = makeDomElement(doc2, "header", { className: "rc-transcript-header" });
+    const titleEl = makeDomElement(doc2, "h3", {
+      className: "rc-transcript-title",
+      textContent: "Live Transcript"
+    });
+    const closeControl = makeDomElement(doc2, "span", {
+      className: "rc-transcript-close",
+      textContent: ""
+    }, {
+      "aria-label": "Close transcript",
+      role: "button",
+      tabindex: "0"
+    });
+    header.appendChild(titleEl);
+    header.appendChild(closeControl);
+    pane.appendChild(header);
+    const cuesContainer = makeDomElement(doc2, "div", { className: "rc-transcript-cues" }, {
+      role: "feed",
+      "aria-label": "Transcript cues"
+    });
+    pane.appendChild(cuesContainer);
+    let activeIndex = -1;
+    let currentCues = [];
+    let cueElements = [];
+    function handleSeek(timeSec) {
+      if (typeof onSeek === "function") {
+        onSeek(timeSec);
+      }
+      if (sidecar && typeof sidecar.seek === "function") {
+        sidecar.seek(timeSec);
+      } else if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time: timeSec });
+      }
+    }
+    function handleBookmarkToggle(cueIndex, note = "") {
+      if (sidecar && typeof sidecar.toggleBookmarkCue === "function") {
+        sidecar.toggleBookmarkCue(cueIndex, note);
+      } else if (sidecar && typeof sidecar.bookmarkCue === "function") {
+        const st = sidecar.getState();
+        toggleBookmarkCue(st, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      } else if (options.state) {
+        toggleBookmarkCue(options.state, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function handleAnnotate(cueIndex, text, insert2 = false) {
+      const insertFn = insert2 ? onInsertToPage : null;
+      if (sidecar && typeof sidecar.annotateCue === "function") {
+        sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn });
+      } else if (options.state) {
+        annotateCue(options.state, cueIndex, text, { onInsertToPage: insertFn, globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function buildCueElement(cue, index) {
+      const cueEl = makeDomElement(doc2, "article", {
+        className: `rc-transcript-cue${cue.bookmarked ? " is-bookmarked" : ""}`
+      }, {
+        "data-cue-index": index,
+        "data-cue-id": cue.id,
+        tabindex: "0"
+      });
+      const timeEl = makeDomElement(doc2, "time", {
+        className: "rc-transcript-cue-time",
+        textContent: formatTimestamp(cue.start)
+      }, {
+        "data-start": cue.start
+      });
+      cueEl.appendChild(timeEl);
+      if (cue.speaker) {
+        const speakerEl = makeDomElement(doc2, "span", {
+          className: "rc-transcript-cue-speaker",
+          textContent: `${cue.speaker}: `
+        });
+        cueEl.appendChild(speakerEl);
+      }
+      const textEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-text",
+        textContent: cue.text
+      });
+      cueEl.appendChild(textEl);
+      const dotEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-dot",
+        textContent: cue.bookmarked ? "\u25CF" : ""
+      }, {
+        "aria-hidden": "true"
+      });
+      cueEl.appendChild(dotEl);
+      const noteEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-note",
+        textContent: cue.annotation || "",
+        hidden: !cue.annotation
+      }, {
+        ...cue.annotation ? {} : { hidden: "true" }
+      });
+      cueEl.appendChild(noteEl);
+      const inkSvg = makeDomElement(doc2, "svg", {
+        className: "rc-cue-ink-svg"
+      });
+      if (Array.isArray(cue.inkStrokes)) {
+        for (const stroke of cue.inkStrokes) {
+          const path = renderCueInkStroke(doc2, stroke);
+          if (path) inkSvg.appendChild(path);
+        }
+      }
+      cueEl.appendChild(inkSvg);
+      const annotInput = makeDomElement(doc2, "input", {
+        className: "rc-transcript-annot-input",
+        type: "text",
+        value: cue.annotation || "",
+        hidden: true
+      }, {
+        hidden: "true",
+        "aria-label": "Cue annotation"
+      });
+      cueEl.appendChild(annotInput);
+      function revealInput() {
+        annotInput.hidden = false;
+        annotInput.removeAttribute("hidden");
+        annotInput.focus();
+      }
+      function commitAnnotation() {
+        const val = annotInput.value.trim();
+        annotInput.hidden = true;
+        annotInput.setAttribute("hidden", "true");
+        handleAnnotate(index, val, true);
+        noteEl.textContent = val;
+        if (val) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+      let activePenPoints = null;
+      let activePathEl = null;
+      cueEl.addEventListener("pointerdown", (e) => {
+        if (e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints = [[x, y, p, Date.now()]];
+          activePathEl = makeDomElement(doc2, "path", {}, {
+            d: `M ${x} ${y}`,
+            fill: "none",
+            stroke: "#38bdf8",
+            "stroke-width": "2",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round"
+          });
+          inkSvg.appendChild(activePathEl);
+          return;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("pointermove", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints.push([x, y, p, Date.now()]);
+          let d = `M ${activePenPoints[0][0]} ${activePenPoints[0][1]}`;
+          for (let i = 1; i < activePenPoints.length; i++) {
+            d += ` L ${activePenPoints[i][0]} ${activePenPoints[i][1]}`;
+          }
+          activePathEl?.setAttribute("d", d);
+          return;
+        }
+      });
+      cueEl.addEventListener("pointerup", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const stroke = {
+            id: `cue-ink-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            points: activePenPoints,
+            tool: "pen",
+            color: "#38bdf8",
+            width: 2,
+            device: "pen",
+            at: Date.now()
+          };
+          if (!Array.isArray(cue.inkStrokes)) {
+            cue.inkStrokes = [];
+          }
+          cue.inkStrokes.push(stroke);
+          activePenPoints = null;
+          activePathEl = null;
+          if (!cue.annotation) {
+            cue.annotation = "[ink annotation]";
+            noteEl.textContent = cue.annotation;
+            noteEl.hidden = false;
+            noteEl.removeAttribute("hidden");
+          }
+          handleAnnotate(index, cue.annotation, false);
+          return;
+        }
+        clearDwellTimer();
+      });
+      cueEl.addEventListener("pointercancel", () => {
+        activePenPoints = null;
+        activePathEl = null;
+        clearDwellTimer();
+      });
+      let dwellTimer = null;
+      let didDwell = false;
+      function startDwellTimer() {
+        didDwell = false;
+        if (dwellTimer !== null) clearTimeout(dwellTimer);
+        dwellTimer = setTimeout(() => {
+          didDwell = true;
+          revealInput();
+        }, 280);
+      }
+      function clearDwellTimer() {
+        if (dwellTimer !== null) {
+          clearTimeout(dwellTimer);
+          dwellTimer = null;
+        }
+      }
+      cueEl.addEventListener("contextmenu", (e) => {
+        e?.preventDefault?.();
+        revealInput();
+      });
+      cueEl.addEventListener("keydown", (e) => {
+        if (e?.key === "Enter") {
+          if (e.target === annotInput) {
+            e.preventDefault?.();
+            commitAnnotation();
+          } else {
+            e.preventDefault?.();
+            revealInput();
+          }
+        }
+      });
+      annotInput.addEventListener("blur", () => {
+        commitAnnotation();
+      });
+      cueEl.addEventListener("click", (e) => {
+        if (e?.target === annotInput || didDwell) {
+          didDwell = false;
+          return;
+        }
+        handleSeek(cue.start);
+      });
+      cueEl.addEventListener("dblclick", () => {
+        handleBookmarkToggle(index);
+      });
+      let touchStartX = null;
+      let touchStartY = null;
+      let lastTap = 0;
+      cueEl.addEventListener("touchstart", (e) => {
+        const t2 = e.touches && e.touches[0];
+        if (t2) {
+          touchStartX = t2.clientX;
+          touchStartY = t2.clientY;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("touchend", (e) => {
+        clearDwellTimer();
+        const now = Date.now();
+        if (now - lastTap < 350) {
+          handleBookmarkToggle(index);
+          lastTap = 0;
+          return;
+        }
+        lastTap = now;
+        if (touchStartX !== null) {
+          const t2 = e.changedTouches && e.changedTouches[0];
+          if (t2) {
+            const dx = t2.clientX - touchStartX;
+            const dy = t2.clientY - (touchStartY ?? t2.clientY);
+            if (dx >= 36 && Math.abs(dy) < 30) {
+              handleBookmarkToggle(index);
+            }
+          }
+        }
+        touchStartX = null;
+        touchStartY = null;
+      });
+      cueEl.addEventListener("touchcancel", () => {
+        clearDwellTimer();
+        touchStartX = null;
+        touchStartY = null;
+      });
+      return cueEl;
+    }
+    function updateCue(index) {
+      if (index < 0 || index >= currentCues.length) return;
+      const cue = currentCues[index];
+      const el2 = cueElements[index];
+      if (!el2) return;
+      if (cue.bookmarked) {
+        el2.classList.add("is-bookmarked");
+      } else {
+        el2.classList.remove("is-bookmarked");
+      }
+      const dotEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-dot") : null);
+      if (dotEl) {
+        dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
+      }
+      const noteEl = el2.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el2.querySelector ? el2.querySelector(".rc-transcript-cue-note") : null);
+      if (noteEl) {
+        noteEl.textContent = cue.annotation || "";
+        if (cue.annotation) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+    }
+    function highlightCue(index) {
+      if (index === activeIndex) return;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.remove("rc-transcript-cue-active");
+        cueElements[activeIndex].removeAttribute("aria-current");
+      }
+      activeIndex = index;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.add("rc-transcript-cue-active");
+        cueElements[activeIndex].setAttribute("aria-current", "true");
+        if (typeof cueElements[activeIndex].scrollIntoView === "function") {
+          cueElements[activeIndex].scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      }
+    }
+    function update(state) {
+      if (!state) return;
+      if (state.title && titleEl) {
+        titleEl.textContent = state.title;
+      }
+      currentCues = Array.isArray(state.cues) ? state.cues : [];
+      if (state.playing && currentCues.length > 0) {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      } else if (currentCues.length === 0) {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      }
+      if (typeof cuesContainer.replaceChildren === "function") {
+        cueElements = currentCues.map((c, i) => buildCueElement(c, i));
+        cuesContainer.replaceChildren(...cueElements);
+      } else {
+        cuesContainer.children = [];
+        cueElements = currentCues.map((c, i) => {
+          const el2 = buildCueElement(c, i);
+          cuesContainer.appendChild(el2);
+          return el2;
+        });
+      }
+      const active = activeCueIndexAt(currentCues, state.currentTime || 0);
+      highlightCue(active);
+    }
+    closeControl.addEventListener("click", () => {
+      pane.hidden = true;
+      pane.setAttribute("hidden", "true");
+      if (typeof onClose === "function") {
+        onClose();
+      }
+    });
+    if (container && typeof container.appendChild === "function") {
+      container.appendChild(pane);
+    }
+    return {
+      element: pane,
+      update,
+      updateCue,
+      highlightCue,
+      show() {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      },
+      hide() {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      },
+      destroy() {
+        if (pane.parentElement && typeof pane.parentElement.removeChild === "function") {
+          pane.parentElement.removeChild(pane);
+        }
+      }
+    };
+  }
+  function createAudioSidecar(options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const state = {
+      playing: false,
+      currentTime: 0,
+      title: String(options.title || ""),
+      sourceKey: String(options.sourceKey || ""),
+      cues: normalizeCues(options.cues),
+      bookmarks: Array.isArray(options.bookmarks) ? [...options.bookmarks] : []
+    };
+    let pane = null;
+    function setAudioTranscript(data2 = {}) {
+      if (typeof data2.playing === "boolean") {
+        state.playing = data2.playing;
+      }
+      if (typeof data2.currentTime === "number") {
+        state.currentTime = data2.currentTime;
+      }
+      if (typeof data2.title === "string") {
+        state.title = data2.title;
+      }
+      if (typeof data2.sourceKey === "string") {
+        state.sourceKey = data2.sourceKey;
+      }
+      if (Array.isArray(data2.cues)) {
+        state.cues = normalizeCues(data2.cues);
+      }
+      if (Array.isArray(data2.bookmarks)) {
+        state.bookmarks = [...data2.bookmarks];
+      }
+      if (pane) {
+        pane.update(state);
+      }
+    }
+    function updateTime(timeSec) {
+      state.currentTime = Number(timeSec) || 0;
+      const activeIdx = activeCueIndexAt(state.cues, state.currentTime);
+      if (pane) {
+        pane.highlightCue(activeIdx);
+      }
+      return activeIdx;
+    }
+    function bookmark(cueIndex, note = "") {
+      const res = bookmarkCue(state, cueIndex, note, { globalObj });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function toggleBookmark(cueIndex, note = "") {
+      const res = toggleBookmarkCue(state, cueIndex, note, { globalObj });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function annotate(cueIndex, annotationText, opts = {}) {
+      const insertFn = opts.onInsertToPage !== void 0 ? opts.onInsertToPage : onInsertToPage;
+      const res = annotateCue(state, cueIndex, annotationText, {
+        onInsertToPage: insertFn,
+        globalObj
+      });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function seek(time) {
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time });
+      }
+      updateTime(time);
+    }
+    const sidecarApi = {
+      getState: () => state,
+      setAudioTranscript,
+      updateTime,
+      bookmarkCue: bookmark,
+      toggleBookmarkCue: toggleBookmark,
+      annotateCue: annotate,
+      seek,
+      activeCueIndexAt: (t2) => activeCueIndexAt(state.cues, t2 !== void 0 ? t2 : state.currentTime),
+      getActiveCueIndex: () => activeCueIndexAt(state.cues, state.currentTime),
+      get pane() {
+        return pane;
+      },
+      createTranscriptPane(container) {
+        pane = createTranscriptPane(container, {
+          sidecar: sidecarApi,
+          globalObj,
+          onInsertToPage
+        });
+        pane.update(state);
+        return pane;
+      }
+    };
+    if (options.container) {
+      sidecarApi.createTranscriptPane(options.container);
+    }
+    return sidecarApi;
+  }
+  function extractDocumentSections(docText, pageIndex = null) {
+    const source = typeof docText === "string" ? docText : "";
+    if (!source.trim()) return [];
+    if (pageIndex !== null) {
+      const pages = inspectDraftpadPages(source);
+      const targetPage = pages.find((p) => p.index === pageIndex);
+      if (!targetPage) return [];
+      return extractSectionsFromText(targetPage.rawContent, targetPage.index);
+    }
+    if (source.includes(PAGE_MARKER)) {
+      const pages = inspectDraftpadPages(source);
+      const allSections = [];
+      for (const page of pages) {
+        const pageSections = extractSectionsFromText(page.rawContent, page.index);
+        allSections.push(...pageSections);
+      }
+      return allSections;
+    }
+    return extractSectionsFromText(source, 0);
+  }
+  function extractSectionsFromText(rawText, pageIndex) {
+    const lines = rawText.split("\n");
+    const headings = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
+      const parsed = parseHeadingLine(line);
+      if (parsed) {
+        headings.push({
+          lineIndex: i,
+          ...parsed
+        });
+      }
+    }
+    if (headings.length > 0) {
+      const sections2 = [];
+      if (headings[0].lineIndex > 0) {
+        const preambleLines = lines.slice(0, headings[0].lineIndex).filter((l) => !isFullDateLine(l.trim()));
+        const preambleText = preambleLines.join("\n").trim();
+        if (preambleText.length > 0) {
+          sections2.push({
+            id: `sec-${pageIndex}-preamble`,
+            title: "Introduction",
+            level: 1,
+            kind: "preamble",
+            text: preambleText,
+            pageIndex
+          });
+        }
+      }
+      for (let k = 0; k < headings.length; k++) {
+        const h = headings[k];
+        const nextLineIdx = k + 1 < headings.length ? headings[k + 1].lineIndex : lines.length;
+        const bodyLines = lines.slice(h.lineIndex + 1, nextLineIdx);
+        const sectionText = bodyLines.join("\n").trim();
+        sections2.push({
+          id: `sec-${pageIndex}-${k}`,
+          title: h.title,
+          level: h.level,
+          kind: h.kind,
+          marker: h.marker,
+          text: sectionText,
+          pageIndex
+        });
+      }
+      return sections2;
+    }
+    const paragraphs = rawText.split(/\n\s*\n+/).map((p) => p.trim()).filter((p) => p.length > 0 && !isFullDateLine(p));
+    const sections = [];
+    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+      const p = paragraphs[pIdx];
+      const firstSentenceMatch = p.match(/^([^.!?…\n]+[.!?…])/);
+      const firstSentence = firstSentenceMatch ? firstSentenceMatch[1].trim() : p.slice(0, 50).trim();
+      const title = firstSentence.length > 60 ? `${firstSentence.slice(0, 57)}\u2026` : firstSentence;
+      sections.push({
+        id: `sec-${pageIndex}-p${pIdx}`,
+        title,
+        level: 1,
+        kind: "paragraph",
+        text: p,
+        pageIndex
+      });
+    }
+    return sections;
+  }
+  var LEGAL_RULE_MARKERS = [
+    // English holding, obligation, conclusion
+    /\bheld\b/i,
+    /\bhold\b/i,
+    /\bholds\b/i,
+    /\bholding\b/i,
+    /\brule\b/i,
+    /\brules\b/i,
+    /\bmust\b/i,
+    /\bshall\b/i,
+    /\brequired\b/i,
+    /\bprohibited\b/i,
+    /\bbecause\b/i,
+    /\btherefore\b/i,
+    /\bthus\b/i,
+    /\bconcludes\b/i,
+    /\bconcluded\b/i,
+    /\bconclusion\b/i,
+    /\bfinding\b/i,
+    /\bfinds\b/i,
+    /\bfound\b/i,
+    /\bliable\b/i,
+    /\bliability\b/i,
+    /\baffirmed\b/i,
+    /\breversed\b/i,
+    /\bstatute\b/i,
+    /§/,
+    /\bsection\b/i,
+    // French obligation and judicial rulings
+    /\btenu\b/i,
+    /\bjugé\b/i,
+    /\brègle\b/i,
+    /\bdoit\b/i,
+    /\bdoivent\b/i,
+    /\bobligatoire\b/i,
+    /\bparce que\b/i,
+    /\bdonc\b/i,
+    /\ben conséquence\b/i,
+    /\bil résulte\b/i,
+    /\bconclut\b/i,
+    /\bconsidérant\b/i,
+    /\bstipule\b/i,
+    /\bresponsabilité\b/i,
+    /\bpréjudice\b/i,
+    // Vietnamese statutory obligations and judicial conclusions
+    /\bquy định\b/i,
+    /\bphải\b/i,
+    /\bbắt buộc\b/i,
+    /\bkhông được\b/i,
+    /\bkết luận\b/i,
+    /\bdo đó\b/i,
+    /\bvì vậy\b/i,
+    /\bcho nên\b/i,
+    /\bnguyên tắc\b/i,
+    /\btrách nhiệm\b/i,
+    /\btòa án\b/i,
+    /\bbồi thường\b/i,
+    /\bvi phạm\b/i,
+    /\btheo đó\b/i,
+    /\báp dụng\b/i,
+    /\bkhoản\b/i,
+    /\bđiều\b/i
+  ];
+  var STOP_WORDS = /* @__PURE__ */ new Set([
+    // EN
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "was",
+    "are",
+    "were",
+    "been",
+    "be",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "should",
+    "can",
+    "could",
+    "may",
+    "might",
+    "that",
+    "this",
+    "these",
+    "those",
+    "it",
+    "its",
+    "they",
+    "their",
+    "we",
+    "our",
+    "you",
+    "your",
+    // FR
+    "le",
+    "la",
+    "les",
+    "un",
+    "une",
+    "des",
+    "et",
+    "ou",
+    "mais",
+    "dans",
+    "en",
+    "sur",
+    "\xE0",
+    "pour",
+    "avec",
+    "par",
+    "de",
+    "du",
+    "ce",
+    "cette",
+    "ces",
+    "est",
+    "sont",
+    "\xE9t\xE9",
+    "\xEAtre",
+    "qui",
+    "que",
+    "il",
+    "ils",
+    "elle",
+    "elles",
+    // VI
+    "v\xE0",
+    "ho\u1EB7c",
+    "nh\u01B0ng",
+    "trong",
+    "tr\xEAn",
+    "t\u1EA1i",
+    "cho",
+    "c\u1EE7a",
+    "v\u1EDBi",
+    "b\u1EDFi",
+    "t\u1EEB",
+    "l\xE0",
+    "\u0111\xE3",
+    "\u0111ang",
+    "s\u1EBD",
+    "c\xF3",
+    "\u0111\u01B0\u1EE3c",
+    "b\u1ECB",
+    "n\xE0y",
+    "\u0111\xF3",
+    "nh\u1EEFng",
+    "c\xE1c",
+    "m\u1ED9t",
+    "khi",
+    "\u0111\u1EC3"
+  ]);
+  function tokenizeWords(text) {
+    if (!text) return [];
+    const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s§]/gu, " ").split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+    return words;
+  }
+  function cleanSpokenSentence(raw) {
+    let s = raw.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/!\[([^\]]*)\]\([^)]+\)/g, "").replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/^(\s*[-*•]\s+|\s*\d+\.\s+|\s*\([a-zA-Z0-9]+\)\s+)/, "").replace(/^#+\s+/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+    if (s.length > 0 && !/[.!?…]$/.test(s)) {
+      s += ".";
+    }
+    return s;
+  }
+  function summarizeSectionOffline(sectionInput, { maxSentences = 2 } = {}) {
+    let title = "";
+    let text = "";
+    if (typeof sectionInput === "string") {
+      text = sectionInput.trim();
+      const firstLineEnd = text.indexOf("\n");
+      const firstLine = firstLineEnd !== -1 ? text.slice(0, firstLineEnd).trim() : text;
+      const parsedHeading = parseHeadingLine(firstLine);
+      if (parsedHeading) {
+        title = parsedHeading.title;
+        text = firstLineEnd !== -1 ? text.slice(firstLineEnd).trim() : "";
+      }
+    } else if (sectionInput && typeof sectionInput === "object") {
+      title = String(sectionInput.title || "").trim();
+      text = String(sectionInput.text ?? sectionInput.content ?? sectionInput.body ?? "").trim();
+    }
+    if (!text && !title) {
+      return { summary: "", bullets: [] };
+    }
+    const rawParagraphs = text.split(/\n\s*\n+/);
+    const candidateSentences = [];
+    for (const para of rawParagraphs) {
+      const trimmedPara = para.trim();
+      if (!trimmedPara) continue;
+      const tokens = trimmedPara.replace(/([.!?…])\s+(?=[A-ZÀ-ỸÁ-Ỵ\d"“'§])/g, "$1\n").split("\n");
+      for (const t2 of tokens) {
+        const s = t2.trim();
+        if (s.length > 0) {
+          candidateSentences.push(s);
+        }
+      }
+    }
+    if (candidateSentences.length === 0) {
+      const single = cleanSpokenSentence(title);
+      return {
+        summary: single,
+        bullets: single ? [single.replace(/[.!?…]$/, "")] : []
+      };
+    }
+    const allWords = tokenizeWords(`${title} ${text}`);
+    const wordFreq = /* @__PURE__ */ new Map();
+    for (const w of allWords) {
+      wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
+    }
+    const titleWords = new Set(tokenizeWords(title));
+    const totalSentences = candidateSentences.length;
+    const scored = candidateSentences.map((rawSentence, index) => {
+      const cleaned = cleanSpokenSentence(rawSentence);
+      const sentWords = tokenizeWords(cleaned);
+      let tfScore = 0;
+      for (const w of sentWords) {
+        tfScore += (wordFreq.get(w) || 0) / (allWords.length || 1);
+      }
+      const normalizedTf = sentWords.length > 0 ? tfScore / Math.sqrt(sentWords.length) : 0;
+      let headingMatches = 0;
+      for (const w of sentWords) {
+        if (titleWords.has(w)) headingMatches++;
+      }
+      const headingScore = headingMatches * 1.2;
+      let markerMatches = 0;
+      for (const marker of LEGAL_RULE_MARKERS) {
+        if (marker.test(cleaned)) markerMatches++;
+      }
+      const markerScore = markerMatches * 1.8;
+      let positionScore = 0.5;
+      if (index === 0) {
+        positionScore = 1.4;
+      } else if (index === totalSentences - 1 && totalSentences > 1) {
+        positionScore = 1.2;
+      } else {
+        positionScore = 1 / (1 + 0.15 * index);
+      }
+      const totalScore = normalizedTf + headingScore + markerScore + positionScore;
+      return {
+        index,
+        raw: rawSentence,
+        cleaned,
+        score: totalScore
+      };
+    });
+    const limit = Math.max(1, Number(maxSentences) || 2);
+    const topScored = [...scored].sort((a, b) => b.score - a.score).slice(0, limit);
+    topScored.sort((a, b) => a.index - b.index);
+    const summary = topScored.map((s) => s.cleaned).join(" ");
+    const bullets = topScored.map((s) => s.cleaned.replace(/[.!?…]$/, ""));
+    return {
+      summary,
+      bullets
+    };
+  }
+  function summarizeAllSections(docText, options = {}) {
+    const sections = extractDocumentSections(docText, options.pageIndex ?? null);
+    return sections.map((sec) => {
+      const res = summarizeSectionOffline(sec, options);
+      return {
+        ...sec,
+        summary: res.summary,
+        bullets: res.bullets
+      };
+    });
+  }
+  function speakSectionSummary(section, { globalObj = typeof window !== "undefined" ? window : null, lang = "en-US" } = {}) {
+    if (!section) return null;
+    let summaryText = section.summary;
+    let titleText = section.title || "";
+    let sectionId = section.id || "sec-0";
+    if (!summaryText) {
+      const rawBody = section.text ?? section.content ?? section.body;
+      const res = summarizeSectionOffline(
+        rawBody !== void 0 ? { ...section, text: rawBody } : section
+      );
+      summaryText = res.summary;
+    }
+    if (!summaryText) return null;
+    let spokenVia = "none";
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "speakSummary",
+        sectionId,
+        title: titleText,
+        text: summaryText
+      });
+      spokenVia = "native";
+    } else if (globalObj?.speechSynthesis && typeof globalObj.SpeechSynthesisUtterance === "function") {
+      try {
+        const utterance = new globalObj.SpeechSynthesisUtterance(summaryText);
+        utterance.lang = lang;
+        const voices = globalObj.speechSynthesis.getVoices?.() || [];
+        const localVoice = voices.find((v) => v.localService === true && (!lang || v.lang?.startsWith(lang.slice(0, 2)))) || voices.find((v) => v.localService === true) || voices[0];
+        if (localVoice) {
+          utterance.voice = localVoice;
+        }
+        globalObj.speechSynthesis.speak(utterance);
+        spokenVia = "speechSynthesis";
+      } catch {
+        spokenVia = "none";
+      }
+    }
+    return {
+      sectionId,
+      title: titleText,
+      text: summaryText,
+      spokenVia
+    };
   }
 
   // src/theme.js
@@ -30428,8 +32894,9 @@ ${PAGE_MARKER}
     const pageIndicator = document.createElement("span");
     pageIndicator.className = "rc-page-indicator";
     pageIndicator.id = "rc-page-indicator";
-    pageIndicator.textContent = formatPageIndicator(0, 1);
+    pageIndicator.textContent = formatDotIndicator(0, 1);
     pageIndicator.setAttribute("data-dots", formatDotIndicator(0, 1));
+    pageIndicator.setAttribute("data-label", formatPageIndicator(0, 1));
     const menuWrap = document.createElement("div");
     menuWrap.className = "rc-menu-wrap";
     const menuBtn = document.createElement("button");
@@ -30611,8 +33078,10 @@ ${PAGE_MARKER}
       if (!state2) return;
       const cur = currentPage(state2);
       const count2 = pageCount(state2);
-      pageIndicator.textContent = formatPageIndicator(cur, count2);
-      pageIndicator.setAttribute("data-dots", formatDotIndicator(cur, count2));
+      const dots = formatDotIndicator(cur, count2);
+      pageIndicator.textContent = dots;
+      pageIndicator.setAttribute("data-dots", dots);
+      pageIndicator.setAttribute("data-label", formatPageIndicator(cur, count2));
     }
     function setToolbarFaded(faded) {
       toolbarFaded = Boolean(faded);
@@ -30633,6 +33102,8 @@ ${PAGE_MARKER}
       menuBtn.setAttribute("aria-expanded", String(menuOpen));
       if (menuOpen) setToolbarFaded(false);
     }
+    let inkLayer = null;
+    let audioSidecar = null;
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
       fontSize: currentFontSize,
@@ -30653,6 +33124,7 @@ ${PAGE_MARKER}
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
+          if (inkLayer) inkLayer.relayout();
         }
       }
     });
@@ -30661,6 +33133,26 @@ ${PAGE_MARKER}
       parent: editorHost
     });
     attachSwipePaging(view);
+    function insertBlock(text) {
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      const insert2 = `
+${String(text ?? "")}`;
+      view.dispatch({
+        changes: { from: line.to, insert: insert2 },
+        selection: { anchor: line.to + insert2.length },
+        scrollIntoView: true,
+        userEvent: "input"
+      });
+    }
+    inkLayer = createInkLayer(view, {
+      getPageIndex: () => view ? currentPage(view.state) : 0,
+      globalObj: typeof window !== "undefined" ? window : null
+    });
+    audioSidecar = createAudioSidecar({
+      container: workspace,
+      onInsertToPage: insertBlock,
+      globalObj: typeof window !== "undefined" ? window : null
+    });
     function showOutline() {
       const wasVisible = outlineVisible;
       outlineVisible = true;
@@ -30678,17 +33170,6 @@ ${PAGE_MARKER}
       pagesBtn.setAttribute("aria-pressed", String(isPageMode(view.state)));
       if (on) showPage(view, currentPage(view.state));
       updatePageIndicator();
-    }
-    function insertBlock(text) {
-      const line = view.state.doc.lineAt(view.state.selection.main.head);
-      const insert2 = `
-${String(text ?? "")}`;
-      view.dispatch({
-        changes: { from: line.to, insert: insert2 },
-        selection: { anchor: line.to + insert2.length },
-        scrollIntoView: true,
-        userEvent: "input"
-      });
     }
     function setCursor(offset) {
       const at = Math.max(0, Math.min(view.state.doc.length, Number(offset) || 0));
@@ -30720,6 +33201,12 @@ ${String(text ?? "")}`;
       newestFirstMenuBtn.setAttribute("aria-pressed", String(newestFirst));
       renderOutline();
     }
+    function normalizeInkToolName(tool) {
+      const t2 = String(tool ?? "pen").trim().toLowerCase();
+      if (t2 === "whole eraser" || t2 === "eraser") return "eraser-whole";
+      if (t2 === "partial eraser") return "eraser-partial";
+      return t2;
+    }
     let currentInkTool = "pen";
     const voiceHandlers = {
       swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
@@ -30735,19 +33222,20 @@ ${String(text ?? "")}`;
       },
       setInkTool: (tool) => {
         currentInkTool = tool;
+        const mapped = normalizeInkToolName(tool);
+        if (inkLayer) inkLayer.setTool(mapped);
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
-        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: mapped });
         return tool;
       },
-      summarizeSection: () => {
-        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.audio;
-        if (h && typeof h.postMessage === "function") h.postMessage({ action: "summarize" });
-        return "summarize";
+      summarizeSection: (idx) => {
+        const secs = extractDocumentSections(view.state.doc.toString(), currentPage(view.state));
+        const sec = secs[idx ?? 0] || { title: "", text: view.state.doc.toString() };
+        return speakSectionSummary(sec);
       },
-      bookmarkAudio: () => {
-        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.audio;
-        if (h && typeof h.postMessage === "function") h.postMessage({ action: "bookmark" });
-        return "bookmark";
+      bookmarkAudio: (idx, note = "") => {
+        const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+        return audioSidecar.bookmarkCue(targetIdx, note);
       }
     };
     const voiceCommand = (phrase2) => executeVoiceMove(phrase2, voiceHandlers);
@@ -30783,8 +33271,60 @@ ${String(text ?? "")}`;
         setCursor,
         insertBlock,
         voiceCommand,
+        getInk: () => inkLayer ? inkLayer.getInk() : { version: 1, strokes: [], removed: [] },
+        setInk: (data2) => {
+          if (!inkLayer) return;
+          const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          inkLayer.setInk(parsed);
+          inkLayer.relayout();
+        },
+        mergeInk: (remote) => {
+          if (!inkLayer) return null;
+          const parsed = typeof remote === "string" ? JSON.parse(remote) : remote;
+          const merged = mergeInkDocuments(inkLayer.getInk(), parsed);
+          inkLayer.setInk(merged);
+          inkLayer.relayout();
+          return merged;
+        },
         getInkTool: () => currentInkTool,
-        setInkTool: (tool) => voiceHandlers.setInkTool(tool)
+        setInkTool: (tool) => voiceHandlers.setInkTool(tool),
+        getInkColor: () => inkLayer ? inkLayer.getColor() : INK_COLORS[0],
+        setInkColor: (color) => {
+          if (inkLayer) inkLayer.setColor(color);
+          return inkLayer ? inkLayer.getColor() : color;
+        },
+        toggleEraser: () => {
+          currentInkTool = inkLayer ? inkLayer.toggleEraser() : "eraser-whole";
+          return currentInkTool;
+        },
+        onPencilAction: (action) => {
+          if (action === "squeeze" || action === "doubleTap") {
+            postHaptic("squeeze");
+            if (inkLayer) {
+              inkLayer.showPalette();
+              currentInkTool = inkLayer.toggleEraser();
+              return currentInkTool;
+            }
+          }
+          return currentInkTool;
+        },
+        setAudioTranscript: (data2) => {
+          const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          audioSidecar.setAudioTranscript(parsed);
+        },
+        updateAudioTime: (sec) => audioSidecar.updateTime(sec),
+        bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
+        annotateAudioCue: (idx, text) => {
+          const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
+          return audioSidecar.annotateCue(targetIdx, text);
+        },
+        summarizeSection: (idx) => voiceHandlers.summarizeSection(idx),
+        summarizeAllSections: () => summarizeAllSections(view.state.doc.toString(), { pageIndex: currentPage(view.state) }),
+        dropFile: (pathOrUri, caption) => {
+          const md = formatDroppedEmbed(pathOrUri, caption);
+          if (md) insertBlock(md);
+          return md;
+        }
       }
     });
     menuBtn.addEventListener("click", (e) => {
@@ -30864,11 +33404,13 @@ ${String(text ?? "")}`;
       onZoneEnter(zone) {
         if (zone === "top") {
           setToolbarFaded(false);
+          if (inkLayer) inkLayer.showPalette();
         }
       },
       onZoneLeave(zone) {
         if (zone === "top" && !menuOpen) {
           setToolbarFaded(true);
+          if (inkLayer) inkLayer.hidePalette();
         }
       },
       globalObj: typeof window !== "undefined" ? window : null
@@ -30880,6 +33422,8 @@ ${String(text ?? "")}`;
     return {
       view,
       bridge: bridge.api,
+      inkLayer,
+      audioSidecar,
       setTheme,
       setFontSize,
       setNewestFirst,
