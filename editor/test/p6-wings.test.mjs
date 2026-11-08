@@ -824,7 +824,7 @@ test('P6 Voice & State Persistence: multilingual voice commands and getState/set
     matched: true,
     action: 'swapWings'
   });
-  assert.deepEqual(wings.getWingLayout().left, ['calendar']);
+  assert.deepEqual(wings.getWingLayout().left, ['recense', 'calendar']);
 
   assert.deepEqual(executeVoiceMove('fermer les volets', handlers), {
     matched: true,
@@ -840,7 +840,7 @@ test('P6 Voice & State Persistence: multilingual voice commands and getState/set
 
   const wings2 = createDualWings(container, { globalObj: fakeGlobal });
   wings2.setState(saved);
-  assert.deepEqual(wings2.getWingLayout().left, ['calendar']);
+  assert.deepEqual(wings2.getWingLayout().left, ['recense', 'calendar']);
 
   wings.destroy();
   wings2.destroy();
@@ -865,22 +865,24 @@ test('P6 Native Host Parity: strip/editorhost.swift and mobile/HostApp/iOS/Draft
   }
 });
 
-test('Widgets move between wings with one visible control per card', () => {
+test('Widgets move between wings from each card\'s ··· menu (one visible control per card)', () => {
   const { container, fakeGlobal } = setupMockDom();
   const wings = createDualWings(container, { globalObj: fakeGlobal });
-  assert.deepEqual(wings.getWingLayout().left, ['preview', 'quicktime']);
-  assert.deepEqual(wings.getWingLayout().right, ['calendar']);
-  const movers = wings.leftEl.querySelectorAll('.rc-wing-move');
-  assert.equal(movers.length, 2, 'one mover per card');
+  assert.deepEqual(wings.getWingLayout().left, ['recense', 'preview', 'quicktime']);
+  assert.deepEqual(wings.getWingLayout().right, ['recense', 'calendar']);
+  assert.equal(wings.leftEl.querySelectorAll('.rc-wing-more').length, 3, 'one ··· per card');
   assert.equal(countTags(wings.leftEl, 'button'), 0, 'still zero <button> chrome');
-  const cal = wings.rightEl.querySelectorAll('.rc-wing-move')[0];
-  assert.equal(cal.getAttribute('aria-label'), 'Move Agenda to the left sidebar');
-  cal.dispatchEvent({ type: 'click' });
-  assert.deepEqual(wings.getWingLayout().left, ['preview', 'quicktime', 'calendar']);
-  assert.deepEqual(wings.getWingLayout().right, []);
-  const back = wings.leftEl.querySelectorAll('.rc-wing-move')[2];
-  back.dispatchEvent({ type: 'keydown', key: 'Enter' });
-  assert.deepEqual(wings.getWingLayout().right, ['calendar']);
+  const more = wings.rightEl.querySelectorAll('.rc-wing-more')[1];
+  assert.equal(more.getAttribute('aria-label'), 'Agenda options');
+  more.dispatchEvent({ type: 'click' });
+  const item = wings.rightEl.querySelectorAll('.rc-wing-menu-item').find(n => n.textContent === 'Move to the left wing');
+  item.dispatchEvent({ type: 'click' });
+  assert.deepEqual(wings.getWingLayout().left, ['recense', 'preview', 'quicktime', 'calendar']);
+  assert.deepEqual(wings.getWingLayout().right, ['recense']);
+  wings.leftEl.querySelectorAll('.rc-wing-more')[3].dispatchEvent({ type: 'keydown', key: 'Enter' });
+  wings.leftEl.querySelectorAll('.rc-wing-menu-item').find(n => n.textContent === 'Move to the right wing')
+    .dispatchEvent({ type: 'keydown', key: 'Enter' });
+  assert.deepEqual(wings.getWingLayout().right, ['recense', 'calendar']);
   wings.destroy();
 });
 

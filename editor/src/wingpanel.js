@@ -2,17 +2,20 @@
  * wingpanel.js · One wing in a native floating panel on the Mac (strip/wingpanels.swift).
  *
  * The host loads this same page with `window.__RECENSE_WING_SIDE = 'left' | 'right'`; the page then shows that
- * side's wing only (no editor), laid out like macOS Notification Center: a title with a close (×) control, the
- * cards, and an "Arrange" pill that shows each card's Move control. The host draws the frosted glass behind each
+ * side's wing only (no editor), laid out like macOS Notification Center: no title and no ×, just the grabber at the
+ * top of the inner edge, "Show in wing…" and the cards (each with its ··· menu). The host draws the frosted glass behind each
  * card (NSVisualEffectView), so the page reports where every glass shape is and how tall it is.
  *
- * page → host (wings channel): {action:'wing', op:'open'|'close'|'toggle', side}, {action:'insert', text},
+ * page → host (wings channel): {action:'wing', op:'open'|'close'|'toggle'|'focus'|'unfocus', side} (focus: the
+ *   "Show in wing…" field opened, so the panel takes key focus; unfocus: it closed, give it back), {action:'insert', text},
  *   {action:'jumpToLine', line}, {action:'layout', height, width, glass:[[x, y, w, h, opacity, radius], …]}
  *   (width: what the Recense card's line needs, 360–560),
  *   plus wings.js's own saveState / openApp / cite messages.
  * host → page: window.recenseEditor.setText, setWingsState, setCalendarAdded, calendarResult, enableWidget,
  *   setRecenseLine, setTypedLine, setArranging, setTheme (the same names the editor page answers to, so one host class serves both).
- * The wing stays open until its ×, its grabber slid toward the edge, the trackpad's three-finger swipe or the menu:
+ *   setArranging is the host's "the panel just opened" call (wingpanels.swift sends it on every open): the wing then
+ *   opens "Show in wing…" by itself when nothing plays. No Arrange pill any more (W2).
+ * The wing stays open until its grabber is slid toward the edge (or pressed), the trackpad's three-finger swipe or the menu:
  * no Esc, no click outside.
  */
 
@@ -34,40 +37,19 @@ function el(doc, tag, cls, text, attrs = {}) {
   return e;
 }
 
-/** A div that acts as a button: click, Enter or Space (the wings use no <button> chrome). */
-function pressable(node, fn) {
-  node.addEventListener('click', fn);
-  node.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      fn(e);
-    }
-  });
-  return node;
-}
+const GLASS = '.rc-wing-card, .rc-wing-find-pill, .rc-wing-find-box, .rc-wing-find-results, .rc-wing-menu, .rc-wing-toast';
 
 export function mountWingPanel(root, side, { globalObj = typeof window !== 'undefined' ? window : null } = {}) {
   const doc = root.ownerDocument || document;
   const post = msg => globalObj?.webkit?.messageHandlers?.wings?.postMessage?.(msg);
   doc.documentElement.classList.add('rc-wings-page');
 
-  const shell = el(doc, 'div', `rc-wings-only rc-wings-only-${side}`);
-  const head = el(doc, 'div', 'rc-wingpanel-head');
-  const title = el(doc, 'span', 'rc-wingpanel-title', side === 'left' ? 'Left Wing' : 'Right Wing');
-  const close = pressable(
-    el(doc, 'div', 'rc-wingpanel-close rc-glass', '×', { role: 'button', tabindex: '0', 'aria-label': 'Close wing' }),
-    () => post({ action: 'wing', op: 'close', side })
-  );
-  // The close control sits at the outer edge, as Notification Center's does; the left panel mirrors it.
-  if (side === 'left') head.append(close, title);
-  else head.append(title, close);
-  const body = el(doc, 'div', 'rc-wingpanel-body');
-  const foot = el(doc, 'div', 'rc-wingpanel-foot');
-  const arrange = el(doc, 'div', 'rc-wingpanel-arrange rc-glass', 'Arrange', {
-    role: 'button', tabindex: '0', 'aria-pressed': 'false', 'aria-label': 'Arrange cards: show Move to the other side'
+  // No visible title (owner, W2); VoiceOver still names the wing.
+  const shell = el(doc, 'div', `rc-wings-only rc-wings-only-${side}`, '', {
+    role: 'region', 'aria-label': side === 'left' ? 'Left wing' : 'Right wing'
   });
-  foot.append(arrange);
-  shell.append(head, body, foot);
+  const body = el(doc, 'div', 'rc-wingpanel-body');
+  shell.append(body);
   root.appendChild(shell);
 
   const scanner = createCalendarScanner({ globalObj });
@@ -76,25 +58,23 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
     onJumpToLine: line => post({ action: 'jumpToLine', line: Number(line) || 1 }),
     onAddEvent: ev => scanner.requestAdd(ev),
     gestures: false,
+    onFindChange: (s, open) => post({ action: 'wing', op: open ? 'focus' : 'unfocus', side: s }),
     globalObj
   });
   wings.setNativeWings((op, s) => post({ action: 'wing', op, side: s }));
   wings.reveal(side);
 
-  let arranging = false;
-  function setArranging(on) {
-    arranging = wings.setArranging(on);
-    arrange.textContent = arranging ? 'Done' : 'Arrange';
-    arrange.setAttribute('aria-pressed', String(arranging));
+  // The host's "this panel just opened" (it sends setArranging(false) on every open; the name is kept for it).
+  function setArranging() {
+    const open = wings.wingShown(side);
     schedule();
-    return arranging;
+    return open;
   }
-  pressable(arrange, () => setArranging(!arranging));
 
-  // Where the glass goes: every card, every shown Move control, the close control and the pill.
+  // Where the glass goes: every card, "Show in wing…" (pill, field, list), an open ··· menu and the Undo toast.
   function glassShapes() {
     const shown = side === 'left' ? wings.leftEl : wings.rightEl;
-    const nodes = [...shell.querySelectorAll('.rc-glass'), ...shown.querySelectorAll('.rc-wing-card, .rc-wing-move')];
+    const nodes = [...shell.querySelectorAll('.rc-glass'), ...shown.querySelectorAll(GLASS)];
     const out = [];
     for (const n of nodes) {
       const r = n.getBoundingClientRect();
@@ -152,7 +132,6 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
     setWingsState(state) {
       wings.setState(state);
       wings.reveal(side);
-      wings.setArranging(arranging);
       schedule();
     },
     getWingsState: () => wings.getState(),

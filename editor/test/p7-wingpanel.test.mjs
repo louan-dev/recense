@@ -53,21 +53,21 @@ test('native wings: open, close and toggle go to the host; the in-page wings sta
   wings.destroy();
 });
 
-test('wing panel page: reveal shows one side; Arrange shows the Move controls; no fan motion; Recense card on both sides', () => {
+test('wing panel page: reveal shows one side; no Arrange; no fan motion; Recense card on both sides', () => {
   const { container, fakeGlobal } = setup();
   const wings = createDualWings(container, { globalObj: fakeGlobal, gestures: false });
   wings.reveal('right');
   assert.equal(wings.rightEl.hidden, false);
   assert.equal(wings.leftEl.hidden, true);
-  assert.equal(wings.setArranging(true), true);
-  assert.ok(wings.rightEl.classList.contains('rc-wings-arranging'));
-  assert.equal(wings.setArranging(false), false);
-  assert.ok(!wings.leftEl.classList.contains('rc-wings-arranging'));
+  assert.equal(wings.setArranging, undefined, 'the Arrange pill is gone (W2): the ··· menu moves cards');
   assert.equal(wings.fanOut, undefined, 'wing motion is gone (owner, 11-08)');
-  // Recense in both wings, first after the grabber; the wings widen with the line (360-560).
+  // The grabber first (top of the inner edge), then "Show in wing…", the Undo toast, then Recense, the first card.
+  const cls = n => String(n.className || n.getAttribute?.('class') || '');
   for (const el of [wings.leftEl, wings.rightEl]) {
-    assert.ok(el.children[0].attributes?.class?.includes?.('rc-wing-grabber') || String(el.children[0].className || el.children[0].getAttribute?.('class')).includes('rc-wing-grabber'));
-    assert.equal(el.children[1].getAttribute ? el.children[1].getAttribute('data-widget') : el.children[1]['data-widget'], 'recense');
+    assert.ok(cls(el.children[0]).includes('rc-wing-grabber'));
+    assert.ok(cls(el.children[1]).includes('rc-wing-find'));
+    assert.ok(cls(el.children[2]).includes('rc-wing-toast'));
+    assert.equal(el.children[3].getAttribute ? el.children[3].getAttribute('data-widget') : el.children[3]['data-widget'], 'recense');
   }
   assert.equal(wings.preferredWidth(), 360, 'nothing playing: the narrow wing');
   const w = wings.setRecenseLine('Les parties conviennent que le vendeur livrera les marchandises dans trente jours.', 'The parties agree the seller will deliver the goods within thirty days.');
