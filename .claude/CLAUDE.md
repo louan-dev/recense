@@ -82,6 +82,9 @@ The tests don't reach these; check them whenever the change does:
   costly still needs the owner.
 - Pushing `library/**` to `main` deploys Gallery (`.github/workflows/library.yml`), so push only after
   `npm test` in `library/` passed.
+- **Coordinator out of reach (owner, 2026-11-08):** read `.handoff/coordinator/PLAYBOOK.md`. Decide as it says,
+  act on the decision without waiting, and log it in `.handoff/coordinator/DECISIONS.md`. Its §0 names the acting
+  coordinator (merges included); its §4 lists what still goes to the owner.
 
 ## One app (settled 2026-10-28; renamed Sill → Recense 2026-11-03)
 **Recense is the only app, and it is the project's name.** It was called Sill until 2026-11-03; the strip, window, audio

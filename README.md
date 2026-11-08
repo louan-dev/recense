@@ -31,7 +31,8 @@ On this Mac the old `~/Developer/gallery` and `~/Developer/sync` folders are gon
 `~/Developer/recense/sync/bin/*`. Several Claude Code
 sessions can work at once, one worktree per part: `/recense <file or word>` (`.claude/skills/recense/SKILL.md`).
 Gemini / Antigravity sessions work as lane workers too: `GEMINI.md` loads the same repo guide and adds the worker
-loop (the lane's `INBOX.md` is their only channel from the coordinator).
+loop (the lane's `INBOX.md` is their only channel from the coordinator). When the coordinator is out of reach, sessions
+decide by its playbook (`.handoff/coordinator/PLAYBOOK.md`, local to this Mac) and log each decision beside it.
 
 ## What works offline
 Recense entirely: transcription, the light, loops, speed, sound and Draftpad run on the Mac. Gallery's apps keep what
