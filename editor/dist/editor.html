@@ -290,6 +290,7 @@ body {
 }
 
 .rc-editor-Mount {
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -317,26 +318,211 @@ body {
   z-index: 3;
 }
 
-.rc-ink-palette {
-  position: sticky;
-  top: 8px;
+/* The ink pill rests under the top edge and floats over the page, so the text never moves.
+   Tap it (or double-tap / squeeze the Pencil) and the palette hangs down from it, glowing. */
+.rc-ink-dock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.rc-ink-pill {
+  appearance: none;
+  pointer-events: auto;
+  width: 96px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
+}
+
+.rc-ink-pill::before {
+  content: '';
+  display: block;
+  width: 44px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--rc-muted);
+  opacity: 0.45;
+  transition: opacity 220ms ease, background-color 220ms ease, box-shadow 220ms ease, width 220ms ease;
+}
+
+.rc-ink-pill:hover::before {
+  opacity: 0.7;
+}
+
+.rc-ink-dock.rc-awake .rc-ink-pill::before {
+  width: 56px;
+  opacity: 1;
+  background: var(--rc-cyan);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--rc-cyan) 60%, transparent);
+}
+
+.rc-ink-palette {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
-  width: fit-content;
-  margin: 0 auto;
+  max-width: calc(100vw - 32px);
   padding: 6px 12px;
   border: 1px solid var(--rc-border);
   border-radius: 999px;
-  background: var(--rc-panel);
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+  backdrop-filter: blur(16px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top center;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s;
 }
 
+/* Asleep: kept in place (no layout jump) but invisible and untouchable. */
 .rc-ink-palette[hidden] {
+  display: flex !important;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms;
+}
+
+/* The colour wheel button, right after the eraser: a small hue ring. */
+.rc-ink-wheel-btn {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0 2px 0 4px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: conic-gradient(#f87171, #facc15, #4ade80, #38bdf8, #a78bfa, #f472b6, #f87171);
+  -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+  mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+}
+
+.rc-ink-wheel-btn[aria-expanded='true'] {
+  outline: 2px solid var(--rc-cyan);
+  outline-offset: 2px;
+}
+
+/* The wheel itself: hangs under the palette, over the text. */
+.rc-ink-wheel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--rc-border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.rc-ink-wheel[hidden] {
   display: none !important;
+}
+
+.rc-ink-wheel-disc {
+  --rc-wheel-l: 50%;
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  touch-action: none;
+  cursor: crosshair;
+  background:
+    radial-gradient(circle, hsl(0 0% var(--rc-wheel-l)) 0%, transparent 70%),
+    conic-gradient(hsl(0 100% var(--rc-wheel-l)), hsl(60 100% var(--rc-wheel-l)), hsl(120 100% var(--rc-wheel-l)),
+      hsl(180 100% var(--rc-wheel-l)), hsl(240 100% var(--rc-wheel-l)), hsl(300 100% var(--rc-wheel-l)), hsl(360 100% var(--rc-wheel-l)));
+}
+
+.rc-ink-wheel-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.rc-ink-wheel-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.rc-ink-wheel-light {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 22px;
+  height: 110px;
+  accent-color: var(--rc-cyan);
+}
+
+.rc-ink-wheel-check {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.rc-ink-wheel-check svg {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+
+.rc-ink-wheel-check[hidden] {
+  display: none !important;
+}
+
+.rc-ink-dropper {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rc-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rc-text);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ink-pill::before,
+  .rc-ink-palette,
+  .rc-ink-palette[hidden] {
+    transition: none;
+  }
+  .rc-ink-palette[hidden] {
+    transform: none;
+  }
 }
 
 .rc-ink-color-dot,
@@ -664,13 +850,7 @@ body {
   pointer-events: auto;
 }
 
-.rc-shell.rc-zone-active-left {
-  box-shadow: inset 3px 0 0 var(--rc-cyan);
-}
-
-.rc-shell.rc-zone-active-right {
-  box-shadow: inset -3px 0 0 var(--rc-cyan);
-}
+/* No lines at the left and right edges (owner, 11-08): they sat on Recense's own side bars. */
 
 .rc-shell.rc-zone-active-top {
   box-shadow: inset 0 3px 0 var(--rc-cyan);
@@ -682,7 +862,7 @@ body {
   top: 0;
   bottom: 0;
   z-index: 8;
-  width: min(272px, 30vw);
+  width: min(var(--rc-wing-w, 360px), 45vw);
   background: var(--rc-panel);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -691,7 +871,8 @@ body {
   gap: 10px;
   padding: 10px;
   overflow-y: auto;
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 220ms ease;
 }
 
 .rc-wing-left {
@@ -715,8 +896,9 @@ body {
 .rc-wing-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 14px 16px;
+  font-size: 15px;
   border: 1px solid var(--rc-border);
   border-radius: 10px;
   background: var(--rc-surface);
@@ -957,7 +1139,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-wing-card {
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 0;
   border-radius: 18px;
   background: var(--rc-glass-tint);
@@ -965,7 +1147,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-widget-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: 0;
@@ -980,7 +1162,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-widget-body {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
 }
 
@@ -1001,33 +1183,128 @@ html.rc-wings-page body {
   display: block;
 }
 
-/* The fan-out presentation: cards spread out from the screen edge, one after another. */
-@keyframes rc-fan-right {
-  from { opacity: 0; transform: translate(56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
-  to { opacity: 1; transform: none; }
+/* The eraser's ring (ink.js ERASER_RADIUS): the pointer while an eraser is picked, at exactly the size it erases. */
+.rc-ink-eraser-ring {
+  fill: none;
+  stroke: var(--rc-text);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
 
-@keyframes rc-fan-left {
-  from { opacity: 0; transform: translate(-56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
-  to { opacity: 1; transform: none; }
+/* The grabber: a short line on the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
+.rc-wing-grabber {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 64px;
+  margin-top: -32px;
+  cursor: grab;
+  touch-action: none;
+  z-index: 2;
 }
 
-.rc-wings-only .rc-wing-right.rc-wing-fan .rc-wing-card {
-  transform-origin: top right;
-  animation: rc-fan-right 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+.rc-wing-grabber::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
 }
 
-.rc-wings-only .rc-wing-left.rc-wing-fan .rc-wing-card {
-  transform-origin: top left;
-  animation: rc-fan-left 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+.rc-wing-grabber:hover::before,
+.rc-wing-grabber:focus-visible::before {
+  opacity: 0.7;
+}
+
+.rc-wing-left .rc-wing-grabber {
+  right: -2px;
+}
+
+.rc-wing-right .rc-wing-grabber {
+  left: -2px;
+}
+
+.rc-wings-only .rc-wing {
+  position: relative;
+}
+
+.rc-wings-only .rc-wing-left .rc-wing-grabber {
+  right: -8px;
+}
+
+.rc-wings-only .rc-wing-right .rc-wing-grabber {
+  left: -8px;
+}
+
+/* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
+   wing can widen to it (wings.js preferredWidth), else it wraps. */
+.rc-recense-original {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rc-recense-translation {
+  font-size: 17px;
+  line-height: 1.3;
+  opacity: 0.72;
+}
+
+/* Preview and Player: big enough to read and watch in. */
+.rc-preview-img,
+.rc-qt-video {
+  width: 100%;
+  max-height: 320px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #000;
+}
+
+.rc-preview-pdf {
+  width: 100%;
+  height: 360px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.rc-qt-timestamp {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--rc-cyan);
+}
+
+.rc-card-pick {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+}
+
+.rc-card-pick-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--rc-border);
+  font-size: 15px;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rc-wings-only .rc-wing.rc-wing-fan .rc-wing-card {
-    animation: none;
+  .rc-wing {
+    transition: none;
   }
+}
+
+/* Find: handwriting that holds the search glows. */
+.rc-ink-found {
+  filter: drop-shadow(0 0 4px var(--rc-cyan)) drop-shadow(0 0 2px var(--rc-cyan));
+}
+
+.rc-find-ink {
+  white-space: nowrap;
 }
 
 </style>
@@ -1036,7 +1313,7 @@ html.rc-wings-page body {
 <div id="app"></div>
 <script>
 (() => {
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -1110,7 +1387,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/state/dist/index.js
+  // node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -4522,7 +4799,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/style-mod/src/style-mod.js
+  // node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -4658,7 +4935,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/w3c-keyname/index.js
+  // node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -4764,7 +5041,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/crelt/index.js
+  // node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -4793,7 +5070,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/view/dist/index.js
+  // node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -14293,7 +14570,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/common/dist/index.js
+  // node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -16354,7 +16631,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/highlight/dist/index.js
+  // node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -17078,7 +17355,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/language/dist/index.js
+  // node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -18564,7 +18841,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/commands/dist/index.js
+  // node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -19658,7 +19935,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -20123,7 +20400,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/markdown/dist/index.js
+  // node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -22211,7 +22488,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/lr/dist/index.js
+  // node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -23989,7 +24266,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/html/dist/index.js
+  // node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -24333,7 +24610,7 @@ html.rc-wings-page body {
     });
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/css/dist/index.js
+  // node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -24513,7 +24790,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-css/dist/index.js
+  // node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -25374,7 +25651,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/javascript/dist/index.js
+  // node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -25586,7 +25863,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -25898,7 +26175,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-html/dist/index.js
+  // node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -26638,7 +26915,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -27467,7 +27744,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/search/dist/index.js
+  // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -28845,6 +29122,10 @@ ${PAGE_MARKER}
     Object.assign(e, props);
     return e;
   }
+  var inkSearch = null;
+  function setInkSearch(provider) {
+    inkSearch = provider && typeof provider.find === "function" ? provider : null;
+  }
   function createFindPanel(view) {
     const dom = el("div", { className: "rc-find" });
     const find2 = el("input", { className: "rc-find-input", type: "search", placeholder: "Find", spellcheck: false });
@@ -28865,10 +29146,17 @@ ${PAGE_MARKER}
       title: "Next match (Enter)",
       ariaLabel: "Next match"
     });
+    const inkBtn = el("button", {
+      className: "rc-find-btn rc-find-ink",
+      type: "button",
+      title: "Next match in handwriting",
+      ariaLabel: "Next match in handwriting",
+      hidden: true
+    });
     const toggle = el("button", { className: "rc-find-toggle", type: "button", textContent: "\u21C4", title: "Replace" });
     const close = el("button", { className: "rc-find-close", type: "button", textContent: "\u2715", title: "Close (Esc)" });
     const row = el("div", { className: "rc-find-row" });
-    row.append(find2, count2, prevBtn, nextBtn, toggle, close);
+    row.append(find2, count2, prevBtn, nextBtn, inkBtn, toggle, close);
     const replaceRow = el("div", { className: "rc-find-row rc-find-replace", hidden: true });
     const repl = el("input", { className: "rc-find-input", placeholder: "Replace with", spellcheck: false });
     repl.setAttribute("aria-label", "Replace with");
@@ -28884,10 +29172,26 @@ ${PAGE_MARKER}
       if (!query.eq(getSearchQuery(view.state))) view.dispatch({ effects: setSearchQuery.of(query) });
       return query;
     }
+    let inkMatches = [];
+    let inkAt = -1;
+    function showInk() {
+      inkMatches = inkSearch && find2.value.trim() ? inkSearch.find(find2.value) : [];
+      if (inkAt >= inkMatches.length) inkAt = -1;
+      inkBtn.hidden = inkMatches.length === 0;
+      inkBtn.textContent = `\u270E ${inkAt >= 0 ? `${inkAt + 1}/` : ""}${inkMatches.length}`;
+      if (inkSearch) inkSearch.mark(inkMatches.map((m) => m.id));
+    }
     function showCount() {
       const query = getSearchQuery(view.state);
       count2.textContent = matchStatus(view.state, query).label;
+      showInk();
     }
+    inkBtn.addEventListener("click", () => {
+      if (!inkMatches.length || !inkSearch) return;
+      inkAt = (inkAt + 1) % inkMatches.length;
+      inkSearch.reveal(inkMatches[inkAt]);
+      showInk();
+    });
     find2.addEventListener("input", () => {
       const query = commit();
       if (query.valid) stepFind(view, 0);
@@ -28964,6 +29268,9 @@ ${PAGE_MARKER}
         find2.focus();
         find2.select();
         showCount();
+      },
+      destroy() {
+        if (inkSearch) inkSearch.mark([]);
       },
       update(u) {
         if (u.docChanged || u.selectionSet || u.transactions.some((tr) => tr.effects.some((e) => e.is(setSearchQuery)))) {
@@ -30168,8 +30475,8 @@ ${PAGE_MARKER}
         return;
       }
       const t2 = e.touches[0];
-      if (t2.clientX <= edgePx) {
-        if (typeof onEdgeZone === "function") onEdgeZone("left");
+      if (t2.clientX <= edgePx || t2.clientX >= widthOf() - edgePx) {
+        if (typeof onEdgeZone === "function") onEdgeZone(t2.clientX <= edgePx ? "left" : "right");
         touchStartX = null;
         return;
       }
@@ -30220,7 +30527,7 @@ ${PAGE_MARKER}
       const w = widthOf();
       const x = Number(e.clientX) || 0;
       const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
-      if (!inEdgeZone && !e.altKey) return;
+      if (e.pointerType === "mouse" ? !e.altKey : !inEdgeZone && !e.altKey) return;
       if (typeof onEdgeZone === "function") onEdgeZone(x <= edgePx * 1.5 ? "left" : "right");
       ptrId = e.pointerId;
       ptrStartX = x;
@@ -30673,12 +30980,6 @@ ${PAGE_MARKER}
       }
       return { matched: true, action: "setInkTool", tool: "whole eraser" };
     }
-    if (hasPhrase("partial eraser") || hasPhrase("t\u1EA9y m\u1ED9t ph\u1EA7n") || hasPhrase("gomme partielle")) {
-      if (typeof handlers2.setInkTool === "function") {
-        handlers2.setInkTool("partial eraser");
-      }
-      return { matched: true, action: "setInkTool", tool: "partial eraser" };
-    }
     if (hasWord("eraser") || hasWord("t\u1EA9y") || hasWord("g\xF4m") || hasWord("gomme")) {
       if (typeof handlers2.setInkTool === "function") {
         handlers2.setInkTool("eraser");
@@ -30812,18 +31113,6 @@ ${PAGE_MARKER}
       }
       return { matched: true, action: "setInkTool", tool: "highlighter" };
     }
-    if (hasWord("underline") || hasPhrase("g\u1EA1ch ch\xE2n") || hasWord("souligner")) {
-      if (typeof handlers2.setInkTool === "function") {
-        handlers2.setInkTool("underline");
-      }
-      return { matched: true, action: "setInkTool", tool: "underline" };
-    }
-    if (hasWord("circle") || hasPhrase("khoanh tr\xF2n") || hasWord("entourer")) {
-      if (typeof handlers2.setInkTool === "function") {
-        handlers2.setInkTool("circle");
-      }
-      return { matched: true, action: "setInkTool", tool: "circle" };
-    }
     if (hasWord("pen") || hasWord("b\xFAt") || hasWord("stylo")) {
       if (typeof handlers2.setInkTool === "function") {
         handlers2.setInkTool("pen");
@@ -30871,7 +31160,10 @@ ${PAGE_MARKER}
     "eraser-whole",
     "eraser-partial"
   ];
+  var SELECT_TOOL = "select";
+  var PALETTE_TOOLS = [SELECT_TOOL, "pen", "highlighter", "eraser-whole"];
   var INK_TOOL_NAMES = {
+    select: "Select text",
     pen: "Pen",
     highlighter: "Highlighter",
     underline: "Underline",
@@ -30881,6 +31173,8 @@ ${PAGE_MARKER}
   };
   var ICON = (body) => `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
   var INK_TOOL_ICONS = {
+    // A text cursor (I-beam).
+    select: ICON('<path d="M6 2.5h4M6 13.5h4M8 2.5v11"/>'),
     pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
     // A marker over a wide translucent band, unlike the pen's slim nib.
     highlighter: ICON('<path d="M2 13.5h12" stroke-width="3.5" stroke-opacity="0.45"/><path d="M6.5 10.5l3.5-7.5 3 1.5-3 7.5z"/>'),
@@ -30902,6 +31196,54 @@ ${PAGE_MARKER}
     "#e6edf3"
   ];
   var DEFAULT_LINE_HEIGHT = 28;
+  function groupHandwriting(strokes, lineHeight = DEFAULT_LINE_HEIGHT) {
+    const pens = (Array.isArray(strokes) ? strokes : []).filter((st) => st && st.tool === "pen" && !st.ocr && Array.isArray(st.points) && st.points.length > 0).sort((a, b) => (a.at || 0) - (b.at || 0));
+    const boxOf = (st) => {
+      const xs = st.points.map((p) => p[0]), ys = st.points.map((p) => p[1]);
+      return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    };
+    const groups = [];
+    for (const st of pens) {
+      const b = boxOf(st);
+      const g = groups.find((gr) => {
+        const m = lineHeight;
+        return Math.abs((st.at || 0) - gr.lastAt) <= 8e3 && b.x0 <= gr.box.x1 + m && b.x1 >= gr.box.x0 - m && b.y0 <= gr.box.y1 + m && b.y1 >= gr.box.y0 - m;
+      });
+      if (g) {
+        g.strokes.push(st);
+        g.lastAt = Math.max(g.lastAt, st.at || 0);
+        g.box = { x0: Math.min(g.box.x0, b.x0), y0: Math.min(g.box.y0, b.y0), x1: Math.max(g.box.x1, b.x1), y1: Math.max(g.box.y1, b.y1) };
+      } else {
+        groups.push({ id: `ink-${st.id}`, strokes: [st], lastAt: st.at || 0, box: b });
+      }
+    }
+    return groups;
+  }
+  function findInkText(strokes, query) {
+    const fold = (t2) => String(t2 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+    const q = fold(query).trim();
+    if (!q) return [];
+    const seen = /* @__PURE__ */ new Map();
+    for (const st of Array.isArray(strokes) ? strokes : []) {
+      const o = st && st.ocr;
+      if (!o || !o.t || seen.has(o.g) || !fold(o.t).includes(q)) continue;
+      seen.set(o.g, { id: o.g, text: o.t, stroke: st });
+    }
+    return [...seen.values()];
+  }
+  function hslToHex(h, sat, light) {
+    const k = (n) => (n + h / 30) % 12;
+    const a = sat * Math.min(light, 1 - light);
+    const f = (n) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const hex = (x) => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, "0");
+    return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+  }
+  function wheelColor(dx, dy, R, light = 0.5) {
+    const hue = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    const sat = Math.min(1, Math.hypot(dx, dy) / R);
+    return hslToHex(hue, sat, light);
+  }
+  var ERASER_RADIUS = { "eraser-whole": 12, "eraser-partial": 10 };
   var DEFAULT_DEBOUNCE_MS = 300;
   var EMBED_RE2 = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
   function parseEmbedTarget(line) {
@@ -31441,16 +31783,22 @@ ${clean(nextLineText)}`;
       onInkChange = null,
       allowMouse = true,
       getPageIndex = null,
-      activePageIndex = 0
+      activePageIndex = 0,
+      // Where the pill and palette float. Never the text's scroller: a child there joins
+      // CodeMirror's flex row and squeezes the text column.
+      mount = null,
+      onToolChange = null
     } = options;
     let inkDoc = initialInk && typeof initialInk === "object" ? {
       version: 1,
       strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
       removed: Array.isArray(initialInk.removed) ? [...initialInk.removed] : []
     } : { version: 1, strokes: [], removed: [] };
-    let currentTool = "pen";
+    let currentTool = SELECT_TOOL;
+    let toolChosen = false;
     let previousDrawingTool = "pen";
-    let currentColor = INK_COLORS[0];
+    let awake = false;
+    let currentColor = null;
     let isDrawing = false;
     let activePoints = [];
     let strokeStartTime = 0;
@@ -31461,9 +31809,28 @@ ${clean(nextLineText)}`;
     let highlightGroup = null;
     let penGroup = null;
     let activeGroup = null;
+    let eraserRing = null;
     let palette = null;
     const colorDots = [];
     const toolDots = [];
+    let wheelBtn = null;
+    let wheel = null;
+    let wheelDisc = null;
+    let wheelMark = null;
+    let wheelLight = null;
+    let wheelOpen = false;
+    let wheelCheck = null;
+    let pendingColor = null;
+    const COLORS_KEY = "rc-ink-colors";
+    const paletteColors = (() => {
+      try {
+        const saved = JSON.parse(globalObj?.localStorage?.getItem(COLORS_KEY) || "null");
+        if (Array.isArray(saved) && saved.length === INK_COLORS.length && saved.every((c) => /^#[0-9a-fA-F]{6}$/.test(c))) return saved;
+      } catch {
+      }
+      return [...INK_COLORS];
+    })();
+    currentColor = paletteColors[0];
     function getCurrentPageIndex() {
       if (typeof getPageIndex === "function") {
         return getPageIndex();
@@ -31493,34 +31860,40 @@ ${clean(nextLineText)}`;
       penGroup.setAttribute("class", "rc-ink-pen-group");
       activeGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
       activeGroup.setAttribute("class", "rc-ink-active-group");
+      eraserRing = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+      eraserRing.setAttribute("class", "rc-ink-eraser-ring");
+      eraserRing.setAttribute("fill", "none");
+      eraserRing.setAttribute("stroke-width", "1");
+      eraserRing.style.display = "none";
       svg.appendChild(highlightGroup);
       svg.appendChild(penGroup);
       svg.appendChild(activeGroup);
+      svg.appendChild(eraserRing);
       if (typeof scrollDOM.appendChild === "function") {
         scrollDOM.appendChild(svg);
       }
     }
+    let dock = null;
+    let pill = null;
     if (docNode && typeof docNode.createElement === "function") {
+      dock = docNode.createElement("div");
+      dock.className = "rc-ink-dock";
+      pill = docNode.createElement("button");
+      pill.className = "rc-ink-pill";
+      pill.setAttribute("type", "button");
+      pill.setAttribute("aria-label", "Ink tools");
+      pill.setAttribute("title", "Ink tools");
+      pill.setAttribute("aria-expanded", "false");
+      pill.textContent = "";
+      pill.addEventListener("click", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        toggleMenu();
+      });
       palette = docNode.createElement("div");
       palette.className = "rc-ink-palette";
       palette.hidden = true;
       palette.setAttribute("aria-label", "Ink palette");
-      for (const color of INK_COLORS) {
-        const dot2 = docNode.createElement("button");
-        dot2.className = `rc-ink-color-dot${color === currentColor ? " rc-active" : ""}`;
-        dot2.setAttribute("type", "button");
-        dot2.setAttribute("data-color", color);
-        dot2.setAttribute("aria-label", color);
-        dot2.style.backgroundColor = color;
-        dot2.textContent = "";
-        dot2.addEventListener("click", (e) => {
-          if (typeof e.preventDefault === "function") e.preventDefault();
-          setColor(color);
-        });
-        palette.appendChild(dot2);
-        colorDots.push(dot2);
-      }
-      for (const tool of INK_TOOLS) {
+      for (const tool of PALETTE_TOOLS) {
         const dot2 = docNode.createElement("button");
         dot2.className = `rc-ink-tool-dot${tool === currentTool ? " rc-active" : ""}`;
         dot2.setAttribute("type", "button");
@@ -31536,9 +31909,154 @@ ${clean(nextLineText)}`;
         palette.appendChild(dot2);
         toolDots.push(dot2);
       }
-      if (scrollDOM && typeof scrollDOM.appendChild === "function") {
-        scrollDOM.appendChild(palette);
+      wheelBtn = docNode.createElement("button");
+      wheelBtn.className = "rc-ink-wheel-btn";
+      wheelBtn.setAttribute("type", "button");
+      wheelBtn.setAttribute("aria-label", "Colour wheel");
+      wheelBtn.setAttribute("title", "Colour wheel");
+      wheelBtn.setAttribute("aria-expanded", "false");
+      wheelBtn.textContent = "";
+      wheelBtn.addEventListener("click", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        setWheelOpen(!wheelOpen);
+      });
+      palette.appendChild(wheelBtn);
+      for (let i = 0; i < paletteColors.length; i++) {
+        const dot2 = docNode.createElement("button");
+        dot2.className = `rc-ink-color-dot${paletteColors[i] === currentColor ? " rc-active" : ""}`;
+        dot2.setAttribute("type", "button");
+        dot2.setAttribute("data-color", paletteColors[i]);
+        dot2.setAttribute("aria-label", paletteColors[i]);
+        dot2.style.backgroundColor = paletteColors[i];
+        dot2.textContent = "";
+        dot2.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          setColor(dot2.getAttribute("data-color"));
+          if (!isInkTool(currentTool)) setTool(previousDrawingTool);
+        });
+        palette.appendChild(dot2);
+        colorDots.push(dot2);
       }
+      wheel = docNode.createElement("div");
+      wheel.className = "rc-ink-wheel";
+      wheel.hidden = true;
+      wheel.setAttribute("aria-label", "Pick a colour");
+      wheelDisc = docNode.createElement("div");
+      wheelDisc.className = "rc-ink-wheel-disc";
+      wheelDisc.setAttribute("role", "slider");
+      wheelDisc.setAttribute("aria-label", "Hue and saturation");
+      wheelMark = docNode.createElement("div");
+      wheelMark.className = "rc-ink-wheel-mark";
+      wheelDisc.appendChild(wheelMark);
+      const side = docNode.createElement("div");
+      side.className = "rc-ink-wheel-side";
+      wheelLight = docNode.createElement("input");
+      wheelLight.className = "rc-ink-wheel-light";
+      wheelLight.setAttribute("type", "range");
+      wheelLight.setAttribute("min", "10");
+      wheelLight.setAttribute("max", "90");
+      wheelLight.setAttribute("value", "50");
+      wheelLight.setAttribute("aria-label", "Lightness");
+      const dropper = docNode.createElement("button");
+      dropper.className = "rc-ink-dropper";
+      dropper.setAttribute("type", "button");
+      dropper.setAttribute("aria-label", "Eyedropper: take a colour from the screen");
+      dropper.setAttribute("title", "Eyedropper");
+      dropper.innerHTML = ICON('<path d="M10.5 2.5l3 3-1.5 1.5-3-3z" fill="currentColor" fill-opacity="0.35"/><path d="M9 4l3 3-6.5 6.5H2.5v-3z"/>');
+      dropper.addEventListener("click", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        sampleColor();
+      });
+      wheelCheck = docNode.createElement("button");
+      wheelCheck.className = "rc-ink-wheel-check";
+      wheelCheck.setAttribute("type", "button");
+      wheelCheck.setAttribute("aria-label", "Use this colour");
+      wheelCheck.setAttribute("title", "Use this colour");
+      wheelCheck.hidden = true;
+      wheelCheck.innerHTML = ICON('<path d="M3.5 8.5l3 3 6-7" stroke-width="2"/>');
+      wheelCheck.addEventListener("click", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        if (pendingColor) replaceSelectedColor(pendingColor);
+        setWheelOpen(false);
+      });
+      side.appendChild(wheelLight);
+      side.appendChild(dropper);
+      side.appendChild(wheelCheck);
+      wheel.appendChild(wheelDisc);
+      wheel.appendChild(side);
+      let wheelPoint = null;
+      const pickAt = (e) => {
+        const r = wheelDisc.getBoundingClientRect ? wheelDisc.getBoundingClientRect() : { left: 0, top: 0, width: 160, height: 160 };
+        const R = r.width / 2;
+        let dx = e.clientX - (r.left + R), dy = e.clientY - (r.top + R);
+        const d = Math.hypot(dx, dy);
+        if (d > R) {
+          dx = dx / d * R;
+          dy = dy / d * R;
+        }
+        wheelPoint = { dx, dy, R };
+        wheelMark.style.left = `${R + dx}px`;
+        wheelMark.style.top = `${R + dy}px`;
+        setPending(wheelColor(dx, dy, R, Number(wheelLight.value) / 100));
+      };
+      let wheelDown = false;
+      wheelDisc.addEventListener("pointerdown", (e) => {
+        wheelDown = true;
+        if (typeof wheelDisc.setPointerCapture === "function" && e.pointerId !== void 0) {
+          try {
+            wheelDisc.setPointerCapture(e.pointerId);
+          } catch {
+          }
+        }
+        pickAt(e);
+      });
+      wheelDisc.addEventListener("pointermove", (e) => {
+        if (wheelDown) pickAt(e);
+      });
+      wheelDisc.addEventListener("pointerup", () => {
+        wheelDown = false;
+      });
+      wheelDisc.addEventListener("pointercancel", () => {
+        wheelDown = false;
+      });
+      wheelLight.addEventListener("input", () => {
+        wheelDisc.style.setProperty?.("--rc-wheel-l", `${wheelLight.value}%`);
+        if (wheelPoint) setPending(wheelColor(wheelPoint.dx, wheelPoint.dy, wheelPoint.R, Number(wheelLight.value) / 100));
+      });
+      dock.appendChild(pill);
+      dock.appendChild(palette);
+      dock.appendChild(wheel);
+      const host = mount || scrollDOM?.parentNode || null;
+      if (host && typeof host.appendChild === "function") {
+        host.appendChild(dock);
+      }
+    }
+    function isInkTool(tool) {
+      return INK_TOOLS.includes(tool) && !tool.startsWith("eraser");
+    }
+    function contains2(node, target) {
+      for (let n = target; n; n = n.parentNode) {
+        if (n === node) return true;
+      }
+      return false;
+    }
+    function onOutsidePress(e) {
+      if (!awake || !dock) return;
+      if (wheelOpen) {
+        const keeps = [wheelDisc, wheelLight, wheelCheck, wheel && wheel.querySelector ? wheel.querySelector(".rc-ink-dropper") : null];
+        if (keeps.some((k) => k && contains2(k, e.target))) return;
+        hidePalette();
+        return;
+      }
+      if (contains2(dock, e.target)) return;
+      hidePalette();
+    }
+    function onKey(e) {
+      if (awake && e.key === "Escape") hidePalette();
+    }
+    if (docNode && typeof docNode.addEventListener === "function") {
+      docNode.addEventListener("pointerdown", onOutsidePress, true);
+      docNode.addEventListener("keydown", onKey, true);
     }
     function updatePaletteActive() {
       for (const dot2 of colorDots) {
@@ -31558,16 +32076,73 @@ ${clean(nextLineText)}`;
         }
       }
     }
-    function showPalette() {
-      if (palette) {
-        palette.hidden = false;
-        palette.style.display = "flex";
+    function setWheelOpen(on) {
+      wheelOpen = Boolean(on) && awake;
+      if (wheel) wheel.hidden = !wheelOpen;
+      if (wheelBtn) wheelBtn.setAttribute("aria-expanded", String(wheelOpen));
+      if (!wheelOpen) setPending(null);
+    }
+    function setPending(hex) {
+      pendingColor = /^#[0-9a-fA-F]{6}$/.test(String(hex)) ? String(hex) : null;
+      if (wheelCheck) {
+        wheelCheck.hidden = !pendingColor;
+        wheelCheck.style.backgroundColor = pendingColor || "";
       }
+      return pendingColor;
+    }
+    function offerColor(hex) {
+      if (!awake) setAwake(true);
+      if (!wheelOpen) setWheelOpen(true);
+      return setPending(hex);
+    }
+    function replaceSelectedColor(hex) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(String(hex))) return null;
+      let i = paletteColors.indexOf(currentColor);
+      if (i < 0) i = 0;
+      paletteColors[i] = hex;
+      const dot2 = colorDots[i];
+      if (dot2) {
+        dot2.setAttribute("data-color", hex);
+        dot2.setAttribute("aria-label", hex);
+        dot2.style.backgroundColor = hex;
+      }
+      try {
+        globalObj?.localStorage?.setItem(COLORS_KEY, JSON.stringify(paletteColors));
+      } catch {
+      }
+      currentColor = hex;
+      if (!isInkTool(currentTool)) setTool(previousDrawingTool);
+      updatePaletteActive();
+      return hex;
+    }
+    function sampleColor() {
+      const Dropper = globalObj?.EyeDropper;
+      if (typeof Dropper === "function") {
+        new Dropper().open().then((r) => offerColor(r.sRGBHex)).catch(() => {
+        });
+        return;
+      }
+      globalObj?.webkit?.messageHandlers?.ui?.postMessage?.({ sampleColor: true });
+    }
+    function setAwake(on) {
+      awake = Boolean(on);
+      if (!awake) setWheelOpen(false);
+      if (palette) palette.hidden = !awake;
+      if (dock) dock.className = awake ? "rc-ink-dock rc-awake" : "rc-ink-dock";
+      if (pill) pill.setAttribute("aria-expanded", String(awake));
+    }
+    function showPalette() {
+      setAwake(true);
     }
     function hidePalette() {
-      if (palette) {
-        palette.hidden = true;
-      }
+      setAwake(false);
+    }
+    function toggleMenu() {
+      setAwake(!awake);
+      return awake;
+    }
+    function isAwake() {
+      return awake;
     }
     function schedulePost() {
       if (debounceTimer !== null) {
@@ -31659,6 +32234,9 @@ ${clean(nextLineText)}`;
         }
         const targetGroup = stroke.tool === "highlighter" ? highlightGroup : penGroup;
         renderStrokeElement(stroke, targetGroup);
+        if (stroke.ocr && inkMarks.has(stroke.ocr.g) && targetGroup.lastChild?.setAttribute) {
+          targetGroup.lastChild.setAttribute("class", "rc-ink-found");
+        }
       }
     }
     function renderActiveStroke() {
@@ -31737,9 +32315,9 @@ ${clean(nextLineText)}`;
       const docText = getDocText();
       let res;
       if (effectiveMode === "partial" || effectiveMode === "eraser-partial") {
-        res = erasePartialStrokes(inkDoc.strokes, points, 10, docText, lineHeight, getCurrentPageIndex());
+        res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-partial"], docText, lineHeight, getCurrentPageIndex());
       } else {
-        res = eraseWholeStrokes(inkDoc.strokes, points, 12);
+        res = eraseWholeStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-whole"]);
       }
       inkDoc.strokes = res.remaining;
       if (res.removedIds && res.removedIds.length > 0) {
@@ -31750,18 +32328,37 @@ ${clean(nextLineText)}`;
       schedulePost();
     }
     function setTool(tool) {
-      if (!INK_TOOLS.includes(tool)) return;
-      if (!tool.startsWith("eraser")) {
+      if (!PALETTE_TOOLS.includes(tool)) return;
+      if (isInkTool(tool)) {
         previousDrawingTool = tool;
       }
+      toolChosen = true;
       currentTool = tool;
       updatePaletteActive();
+      updateCursor();
+      if (typeof onToolChange === "function") onToolChange(tool);
+    }
+    function updateCursor() {
+      const erasing = currentTool.startsWith("eraser");
+      if (scrollDOM?.style) scrollDOM.style.cursor = erasing ? "none" : "";
+      if (!erasing) hideRing();
+    }
+    function hideRing() {
+      if (eraserRing) eraserRing.style.display = "none";
+    }
+    function moveRing(e) {
+      if (!eraserRing || !currentTool.startsWith("eraser") || e.pointerType === "touch") return;
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      eraserRing.setAttribute("cx", String(e.clientX - rect.left + (scrollDOM?.scrollLeft || 0)));
+      eraserRing.setAttribute("cy", String(e.clientY - rect.top + (scrollDOM?.scrollTop || 0)));
+      eraserRing.setAttribute("r", String(ERASER_RADIUS[currentTool] || 12));
+      eraserRing.style.display = "";
     }
     function getTool() {
       return currentTool;
     }
     function setColor(color) {
-      if (INK_COLORS.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
+      if (paletteColors.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
         currentColor = color;
         updatePaletteActive();
       }
@@ -31770,17 +32367,21 @@ ${clean(nextLineText)}`;
       return currentColor;
     }
     function toggleEraser() {
-      if (currentTool.startsWith("eraser")) {
-        currentTool = previousDrawingTool;
-      } else {
-        currentTool = "eraser-whole";
-      }
-      updatePaletteActive();
+      setTool(currentTool.startsWith("eraser") ? previousDrawingTool : "eraser-whole");
       return currentTool;
     }
+    function inks(e) {
+      if (e.pointerType === "touch") return false;
+      if (!allowMouse && e.pointerType === "mouse") return false;
+      if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === "pen") {
+        currentTool = "pen";
+        updatePaletteActive();
+        if (typeof onToolChange === "function") onToolChange(currentTool);
+      }
+      return currentTool !== SELECT_TOOL;
+    }
     function onPointerDown(e) {
-      if (e.pointerType === "touch") return;
-      if (!allowMouse && e.pointerType === "mouse") return;
+      if (isDrawing || !inks(e)) return;
       isDrawing = true;
       strokeStartTime = e.timeStamp || Date.now();
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
@@ -31796,11 +32397,12 @@ ${clean(nextLineText)}`;
       } else {
         renderActiveStroke();
       }
-      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+      if (typeof e.preventDefault === "function") {
         e.preventDefault();
       }
     }
     function onPointerMove(e) {
+      moveRing(e);
       if (!isDrawing) return;
       if (e.pointerType === "touch") return;
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
@@ -31821,7 +32423,7 @@ ${clean(nextLineText)}`;
       if (!currentTool.startsWith("eraser")) {
         renderActiveStroke();
       }
-      if (typeof e.preventDefault === "function" && e.pointerType === "pen") {
+      if (typeof e.preventDefault === "function") {
         e.preventDefault();
       }
     }
@@ -31862,10 +32464,88 @@ ${clean(nextLineText)}`;
       };
       anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
       inkDoc.strokes.push(stroke);
+      if (stroke.tool === "pen") scheduleRecognition();
       activePoints = [];
       if (activeGroup) activeGroup.innerHTML = "";
       render();
       schedulePost();
+    }
+    let ocrTimer = null;
+    const ocrSent = /* @__PURE__ */ new Map();
+    function scheduleRecognition() {
+      if (ocrTimer !== null) clearTimeout(ocrTimer);
+      ocrTimer = setTimeout(() => {
+        ocrTimer = null;
+        recognizeNow();
+      }, 1500);
+    }
+    function recognizeNow() {
+      const post = globalObj?.webkit?.messageHandlers?.ui?.postMessage;
+      if (typeof post !== "function" || !docNode || typeof docNode.createElement !== "function") return 0;
+      const pending = new Set([...ocrSent.values()].flat());
+      const groups = groupHandwriting(inkDoc.strokes.filter((st) => !pending.has(st)), lineHeight);
+      let sent = 0;
+      for (const g of groups) {
+        const png = renderGroupPNG(g);
+        if (!png) continue;
+        ocrSent.set(g.id, g.strokes);
+        globalObj.webkit.messageHandlers.ui.postMessage({ inkOCR: { id: g.id, png } });
+        sent++;
+      }
+      return sent;
+    }
+    function renderGroupPNG(g) {
+      const pad = 12, k = 2;
+      const w = Math.ceil((g.box.x1 - g.box.x0 + pad * 2) * k), h = Math.ceil((g.box.y1 - g.box.y0 + pad * 2) * k);
+      if (w < 8 || h < 8 || w > 4096 || h > 4096) return null;
+      const c = docNode.createElement("canvas");
+      const ctx = c && typeof c.getContext === "function" ? c.getContext("2d") : null;
+      if (!ctx) return null;
+      c.width = w;
+      c.height = h;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 3 * k;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const st of g.strokes) {
+        ctx.beginPath();
+        st.points.forEach((p, i) => {
+          const x = (p[0] - g.box.x0 + pad) * k, y = (p[1] - g.box.y0 + pad) * k;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        if (st.points.length === 1) ctx.lineTo((st.points[0][0] - g.box.x0 + pad) * k + 0.1, (st.points[0][1] - g.box.y0 + pad) * k);
+        ctx.stroke();
+      }
+      const url = typeof c.toDataURL === "function" ? c.toDataURL("image/png") : "";
+      return url.startsWith("data:image/png;base64,") ? url.slice("data:image/png;base64,".length) : null;
+    }
+    function setInkText(id2, text) {
+      const strokes = ocrSent.get(id2) || inkDoc.strokes.filter((st) => st.ocr && st.ocr.g === id2);
+      ocrSent.delete(id2);
+      const live = new Set(inkDoc.strokes);
+      let n = 0;
+      for (const st of strokes) {
+        if (!live.has(st)) continue;
+        st.ocr = { g: id2, t: String(text ?? "") };
+        n++;
+      }
+      if (n) schedulePost();
+      return n;
+    }
+    function findInk(query) {
+      return findInkText(inkDoc.strokes, query).map((m) => {
+        const r = resolveStrokeAnchor(m.stroke, getDocText(), lineHeight);
+        const ys = (r.points || []).map((p) => p[1]);
+        return { id: m.id, text: m.text, pageIndex: r.pageIndex ?? 0, y: ys.length ? Math.min(...ys) : 0 };
+      });
+    }
+    let inkMarks = /* @__PURE__ */ new Set();
+    function markInk(ids) {
+      inkMarks = new Set(ids || []);
+      render();
     }
     function onPointerCancel() {
       isDrawing = false;
@@ -31873,14 +32553,14 @@ ${clean(nextLineText)}`;
       if (activeGroup) activeGroup.innerHTML = "";
     }
     function onPointerDownCapture(e) {
-      if (e.pointerType === "pen") {
+      if (e.pointerType === "pen" && inks(e)) {
         if (typeof e.stopPropagation === "function") e.stopPropagation();
         if (typeof e.preventDefault === "function") e.preventDefault();
         onPointerDown(e);
       }
     }
     function onPointerEnterCapture(e) {
-      if (e.pointerType === "pen" && e.buttons > 0) {
+      if (e.pointerType === "pen" && e.buttons > 0 && currentTool !== SELECT_TOOL) {
         if (typeof e.stopPropagation === "function") e.stopPropagation();
         if (typeof e.preventDefault === "function") e.preventDefault();
       }
@@ -31892,11 +32572,16 @@ ${clean(nextLineText)}`;
       scrollDOM.addEventListener("pointermove", onPointerMove);
       scrollDOM.addEventListener("pointerup", onPointerUp);
       scrollDOM.addEventListener("pointercancel", onPointerCancel);
+      scrollDOM.addEventListener("pointerleave", hideRing);
     }
     function destroy() {
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
+      }
+      if (ocrTimer !== null) {
+        clearTimeout(ocrTimer);
+        ocrTimer = null;
       }
       if (scrollDOM && typeof scrollDOM.removeEventListener === "function") {
         scrollDOM.removeEventListener("pointerdown", onPointerDownCapture, true);
@@ -31905,12 +32590,17 @@ ${clean(nextLineText)}`;
         scrollDOM.removeEventListener("pointermove", onPointerMove);
         scrollDOM.removeEventListener("pointerup", onPointerUp);
         scrollDOM.removeEventListener("pointercancel", onPointerCancel);
+        scrollDOM.removeEventListener("pointerleave", hideRing);
       }
       if (svg && svg.parentNode && typeof svg.parentNode.removeChild === "function") {
         svg.parentNode.removeChild(svg);
       }
-      if (palette && palette.parentNode && typeof palette.parentNode.removeChild === "function") {
-        palette.parentNode.removeChild(palette);
+      if (docNode && typeof docNode.removeEventListener === "function") {
+        docNode.removeEventListener("pointerdown", onOutsidePress, true);
+        docNode.removeEventListener("keydown", onKey, true);
+      }
+      if (dock && dock.parentNode && typeof dock.parentNode.removeChild === "function") {
+        dock.parentNode.removeChild(dock);
       }
     }
     render();
@@ -31928,8 +32618,21 @@ ${clean(nextLineText)}`;
       destroy,
       svg,
       palette,
+      pill,
+      dock,
       showPalette,
-      hidePalette
+      hidePalette,
+      toggleMenu,
+      isAwake,
+      replaceSelectedColor,
+      offerColor,
+      getPendingColor: () => pendingColor,
+      setWheelOpen,
+      getPaletteColors: () => [...paletteColors],
+      setInkText,
+      findInk,
+      markInk,
+      recognizeNow
     };
   }
 
@@ -33618,6 +34321,42 @@ ${clean(nextLineText)}`;
         globalObj.webkit.messageHandlers.ui.postMessage({ haptic: kind });
       }
     }
+    function filePicker(accept, label, onFile) {
+      const wrap = makeDomElement2(doc2, "div", {}, { class: "rc-card-pick" });
+      const btn = makeDomElement2(doc2, "div", { textContent: label }, {
+        class: "rc-widget-action rc-card-pick-btn",
+        role: "button",
+        tabindex: "0"
+      });
+      const input = makeDomElement2(doc2, "input", {}, { type: "file", accept, class: "rc-card-pick-input", hidden: "true" });
+      const take = (file) => {
+        if (!file) return;
+        const url = globalObj?.URL?.createObjectURL ? globalObj.URL.createObjectURL(file) : "";
+        if (url) onFile(url, String(file.name || "").replace(/\.[^.]+$/, ""), file);
+      };
+      input.addEventListener("change", () => take(input.files && input.files[0]));
+      const open = (e) => {
+        if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+        if (typeof input.click === "function") input.click();
+      };
+      btn.addEventListener("click", open);
+      btn.addEventListener("keydown", open);
+      wrap.appendChild(btn);
+      wrap.appendChild(input);
+      return { wrap, take };
+    }
+    function acceptDrops(card, onFile) {
+      card.addEventListener("dragover", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+      });
+      card.addEventListener("drop", (e) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        const url = globalObj?.URL?.createObjectURL ? globalObj.URL.createObjectURL(file) : "";
+        if (url) onFile(url, String(file.name || "").replace(/\.[^.]+$/, ""), file);
+      });
+    }
     const widgetElements = {};
     let previewData = { src: "", caption: "" };
     const previewCard = makeDomElement2(doc2, "section", {}, {
@@ -33637,13 +34376,13 @@ ${clean(nextLineText)}`;
       previewCard.appendChild(header);
       const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-preview-body", "data-src": previewData.src || "" });
       if (previewData.src) {
-        if (previewData.src.endsWith(".pdf")) {
-          const badgeDiv = makeDomElement2(doc2, "div", {}, { class: "rc-preview-pdf-badge" });
-          const badge = makeDomElement2(doc2, "span", { textContent: "PDF" }, { class: "rc-badge-text" });
-          const filename = makeDomElement2(doc2, "span", { textContent: previewData.caption || previewData.src }, { class: "rc-preview-filename" });
-          badgeDiv.appendChild(badge);
-          badgeDiv.appendChild(filename);
-          body.appendChild(badgeDiv);
+        if (previewData.kind === "pdf" || previewData.src.endsWith(".pdf")) {
+          const frame = makeDomElement2(doc2, "iframe", {}, {
+            class: "rc-preview-pdf",
+            src: previewData.src,
+            title: previewData.caption || "Exhibit"
+          });
+          body.appendChild(frame);
         } else {
           const img = makeDomElement2(doc2, "img", {}, {
             class: "rc-preview-img",
@@ -33653,8 +34392,7 @@ ${clean(nextLineText)}`;
           body.appendChild(img);
         }
       } else {
-        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Exhibit Selected" }, { class: "rc-empty-state" });
-        body.appendChild(empty2);
+        body.appendChild(filePicker("application/pdf,image/*", "Choose an exhibit\u2026", loadExhibit).wrap);
       }
       body.addEventListener("click", () => {
         if (!previewData.src) return;
@@ -33675,11 +34413,15 @@ ${clean(nextLineText)}`;
       });
       previewCard.appendChild(body);
     }
-    updatePreviewCard();
-    function setPreviewTarget(pathOrUrl, caption = "") {
-      previewData = { src: String(pathOrUrl || ""), caption: String(caption || "") };
+    function setPreviewTarget(pathOrUrl, caption = "", kind = "") {
+      previewData = { src: String(pathOrUrl || ""), caption: String(caption || ""), kind: String(kind || "") };
       updatePreviewCard();
     }
+    function loadExhibit(url, name2, file) {
+      setPreviewTarget(url, name2, /pdf/.test(String(file?.type || "")) ? "pdf" : "image");
+    }
+    acceptDrops(previewCard, loadExhibit);
+    updatePreviewCard();
     let qtData = { src: "", title: "", playbackRate: 1, loopRange: [0, 0], currentTime: 0 };
     const qtCard = makeDomElement2(doc2, "section", {}, {
       class: "rc-wing-card rc-widget-quicktime",
@@ -33703,7 +34445,9 @@ ${clean(nextLineText)}`;
         const video = makeDomElement2(doc2, "video", { playbackRate: qtData.playbackRate }, {
           class: "rc-qt-video",
           src: qtData.src,
-          playsinline: "true"
+          playsinline: "true",
+          controls: "true",
+          preload: "metadata"
         });
         video.addEventListener("timeupdate", () => {
           qtData.currentTime = video.currentTime || 0;
@@ -33711,18 +34455,22 @@ ${clean(nextLineText)}`;
             video.currentTime = qtData.loopRange[0];
             qtData.currentTime = qtData.loopRange[0];
           }
+          tsSpan.textContent = `[@${formatTimestamp2(qtData.currentTime)}] cite this moment`;
         });
         const controls = makeDomElement2(doc2, "div", {}, { class: "rc-qt-controls" });
-        const tsSpan = makeDomElement2(doc2, "span", { textContent: `[@${formatTimestamp2(qtData.currentTime)}]` }, { class: "rc-qt-timestamp" });
+        const tsSpan = makeDomElement2(doc2, "span", { textContent: `[@${formatTimestamp2(qtData.currentTime)}] cite this moment` }, {
+          class: "rc-qt-timestamp",
+          role: "button",
+          tabindex: "0"
+        });
         controls.appendChild(tsSpan);
         body.appendChild(video);
         body.appendChild(controls);
       } else {
-        const empty2 = makeDomElement2(doc2, "div", { textContent: "No Media Loaded" }, { class: "rc-empty-state" });
-        body.appendChild(empty2);
+        body.appendChild(filePicker("video/*,audio/*", "Choose a video or recording\u2026", (url, name2) => setMediaSource(url, name2)).wrap);
       }
-      body.addEventListener("click", () => {
-        if (!qtData.src) return;
+      body.addEventListener("click", (e) => {
+        if (!qtData.src || !e?.target?.classList?.contains?.("rc-qt-timestamp")) return;
         const ts = formatTimestamp2(qtData.currentTime);
         const snippet2 = `[@${ts}] ${qtData.title || "Media reference"}
 `;
@@ -33742,6 +34490,7 @@ ${clean(nextLineText)}`;
       qtCard.appendChild(body);
     }
     updateQuickTimeCard();
+    acceptDrops(qtCard, (url, name2) => setMediaSource(url, name2));
     function setMediaSource(pathOrUrl, title = "") {
       qtData.src = String(pathOrUrl || "");
       qtData.title = String(title || "");
@@ -34025,6 +34774,103 @@ ${clean(nextLineText)}`;
       openEl.addEventListener("keydown", open);
       iphoneCard.appendChild(openEl);
     }
+    let recenseLine = { original: "", translation: "" };
+    const recenseCards = {};
+    for (const side of ["left", "right"]) {
+      recenseCards[side] = makeDomElement2(doc2, "section", {}, {
+        class: "rc-wing-card rc-widget-recense",
+        "data-widget": "recense",
+        role: "region",
+        "aria-label": "Recense",
+        "aria-live": "polite"
+      });
+    }
+    function updateRecenseCards() {
+      for (const card of Object.values(recenseCards)) {
+        while (card.firstChild) card.removeChild(card.firstChild);
+        const header = makeDomElement2(doc2, "div", {}, { class: "rc-widget-header" });
+        header.appendChild(makeDomElement2(doc2, "span", { textContent: "Recense" }, { class: "rc-widget-title" }));
+        card.appendChild(header);
+        if (recenseLine.original || recenseLine.translation) {
+          card.appendChild(makeDomElement2(doc2, "div", { textContent: recenseLine.original }, { class: "rc-recense-original" }));
+          if (recenseLine.translation) {
+            card.appendChild(makeDomElement2(doc2, "div", { textContent: recenseLine.translation }, { class: "rc-recense-translation" }));
+          }
+        } else {
+          card.appendChild(makeDomElement2(doc2, "div", { textContent: "Nothing playing" }, { class: "rc-empty-state" }));
+        }
+      }
+      sizeWings();
+    }
+    const WING_MIN = 360;
+    const WING_MAX = 560;
+    let measureCtx = null;
+    function textWidth(text, font) {
+      if (!text) return 0;
+      if (!measureCtx && doc2 && typeof doc2.createElement === "function") {
+        const c = doc2.createElement("canvas");
+        measureCtx = c && typeof c.getContext === "function" ? c.getContext("2d") : null;
+      }
+      if (!measureCtx) return text.length * 9;
+      measureCtx.font = font;
+      return measureCtx.measureText(text).width;
+    }
+    function preferredWidth() {
+      const pad = 2 * 16 + 4;
+      const w = Math.max(
+        textWidth(recenseLine.original, "600 19px -apple-system, system-ui, sans-serif"),
+        textWidth(recenseLine.translation, "400 17px -apple-system, system-ui, sans-serif")
+      ) + pad;
+      return Math.round(Math.min(WING_MAX, Math.max(WING_MIN, w)));
+    }
+    function sizeWings() {
+      const w = `${preferredWidth()}px`;
+      for (const el3 of [leftEl, rightEl]) el3.style?.setProperty?.("--rc-wing-w", w);
+    }
+    function setRecenseLine(original = "", translation = "") {
+      recenseLine = { original: String(original ?? ""), translation: String(translation ?? "") };
+      updateRecenseCards();
+      return preferredWidth();
+    }
+    updateRecenseCards();
+    function grabberFor(side) {
+      const g = makeDomElement2(doc2, "div", {}, {
+        class: `rc-wing-grabber rc-wing-grabber-${side}`,
+        role: "button",
+        tabindex: "0",
+        "aria-label": `Tuck the ${side} wing in`
+      });
+      let startX = null;
+      g.addEventListener("pointerdown", (e) => {
+        startX = e.clientX;
+        if (typeof g.setPointerCapture === "function" && e.pointerId !== void 0) {
+          try {
+            g.setPointerCapture(e.pointerId);
+          } catch {
+          }
+        }
+        if (typeof e.stopPropagation === "function") e.stopPropagation();
+      });
+      g.addEventListener("pointermove", (e) => {
+        if (startX === null) return;
+        const outward = side === "left" ? startX - e.clientX : e.clientX - startX;
+        if (outward >= 30) {
+          startX = null;
+          postHaptic2("close");
+          closeWing(side);
+        }
+      });
+      const end = () => {
+        startX = null;
+      };
+      g.addEventListener("pointerup", end);
+      g.addEventListener("pointercancel", end);
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") closeWing(side);
+      });
+      return g;
+    }
+    const grabbers = { left: grabberFor("left"), right: grabberFor("right") };
     const WIDGET_NAMES = {
       preview: "Preview",
       quicktime: "Player",
@@ -34060,6 +34906,10 @@ ${clean(nextLineText)}`;
         while (el3.firstChild) {
           el3.removeChild(el3.firstChild);
         }
+        if (el3.appendChild) {
+          el3.appendChild(grabbers[side]);
+          el3.appendChild(recenseCards[side]);
+        }
         for (const wId of list) {
           const card = widgetElements[wId];
           if (card && shown(wId) && el3.appendChild) {
@@ -34091,19 +34941,6 @@ ${clean(nextLineText)}`;
     function setArranging(on) {
       for (const el3 of [leftEl, rightEl]) el3.classList?.toggle("rc-wings-arranging", Boolean(on));
       return Boolean(on);
-    }
-    function fanOut(side) {
-      const el3 = side === "left" ? leftEl : rightEl;
-      let i = 0;
-      for (const child of el3.children || []) {
-        if (!child.classList?.contains("rc-wing-card")) continue;
-        child.style?.setProperty?.("--rc-fan-i", String(i));
-        i++;
-      }
-      el3.classList?.remove("rc-wing-fan");
-      void el3.offsetWidth;
-      el3.classList?.add("rc-wing-fan");
-      return i;
     }
     function openWing(side) {
       if (nativeWings) {
@@ -34370,7 +35207,8 @@ ${clean(nextLineText)}`;
       setNativeWings,
       reveal,
       setArranging,
-      fanOut,
+      setRecenseLine,
+      preferredWidth,
       openPersistentSession,
       getState,
       setState,
@@ -34464,7 +35302,12 @@ ${clean(nextLineText)}`;
     }
     let lastReport = "";
     function report() {
-      const msg = { action: "layout", height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() };
+      const msg = {
+        action: "layout",
+        height: Math.ceil(shell.getBoundingClientRect().height),
+        width: wings.preferredWidth(),
+        glass: glassShapes()
+      };
       const key = JSON.stringify(msg);
       if (key !== lastReport) {
         lastReport = key;
@@ -34479,21 +35322,9 @@ ${clean(nextLineText)}`;
         report();
       });
     }
-    let followUntil = 0;
-    function follow(ms) {
-      followUntil = Math.max(followUntil, performance.now() + ms);
-      const tick = () => {
-        report();
-        if (performance.now() < followUntil) globalObj.requestAnimationFrame(tick);
-      };
-      globalObj.requestAnimationFrame(tick);
-    }
     if (globalObj.ResizeObserver) new globalObj.ResizeObserver(schedule).observe(shell);
     globalObj.addEventListener("scroll", schedule, { passive: true });
     globalObj.addEventListener("resize", schedule);
-    doc2.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") post({ action: "wing", op: "close", side });
-    });
     const rescan = (text) => wings.setCalendarEvents(scanner.scanText(String(text ?? "")));
     let docText = "";
     const api = {
@@ -34537,13 +35368,14 @@ ${clean(nextLineText)}`;
         wings.enableHostWidget(id2);
         schedule();
       },
-      fanOut() {
-        const n = wings.fanOut(side);
-        follow(420 + n * 60);
-        return n;
+      // The line on Recense's screen: the card shows it, and the panel widens to fit it.
+      setRecenseLine(original, translation) {
+        const w = wings.setRecenseLine(original, translation);
+        schedule();
+        return w;
       },
       setArranging,
-      layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() })
+      layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), width: wings.preferredWidth(), glass: glassShapes() })
     };
     if (globalObj) globalObj.recenseEditor = api;
     schedule();
@@ -35013,7 +35845,23 @@ ${String(text ?? "")}`;
     }
     inkLayer = createInkLayer(view, {
       getPageIndex: () => view ? currentPage(view.state) : 0,
-      globalObj: typeof window !== "undefined" ? window : null
+      globalObj: typeof window !== "undefined" ? window : null,
+      mount: editorHost,
+      onToolChange: (tool) => {
+        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
+        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+      }
+    });
+    setInkSearch({
+      find: (q) => inkLayer ? inkLayer.findInk(q) : [],
+      mark: (ids) => {
+        if (inkLayer) inkLayer.markInk(ids);
+      },
+      reveal: (m) => {
+        if (!view || !m) return;
+        if (currentPage(view.state) !== m.pageIndex) showPage(view, m.pageIndex);
+        view.scrollDOM.scrollTo({ top: Math.max(0, m.y - 80), behavior: "smooth" });
+      }
     });
     audioSidecar = createAudioSidecar({
       container: workspace,
@@ -35093,7 +35941,6 @@ ${String(text ?? "")}`;
       if (t2 === "partial eraser") return "eraser-partial";
       return t2;
     }
-    let currentInkTool = "pen";
     const voiceHandlers = {
       swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
       swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
@@ -35107,11 +35954,7 @@ ${String(text ?? "")}`;
         return openFindReplace(view);
       },
       setInkTool: (tool) => {
-        currentInkTool = tool;
-        const mapped = normalizeInkToolName(tool);
-        if (inkLayer) inkLayer.setTool(mapped);
-        const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
-        if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: mapped });
+        if (inkLayer) inkLayer.setTool(normalizeInkToolName(tool));
         return tool;
       },
       summarizeSection: (idx) => {
@@ -35175,27 +36018,25 @@ ${String(text ?? "")}`;
           inkLayer.relayout();
           return merged;
         },
-        getInkTool: () => currentInkTool,
+        getInkTool: () => inkLayer ? inkLayer.getTool() : "select",
         setInkTool: (tool) => voiceHandlers.setInkTool(tool),
         getInkColor: () => inkLayer ? inkLayer.getColor() : INK_COLORS[0],
         setInkColor: (color) => {
           if (inkLayer) inkLayer.setColor(color);
           return inkLayer ? inkLayer.getColor() : color;
         },
-        toggleEraser: () => {
-          currentInkTool = inkLayer ? inkLayer.toggleEraser() : "eraser-whole";
-          return currentInkTool;
-        },
+        toggleEraser: () => inkLayer ? inkLayer.toggleEraser() : "eraser-whole",
+        // The host's eyedropper answer (macOS's sampler, iOS's colour picker): it waits under the wheel's check mark.
+        // The host's reading of a handwriting group (shared/inkocr.swift): kept with its strokes for Find.
+        setInkText: (id2, text) => inkLayer ? inkLayer.setInkText(String(id2), String(text ?? "")) : 0,
+        setPickedColor: (hex) => inkLayer ? inkLayer.offerColor(String(hex)) : null,
+        // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
         onPencilAction: (action) => {
-          if (action === "squeeze" || action === "doubleTap") {
+          if ((action === "squeeze" || action === "doubleTap") && inkLayer) {
             postHaptic("squeeze");
-            if (inkLayer) {
-              inkLayer.showPalette();
-              currentInkTool = inkLayer.toggleEraser();
-              return currentInkTool;
-            }
+            return inkLayer.toggleMenu() ? "awake" : "asleep";
           }
-          return currentInkTool;
+          return inkLayer && inkLayer.isAwake() ? "awake" : "asleep";
         },
         setAudioTranscript: (data2) => {
           const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
@@ -35237,6 +36078,7 @@ ${String(text ?? "")}`;
         moveWidget: (id2, side) => dualWings ? dualWings.moveWidget(id2, side) : null,
         getWingLayout: () => dualWings ? dualWings.getWingLayout() : { left: [], right: [], leftOpen: false, rightOpen: false },
         setPreviewTarget: (src, caption) => dualWings ? dualWings.setPreviewTarget(src, caption) : null,
+        setRecenseLine: (original, translation) => dualWings ? dualWings.setRecenseLine(original, translation) : null,
         setMediaSource: (src, title) => dualWings ? dualWings.setMediaSource(src, title) : null,
         setPlaybackRate: (rate) => dualWings ? dualWings.setPlaybackRate(rate) : null,
         setLoopRange: (start, end) => dualWings ? dualWings.setLoopRange(start, end) : null,
@@ -35339,13 +36181,11 @@ ${String(text ?? "")}`;
       onZoneEnter(zone) {
         if (zone === "top") {
           setToolbarFaded(false);
-          if (inkLayer) inkLayer.showPalette();
         }
       },
       onZoneLeave(zone) {
         if (zone === "top" && !menuOpen) {
           setToolbarFaded(true);
-          if (inkLayer) inkLayer.hidePalette();
         }
       },
       globalObj: typeof window !== "undefined" ? window : null
@@ -35373,7 +36213,7 @@ ${String(text ?? "")}`;
         return openFindReplace(view);
       },
       voiceCommand,
-      getInkTool: () => currentInkTool,
+      getInkTool: () => inkLayer ? inkLayer.getTool() : "select",
       setInkTool: (tool) => voiceHandlers.setInkTool(tool),
       getTheme: () => currentTheme,
       getFontSize: () => currentFontSize,

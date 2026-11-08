@@ -217,6 +217,13 @@ function el(tag, props = {}) {
   return e;
 }
 
+// Handwriting in Find (ink.js reads it on the device): { find(query) → [{ id, text, pageIndex, y }], mark(ids),
+// reveal(match) }. Set by the editor once its ink layer exists; null: Find searches the text only.
+let inkSearch = null;
+export function setInkSearch(provider) {
+  inkSearch = provider && typeof provider.find === 'function' ? provider : null;
+}
+
 export function createFindPanel(view) {
   const dom = el('div', { className: 'rc-find' });
   const find = el('input', { className: 'rc-find-input', type: 'search', placeholder: 'Find', spellcheck: false });
@@ -237,10 +244,18 @@ export function createFindPanel(view) {
     title: 'Next match (Enter)',
     ariaLabel: 'Next match'
   });
+  // Matches in handwriting: their count; each press shows the next one (it glows while Find is open).
+  const inkBtn = el('button', {
+    className: 'rc-find-btn rc-find-ink',
+    type: 'button',
+    title: 'Next match in handwriting',
+    ariaLabel: 'Next match in handwriting',
+    hidden: true
+  });
   const toggle = el('button', { className: 'rc-find-toggle', type: 'button', textContent: '⇄', title: 'Replace' });
   const close = el('button', { className: 'rc-find-close', type: 'button', textContent: '✕', title: 'Close (Esc)' });
   const row = el('div', { className: 'rc-find-row' });
-  row.append(find, count, prevBtn, nextBtn, toggle, close);
+  row.append(find, count, prevBtn, nextBtn, inkBtn, toggle, close);
 
   const replaceRow = el('div', { className: 'rc-find-row rc-find-replace', hidden: true });
   const repl = el('input', { className: 'rc-find-input', placeholder: 'Replace with', spellcheck: false });
@@ -259,10 +274,26 @@ export function createFindPanel(view) {
     if (!query.eq(getSearchQuery(view.state))) view.dispatch({ effects: setSearchQuery.of(query) });
     return query;
   }
+  let inkMatches = [];
+  let inkAt = -1;
+  function showInk() {
+    inkMatches = inkSearch && find.value.trim() ? inkSearch.find(find.value) : [];
+    if (inkAt >= inkMatches.length) inkAt = -1;
+    inkBtn.hidden = inkMatches.length === 0;
+    inkBtn.textContent = `✎ ${inkAt >= 0 ? `${inkAt + 1}/` : ''}${inkMatches.length}`;
+    if (inkSearch) inkSearch.mark(inkMatches.map(m => m.id));
+  }
   function showCount() {
     const query = getSearchQuery(view.state);
     count.textContent = matchStatus(view.state, query).label;
+    showInk();
   }
+  inkBtn.addEventListener('click', () => {
+    if (!inkMatches.length || !inkSearch) return;
+    inkAt = (inkAt + 1) % inkMatches.length;
+    inkSearch.reveal(inkMatches[inkAt]);
+    showInk();
+  });
 
   find.addEventListener('input', () => {
     const query = commit();
@@ -319,6 +350,7 @@ export function createFindPanel(view) {
     dom,
     top: true,
     mount() { find.focus(); find.select(); showCount(); },
+    destroy() { if (inkSearch) inkSearch.mark([]); },
     update(u) {
       if (
         u.docChanged ||

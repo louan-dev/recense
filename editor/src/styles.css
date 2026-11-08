@@ -283,6 +283,7 @@ body {
 }
 
 .rc-editor-Mount {
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -310,26 +311,211 @@ body {
   z-index: 3;
 }
 
-.rc-ink-palette {
-  position: sticky;
-  top: 8px;
+/* The ink pill rests under the top edge and floats over the page, so the text never moves.
+   Tap it (or double-tap / squeeze the Pencil) and the palette hangs down from it, glowing. */
+.rc-ink-dock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.rc-ink-pill {
+  appearance: none;
+  pointer-events: auto;
+  width: 96px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
+}
+
+.rc-ink-pill::before {
+  content: '';
+  display: block;
+  width: 44px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--rc-muted);
+  opacity: 0.45;
+  transition: opacity 220ms ease, background-color 220ms ease, box-shadow 220ms ease, width 220ms ease;
+}
+
+.rc-ink-pill:hover::before {
+  opacity: 0.7;
+}
+
+.rc-ink-dock.rc-awake .rc-ink-pill::before {
+  width: 56px;
+  opacity: 1;
+  background: var(--rc-cyan);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--rc-cyan) 60%, transparent);
+}
+
+.rc-ink-palette {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
-  width: fit-content;
-  margin: 0 auto;
+  max-width: calc(100vw - 32px);
   padding: 6px 12px;
   border: 1px solid var(--rc-border);
   border-radius: 999px;
-  background: var(--rc-panel);
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+  backdrop-filter: blur(16px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-  transition: opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top center;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s;
 }
 
+/* Asleep: kept in place (no layout jump) but invisible and untouchable. */
 .rc-ink-palette[hidden] {
+  display: flex !important;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms;
+}
+
+/* The colour wheel button, right after the eraser: a small hue ring. */
+.rc-ink-wheel-btn {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0 2px 0 4px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: conic-gradient(#f87171, #facc15, #4ade80, #38bdf8, #a78bfa, #f472b6, #f87171);
+  -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+  mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+}
+
+.rc-ink-wheel-btn[aria-expanded='true'] {
+  outline: 2px solid var(--rc-cyan);
+  outline-offset: 2px;
+}
+
+/* The wheel itself: hangs under the palette, over the text. */
+.rc-ink-wheel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--rc-border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.rc-ink-wheel[hidden] {
   display: none !important;
+}
+
+.rc-ink-wheel-disc {
+  --rc-wheel-l: 50%;
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  touch-action: none;
+  cursor: crosshair;
+  background:
+    radial-gradient(circle, hsl(0 0% var(--rc-wheel-l)) 0%, transparent 70%),
+    conic-gradient(hsl(0 100% var(--rc-wheel-l)), hsl(60 100% var(--rc-wheel-l)), hsl(120 100% var(--rc-wheel-l)),
+      hsl(180 100% var(--rc-wheel-l)), hsl(240 100% var(--rc-wheel-l)), hsl(300 100% var(--rc-wheel-l)), hsl(360 100% var(--rc-wheel-l)));
+}
+
+.rc-ink-wheel-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.rc-ink-wheel-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.rc-ink-wheel-light {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 22px;
+  height: 110px;
+  accent-color: var(--rc-cyan);
+}
+
+.rc-ink-wheel-check {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.rc-ink-wheel-check svg {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+
+.rc-ink-wheel-check[hidden] {
+  display: none !important;
+}
+
+.rc-ink-dropper {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rc-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rc-text);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ink-pill::before,
+  .rc-ink-palette,
+  .rc-ink-palette[hidden] {
+    transition: none;
+  }
+  .rc-ink-palette[hidden] {
+    transform: none;
+  }
 }
 
 .rc-ink-color-dot,
@@ -657,13 +843,7 @@ body {
   pointer-events: auto;
 }
 
-.rc-shell.rc-zone-active-left {
-  box-shadow: inset 3px 0 0 var(--rc-cyan);
-}
-
-.rc-shell.rc-zone-active-right {
-  box-shadow: inset -3px 0 0 var(--rc-cyan);
-}
+/* No lines at the left and right edges (owner, 11-08): they sat on Recense's own side bars. */
 
 .rc-shell.rc-zone-active-top {
   box-shadow: inset 0 3px 0 var(--rc-cyan);
@@ -675,7 +855,7 @@ body {
   top: 0;
   bottom: 0;
   z-index: 8;
-  width: min(272px, 30vw);
+  width: min(var(--rc-wing-w, 360px), 45vw);
   background: var(--rc-panel);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -684,7 +864,8 @@ body {
   gap: 10px;
   padding: 10px;
   overflow-y: auto;
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 220ms ease;
 }
 
 .rc-wing-left {
@@ -708,8 +889,9 @@ body {
 .rc-wing-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 14px 16px;
+  font-size: 15px;
   border: 1px solid var(--rc-border);
   border-radius: 10px;
   background: var(--rc-surface);
@@ -950,7 +1132,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-wing-card {
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 0;
   border-radius: 18px;
   background: var(--rc-glass-tint);
@@ -958,7 +1140,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-widget-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: 0;
@@ -973,7 +1155,7 @@ html.rc-wings-page body {
 }
 
 .rc-wings-only .rc-widget-body {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
 }
 
@@ -994,31 +1176,126 @@ html.rc-wings-page body {
   display: block;
 }
 
-/* The fan-out presentation: cards spread out from the screen edge, one after another. */
-@keyframes rc-fan-right {
-  from { opacity: 0; transform: translate(56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
-  to { opacity: 1; transform: none; }
+/* The eraser's ring (ink.js ERASER_RADIUS): the pointer while an eraser is picked, at exactly the size it erases. */
+.rc-ink-eraser-ring {
+  fill: none;
+  stroke: var(--rc-text);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
 
-@keyframes rc-fan-left {
-  from { opacity: 0; transform: translate(-56px, calc(var(--rc-fan-i, 0) * -18px)) scale(0.94); }
-  to { opacity: 1; transform: none; }
+/* The grabber: a short line on the wing's inner edge; slide it toward the screen edge to tuck the wing in. */
+.rc-wing-grabber {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 64px;
+  margin-top: -32px;
+  cursor: grab;
+  touch-action: none;
+  z-index: 2;
 }
 
-.rc-wings-only .rc-wing-right.rc-wing-fan .rc-wing-card {
-  transform-origin: top right;
-  animation: rc-fan-right 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+.rc-wing-grabber::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
 }
 
-.rc-wings-only .rc-wing-left.rc-wing-fan .rc-wing-card {
-  transform-origin: top left;
-  animation: rc-fan-left 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--rc-fan-i, 0) * 55ms);
+.rc-wing-grabber:hover::before,
+.rc-wing-grabber:focus-visible::before {
+  opacity: 0.7;
+}
+
+.rc-wing-left .rc-wing-grabber {
+  right: -2px;
+}
+
+.rc-wing-right .rc-wing-grabber {
+  left: -2px;
+}
+
+.rc-wings-only .rc-wing {
+  position: relative;
+}
+
+.rc-wings-only .rc-wing-left .rc-wing-grabber {
+  right: -8px;
+}
+
+.rc-wings-only .rc-wing-right .rc-wing-grabber {
+  left: -8px;
+}
+
+/* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
+   wing can widen to it (wings.js preferredWidth), else it wraps. */
+.rc-recense-original {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rc-recense-translation {
+  font-size: 17px;
+  line-height: 1.3;
+  opacity: 0.72;
+}
+
+/* Preview and Player: big enough to read and watch in. */
+.rc-preview-img,
+.rc-qt-video {
+  width: 100%;
+  max-height: 320px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #000;
+}
+
+.rc-preview-pdf {
+  width: 100%;
+  height: 360px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.rc-qt-timestamp {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--rc-cyan);
+}
+
+.rc-card-pick {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+}
+
+.rc-card-pick-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--rc-border);
+  font-size: 15px;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rc-wings-only .rc-wing.rc-wing-fan .rc-wing-card {
-    animation: none;
+  .rc-wing {
+    transition: none;
   }
+}
+
+/* Find: handwriting that holds the search glows. */
+.rc-ink-found {
+  filter: drop-shadow(0 0 4px var(--rc-cyan)) drop-shadow(0 0 2px var(--rc-cyan));
+}
+
+.rc-find-ink {
+  white-space: nowrap;
 }

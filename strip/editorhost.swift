@@ -142,6 +142,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             syncedEventIds = Set(ids)
         }
         web.navigationDelegate = self
+        web.uiDelegate = self
         web.setValue(false, forKey: "drawsBackground")
         if let url = EditorHost.pageURL() {
             source = url.path
@@ -229,6 +230,22 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "ui" {
             if (m.body as? String) == "bounce" { onBounce?(); return }
+            // Handwriting to read for Find (shared/inkocr.swift): one group of strokes, as a PNG.
+            if let d = m.body as? [String: Any], let o = d["inkOCR"] as? [String: Any],
+               let id = o["id"] as? String, let png = o["png"] as? String {
+                InkOCR.read(pngBase64: png) { [weak self] text in self?.send("setInkText(\(jsString(id)), \(jsString(text)))") }
+                return
+            }
+            // The ink palette's eyedropper: macOS's own screen sampler; the colour picked replaces the selected one.
+            if let d = m.body as? [String: Any], d["sampleColor"] as? Bool == true {
+                NSColorSampler().show { [weak self] c in
+                    guard let c = c?.usingColorSpace(.sRGB) else { return }
+                    let hex = String(format: "#%02x%02x%02x", Int((c.redComponent * 255).rounded()),
+                                     Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+                    self?.send("setPickedColor(\(jsString(hex)))")
+                }
+                return
+            }
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 let p = NSHapticFeedbackManager.defaultPerformer
                 switch kind {
@@ -488,5 +505,45 @@ func editorSelftest() -> Bool {
         print("\(pass ? "ok  " : "FAIL") editor, \(label)")
         ok = ok && pass
     }
+    return ok
+}
+
+/// A card's "Choose…" (an <input type=file>): the Mac's own open panel. The file stays on this Mac; the page plays or
+/// shows it from here.
+extension EditorHost: WKUIDelegate {
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let p = NSOpenPanel()
+        p.allowsMultipleSelection = parameters.allowsMultipleSelection
+        p.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)    // the wing panel never takes focus; the open panel must
+        p.begin { r in completionHandler(r == .OK ? p.urls : nil) }
+    }
+}
+
+/// `recense selftest`: the handwriting reader (Vision, on device) gets a hand-lettered line back through the same
+/// PNG-in-base64 path the page uses, so ⌘F can find ink.
+func inkOCRSelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String, _ got: Any = "") { print("\(pass ? "ok  " : "FAIL") ink ocr, \(what)\(pass ? "" : " — got \(got)")"); ok = ok && pass }
+    let size = NSSize(width: 900, height: 160)
+    let img = NSImage(size: size)
+    img.lockFocus()
+    NSColor.white.setFill(); NSRect(origin: .zero, size: size).fill()
+    let font = NSFont(name: "Bradley Hand", size: 72) ?? .systemFont(ofSize: 72)
+    ("Contrat de vente" as NSString).draw(at: NSPoint(x: 30, y: 40), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+    img.unlockFocus()
+    guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { check(false, "render sample"); return false }
+    var text = ""
+    let done = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+        if let src = CGImageSourceCreateWithData(Data(base64Encoded: png.base64EncodedString())! as CFData, nil),
+           let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) { text = InkOCR.recognize(cg) }
+        done.signal()
+    }
+    done.wait()
+    let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    check(folded.contains("contrat") && folded.contains("vente"), "reads a hand-lettered French line", text)
     return ok
 }

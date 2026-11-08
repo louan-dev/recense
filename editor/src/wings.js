@@ -570,6 +570,47 @@ export function createDualWings(container, options = {}) {
     }
   }
 
+  /**
+   * An empty card's one control: choose a file from this device (or drop one on the card). It plays or shows here,
+   * offline, from the file itself; nothing is uploaded.
+   */
+  function filePicker(accept, label, onFile) {
+    const wrap = makeDomElement(doc, 'div', {}, { class: 'rc-card-pick' });
+    const btn = makeDomElement(doc, 'div', { textContent: label }, {
+      class: 'rc-widget-action rc-card-pick-btn', role: 'button', tabindex: '0'
+    });
+    const input = makeDomElement(doc, 'input', {}, { type: 'file', accept, class: 'rc-card-pick-input', hidden: 'true' });
+    const take = file => {
+      if (!file) return;
+      const url = globalObj?.URL?.createObjectURL ? globalObj.URL.createObjectURL(file) : '';
+      if (url) onFile(url, String(file.name || '').replace(/\.[^.]+$/, ''), file);
+    };
+    input.addEventListener('change', () => take(input.files && input.files[0]));
+    const open = e => {
+      if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+      if (typeof input.click === 'function') input.click();
+    };
+    btn.addEventListener('click', open);
+    btn.addEventListener('keydown', open);
+    wrap.appendChild(btn);
+    wrap.appendChild(input);
+    return { wrap, take };
+  }
+
+  /** Drop a file on a card to load it. */
+  function acceptDrops(card, onFile) {
+    card.addEventListener('dragover', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    });
+    card.addEventListener('drop', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      const url = globalObj?.URL?.createObjectURL ? globalObj.URL.createObjectURL(file) : '';
+      if (url) onFile(url, String(file.name || '').replace(/\.[^.]+$/, ''), file);
+    });
+  }
+
   // Widget Cards & State
   const widgetElements = {};
 
@@ -595,13 +636,14 @@ export function createDualWings(container, options = {}) {
 
     const body = makeDomElement(doc, 'div', {}, { class: 'rc-widget-body rc-preview-body', 'data-src': previewData.src || '' });
     if (previewData.src) {
-      if (previewData.src.endsWith('.pdf')) {
-        const badgeDiv = makeDomElement(doc, 'div', {}, { class: 'rc-preview-pdf-badge' });
-        const badge = makeDomElement(doc, 'span', { textContent: 'PDF' }, { class: 'rc-badge-text' });
-        const filename = makeDomElement(doc, 'span', { textContent: previewData.caption || previewData.src }, { class: 'rc-preview-filename' });
-        badgeDiv.appendChild(badge);
-        badgeDiv.appendChild(filename);
-        body.appendChild(badgeDiv);
+      if (previewData.kind === 'pdf' || previewData.src.endsWith('.pdf')) {
+        // The document itself, readable in the card (the web view's own PDF viewer, offline).
+        const frame = makeDomElement(doc, 'iframe', {}, {
+          class: 'rc-preview-pdf',
+          src: previewData.src,
+          title: previewData.caption || 'Exhibit'
+        });
+        body.appendChild(frame);
       } else {
         const img = makeDomElement(doc, 'img', {}, {
           class: 'rc-preview-img',
@@ -611,8 +653,7 @@ export function createDualWings(container, options = {}) {
         body.appendChild(img);
       }
     } else {
-      const empty = makeDomElement(doc, 'div', { textContent: 'No Exhibit Selected' }, { class: 'rc-empty-state' });
-      body.appendChild(empty);
+      body.appendChild(filePicker('application/pdf,image/*', 'Choose an exhibit…', loadExhibit).wrap);
     }
 
     body.addEventListener('click', () => {
@@ -635,12 +676,16 @@ export function createDualWings(container, options = {}) {
 
     previewCard.appendChild(body);
   }
-  updatePreviewCard();
 
-  function setPreviewTarget(pathOrUrl, caption = '') {
-    previewData = { src: String(pathOrUrl || ''), caption: String(caption || '') };
+  function setPreviewTarget(pathOrUrl, caption = '', kind = '') {
+    previewData = { src: String(pathOrUrl || ''), caption: String(caption || ''), kind: String(kind || '') };
     updatePreviewCard();
   }
+  function loadExhibit(url, name, file) {
+    setPreviewTarget(url, name, /pdf/.test(String(file?.type || '')) ? 'pdf' : 'image');
+  }
+  acceptDrops(previewCard, loadExhibit);
+  updatePreviewCard();
 
   // 2. QuickTime Widget (Offline QuickTime Media Player)
   let qtData = { src: '', title: '', playbackRate: 1.0, loopRange: [0, 0], currentTime: 0 };
@@ -669,7 +714,9 @@ export function createDualWings(container, options = {}) {
       const video = makeDomElement(doc, 'video', { playbackRate: qtData.playbackRate }, {
         class: 'rc-qt-video',
         src: qtData.src,
-        playsinline: 'true'
+        playsinline: 'true',
+        controls: 'true',
+        preload: 'metadata'
       });
 
       // Loop range handling
@@ -679,21 +726,24 @@ export function createDualWings(container, options = {}) {
           video.currentTime = qtData.loopRange[0];
           qtData.currentTime = qtData.loopRange[0];
         }
+        tsSpan.textContent = `[@${formatTimestamp(qtData.currentTime)}] cite this moment`;
       });
 
       const controls = makeDomElement(doc, 'div', {}, { class: 'rc-qt-controls' });
-      const tsSpan = makeDomElement(doc, 'span', { textContent: `[@${formatTimestamp(qtData.currentTime)}]` }, { class: 'rc-qt-timestamp' });
+      const tsSpan = makeDomElement(doc, 'span', { textContent: `[@${formatTimestamp(qtData.currentTime)}] cite this moment` }, {
+        class: 'rc-qt-timestamp', role: 'button', tabindex: '0'
+      });
       controls.appendChild(tsSpan);
 
       body.appendChild(video);
       body.appendChild(controls);
     } else {
-      const empty = makeDomElement(doc, 'div', { textContent: 'No Media Loaded' }, { class: 'rc-empty-state' });
-      body.appendChild(empty);
+      body.appendChild(filePicker('video/*,audio/*', 'Choose a video or recording…', (url, name) => setMediaSource(url, name)).wrap);
     }
 
-    body.addEventListener('click', () => {
-      if (!qtData.src) return;
+    // Citing the moment: the timestamp line under the picture (the picture itself keeps its own play controls).
+    body.addEventListener('click', e => {
+      if (!qtData.src || !e?.target?.classList?.contains?.('rc-qt-timestamp')) return;
       const ts = formatTimestamp(qtData.currentTime);
       const snippet = `[@${ts}] ${qtData.title || 'Media reference'}\n`;
       if (typeof options.onInsertToPage === 'function') {
@@ -713,6 +763,8 @@ export function createDualWings(container, options = {}) {
     qtCard.appendChild(body);
   }
   updateQuickTimeCard();
+
+  acceptDrops(qtCard, (url, name) => setMediaSource(url, name));
 
   function setMediaSource(pathOrUrl, title = '') {
     qtData.src = String(pathOrUrl || '');
@@ -1042,6 +1094,107 @@ export function createDualWings(container, options = {}) {
     iphoneCard.appendChild(openEl);
   }
 
+  // Recense, in both wings: the line on screen now, its words above, the translation under (one frame, two lines).
+  // Each wing has its own card; the host (the Mac) sends the line whenever it changes.
+  let recenseLine = { original: '', translation: '' };
+  const recenseCards = {};
+  for (const side of ['left', 'right']) {
+    recenseCards[side] = makeDomElement(doc, 'section', {}, {
+      class: 'rc-wing-card rc-widget-recense',
+      'data-widget': 'recense',
+      role: 'region',
+      'aria-label': 'Recense',
+      'aria-live': 'polite'
+    });
+  }
+  function updateRecenseCards() {
+    for (const card of Object.values(recenseCards)) {
+      while (card.firstChild) card.removeChild(card.firstChild);
+      const header = makeDomElement(doc, 'div', {}, { class: 'rc-widget-header' });
+      header.appendChild(makeDomElement(doc, 'span', { textContent: 'Recense' }, { class: 'rc-widget-title' }));
+      card.appendChild(header);
+      if (recenseLine.original || recenseLine.translation) {
+        card.appendChild(makeDomElement(doc, 'div', { textContent: recenseLine.original }, { class: 'rc-recense-original' }));
+        if (recenseLine.translation) {
+          card.appendChild(makeDomElement(doc, 'div', { textContent: recenseLine.translation }, { class: 'rc-recense-translation' }));
+        }
+      } else {
+        card.appendChild(makeDomElement(doc, 'div', { textContent: 'Nothing playing' }, { class: 'rc-empty-state' }));
+      }
+    }
+    sizeWings();
+  }
+
+  // The wings widen with the line, so each of its two rows sits on one line when it can (the card's own font,
+  // measured); between 360 and 560 pt, then the words wrap.
+  const WING_MIN = 360;
+  const WING_MAX = 560;
+  let measureCtx = null;
+  function textWidth(text, font) {
+    if (!text) return 0;
+    if (!measureCtx && doc && typeof doc.createElement === 'function') {
+      const c = doc.createElement('canvas');
+      measureCtx = c && typeof c.getContext === 'function' ? c.getContext('2d') : null;
+    }
+    if (!measureCtx) return text.length * 9;
+    measureCtx.font = font;
+    return measureCtx.measureText(text).width;
+  }
+  function preferredWidth() {
+    const pad = 2 * 16 + 4;
+    const w = Math.max(
+      textWidth(recenseLine.original, '600 19px -apple-system, system-ui, sans-serif'),
+      textWidth(recenseLine.translation, '400 17px -apple-system, system-ui, sans-serif')
+    ) + pad;
+    return Math.round(Math.min(WING_MAX, Math.max(WING_MIN, w)));
+  }
+  function sizeWings() {
+    const w = `${preferredWidth()}px`;
+    for (const el of [leftEl, rightEl]) el.style?.setProperty?.('--rc-wing-w', w);
+  }
+  function setRecenseLine(original = '', translation = '') {
+    recenseLine = { original: String(original ?? ''), translation: String(translation ?? '') };
+    updateRecenseCards();
+    return preferredWidth();
+  }
+  updateRecenseCards();
+
+  // The grabber on each wing's inner edge: slide it toward the screen edge and the wing tucks in.
+  function grabberFor(side) {
+    const g = makeDomElement(doc, 'div', {}, {
+      class: `rc-wing-grabber rc-wing-grabber-${side}`,
+      role: 'button',
+      tabindex: '0',
+      'aria-label': `Tuck the ${side} wing in`
+    });
+    let startX = null;
+    g.addEventListener('pointerdown', e => {
+      startX = e.clientX;
+      if (typeof g.setPointerCapture === 'function' && e.pointerId !== undefined) {
+        try { g.setPointerCapture(e.pointerId); } catch { /* capture is a nicety */ }
+      }
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+    });
+    g.addEventListener('pointermove', e => {
+      if (startX === null) return;
+      const outward = side === 'left' ? startX - e.clientX : e.clientX - startX;
+      if (outward >= 30) {
+        startX = null;
+        postHaptic('close');
+        closeWing(side);
+      }
+    });
+    const end = () => { startX = null; };
+    g.addEventListener('pointerup', end);
+    g.addEventListener('pointercancel', end);
+    // Keyboard: Enter or Space tucks it in too.
+    g.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') closeWing(side);
+    });
+    return g;
+  }
+  const grabbers = { left: grabberFor('left'), right: grabberFor('right') };
+
   const WIDGET_NAMES = {
     preview: 'Preview', quicktime: 'Player', findmy: 'Find My', mail: 'Mail', calendar: 'Agenda', iphone: 'iPhone Mirroring'
   };
@@ -1076,6 +1229,10 @@ export function createDualWings(container, options = {}) {
     for (const [el, list, side] of [[leftEl, leftWidgets, 'left'], [rightEl, rightWidgets, 'right']]) {
       while (el.firstChild) {
         el.removeChild(el.firstChild);
+      }
+      if (el.appendChild) {
+        el.appendChild(grabbers[side]);
+        el.appendChild(recenseCards[side]);
       }
       for (const wId of list) {
         const card = widgetElements[wId];
@@ -1117,21 +1274,6 @@ export function createDualWings(container, options = {}) {
   function setArranging(on) {
     for (const el of [leftEl, rightEl]) el.classList?.toggle('rc-wings-arranging', Boolean(on));
     return Boolean(on);
-  }
-
-  /** The fan-out presentation: the shown side's cards spread out from the screen edge, one after another (CSS). */
-  function fanOut(side) {
-    const el = side === 'left' ? leftEl : rightEl;
-    let i = 0;
-    for (const child of el.children || []) {
-      if (!child.classList?.contains('rc-wing-card')) continue;
-      child.style?.setProperty?.('--rc-fan-i', String(i));
-      i++;
-    }
-    el.classList?.remove('rc-wing-fan');
-    void el.offsetWidth; // restart the animation
-    el.classList?.add('rc-wing-fan');
-    return i;
   }
 
   // Symmetric ambidextrous controls
@@ -1439,7 +1581,8 @@ export function createDualWings(container, options = {}) {
     setNativeWings,
     reveal,
     setArranging,
-    fanOut,
+    setRecenseLine,
+    preferredWidth,
     openPersistentSession,
     getState,
     setState,

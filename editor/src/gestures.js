@@ -259,13 +259,7 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: true, action: 'setInkTool', tool: 'whole eraser' };
   }
 
-  if (hasPhrase('partial eraser') || hasPhrase('tẩy một phần') || hasPhrase('gomme partielle')) {
-    if (typeof handlers.setInkTool === 'function') {
-      handlers.setInkTool('partial eraser');
-    }
-    return { matched: true, action: 'setInkTool', tool: 'partial eraser' };
-  }
-
+  // (No partial eraser any more, owner 11-08: "partial eraser" is the eraser.)
   if (hasWord('eraser') || hasWord('tẩy') || hasWord('gôm') || hasWord('gomme')) {
     if (typeof handlers.setInkTool === 'function') {
       handlers.setInkTool('eraser');
@@ -446,20 +440,6 @@ export function executeVoiceMove(commandStr, handlers = {}) {
       handlers.setInkTool('highlighter');
     }
     return { matched: true, action: 'setInkTool', tool: 'highlighter' };
-  }
-
-  if (hasWord('underline') || hasPhrase('gạch chân') || hasWord('souligner')) {
-    if (typeof handlers.setInkTool === 'function') {
-      handlers.setInkTool('underline');
-    }
-    return { matched: true, action: 'setInkTool', tool: 'underline' };
-  }
-
-  if (hasWord('circle') || hasPhrase('khoanh tròn') || hasWord('entourer')) {
-    if (typeof handlers.setInkTool === 'function') {
-      handlers.setInkTool('circle');
-    }
-    return { matched: true, action: 'setInkTool', tool: 'circle' };
   }
 
   if (hasWord('pen') || hasWord('bút') || hasWord('stylo')) {

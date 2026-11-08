@@ -514,8 +514,9 @@ export function attachSwipePaging(
       return;
     }
     const t = e.touches[0];
-    if (t.clientX <= edgePx) {
-      if (typeof onEdgeZone === 'function') onEdgeZone('left');
+    // A touch that starts at either edge belongs to the wings (the edge swipe), never to paging.
+    if (t.clientX <= edgePx || t.clientX >= widthOf() - edgePx) {
+      if (typeof onEdgeZone === 'function') onEdgeZone(t.clientX <= edgePx ? 'left' : 'right');
       touchStartX = null;
       return;
     }
@@ -572,8 +573,9 @@ export function attachSwipePaging(
     const w = widthOf();
     const x = Number(e.clientX) || 0;
     const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
-    // Allow Pencil/mouse paging from either ambidextrous edge zone (or with Alt/Shift) so central Pencil strokes draw ink.
-    if (!inEdgeZone && !e.altKey) return;
+    // Pencil pages from either edge zone (central strokes draw ink). A mouse pages only with
+    // Option held: a plain mouse drag near the margin is selecting text, never turning the page.
+    if (e.pointerType === 'mouse' ? !e.altKey : !inEdgeZone && !e.altKey) return;
     if (typeof onEdgeZone === 'function') onEdgeZone(x <= edgePx * 1.5 ? 'left' : 'right');
     ptrId = e.pointerId;
     ptrStartX = x;

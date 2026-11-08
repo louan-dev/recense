@@ -556,7 +556,9 @@ test('P6 Feathery Offline Widgets: QuickTime player, rate, loop, and timestamp c
   assert.equal(qtCard.getAttribute('data-src'), 'recense-file:///media/deposition.mov');
 
   const qtBody = qtCard.querySelector('.rc-qt-body');
-  qtBody.dispatchEvent({ type: 'click' });
+  qtBody.dispatchEvent({ type: 'click' });   // a click on the picture (its play controls) cites nothing
+  assert.equal(inserted.length, 0);
+  qtBody.dispatchEvent({ type: 'click', target: qtCard.querySelector('.rc-qt-timestamp') });
 
   assert.equal(inserted.length, 1);
   assert.match(inserted[0], /^\[@\d{2}:\d{2}\] Deposition Video\n$/);

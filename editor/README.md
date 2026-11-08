@@ -19,9 +19,9 @@ Offline-first Draftpad whiteboard and Markdown editor core built on CodeMirror 6
 - **Notability-style line-anchored ink whiteboard (`src/ink.js`):**
   - Type and write with an Apple Pencil Pro on the same surface with no mode switch and no Done button.
   - **Line-anchored JSON (`draftpad.ink.json`):** each stroke anchors to its window's line context (`hashLineContext`, `offsetInPage`, `embedTarget`, `relX`, `relY`). Inserting or deleting lines in Window 0 produces `deltaY = 0` for Window 1's ink, while edits above a stroke in the same window shift its ink vertically in lockstep with the text.
-  - **Tools & 8-colour pure-dot row:** `pen`, `highlighter` (rendered under text with `mix-blend-mode: multiply`), `underline` (`snapUnderlineStroke`), `circle` (`detectAndSnapShape`), `eraser-whole` (`eraseWholeStrokes`), and `eraser-partial` (`erasePartialStrokes`), plus 8 high-contrast colours (`INK_COLORS`).
+  - **Tools & 8-colour pure-dot row:** `select` (default; mouse never inks), `pen`, `highlighter` (rendered under text with `mix-blend-mode: multiply`) and `eraser-whole` (`eraseWholeStrokes`), then a colour wheel, plus 8 colours (`INK_COLORS`, replaceable from the wheel).
   - **Draw-and-hold shape snapping:** quick freehand writing (such as a handwritten letter `'o'`) stays freehand; holding at the end of a stroke (`>= 320 ms`) snaps rough circles to clean geometric `<ellipse>` shapes and straight strokes to `<line>`.
-  - **240 Hz Apple Pencil Pro coalesced input & squeeze:** captures `e.getCoalescedEvents()` for full-fidelity strokes; squeezing or double-tapping Apple Pencil Pro (`onPencilAction('squeeze')`) toggles the eraser and reveals the pure-dot palette.
+  - **240 Hz Apple Pencil Pro coalesced input & squeeze:** captures `e.getCoalescedEvents()` for full-fidelity strokes; squeezing or double-tapping Apple Pencil Pro (`onPencilAction('squeeze' | 'doubleTap')`) wakes or sleeps the palette in its place under the top edge.
   - **Dropped-in file embeds keep ink on top (`src/embeds.js`):** dropping a PDF or image onto the page inserts `![caption](target)` and captures Pencil strokes over `.cm-embed` widgets so annotations stay anchored to the embedded file.
   - **CRDT-safe multi-device merge (`mergeInkDocuments`):** unions strokes by `id` and respects `removed` tombstone IDs across Mac and iPad/iPhone.
 - **Live audio transcript sidecar & offline section summaries (`src/audio.js`):**
@@ -72,6 +72,20 @@ npm run build
 Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 
 ## Ink palette and shape snapping (2026-11-08)
-- The palette's tool buttons now show icons (pen, highlighter as a marker over a band, underline, circle, eraser, partial eraser), with names on hover and for VoiceOver.
+- The palette's tool buttons show icons (select, pen, highlighter, eraser), with names on hover and for VoiceOver. Circle and underline are gone: hold the stroke's end instead.
 - The pen only turns a stroke into a shape when you hold still at its end for 0.5 s (`SNAP_HOLD_MS`) and it's bigger than a letter (`SNAP_MIN_SIZE`, 40 px):
   a closed loop becomes an ellipse, and a nearly straight stroke becomes a line. Letters and curves stay as drawn.
+
+## Palette pill, colour wheel, handwriting search (2026-11-08)
+- **Pill:** a small pill sits under the top edge, always. Tap it (or Pencil Pro double-tap / squeeze) and it glows and
+  wakes the palette, which floats over the text without moving it, the same on blank and written pages. Tap anywhere
+  else, or Esc, and it sleeps.
+- **Eraser:** the cursor becomes a see-through ring the exact size it erases (`ERASER_RADIUS`, 12 pt). The partial eraser
+  is gone.
+- **Colour wheel** (after the eraser): pick from the gradient and lightness slider, or the dropper samples any shade on
+  screen (Mac: `NSColorSampler`; iOS: the system colour picker; browsers with `EyeDropper`). A ✓ appears; only ✓
+  replaces the selected colour. Tapping anywhere else closes the menu and keeps the old colour.
+- **Handwriting in ⌘F:** 1.5 s after you stop writing, the group of pen strokes is read on the device (Apple Vision;
+  English, French, Vietnamese; `shared/inkocr.swift`) and the text is kept with the strokes in the ink file. Find shows
+  a "✎ n" button beside the text count; it steps through ink matches and makes them glow. Accents and case are ignored.
+- **Paging:** a mouse drag in the margin selects text; Option + drag pages.

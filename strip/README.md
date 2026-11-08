@@ -263,21 +263,20 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons | draftpad-flip | draftpad-flip-go | wing-left | wing-right | wing-close | wing-motion-slide | wing-motion-fan`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons | draftpad-flip | draftpad-flip-go | wing-left | wing-right | wing-close`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
 too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), that the hider watches no key or
 modifier event (so ⌘-Tab, ⌘C and ⌘-drag can't reveal its icons), and the lyrics lookups against a stand-in LRCLIB and Genius that count requests: 50
 songs, talks and ambiguous titles (at most 2 requests a song, none for speech), the waits on 429 and 503, no network,
 the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get; Draftpad's merge; and the editor
-host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact; the wings: the two-finger edge swipe fed with made-up trackpad frames (in from either edge opens, back toward
-an open wing's edge closes, scrolls and nudges don't) and the two panels' mirrored places.
+host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact; the wings: three-finger sideways swipes fed with made-up trackpad frames (the open/tuck sequence below) and the two
+panels' mirrored places; and the handwriting reader (Vision, on device) reading a hand-lettered French line.
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).
 `show-icons` shows the menu-bar hider's hidden icons (launching Recense hidden first if it isn't running).
-`wing-left` / `wing-right` open a wing panel, `wing-close` closes both; `wing-motion-slide` / `wing-motion-fan` pick how
-they open.
+`wing-left` / `wing-right` open a wing panel, `wing-close` closes both.
 
 `RECENSE_INSTANCE=<name>` runs a separate copy of a build beside the installed one (its own lock, command channel and
 state file), for trying a build without replacing Recense.app: point it at a scratch vault with `DRAFTPAD=` and send it
@@ -292,16 +291,21 @@ takes typing focus. Each card sits on frosted glass with the desktop showing bet
 **Arrange** pill at the bottom shows each card's "Move to the other side" control (Done hides them again). Layout and
 cards are one state across both panels and the editor (`draftpad.wings.json`).
 
-- **Open:** two fingers in from the trackpad's right edge (right wing) or left edge (left wing); Recense menu or the
-  editor's right-click menu → Show Left Wing / Show Right Wing; `./recense wing-left|wing-right`; the editor's voice
-  moves ("left wing", "right wing", "both wings").
-- **Close:** the × on the panel, two fingers back toward its edge, Esc, or a click anywhere outside it.
-- **Motion:** Recense menu → Wing Motion → Slide In from the Edge (default) or Fan Out from the Edge. With Reduce Motion
-  on, neither: the panel appears.
-- The right-edge swipe needs macOS's own one off: System Settings → Trackpad → More Gestures → Notification Center.
-  An edge swipe holds back the app's sideways scroll while it runs (the scroll filter, Accessibility permission).
-- Built in `wingpanels.swift` (panels, glass, closing) and `editor/src/wingpanel.js` (the same bundled page in
-  wings-only mode); the edge swipe is `trackEdgeSwipe` in `app.swift`.
+- **Open (no Recense window needed):** three fingers right → left brings out the right wing; three fingers left → right
+  brings out the left wing; both can stay open. Also: Recense menu or the editor's right-click menu → Show Left Wing /
+  Show Right Wing; `./recense wing-left|wing-right`; the editor's voice moves ("left wing", "right wing", "both wings").
+- **Tuck in:** with both open, three fingers starting mid-trackpad toward the left tuck the left wing; then three fingers
+  toward the right tuck the right wing. Also: the × on the panel, or slide the grabber on the wing's inner edge toward
+  the screen edge.
+- **Locked open:** a wing stays out until you tuck it in, whatever Recense does (sleep, pulled up, hidden). No Esc or
+  outside click closes it. No long holds.
+- **Recense in the wings:** the first card on each side shows the current line (original and translation); the panel
+  widens (360–560 pt) so two lines fit comfortably.
+- **Cards that work:** Preview opens a PDF or image (Choose an exhibit…, or drop a file); Player plays a video or
+  recording (Choose…, or drop) and "cite this moment" inserts a timestamped citation.
+- One motion only: slide in from the edge; with Reduce Motion on, the panel just appears.
+- Built in `wingpanels.swift` (panels, glass, swipe sequence `wingSwipe`) and `editor/src/wingpanel.js` (the same bundled
+  page in wings-only mode); the swipe is `trackThree` in `app.swift`.
 
 ## Gestures and controls
 
@@ -321,7 +325,7 @@ cards are one state across both panels and the editor (`draftpad.wings.json`).
 | ⌘] / ⌘[ | Next / previous topic |
 | Swipe up | Summon Recense; dismiss the Recense card |
 | Two fingers held still | Time ruler on where the media is |
-| Two fingers in from the trackpad's right / left edge | Right / left wing panel (two fingers back toward the edge close it) |
+| Three fingers right → left / left → right | Right / left wing out (from mid-trackpad, toward an open wing: tuck it in) |
 
 Three-finger swipes use Apple's private MultitouchSupport framework (no permission prompt; experimental, so a macOS
 update could break it). Turn macOS's own three-finger swipes off in System Settings → Trackpad → More Gestures.

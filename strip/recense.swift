@@ -8321,7 +8321,15 @@ final class NativeSources {
         } else if Date() > statusUntil { overlay.setStatus("Play something") }
     }
 
-    var editable: Line?                       // the line on screen: what an edit corrects
+    var editable: Line? {                     // the line on screen: what an edit corrects
+        didSet {
+            // The wings' Recense card shows the same line: told only when the line (or its translation) changes.
+            guard editable?.id != oldValue?.id || editable?.words.count != oldValue?.words.count
+                    || editable?.english?.count != oldValue?.english?.count else { return }
+            Recense.onLine?(editable.map { $0.words.map { $0.text }.joined(separator: " ") } ?? "",
+                            editable?.english.map { $0.map { $0.w }.joined(separator: " ") } ?? "")
+        }
+    }
 
     /// The line on screen, corrected in place; the player waits while it's typed. A double-click's first click has
     /// already played or paused, so what was playing before it plays again after.
@@ -8668,6 +8676,8 @@ func measureSelftest() -> Bool {
 // (--corrections-selftest, --match, …) stay in the recense repo's main.swift.
 @MainActor enum Recense {
     static var delegate: AppDelegate?
+    /// The line on screen changed: its words, then its translation ("" for none). The wings' Recense card follows it.
+    static var onLine: ((String, String) -> Void)?
     /// Posted when Recense starts or stops working (userInfo["working"]: Bool), for Recense's strip button (SPEC 20).
     static let workingChanged = Notification.Name("RecenseWorkingChanged")
     static var working: Bool { delegate?.wasWorking ?? false }

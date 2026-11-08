@@ -432,12 +432,13 @@ test('Touch, Pencil, and Voice parity: executeVoiceMove and voiceCommand dispatc
   const tools = [
     'pen',
     'highlighter',
-    'underline',
-    'circle',
     'eraser',
-    'whole eraser',
-    'partial eraser'
+    'whole eraser'
   ];
+  assert.equal(executeVoiceMove('partial eraser', handlers).tool, 'eraser', 'the one eraser');
+  // Underline and Circle are no tools any more (the held end snaps a stroke to them).
+  assert.equal(executeVoiceMove('underline', handlers).action === 'setInkTool', false);
+  assert.equal(executeVoiceMove('circle', handlers).action === 'setInkTool', false);
   for (const tool of tools) {
     const res = executeVoiceMove(tool, handlers);
     assert.equal(res.matched, true);
@@ -488,10 +489,10 @@ test('Touch, Pencil, and Voice parity: executeVoiceMove and voiceCommand dispatc
   assert.equal(nat6.matched, true);
   assert.equal(nat6.action, 'bookmarkAudio');
 
-  // Verify modifier priority: whole / partial eraser before generic eraser
+  // "partial eraser" is the one eraser now; "whole eraser" still names it too
   const partRes = executeVoiceMove('use partial eraser please', handlers);
   assert.equal(partRes.matched, true);
-  assert.equal(partRes.tool, 'partial eraser');
+  assert.equal(partRes.tool, 'eraser');
 
   const wholeRes = executeVoiceMove('switch to whole eraser', handlers);
   assert.equal(wholeRes.matched, true);
@@ -527,7 +528,7 @@ test('Integration: voiceCommand on mounted editor drives navigation and tools', 
   assert.equal(mounted.bridge.getInkTool(), 'highlighter');
 
   mounted.voiceCommand('eraser');
-  assert.equal(mounted.getInkTool(), 'eraser');
+  assert.equal(mounted.getInkTool(), 'eraser-whole', 'the tool reads back by its one canonical name');
 
   // Voice outline toggle
   assert.equal(mounted.isOutlineOpen(), false);

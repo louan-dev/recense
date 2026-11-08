@@ -53,7 +53,7 @@ test('native wings: open, close and toggle go to the host; the in-page wings sta
   wings.destroy();
 });
 
-test('wing panel page: reveal shows one side; Arrange shows the Move controls; fan-out numbers the cards', () => {
+test('wing panel page: reveal shows one side; Arrange shows the Move controls; no fan motion; Recense card on both sides', () => {
   const { container, fakeGlobal } = setup();
   const wings = createDualWings(container, { globalObj: fakeGlobal, gestures: false });
   wings.reveal('right');
@@ -63,8 +63,15 @@ test('wing panel page: reveal shows one side; Arrange shows the Move controls; f
   assert.ok(wings.rightEl.classList.contains('rc-wings-arranging'));
   assert.equal(wings.setArranging(false), false);
   assert.ok(!wings.leftEl.classList.contains('rc-wings-arranging'));
-  assert.equal(wings.fanOut('left'), 2, 'the left wing holds Preview and Player');
-  assert.ok(wings.leftEl.classList.contains('rc-wing-fan'));
+  assert.equal(wings.fanOut, undefined, 'wing motion is gone (owner, 11-08)');
+  // Recense in both wings, first after the grabber; the wings widen with the line (360-560).
+  for (const el of [wings.leftEl, wings.rightEl]) {
+    assert.ok(el.children[0].attributes?.class?.includes?.('rc-wing-grabber') || String(el.children[0].className || el.children[0].getAttribute?.('class')).includes('rc-wing-grabber'));
+    assert.equal(el.children[1].getAttribute ? el.children[1].getAttribute('data-widget') : el.children[1]['data-widget'], 'recense');
+  }
+  assert.equal(wings.preferredWidth(), 360, 'nothing playing: the narrow wing');
+  const w = wings.setRecenseLine('Les parties conviennent que le vendeur livrera les marchandises dans trente jours.', 'The parties agree the seller will deliver the goods within thirty days.');
+  assert.ok(w > 360 && w <= 560, `a long line widens the wing (${w})`);
   wings.destroy();
 });
 

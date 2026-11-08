@@ -11,7 +11,14 @@ export const INK_TOOLS = [
   'eraser-partial'
 ];
 
+// The palette's first button: the pointer selects text and draws nothing. Underline and Circle aren't buttons
+// (owner, 11-08): holding the pen still at a stroke's end already snaps it to a line or an ellipse. They stay in
+// INK_TOOLS so strokes saved with them still draw. One eraser (the partial one went, owner 11-08).
+export const SELECT_TOOL = 'select';
+export const PALETTE_TOOLS = [SELECT_TOOL, 'pen', 'highlighter', 'eraser-whole'];
+
 export const INK_TOOL_NAMES = {
+  select: 'Select text',
   pen: 'Pen',
   highlighter: 'Highlighter',
   underline: 'Underline',
@@ -24,6 +31,8 @@ export const INK_TOOL_NAMES = {
 const ICON = body =>
   `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 export const INK_TOOL_ICONS = {
+  // A text cursor (I-beam).
+  select: ICON('<path d="M6 2.5h4M6 13.5h4M8 2.5v11"/>'),
   pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
   // A marker over a wide translucent band, unlike the pen's slim nib.
   highlighter: ICON('<path d="M2 13.5h12" stroke-width="3.5" stroke-opacity="0.45"/><path d="M6.5 10.5l3.5-7.5 3 1.5-3 7.5z"/>'),
@@ -47,6 +56,70 @@ export const INK_COLORS = [
 ];
 
 export const DEFAULT_LINE_HEIGHT = 28;
+
+/**
+ * Handwriting groups for recognition: pen strokes not read yet, clustered by place and time (a stroke joins a group
+ * when its box, grown by a line height, touches the group's and it was written within 8 s of the group's last).
+ */
+export function groupHandwriting(strokes, lineHeight = DEFAULT_LINE_HEIGHT) {
+  const pens = (Array.isArray(strokes) ? strokes : [])
+    .filter(st => st && st.tool === 'pen' && !st.ocr && Array.isArray(st.points) && st.points.length > 0)
+    .sort((a, b) => (a.at || 0) - (b.at || 0));
+  const boxOf = st => {
+    const xs = st.points.map(p => p[0]), ys = st.points.map(p => p[1]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  };
+  const groups = [];
+  for (const st of pens) {
+    const b = boxOf(st);
+    const g = groups.find(gr => {
+      const m = lineHeight;
+      return Math.abs((st.at || 0) - gr.lastAt) <= 8000 &&
+        b.x0 <= gr.box.x1 + m && b.x1 >= gr.box.x0 - m && b.y0 <= gr.box.y1 + m && b.y1 >= gr.box.y0 - m;
+    });
+    if (g) {
+      g.strokes.push(st);
+      g.lastAt = Math.max(g.lastAt, st.at || 0);
+      g.box = { x0: Math.min(g.box.x0, b.x0), y0: Math.min(g.box.y0, b.y0), x1: Math.max(g.box.x1, b.x1), y1: Math.max(g.box.y1, b.y1) };
+    } else {
+      groups.push({ id: `ink-${st.id}`, strokes: [st], lastAt: st.at || 0, box: b });
+    }
+  }
+  return groups;
+}
+
+/** Find in handwriting: the read groups whose text holds `query` (any case, accents ignored). */
+export function findInkText(strokes, query) {
+  const fold = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+  const q = fold(query).trim();
+  if (!q) return [];
+  const seen = new Map();
+  for (const st of Array.isArray(strokes) ? strokes : []) {
+    const o = st && st.ocr;
+    if (!o || !o.t || seen.has(o.g) || !fold(o.t).includes(q)) continue;
+    seen.set(o.g, { id: o.g, text: o.t, stroke: st });
+  }
+  return [...seen.values()];
+}
+
+/** HSL (h 0-360, s and l 0-1) to #rrggbb. */
+export function hslToHex(h, sat, light) {
+  const k = n => (n + h / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = n => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = x => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, '0');
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+}
+
+/** A point on the colour wheel (centre-relative, radius R) as hue (the angle, red at the top) and saturation (out from the centre). */
+export function wheelColor(dx, dy, R, light = 0.5) {
+  const hue = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+  const sat = Math.min(1, Math.hypot(dx, dy) / R);
+  return hslToHex(hue, sat, light);
+}
+
+/** How far each eraser reaches from the pointer, in page points; the eraser's ring is drawn at exactly this size. */
+export const ERASER_RADIUS = { 'eraser-whole': 12, 'eraser-partial': 10 };
 export const DEFAULT_DEBOUNCE_MS = 300;
 
 const EMBED_RE = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
@@ -738,7 +811,11 @@ export function createInkLayer(view, options = {}) {
     onInkChange = null,
     allowMouse = true,
     getPageIndex = null,
-    activePageIndex = 0
+    activePageIndex = 0,
+    // Where the pill and palette float. Never the text's scroller: a child there joins
+    // CodeMirror's flex row and squeezes the text column.
+    mount = null,
+    onToolChange = null
   } = options;
 
   let inkDoc = initialInk && typeof initialInk === 'object'
@@ -749,9 +826,12 @@ export function createInkLayer(view, options = {}) {
       }
     : { version: 1, strokes: [], removed: [] };
 
-  let currentTool = 'pen';
+  // Select until a Pencil touches the page or a tool is picked, so a mouse drag selects text.
+  let currentTool = SELECT_TOOL;
+  let toolChosen = false;
   let previousDrawingTool = 'pen';
-  let currentColor = INK_COLORS[0];
+  let awake = false;
+  let currentColor = null;
   let isDrawing = false;
   let activePoints = [];
   let strokeStartTime = 0;
@@ -764,9 +844,28 @@ export function createInkLayer(view, options = {}) {
   let highlightGroup = null;
   let penGroup = null;
   let activeGroup = null;
+  let eraserRing = null;
   let palette = null;
   const colorDots = [];
   const toolDots = [];
+  let wheelBtn = null;
+  let wheel = null;
+  let wheelDisc = null;
+  let wheelMark = null;
+  let wheelLight = null;
+  let wheelOpen = false;
+  let wheelCheck = null;
+  let pendingColor = null;
+  // The eight dots' colours: the defaults, or the ones the wheel put there (kept on this device).
+  const COLORS_KEY = 'rc-ink-colors';
+  const paletteColors = (() => {
+    try {
+      const saved = JSON.parse(globalObj?.localStorage?.getItem(COLORS_KEY) || 'null');
+      if (Array.isArray(saved) && saved.length === INK_COLORS.length && saved.every(c => /^#[0-9a-fA-F]{6}$/.test(c))) return saved;
+    } catch { /* no storage: the defaults */ }
+    return [...INK_COLORS];
+  })();
+  currentColor = paletteColors[0];
 
   function getCurrentPageIndex() {
     if (typeof getPageIndex === 'function') {
@@ -804,41 +903,51 @@ export function createInkLayer(view, options = {}) {
     activeGroup = docNode.createElementNS('http://www.w3.org/2000/svg', 'g');
     activeGroup.setAttribute('class', 'rc-ink-active-group');
 
+    // The eraser's ring: replaces the pointer while an eraser is picked, at exactly the size it erases.
+    eraserRing = docNode.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    eraserRing.setAttribute('class', 'rc-ink-eraser-ring');
+    eraserRing.setAttribute('fill', 'none');
+    eraserRing.setAttribute('stroke-width', '1');
+    eraserRing.style.display = 'none';
+
     svg.appendChild(highlightGroup);
     svg.appendChild(penGroup);
     svg.appendChild(activeGroup);
+    svg.appendChild(eraserRing);
 
     if (typeof scrollDOM.appendChild === 'function') {
       scrollDOM.appendChild(svg);
     }
   }
 
-  // 2. Build Palette DOM (Pure dot colours and tool row, zero text/words, no Done button)
+  // 2. The pill and its palette. The pill always rests under the top edge (asleep); a tap,
+  // or a Pencil double-tap or squeeze, wakes the palette, which hangs over the text without
+  // moving it. A tap anywhere outside puts it back to sleep.
+  let dock = null;
+  let pill = null;
   if (docNode && typeof docNode.createElement === 'function') {
+    dock = docNode.createElement('div');
+    dock.className = 'rc-ink-dock';
+
+    pill = docNode.createElement('button');
+    pill.className = 'rc-ink-pill';
+    pill.setAttribute('type', 'button');
+    pill.setAttribute('aria-label', 'Ink tools');
+    pill.setAttribute('title', 'Ink tools');
+    pill.setAttribute('aria-expanded', 'false');
+    pill.textContent = '';
+    pill.addEventListener('click', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      toggleMenu();
+    });
+
     palette = docNode.createElement('div');
     palette.className = 'rc-ink-palette';
     palette.hidden = true;
     palette.setAttribute('aria-label', 'Ink palette');
 
-    // 8 colour dots
-    for (const color of INK_COLORS) {
-      const dot = docNode.createElement('button');
-      dot.className = `rc-ink-color-dot${color === currentColor ? ' rc-active' : ''}`;
-      dot.setAttribute('type', 'button');
-      dot.setAttribute('data-color', color);
-      dot.setAttribute('aria-label', color);
-      dot.style.backgroundColor = color;
-      dot.textContent = '';
-      dot.addEventListener('click', e => {
-        if (typeof e.preventDefault === 'function') e.preventDefault();
-        setColor(color);
-      });
-      palette.appendChild(dot);
-      colorDots.push(dot);
-    }
-
-    // 6 tool buttons, each with its own icon (no words)
-    for (const tool of INK_TOOLS) {
+    // Tools first (Select, then the ink tools), each with its own icon (no words)
+    for (const tool of PALETTE_TOOLS) {
       const dot = docNode.createElement('button');
       dot.className = `rc-ink-tool-dot${tool === currentTool ? ' rc-active' : ''}`;
       dot.setAttribute('type', 'button');
@@ -855,9 +964,156 @@ export function createInkLayer(view, options = {}) {
       toolDots.push(dot);
     }
 
-    if (scrollDOM && typeof scrollDOM.appendChild === 'function') {
-      scrollDOM.appendChild(palette);
+    // The colour wheel, right after the eraser: a gradient to pick from, a lightness slider, and an eyedropper
+    // that takes the colour of anything under it. The colour picked replaces the selected dot's colour.
+    wheelBtn = docNode.createElement('button');
+    wheelBtn.className = 'rc-ink-wheel-btn';
+    wheelBtn.setAttribute('type', 'button');
+    wheelBtn.setAttribute('aria-label', 'Colour wheel');
+    wheelBtn.setAttribute('title', 'Colour wheel');
+    wheelBtn.setAttribute('aria-expanded', 'false');
+    wheelBtn.textContent = '';
+    wheelBtn.addEventListener('click', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      setWheelOpen(!wheelOpen);
+    });
+    palette.appendChild(wheelBtn);
+
+    // 8 colour dots (the wheel can replace any of them); picking one while on Select or the eraser picks the pen back up
+    for (let i = 0; i < paletteColors.length; i++) {
+      const dot = docNode.createElement('button');
+      dot.className = `rc-ink-color-dot${paletteColors[i] === currentColor ? ' rc-active' : ''}`;
+      dot.setAttribute('type', 'button');
+      dot.setAttribute('data-color', paletteColors[i]);
+      dot.setAttribute('aria-label', paletteColors[i]);
+      dot.style.backgroundColor = paletteColors[i];
+      dot.textContent = '';
+      dot.addEventListener('click', e => {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        setColor(dot.getAttribute('data-color'));
+        if (!isInkTool(currentTool)) setTool(previousDrawingTool);
+      });
+      palette.appendChild(dot);
+      colorDots.push(dot);
     }
+
+    wheel = docNode.createElement('div');
+    wheel.className = 'rc-ink-wheel';
+    wheel.hidden = true;
+    wheel.setAttribute('aria-label', 'Pick a colour');
+    wheelDisc = docNode.createElement('div');
+    wheelDisc.className = 'rc-ink-wheel-disc';
+    wheelDisc.setAttribute('role', 'slider');
+    wheelDisc.setAttribute('aria-label', 'Hue and saturation');
+    wheelMark = docNode.createElement('div');
+    wheelMark.className = 'rc-ink-wheel-mark';
+    wheelDisc.appendChild(wheelMark);
+    const side = docNode.createElement('div');
+    side.className = 'rc-ink-wheel-side';
+    wheelLight = docNode.createElement('input');
+    wheelLight.className = 'rc-ink-wheel-light';
+    wheelLight.setAttribute('type', 'range');
+    wheelLight.setAttribute('min', '10');
+    wheelLight.setAttribute('max', '90');
+    wheelLight.setAttribute('value', '50');
+    wheelLight.setAttribute('aria-label', 'Lightness');
+    const dropper = docNode.createElement('button');
+    dropper.className = 'rc-ink-dropper';
+    dropper.setAttribute('type', 'button');
+    dropper.setAttribute('aria-label', 'Eyedropper: take a colour from the screen');
+    dropper.setAttribute('title', 'Eyedropper');
+    dropper.innerHTML = ICON('<path d="M10.5 2.5l3 3-1.5 1.5-3-3z" fill="currentColor" fill-opacity="0.35"/><path d="M9 4l3 3-6.5 6.5H2.5v-3z"/>');
+    dropper.addEventListener('click', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      sampleColor();
+    });
+    // The pending shade and its check mark: nothing changes until the check is pressed.
+    wheelCheck = docNode.createElement('button');
+    wheelCheck.className = 'rc-ink-wheel-check';
+    wheelCheck.setAttribute('type', 'button');
+    wheelCheck.setAttribute('aria-label', 'Use this colour');
+    wheelCheck.setAttribute('title', 'Use this colour');
+    wheelCheck.hidden = true;
+    wheelCheck.innerHTML = ICON('<path d="M3.5 8.5l3 3 6-7" stroke-width="2"/>');
+    wheelCheck.addEventListener('click', e => {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (pendingColor) replaceSelectedColor(pendingColor);
+      setWheelOpen(false);
+    });
+    side.appendChild(wheelLight);
+    side.appendChild(dropper);
+    side.appendChild(wheelCheck);
+    wheel.appendChild(wheelDisc);
+    wheel.appendChild(side);
+
+    let wheelPoint = null;   // where on the disc (dx, dy, R) the last pick was
+    const pickAt = e => {
+      const r = wheelDisc.getBoundingClientRect ? wheelDisc.getBoundingClientRect() : { left: 0, top: 0, width: 160, height: 160 };
+      const R = r.width / 2;
+      let dx = e.clientX - (r.left + R), dy = e.clientY - (r.top + R);
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
+      wheelPoint = { dx, dy, R };
+      wheelMark.style.left = `${R + dx}px`;
+      wheelMark.style.top = `${R + dy}px`;
+      setPending(wheelColor(dx, dy, R, Number(wheelLight.value) / 100));
+    };
+    let wheelDown = false;
+    wheelDisc.addEventListener('pointerdown', e => {
+      wheelDown = true;
+      if (typeof wheelDisc.setPointerCapture === 'function' && e.pointerId !== undefined) {
+        try { wheelDisc.setPointerCapture(e.pointerId); } catch { /* capture is a nicety */ }
+      }
+      pickAt(e);
+    });
+    wheelDisc.addEventListener('pointermove', e => { if (wheelDown) pickAt(e); });
+    wheelDisc.addEventListener('pointerup', () => { wheelDown = false; });
+    wheelDisc.addEventListener('pointercancel', () => { wheelDown = false; });
+    wheelLight.addEventListener('input', () => {
+      wheelDisc.style.setProperty?.('--rc-wheel-l', `${wheelLight.value}%`);
+      if (wheelPoint) setPending(wheelColor(wheelPoint.dx, wheelPoint.dy, wheelPoint.R, Number(wheelLight.value) / 100));
+    });
+
+    dock.appendChild(pill);
+    dock.appendChild(palette);
+    dock.appendChild(wheel);
+    const host = mount || scrollDOM?.parentNode || null;
+    if (host && typeof host.appendChild === 'function') {
+      host.appendChild(dock);
+    }
+  }
+
+  function isInkTool(tool) {
+    return INK_TOOLS.includes(tool) && !tool.startsWith('eraser');
+  }
+
+  function contains(node, target) {
+    for (let n = target; n; n = n.parentNode) {
+      if (n === node) return true;
+    }
+    return false;
+  }
+
+  // Any press outside the pill and palette puts the palette to sleep (it doesn't eat the press).
+  function onOutsidePress(e) {
+    if (!awake || !dock) return;
+    // The colour wheel open: only its disc, lightness, eyedropper and check mark keep it; any other press puts the
+    // wheel and the palette away and keeps the current colour.
+    if (wheelOpen) {
+      const keeps = [wheelDisc, wheelLight, wheelCheck, wheel && wheel.querySelector ? wheel.querySelector('.rc-ink-dropper') : null];
+      if (keeps.some(k => k && contains(k, e.target))) return;
+      hidePalette();
+      return;
+    }
+    if (contains(dock, e.target)) return;
+    hidePalette();
+  }
+  function onKey(e) {
+    if (awake && e.key === 'Escape') hidePalette();
+  }
+  if (docNode && typeof docNode.addEventListener === 'function') {
+    docNode.addEventListener('pointerdown', onOutsidePress, true);
+    docNode.addEventListener('keydown', onKey, true);
   }
 
   function updatePaletteActive() {
@@ -879,17 +1135,82 @@ export function createInkLayer(view, options = {}) {
     }
   }
 
-  function showPalette() {
-    if (palette) {
-      palette.hidden = false;
-      palette.style.display = 'flex';
+  function setWheelOpen(on) {
+    wheelOpen = Boolean(on) && awake;
+    if (wheel) wheel.hidden = !wheelOpen;
+    if (wheelBtn) wheelBtn.setAttribute('aria-expanded', String(wheelOpen));
+    if (!wheelOpen) setPending(null);
+  }
+
+  /** A shade picked (wheel, lightness or eyedropper) waits under its check mark; null clears it. */
+  function setPending(hex) {
+    pendingColor = /^#[0-9a-fA-F]{6}$/.test(String(hex)) ? String(hex) : null;
+    if (wheelCheck) {
+      wheelCheck.hidden = !pendingColor;
+      wheelCheck.style.backgroundColor = pendingColor || '';
     }
+    return pendingColor;
+  }
+
+  /** The host's eyedropper answer: shown under the check mark (the wheel opens for it if it was closed). */
+  function offerColor(hex) {
+    if (!awake) setAwake(true);
+    if (!wheelOpen) setWheelOpen(true);
+    return setPending(hex);
+  }
+
+  /** The colour picked (wheel or eyedropper) replaces the selected dot's colour, and the pen picks it up. */
+  function replaceSelectedColor(hex) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(String(hex))) return null;
+    let i = paletteColors.indexOf(currentColor);
+    if (i < 0) i = 0;
+    paletteColors[i] = hex;
+    const dot = colorDots[i];
+    if (dot) {
+      dot.setAttribute('data-color', hex);
+      dot.setAttribute('aria-label', hex);
+      dot.style.backgroundColor = hex;
+    }
+    try { globalObj?.localStorage?.setItem(COLORS_KEY, JSON.stringify(paletteColors)); } catch { /* kept for this session */ }
+    currentColor = hex;
+    if (!isInkTool(currentTool)) setTool(previousDrawingTool);
+    updatePaletteActive();
+    return hex;
+  }
+
+  /** The eyedropper: the browser's own where it has one, else the host's (macOS's sampler, iOS's colour picker). */
+  function sampleColor() {
+    const Dropper = globalObj?.EyeDropper;
+    if (typeof Dropper === 'function') {
+      new Dropper().open().then(r => offerColor(r.sRGBHex)).catch(() => {});
+      return;
+    }
+    globalObj?.webkit?.messageHandlers?.ui?.postMessage?.({ sampleColor: true });
+  }
+
+  function setAwake(on) {
+    awake = Boolean(on);
+    if (!awake) setWheelOpen(false);
+    if (palette) palette.hidden = !awake;
+    if (dock) dock.className = awake ? 'rc-ink-dock rc-awake' : 'rc-ink-dock';
+    if (pill) pill.setAttribute('aria-expanded', String(awake));
+  }
+
+  function showPalette() {
+    setAwake(true);
   }
 
   function hidePalette() {
-    if (palette) {
-      palette.hidden = true;
-    }
+    setAwake(false);
+  }
+
+  function toggleMenu() {
+    setAwake(!awake);
+    return awake;
+  }
+
+  function isAwake() {
+    return awake;
   }
 
   function schedulePost() {
@@ -1001,6 +1322,10 @@ export function createInkLayer(view, options = {}) {
 
       const targetGroup = stroke.tool === 'highlighter' ? highlightGroup : penGroup;
       renderStrokeElement(stroke, targetGroup);
+      // Find marks handwriting that holds the search (a glow on its strokes).
+      if (stroke.ocr && inkMarks.has(stroke.ocr.g) && targetGroup.lastChild?.setAttribute) {
+        targetGroup.lastChild.setAttribute('class', 'rc-ink-found');
+      }
     }
   }
 
@@ -1088,9 +1413,9 @@ export function createInkLayer(view, options = {}) {
     const docText = getDocText();
     let res;
     if (effectiveMode === 'partial' || effectiveMode === 'eraser-partial') {
-      res = erasePartialStrokes(inkDoc.strokes, points, 10, docText, lineHeight, getCurrentPageIndex());
+      res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS['eraser-partial'], docText, lineHeight, getCurrentPageIndex());
     } else {
-      res = eraseWholeStrokes(inkDoc.strokes, points, 12);
+      res = eraseWholeStrokes(inkDoc.strokes, points, ERASER_RADIUS['eraser-whole']);
     }
 
     inkDoc.strokes = res.remaining;
@@ -1103,12 +1428,35 @@ export function createInkLayer(view, options = {}) {
   }
 
   function setTool(tool) {
-    if (!INK_TOOLS.includes(tool)) return;
-    if (!tool.startsWith('eraser')) {
+    if (!PALETTE_TOOLS.includes(tool)) return;
+    if (isInkTool(tool)) {
       previousDrawingTool = tool;
     }
+    toolChosen = true;
     currentTool = tool;
     updatePaletteActive();
+    updateCursor();
+    if (typeof onToolChange === 'function') onToolChange(tool);
+  }
+
+  // An eraser hides the pointer and draws its ring instead; any other tool gives the pointer back.
+  function updateCursor() {
+    const erasing = currentTool.startsWith('eraser');
+    if (scrollDOM?.style) scrollDOM.style.cursor = erasing ? 'none' : '';
+    if (!erasing) hideRing();
+  }
+
+  function hideRing() {
+    if (eraserRing) eraserRing.style.display = 'none';
+  }
+
+  function moveRing(e) {
+    if (!eraserRing || !currentTool.startsWith('eraser') || e.pointerType === 'touch') return;
+    const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+    eraserRing.setAttribute('cx', String(e.clientX - rect.left + (scrollDOM?.scrollLeft || 0)));
+    eraserRing.setAttribute('cy', String(e.clientY - rect.top + (scrollDOM?.scrollTop || 0)));
+    eraserRing.setAttribute('r', String(ERASER_RADIUS[currentTool] || 12));
+    eraserRing.style.display = '';
   }
 
   function getTool() {
@@ -1116,7 +1464,7 @@ export function createInkLayer(view, options = {}) {
   }
 
   function setColor(color) {
-    if (INK_COLORS.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
+    if (paletteColors.includes(color) || /^#[0-9a-fA-F]{6}$/.test(color)) {
       currentColor = color;
       updatePaletteActive();
     }
@@ -1127,18 +1475,25 @@ export function createInkLayer(view, options = {}) {
   }
 
   function toggleEraser() {
-    if (currentTool.startsWith('eraser')) {
-      currentTool = previousDrawingTool;
-    } else {
-      currentTool = 'eraser-whole';
-    }
-    updatePaletteActive();
+    setTool(currentTool.startsWith('eraser') ? previousDrawingTool : 'eraser-whole');
     return currentTool;
   }
 
+  // Whether this press draws. Select never draws; the first Pencil touch on an untouched
+  // palette picks the pen, so the iPad writes at once while the Mac's mouse selects text.
+  function inks(e) {
+    if (e.pointerType === 'touch') return false;
+    if (!allowMouse && e.pointerType === 'mouse') return false;
+    if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === 'pen') {
+      currentTool = 'pen';
+      updatePaletteActive();
+      if (typeof onToolChange === 'function') onToolChange(currentTool);
+    }
+    return currentTool !== SELECT_TOOL;
+  }
+
   function onPointerDown(e) {
-    if (e.pointerType === 'touch') return;
-    if (!allowMouse && e.pointerType === 'mouse') return;
+    if (isDrawing || !inks(e)) return;
 
     isDrawing = true;
     strokeStartTime = e.timeStamp || Date.now();
@@ -1159,12 +1514,13 @@ export function createInkLayer(view, options = {}) {
       renderActiveStroke();
     }
 
-    if (typeof e.preventDefault === 'function' && e.pointerType === 'pen') {
+    if (typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
   }
 
   function onPointerMove(e) {
+    moveRing(e);   // also while hovering (mouse, or a Pencil above the glass)
     if (!isDrawing) return;
     if (e.pointerType === 'touch') return;
 
@@ -1193,7 +1549,7 @@ export function createInkLayer(view, options = {}) {
       renderActiveStroke();
     }
 
-    if (typeof e.preventDefault === 'function' && e.pointerType === 'pen') {
+    if (typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
   }
@@ -1242,11 +1598,93 @@ export function createInkLayer(view, options = {}) {
 
     anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
     inkDoc.strokes.push(stroke);
+    if (stroke.tool === 'pen') scheduleRecognition();
 
     activePoints = [];
     if (activeGroup) activeGroup.innerHTML = '';
     render();
     schedulePost();
+  }
+
+  // Handwriting → text, for Find: 1.5 s after the pen rests, each new group goes to the host as a picture.
+  let ocrTimer = null;
+  const ocrSent = new Map();   // group id → its strokes, while the host reads it
+  function scheduleRecognition() {
+    if (ocrTimer !== null) clearTimeout(ocrTimer);
+    ocrTimer = setTimeout(() => {
+      ocrTimer = null;
+      recognizeNow();
+    }, 1500);
+  }
+  function recognizeNow() {
+    const post = globalObj?.webkit?.messageHandlers?.ui?.postMessage;
+    if (typeof post !== 'function' || !docNode || typeof docNode.createElement !== 'function') return 0;
+    const pending = new Set([...ocrSent.values()].flat());
+    const groups = groupHandwriting(inkDoc.strokes.filter(st => !pending.has(st)), lineHeight);
+    let sent = 0;
+    for (const g of groups) {
+      const png = renderGroupPNG(g);
+      if (!png) continue;
+      ocrSent.set(g.id, g.strokes);
+      globalObj.webkit.messageHandlers.ui.postMessage({ inkOCR: { id: g.id, png } });
+      sent++;
+    }
+    return sent;
+  }
+  /** One group, dark on white, at twice its size (the recogniser reads larger letters better), as base64 PNG. */
+  function renderGroupPNG(g) {
+    const pad = 12, k = 2;
+    const w = Math.ceil((g.box.x1 - g.box.x0 + pad * 2) * k), h = Math.ceil((g.box.y1 - g.box.y0 + pad * 2) * k);
+    if (w < 8 || h < 8 || w > 4096 || h > 4096) return null;
+    const c = docNode.createElement('canvas');
+    const ctx = c && typeof c.getContext === 'function' ? c.getContext('2d') : null;
+    if (!ctx) return null;
+    c.width = w;
+    c.height = h;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3 * k;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const st of g.strokes) {
+      ctx.beginPath();
+      st.points.forEach((p, i) => {
+        const x = (p[0] - g.box.x0 + pad) * k, y = (p[1] - g.box.y0 + pad) * k;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      if (st.points.length === 1) ctx.lineTo((st.points[0][0] - g.box.x0 + pad) * k + 0.1, (st.points[0][1] - g.box.y0 + pad) * k);
+      ctx.stroke();
+    }
+    const url = typeof c.toDataURL === 'function' ? c.toDataURL('image/png') : '';
+    return url.startsWith('data:image/png;base64,') ? url.slice('data:image/png;base64,'.length) : null;
+  }
+  /** The host's reading of a group: kept on its strokes (and saved with the ink), so Find sees it on every device. */
+  function setInkText(id, text) {
+    const strokes = ocrSent.get(id) || inkDoc.strokes.filter(st => st.ocr && st.ocr.g === id);
+    ocrSent.delete(id);
+    const live = new Set(inkDoc.strokes);
+    let n = 0;
+    for (const st of strokes) {
+      if (!live.has(st)) continue;   // erased while it was being read
+      st.ocr = { g: id, t: String(text ?? '') };
+      n++;
+    }
+    if (n) schedulePost();
+    return n;
+  }
+  function findInk(query) {
+    return findInkText(inkDoc.strokes, query).map(m => {
+      const r = resolveStrokeAnchor(m.stroke, getDocText(), lineHeight);
+      const ys = (r.points || []).map(p => p[1]);
+      return { id: m.id, text: m.text, pageIndex: r.pageIndex ?? 0, y: ys.length ? Math.min(...ys) : 0 };
+    });
+  }
+  /** Marks the found groups' strokes (a glow), or clears the marks with an empty list. */
+  let inkMarks = new Set();
+  function markInk(ids) {
+    inkMarks = new Set(ids || []);
+    render();
   }
 
   function onPointerCancel() {
@@ -1257,7 +1695,7 @@ export function createInkLayer(view, options = {}) {
 
   // Intercept Pencil events over .cm-embed with capture listeners
   function onPointerDownCapture(e) {
-    if (e.pointerType === 'pen') {
+    if (e.pointerType === 'pen' && inks(e)) {
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
       if (typeof e.preventDefault === 'function') e.preventDefault();
       onPointerDown(e);
@@ -1265,7 +1703,7 @@ export function createInkLayer(view, options = {}) {
   }
 
   function onPointerEnterCapture(e) {
-    if (e.pointerType === 'pen' && e.buttons > 0) {
+    if (e.pointerType === 'pen' && e.buttons > 0 && currentTool !== SELECT_TOOL) {
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
       if (typeof e.preventDefault === 'function') e.preventDefault();
     }
@@ -1278,12 +1716,17 @@ export function createInkLayer(view, options = {}) {
     scrollDOM.addEventListener('pointermove', onPointerMove);
     scrollDOM.addEventListener('pointerup', onPointerUp);
     scrollDOM.addEventListener('pointercancel', onPointerCancel);
+    scrollDOM.addEventListener('pointerleave', hideRing);
   }
 
   function destroy() {
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
+    }
+    if (ocrTimer !== null) {
+      clearTimeout(ocrTimer);
+      ocrTimer = null;
     }
     if (scrollDOM && typeof scrollDOM.removeEventListener === 'function') {
       scrollDOM.removeEventListener('pointerdown', onPointerDownCapture, true);
@@ -1292,12 +1735,17 @@ export function createInkLayer(view, options = {}) {
       scrollDOM.removeEventListener('pointermove', onPointerMove);
       scrollDOM.removeEventListener('pointerup', onPointerUp);
       scrollDOM.removeEventListener('pointercancel', onPointerCancel);
+      scrollDOM.removeEventListener('pointerleave', hideRing);
     }
     if (svg && svg.parentNode && typeof svg.parentNode.removeChild === 'function') {
       svg.parentNode.removeChild(svg);
     }
-    if (palette && palette.parentNode && typeof palette.parentNode.removeChild === 'function') {
-      palette.parentNode.removeChild(palette);
+    if (docNode && typeof docNode.removeEventListener === 'function') {
+      docNode.removeEventListener('pointerdown', onOutsidePress, true);
+      docNode.removeEventListener('keydown', onKey, true);
+    }
+    if (dock && dock.parentNode && typeof dock.parentNode.removeChild === 'function') {
+      dock.parentNode.removeChild(dock);
     }
   }
 
@@ -1318,7 +1766,20 @@ export function createInkLayer(view, options = {}) {
     destroy,
     svg,
     palette,
+    pill,
+    dock,
     showPalette,
-    hidePalette
+    hidePalette,
+    toggleMenu,
+    isAwake,
+    replaceSelectedColor,
+    offerColor,
+    getPendingColor: () => pendingColor,
+    setWheelOpen,
+    getPaletteColors: () => [...paletteColors],
+    setInkText,
+    findInk,
+    markInk,
+    recognizeNow
   };
 }

@@ -349,53 +349,44 @@ func trackHold(_ touching: [(id: Int32, p: MTPoint)], at now: Double) {
     }
 }
 
-/// Two fingers in from the trackpad's right or left edge open that wing (wingpanels.swift); two fingers back toward
-/// an open wing's edge close it. With Notification Center's own edge swipe turned off (owner, 11-08) the right edge
-/// is free, and the left edge has no system gesture. Distances are fractions of the trackpad's width.
-var edgeSwipeHandler: ((String) -> Void)?
-let edgeZone: Float = 0.10        // the outer finger lands within this of the edge…
-let edgeReach: Float = 0.24       // …and the other within this
-let edgeTravel: Float = 0.06      // how far in they travel together to open (about 1 cm)
-let backTravel: Float = 0.10      // how far back toward an open wing's edge to close it
-var gEdgeStarts: [Int32: MTPoint] = [:], gEdgeSide = 0, gEdgeSpent = false
-/// Read by the scroll filter: an edge swipe may be under way, so the app under the pointer doesn't also scroll
-/// sideways (or go Back / Forward in Safari) with it.
-var gEdgeSwiping = false
+/// Three fingers sideways open and close the wings (wingpanels.swift; `wingSwipe` there decides which), whether
+/// Recense's window is up or tucked away. Up and down stay Recense's own layers.
+/// Called with the direction (-1 leftward, +1 rightward) and where the fingers started (0 = the trackpad's left edge).
+var wingSwipeHandler: ((Int, Float) -> Void)?
 
-func trackEdgeSwipe(_ touching: [(id: Int32, p: MTPoint)]) {
-    guard touching.count == 2 else {
-        gEdgeStarts = [:]; gEdgeSide = 0; gEdgeSwiping = false
-        if touching.isEmpty { gEdgeSpent = false }
+/// Exactly three fingers on the trackpad: one action per touch, up / down (layers) or sideways (wings).
+func trackThree(_ touching: [(id: Int32, p: MTPoint)]) {
+    // (Re)start tracking if this is a new set of fingers.
+    if Set(touching.map { $0.id }) != Set(gStarts.keys) {
+        gStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) })
+        gThreeMoving = false
         return
     }
-    if Set(touching.map { $0.id }) != Set(gEdgeStarts.keys) {
-        gEdgeStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) })
-        let lo = min(touching[0].p.x, touching[1].p.x), hi = max(touching[0].p.x, touching[1].p.x)
-        gEdgeSide = hi >= 1 - edgeZone && lo >= 1 - edgeReach ? 1 : (lo <= edgeZone && hi <= edgeReach ? -1 : 0)
-        gEdgeSwiping = gEdgeSide != 0 && !gEdgeSpent
+    var dys: [Float] = [], dxs: [Float] = []
+    for t in touching {
+        let s0 = gStarts[t.id]!
+        dys.append(t.p.y - s0.y); dxs.append(t.p.x - s0.x)
+    }
+    let allUp = dys.allSatisfy { $0 > 0.01 }, allDown = dys.allSatisfy { $0 < -0.01 }
+    let allRight = dxs.allSatisfy { $0 > 0.01 }, allLeft = dxs.allSatisfy { $0 < -0.01 }
+    gThreeMoving = allUp || allDown || allRight || allLeft
+    if gThreeMoving { gLastTouchWasSwipe = true }
+    guard !gSpent else { return }
+    let dy = dys.reduce(0, +) / 3, dx = dxs.reduce(0, +) / 3
+    let together = dys.allSatisfy { abs($0) >= fingerDistance } && (allUp || allDown)
+    if together && abs(dy) > swipeDistance && abs(dy) > abs(dx) * 1.5 {
+        gSpent = true                                                    // one action per swipe
+        let cmd = dy > 0 ? "up" : "down"
+        DispatchQueue.main.async { gestureHandler?(cmd) }
         return
     }
-    guard !gEdgeSpent else { return }
-    let dxs = touching.map { $0.p.x - gEdgeStarts[$0.id]!.x }, dys = touching.map { $0.p.y - gEdgeStarts[$0.id]!.y }
-    let dx = (dxs[0] + dxs[1]) / 2, dy = (dys[0] + dys[1]) / 2
-    let sideways = abs(dx) > abs(dy) * 1.5
-    if gEdgeSide != 0 {
-        // Up or down along the edge is a scroll: let it be one.
-        if abs(dy) > 0.04 && !sideways { gEdgeSide = 0; gEdgeSwiping = false; return }
-        let inward: (Float) -> Float = { gEdgeSide == 1 ? -$0 : $0 }
-        if sideways && inward(dx) >= edgeTravel && dxs.allSatisfy({ inward($0) > 0.02 }) {
-            gEdgeSpent = true; gLastTouchWasSwipe = true                // its momentum doesn't scroll either
-            let cmd = gEdgeSide == 1 ? "right-in" : "left-in"
-            DispatchQueue.main.async { edgeSwipeHandler?(cmd) }
-        }
-        return
+    let sideways = dxs.allSatisfy { abs($0) >= fingerDistance } && (allRight || allLeft)
+    if sideways && abs(dx) > swipeDistance && abs(dx) > abs(dy) * 1.5 {
+        gSpent = true
+        let startX = gStarts.values.map { $0.x }.reduce(0, +) / Float(gStarts.count)
+        let dir = dx > 0 ? 1 : -1
+        DispatchQueue.main.async { wingSwipeHandler?(dir, startX) }
     }
-    // Back toward an open wing's edge, from anywhere on the trackpad.
-    guard sideways, abs(dx) >= backTravel, dxs.allSatisfy({ abs($0) > 0.03 && ($0 > 0) == (dx > 0) }) else { return }
-    let cmd = dx > 0 ? (gWingOpenRight ? "right-out" : "") : (gWingOpenLeft ? "left-out" : "")
-    guard !cmd.isEmpty else { return }
-    gEdgeSpent = true
-    DispatchQueue.main.async { edgeSwipeHandler?(cmd) }
 }
 
 let frameCallback: MTFrameCallback = { _, data, count, now, _ in
@@ -409,33 +400,10 @@ let frameCallback: MTFrameCallback = { _, data, count, now, _ in
     let n = touching.count
     if !gWasDown && n > 0 { gLastTouchWasSwipe = false }                 // a new touch begins
     gWasDown = n > 0
-    trackEdgeSwipe(touching)
     if n == 0 { gStarts = [:]; gSpent = false; gThreeMoving = false; return 0 }
     if n > 3 { gStarts = [:]; gSpent = true; gThreeMoving = false; return 0 }   // four or more: ignore until lifted
     if n < 3 { gStarts = [:]; gThreeMoving = false; return 0 }
-
-    // Exactly three. (Re)start tracking if this is a new set of fingers.
-    if Set(touching.map { $0.id }) != Set(gStarts.keys) {
-        gStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) })
-        gThreeMoving = false
-        return 0
-    }
-    var dys: [Float] = [], dxs: [Float] = []
-    for t in touching {
-        let s0 = gStarts[t.id]!
-        dys.append(t.p.y - s0.y); dxs.append(t.p.x - s0.x)
-    }
-    let allUp = dys.allSatisfy { $0 > 0.01 }, allDown = dys.allSatisfy { $0 < -0.01 }
-    gThreeMoving = allUp || allDown
-    if gThreeMoving { gLastTouchWasSwipe = true }
-    guard !gSpent else { return 0 }
-    let dy = dys.reduce(0, +) / 3, dx = dxs.reduce(0, +) / 3
-    let together = dys.allSatisfy { abs($0) >= fingerDistance } && (allUp || allDown)
-    if together && abs(dy) > swipeDistance && abs(dy) > abs(dx) * 1.5 {
-        gSpent = true                                                    // one action per swipe
-        let cmd = dy > 0 ? "up" : "down"
-        DispatchQueue.main.async { gestureHandler?(cmd) }
-    }
+    trackThree(touching)
     return 0
 }
 
@@ -452,7 +420,7 @@ let scrollFilter: CGEventTapCallBack = { _, type, event, _ in
     guard type == .scrollWheel, event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 else {
         return Unmanaged.passUnretained(event)
     }
-    if gThreeMoving || gEdgeSwiping { return nil }
+    if gThreeMoving { return nil }
     let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
     if !gWasDown && momentum != 0 && gLastTouchWasSwipe { return nil }
     return Unmanaged.passUnretained(event)
@@ -6669,7 +6637,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self.present(.pad)
             e.send("jumpToLine(\(line))")
         }
-        w.menuItems = { [weak self] in self?.wingMotionItems() ?? [] }
         return w
     }()
     lazy var menuBar = MenuBarUsage()
@@ -6756,6 +6723,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
 
         writeState("hidden")
+        // The wings' Recense card follows the line on Recense's screen.
+        MainActor.assumeIsolated { Recense.onLine = { [weak self] o, t in self?.wingPanels.setRecenseLine(o, t) } }
         Recense.start()            // last, once Recense's own strip, hover and gestures are set up (start() runs once)
         run(initialCommand)
     }
@@ -6773,16 +6742,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             NSLog("recense: two-finger hold \(on ? "down" : "up")")
             MainActor.assumeIsolated { Recense.hold(on) }
         }
-        edgeSwipeHandler = { [weak self] cmd in
-            NSLog("recense: two-finger edge swipe \(cmd)")
-            guard let self = self else { return }
-            switch cmd {
-            case "right-in": self.wingPanels.show(.right)
-            case "left-in": self.wingPanels.show(.left)
-            case "right-out": self.wingPanels.hide(.right, "swipe back")
-            case "left-out": self.wingPanels.hide(.left, "swipe back")
-            default: break
-            }
+        wingSwipeHandler = { [weak self] dir, x in
+            NSLog("recense: three-finger swipe \(dir < 0 ? "leftward" : "rightward") from \(x)")
+            self?.wingPanels.swipe(dir, from: x)
         }
         let n = gestures?.begin() ?? 0
         NSLog("recense: native gestures listening on \(n) trackpad(s)")
@@ -7040,30 +7002,17 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         return items + [NSMenuItem.separator()] + wingMenuItems()
     }
 
-    // MARK: Wings (wingpanels.swift): the visible controls beside the edge swipes and voice
+    // MARK: Wings (wingpanels.swift): the visible controls beside the three-finger swipes, side-bar holds and voice
 
-    /// "Show Left Wing", "Show Right Wing" (Hide while open) and the motion setting.
+    /// "Show Left Wing", "Show Right Wing" (Hide while open).
     func wingMenuItems() -> [NSMenuItem] {
         let left = NSMenuItem(title: wingPanels.isOpen(.left) ? "Hide Left Wing" : "Show Left Wing", action: #selector(toggleLeftWing), keyEquivalent: "")
         let right = NSMenuItem(title: wingPanels.isOpen(.right) ? "Hide Right Wing" : "Show Right Wing", action: #selector(toggleRightWing), keyEquivalent: "")
         [left, right].forEach { $0.target = self }
-        let motion = NSMenuItem(title: "Wing Motion", action: nil, keyEquivalent: "")
-        let sub = NSMenu(); wingMotionItems().forEach { sub.addItem($0) }
-        motion.submenu = sub
-        return [left, right, motion]
-    }
-    func wingMotionItems() -> [NSMenuItem] {
-        let slide = NSMenuItem(title: "Slide In from the Edge", action: #selector(wingSlide), keyEquivalent: "")
-        let fan = NSMenuItem(title: "Fan Out from the Edge", action: #selector(wingFan), keyEquivalent: "")
-        slide.state = wingMotion == .slide ? .on : .off
-        fan.state = wingMotion == .fan ? .on : .off
-        [slide, fan].forEach { $0.target = self }
-        return [slide, fan]
+        return [left, right]
     }
     @objc func toggleLeftWing() { wingPanels.toggle(.left) }
     @objc func toggleRightWing() { wingPanels.toggle(.right) }
-    @objc func wingSlide() { wingMotion = .slide }
-    @objc func wingFan() { wingMotion = .fan }
     @objc func useNewEditor() { setEditor(.new) }
     @objc func useClassicEditor() { setEditor(.classic) }
 
@@ -7231,8 +7180,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "wing-left":  wingPanels.show(.left)
         case "wing-right": wingPanels.show(.right)
         case "wing-close": wingPanels.hideAll()
-        case "wing-motion-slide": wingMotion = .slide
-        case "wing-motion-fan": wingMotion = .fan
         default:       present(.time)
         }
     }
@@ -7933,7 +7880,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
                 "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go",
-                "wing-left", "wing-right", "wing-close", "wing-motion-slide", "wing-motion-fan"]
+                "wing-left", "wing-right", "wing-close"]
 
 func stripSelftest() -> Bool {
     let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
@@ -7948,8 +7895,8 @@ func stripSelftest() -> Bool {
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
-    let g = wingsSelftest(), h = speechSelftest()
-    exit(a && b && c && d && e && f && g && h ? 0 : 1)
+    let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest()
+    exit(a && b && c && d && e && f && g && h && i ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".

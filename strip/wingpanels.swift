@@ -9,18 +9,28 @@ import WebKit
 // are; the panel draws Notification Center's frosted glass (NSVisualEffectView) behind each one, and the desktop
 // shows between them.
 //
-// Summoned by a two-finger swipe in from the trackpad's right or left edge (app.swift, trackEdgeSwipe), the
-// Recense menu, the editor's right-click menu, `recense wing-left|wing-right`, or the editor's voice moves.
-// Closed by the × on the panel, a two-finger swipe back toward its edge, Esc, or a click anywhere outside it.
-//
-// Two presentations (setting "wingMotion"): slide (default: the panel slides in from its edge, as Notification
-// Center does) and fan (the cards spread out from the edge one after another). Reduce Motion: neither; it appears.
+// Summoned (owner, 2026-11-08) by three fingers sideways on the trackpad (app.swift, trackThree; `wingSwipe` below),
+// the Recense menu, the editor's right-click menu, `recense wing-left|wing-right`, or the editor's voice moves;
+// Recense's own window needn't be open. No long holds on the Mac (owner).
+// A summoned wing stays locked open, whatever Recense does, until its ×, the three-finger swipe that puts it away,
+// or the menu. No click outside or Esc closes it.
+// It slides in from its edge as Notification Center does; Reduce Motion: it appears.
 
 enum WingSide: String, CaseIterable { case left, right }
-enum WingMotion: String { case slide, fan }
-var wingMotion: WingMotion {
-    get { WingMotion(rawValue: UserDefaults.standard.string(forKey: "wingMotion") ?? "") ?? .slide }
-    set { UserDefaults.standard.set(newValue.rawValue, forKey: "wingMotion") }
+
+/// Three fingers sideways: leftward brings out the right wing, rightward the left one (both can be out). Leftward from
+/// the middle of the trackpad puts the left wing back in while it's out, rightward from the middle the right one; a
+/// swipe that has nothing to open puts the other wing in. nil: nothing to do.
+func wingSwipe(dir: Int, startX: Float, left: Bool, right: Bool) -> (side: WingSide, open: Bool)? {
+    let middle = startX >= 0.3 && startX <= 0.7
+    if dir < 0 {
+        if middle && left { return (.left, false) }
+        if !right { return (.right, true) }
+        return left ? (.left, false) : nil
+    }
+    if middle && right { return (.right, false) }
+    if !left { return (.left, true) }
+    return right ? (.right, false) : nil
 }
 
 /// Read by the trackpad thread (app.swift): which wings are open, so a swipe toward that edge closes it.
@@ -44,12 +54,12 @@ final class WingPanels {
         let host: EditorHost
         var glass: [NSVisualEffectView] = []
         var height: CGFloat = 0
+        var width: CGFloat = WingPanels.width   // grows with Recense's line (the page asks, 360–560)
         var ready = false
     }
     private var wings: [WingSide: Wing] = [:]
     private(set) var open: Set<WingSide> = []
     private var pendingShow: Set<WingSide> = []
-    private var monitors: [Any] = []
     private var transition: [WingSide: Int] = [:]
 
     let vault: URL, cache: URL
@@ -60,6 +70,13 @@ final class WingPanels {
     /// A card cites into the page / jumps to a line in it.
     var onInsert: ((String) -> Void)?
     var onJump: ((Int) -> Void)?
+    /// Recense's line on screen (words, translation), for both wings' Recense card.
+    private var line = ("", "")
+    func setRecenseLine(_ original: String, _ translation: String) {
+        line = (original, translation)
+        for w in wings.values { w.host.send("setRecenseLine(\(jsString(original)), \(jsString(translation)))") }
+    }
+
     /// Extra entries for a panel's right-click menu.
     var menuItems: () -> [NSMenuItem] = { [] }
 
@@ -68,6 +85,12 @@ final class WingPanels {
     func isOpen(_ s: WingSide) -> Bool { open.contains(s) }
 
     func toggle(_ s: WingSide) { isOpen(s) ? hide(s) : show(s) }
+
+    /// Three fingers sideways (app.swift): see `wingSwipe`.
+    func swipe(_ dir: Int, from x: Float) {
+        guard let d = wingSwipe(dir: dir, startX: x, left: isOpen(.left), right: isOpen(.right)) else { return }
+        d.open ? show(d.side) : hide(d.side, "three-finger swipe")
+    }
 
     /// The page's request: op is open / close / toggle; side is left, right or both.
     func handle(op: String, side: String) {
@@ -91,7 +114,7 @@ final class WingPanels {
         transition[s, default: 0] += 1
         w.host.setText(currentText())
         w.host.send("setArranging(false)")       // Move controls hidden at rest, every time it opens
-        installMonitors()
+        w.host.send("setRecenseLine(\(jsString(line.0)), \(jsString(line.1)))")
         guard w.ready else { pendingShow.insert(s); return }   // first time: once the page has laid itself out
         present(s)
     }
@@ -99,14 +122,14 @@ final class WingPanels {
     private func present(_ s: WingSide) {
         guard let w = wings[s] else { return }
         let screen = WingPanels.pointerScreen()
-        w.panel.setFrame(frame(s, height: w.height, on: screen), display: false)
+        w.panel.setFrame(frame(s, height: w.height, width: w.width, on: screen), display: false)
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         w.stage.frame = w.panel.contentView?.bounds ?? .zero
         w.panel.alphaValue = 1
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         if still {
             w.panel.orderFrontRegardless()
-        } else if wingMotion == .slide {
+        } else {
             // In from the edge, inside the panel's own bounds, so nothing shows on a neighbouring display.
             var start = w.stage.frame
             start.origin.x = s == .right ? start.width + WingPanels.edgeInset : -(start.width + WingPanels.edgeInset)
@@ -117,18 +140,14 @@ final class WingPanels {
                 c.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
                 w.stage.animator().setFrameOrigin(.zero)
             }
-        } else {
-            w.panel.orderFrontRegardless()
-            w.host.send("fanOut()")
         }
-        log("wings: \(s.rawValue) open (\(still ? "still" : wingMotion.rawValue))")
+        log("wings: \(s.rawValue) open\(still ? " (still)" : "")")
     }
 
     func hide(_ s: WingSide, _ why: String = "asked") {
         pendingShow.remove(s)
         guard open.contains(s), let w = wings[s] else { return }
         open.remove(s); syncFlags()
-        if open.isEmpty { removeMonitors() }
         transition[s, default: 0] += 1
         let t = transition[s]
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -140,12 +159,8 @@ final class WingPanels {
         NSAnimationContext.runAnimationGroup({ c in
             c.duration = 0.2
             c.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            if wingMotion == .slide {
-                w.stage.animator().setFrameOrigin(NSPoint(x: s == .right ? w.stage.frame.width + WingPanels.edgeInset
-                                                                         : -(w.stage.frame.width + WingPanels.edgeInset), y: 0))
-            } else {
-                w.panel.animator().alphaValue = 0
-            }
+            w.stage.animator().setFrameOrigin(NSPoint(x: s == .right ? w.stage.frame.width + WingPanels.edgeInset
+                                                                     : -(w.stage.frame.width + WingPanels.edgeInset), y: 0))
         }, completionHandler: done)
         log("wings: \(s.rawValue) closed (\(why))")
     }
@@ -166,12 +181,13 @@ final class WingPanels {
 
     /// Notification Center's place: below the menu bar, inset from the side edge; as tall as the cards, at most
     /// down to the bottom of the screen (above the Dock).
-    func frame(_ s: WingSide, height: CGFloat, on screen: NSScreen?) -> NSRect {
+    func frame(_ s: WingSide, height: CGFloat, width: CGFloat = WingPanels.width, on screen: NSScreen?) -> NSRect {
         let v = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let maxH = v.height - WingPanels.topGap - WingPanels.bottomGap
         let h = min(max(height, 60), maxH)
-        let x = s == .right ? v.maxX - WingPanels.width - WingPanels.edgeInset : v.minX + WingPanels.edgeInset
-        return NSRect(x: x.rounded(), y: (v.maxY - WingPanels.topGap - h).rounded(), width: WingPanels.width, height: h.rounded())
+        let wd = min(max(width, WingPanels.width), 560)
+        let x = s == .right ? v.maxX - wd - WingPanels.edgeInset : v.minX + WingPanels.edgeInset
+        return NSRect(x: x.rounded(), y: (v.maxY - WingPanels.topGap - h).rounded(), width: wd.rounded(), height: h.rounded())
     }
 
     // MARK: The panel and its page
@@ -230,21 +246,27 @@ final class WingPanels {
         case "jumpToLine":
             onJump?((d["line"] as? NSNumber)?.intValue ?? 1)
         case "layout":
-            layout(s, height: CGFloat((d["height"] as? NSNumber)?.doubleValue ?? 0), glass: d["glass"] as? [[NSNumber]] ?? [])
+            layout(s, height: CGFloat((d["height"] as? NSNumber)?.doubleValue ?? 0),
+                   width: CGFloat((d["width"] as? NSNumber)?.doubleValue ?? Double(WingPanels.width)),
+                   glass: d["glass"] as? [[NSNumber]] ?? [])
         default: break
         }
     }
 
     /// The page's shapes, in its own (top-left) coordinates: [x, y, width, height, opacity, corner radius].
-    private func layout(_ s: WingSide, height: CGFloat, glass shapes: [[NSNumber]]) {
+    private func layout(_ s: WingSide, height: CGFloat, width: CGFloat, glass shapes: [[NSNumber]]) {
         guard var w = wings[s] else { return }
-        if height > 0, abs(height - w.height) >= 1 {
-            w.height = height
+        let grew = height > 0 && abs(height - w.height) >= 1, widened = abs(width - w.width) >= 1
+        if grew || widened {
+            if height > 0 { w.height = height }
+            w.width = width
             if w.panel.isVisible {
-                // Grow or shrink from the top, as Notification Center does; the stage keeps its slide offset.
+                // Grow or shrink from the top (and from the outer edge), as Notification Center does; the stage
+                // keeps its slide offset.
                 let x = w.stage.frame.origin.x
-                w.panel.setFrame(frame(s, height: height, on: w.panel.screen), display: true)
-                w.stage.frame = NSRect(x: x, y: 0, width: WingPanels.width, height: w.panel.frame.height)
+                let f = frame(s, height: w.height, width: w.width, on: w.panel.screen)
+                w.panel.setFrame(f, display: true)
+                w.stage.frame = NSRect(x: x, y: 0, width: f.width, height: f.height)
             }
         }
         while w.glass.count < shapes.count {
@@ -298,34 +320,6 @@ final class WingPanels {
         for h in pages() where h !== from { h.refreshCalendarAdded() }
     }
 
-    // MARK: Closing: Esc, or a click outside
-
-    private func installMonitors() {
-        guard monitors.isEmpty else { return }
-        let mice: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        // Clicks in other apps are always outside the panels. (Global monitors can't hold the click back: it still
-        // reaches what was clicked.)
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: mice, handler: { [weak self] _ in self?.hideAll("a click in another app") }) { monitors.append(m) }
-        if let m = NSEvent.addLocalMonitorForEvents(matching: mice, handler: { [weak self] e in
-            guard let self = self else { return e }
-            if !self.wings.values.contains(where: { $0.panel === e.window }) { self.hideAll("a click outside") }
-            return e
-        }) { monitors.append(m) }
-        // Esc anywhere (needs the Accessibility permission Recense already has for the scroll filter).
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
-            if e.keyCode == 53 { self?.hideAll("Esc") }
-        }) { monitors.append(m) }
-        if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] e in
-            guard let self = self, e.keyCode == 53, !self.open.isEmpty else { return e }
-            self.hideAll("Esc"); return nil
-        }) { monitors.append(m) }
-    }
-
-    private func removeMonitors() {
-        monitors.forEach { NSEvent.removeMonitor($0) }
-        monitors = []
-    }
-
     // MARK: Menus
 
     private func panelMenu(_ s: WingSide) -> [NSMenuItem] {
@@ -345,45 +339,50 @@ final class WingMenuTarget: NSObject {
     }
 }
 
-/// `recense selftest`: the edge swipe (app.swift, trackEdgeSwipe) fed with made-up trackpad frames, and the two
-/// panels' places. Needs no trackpad, window or permission.
+/// `recense selftest`: the three-finger swipe (app.swift, trackThree) fed with made-up trackpad frames, the owner's
+/// open / close sequence through `wingSwipe`, and the two panels' places. Needs no trackpad, window or permission.
 func wingsSelftest() -> Bool {
     var heard: [String] = []
-    let saved = edgeSwipeHandler
-    edgeSwipeHandler = { heard.append($0) }
-    defer { edgeSwipeHandler = saved; gWingOpenLeft = false; gWingOpenRight = false }
-    /// One touch from `a` to `b` (two fingers, x and y as fractions of the trackpad), then the fingers lift.
-    func swipe(_ a: [(Float, Float)], _ b: [(Float, Float)]) -> [String] {
-        heard = []
+    let saved = wingSwipeHandler, savedLayers = gestureHandler
+    wingSwipeHandler = { d, x in heard.append("\(d < 0 ? "leftward" : "rightward")@\(Int((x * 10).rounded()))") }
+    gestureHandler = { heard.append($0) }
+    defer { wingSwipeHandler = saved; gestureHandler = savedLayers; gStarts = [:]; gSpent = false; gThreeMoving = false }
+    /// One touch: three fingers from `a` (x, y as fractions of the trackpad) moving by (dx, dy), then lifted.
+    func swipe(_ a: [(Float, Float)], _ dx: Float, _ dy: Float) -> [String] {
+        heard = []; gStarts = [:]; gSpent = false
         for step in 0...10 {
             let t = Float(step) / 10
-            trackEdgeSwipe(a.indices.map { i in
-                (id: Int32(i + 1), p: MTPoint(x: a[i].0 + (b[i].0 - a[i].0) * t, y: a[i].1 + (b[i].1 - a[i].1) * t))
-            })
+            trackThree(a.indices.map { i in (id: Int32(i + 1), p: MTPoint(x: a[i].0 + dx * t, y: a[i].1 + dy * t)) })
         }
-        trackEdgeSwipe([])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.02))   // the handler is called on the main queue
+        gStarts = [:]; gSpent = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))   // the handlers are called on the main queue
         return heard
     }
+    let mid: [(Float, Float)] = [(0.42, 0.5), (0.5, 0.55), (0.58, 0.5)]
+    let rightSide: [(Float, Float)] = [(0.72, 0.5), (0.8, 0.55), (0.88, 0.5)]
+    // The owner's sequence: leftward → right out; rightward → left out (both); middle-left → left in; middle-right → right in.
+    var lo = false, ro = false
+    func step(_ dir: Int, _ x: Float) -> String {
+        if let d = wingSwipe(dir: dir, startX: x, left: lo, right: ro) {
+            if d.side == .left { lo = d.open } else { ro = d.open }
+        }
+        return (lo ? "L" : "-") + (ro ? "R" : "-")
+    }
+    let seen: [String] = [step(-1, 0.8), step(1, 0.2), step(-1, 0.5), step(1, 0.5)]
+    let sequence = seen == ["-R", "LR", "-R", "--"]
     let w = WingPanels(vault: URL(fileURLWithPath: "/tmp"), cache: URL(fileURLWithPath: "/tmp"))
     let r = w.frame(.right, height: 300, on: nil), l = w.frame(.left, height: 300, on: nil)   // a 1440 × 900 screen
     let checks: [(String, Bool)] = [
-        ("two fingers in from the right edge open the right wing", swipe([(0.97, 0.5), (0.88, 0.6)], [(0.85, 0.5), (0.76, 0.6)]) == ["right-in"]),
-        ("two fingers in from the left edge open the left wing", swipe([(0.03, 0.5), (0.12, 0.6)], [(0.15, 0.5), (0.24, 0.6)]) == ["left-in"]),
-        ("the same swipe away from the edges opens nothing", swipe([(0.6, 0.5), (0.5, 0.6)], [(0.48, 0.5), (0.38, 0.6)]).isEmpty),
-        ("scrolling up or down along the edge opens nothing", swipe([(0.97, 0.3), (0.9, 0.4)], [(0.96, 0.7), (0.89, 0.8)]).isEmpty
-            && !gEdgeSwiping),
-        ("a short nudge in from the edge opens nothing", swipe([(0.97, 0.5), (0.88, 0.6)], [(0.95, 0.5), (0.86, 0.6)]).isEmpty),
-        ("two fingers back toward the right edge close an open right wing", {
-            gWingOpenRight = true; defer { gWingOpenRight = false }
-            return swipe([(0.4, 0.5), (0.5, 0.6)], [(0.6, 0.5), (0.7, 0.6)]) == ["right-out"]
-        }()),
-        ("…and do nothing while it's closed", swipe([(0.4, 0.5), (0.5, 0.6)], [(0.6, 0.5), (0.7, 0.6)]).isEmpty),
-        ("two fingers back toward the left edge close an open left wing", {
-            gWingOpenLeft = true; defer { gWingOpenLeft = false }
-            return swipe([(0.6, 0.5), (0.5, 0.6)], [(0.4, 0.5), (0.3, 0.6)]) == ["left-out"]
-        }()),
-        ("one action per touch", swipe([(0.97, 0.5), (0.88, 0.6)], [(0.6, 0.5), (0.5, 0.6)]) == ["right-in"]),
+        ("three fingers leftward are heard as a wing swipe", swipe(rightSide, -0.2, 0.01) == ["leftward@8"]),
+        ("three fingers rightward from the middle too", swipe(mid, 0.2, -0.01) == ["rightward@5"]),
+        ("three fingers up stay Recense's layers", swipe(mid, 0, 0.2) == ["up"]),
+        ("a short sideways nudge does nothing", swipe(mid, 0.05, 0).isEmpty),
+        ("a diagonal does nothing sideways", !swipe(mid, 0.12, 0.12).contains { $0.hasPrefix("left") || $0.hasPrefix("right") }),
+        ("the owner's sequence: right out, left out, left in (middle), right in (middle)", sequence),
+        ("with the right wing out, rightward from the left side brings the left one out",
+            wingSwipe(dir: 1, startX: 0.15, left: false, right: true).map { $0.side == .left && $0.open } == true),
+        ("with both out, leftward from the right side puts the left one in",
+            wingSwipe(dir: -1, startX: 0.85, left: true, right: true).map { $0.side == .left && !$0.open } == true),
         ("the right panel sits 8 pt in from the right edge, 360 pt wide, under the menu bar", r.maxX == 1440 - 8 && r.width == 360
             && r.maxY == 900 - WingPanels.topGap),
         ("the left panel is its exact mirror", l.minX == 8 && l.width == r.width && l.minY == r.minY && l.height == r.height),

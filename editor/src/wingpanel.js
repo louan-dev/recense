@@ -7,10 +7,13 @@
  * card (NSVisualEffectView), so the page reports where every glass shape is and how tall it is.
  *
  * page → host (wings channel): {action:'wing', op:'open'|'close'|'toggle', side}, {action:'insert', text},
- *   {action:'jumpToLine', line}, {action:'layout', height, glass:[[x, y, w, h, opacity, radius], …]},
+ *   {action:'jumpToLine', line}, {action:'layout', height, width, glass:[[x, y, w, h, opacity, radius], …]}
+ *   (width: what the Recense card's line needs, 360–560),
  *   plus wings.js's own saveState / openApp / cite messages.
  * host → page: window.recenseEditor.setText, setWingsState, setCalendarAdded, calendarResult, enableWidget,
- *   fanOut, setArranging, setTheme (the same names the editor page answers to, so one host class serves both).
+ *   setRecenseLine, setArranging, setTheme (the same names the editor page answers to, so one host class serves both).
+ * The wing stays open until its ×, its grabber slid toward the edge, the trackpad's three-finger swipe or the menu:
+ * no Esc, no click outside.
  */
 
 import { createDualWings, createCalendarScanner } from './wings.js';
@@ -105,7 +108,12 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
   }
   let lastReport = '';
   function report() {
-    const msg = { action: 'layout', height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() };
+    const msg = {
+      action: 'layout',
+      height: Math.ceil(shell.getBoundingClientRect().height),
+      width: wings.preferredWidth(),
+      glass: glassShapes()
+    };
     const key = JSON.stringify(msg);
     if (key !== lastReport) {
       lastReport = key;
@@ -120,23 +128,9 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
       report();
     });
   }
-  // While cards fan out, the glass follows them frame by frame; then it rests.
-  let followUntil = 0;
-  function follow(ms) {
-    followUntil = Math.max(followUntil, performance.now() + ms);
-    const tick = () => {
-      report();
-      if (performance.now() < followUntil) globalObj.requestAnimationFrame(tick);
-    };
-    globalObj.requestAnimationFrame(tick);
-  }
   if (globalObj.ResizeObserver) new globalObj.ResizeObserver(schedule).observe(shell);
   globalObj.addEventListener('scroll', schedule, { passive: true });
   globalObj.addEventListener('resize', schedule);
-
-  doc.addEventListener('keydown', e => {
-    if (e.key === 'Escape') post({ action: 'wing', op: 'close', side });
-  });
 
   const rescan = text => wings.setCalendarEvents(scanner.scanText(String(text ?? '')));
   let docText = '';
@@ -177,13 +171,14 @@ export function mountWingPanel(root, side, { globalObj = typeof window !== 'unde
       wings.enableHostWidget(id);
       schedule();
     },
-    fanOut() {
-      const n = wings.fanOut(side);
-      follow(420 + n * 60);
-      return n;
+    // The line on Recense's screen: the card shows it, and the panel widens to fit it.
+    setRecenseLine(original, translation) {
+      const w = wings.setRecenseLine(original, translation);
+      schedule();
+      return w;
     },
     setArranging,
-    layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), glass: glassShapes() })
+    layout: () => ({ height: Math.ceil(shell.getBoundingClientRect().height), width: wings.preferredWidth(), glass: glassShapes() })
   };
   if (globalObj) globalObj.recenseEditor = api;
   schedule();

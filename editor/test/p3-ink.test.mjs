@@ -478,7 +478,50 @@ test('P3: createInkLayer manages 240Hz coalesced events, embed capture, per-wind
   const colorButtons = layer.palette.children.filter(c => c.attributes['data-color']);
   const toolButtons = layer.palette.children.filter(c => c.attributes['data-tool']);
   assert.equal(colorButtons.length, 8, '8 color dots');
-  assert.equal(toolButtons.length, 6, '6 tool dots');
+  assert.equal(toolButtons.length, 4, 'Select, pen, highlighter, one eraser (no Underline, Circle or partial eraser)');
+  assert.equal(toolButtons[0].attributes['data-tool'], 'select', 'Select comes first');
+  // The pill and palette float in their own dock, never inside the text scroller (that squeezed the text).
+  assert.ok(layer.dock && layer.pill, 'dock and pill exist');
+  assert.equal(scrollDOM.children.includes(layer.dock), false, 'dock is not a child of the scroller');
+  assert.equal(scrollDOM.children.includes(layer.palette), false, 'palette is not a child of the scroller');
+  assert.equal(layer.getTool(), 'select', 'starts on Select so a mouse drag selects text');
+  assert.equal(layer.toggleMenu(), true, 'pill wakes the palette');
+  assert.equal(layer.palette.hidden, false);
+  assert.equal(layer.toggleMenu(), false, 'and puts it back to sleep');
+  // A mouse drag on Select draws nothing (it is a text selection).
+  bubbleListeners.pointerdown.forEach(fn => fn({ pointerType: 'mouse', clientX: 5, clientY: 5, timeStamp: 1, preventDefault: () => {} }));
+  bubbleListeners.pointerup.forEach(fn => fn({ pointerType: 'mouse', clientX: 9, clientY: 5, timeStamp: 2 }));
+  assert.equal(layer.getInk().strokes.length, 0, 'mouse on Select leaves no ink');
+  // Picking the eraser from the palette selects it (it used to stay on the pen).
+  toolButtons.find(b => b.attributes['data-tool'] === 'eraser-whole')._listeners.click[0]({ preventDefault() {} });
+  assert.equal(layer.getTool(), 'eraser-whole', 'eraser click selects the eraser');
+  // The palette's colour dots pick the last pen back up from an eraser.
+  colorButtons[1]._listeners.click[0]({ preventDefault() {} });
+  assert.equal(layer.getTool(), 'pen');
+  // An explicit Select keeps the Pencil from inking too (it selects); back to Pen for the probes below.
+  layer.setTool('select');
+  bubbleListeners.pointerdown.forEach(fn => fn({ pointerType: 'pen', clientX: 5, clientY: 5, timeStamp: 1, preventDefault: () => {} }));
+  bubbleListeners.pointerup.forEach(fn => fn({ pointerType: 'pen', clientX: 9, clientY: 5, timeStamp: 2 }));
+  assert.equal(layer.getInk().strokes.length, 0, 'Pencil on a chosen Select leaves no ink');
+  layer.setTool('pen');
+  // The colour wheel: right after the eraser; what it picks replaces the selected dot's colour.
+  const kids = layer.palette.children;
+  const eraserIdx = kids.findIndex(c => c.attributes['data-tool'] === 'eraser-whole');
+  assert.equal(kids[eraserIdx + 1].attributes['aria-label'], 'Colour wheel');
+  const before = layer.getPaletteColors();
+  layer.setColor(before[2]);
+  assert.equal(layer.replaceSelectedColor('#123456'), '#123456');
+  assert.deepEqual(layer.getPaletteColors(), [...before.slice(0, 2), '#123456', ...before.slice(3)]);
+  assert.equal(layer.getColor(), '#123456');
+  assert.equal(layer.replaceSelectedColor('not a colour'), null);
+  // A shade from the eyedropper waits under the check mark; closing the wheel keeps the current colour.
+  layer.showPalette();
+  assert.equal(layer.offerColor('#abcdef'), '#abcdef');
+  assert.equal(layer.getColor(), '#123456', 'nothing changes before the check mark');
+  layer.setWheelOpen(false);
+  assert.equal(layer.getPendingColor(), null);
+  assert.equal(layer.getColor(), '#123456', 'dismissed: the current colour stays');
+  layer.hidePalette();
   for (const b of colorButtons) {
     assert.equal(b.textContent, '', 'color dot has zero text/words');
     assert.ok(b.style.backgroundColor);

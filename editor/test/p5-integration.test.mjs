@@ -229,13 +229,14 @@ test('P5 Integration: mounted editor unifies navigation, ink sidecar, Pencil Pro
   const mounted = mountEditor(root, initialDoc);
   const api = mounted.bridge;
 
-  // 1. Apple Pencil Pro squeeze toggles between pen and eraser-whole and posts squeeze haptic
-  assert.equal(api.getInkTool(), 'pen');
-  const toggled = api.onPencilAction('squeeze');
-  assert.equal(toggled, 'eraser-whole');
-  assert.equal(api.getInkTool(), 'eraser-whole');
+  // 1. Apple Pencil Pro squeeze or double-tap wakes the palette under the pill (and sleeps it), with a haptic
+  assert.equal(api.getInkTool(), 'select');
+  assert.equal(api.onPencilAction('squeeze'), 'awake');
+  assert.equal(mounted.inkLayer.palette.hidden, false);
   assert.ok(messages.ui.some(m => m && m.haptic === 'squeeze'));
-  assert.equal(api.onPencilAction('doubleTap'), 'pen');
+  assert.equal(api.onPencilAction('doubleTap'), 'asleep');
+  assert.equal(mounted.inkLayer.palette.hidden, true);
+  assert.equal(api.getInkTool(), 'select', 'waking the palette changes no tool');
 
   // 2. Dropped-in file embed inserts ![](...) and keeps its ink on top when lines are inserted above
   const embedMd = api.dropFile('exhibits/chart 01.pdf', 'Exhibit A');

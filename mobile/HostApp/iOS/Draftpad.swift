@@ -6,8 +6,8 @@
 // Whiteboard & Apple Pencil Pro:
 // - Type and write with an Apple Pencil Pro on the same surface with no mode switch and no Done button.
 // - Ink sits on the words and moves with them, stored as plain JSON anchored to lines of text in draftpad.ink.json.
-// - Squeeze or double-tap on Apple Pencil Pro toggles the eraser and reveals the pure-dot colour/tool palette with
-//   Freeform-grade haptics.
+// - Squeeze or double-tap on Apple Pencil Pro wakes the ink palette under its pill (again: puts it to sleep), with
+//   Freeform-grade haptics. A swipe in from the left or right screen edge brings out that wing.
 import SwiftUI
 import ShowsKit
 import WebKit
@@ -185,6 +185,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
         case "ui":
             if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
+            // Handwriting to read for Find (shared/inkocr.swift): one group of strokes, as a PNG.
+            if let d = m.body as? [String: Any], let o = d["inkOCR"] as? [String: Any],
+               let id = o["id"] as? String, let png = o["png"] as? String {
+                InkOCR.read(pngBase64: png) { [weak self] text in self?.call("setInkText(\(jsLiteral(id)), \(jsLiteral(text)))") }
+                return
+            }
+            // The ink palette's eyedropper: the system colour picker (its eyedropper samples anything on screen).
+            if let d = m.body as? [String: Any], d["sampleColor"] as? Bool == true { pickColor(); return }
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 switch kind {
                 case "snap": UISelectionFeedbackGenerator().selectionChanged()
@@ -361,11 +369,45 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         call("onPencilAction(\(jsLiteral(action)))")
     }
 
+    /// A swipe in from the screen's left or right edge brings that wing out (owner, 11-08: the edge swipe, not a hold).
+    func openWing(_ side: String) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        call("openWing(\(jsLiteral(side)))")
+    }
+
     func setAudioTranscript(_ json: String) { call("setAudioTranscript(\(jsLiteral(json)))") }
+
+    private var colorDelegate: ColorPick?
+    /// Opens the system colour picker over the page; the colour chosen replaces the palette's selected one.
+    func pickColor() {
+        guard let top = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first?.rootViewController
+        else { return }
+        var shown = top
+        while let p = shown.presentedViewController { shown = p }
+        let picker = UIColorPickerViewController()
+        picker.supportsAlpha = false
+        let d = ColorPick { [weak self] c in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            c.getRed(&r, green: &g, blue: &b, alpha: &a)
+            let hex = String(format: "#%02x%02x%02x", Int((min(max(r, 0), 1) * 255).rounded()),
+                             Int((min(max(g, 0), 1) * 255).rounded()), Int((min(max(b, 0), 1) * 255).rounded()))
+            self?.call("setPickedColor(\(jsLiteral(hex)))")
+        }
+        colorDelegate = d
+        picker.delegate = d
+        shown.present(picker, animated: true)
+    }
     func updateAudioTime(_ sec: Double) { call("updateAudioTime(\(sec))") }
     func executeVoiceCommand(_ phrase: String) { call("voiceCommand(\(jsLiteral(phrase)))") }
 
     func stop() { pollTimer?.invalidate(); flushAndSave() }
+}
+
+/// Reports the colour once the picker closes (one pick, not every drag of its sliders).
+final class ColorPick: NSObject, UIColorPickerViewControllerDelegate {
+    let done: (UIColor) -> Void
+    init(_ f: @escaping (UIColor) -> Void) { done = f }
+    func colorPickerViewControllerDidFinish(_ p: UIColorPickerViewController) { done(p.selectedColor) }
 }
 
 /// A Swift string as a JavaScript string literal.
@@ -376,23 +418,48 @@ func jsLiteral(_ s: String) -> String {
 
 // MARK: Pencil
 
-/// The unified whiteboard web view, with Apple Pencil Pro squeeze and double-tap wired directly to the inline ink layer.
+/// The unified whiteboard web view, with Apple Pencil Pro squeeze and double-tap wired directly to the inline ink layer
+/// (they wake the ink palette), and a swipe in from either screen edge opening that side's wing. The edge swipes are
+/// native screen-edge recognizers, so they win over the web page's scrolling and paging.
 struct EditorSurface: UIViewRepresentable {
     let web: WKWebView
+    var onEdge: (String) -> Void = { _ in }
     let onPencilAction: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction, onEdge) }
 
     func makeUIView(context: Context) -> WKWebView {
         let i = UIPencilInteraction(delegate: context.coordinator)
         web.addInteraction(i)
+        for edge in [UIRectEdge.left, .right] {
+            let g = UIScreenEdgePanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.edgePan(_:)))
+            g.edges = edge
+            g.delegate = context.coordinator
+            web.addGestureRecognizer(g)
+        }
         return web
     }
-    func updateUIView(_ v: WKWebView, context: Context) { context.coordinator.onPencilAction = onPencilAction }
+    func updateUIView(_ v: WKWebView, context: Context) {
+        context.coordinator.onPencilAction = onPencilAction
+        context.coordinator.onEdge = onEdge
+    }
 
-    final class Coordinator: NSObject, UIPencilInteractionDelegate {
+    final class Coordinator: NSObject, UIPencilInteractionDelegate, UIGestureRecognizerDelegate {
         var onPencilAction: (String) -> Void
-        init(_ f: @escaping (String) -> Void) { onPencilAction = f }
+        var onEdge: (String) -> Void
+        private var fired = false
+        init(_ f: @escaping (String) -> Void, _ e: @escaping (String) -> Void) { onPencilAction = f; onEdge = e }
+        /// One wing per swipe, once the finger has come 40 pt in from the edge.
+        @objc func edgePan(_ g: UIScreenEdgePanGestureRecognizer) {
+            switch g.state {
+            case .began: fired = false
+            case .changed:
+                let dx = g.translation(in: g.view).x
+                if !fired, g.edges == .left ? dx > 40 : dx < -40 { fired = true; onEdge(g.edges == .left ? "left" : "right") }
+            default: break
+            }
+        }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { false }
         func pencilInteraction(_ i: UIPencilInteraction, didReceiveSqueeze s: UIPencilInteraction.Squeeze) {
             if s.phase == .ended { onPencilAction("squeeze") }
         }
@@ -444,7 +511,7 @@ struct DraftpadEditor: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            EditorSurface(web: editor.web.web) { action in
+            EditorSurface(web: editor.web.web, onEdge: { editor.web.openWing($0) }) { action in
                 editor.web.handlePencilAction(action)
             }
         }

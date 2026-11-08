@@ -16,7 +16,8 @@ import {
   searchExtension,
   openFindReplace,
   toggleFindReplace,
-  isFindReplaceOpen
+  isFindReplaceOpen,
+  setInkSearch
 } from './search.js';
 import { legalNumberingExtension } from './legal.js';
 import { createEditorBridge, externalSetTextAnnotation, postHaptic } from './bridge.js';
@@ -509,7 +510,23 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   inkLayer = createInkLayer(view, {
     getPageIndex: () => (view ? currentPage(view.state) : 0),
-    globalObj: typeof window !== 'undefined' ? window : null
+    globalObj: typeof window !== 'undefined' ? window : null,
+    mount: editorHost,
+    onToolChange: tool => {
+      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
+      if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
+    }
+  });
+
+  // Find also looks in handwriting (read on this device; ink.js + the host's recogniser).
+  setInkSearch({
+    find: q => (inkLayer ? inkLayer.findInk(q) : []),
+    mark: ids => { if (inkLayer) inkLayer.markInk(ids); },
+    reveal: m => {
+      if (!view || !m) return;
+      if (currentPage(view.state) !== m.pageIndex) showPage(view, m.pageIndex);
+      view.scrollDOM.scrollTo({ top: Math.max(0, m.y - 80), behavior: 'smooth' });
+    }
   });
 
   audioSidecar = createAudioSidecar({
@@ -603,7 +620,6 @@ export function mountEditor(root = document.body, initialDoc = '') {
     return t;
   }
 
-  let currentInkTool = 'pen';
   const voiceHandlers = {
     swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
     swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
@@ -617,11 +633,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       return openFindReplace(view);
     },
     setInkTool: tool => {
-      currentInkTool = tool;
-      const mapped = normalizeInkToolName(tool);
-      if (inkLayer) inkLayer.setTool(mapped);
-      const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
-      if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: mapped });
+      // The layer reports the change back through onToolChange (state + host message).
+      if (inkLayer) inkLayer.setTool(normalizeInkToolName(tool));
       return tool;
     },
     summarizeSection: idx => {
@@ -690,27 +703,25 @@ export function mountEditor(root = document.body, initialDoc = '') {
         inkLayer.relayout();
         return merged;
       },
-      getInkTool: () => currentInkTool,
+      getInkTool: () => (inkLayer ? inkLayer.getTool() : 'select'),
       setInkTool: tool => voiceHandlers.setInkTool(tool),
       getInkColor: () => (inkLayer ? inkLayer.getColor() : INK_COLORS[0]),
       setInkColor: color => {
         if (inkLayer) inkLayer.setColor(color);
         return inkLayer ? inkLayer.getColor() : color;
       },
-      toggleEraser: () => {
-        currentInkTool = inkLayer ? inkLayer.toggleEraser() : 'eraser-whole';
-        return currentInkTool;
-      },
+      toggleEraser: () => (inkLayer ? inkLayer.toggleEraser() : 'eraser-whole'),
+      // The host's eyedropper answer (macOS's sampler, iOS's colour picker): it waits under the wheel's check mark.
+      // The host's reading of a handwriting group (shared/inkocr.swift): kept with its strokes for Find.
+      setInkText: (id, text) => (inkLayer ? inkLayer.setInkText(String(id), String(text ?? '')) : 0),
+      setPickedColor: hex => (inkLayer ? inkLayer.offerColor(String(hex)) : null),
+      // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
       onPencilAction: action => {
-        if (action === 'squeeze' || action === 'doubleTap') {
+        if ((action === 'squeeze' || action === 'doubleTap') && inkLayer) {
           postHaptic('squeeze');
-          if (inkLayer) {
-            inkLayer.showPalette();
-            currentInkTool = inkLayer.toggleEraser();
-            return currentInkTool;
-          }
+          return inkLayer.toggleMenu() ? 'awake' : 'asleep';
         }
-        return currentInkTool;
+        return inkLayer && inkLayer.isAwake() ? 'awake' : 'asleep';
       },
       setAudioTranscript: data => {
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
@@ -752,6 +763,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       moveWidget: (id, side) => (dualWings ? dualWings.moveWidget(id, side) : null),
       getWingLayout: () => (dualWings ? dualWings.getWingLayout() : { left: [], right: [], leftOpen: false, rightOpen: false }),
       setPreviewTarget: (src, caption) => (dualWings ? dualWings.setPreviewTarget(src, caption) : null),
+      setRecenseLine: (original, translation) => (dualWings ? dualWings.setRecenseLine(original, translation) : null),
       setMediaSource: (src, title) => (dualWings ? dualWings.setMediaSource(src, title) : null),
       setPlaybackRate: rate => (dualWings ? dualWings.setPlaybackRate(rate) : null),
       setLoopRange: (start, end) => (dualWings ? dualWings.setLoopRange(start, end) : null),
@@ -869,13 +881,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onZoneEnter(zone) {
       if (zone === 'top') {
         setToolbarFaded(false);
-        if (inkLayer) inkLayer.showPalette();
       }
     },
     onZoneLeave(zone) {
       if (zone === 'top' && !menuOpen) {
         setToolbarFaded(true);
-        if (inkLayer) inkLayer.hidePalette();
       }
     },
     globalObj: typeof window !== 'undefined' ? window : null
@@ -905,7 +915,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       return openFindReplace(view);
     },
     voiceCommand,
-    getInkTool: () => currentInkTool,
+    getInkTool: () => (inkLayer ? inkLayer.getTool() : 'select'),
     setInkTool: tool => voiceHandlers.setInkTool(tool),
     getTheme: () => currentTheme,
     getFontSize: () => currentFontSize,
