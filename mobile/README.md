@@ -86,6 +86,9 @@ zsh mobile/macos/build.sh                     # builds and installs the Mac app 
 New Swift files in `HostApp/iOS/` or `../shared/` are built in automatically (synchronized folders); others go into the project by hand.
 `../shared/ShowsKit/` is the exception: a Swift package the app links (`import ShowsKit`), excluded from the synchronized group.
 Built with Xcode 27.2 (`/Applications/Xcode-27.2.0.app`, iOS 27.2 SDK; `build.sh` picks it unless `DEVELOPER_DIR` is set). Devices are named by UDID.
+With no device named, `build.sh` picks the first physical iPhone or iPad (booted simulators are listed as connected too since Xcode 27).
+The unsigned compile (`CODE_SIGNING_ALLOWED=NO`) only proves the code builds; nothing reaches a device until `build.sh` runs.
+It needs the device service and the Keychain, so a sandboxed agent session must run it outside the sandbox.
 Signed with a free Personal Team, so the iOS profile lasts 7 days. `sync/bin/resign-ios.zsh` runs daily and checks
 each device on its own: one whose app is missing or was installed 5 or more days ago is reinstalled (the cached
 profile is renewed first when 2 days or less are left). Per-device stamps: `~/Library/Application Support/recense/resign-ios/`. The device's Access token comes from the Keychain (`gallery-access-<device>`, else
