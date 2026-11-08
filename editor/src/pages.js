@@ -3,6 +3,11 @@ import { Decoration, EditorView } from '@codemirror/view';
 
 export const PAGE_MARKER = '<!-- page -->';
 export const PAGE_JOINER = `\n\n${PAGE_MARKER}\n\n`;
+/** A saved page's hidden line (library.js): `<!-- saved k3x9q2 -->`. */
+export const META_RE = /^<!-- saved ([a-z0-9]{6}) -->$/;
+export function isMetaLine(line) {
+  return META_RE.test(String(line || '').trim());
+}
 
 const WEEKDAYS = new Set([
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
@@ -106,7 +111,7 @@ export function inspectDraftpadPages(text) {
     let firstNonEmptyLineNumber = startLine;
     for (let j = 0; j < pageLines.length; j++) {
       const candidate = pageLines[j].trim();
-      if (candidate.length > 0) {
+      if (candidate.length > 0 && !isMetaLine(candidate)) {
         firstNonEmptyLine = pageLines[j];
         firstNonEmptyLineNumber = startLine + j;
         break;
@@ -144,6 +149,7 @@ export function findPageDecorations(text) {
   const lines = source.split('\n');
   const markers = [];
   const dateLines = [];
+  const metaLines = [];
   let offset = 0;
   let awaitingPageFirstContentLine = true;
 
@@ -157,6 +163,8 @@ export function findPageDecorations(text) {
     if (lineText === PAGE_MARKER) {
       markers.push({ from, to, lineNumber });
       awaitingPageFirstContentLine = true;
+    } else if (isMetaLine(lineText)) {
+      metaLines.push({ from, to, lineNumber });
     } else if (awaitingPageFirstContentLine && lineText.trim().length > 0) {
       awaitingPageFirstContentLine = false;
       if (isFullDateLine(lineText)) {
@@ -167,7 +175,7 @@ export function findPageDecorations(text) {
     offset += rawLine.length + 1;
   }
 
-  return { markers, dateLines };
+  return { markers, dateLines, metaLines };
 }
 
 const pageDividerLineDeco = Decoration.line({
@@ -184,10 +192,16 @@ const pageDateLineDeco = Decoration.line({
   }
 });
 
+// A saved page's hidden line: out of sight (and out of the caret's way) in the editor.
+const metaHiddenDeco = Decoration.replace({ block: true });
+
 function buildPageDecoSet(doc) {
   const text = doc.toString();
-  const { markers, dateLines } = findPageDecorations(text);
+  const { markers, dateLines, metaLines } = findPageDecorations(text);
   const items = [];
+  for (const m of metaLines) {
+    items.push(metaHiddenDeco.range(m.from, m.to));
+  }
   for (const m of markers) {
     items.push(pageDividerLineDeco.range(m.from));
   }

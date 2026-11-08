@@ -271,7 +271,8 @@ modifier event (so ⌘-Tab, ⌘C and ⌘-drag can't reveal its icons), and the l
 songs, talks and ambiguous titles (at most 2 requests a song, none for speech), the waits on 429 and 503, no network,
 the User-Agent, the 2 s rule, the 30-day recheck and Genius's one search and one get; Draftpad's merge; and the editor
 host: the page order round-trips the file byte for byte, new pages land on top, text reaches the page intact; the wings: three-finger sideways swipes fed with made-up trackpad frames (the open/tuck sequence below) and the two
-panels' mirrored places; and the handwriting reader (Vision, on device) reading a hand-lettered French line.
+panels' mirrored places; the handwriting reader (Vision, on device) reading a hand-lettered French line; and the page
+library (expired pages archived once, the playlists file round trip, odd sidecar names refused).
 
 `status` prints `time`, `pad`, `hidden` or `not running`. Show-type commands launch Recense if it isn't running;
 `background` launches it hidden (the login item uses this).
@@ -335,3 +336,10 @@ from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/strip/sc
 ## Roadmap
 Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
 (Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.
+
+## Draftpad page library (2026-11-08)
+`shared/draftpadlibrary.swift` (linked into `Sources/recense/`, also built into iOS) answers the editor page:
+`draftpad.playlists.json` and `draftpad.pages.json` beside the note, expired pages appended to
+`<vault>/Draftpad expired/<YYYY-MM>.md` before the page removes them, and read-aloud with each word reported back.
+The calendar sheet's **Don't add** is kept as `x:<id>` in `draftpad.events.json`; a revised place and notes reach the
+event. See `editor/README.md` for what you see.

@@ -98,6 +98,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// Where the page came from, for the log: the CodeMirror core, or the stand-in.
     private(set) var source = ""
     private let speechSynthesizer = AVSpeechSynthesizer()
+    private let voice = ReadAloud()   // playlists and the Recensed view (shared/draftpadlibrary.swift)
     /// macOS's own iPhone Mirroring app (macOS 15+), opened from its wing card.
     static let iPhoneMirroring = URL(fileURLWithPath: "/System/Applications/iPhone Mirroring.app")
     private let eventStore = EKEventStore()
@@ -230,6 +231,10 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "ui" {
             if (m.body as? String) == "bounce" { onBounce?(); return }
+            // Page library: playlists file, expired pages to the archive, read-aloud (shared/draftpadlibrary.swift).
+            if let d = m.body as? [String: Any],
+               DraftpadLibrary.handle(d, vault: wingSide == nil ? vault : nil, voice: voice,
+                                      js: { [weak self] in self?.send($0) }, quote: jsString) { return }
             // Handwriting to read for Find (shared/inkocr.swift): one group of strokes, as a PNG.
             if let d = m.body as? [String: Any], let o = d["inkOCR"] as? [String: Any],
                let id = o["id"] as? String, let png = o["png"] as? String {
@@ -281,6 +286,12 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                (d["action"] as? String) == "addEvents",
                let items = d["events"] as? [[String: Any]] {
                 saveEvents(items)
+            }
+            // "Don't add" in the calendar sheet: kept as "x:<id>" in the same file, so no device asks again.
+            if let d = m.body as? [String: Any], (d["action"] as? String) == "dismiss", let ids = d["ids"] as? [String] {
+                reloadSyncedEventIds()
+                syncedEventIds.formUnion(ids.map { "x:" + $0 })
+                persistSyncedEventIds()
             }
             return
         }
@@ -354,7 +365,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                     ev.startDate = start
                     ev.endDate = EditorHost.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
                     ev.isAllDay = (item["allDay"] as? Bool) == true
-                    ev.notes = item["rawLine"] as? String
+                    ev.notes = (item["notes"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item["rawLine"] as? String
+                    if let place = item["location"] as? String, !place.isEmpty { ev.location = place }
                     do {
                         try self.eventStore.save(ev, span: .thisEvent)
                         self.syncedEventIds.insert(id)
@@ -418,6 +430,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         if wingSide == nil, let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
             call("setInk(\(jsString(inkJSON)))")
         }
+        if wingSide == nil { for c in DraftpadLibrary.loadCalls(vault: vault, quote: jsString) { call(c) } }
         if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
             call("setWingsState(\(jsString(wingsJSON)))")
         }
@@ -545,5 +558,32 @@ func inkOCRSelftest() -> Bool {
     done.wait()
     let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     check(folded.contains("contrat") && folded.contains("vente"), "reads a hand-lettered French line", text)
+    return ok
+}
+
+/// `recense selftest`: expired pages reach the archive once (a second sweep of the same page adds nothing), and the
+/// playlists file comes back to the page on load.
+func librarySelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String, _ got: Any = "") { print("\(pass ? "ok  " : "FAIL") library, \(what)\(pass ? "" : " — got \(got)")"); ok = ok && pass }
+    let vault = FileManager.default.temporaryDirectory.appendingPathComponent("recense-library-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: vault) }
+    let day = Date(timeIntervalSince1970: 1_793_000_000)
+    let page = "Saturday, October 3, 2026\n\nOld page"
+    check(DraftpadLibrary.archive([page], vault: vault, now: day), "archives an expired page")
+    check(DraftpadLibrary.archive([page], vault: vault, now: day), "a second sweep succeeds")
+    let files = (try? FileManager.default.contentsOfDirectory(atPath: vault.appendingPathComponent("Draftpad expired").path)) ?? []
+    let text = files.first.flatMap { coordinatedRead(vault.appendingPathComponent("Draftpad expired/\($0)").path) } ?? ""
+    check(files.count == 1 && text.components(separatedBy: "Old page").count == 2, "kept once, in one monthly file", "\(files) \(text)")
+    var sent: [String] = []
+    let voice = ReadAloud()
+    _ = DraftpadLibrary.handle(["sidecar": ["name": "playlists", "json": "{\"version\":1,\"playlists\":[]}"]], vault: vault,
+                               voice: voice, js: { sent.append($0) }, quote: jsString)
+    _ = DraftpadLibrary.handle(["sidecar": ["name": "../evil", "json": "x"]], vault: vault, voice: voice, js: { sent.append($0) }, quote: jsString)
+    let calls = DraftpadLibrary.loadCalls(vault: vault, quote: jsString)
+    check(calls.count == 1 && calls[0].hasPrefix("setSidecar(\"playlists\""), "playlists come back on load; other names refused", calls)
+    _ = DraftpadLibrary.handle(["archivePages": ["token": "x1", "pages": [page]]], vault: vault, voice: voice, js: { sent.append($0) }, quote: jsString)
+    check(sent.last == "pagesArchived(\"x1\", true)", "answers the page after archiving", sent)
     return ok
 }

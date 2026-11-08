@@ -7895,8 +7895,8 @@ func stripSelftest() -> Bool {
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
-    let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest()
-    exit(a && b && c && d && e && f && g && h && i ? 0 : 1)
+    let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest()
+    exit(a && b && c && d && e && f && g && h && i && j ? 0 : 1)
 }
 
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".

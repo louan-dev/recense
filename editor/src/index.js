@@ -79,6 +79,9 @@ import {
   createDualWings
 } from './wings.js';
 import { mountWingPanel, wingSideFrom } from './wingpanel.js';
+import { createLibraryUI } from './libraryui.js';
+import { createSpeaker } from './speech.js';
+import { createCalendarSheet } from './calsheet.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -447,6 +450,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   let inkLayer = null;
+  let library = null;
   let audioSidecar = null;
   let dualWings = null;
   let calendarScanner = null;
@@ -461,6 +465,23 @@ export function mountEditor(root = document.body, initialDoc = '') {
         dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
       }
     }, 800);
+    scheduleCalendarOffer();
+  }
+
+  // The calendar sheet (calsheet.js) asks about each new future event once typing has paused 3 s. In the apps it
+  // waits for the host's list of events already added or refused, so it never asks twice.
+  let calSheet = null;
+  let calendarReady = !(typeof window !== 'undefined' && window.webkit?.messageHandlers?.calendar);
+  let calendarOfferTimer = null;
+  function scheduleCalendarOffer(ms = 3000) {
+    if (!calSheet) return;
+    if (calendarOfferTimer) clearTimeout(calendarOfferTimer);
+    calendarOfferTimer = setTimeout(() => {
+      calendarOfferTimer = null;
+      if (!calSheet || !calendarReady || !view || !calendarScanner) return;
+      calSheet.offer(calendarScanner.scanText(view.state.doc.toString()));
+    }, ms);
+    calendarOfferTimer?.unref?.();
   }
 
   const { state, compartments } = createEditorState(initialDoc, {
@@ -481,13 +502,26 @@ export function mountEditor(root = document.body, initialDoc = '') {
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
         if (calendarScanner && dualWings) scheduleCalendarScan();
+        if (isExternal) scheduleExpiry();
+        else if (library) library.noteEdit();
       }
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
         if (inkLayer) inkLayer.relayout();
       }
+      if (library && (update.docChanged || update.selectionSet || update.transactions.some(tr => tr.effects.length > 0))) {
+        library.refresh();
+      }
     }
   });
+
+  // Expired pages leave once the host's text is in (5 s after it arrives) and then every hour; never mid-typing.
+  let expiryTimer = null;
+  function scheduleExpiry(ms = 5000) {
+    if (expiryTimer) clearTimeout(expiryTimer);
+    expiryTimer = setTimeout(() => { expiryTimer = null; if (library) library.runExpiry(); }, ms);
+  }
+  if (typeof setInterval === 'function') setInterval(() => scheduleExpiry(0), 3_600_000)?.unref?.();   // unref: never holds a test run open
 
   view = new EditorView({
     state,
@@ -517,6 +551,23 @@ export function mountEditor(root = document.body, initialDoc = '') {
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
     }
   });
+
+  const speaker = createSpeaker(typeof window !== 'undefined' ? window : null);
+  library = createLibraryUI({
+    getView: () => view,
+    toolbar,
+    before: menuWrap,
+    panel: outlinePanel,
+    header: outlineHeader,
+    title: outlineTitle,
+    outlineOnly: [newestFirstBtn],
+    list: outlineList,
+    showPanel: showOutline,
+    hidePanel: hideOutline,
+    ink: inkLayer,
+    speaker
+  });
+  library.refresh();
 
   // Find also looks in handwriting (read on this device; ink.js + the host's recogniser).
   setInkSearch({
@@ -552,6 +603,14 @@ export function mountEditor(root = document.body, initialDoc = '') {
   calendarScanner = createCalendarScanner({
     globalObj: typeof window !== 'undefined' ? window : null
   });
+  if (typeof window !== 'undefined' && !window.__RECENSE_WING_SIDE && typeof document !== 'undefined') {
+    calSheet = createCalendarSheet({
+      layer: workspace,
+      onAdd: ev => calendarScanner.requestAdd(ev),
+      onDismiss: id => window.webkit?.messageHandlers?.calendar?.postMessage?.({ action: 'dismiss', ids: [id] })
+    });
+    scheduleCalendarOffer();
+  }
 
   if (initialDoc) {
     dualWings.setCalendarEvents(calendarScanner.scanText(initialDoc));
@@ -715,6 +774,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
       // The host's reading of a handwriting group (shared/inkocr.swift): kept with its strokes for Find.
       setInkText: (id, text) => (inkLayer ? inkLayer.setInkText(String(id), String(text ?? '')) : 0),
       setPickedColor: hex => (inkLayer ? inkLayer.offerColor(String(hex)) : null),
+      // Page library: draftpad.playlists.json from the host, the archive's answer, a tab of the side panel.
+      setSidecar: (name, json) => (library ? library.setSidecar(String(name), String(json)) : null),
+      pagesArchived: (token, ok) => (library ? library.pagesArchived(String(token), Boolean(ok)) : 0),
+      openLibrary: tabName => (library ? library.openTab(String(tabName || 'saved')) : null),
       // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
       onPencilAction: action => {
         if ((action === 'squeeze' || action === 'doubleTap') && inkLayer) {
@@ -734,7 +797,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
       },
       // At load: the ids the host already saved (draftpad.events.json), so they show as added.
       setCalendarAdded: data => {
-        const ids = typeof data === 'string' ? JSON.parse(data) : data;
+        const all = typeof data === 'string' ? JSON.parse(data) : data;
+        const ids = Array.isArray(all) ? all.filter(id => !String(id).startsWith('x:')) : all;
+        // "x:<id>": events refused in the calendar sheet (kept in the same file as the ones added).
+        if (calSheet && Array.isArray(all)) calSheet.setDismissed(all.filter(id => String(id).startsWith('x:')).map(id => String(id).slice(2)));
+        if (!calendarReady) { calendarReady = true; scheduleCalendarOffer(); }
         if (calendarScanner && Array.isArray(ids)) calendarScanner.markSynced(ids);
         if (view && calendarScanner && dualWings) {
           dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));

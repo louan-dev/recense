@@ -89,3 +89,19 @@ Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
   English, French, Vietnamese; `shared/inkocr.swift`) and the text is kept with the strokes in the ink file. Find shows
   a "✎ n" button beside the text count; it steps through ink matches and makes them glow. Accents and case are ignored.
 - **Paging:** a mouse drag in the margin selects text; Option + drag pages.
+
+## Pages expire unless saved; Saved, Playlists, calendar sheet (2026-11-08)
+- **Ephemeral pages** (`src/library.js`): a page lives 14 days, like a new Recense episode (`Rules.newKeepDays`), from
+  the later of its date heading and its last edit (kept per page in `draftpad.pages.json`). The newest page, the page
+  on screen and undated pages never expire. Expired pages are appended to `<vault>/Draftpad expired/<YYYY-MM>.md`
+  first, and leave the note only once that write succeeded (their ink goes with them).
+- **Bookmark** (toolbar, the same icon as the player's bookmarks): tap to save the page ("N days left" shows until
+  then). Tap again: the **Saved in** sheet (Saved pages, New playlist, your playlists; tick, then Done). A saved page
+  carries one hidden line under its heading, `<!-- saved k3x9q2 -->` (Obsidian hides it too).
+- **Side panel tabs**: Outline · Saved (jump to a saved page) · Playlists (Listen reads the pages aloud in order;
+  Name & details; × removes with a toast, no confirmation). Format of `draftpad.playlists.json` is at the top of
+  `src/library.js` (pages now; episodes and audio files share the same list later).
+- **Calendar sheet** (`src/calsheet.js`): every new future date in your notes opens a prefilled sheet once typing
+  pauses (3 s): title, day, times, all day, place, notes. Nothing is saved until **Add to Calendar**; **Don't add**
+  is remembered (`x:<id>` in `draftpad.events.json`); tapping outside or Esc asks again next time. Not in wing panels.
+- Read-aloud for playlists: `src/speech.js` (host voice with word ranges, `shared/draftpadlibrary.swift`).

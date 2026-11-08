@@ -104,6 +104,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     private var pollTimer: Timer?
     private var lastPosted: String?
     private let speechSynthesizer = AVSpeechSynthesizer()
+    private let voice = ReadAloud()   // playlists and the Recensed view (shared/draftpadlibrary.swift)
     private let eventStore = EKEventStore()
     private var syncedEventIds = Set<String>()
     var onAudioAction: (([String: Any]) -> Void)?
@@ -165,6 +166,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             call("setWingsState(\(jsLiteral(wingsJSON)))")
         }
         call("setCalendarAdded(\(jsLiteral(syncedEventIdsJSON)))")
+        for c in DraftpadLibrary.loadCalls(vault: file.vault, quote: jsLiteral) { call(c) }
         call("showPage(0)")
         // Another device's edit (the Mac, Obsidian) reaches the file through iCloud: merge it in while open.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.pollExternal() }
@@ -185,6 +187,9 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
         case "ui":
             if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
+            // Page library: playlists file, expired pages to the archive, read-aloud (shared/draftpadlibrary.swift).
+            if let d = m.body as? [String: Any],
+               DraftpadLibrary.handle(d, vault: file.vault, voice: voice, js: { [weak self] in self?.call($0) }, quote: jsLiteral) { return }
             // Handwriting to read for Find (shared/inkocr.swift): one group of strokes, as a PNG.
             if let d = m.body as? [String: Any], let o = d["inkOCR"] as? [String: Any],
                let id = o["id"] as? String, let png = o["png"] as? String {
@@ -223,6 +228,12 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                (d["action"] as? String) == "addEvents",
                let items = d["events"] as? [[String: Any]] {
                 saveEvents(items)
+            }
+            // "Don't add" in the calendar sheet: kept as "x:<id>" in the same file, so no device asks again.
+            if let d = m.body as? [String: Any], (d["action"] as? String) == "dismiss", let ids = d["ids"] as? [String] {
+                reloadSyncedEventIds()
+                syncedEventIds.formUnion(ids.map { "x:" + $0 })
+                persistSyncedEventIds()
             }
         case "wings":
             guard let wp = file.wingsNote?.path else { return }
@@ -280,7 +291,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                     ev.startDate = start
                     ev.endDate = DraftpadWeb.pageDate(item["endISO"] as? String) ?? start.addingTimeInterval(3600)
                     ev.isAllDay = (item["allDay"] as? Bool) == true
-                    ev.notes = item["rawLine"] as? String
+                    ev.notes = (item["notes"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item["rawLine"] as? String
+                    if let place = item["location"] as? String, !place.isEmpty { ev.location = place }
                     do {
                         try self.eventStore.save(ev, span: .thisEvent)
                         self.syncedEventIds.insert(id)
@@ -303,6 +315,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     private func persistSyncedEventIds() {
         let json = syncedEventIdsJSON
         if let p = file.eventsNote?.path { coordinatedWrite(json, to: p) }
+    }
+
+    /// The Mac (or another device) may have added or refused one meanwhile: merge the file in before writing it.
+    private func reloadSyncedEventIds() {
+        if let p = file.eventsNote?.path, let raw = coordinatedRead(p), let data = raw.data(using: .utf8),
+           let ids = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            syncedEventIds.formUnion(ids)
+        }
     }
 
     private func reportCalendar(_ id: String, _ ok: Bool, _ message: String) {

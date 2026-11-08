@@ -1659,6 +1659,27 @@ export function createInkLayer(view, options = {}) {
     const url = typeof c.toDataURL === 'function' ? c.toDataURL('image/png') : '';
     return url.startsWith('data:image/png;base64,') ? url.slice('data:image/png;base64,'.length) : null;
   }
+  /**
+   * Pages `indices` of `docBefore` are being removed (an expired page): their strokes go (tombstoned, so a merge can't
+   * bring them back) and strokes on later pages move up by the pages removed before them.
+   */
+  function removePageInk(indices, docBefore) {
+    const drop = new Set(indices);
+    const sorted = [...drop].sort((a, b) => a - b);
+    const keep = [];
+    let changed = false;
+    for (const st of inkDoc.strokes) {
+      const r = resolveStrokeAnchor(st, docBefore, lineHeight);
+      const pi = r.pageIndex ?? 0;
+      if (drop.has(pi)) { inkDoc.removed.push(st.id); changed = true; continue; }
+      const shift = sorted.filter(i => i < pi).length;
+      if (shift && st.anchor) { st.anchor = { ...st.anchor, pageIndex: pi - shift }; changed = true; }
+      keep.push(st);
+    }
+    inkDoc.strokes = keep;
+    if (changed) { schedulePost(); render(); }
+    return changed;
+  }
   /** The host's reading of a group: kept on its strokes (and saved with the ink), so Find sees it on every device. */
   function setInkText(id, text) {
     const strokes = ocrSent.get(id) || inkDoc.strokes.filter(st => st.ocr && st.ocr.g === id);
@@ -1778,6 +1799,7 @@ export function createInkLayer(view, options = {}) {
     setWheelOpen,
     getPaletteColors: () => [...paletteColors],
     setInkText,
+    removePageInk,
     findInk,
     markInk,
     recognizeNow

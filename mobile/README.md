@@ -44,7 +44,8 @@ updates in place.
   The wings' layout (cards moved between the two sides) saves to `draftpad.wings.json`, as on the Mac. Swipe in from
   the screen's left or right edge to bring out that wing (no long hold). The ink palette, colour wheel (the system colour
   picker samples any shade) and handwriting search (⌘F finds ink, read on the device by `shared/inkocr.swift`) are the
-  Mac's, from the same page.
+  Mac's, from the same page. So are saved pages (bookmark), the Saved and Playlists tabs, the 14-day expiry (archived to
+  `Draftpad expired/` in the vault) and the calendar sheet (`shared/draftpadlibrary.swift`).
 - **Apple Pencil in Draftpad:** write into the text with Scribble (iPadOS turns handwriting into typed text).
   Squeeze (Apple Pencil Pro), double-tap, or the pencil button opens the ink layer: the Pencil draws, fingers still
   scroll, and the system palette follows the Pencil Pro (barrel roll, squeeze for the compact palette). **Done** saves

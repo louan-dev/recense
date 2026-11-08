@@ -1307,6 +1307,245 @@ html.rc-wings-page body {
   white-space: nowrap;
 }
 
+/* ── Page library: bookmark, days left, toast, "Saved in" sheet, panel tabs (libraryui.js) ─────────────────────── */
+.rc-expiry[hidden] { display: none; }
+.rc-expiry,
+.rc-expiry[hidden] + .rc-bookmark-btn {
+  margin-left: auto;
+}
+.rc-expiry {
+  font-size: 12px;
+  color: var(--rc-muted);
+  white-space: nowrap;
+}
+.rc-bookmark-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+}
+.rc-bookmark-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.rc-bookmark-btn[aria-pressed="true"] { color: var(--rc-cyan); }
+.rc-bookmark-btn[aria-pressed="true"] svg { fill: currentColor; }
+
+.rc-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--rc-text);
+  color: var(--rc-surface);
+  font-size: 15px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  animation: rc-toast-in 200ms ease-out;
+}
+.rc-toast[hidden] { display: none; }
+.rc-toast-action {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+@keyframes rc-toast-in { from { opacity: 0; } to { opacity: 1; } }
+
+.rc-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: rc-toast-in 200ms ease-out;
+}
+.rc-sheet-scrim[hidden] { display: none; }
+.rc-sheet {
+  width: min(520px, 100%);
+  max-height: 70%;
+  overflow-y: auto;
+  padding: 6px 16px 20px;
+  border-radius: 14px 14px 0 0;
+  background: var(--rc-panel);
+  border: 1px solid var(--rc-border);
+  border-bottom: 0;
+  animation: rc-sheet-up 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes rc-sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rc-sheet-grabber {
+  width: 36px;
+  height: 5px;
+  margin: 4px auto 8px;
+  border-radius: 3px;
+  background: var(--rc-muted);
+  opacity: 0.5;
+}
+.rc-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 12px;
+}
+.rc-sheet-title { font-size: 16px; font-weight: 700; color: var(--rc-text); }
+.rc-sheet-cancel, .rc-sheet-done, .rc-sheet-new, .rc-library-new, .rc-library-back {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--rc-cyan);
+  cursor: pointer;
+  padding: 6px 2px;
+}
+.rc-sheet-done { font-weight: 700; }
+.rc-sheet-new, .rc-library-new { display: block; padding: 10px 0; text-align: left; }
+.rc-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rc-border);
+}
+.rc-sheet-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--rc-blue);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.rc-sheet-text { flex: 1; min-width: 0; }
+.rc-sheet-name { font-size: 16px; color: var(--rc-text); }
+.rc-sheet-sub { font-size: 13px; color: var(--rc-muted); }
+.rc-sheet-toggle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rc-muted);
+  background: none;
+  color: var(--rc-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.rc-sheet-toggle.on { border-color: var(--rc-cyan); background: var(--rc-cyan); color: var(--rc-surface); }
+
+.rc-outline { width: min(320px, 85%); background: linear-gradient(var(--rc-panel), var(--rc-panel)), var(--rc-surface); }
+.rc-panel-tabs { display: flex; gap: 2px; flex-wrap: wrap; }
+.rc-panel-tab {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--rc-muted);
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rc-panel-tab[aria-selected="true"] { color: var(--rc-cyan); background: color-mix(in srgb, var(--rc-cyan) 12%, transparent); }
+.rc-outline-list[hidden], .rc-library-list[hidden] { display: none; }
+.rc-library-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.rc-library-row { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--rc-border); }
+.rc-library-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 10px 0;
+  cursor: pointer;
+  color: var(--rc-text);
+  font: inherit;
+}
+.rc-library-title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-library-sub { font-size: 12px; color: var(--rc-muted); }
+.rc-library-remove {
+  border: 0;
+  background: none;
+  color: var(--rc-muted);
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+.rc-library-h { font-size: 20px; margin: 8px 0 4px; color: var(--rc-text); }
+.rc-library-desc { font-size: 14px; color: var(--rc-muted); margin: 0 0 4px; line-height: 1.4; }
+.rc-library-actions { display: flex; gap: 8px; margin: 12px 0; }
+.rc-library-listen, .rc-library-details {
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.rc-library-listen { border: 0; background: var(--rc-cyan); color: var(--rc-surface); font-weight: 700; }
+.rc-library-listen:disabled { opacity: 0.4; cursor: default; }
+.rc-library-details { border: 1px solid var(--rc-border); background: none; color: var(--rc-text); }
+.rc-library-form, .rc-library-newform { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.rc-library-newform { flex-direction: row; }
+.rc-library-input {
+  flex: 1;
+  font: inherit;
+  font-size: 15px;
+  color: var(--rc-text);
+  background: var(--rc-surface);
+  border: 1px solid var(--rc-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.rc-library-delete {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: #e5484d;
+  cursor: pointer;
+  padding: 10px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-toast, .rc-sheet, .rc-sheet-scrim { animation: none; }
+}
+
+/* ── Calendar sheet (calsheet.js) ─────────────────────────────────────────────────────────────────────────────────── */
+.rc-cal-sheet { display: flex; flex-direction: column; gap: 10px; }
+.rc-cal-from { margin: 0; font-size: 14px; line-height: 1.4; color: var(--rc-muted); }
+.rc-cal-field { display: flex; flex-direction: column; gap: 4px; }
+.rc-cal-label { font-size: 12px; font-weight: 600; color: var(--rc-muted); }
+.rc-cal-row { display: flex; gap: 10px; }
+.rc-cal-row[hidden] { display: none; }
+.rc-cal-row .rc-cal-field { flex: 1; }
+.rc-cal-allday { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--rc-text); }
+.rc-cal-check { width: 20px; height: 20px; accent-color: var(--rc-cyan); }
+.rc-cal-buttons { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.rc-cal-buttons button { flex: 1; padding: 11px 14px; font-size: 16px; }
+.rc-cal-more { margin: 0; font-size: 12px; color: var(--rc-muted); text-align: center; }
+
 </style>
 </head>
 <body>
@@ -3518,8 +3757,8 @@ html.rc-wings-page body {
     for (let i = 1; i < specs.length; i++) {
       if (specs[i].filter === false)
         filter = false;
-      let seq = !!specs[i].sequential;
-      s = mergeTransaction(s, resolveTransactionInner(state, specs[i], seq ? s.changes.newLength : state.doc.length), seq);
+      let seq2 = !!specs[i].sequential;
+      s = mergeTransaction(s, resolveTransactionInner(state, specs[i], seq2 ? s.changes.newLength : state.doc.length), seq2);
     }
     let tr = Transaction.create(state, s.changes, s.selection, s.effects, s.annotations, s.scrollIntoView);
     return extendTransaction(filter ? filterTransaction(tr) : tr);
@@ -20222,19 +20461,19 @@ html.rc-wings-page body {
       let lines = [], positions = [], m;
       for (let line of template.split(/\r\n?|\n/)) {
         while (m = /[#$]\{(?:(\d+)(?::([^{}]*))?|((?:\\[{}]|[^{}])*))\}/.exec(line)) {
-          let seq = m[1] ? +m[1] : null, rawName = m[2] || m[3] || "", found = -1;
-          if (seq === 0)
-            seq = 1e9;
+          let seq2 = m[1] ? +m[1] : null, rawName = m[2] || m[3] || "", found = -1;
+          if (seq2 === 0)
+            seq2 = 1e9;
           let name2 = rawName.replace(/\\[{}]/g, (m2) => m2[1]);
           for (let i = 0; i < fields.length; i++) {
-            if (seq != null ? fields[i].seq == seq : name2 ? fields[i].name == name2 : false)
+            if (seq2 != null ? fields[i].seq == seq2 : name2 ? fields[i].name == name2 : false)
               found = i;
           }
           if (found < 0) {
             let i = 0;
-            while (i < fields.length && (seq == null || fields[i].seq != null && fields[i].seq < seq))
+            while (i < fields.length && (seq2 == null || fields[i].seq != null && fields[i].seq < seq2))
               i++;
-            fields.splice(i, 0, { seq, name: name2 });
+            fields.splice(i, 0, { seq: seq2, name: name2 });
             found = i;
             for (let pos of positions)
               if (pos.field >= found)
@@ -27343,6 +27582,10 @@ html.rc-wings-page body {
 ${PAGE_MARKER}
 
 `;
+  var META_RE = /^<!-- saved ([a-z0-9]{6}) -->$/;
+  function isMetaLine(line) {
+    return META_RE.test(String(line || "").trim());
+  }
   var WEEKDAYS = /* @__PURE__ */ new Set([
     "Sunday",
     "Monday",
@@ -27430,7 +27673,7 @@ ${PAGE_MARKER}
       let firstNonEmptyLineNumber = startLine;
       for (let j = 0; j < pageLines.length; j++) {
         const candidate = pageLines[j].trim();
-        if (candidate.length > 0) {
+        if (candidate.length > 0 && !isMetaLine(candidate)) {
           firstNonEmptyLine = pageLines[j];
           firstNonEmptyLineNumber = startLine + j;
           break;
@@ -27458,6 +27701,7 @@ ${PAGE_MARKER}
     const lines = source.split("\n");
     const markers = [];
     const dateLines = [];
+    const metaLines = [];
     let offset = 0;
     let awaitingPageFirstContentLine = true;
     for (let i = 0; i < lines.length; i++) {
@@ -27469,6 +27713,8 @@ ${PAGE_MARKER}
       if (lineText === PAGE_MARKER) {
         markers.push({ from, to, lineNumber });
         awaitingPageFirstContentLine = true;
+      } else if (isMetaLine(lineText)) {
+        metaLines.push({ from, to, lineNumber });
       } else if (awaitingPageFirstContentLine && lineText.trim().length > 0) {
         awaitingPageFirstContentLine = false;
         if (isFullDateLine(lineText)) {
@@ -27477,7 +27723,7 @@ ${PAGE_MARKER}
       }
       offset += rawLine.length + 1;
     }
-    return { markers, dateLines };
+    return { markers, dateLines, metaLines };
   }
   var pageDividerLineDeco = Decoration.line({
     attributes: {
@@ -27491,10 +27737,14 @@ ${PAGE_MARKER}
       class: "cm-page-date-line"
     }
   });
+  var metaHiddenDeco = Decoration.replace({ block: true });
   function buildPageDecoSet(doc2) {
     const text = doc2.toString();
-    const { markers, dateLines } = findPageDecorations(text);
+    const { markers, dateLines, metaLines } = findPageDecorations(text);
     const items = [];
+    for (const m of metaLines) {
+      items.push(metaHiddenDeco.range(m.from, m.to));
+    }
     for (const m of markers) {
       items.push(pageDividerLineDeco.range(m.from));
     }
@@ -28710,22 +28960,22 @@ ${PAGE_MARKER}
         checked: query.wholeWord,
         onchange: this.commit
       });
-      function button(name2, onclick, content2) {
+      function button2(name2, onclick, content2) {
         return crelt("button", { class: "cm-button", name: name2, onclick, type: "button" }, content2);
       }
       this.dom = crelt("div", { onkeydown: (e) => this.keydown(e), class: "cm-search" }, [
         this.searchField,
-        button("next", () => findNext(view), [phrase(view, "next")]),
-        button("prev", () => findPrevious(view), [phrase(view, "previous")]),
-        button("select", () => selectMatches(view), [phrase(view, "all")]),
+        button2("next", () => findNext(view), [phrase(view, "next")]),
+        button2("prev", () => findPrevious(view), [phrase(view, "previous")]),
+        button2("select", () => selectMatches(view), [phrase(view, "all")]),
         crelt("label", null, [this.caseField, phrase(view, "match case")]),
         crelt("label", null, [this.reField, phrase(view, "regexp")]),
         crelt("label", null, [this.wordField, phrase(view, "by word")]),
         ...view.state.readOnly ? [] : [
           crelt("br"),
           this.replaceField,
-          button("replace", () => replaceNext(view), [phrase(view, "replace")]),
-          button("replaceAll", () => replaceAll(view), [phrase(view, "replace all")])
+          button2("replace", () => replaceNext(view), [phrase(view, "replace")]),
+          button2("replaceAll", () => replaceAll(view), [phrase(view, "replace all")])
         ],
         crelt("button", {
           name: "close",
@@ -30419,24 +30669,24 @@ ${PAGE_MARKER}
     const targetEl = () => view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null;
     const widthOf = () => view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400;
     function renderDrag(dx) {
-      const el3 = targetEl();
-      if (!el3 || !el3.style) return 0;
+      const el5 = targetEl();
+      if (!el5 || !el5.style) return 0;
       const eff = computeEffectiveDrag(view.state, dx, widthOf());
-      el3.style.transition = "none";
-      el3.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
+      el5.style.transition = "none";
+      el5.style.transform = eff === 0 ? "" : `translateX(${eff}px)`;
       return eff;
     }
     function settleDrag(dx) {
-      const el3 = targetEl();
+      const el5 = targetEl();
       const limit = Math.min(threshold, widthOf() * 0.2);
       if (dx >= limit) {
         swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
       } else if (dx <= -limit) {
         swipeRightToLeft(view, { onSnap, onBounce });
       }
-      if (el3 && el3.style) {
-        el3.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
-        el3.style.transform = "translateX(0px)";
+      if (el5 && el5.style) {
+        el5.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+        el5.style.transform = "translateX(0px)";
       }
     }
     view.scrollDOM.addEventListener("wheel", (e) => {
@@ -32168,43 +32418,43 @@ ${clean(nextLineText)}`;
       const isOrphaned = Boolean(stroke.orphaned);
       const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
       if (stroke.shape?.kind === "ellipse") {
-        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
-        el3.setAttribute("cx", String(stroke.shape.cx));
-        el3.setAttribute("cy", String(stroke.shape.cy));
-        el3.setAttribute("rx", String(stroke.shape.rx));
-        el3.setAttribute("ry", String(stroke.shape.ry));
-        el3.setAttribute("fill", "none");
-        el3.setAttribute("stroke", stroke.color || currentColor);
-        el3.setAttribute("stroke-width", String(strokeWidth));
-        el3.setAttribute("stroke-linecap", "round");
-        if (isHighlighter) el3.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el3);
+        const el5 = docNode.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+        el5.setAttribute("cx", String(stroke.shape.cx));
+        el5.setAttribute("cy", String(stroke.shape.cy));
+        el5.setAttribute("rx", String(stroke.shape.rx));
+        el5.setAttribute("ry", String(stroke.shape.ry));
+        el5.setAttribute("fill", "none");
+        el5.setAttribute("stroke", stroke.color || currentColor);
+        el5.setAttribute("stroke-width", String(strokeWidth));
+        el5.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el5.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el5.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el5);
         return;
       }
       if (stroke.shape?.kind === "line") {
-        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
-        el3.setAttribute("x1", String(stroke.shape.x1));
-        el3.setAttribute("y1", String(stroke.shape.y1));
-        el3.setAttribute("x2", String(stroke.shape.x2));
-        el3.setAttribute("y2", String(stroke.shape.y2));
-        el3.setAttribute("stroke", stroke.color || currentColor);
-        el3.setAttribute("stroke-width", String(strokeWidth));
-        el3.setAttribute("stroke-linecap", "round");
-        if (isHighlighter) el3.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el3);
+        const el5 = docNode.createElementNS("http://www.w3.org/2000/svg", "line");
+        el5.setAttribute("x1", String(stroke.shape.x1));
+        el5.setAttribute("y1", String(stroke.shape.y1));
+        el5.setAttribute("x2", String(stroke.shape.x2));
+        el5.setAttribute("y2", String(stroke.shape.y2));
+        el5.setAttribute("stroke", stroke.color || currentColor);
+        el5.setAttribute("stroke-width", String(strokeWidth));
+        el5.setAttribute("stroke-linecap", "round");
+        if (isHighlighter) el5.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el5.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el5);
         return;
       }
       if (pts.length === 1) {
-        const el3 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
-        el3.setAttribute("cx", String(pts[0][0]));
-        el3.setAttribute("cy", String(pts[0][1]));
-        el3.setAttribute("r", String(strokeWidth / 2));
-        el3.setAttribute("fill", stroke.color || currentColor);
-        if (isHighlighter) el3.setAttribute("opacity", "0.45");
-        else if (isOrphaned) el3.setAttribute("opacity", "0.38");
-        targetGroup.appendChild(el3);
+        const el5 = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+        el5.setAttribute("cx", String(pts[0][0]));
+        el5.setAttribute("cy", String(pts[0][1]));
+        el5.setAttribute("r", String(strokeWidth / 2));
+        el5.setAttribute("fill", stroke.color || currentColor);
+        if (isHighlighter) el5.setAttribute("opacity", "0.45");
+        else if (isOrphaned) el5.setAttribute("opacity", "0.38");
+        targetGroup.appendChild(el5);
         return;
       }
       const path = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -32495,8 +32745,8 @@ ${clean(nextLineText)}`;
       return sent;
     }
     function renderGroupPNG(g) {
-      const pad = 12, k = 2;
-      const w = Math.ceil((g.box.x1 - g.box.x0 + pad * 2) * k), h = Math.ceil((g.box.y1 - g.box.y0 + pad * 2) * k);
+      const pad2 = 12, k = 2;
+      const w = Math.ceil((g.box.x1 - g.box.x0 + pad2 * 2) * k), h = Math.ceil((g.box.y1 - g.box.y0 + pad2 * 2) * k);
       if (w < 8 || h < 8 || w > 4096 || h > 4096) return null;
       const c = docNode.createElement("canvas");
       const ctx = c && typeof c.getContext === "function" ? c.getContext("2d") : null;
@@ -32512,23 +32762,50 @@ ${clean(nextLineText)}`;
       for (const st of g.strokes) {
         ctx.beginPath();
         st.points.forEach((p, i) => {
-          const x = (p[0] - g.box.x0 + pad) * k, y = (p[1] - g.box.y0 + pad) * k;
+          const x = (p[0] - g.box.x0 + pad2) * k, y = (p[1] - g.box.y0 + pad2) * k;
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
-        if (st.points.length === 1) ctx.lineTo((st.points[0][0] - g.box.x0 + pad) * k + 0.1, (st.points[0][1] - g.box.y0 + pad) * k);
+        if (st.points.length === 1) ctx.lineTo((st.points[0][0] - g.box.x0 + pad2) * k + 0.1, (st.points[0][1] - g.box.y0 + pad2) * k);
         ctx.stroke();
       }
       const url = typeof c.toDataURL === "function" ? c.toDataURL("image/png") : "";
       return url.startsWith("data:image/png;base64,") ? url.slice("data:image/png;base64,".length) : null;
     }
+    function removePageInk(indices, docBefore) {
+      const drop = new Set(indices);
+      const sorted = [...drop].sort((a, b) => a - b);
+      const keep = [];
+      let changed = false;
+      for (const st of inkDoc.strokes) {
+        const r = resolveStrokeAnchor(st, docBefore, lineHeight);
+        const pi = r.pageIndex ?? 0;
+        if (drop.has(pi)) {
+          inkDoc.removed.push(st.id);
+          changed = true;
+          continue;
+        }
+        const shift2 = sorted.filter((i) => i < pi).length;
+        if (shift2 && st.anchor) {
+          st.anchor = { ...st.anchor, pageIndex: pi - shift2 };
+          changed = true;
+        }
+        keep.push(st);
+      }
+      inkDoc.strokes = keep;
+      if (changed) {
+        schedulePost();
+        render();
+      }
+      return changed;
+    }
     function setInkText(id2, text) {
       const strokes = ocrSent.get(id2) || inkDoc.strokes.filter((st) => st.ocr && st.ocr.g === id2);
       ocrSent.delete(id2);
-      const live = new Set(inkDoc.strokes);
+      const live2 = new Set(inkDoc.strokes);
       let n = 0;
       for (const st of strokes) {
-        if (!live.has(st)) continue;
+        if (!live2.has(st)) continue;
         st.ocr = { g: id2, t: String(text ?? "") };
         n++;
       }
@@ -32630,6 +32907,7 @@ ${clean(nextLineText)}`;
       setWheelOpen,
       getPaletteColors: () => [...paletteColors],
       setInkText,
+      removePageInk,
       findInk,
       markInk,
       recognizeNow
@@ -32770,7 +33048,7 @@ ${clean(nextLineText)}`;
     const listeners = {};
     const attributes = {};
     const classListSet = /* @__PURE__ */ new Set();
-    const el3 = {
+    const el5 = {
       tagName: tag.toUpperCase(),
       hidden: false,
       value: "",
@@ -32798,7 +33076,7 @@ ${clean(nextLineText)}`;
       },
       setAttribute(k, v) {
         attributes[k] = String(v);
-        if (k === "hidden") el3.hidden = true;
+        if (k === "hidden") el5.hidden = true;
         if (k === "class") {
           classListSet.clear();
           String(v).split(/\s+/).forEach((c) => {
@@ -32811,28 +33089,28 @@ ${clean(nextLineText)}`;
       },
       removeAttribute(k) {
         delete attributes[k];
-        if (k === "hidden") el3.hidden = false;
+        if (k === "hidden") el5.hidden = false;
       },
       hasAttribute(k) {
         return k in attributes;
       },
       appendChild(child) {
-        el3.children.push(child);
-        child.parentElement = el3;
+        el5.children.push(child);
+        child.parentElement = el5;
         return child;
       },
       removeChild(child) {
-        const idx = el3.children.indexOf(child);
+        const idx = el5.children.indexOf(child);
         if (idx !== -1) {
-          el3.children.splice(idx, 1);
+          el5.children.splice(idx, 1);
           child.parentElement = null;
         }
         return child;
       },
       replaceChildren(...newChildren) {
-        el3.children = [];
+        el5.children = [];
         for (const c of newChildren) {
-          el3.appendChild(c);
+          el5.appendChild(c);
         }
       },
       addEventListener(type, fn) {
@@ -32855,7 +33133,7 @@ ${clean(nextLineText)}`;
       focus() {
       }
     };
-    Object.defineProperty(el3, "className", {
+    Object.defineProperty(el5, "className", {
       get() {
         return Array.from(classListSet).join(" ");
       },
@@ -32868,35 +33146,35 @@ ${clean(nextLineText)}`;
         }
       }
     });
-    return el3;
+    return el5;
   }
   function makeDomElement(doc2, tag, props = {}, attrs = {}) {
     const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
-    let el3;
+    let el5;
     if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
-      el3 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
+      el5 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
     } else if (doc2 && typeof doc2.createElement === "function") {
-      el3 = doc2.createElement(tag);
+      el5 = doc2.createElement(tag);
     } else {
-      el3 = createMockElement(tag);
+      el5 = createMockElement(tag);
     }
     for (const [k, v] of Object.entries(props)) {
       if (k === "style" && typeof v === "object") {
-        if (el3.style) Object.assign(el3.style, v);
+        if (el5.style) Object.assign(el5.style, v);
       } else {
-        el3[k] = v;
+        el5[k] = v;
       }
     }
     for (const [k, v] of Object.entries(attrs)) {
       if (v !== void 0 && v !== null) {
-        if (typeof el3.setAttribute === "function") {
-          el3.setAttribute(k, String(v));
+        if (typeof el5.setAttribute === "function") {
+          el5.setAttribute(k, String(v));
         } else {
-          el3[k] = String(v);
+          el5[k] = String(v);
         }
       }
     }
-    return el3;
+    return el5;
   }
   function strokeToPathData(stroke) {
     if (stroke?.d) return stroke.d;
@@ -33225,18 +33503,18 @@ ${clean(nextLineText)}`;
     function updateCue(index) {
       if (index < 0 || index >= currentCues.length) return;
       const cue = currentCues[index];
-      const el3 = cueElements[index];
-      if (!el3) return;
+      const el5 = cueElements[index];
+      if (!el5) return;
       if (cue.bookmarked) {
-        el3.classList.add("is-bookmarked");
+        el5.classList.add("is-bookmarked");
       } else {
-        el3.classList.remove("is-bookmarked");
+        el5.classList.remove("is-bookmarked");
       }
-      const dotEl = el3.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el3.querySelector ? el3.querySelector(".rc-transcript-cue-dot") : null);
+      const dotEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-dot") : null);
       if (dotEl) {
         dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
       }
-      const noteEl = el3.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el3.querySelector ? el3.querySelector(".rc-transcript-cue-note") : null);
+      const noteEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-note") : null);
       if (noteEl) {
         noteEl.textContent = cue.annotation || "";
         if (cue.annotation) {
@@ -33282,9 +33560,9 @@ ${clean(nextLineText)}`;
       } else {
         cuesContainer.children = [];
         cueElements = currentCues.map((c, i) => {
-          const el3 = buildCueElement(c, i);
-          cuesContainer.appendChild(el3);
-          return el3;
+          const el5 = buildCueElement(c, i);
+          cuesContainer.appendChild(el5);
+          return el5;
         });
       }
       const active = activeCueIndexAt(currentCues, state.currentTime || 0);
@@ -34123,7 +34401,7 @@ ${clean(nextLineText)}`;
     const attributes = {};
     const classListSet = /* @__PURE__ */ new Set();
     const children = [];
-    const el3 = {
+    const el5 = {
       tagName: tag.toUpperCase(),
       nodeName: tag.toUpperCase(),
       hidden: false,
@@ -34156,10 +34434,10 @@ ${clean(nextLineText)}`;
       },
       setAttribute(k, v) {
         attributes[k] = String(v);
-        if (k === "hidden") el3.hidden = true;
+        if (k === "hidden") el5.hidden = true;
         if (k.startsWith("data-")) {
           const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
-          el3.dataset[dKey] = String(v);
+          el5.dataset[dKey] = String(v);
         }
         if (k === "class") {
           classListSet.clear();
@@ -34173,10 +34451,10 @@ ${clean(nextLineText)}`;
       },
       removeAttribute(k) {
         delete attributes[k];
-        if (k === "hidden") el3.hidden = false;
+        if (k === "hidden") el5.hidden = false;
         if (k.startsWith("data-")) {
           const dKey = k.slice(5).replace(/-([a-z])/g, (_, g) => g.toUpperCase());
-          delete el3.dataset[dKey];
+          delete el5.dataset[dKey];
         }
       },
       hasAttribute(k) {
@@ -34185,9 +34463,9 @@ ${clean(nextLineText)}`;
       appendChild(child) {
         if (child) {
           children.push(child);
-          child.parentElement = el3;
-          child.parentNode = el3;
-          el3.firstChild = children[0] || null;
+          child.parentElement = el5;
+          child.parentNode = el5;
+          el5.firstChild = children[0] || null;
         }
         return child;
       },
@@ -34197,16 +34475,16 @@ ${clean(nextLineText)}`;
           children.splice(idx, 1);
           child.parentElement = null;
           child.parentNode = null;
-          el3.firstChild = children[0] || null;
+          el5.firstChild = children[0] || null;
         }
         return child;
       },
       replaceChildren(...newChildren) {
         while (children.length > 0) {
-          el3.removeChild(children[0]);
+          el5.removeChild(children[0]);
         }
         for (const c of newChildren) {
-          el3.appendChild(c);
+          el5.appendChild(c);
         }
       },
       addEventListener(type, fn) {
@@ -34225,7 +34503,7 @@ ${clean(nextLineText)}`;
         }
       },
       querySelector(sel) {
-        return el3.querySelectorAll(sel)[0] || null;
+        return el5.querySelectorAll(sel)[0] || null;
       },
       querySelectorAll(sel) {
         const matches = [];
@@ -34237,7 +34515,7 @@ ${clean(nextLineText)}`;
             walk(child);
           }
         }
-        walk(el3);
+        walk(el5);
         return matches;
       }
     };
@@ -34255,7 +34533,7 @@ ${clean(nextLineText)}`;
       }
       return target.tagName === sel.toUpperCase();
     }
-    Object.defineProperty(el3, "className", {
+    Object.defineProperty(el5, "className", {
       get() {
         return Array.from(classListSet).join(" ");
       },
@@ -34268,32 +34546,32 @@ ${clean(nextLineText)}`;
         }
       }
     });
-    return el3;
+    return el5;
   }
   function makeDomElement2(doc2, tag, props = {}, attrs = {}) {
-    let el3;
+    let el5;
     if (doc2 && typeof doc2.createElement === "function") {
-      el3 = doc2.createElement(tag);
+      el5 = doc2.createElement(tag);
     } else {
-      el3 = createMockElement2(tag);
+      el5 = createMockElement2(tag);
     }
     for (const [k, v] of Object.entries(props)) {
       if (k === "style" && typeof v === "object") {
-        if (el3.style) Object.assign(el3.style, v);
+        if (el5.style) Object.assign(el5.style, v);
       } else {
-        el3[k] = v;
+        el5[k] = v;
       }
     }
     for (const [k, v] of Object.entries(attrs)) {
       if (v !== void 0 && v !== null) {
-        if (typeof el3.setAttribute === "function") {
-          el3.setAttribute(k, String(v));
+        if (typeof el5.setAttribute === "function") {
+          el5.setAttribute(k, String(v));
         } else {
-          el3[k] = String(v);
+          el5[k] = String(v);
         }
       }
     }
-    return el3;
+    return el5;
   }
   function createDualWings(container, options = {}) {
     const doc2 = container?.ownerDocument || (typeof document !== "undefined" ? document : null);
@@ -34816,16 +35094,16 @@ ${clean(nextLineText)}`;
       return measureCtx.measureText(text).width;
     }
     function preferredWidth() {
-      const pad = 2 * 16 + 4;
+      const pad2 = 2 * 16 + 4;
       const w = Math.max(
         textWidth(recenseLine.original, "600 19px -apple-system, system-ui, sans-serif"),
         textWidth(recenseLine.translation, "400 17px -apple-system, system-ui, sans-serif")
-      ) + pad;
+      ) + pad2;
       return Math.round(Math.min(WING_MAX, Math.max(WING_MIN, w)));
     }
     function sizeWings() {
       const w = `${preferredWidth()}px`;
-      for (const el3 of [leftEl, rightEl]) el3.style?.setProperty?.("--rc-wing-w", w);
+      for (const el5 of [leftEl, rightEl]) el5.style?.setProperty?.("--rc-wing-w", w);
     }
     function setRecenseLine(original = "", translation = "") {
       recenseLine = { original: String(original ?? ""), translation: String(translation ?? "") };
@@ -34885,7 +35163,7 @@ ${clean(nextLineText)}`;
     function moverFor(wId, side) {
       const target = side === "left" ? "right" : "left";
       const name2 = WIDGET_NAMES[wId] || wId;
-      const el3 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
+      const el5 = makeDomElement2(doc2, "div", { textContent: side === "left" ? "Move to right \u203A" : "\u2039 Move to left" }, {
         class: "rc-wing-move",
         "data-widget": wId,
         "data-target": target,
@@ -34897,24 +35175,24 @@ ${clean(nextLineText)}`;
         if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
         moveWidget(wId, target);
       };
-      el3.addEventListener("click", go);
-      el3.addEventListener("keydown", go);
-      return el3;
+      el5.addEventListener("click", go);
+      el5.addEventListener("keydown", go);
+      return el5;
     }
     function renderWidgets() {
-      for (const [el3, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
-        while (el3.firstChild) {
-          el3.removeChild(el3.firstChild);
+      for (const [el5, list, side] of [[leftEl, leftWidgets, "left"], [rightEl, rightWidgets, "right"]]) {
+        while (el5.firstChild) {
+          el5.removeChild(el5.firstChild);
         }
-        if (el3.appendChild) {
-          el3.appendChild(grabbers[side]);
-          el3.appendChild(recenseCards[side]);
+        if (el5.appendChild) {
+          el5.appendChild(grabbers[side]);
+          el5.appendChild(recenseCards[side]);
         }
         for (const wId of list) {
           const card = widgetElements[wId];
-          if (card && shown(wId) && el3.appendChild) {
-            el3.appendChild(moverFor(wId, side));
-            el3.appendChild(card);
+          if (card && shown(wId) && el5.appendChild) {
+            el5.appendChild(moverFor(wId, side));
+            el5.appendChild(card);
           }
         }
       }
@@ -34939,7 +35217,7 @@ ${clean(nextLineText)}`;
       rightEl.hidden = side !== "right";
     }
     function setArranging(on) {
-      for (const el3 of [leftEl, rightEl]) el3.classList?.toggle("rc-wings-arranging", Boolean(on));
+      for (const el5 of [leftEl, rightEl]) el5.classList?.toggle("rc-wings-arranging", Boolean(on));
       return Boolean(on);
     }
     function openWing(side) {
@@ -35382,6 +35660,934 @@ ${clean(nextLineText)}`;
     return { api, wings, shell, setArranging };
   }
 
+  // src/library.js
+  var PAGE_KEEP_DAYS = 14;
+  var DAY_MS = 864e5;
+  var LISTEN_WPM = 150;
+  function newPageId(rand = Math.random) {
+    let s = "";
+    const abc = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 6; i++) s += abc[Math.floor(rand() * abc.length) % abc.length];
+    return s;
+  }
+  function pageSavedId(page) {
+    if (!page) return null;
+    for (const line of String(page.rawContent || "").split("\n")) {
+      const m = META_RE.exec(line.trim());
+      if (m) return m[1];
+    }
+    return null;
+  }
+  function pageBody(page) {
+    const lines = String(page?.rawContent || "").split("\n").filter((l) => !isMetaLine(l));
+    if (page?.dateLine) {
+      const k = lines.findIndex((l) => l.trim() === page.dateLine);
+      if (k >= 0) lines.splice(k, 1);
+    }
+    return lines.join("\n").trim();
+  }
+  function wordCount(text) {
+    const m = String(text || "").match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu);
+    return m ? m.length : 0;
+  }
+  function pageKey(pages, index) {
+    const p = pages[index];
+    if (!p || !p.dateLine) return null;
+    let n = 0;
+    for (let i = 0; i < index; i++) if (pages[i].dateLine === p.dateLine) n++;
+    return `${p.dateLine}#${n}`;
+  }
+  function editedMs(day) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : null;
+  }
+  function todayKey(now = Date.now()) {
+    const d = new Date(now);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function lifeStart(page, edited) {
+    const e = editedMs(edited);
+    return e !== null && e > page.dateMs ? e : page.dateMs;
+  }
+  function daysLeft(page, now = Date.now(), edited = null) {
+    if (!page || pageSavedId(page) || typeof page.dateMs !== "number") return null;
+    const end = lifeStart(page, edited) + PAGE_KEEP_DAYS * DAY_MS;
+    return Math.max(0, Math.ceil((end - now) / DAY_MS));
+  }
+  function mergeEdited(a = {}, b = {}) {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b || {})) if (!out[k] || String(v) > String(out[k])) out[k] = v;
+    return out;
+  }
+  function expiredPageIndices(text, { now = Date.now(), keepIndex = -1, edited = {} } = {}) {
+    const pages = inspectDraftpadPages(text);
+    const out = [];
+    for (const p of pages) {
+      if (p.index === 0 || p.index === keepIndex) continue;
+      if (typeof p.dateMs !== "number") continue;
+      if (pageSavedId(p)) continue;
+      const start = lifeStart(p, edited[pageKey(pages, p.index)]);
+      if (now - start >= PAGE_KEEP_DAYS * DAY_MS) out.push(p.index);
+    }
+    return out;
+  }
+  function setPageSaved(text, index, saved, { id: id2 = null, rand } = {}) {
+    const pages = inspectDraftpadPages(text);
+    const p = pages[index];
+    if (!p) return { text, id: null, changes: null };
+    const have = pageSavedId(p);
+    if (saved && have) return { text, id: have, changes: null };
+    if (!saved && !have) return { text, id: null, changes: null };
+    if (saved) {
+      const nid = id2 || newPageId(rand);
+      const line = `<!-- saved ${nid} -->`;
+      let at, insert2;
+      if (p.dateLine) {
+        const lineStart = text.indexOf(p.dateLine, p.from);
+        at = lineStart + p.dateLine.length;
+        const eol = text.indexOf("\n", at);
+        at = eol === -1 ? text.length : eol;
+        insert2 = "\n" + line;
+      } else {
+        at = p.from;
+        insert2 = line + "\n";
+      }
+      const changes2 = { from: at, to: at, insert: insert2 };
+      return { text: text.slice(0, at) + insert2 + text.slice(at), id: nid, changes: changes2 };
+    }
+    const re = new RegExp(`(^|\\n)<!-- saved ${have} -->(?=\\n|$)`);
+    const seg = text.slice(p.from, p.to);
+    const m = re.exec(seg);
+    if (!m) return { text, id: null, changes: null };
+    let from = p.from + m.index;
+    let to = from + m[0].length;
+    if (!m[1] && text[to] === "\n") to += 1;
+    const changes = { from, to, insert: "" };
+    return { text: text.slice(0, from) + text.slice(to), id: null, changes };
+  }
+  function savedPages(text) {
+    return inspectDraftpadPages(text).map((p) => ({ p, id: pageSavedId(p) })).filter((x) => x.id).map(({ p, id: id2 }) => ({ id: id2, index: p.index, title: pageTitle(p), dateMs: p.dateMs, words: wordCount(pageBody(p)) }));
+  }
+  function pageTitle(p) {
+    const body = pageBody(p).split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean);
+    return (body ? body.slice(0, 80) : "") || p.dateLine || `Page ${p.index + 1}`;
+  }
+  function findPageById(text, id2) {
+    if (!id2) return null;
+    return inspectDraftpadPages(text).find((p) => pageSavedId(p) === id2) || null;
+  }
+  function emptyPlaylists() {
+    return { version: 1, playlists: [] };
+  }
+  function parsePlaylists(json) {
+    try {
+      const d = typeof json === "string" ? JSON.parse(json) : json;
+      if (d && Array.isArray(d.playlists)) {
+        return { version: 1, ...d, playlists: d.playlists.filter((p) => p && p.id).map((p) => ({ items: [], ...p })) };
+      }
+    } catch {
+    }
+    return emptyPlaylists();
+  }
+  function createPlaylist(state, name2, { now = /* @__PURE__ */ new Date(), rand } = {}) {
+    const iso = now.toISOString();
+    const pl = {
+      id: "pl-" + newPageId(rand),
+      name: String(name2 || "").trim() || "New playlist",
+      description: "",
+      private: true,
+      owner: "me",
+      collaborators: [],
+      created: iso,
+      updated: iso,
+      items: []
+    };
+    return { state: { ...state, playlists: [...state.playlists, pl] }, playlist: pl };
+  }
+  function mapPlaylist(state, id2, f) {
+    return { ...state, playlists: state.playlists.map((p) => p.id === id2 ? f(p) : p) };
+  }
+  function addToPlaylist(state, id2, item, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => {
+      if (p.items.some((i) => i.kind === item.kind && i.ref === item.ref)) return p;
+      const iso = now.toISOString();
+      return { ...p, updated: iso, items: [...p.items, { kind: item.kind, ref: item.ref, added: iso, addedBy: "me", note: "" }] };
+    });
+  }
+  function removeFromPlaylist(state, id2, ref, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => ({ ...p, updated: now.toISOString(), items: p.items.filter((i) => i.ref !== ref) }));
+  }
+  function editPlaylist(state, id2, { name: name2, description }, { now = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => ({
+      ...p,
+      updated: now.toISOString(),
+      name: name2 !== void 0 ? String(name2).trim() || p.name : p.name,
+      description: description !== void 0 ? String(description) : p.description
+    }));
+  }
+  function deletePlaylist(state, id2) {
+    return { ...state, playlists: state.playlists.filter((p) => p.id !== id2) };
+  }
+  function playlistsWith(state, ref) {
+    return state.playlists.filter((p) => p.items.some((i) => i.ref === ref)).map((p) => p.id);
+  }
+  function playlistSummary(pl, text) {
+    const pages = inspectDraftpadPages(text);
+    let words = 0, n = 0;
+    for (const it of pl.items) {
+      n++;
+      if (it.kind !== "page") continue;
+      const p = pages.find((pp) => pageSavedId(pp) === it.ref);
+      if (p) words += wordCount(pageBody(p));
+    }
+    const min = Math.max(n ? 1 : 0, Math.round(words / LISTEN_WPM));
+    const dur = min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min} min`;
+    return `${n} ${n === 1 ? "page" : "pages"} \xB7 ${dur}`;
+  }
+
+  // src/libraryui.js
+  var BOOKMARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
+  var LIST_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11M4 11h11M4 16h7M17 13v8M13 17h8"/></svg>';
+  function el3(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== void 0) e.textContent = text;
+    return e;
+  }
+  function button(cls, text, label) {
+    const b = el3("button", cls, text);
+    b.type = "button";
+    if (label) {
+      b.setAttribute("aria-label", label);
+      b.title = label;
+    }
+    return b;
+  }
+  function createLibraryUI({
+    getView,
+    toolbar,
+    before,
+    panel,
+    header,
+    title,
+    outlineOnly = [],
+    list,
+    showPanel: showPanel2,
+    hidePanel,
+    ink,
+    speaker,
+    globalObj = typeof window !== "undefined" ? window : null,
+    now = () => Date.now()
+  }) {
+    const host = () => globalObj?.webkit?.messageHandlers?.ui;
+    let playlists = emptyPlaylists();
+    let edited = {};
+    let tab = "outline";
+    let openPlaylistId = null;
+    const tabs = /* @__PURE__ */ new Map();
+    const mark = button("rc-btn rc-bookmark-btn", "", "Save page");
+    mark.innerHTML = BOOKMARK;
+    mark.setAttribute("aria-pressed", "false");
+    const left = el3("span", "rc-expiry");
+    toolbar.insertBefore(left, before);
+    toolbar.insertBefore(mark, before);
+    function pageNow() {
+      const v = getView();
+      if (!v) return null;
+      return inspectDraftpadPages(v.state.doc.toString())[currentPage(v.state)] || null;
+    }
+    function refreshMark() {
+      const p = pageNow();
+      const id2 = pageSavedId(p);
+      mark.setAttribute("aria-pressed", String(Boolean(id2)));
+      const label = id2 ? "Saved: change where it\u2019s saved" : "Save page";
+      mark.setAttribute("aria-label", label);
+      mark.title = label;
+      const v0 = getView();
+      const d = daysLeft(p, now(), p && v0 ? edited[pageKey(inspectDraftpadPages(v0.state.doc.toString()), p.index)] : null);
+      left.textContent = d === null ? "" : d === 0 ? "Expires today" : `${d} ${d === 1 ? "day" : "days"} left`;
+      left.hidden = d === null;
+    }
+    function dispatchSave(index, saved, id2) {
+      const v = getView();
+      const r = setPageSaved(v.state.doc.toString(), index, saved, { id: id2 });
+      if (r.changes) v.dispatch({ changes: r.changes, userEvent: saved ? "input.save" : "delete.save" });
+      return r.id;
+    }
+    mark.addEventListener("click", () => {
+      const v = getView();
+      if (!v) return;
+      const i = currentPage(v.state);
+      const p = pageNow();
+      if (!pageSavedId(p)) {
+        dispatchSave(i, true);
+        toast("Saved to Saved pages", { action: "Change", onAction: () => openSheet() });
+        refresh();
+      } else {
+        openSheet();
+      }
+    });
+    const toastEl = el3("div", "rc-toast");
+    toastEl.setAttribute("role", "status");
+    toastEl.hidden = true;
+    const layer2 = panel.parentNode || panel;
+    layer2.appendChild(toastEl);
+    let toastTimer = null;
+    function toast(text, { action, onAction } = {}) {
+      toastEl.innerHTML = "";
+      toastEl.append(el3("span", "rc-toast-text", text));
+      if (action) {
+        const b = button("rc-toast-action", action);
+        b.addEventListener("click", () => {
+          hideToast();
+          onAction?.();
+        });
+        toastEl.append(b);
+      }
+      toastEl.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(hideToast, 3500);
+    }
+    function hideToast() {
+      toastEl.hidden = true;
+    }
+    const scrim = el3("div", "rc-sheet-scrim");
+    scrim.hidden = true;
+    const sheet = el3("div", "rc-sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-label", "Saved in");
+    scrim.append(sheet);
+    layer2.appendChild(scrim);
+    scrim.addEventListener("pointerdown", (e) => {
+      if (e.target === scrim) closeSheet();
+    });
+    let pending = null;
+    function openSheet() {
+      const p = pageNow();
+      const id2 = pageSavedId(p);
+      pending = { saved: Boolean(id2), in: new Set(id2 ? playlistsWith(playlists, id2) : []) };
+      renderSheet();
+      scrim.hidden = false;
+    }
+    function closeSheet() {
+      scrim.hidden = true;
+      pending = null;
+    }
+    function renderSheet() {
+      sheet.innerHTML = "";
+      sheet.append(el3("div", "rc-sheet-grabber"));
+      const head = el3("div", "rc-sheet-head");
+      const cancel = button("rc-sheet-cancel", "Cancel");
+      const done = button("rc-sheet-done", "Done");
+      head.append(cancel, el3("span", "rc-sheet-title", "Saved in"), done);
+      cancel.addEventListener("click", closeSheet);
+      done.addEventListener("click", applySheet);
+      sheet.append(head);
+      const rows = el3("div", "rc-sheet-rows");
+      rows.append(sheetRow("Saved pages", "Kept: never expires", pending.saved, () => {
+        pending.saved = !pending.saved;
+        if (!pending.saved) pending.in.clear();
+        renderSheet();
+      }, BOOKMARK));
+      const add2 = button("rc-sheet-new", "New playlist");
+      add2.addEventListener("click", () => {
+        const f = newPlaylistField((pl) => {
+          pending.in.add(pl.id);
+          pending.saved = true;
+          renderSheet();
+        });
+        f.__button = add2;
+        add2.replaceWith(f);
+      });
+      rows.append(add2);
+      for (const pl of playlists.playlists) {
+        rows.append(sheetRow(pl.name, playlistSummary(pl, getView().state.doc.toString()), pending.in.has(pl.id), () => {
+          if (pending.in.has(pl.id)) pending.in.delete(pl.id);
+          else {
+            pending.in.add(pl.id);
+            pending.saved = true;
+          }
+          renderSheet();
+        }, LIST_ICON));
+      }
+      sheet.append(rows);
+    }
+    function newPlaylistField(onCreate) {
+      const f = el3("form", "rc-library-newform");
+      const input = el3("input", "rc-library-input");
+      input.placeholder = "Playlist name";
+      input.setAttribute("aria-label", "Playlist name");
+      const ok = button("rc-library-listen", "Create");
+      ok.type = "submit";
+      f.append(input, ok);
+      f.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const r = createPlaylist(playlists, input.value);
+        playlists = r.state;
+        persist();
+        onCreate(r.playlist);
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          f.replaceWith(f.__button);
+        }
+      });
+      setTimeout(() => input.focus(), 0);
+      return f;
+    }
+    function sheetRow(name2, sub, on, toggle, icon) {
+      const r = el3("div", "rc-sheet-row");
+      const ic = el3("span", "rc-sheet-icon");
+      ic.innerHTML = icon;
+      const txt = el3("div", "rc-sheet-text");
+      txt.append(el3("div", "rc-sheet-name", name2), el3("div", "rc-sheet-sub", sub));
+      const t2 = button(`rc-sheet-toggle${on ? " on" : ""}`, on ? "\u2713" : "+", on ? `Remove from ${name2}` : `Add to ${name2}`);
+      t2.setAttribute("aria-pressed", String(on));
+      t2.addEventListener("click", toggle);
+      r.append(ic, txt, t2);
+      return r;
+    }
+    function applySheet() {
+      const v = getView();
+      const i = currentPage(v.state);
+      let id2 = pageSavedId(pageNow());
+      if (pending.saved && !id2) id2 = dispatchSave(i, true);
+      if (!pending.saved && id2) {
+        dispatchSave(i, false);
+      }
+      const want = pending.saved ? pending.in : /* @__PURE__ */ new Set();
+      for (const pl of playlists.playlists) {
+        const has = id2 && pl.items.some((it) => it.ref === id2);
+        if (want.has(pl.id) && !has) playlists = addToPlaylist(playlists, pl.id, { kind: "page", ref: id2 });
+        if (!want.has(pl.id) && has) playlists = removeFromPlaylist(playlists, pl.id, id2);
+      }
+      persist();
+      const msg = !pending.saved ? "Removed from Saved pages" : want.size ? `Saved in ${want.size} ${want.size === 1 ? "playlist" : "playlists"}` : "Saved to Saved pages";
+      closeSheet();
+      toast(msg);
+      refresh();
+    }
+    const tabBar = el3("div", "rc-panel-tabs");
+    tabBar.setAttribute("role", "tablist");
+    if (title) {
+      header.insertBefore(tabBar, title);
+      header.removeChild(title);
+    } else header.appendChild(tabBar);
+    const libList = el3("div", "rc-library-list");
+    libList.hidden = true;
+    panel.append(libList);
+    function addTab(id2, label, render) {
+      const b = button("rc-panel-tab", label);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(id2 === tab));
+      b.addEventListener("click", () => openTab(id2));
+      tabBar.append(b);
+      tabs.set(id2, { btn: b, render });
+    }
+    addTab("outline", "Outline", null);
+    addTab("saved", "Saved", renderSaved);
+    addTab("playlists", "Playlists", renderPlaylists);
+    function openTab(id2) {
+      if (!tabs.has(id2)) return;
+      tab = id2;
+      for (const [k, t2] of tabs) t2.btn.setAttribute("aria-selected", String(k === id2));
+      const outlineOn = id2 === "outline";
+      list.hidden = !outlineOn;
+      libList.hidden = outlineOn;
+      for (const b of outlineOnly) b.hidden = !outlineOn;
+      if (!outlineOn) {
+        if (id2 !== "playlists") openPlaylistId = null;
+        renderTab();
+      }
+      showPanel2();
+    }
+    function renderTab() {
+      if (tab === "outline") return;
+      libList.innerHTML = "";
+      tabs.get(tab)?.render?.(libList);
+    }
+    function jumpTo(index) {
+      const v = getView();
+      if (!v || index < 0) return;
+      showPage(v, index);
+      v.dispatch({ effects: EditorView.scrollIntoView(inspectDraftpadPages(v.state.doc.toString())[index]?.from ?? 0, { y: "start" }) });
+      hidePanel();
+      refresh();
+    }
+    function pageRow(title2, sub, onOpen, extra) {
+      const r = el3("div", "rc-library-row");
+      const b = button("rc-library-open", "");
+      b.append(el3("span", "rc-library-title", title2), el3("span", "rc-library-sub", sub));
+      b.addEventListener("click", onOpen);
+      r.append(b);
+      if (extra) r.append(extra);
+      return r;
+    }
+    function dateText(ms) {
+      if (typeof ms !== "number") return "Undated";
+      return new Date(ms).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+    }
+    function renderSaved(c) {
+      const text = getView().state.doc.toString();
+      const items = savedPages(text);
+      if (!items.length) {
+        c.append(el3("div", "rc-outline-empty", "No saved pages. Tap the bookmark on a page to keep it; other pages go after 14 days."));
+        return;
+      }
+      for (const s of items) c.append(pageRow(s.title, `${dateText(s.dateMs)} \xB7 ${s.words} words`, () => jumpTo(s.index)));
+    }
+    function renderPlaylists(c) {
+      const text = getView().state.doc.toString();
+      const pl = openPlaylistId && playlists.playlists.find((p) => p.id === openPlaylistId);
+      if (pl) return renderPlaylist(c, pl, text);
+      const add2 = button("rc-library-new", "+ New playlist");
+      add2.addEventListener("click", () => {
+        const f = newPlaylistField((pl2) => {
+          openPlaylistId = pl2.id;
+          renderTab();
+        });
+        f.__button = add2;
+        add2.replaceWith(f);
+      });
+      c.append(add2);
+      if (!playlists.playlists.length) {
+        c.append(el3("div", "rc-outline-empty", "Group pages into a playlist: bookmark a page, then tap it again."));
+        return;
+      }
+      for (const p of playlists.playlists) {
+        c.append(pageRow(p.name, playlistSummary(p, text), () => {
+          openPlaylistId = p.id;
+          renderTab();
+        }));
+      }
+    }
+    let editing = false;
+    let deleteArmed = false;
+    function renderPlaylist(c, pl, text) {
+      const back = button("rc-library-back", "\u2039 Playlists");
+      back.addEventListener("click", () => {
+        openPlaylistId = null;
+        editing = false;
+        renderTab();
+      });
+      c.append(back);
+      if (editing) return renderDetails(c, pl);
+      c.append(el3("h3", "rc-library-h", pl.name));
+      if (pl.description) c.append(el3("p", "rc-library-desc", pl.description));
+      c.append(el3("div", "rc-library-sub", `${pl.private ? "\u{1F512} Private" : "Public"} \xB7 ${playlistSummary(pl, text)}`));
+      const actions = el3("div", "rc-library-actions");
+      const listen = button("rc-library-listen", speaker?.isSpeaking() ? "\u25A0 Stop" : "\u25B6 Listen", "Read the playlist aloud");
+      listen.addEventListener("click", () => {
+        if (speaker.isSpeaking()) {
+          speaker.stop();
+          renderTab();
+          return;
+        }
+        const parts = pl.items.map((it) => findPageById(getView().state.doc.toString(), it.ref)).filter(Boolean).map(pageBody).filter(Boolean);
+        if (!parts.length) return;
+        speaker.speak(parts, { onDone: () => renderTab() });
+        renderTab();
+      });
+      const details = button("rc-library-details", "Name & details");
+      details.addEventListener("click", () => {
+        editing = true;
+        deleteArmed = false;
+        renderTab();
+      });
+      actions.append(listen, details);
+      c.append(actions);
+      if (!pl.items.length) c.append(el3("div", "rc-outline-empty", "Empty. Bookmark a page, tap the bookmark again, and tick this playlist."));
+      for (const it of pl.items) {
+        const p = it.kind === "page" ? findPageById(text, it.ref) : null;
+        const title2 = p ? pageTitle(p) : it.kind === "page" ? "Page no longer here" : it.ref;
+        const rm2 = button("rc-library-remove", "\xD7", `Remove ${title2} from this playlist`);
+        rm2.addEventListener("click", () => {
+          playlists = removeFromPlaylist(playlists, pl.id, it.ref);
+          persist();
+          toast(`Removed ${title2}.`);
+          renderTab();
+        });
+        c.append(pageRow(title2, p ? dateText(p.dateMs) : it.kind, () => p && jumpTo(p.index), rm2));
+      }
+    }
+    function renderDetails(c, pl) {
+      const form = el3("form", "rc-library-form");
+      const name2 = el3("input", "rc-library-input");
+      name2.value = pl.name;
+      name2.setAttribute("aria-label", "Name");
+      const desc = el3("textarea", "rc-library-input");
+      desc.value = pl.description || "";
+      desc.rows = 3;
+      desc.setAttribute("aria-label", "Description");
+      desc.placeholder = "Description";
+      const row = el3("div", "rc-library-actions");
+      const cancel = button("rc-library-details", "Cancel");
+      const save = button("rc-library-listen", "Save");
+      save.type = "submit";
+      save.disabled = true;
+      const dirty = () => {
+        save.disabled = name2.value === pl.name && desc.value === (pl.description || "");
+      };
+      name2.addEventListener("input", dirty);
+      desc.addEventListener("input", dirty);
+      cancel.addEventListener("click", () => {
+        editing = false;
+        renderTab();
+      });
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        playlists = editPlaylist(playlists, pl.id, { name: name2.value, description: desc.value });
+        persist();
+        editing = false;
+        renderTab();
+      });
+      const del = button("rc-library-delete", deleteArmed ? "Tap again to delete" : "Delete playlist");
+      del.addEventListener("click", () => {
+        if (!deleteArmed) {
+          deleteArmed = true;
+          del.textContent = "Tap again to delete";
+          return;
+        }
+        playlists = deletePlaylist(playlists, pl.id);
+        persist();
+        toast(`Deleted ${pl.name}. Its pages stay saved.`);
+        editing = false;
+        openPlaylistId = null;
+        renderTab();
+      });
+      row.append(cancel, save);
+      form.append(name2, desc, row, del);
+      c.append(form);
+    }
+    let editTimer = null;
+    function noteEdit() {
+      const v = getView();
+      if (!v) return;
+      const pages = inspectDraftpadPages(v.state.doc.toString());
+      const key = pageKey(pages, currentPage(v.state));
+      const day = todayKey(now());
+      if (!key || edited[key] === day) return;
+      edited = { ...edited, [key]: day };
+      clearTimeout(editTimer);
+      editTimer = setTimeout(() => persistSidecar("pages", JSON.stringify({ version: 1, edited })), 1500);
+    }
+    function setPagesJSON(json) {
+      try {
+        edited = mergeEdited(edited, JSON.parse(json)?.edited || {});
+      } catch {
+      }
+      refreshMark();
+    }
+    function persistSidecar(name2, json) {
+      const h = host();
+      if (h && typeof h.postMessage === "function") h.postMessage({ sidecar: { name: name2, json } });
+      else try {
+        globalObj?.localStorage?.setItem(`rc-${name2}`, json);
+      } catch {
+      }
+    }
+    function persist() {
+      persistSidecar("playlists", JSON.stringify(playlists));
+    }
+    function setPlaylistsJSON(json) {
+      playlists = parsePlaylists(json);
+      renderTab();
+    }
+    if (!host()) {
+      try {
+        const j = globalObj?.localStorage?.getItem("rc-playlists");
+        if (j) playlists = parsePlaylists(j);
+      } catch {
+      }
+    }
+    const waiting = /* @__PURE__ */ new Map();
+    let tokenSeq = 0;
+    function runExpiry() {
+      const v = getView();
+      const h = host();
+      if (!v || !h || typeof h.postMessage !== "function") return 0;
+      const text = v.state.doc.toString();
+      const idx = expiredPageIndices(text, { now: now(), keepIndex: currentPage(v.state), edited });
+      if (!idx.length) return 0;
+      const pages = inspectDraftpadPages(text);
+      const raw = idx.map((i) => pages[i].rawContent);
+      const token = `x${++tokenSeq}`;
+      waiting.set(token, raw);
+      h.postMessage({ archivePages: { token, pages: raw } });
+      return idx.length;
+    }
+    function pagesArchived(token, ok) {
+      const raw = waiting.get(token);
+      waiting.delete(token);
+      if (!ok || !raw) return 0;
+      const v = getView();
+      const text = v.state.doc.toString();
+      const pages = inspectDraftpadPages(text);
+      const still = new Set(expiredPageIndices(text, { now: now(), keepIndex: currentPage(v.state), edited }));
+      const want = new Set(raw);
+      const drop = pages.filter((p) => still.has(p.index) && want.has(p.rawContent)).map((p) => p.index);
+      if (!drop.length) return 0;
+      const changes = drop.map((i) => ({ from: pages[i - 1].to, to: pages[i].to, insert: "" }));
+      ink?.removePageInk?.(drop, text);
+      const cur = currentPage(v.state);
+      const shift2 = drop.filter((i) => i < cur).length;
+      v.dispatch({ changes, userEvent: "delete.expired" });
+      if (shift2) showPage(v, cur - shift2);
+      refresh();
+      return drop.length;
+    }
+    function refresh() {
+      refreshMark();
+      if (!libList.hidden) renderTab();
+    }
+    function setSidecar(name2, json) {
+      if (name2 === "playlists") setPlaylistsJSON(json);
+      else if (name2 === "pages") setPagesJSON(json);
+    }
+    return {
+      refresh,
+      openTab,
+      addTab,
+      toast,
+      setPlaylistsJSON,
+      setSidecar,
+      noteEdit,
+      getPlaylists: () => playlists,
+      runExpiry,
+      pagesArchived,
+      openSheet,
+      closeSheet,
+      bookmark: mark
+    };
+  }
+
+  // src/speech.js
+  var seq = 0;
+  var live = /* @__PURE__ */ new Map();
+  function createSpeaker(globalObj = typeof window !== "undefined" ? window : null) {
+    const host = () => globalObj?.webkit?.messageHandlers?.ui;
+    let current = null;
+    if (globalObj && !globalObj.__rcSpeechHooks) {
+      globalObj.__rcSpeechHooks = true;
+      globalObj.speechProgress = (id2, part, from, len) => live.get(id2)?.onWord?.(part, from, len);
+      globalObj.speechDone = (id2) => {
+        const h = live.get(id2);
+        live.delete(id2);
+        h?.onDone?.();
+      };
+    }
+    function speak(parts, { onWord, onDone, lang } = {}) {
+      stop();
+      const id2 = `say-${++seq}`;
+      current = id2;
+      live.set(id2, { onWord, onDone });
+      const h = host();
+      if (h && typeof h.postMessage === "function") {
+        h.postMessage({ speakParts: { id: id2, parts, lang: lang || null } });
+        return id2;
+      }
+      const synth = globalObj?.speechSynthesis;
+      const Utter = globalObj?.SpeechSynthesisUtterance;
+      if (!synth || !Utter) {
+        setTimeout(() => globalObj?.speechDone?.(id2), 0);
+        return id2;
+      }
+      let k = 0;
+      const next = () => {
+        if (current !== id2) return;
+        if (k >= parts.length) {
+          globalObj.speechDone(id2);
+          return;
+        }
+        const i = k++;
+        const u = new Utter(parts[i]);
+        if (lang) u.lang = lang;
+        u.onboundary = (e) => {
+          if (e.name === "word" || e.name === void 0) globalObj.speechProgress(id2, i, e.charIndex, e.charLength || 0);
+        };
+        u.onend = next;
+        u.onerror = next;
+        synth.speak(u);
+      };
+      next();
+      return id2;
+    }
+    function stop() {
+      if (!current) return;
+      const id2 = current;
+      current = null;
+      const h = host();
+      if (h && typeof h.postMessage === "function") h.postMessage({ speakStop: true });
+      else globalObj?.speechSynthesis?.cancel?.();
+      const handlers2 = live.get(id2);
+      live.delete(id2);
+      handlers2?.onDone?.();
+    }
+    return { speak, stop, isSpeaking: () => current !== null };
+  }
+
+  // src/calsheet.js
+  function el4(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== void 0) e.textContent = text;
+    return e;
+  }
+  var pad = (n) => String(n).padStart(2, "0");
+  function localDate(d) {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  function localTime(d) {
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  function eventFromFields(base2, f) {
+    const [y, m, d] = String(f.date).split("-").map(Number);
+    const at = (t2, fallbackH) => {
+      const [h, mi] = String(t2 || "").split(":").map(Number);
+      return new Date(y, (m || 1) - 1, d || 1, Number.isFinite(h) ? h : fallbackH, Number.isFinite(mi) ? mi : 0);
+    };
+    const start = f.allDay ? new Date(y, m - 1, d) : at(f.start, 9);
+    let end = f.allDay ? new Date(y, m - 1, d + 1) : at(f.end, start.getHours() + 1);
+    if (end <= start) end = new Date(start.getTime() + 36e5);
+    return {
+      ...base2,
+      title: String(f.title || "").trim() || base2.title,
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      allDay: Boolean(f.allDay),
+      location: String(f.location || "").trim(),
+      notes: String(f.notes || "").trim()
+    };
+  }
+  function eventsToOffer(events, { dismissed, offered, now = Date.now() }) {
+    return events.filter((ev) => !ev.added && !dismissed.has(ev.id) && !offered.has(ev.id) && Date.parse(ev.endISO || ev.startISO) >= now);
+  }
+  function createCalendarSheet({ layer: layer2, onAdd, onDismiss, now = () => Date.now() }) {
+    const dismissed = /* @__PURE__ */ new Set();
+    const offered = /* @__PURE__ */ new Set();
+    const queue = [];
+    let current = null;
+    const scrim = el4("div", "rc-sheet-scrim rc-cal-scrim");
+    scrim.hidden = true;
+    const sheet = el4("form", "rc-sheet rc-cal-sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-label", "New calendar event");
+    scrim.appendChild(sheet);
+    layer2.appendChild(scrim);
+    scrim.addEventListener("pointerdown", (e) => {
+      if (e.target === scrim) later();
+    });
+    sheet.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        later();
+      }
+    });
+    function field(label, input2) {
+      const w = el4("label", "rc-cal-field");
+      w.append(el4("span", "rc-cal-label", label), input2);
+      return w;
+    }
+    function input(type, value, cls = "rc-library-input") {
+      const i = el4(type === "textarea" ? "textarea" : "input", cls);
+      if (type !== "textarea") i.type = type;
+      if (type === "checkbox") i.checked = Boolean(value);
+      else i.value = value ?? "";
+      return i;
+    }
+    function render(ev) {
+      sheet.innerHTML = "";
+      const s = new Date(ev.startISO), e = new Date(ev.endISO || ev.startISO);
+      const f = {
+        title: input("text", ev.title),
+        date: input("date", localDate(s)),
+        start: input("time", localTime(s)),
+        end: input("time", localTime(e)),
+        allDay: input("checkbox", ev.allDay, "rc-cal-check"),
+        location: input("text", ev.location || ""),
+        notes: input("textarea", ev.notes ?? ev.rawLine ?? "")
+      };
+      f.notes.rows = 3;
+      const times = el4("div", "rc-cal-row");
+      times.append(field("Starts", f.start), field("Ends", f.end));
+      const syncAllDay = () => {
+        times.hidden = f.allDay.checked;
+      };
+      f.allDay.addEventListener("change", syncAllDay);
+      syncAllDay();
+      const head = el4("div", "rc-sheet-head");
+      head.append(el4("span", "rc-sheet-title", "New event from your note"));
+      const from = el4("p", "rc-cal-from", ev.rawLine ? `\u201C${ev.rawLine.trim()}\u201D` : "");
+      const allDay = el4("label", "rc-cal-allday");
+      allDay.append(f.allDay, el4("span", "", "All day"));
+      const buttons = el4("div", "rc-cal-buttons");
+      const no = el4("button", "rc-library-details", "Don\u2019t add");
+      no.type = "button";
+      const yes = el4("button", "rc-library-listen", "Add to Calendar");
+      yes.type = "submit";
+      buttons.append(no, yes);
+      no.addEventListener("click", () => {
+        dismissed.add(ev.id);
+        onDismiss?.(ev.id);
+        next();
+      });
+      sheet.onsubmit = (e2) => {
+        e2.preventDefault();
+        onAdd?.(eventFromFields(ev, {
+          title: f.title.value,
+          date: f.date.value,
+          start: f.start.value,
+          end: f.end.value,
+          allDay: f.allDay.checked,
+          location: f.location.value,
+          notes: f.notes.value
+        }));
+        next();
+      };
+      sheet.append(
+        el4("div", "rc-sheet-grabber"),
+        head,
+        from,
+        field("Title", f.title),
+        field("Day", f.date),
+        allDay,
+        times,
+        field("Place", f.location),
+        field("Notes", f.notes),
+        buttons
+      );
+      if (queue.length) sheet.append(el4("p", "rc-cal-more", `${queue.length} more after this`));
+    }
+    function next() {
+      current = queue.shift() || null;
+      if (!current) {
+        scrim.hidden = true;
+        return;
+      }
+      render(current);
+      scrim.hidden = false;
+    }
+    function later() {
+      if (current) offered.delete(current.id);
+      for (const q of queue) offered.delete(q.id);
+      queue.length = 0;
+      current = null;
+      scrim.hidden = true;
+    }
+    function offer(events) {
+      for (const ev of eventsToOffer(events, { dismissed, offered, now: now() })) {
+        offered.add(ev.id);
+        queue.push(ev);
+      }
+      if (!current) next();
+    }
+    function setDismissed(ids) {
+      for (const id2 of ids) dismissed.add(id2);
+    }
+    return { offer, setDismissed, isOpen: () => Boolean(current), close: later };
+  }
+
   // src/theme.js
   var DEFAULT_FONT_SIZE = 18;
   var COLUMN_CHARS = 66;
@@ -35789,6 +36995,7 @@ ${clean(nextLineText)}`;
       if (menuOpen) setToolbarFaded(false);
     }
     let inkLayer = null;
+    let library = null;
     let audioSidecar = null;
     let dualWings = null;
     let calendarScanner = null;
@@ -35801,6 +37008,20 @@ ${clean(nextLineText)}`;
           dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
         }
       }, 800);
+      scheduleCalendarOffer();
+    }
+    let calSheet = null;
+    let calendarReady = !(typeof window !== "undefined" && window.webkit?.messageHandlers?.calendar);
+    let calendarOfferTimer = null;
+    function scheduleCalendarOffer(ms = 3e3) {
+      if (!calSheet) return;
+      if (calendarOfferTimer) clearTimeout(calendarOfferTimer);
+      calendarOfferTimer = setTimeout(() => {
+        calendarOfferTimer = null;
+        if (!calSheet || !calendarReady || !view || !calendarScanner) return;
+        calSheet.offer(calendarScanner.scanText(view.state.doc.toString()));
+      }, ms);
+      calendarOfferTimer?.unref?.();
     }
     const { state, compartments } = createEditorState(initialDoc, {
       theme: currentTheme,
@@ -35820,13 +37041,27 @@ ${clean(nextLineText)}`;
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
           if (calendarScanner && dualWings) scheduleCalendarScan();
+          if (isExternal) scheduleExpiry();
+          else if (library) library.noteEdit();
         }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
           if (inkLayer) inkLayer.relayout();
         }
+        if (library && (update.docChanged || update.selectionSet || update.transactions.some((tr) => tr.effects.length > 0))) {
+          library.refresh();
+        }
       }
     });
+    let expiryTimer = null;
+    function scheduleExpiry(ms = 5e3) {
+      if (expiryTimer) clearTimeout(expiryTimer);
+      expiryTimer = setTimeout(() => {
+        expiryTimer = null;
+        if (library) library.runExpiry();
+      }, ms);
+    }
+    if (typeof setInterval === "function") setInterval(() => scheduleExpiry(0), 36e5)?.unref?.();
     view = new EditorView({
       state,
       parent: editorHost
@@ -35852,6 +37087,22 @@ ${String(text ?? "")}`;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
       }
     });
+    const speaker = createSpeaker(typeof window !== "undefined" ? window : null);
+    library = createLibraryUI({
+      getView: () => view,
+      toolbar,
+      before: menuWrap,
+      panel: outlinePanel,
+      header: outlineHeader,
+      title: outlineTitle,
+      outlineOnly: [newestFirstBtn],
+      list: outlineList,
+      showPanel: showOutline,
+      hidePanel: hideOutline,
+      ink: inkLayer,
+      speaker
+    });
+    library.refresh();
     setInkSearch({
       find: (q) => inkLayer ? inkLayer.findInk(q) : [],
       mark: (ids) => {
@@ -35884,6 +37135,14 @@ ${String(text ?? "")}`;
     calendarScanner = createCalendarScanner({
       globalObj: typeof window !== "undefined" ? window : null
     });
+    if (typeof window !== "undefined" && !window.__RECENSE_WING_SIDE && typeof document !== "undefined") {
+      calSheet = createCalendarSheet({
+        layer: workspace,
+        onAdd: (ev) => calendarScanner.requestAdd(ev),
+        onDismiss: (id2) => window.webkit?.messageHandlers?.calendar?.postMessage?.({ action: "dismiss", ids: [id2] })
+      });
+      scheduleCalendarOffer();
+    }
     if (initialDoc) {
       dualWings.setCalendarEvents(calendarScanner.scanText(initialDoc));
     }
@@ -36030,6 +37289,10 @@ ${String(text ?? "")}`;
         // The host's reading of a handwriting group (shared/inkocr.swift): kept with its strokes for Find.
         setInkText: (id2, text) => inkLayer ? inkLayer.setInkText(String(id2), String(text ?? "")) : 0,
         setPickedColor: (hex) => inkLayer ? inkLayer.offerColor(String(hex)) : null,
+        // Page library: draftpad.playlists.json from the host, the archive's answer, a tab of the side panel.
+        setSidecar: (name2, json) => library ? library.setSidecar(String(name2), String(json)) : null,
+        pagesArchived: (token, ok) => library ? library.pagesArchived(String(token), Boolean(ok)) : 0,
+        openLibrary: (tabName) => library ? library.openTab(String(tabName || "saved")) : null,
         // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
         onPencilAction: (action) => {
           if ((action === "squeeze" || action === "doubleTap") && inkLayer) {
@@ -36049,7 +37312,13 @@ ${String(text ?? "")}`;
         },
         // At load: the ids the host already saved (draftpad.events.json), so they show as added.
         setCalendarAdded: (data2) => {
-          const ids = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          const all = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          const ids = Array.isArray(all) ? all.filter((id2) => !String(id2).startsWith("x:")) : all;
+          if (calSheet && Array.isArray(all)) calSheet.setDismissed(all.filter((id2) => String(id2).startsWith("x:")).map((id2) => String(id2).slice(2)));
+          if (!calendarReady) {
+            calendarReady = true;
+            scheduleCalendarOffer();
+          }
           if (calendarScanner && Array.isArray(ids)) calendarScanner.markSynced(ids);
           if (view && calendarScanner && dualWings) {
             dualWings.setCalendarEvents(calendarScanner.scanText(view.state.doc.toString()));
