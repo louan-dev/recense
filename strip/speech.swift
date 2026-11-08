@@ -69,6 +69,7 @@ import Speech
     /// `defaults write local.recense speechCheck -bool YES`, then Recense started: once, a throwaway custom language model is
     /// built (asking for Speech Recognition permission if it hasn't been), and the outcome logged.
     static func startup() {
+        SpeechCore.note = { log("speech: " + $0) }       // the shared engine's notes go to Recense's log
         guard UserDefaults.standard.bool(forKey: "speechCheck") else { return }
         UserDefaults.standard.removeObject(forKey: "speechCheck")
         #if compiler(>=6.2)
@@ -92,150 +93,41 @@ import Speech
 @available(macOS 26, *)
 @MainActor enum Ears {
     enum Module: String { case speech = "apple.speechtranscriber", dictation = "apple.dictationtranscriber", open = "meta.omnilingual" }
-    struct W { var text: String; var start: Double; var end: Double; var c: Double; var lang: String; var heard: String? = nil }
-    struct Phrase { var start: Double; var end: Double; var text: String; var alts: [String]; var words: [W] }
+    // the words and phrases, the module choice, the models' setup and the hearing itself are the shared engine's
+    // (shared/speechcore.swift, the same on the iPhone and iPad); what's here is the Mac's: the open ears, the
+    // canon, the lexicon's second opinion, two languages kept phrase by phrase
+    typealias W = SpeechCore.W
+    typealias Phrase = SpeechCore.Phrase
     struct Hearing { var lang: String; var module: Module; var phrases: [Phrase]; var lm = false; var canon: String? = nil
         var words: [W] { phrases.flatMap(\.words) }
     }
 
     /// The module that hears a language here, and its locale; nil: neither does.
-    static var modules: [String: (Module, Locale)?] = [:]
     static func module(_ lang: String) async -> (Module, Locale)? {
-        if let m = modules[lang] { return m }
-        let want = Locale(identifier: ["en": "en-US", "fr": "fr-FR", "vi": "vi-VN"][lang] ?? lang)
-        var m: (Module, Locale)?
-        if SpeechTranscriber.isAvailable, let l = await SpeechTranscriber.supportedLocale(equivalentTo: want) { m = (.speech, l) }
-        else if let l = await DictationTranscriber.supportedLocale(equivalentTo: want) { m = (.dictation, l) }
-        modules[lang] = m
-        if m == nil { log("speech: no on-device model for \(lang)") }
-        return m
+        guard let (m, l) = await SpeechEngine.module(lang) else { return nil }
+        return (m == .speech ? .speech : .dictation, l)
     }
+    static func shared(_ m: Module) -> SpeechCore.Module { m == .speech ? .speech : .dictation }
 
-    /// The locale's model on this Mac, downloaded once (the one moment this needs a connection) and reserved.
-    static var ready: Set<String> = []
-    static var used: [String: Date] = [:]          // when each locale was last asked for (the one used longest ago goes first)
+    /// The locale's model on this Mac, downloaded once (the one moment this needs a connection) and reserved; the
+    /// listener's own languages are let go of last.
     static func prepare(_ m: Module, _ l: Locale) async -> Bool {
-        let id = m.rawValue + "|" + l.identifier
-        used[l.identifier(.bcp47)] = Date()
-        if ready.contains(id) { return true }
-        let probe: any SpeechModule = m == .speech ? SpeechTranscriber(locale: l, preset: .transcription) : DictationTranscriber(locale: l, preset: .longDictation)
-        let have = m == .speech ? await SpeechTranscriber.installedLocales : await DictationTranscriber.installedLocales
-        // the system lets an app hold at most a few locales (5 here): every language unlocked means letting go of the
-        // one used longest ago (its model stays on the Mac; reserving it again later is instant)
-        let held = await AssetInventory.reservedLocales
-        if held.count >= AssetInventory.maximumReservedLocales, !held.contains(where: { $0.identifier(.bcp47) == l.identifier(.bcp47) }) {
-            let own = Set(NativeLang.all.map(\.code))        // the listener's own languages go last
-            let old = held.min { a, b in
-                let oa = own.contains(a.language.languageCode?.identifier ?? ""), ob = own.contains(b.language.languageCode?.identifier ?? "")
-                return oa != ob ? !oa : (used[a.identifier(.bcp47)] ?? .distantPast) < (used[b.identifier(.bcp47)] ?? .distantPast)
-            }
-            if let old, await AssetInventory.release(reservedLocale: old) {
-                ready = ready.filter { !$0.hasSuffix("|" + old.identifier) }
-                log("speech: let go of the \(old.identifier) model to make room for \(l.identifier)")
-            }
-        }
-        if !have.contains(where: { $0.identifier(.bcp47) == l.identifier(.bcp47) }) {
-            do {
-                if let r = try await AssetInventory.assetInstallationRequest(supporting: [probe]) {
-                    log("speech: downloading the \(l.identifier) model (\(m))")
-                    try await r.downloadAndInstall()
-                }
-            } catch { log("speech: the \(l.identifier) model isn't on this Mac and couldn't be fetched: \(error.localizedDescription)"); return false }
-        }
-        _ = try? await AssetInventory.reserve(locale: l)
-        ready.insert(id)
-        return true
+        await SpeechEngine.prepare(shared(m), l, keep: Set(NativeLang.all.map(\.code)))
     }
 
     /// Hears 16 kHz mono samples in one language with one module (a custom language model too, when there is one).
     static func hear(_ samples: [Float], _ lang: String, module m: Module, _ l: Locale, lm: Bool = true) async throws -> Hearing {
+        if m == .open { return try await heardOpen(samples, lang) }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("recense-\(UUID().uuidString).wav")
         try wav(samples, sr: 16000).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         let file = try AVAudioFile(forReading: url)
-        let module: any SpeechModule
-        let collect: Task<[Phrase], Error>
-        var custom = false
-        switch m {
-        case .speech:
-            let t = SpeechTranscriber(locale: l, transcriptionOptions: [], reportingOptions: [.alternativeTranscriptions],
-                                      attributeOptions: [.audioTimeRange, .transcriptionConfidence])
-            module = t
-            collect = Task { var out: [Phrase] = []; for try await r in t.results { out.append(phrase(r.range, r.text, r.alternatives, lang)) }; return out }
-        case .open:
-            return try await heardOpen(samples, lang)
-        case .dictation:
-            var hints = Set<DictationTranscriber.ContentHint>()
-            if lm, let c = CustomLM.configuration(lang) { hints.insert(.customizedLanguage(modelConfiguration: c)); custom = true }
-            let t = DictationTranscriber(locale: l, contentHints: hints, transcriptionOptions: [.punctuation], reportingOptions: [.alternativeTranscriptions],
-                                         attributeOptions: [.audioTimeRange, .transcriptionConfidence])
-            module = t
-            collect = Task { var out: [Phrase] = []; for try await r in t.results { out.append(phrase(r.range, r.text, r.alternatives, lang)) }; return out }
-        }
-        let analyzer = SpeechAnalyzer(modules: [module], options: .init(priority: .utility, modelRetention: .lingering))
-        // DictationTranscriber fails with "RecogFailed" on speech in a language not its own (silence comes back
-        // empty): it heard nothing it can write, which is an empty hearing, not an error to retry forever.
-        func nothing(_ e: Error) -> Bool { let n = e as NSError; return n.domain == "SFSpeechErrorDomain" && n.localizedDescription == "RecogFailed" }
-        do {
-            if let last = try await analyzer.analyzeSequence(from: file) { try await analyzer.finalizeAndFinish(through: last) }
-            else { await analyzer.cancelAndFinishNow() }
-        } catch {
-            collect.cancel(); rest()
-            if nothing(error) { return Hearing(lang: lang, module: m, phrases: [], lm: custom) }
-            throw error
-        }
-        let phrases: [Phrase]
-        do { phrases = try await collect.value } catch { rest(); if nothing(error) { phrases = [] } else { throw error } }
-        rest()
-        return Hearing(lang: lang, module: m, phrases: tidy(phrases), lm: custom)
+        let custom = m == .dictation && lm ? CustomLM.configuration(lang) : nil
+        let phrases = try await SpeechEngine.hear(file, lang, module: shared(m), l, custom: custom)
+        return Hearing(lang: lang, module: m, phrases: phrases, lm: custom != nil)
     }
 
-    /// A model hearing speech in a language it doesn't know may write one word of its own over all of it ("Bonjour",
-    /// timed over a whole English sentence): a word longer than 1.5 s keeps only its last 0.6 s (the rule Recense
-    /// already had for Whisper's sung words), and phrases are cut where the voice really stops (a long pause, or a pause after a thought), so what was really heard can
-    /// be told from what was skipped, stretch by stretch.
-    nonisolated static func tidy(_ phrases: [Phrase]) -> [Phrase] {
-        var out: [Phrase] = []
-        for p in phrases where !p.words.isEmpty {
-            let ws = p.words.map { w -> W in var x = w; if x.end - x.start > 1.5 { x.start = x.end - 0.6 }; return x }
-            var cur: [W] = []
-            func flush(_ whole: Bool) {
-                guard let a = cur.first, let b = cur.last else { return }
-                out.append(Phrase(start: a.start, end: b.end, text: cur.map(\.text).joined(separator: " "), alts: whole ? p.alts : [], words: cur))
-                cur = []
-            }
-            for w in ws {
-                // a cut where the voice really stops: 2.5 s of nothing, or a pause after the thought ends. A slow song
-                // pauses 0.8 s between its words; cutting there made every word its own line (notes 20261029 item 21)
-                if let last = cur.last {
-                    let gap = w.start - last.end, ends = last.text.range(of: "[.!?…;:,]$", options: .regularExpression) != nil
-                    if gap > 2.5 || (gap > 0.8 && (ends || cur.count >= 12)) { flush(false) }
-                }
-                cur.append(w)
-            }
-            flush(out.last.map { $0.start < p.start } ?? true && cur.count == ws.count)
-        }
-        return out
-    }
-
-    nonisolated static func phrase(_ range: CMTimeRange, _ text: AttributedString, _ alts: [AttributedString], _ lang: String) -> Phrase {
-        var ws: [W] = []
-        for run in text.runs {
-            let t = String(text[run.range].characters).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty, let r = run.audioTimeRange else { continue }
-            ws.append(W(text: t, start: r.start.seconds, end: r.end.seconds, c: run.transcriptionConfidence ?? 1, lang: lang))
-        }
-        return Phrase(start: range.start.seconds, end: range.end.seconds, text: String(text.characters).trimmingCharacters(in: .whitespaces),
-                      alts: alts.map { String($0.characters).trimmingCharacters(in: .whitespaces) }, words: ws)
-    }
-
-    /// The models stay warm between requests and are let go after three quiet minutes (the lifecycle the
-    /// Translation sessions taught: nothing long-lived that isn't working).
-    static var resting: Task<Void, Never>?
-    static func rest() {
-        resting?.cancel()
-        resting = Task { try? await Task.sleep(for: .seconds(180)); guard !Task.isCancelled else { return }; await SpeechModels.endRetention() }
-    }
+    nonisolated static func tidy(_ phrases: [Phrase]) -> [Phrase] { SpeechCore.tidy(phrases) }
 
     /// How surely a hearing heard its language: its words' length × confidence, × how much they read as that
     /// language among the candidates (a model hearing another language writes its own words, unsurely).
@@ -887,4 +779,33 @@ import Speech
         if changed { save() }
         return changed
     }
+}
+
+// `recense selftest`: the shared engine's rules (shared/speechcore.swift) that need no model and no permission.
+func speechSelftest() -> Bool {
+    typealias W = SpeechCore.W
+    typealias P = SpeechCore.Phrase
+    func w(_ t: String, _ a: Double, _ b: Double) -> W { W(text: t, start: a, end: b, lang: "vi") }
+    var all = true
+    func check(_ ok: Bool, _ what: String) { all = all && ok; print("\(ok ? "ok  " : "FAIL") speech, \(what)") }
+    // a pause of 3 s cuts a phrase; one of 0.5 s doesn't
+    let one = P(start: 0, end: 6, text: "", words: [w("Tòa án", 0, 0.5), w("đã", 0.6, 0.8), w("phán quyết.", 3.8, 4.4), w("Tuy nhiên", 4.9, 5.4)])
+    let cut = SpeechCore.tidy([one])
+    check(cut.map(\.text) == ["Tòa án đã", "phán quyết. Tuy nhiên"], "tidy cuts a phrase where the voice stops (\(cut.map(\.text)))")
+    // a word stretched over 3 s keeps its last 0.6 s
+    check(SpeechCore.tidy([P(start: 0, end: 3, text: "", words: [w("Bonjour", 0, 3)])]).first?.words.first?.start == 2.4, "tidy shortens a word held too long")
+    // a stretch heard with margins keeps only its own words, placed in the whole recording
+    let heard = SpeechCore.shift([P(start: 0, end: 4, text: "", words: [w("a", 0.5, 0.9), w("b", 1.2, 1.5), w("c", 3.6, 3.9)])], by: 119)
+    let clipped = SpeechCore.clip(heard, from: 120, to: 122.5)
+    check(clipped.flatMap(\.words).map(\.text) == ["b"] && abs((clipped.first?.start ?? 0) - 120.2) < 1e-9, "a stretch keeps its own words, in the file's time")
+    // the lead of silence is taken off, never below 0
+    if #available(macOS 26, *) {
+        let back = SpeechEngine.unlead([P(start: 0.3, end: 1, text: "", words: [w("x", 0.3, 0.6), w("y", 0.7, 1.0)])])
+        check(back[0].words[0].start == 0 && abs(back[0].words[1].start - 0.2) < 1e-9 && back[0].start == 0, "the lead of silence comes off every time")
+    }
+    // the playhead's stretch first, then after, then before
+    check(SpeechAhead.next(playhead: 250, count: 4, done: []) == 2 && SpeechAhead.next(playhead: 250, count: 4, done: [2, 3]) == 0
+          && SpeechAhead.next(playhead: 9, count: 2, done: [0, 1]) == nil, "the stretch under the playhead is heard first")
+    check(SpeechCore.code("vi-VN") == "vi" && SpeechCore.code("fr_FR") == "fr" && SpeechCore.locale("vi").identifier == "vi-VN", "language codes and locales")
+    return all
 }

@@ -1,0 +1,1 @@
+../../../shared/speechcore.swift

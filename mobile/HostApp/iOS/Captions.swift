@@ -14,6 +14,10 @@ enum Captions {
         var text: String
         var final: Bool
         var locale: String  // what was heard, e.g. "fr-FR"
+        // SpeechAnalyzer's ears (shared/speechcore.swift): every word timed, in seconds from t0 (seconds since 1970
+        // when the extension's stream began). nil from SFSpeechRecognizer, whose live words have no times.
+        var words: [SpeechCore.W]? = nil
+        var t0: Double? = nil
     }
 
     // on: the broadcast is running, while beat (written every 2 s by the extension) is fresh: an extension iOS ended
@@ -21,6 +25,10 @@ enum Captions {
     // heard: the language it listens for (set by the app)
     struct State: Codable {
         var on = false; var beat: Date?; var stop = false; var heard = Locale.current.identifier; var error: String?
+        // engine: which ears the extension hears with ("SpeechAnalyzer", "SFSpeechRecognizer"; "SpeechAnalyzer…" while a
+        // broadcast with it runs, so one that iOS ended without a word, over the extension's 50 MB, is told apart).
+        // analyzerFailed: when that happened; the extension then hears with SFSpeechRecognizer for a day.
+        var engine: String? = nil; var analyzerFailed: Date? = nil
         var live: Bool { on && (beat.map { Date().timeIntervalSince($0) < 6 } ?? false) }
     }
 
