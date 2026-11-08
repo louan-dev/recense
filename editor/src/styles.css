@@ -346,8 +346,31 @@ body {
 }
 
 .rc-ink-tool-dot {
-  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border-color: transparent;
   background: transparent;
+  color: var(--rc-text, currentColor);
+}
+
+.rc-ink-tool-dot svg {
+  pointer-events: none;
+}
+
+.rc-ink-tool-dot.rc-active {
+  transform: none;
+  background: color-mix(in srgb, var(--rc-cyan) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ink-color-dot,
+  .rc-ink-tool-dot {
+    transition: none;
+  }
 }
 
 .rc-ink-color-dot.rc-active,

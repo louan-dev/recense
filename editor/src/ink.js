@@ -11,6 +11,29 @@ export const INK_TOOLS = [
   'eraser-partial'
 ];
 
+export const INK_TOOL_NAMES = {
+  pen: 'Pen',
+  highlighter: 'Highlighter',
+  underline: 'Underline',
+  circle: 'Circle',
+  'eraser-whole': 'Eraser',
+  'eraser-partial': 'Partial eraser'
+};
+
+// 16-px line icons in the text colour, so each tool reads at a glance.
+const ICON = body =>
+  `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+export const INK_TOOL_ICONS = {
+  pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
+  highlighter: ICON('<path d="M5 10l5.5-6.5 2.5 2.5-6.5 5.5z"/><path d="M5 10l-2 3h3l1-1"/>'),
+  underline: ICON('<path d="M5 3v4a3 3 0 0 0 6 0V3"/><path d="M3 13.5h10"/>'),
+  circle: ICON('<ellipse cx="8" cy="8" rx="5.5" ry="4.5"/>'),
+  // A solid eraser block: wipes whole strokes.
+  'eraser-whole': ICON('<path d="M6.5 13.5L2.5 9.5 9 3l4.5 4.5-6 6z" fill="currentColor" fill-opacity="0.35"/><path d="M6.5 13.5h7"/>'),
+  // A stroke with a gap cut out of it: wipes only the part the pen crosses.
+  'eraser-partial': ICON('<path d="M2 11c1.5-3 3-3 4-1.5"/><path d="M10 9.5c1-1.5 2.5-1.5 4 1.5"/><path d="M7.2 6.5l1.6 1.6M8.8 6.5L7.2 8.1" stroke-width="1.2"/>')
+};
+
 export const INK_COLORS = [
   '#38bdf8',
   '#facc15',
@@ -361,16 +384,34 @@ export function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
   ];
 }
 
+// Hold the pen still this long at the end of a stroke to turn it into a shape.
+export const SNAP_HOLD_MS = 500;
+// Strokes smaller than this (in px, on 28-px lines) are letters and never become shapes.
+export const SNAP_MIN_SIZE = 40;
+
 /**
- * Snaps to geometric ellipse or line.
+ * How long the pen stayed still (within radius px, allowing for Pencil jitter, of where it lifted) before lifting.
+ * points: [[x, y, p, t], ...]; upTime: the lift's timestamp, same clock as t.
+ */
+export function endHoldMs(points, upTime, radius = 6) {
+  if (!Array.isArray(points) || points.length === 0) return 0;
+  const last = points[points.length - 1];
+  let stillSince = last[3] ?? upTime;
+  for (let i = points.length - 2; i >= 0; i--) {
+    if (Math.hypot(points[i][0] - last[0], points[i][1] - last[1]) > radius) break;
+    stillSince = points[i][3] ?? stillSince;
+  }
+  return Math.max(0, (upTime ?? stillSince) - stillSince);
+}
+
+/**
+ * Snaps a freehand stroke to an ellipse or a line (the Circle tool always; the pen only when held at the end).
  * - forceCircle === true: always snaps to ellipse.
- * - forceCircle === false: NEVER snaps unless holdDurationMs >= 320 (draw-and-hold at stroke end).
- *   A quick 'o' (holdDurationMs < 320) returns { snapped: false, shape: null, points }.
- * - When holdDurationMs >= 320:
- *   If isClosedLoop or perimeter > chord * 1.35 (curved path, w >= 10, h >= 10, aspect 0.35..2.8):
- *     snaps to ellipse (48 perimeter points).
- *   If perimeter <= chord * 1.35:
- *     snaps to line.
+ * - forceCircle === false: NEVER snaps unless the pen held still at the stroke's end for
+ *   holdDurationMs >= SNAP_HOLD_MS (see endHoldMs), and the stroke is bigger than a letter
+ *   (SNAP_MIN_SIZE). Handwriting therefore stays handwriting.
+ * - When held: a closed loop (ends meet) becomes an ellipse; a nearly straight stroke becomes a line;
+ *   anything else (letters, curves, scribbles) stays as drawn.
  */
 export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = false } = {}) {
   if (!Array.isArray(points) || points.length === 0) {
@@ -400,12 +441,6 @@ export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = f
   );
 
   const aspect = h > 0 ? w / h : 1;
-  const isClosedLoop =
-    perimeter > 0 &&
-    chord < 0.28 * perimeter &&
-    aspect >= 0.45 &&
-    aspect <= 2.2;
-
   function makeEllipse() {
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
@@ -436,8 +471,9 @@ export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = f
     return makeEllipse();
   }
 
-  // Draw-and-hold check: NEVER snap freehand strokes unless held for >= 320ms!
-  if (holdDurationMs < 320) {
+  // Draw-and-hold check: NEVER snap freehand strokes unless held still at the end,
+  // and never snap anything letter-sized.
+  if (holdDurationMs < SNAP_HOLD_MS || Math.max(w, h) < SNAP_MIN_SIZE) {
     return {
       snapped: false,
       shape: null,
@@ -445,32 +481,55 @@ export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = f
     };
   }
 
-  // Held at end (holdDurationMs >= 320): check if curved or straight
-  const isCurved =
-    isClosedLoop ||
-    (perimeter > chord * 1.35 && w >= 10 && h >= 10 && aspect >= 0.35 && aspect <= 2.8);
+  // Held: a closed loop (the two ends brought together) becomes an ellipse.
+  const size = Math.max(w, h);
+  const endsJoined =
+    chord <= Math.max(8, 0.15 * size) &&
+    perimeter >= 2.2 * size &&
+    aspect >= 0.35 &&
+    aspect <= 2.8;
 
-  if (isCurved) {
+  if (endsJoined) {
     return makeEllipse();
   }
 
-  // Genuinely straight line
+  // Held at one end and already nearly straight: straighten it (a held horizontal line, say).
+  // A letter or a curve bends too far from the start-to-end line to pass.
   const x1 = points[0][0];
   const y1 = points[0][1];
   const x2 = points[points.length - 1][0];
   const y2 = points[points.length - 1][1];
-  const p1 = points[0][2] ?? 0.5;
-  const p2 = points[points.length - 1][2] ?? p1;
-  const t0 = points[0][3] ?? 0;
-  const t1 = points[points.length - 1][3] ?? t0;
+  let maxDev = 0;
+  if (chord > 0) {
+    for (const pt of points) {
+      const dev = Math.abs((x2 - x1) * (y1 - pt[1]) - (x1 - pt[0]) * (y2 - y1)) / chord;
+      if (dev > maxDev) maxDev = dev;
+    }
+  }
+  const nearlyStraight =
+    chord >= SNAP_MIN_SIZE &&
+    perimeter <= chord * 1.12 &&
+    maxDev <= Math.max(5, 0.08 * chord);
+
+  if (nearlyStraight) {
+    const p1 = points[0][2] ?? 0.5;
+    const p2 = points[points.length - 1][2] ?? p1;
+    const t0 = points[0][3] ?? 0;
+    const t1 = points[points.length - 1][3] ?? t0;
+    return {
+      snapped: true,
+      shape: { kind: 'line', x1, y1, x2, y2 },
+      points: [
+        [x1, y1, p1, t0],
+        [x2, y2, p2, t1]
+      ]
+    };
+  }
 
   return {
-    snapped: true,
-    shape: { kind: 'line', x1, y1, x2, y2 },
-    points: [
-      [x1, y1, p1, t0],
-      [x2, y2, p2, t1]
-    ]
+    snapped: false,
+    shape: null,
+    points: points.map(p => [...p])
   };
 }
 
@@ -777,14 +836,16 @@ export function createInkLayer(view, options = {}) {
       colorDots.push(dot);
     }
 
-    // 6 tool dots
+    // 6 tool buttons, each with its own icon (no words)
     for (const tool of INK_TOOLS) {
       const dot = docNode.createElement('button');
       dot.className = `rc-ink-tool-dot${tool === currentTool ? ' rc-active' : ''}`;
       dot.setAttribute('type', 'button');
       dot.setAttribute('data-tool', tool);
-      dot.setAttribute('aria-label', tool);
+      dot.setAttribute('aria-label', INK_TOOL_NAMES[tool] || tool);
+      dot.setAttribute('title', INK_TOOL_NAMES[tool] || tool);
       dot.textContent = '';
+      dot.innerHTML = INK_TOOL_ICONS[tool] || '';
       dot.addEventListener('click', e => {
         if (typeof e.preventDefault === 'function') e.preventDefault();
         setTool(tool);
@@ -1149,7 +1210,8 @@ export function createInkLayer(view, options = {}) {
 
     if (activePoints.length === 0) return;
 
-    const holdDurationMs = (e.timeStamp || Date.now()) - strokeStartTime;
+    // Only the stillness at the end counts, not the whole stroke's length.
+    const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
     let finalPoints = activePoints;
     let finalShape = null;
 

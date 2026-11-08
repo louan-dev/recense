@@ -353,8 +353,31 @@ body {
 }
 
 .rc-ink-tool-dot {
-  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border-color: transparent;
   background: transparent;
+  color: var(--rc-text, currentColor);
+}
+
+.rc-ink-tool-dot svg {
+  pointer-events: none;
+}
+
+.rc-ink-tool-dot.rc-active {
+  transform: none;
+  background: color-mix(in srgb, var(--rc-cyan) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ink-color-dot,
+  .rc-ink-tool-dot {
+    transition: none;
+  }
 }
 
 .rc-ink-color-dot.rc-active,
@@ -1013,7 +1036,7 @@ html.rc-wings-page body {
 <div id="app"></div>
 <script>
 (() => {
-  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -1087,7 +1110,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
+  // node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -4499,7 +4522,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../editor/node_modules/style-mod/src/style-mod.js
+  // node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -4635,7 +4658,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../editor/node_modules/w3c-keyname/index.js
+  // node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -4741,7 +4764,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../editor/node_modules/crelt/index.js
+  // node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -4770,7 +4793,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
+  // node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -14270,7 +14293,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../editor/node_modules/@lezer/common/dist/index.js
+  // node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -16331,7 +16354,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
+  // node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -17055,7 +17078,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
+  // node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -18541,7 +18564,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
+  // node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -19635,7 +19658,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -20100,7 +20123,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
+  // node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -22188,7 +22211,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
+  // node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -23966,7 +23989,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // ../../../../editor/node_modules/@lezer/html/dist/index.js
+  // node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -24310,7 +24333,7 @@ html.rc-wings-page body {
     });
   }
 
-  // ../../../../editor/node_modules/@lezer/css/dist/index.js
+  // node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -24490,7 +24513,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
+  // node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -25351,7 +25374,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
+  // node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -25563,7 +25586,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -25875,7 +25898,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
+  // node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -26615,7 +26638,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -27444,7 +27467,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
+  // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -30848,6 +30871,25 @@ ${PAGE_MARKER}
     "eraser-whole",
     "eraser-partial"
   ];
+  var INK_TOOL_NAMES = {
+    pen: "Pen",
+    highlighter: "Highlighter",
+    underline: "Underline",
+    circle: "Circle",
+    "eraser-whole": "Eraser",
+    "eraser-partial": "Partial eraser"
+  };
+  var ICON = (body) => `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  var INK_TOOL_ICONS = {
+    pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
+    highlighter: ICON('<path d="M5 10l5.5-6.5 2.5 2.5-6.5 5.5z"/><path d="M5 10l-2 3h3l1-1"/>'),
+    underline: ICON('<path d="M5 3v4a3 3 0 0 0 6 0V3"/><path d="M3 13.5h10"/>'),
+    circle: ICON('<ellipse cx="8" cy="8" rx="5.5" ry="4.5"/>'),
+    // A solid eraser block: wipes whole strokes.
+    "eraser-whole": ICON('<path d="M6.5 13.5L2.5 9.5 9 3l4.5 4.5-6 6z" fill="currentColor" fill-opacity="0.35"/><path d="M6.5 13.5h7"/>'),
+    // A stroke with a gap cut out of it: wipes only the part the pen crosses.
+    "eraser-partial": ICON('<path d="M2 11c1.5-3 3-3 4-1.5"/><path d="M10 9.5c1-1.5 2.5-1.5 4 1.5"/><path d="M7.2 6.5l1.6 1.6M8.8 6.5L7.2 8.1" stroke-width="1.2"/>')
+  };
   var INK_COLORS = [
     "#38bdf8",
     "#facc15",
@@ -31124,6 +31166,18 @@ ${clean(nextLineText)}`;
       [maxX, snapY, pEnd, tEnd]
     ];
   }
+  var SNAP_HOLD_MS = 500;
+  var SNAP_MIN_SIZE = 40;
+  function endHoldMs(points, upTime, radius = 6) {
+    if (!Array.isArray(points) || points.length === 0) return 0;
+    const last2 = points[points.length - 1];
+    let stillSince = last2[3] ?? upTime;
+    for (let i = points.length - 2; i >= 0; i--) {
+      if (Math.hypot(points[i][0] - last2[0], points[i][1] - last2[1]) > radius) break;
+      stillSince = points[i][3] ?? stillSince;
+    }
+    return Math.max(0, (upTime ?? stillSince) - stillSince);
+  }
   function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = false } = {}) {
     if (!Array.isArray(points) || points.length === 0) {
       return { snapped: false, shape: null, points: [] };
@@ -31148,7 +31202,6 @@ ${clean(nextLineText)}`;
       points[points.length - 1][1] - points[0][1]
     );
     const aspect = h > 0 ? w / h : 1;
-    const isClosedLoop = perimeter > 0 && chord < 0.28 * perimeter && aspect >= 0.45 && aspect <= 2.2;
     function makeEllipse() {
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
@@ -31156,13 +31209,13 @@ ${clean(nextLineText)}`;
       const ry = Math.max(1, h / 2);
       const snappedPoints = [];
       const pAvg = points.reduce((sum, p) => sum + (p[2] ?? 0.5), 0) / points.length;
-      const t02 = points[0]?.[3] ?? 0;
-      const t12 = points[points.length - 1]?.[3] ?? t02;
+      const t0 = points[0]?.[3] ?? 0;
+      const t1 = points[points.length - 1]?.[3] ?? t0;
       for (let i = 0; i < 48; i++) {
         const theta = i / 48 * (2 * Math.PI);
         const x = cx + rx * Math.cos(theta);
         const y = cy + ry * Math.sin(theta);
-        const t2 = t02 + (t12 - t02) * (i / 48);
+        const t2 = t0 + (t1 - t0) * (i / 48);
         snappedPoints.push([x, y, pAvg, t2]);
       }
       return {
@@ -31174,32 +31227,48 @@ ${clean(nextLineText)}`;
     if (forceCircle) {
       return makeEllipse();
     }
-    if (holdDurationMs < 320) {
+    if (holdDurationMs < SNAP_HOLD_MS || Math.max(w, h) < SNAP_MIN_SIZE) {
       return {
         snapped: false,
         shape: null,
         points: points.map((p) => [...p])
       };
     }
-    const isCurved = isClosedLoop || perimeter > chord * 1.35 && w >= 10 && h >= 10 && aspect >= 0.35 && aspect <= 2.8;
-    if (isCurved) {
+    const size = Math.max(w, h);
+    const endsJoined = chord <= Math.max(8, 0.15 * size) && perimeter >= 2.2 * size && aspect >= 0.35 && aspect <= 2.8;
+    if (endsJoined) {
       return makeEllipse();
     }
     const x1 = points[0][0];
     const y1 = points[0][1];
     const x2 = points[points.length - 1][0];
     const y2 = points[points.length - 1][1];
-    const p1 = points[0][2] ?? 0.5;
-    const p2 = points[points.length - 1][2] ?? p1;
-    const t0 = points[0][3] ?? 0;
-    const t1 = points[points.length - 1][3] ?? t0;
+    let maxDev = 0;
+    if (chord > 0) {
+      for (const pt of points) {
+        const dev = Math.abs((x2 - x1) * (y1 - pt[1]) - (x1 - pt[0]) * (y2 - y1)) / chord;
+        if (dev > maxDev) maxDev = dev;
+      }
+    }
+    const nearlyStraight = chord >= SNAP_MIN_SIZE && perimeter <= chord * 1.12 && maxDev <= Math.max(5, 0.08 * chord);
+    if (nearlyStraight) {
+      const p1 = points[0][2] ?? 0.5;
+      const p2 = points[points.length - 1][2] ?? p1;
+      const t0 = points[0][3] ?? 0;
+      const t1 = points[points.length - 1][3] ?? t0;
+      return {
+        snapped: true,
+        shape: { kind: "line", x1, y1, x2, y2 },
+        points: [
+          [x1, y1, p1, t0],
+          [x2, y2, p2, t1]
+        ]
+      };
+    }
     return {
-      snapped: true,
-      shape: { kind: "line", x1, y1, x2, y2 },
-      points: [
-        [x1, y1, p1, t0],
-        [x2, y2, p2, t1]
-      ]
+      snapped: false,
+      shape: null,
+      points: points.map((p) => [...p])
     };
   }
   function distToSegmentSquared(px, py, x1, y1, x2, y2) {
@@ -31455,8 +31524,10 @@ ${clean(nextLineText)}`;
         dot2.className = `rc-ink-tool-dot${tool === currentTool ? " rc-active" : ""}`;
         dot2.setAttribute("type", "button");
         dot2.setAttribute("data-tool", tool);
-        dot2.setAttribute("aria-label", tool);
+        dot2.setAttribute("aria-label", INK_TOOL_NAMES[tool] || tool);
+        dot2.setAttribute("title", INK_TOOL_NAMES[tool] || tool);
         dot2.textContent = "";
+        dot2.innerHTML = INK_TOOL_ICONS[tool] || "";
         dot2.addEventListener("click", (e) => {
           if (typeof e.preventDefault === "function") e.preventDefault();
           setTool(tool);
@@ -31763,7 +31834,7 @@ ${clean(nextLineText)}`;
         return;
       }
       if (activePoints.length === 0) return;
-      const holdDurationMs = (e.timeStamp || Date.now()) - strokeStartTime;
+      const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
       let finalPoints = activePoints;
       let finalShape = null;
       if (currentTool === "underline") {

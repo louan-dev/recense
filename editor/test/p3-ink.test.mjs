@@ -12,6 +12,8 @@ import {
   mergeInkDocuments,
   snapUnderlineStroke,
   detectAndSnapShape,
+  endHoldMs,
+  SNAP_HOLD_MS,
   eraseWholeStrokes,
   erasePartialStrokes,
   createInkLayer,
@@ -86,14 +88,14 @@ test('P3: detectAndSnapShape protects quick handwritten "o" and snaps held rough
   assert.equal(quickResult.shape, null);
   assert.equal(quickResult.points.length, handwrittenO.length);
 
-  // 2. Draw-and-hold rough circle (holdDurationMs = 380 >= 320ms) -> Snaps to ellipse with 48 points!
+  // 2. Held rough circle whose ends meet -> snaps to ellipse with 48 points
   const heldRoughCircle = [];
   for (let i = 0; i <= 24; i++) {
     const angle = (i / 24) * 2 * Math.PI;
     const r = 35 + (i % 3 === 0 ? 3 : -2);
     heldRoughCircle.push([100 + r * Math.cos(angle), 100 + r * Math.sin(angle), 0.5, i * 15]);
   }
-  const heldCircleResult = detectAndSnapShape(heldRoughCircle, { holdDurationMs: 380, forceCircle: false });
+  const heldCircleResult = detectAndSnapShape(heldRoughCircle, { holdDurationMs: SNAP_HOLD_MS, forceCircle: false });
   assert.equal(heldCircleResult.snapped, true);
   assert.equal(heldCircleResult.shape.kind, 'ellipse');
   assert.equal(heldCircleResult.points.length, 48, 'generates exactly 48 perimeter points');
@@ -106,19 +108,44 @@ test('P3: detectAndSnapShape protects quick handwritten "o" and snaps held rough
   assert.equal(forceCircleResult.shape.kind, 'ellipse');
   assert.equal(forceCircleResult.points.length, 48);
 
-  // 4. Straight line held at end (holdDurationMs = 350) -> Snaps to line
+  // 4. Held, nearly straight -> straight line; held open arc or zigzag -> stays as drawn
   const straightLine = [
     [10, 20, 0.5, 0],
-    [50, 20.5, 0.5, 100],
+    [50, 22.5, 0.5, 100],
     [100, 20, 0.5, 350]
   ];
-  const lineResult = detectAndSnapShape(straightLine, { holdDurationMs: 350, forceCircle: false });
-  assert.equal(lineResult.snapped, true);
-  assert.equal(lineResult.shape.kind, 'line');
-  assert.equal(lineResult.shape.x1, 10);
-  assert.equal(lineResult.shape.y1, 20);
-  assert.equal(lineResult.shape.x2, 100);
-  assert.equal(lineResult.shape.y2, 20);
+  const lineResult = detectAndSnapShape(straightLine, { holdDurationMs: SNAP_HOLD_MS });
+  assert.equal(lineResult.snapped, true, 'held, nearly straight stroke becomes a line');
+  assert.deepEqual(lineResult.shape, { kind: 'line', x1: 10, y1: 20, x2: 100, y2: 20 });
+  assert.equal(detectAndSnapShape(straightLine, { holdDurationMs: 0 }).snapped, false, 'not held: stays as drawn');
+  const openArc = heldRoughCircle.slice(0, 18);
+  assert.equal(detectAndSnapShape(openArc, { holdDurationMs: 2000 }).snapped, false, 'held open arc stays as drawn');
+  const zigzag = [[0, 0, 0.5, 0], [20, 15, 0.5, 50], [40, 0, 0.5, 100], [60, 15, 0.5, 150], [80, 0, 0.5, 200]];
+  assert.equal(detectAndSnapShape(zigzag, { holdDurationMs: 2000 }).snapped, false, 'held cursive-like zigzag stays as drawn');
+  const shortDash = [[0, 0, 0.5, 0], [25, 0, 0.5, 100]];
+  assert.equal(detectAndSnapShape(shortDash, { holdDurationMs: 2000 }).snapped, false, 'letter-sized dash (a "-" or "t" bar) stays as drawn');
+
+  // 5. Held closed loop but letter-sized (a slow, held "o") never snaps
+  const smallO = [];
+  for (let i = 0; i <= 20; i++) {
+    const a = (i / 20) * 2 * Math.PI;
+    smallO.push([50 + 9 * Math.cos(a), 50 + 11 * Math.sin(a), 0.5, i * 40]);
+  }
+  assert.equal(detectAndSnapShape(smallO, { holdDurationMs: 2000 }).snapped, false, 'letter-sized loop stays a letter');
+
+  // 6. Closed loop that is not held long enough never snaps
+  assert.equal(detectAndSnapShape(heldRoughCircle, { holdDurationMs: SNAP_HOLD_MS - 1 }).snapped, false);
+});
+
+test('P3: endHoldMs counts only the stillness before lift, not the whole stroke', () => {
+  // A slow 900 ms letter stroke, lifted while still moving: no hold.
+  const slowLetter = [];
+  for (let i = 0; i <= 30; i++) slowLetter.push([10 + i * 8, 20 + (i % 2) * 8, 0.5, i * 30]);
+  assert.equal(endHoldMs(slowLetter, 905), 5);
+  // The pen stops at (40, 20) at t=600 and rests there until lift at t=1200.
+  const held = [[0, 20, 0.5, 0], [20, 20, 0.5, 300], [40, 20, 0.5, 600], [41, 21, 0.5, 900], [40, 20, 0.5, 1150]];
+  assert.equal(endHoldMs(held, 1200), 600);
+  assert.equal(endHoldMs([], 100), 0);
 });
 
 test('P3: eraseWholeStrokes removes intersecting stroke and collects removed ID', () => {
