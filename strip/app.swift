@@ -7900,6 +7900,11 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     exit(a && b && c && d && e && f && g && h && i && j && k ? 0 : 1)
 }
 
+// `recense draftpad-check [folder]`: the Recense layer on the real path, off screen, with a test page (draftpadcheck.swift).
+if CommandLine.arguments.dropFirst().first == "draftpad-check" {
+    draftpadCheck(out: URL(fileURLWithPath: CommandLine.arguments.dropFirst(2).first ?? NSTemporaryDirectory() + "draftpad-check"))
+}
+
 // Single instance, enforced with a lock file. Holding the lock means "I am the running copy".
 let lockFD = open("/tmp/local.recense\(instanceSuffix).lock", O_CREAT | O_RDWR, 0o600)
 let holdsLock = lockFD >= 0 && flock(lockFD, LOCK_EX | LOCK_NB) == 0

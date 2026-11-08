@@ -352,6 +352,12 @@ Apple's Translation (installed languages), Gist and IRAC from Apple's on-device 
 guide is in the schema, built at run time because the Command Line Tools ship no macro plugins; greedy, 700 tokens out
 at most, so it can't overflow the 4,096-token context), and `<vault>/Recensed/<id>.json` for saved pages. While you
 write, the wing panels' Recense card shows your text's lens line (`WingPanels.setTypedLine`).
+M2 (Gist per paragraph): the Gist schema has one field per paragraph (`p1`…`pN`, six per call) after the title, then
+the page gist; every line is asked for in the section's language by name, a line mixing two languages is flagged
+(`isMixed`), and the section's other-language sentences go to the page translated, for the citation check.
+**Check the real app without touching your notes:** `strip/recense draftpad-check <folder>` runs the installed editor,
+this file and the on-device model on a test page in an off-screen window with throwaway storage, checks the Gist shape,
+one language per line, per-sentence Source, Chapters and the wing card, and saves a PNG per view (about 40 s on the M1).
 `shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
 `phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
 the same copy.

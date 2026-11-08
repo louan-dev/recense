@@ -15,7 +15,7 @@
 import { StateField, StateEffect } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import { docSections, reconcile, sentenceLine, lensLineToLine } from './typedlines.js';
-import { settle, reformatKind } from './lenses.js';
+import { settle, reformatKind, pageGist } from './lenses.js';
 import { inspectDraftpadPages } from './pages.js';
 import { pageSavedId, pageTitle } from './library.js';
 import { headingInsert } from './chapters.js';
@@ -61,6 +61,7 @@ class LensWidget extends WidgetType {
       if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-role', textContent: ROLE_NAMES[l.role] }));
       row.append(document.createTextNode(l.text));
       if (l.added) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'added' }));
+      else if (l.extract) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'extract' }));
       row.title = l.added ? 'Recense added this: it is not in your text' : 'Tap to light the sentences it comes from';
       row.addEventListener('mousedown', e => e.preventDefault());
       row.addEventListener('click', e => { e.preventDefault(); this.onTap?.(l.from || []); });
@@ -104,11 +105,14 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
       continue;
     }
     if (lens === 'gist') {
-      const top = r.whole ? [r.whole] : [];
+      const top = pageGist(r);
       if (r.title || top.length) blocks.push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? '' : r.title, tag, why: r.why, lines: top });
+      // One line per paragraph, under that paragraph.
+      const paraEnd = new Map();
+      for (const x of s.sentences) paraEnd.set(x.p, Math.max(paraEnd.get(x.p) ?? -1, x.to));
       const groups = new Map();
       for (const l of r.gist) {
-        const at = l.from.length ? endOf(l.from) : s.to;
+        const at = paraEnd.has(l.para) ? paraEnd.get(l.para) : l.from.length ? endOf(l.from) : s.to;
         if (!groups.has(at)) groups.set(at, []);
         groups.get(at).push(l);
       }
@@ -167,7 +171,7 @@ export function createRecense({
   function staleLines() {
     const out = new Map();
     const sentenceOwner = new Map();
-    for (const [key, r] of results) for (const l of [...r.gist, ...(r.reformat?.lines || []), ...(r.whole ? [r.whole] : [])]) for (const k of l.from) sentenceOwner.set(k, key);
+    for (const [key, r] of results) for (const l of [...r.gist, ...(r.reformat?.lines || []), ...pageGist(r)]) for (const k of l.from) sentenceOwner.set(k, key);
     for (const s of current()) {
       if (results.has(s.key)) continue;
       const olds = new Set(s.sentences.map(x => sentenceOwner.get(x.key)).filter(Boolean));
@@ -368,7 +372,8 @@ export function createRecense({
         const r = results.get(s.key);
         let m = 0;
         return { key: s.key, engine: r.engine, title: r.title, kind: r.reformat.kind,
-          gist: [r.whole, ...r.gist].filter(Boolean).map(l => lensLineToLine(l, m++)),
+          page: pageGist(r).map(l => lensLineToLine(l, m++)),
+          gist: r.gist.map(l => ({ ...lensLineToLine(l, m++), para: l.para ?? null })),
           reformat: r.reformat.lines.map(l => ({ ...lensLineToLine(l, m++), role: l.role || null })) };
       })
     };
@@ -378,7 +383,7 @@ export function createRecense({
   // ── Chapters (the side panel) ──────────────────────────────────────────────────────────────────────────────────────
   function liveTitles() {
     const m = new Map();
-    for (const [k, r] of results) if (r.title || r.whole) m.set(k, { title: r.title, gist: r.whole?.text || r.gist[0]?.text || '' });
+    for (const [k, r] of results) if (r.title || pageGist(r).length) m.set(k, { title: r.title, gist: pageGist(r)[0]?.text || r.gist[0]?.text || '' });
     return m;
   }
   function freeze() { frozen = liveTitles(); }

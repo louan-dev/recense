@@ -1,3 +1,4 @@
+import { isMixed } from './lenses.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -895,6 +896,27 @@ export function mountEditor(root = document.body, initialDoc = '') {
       recenseNow: () => recenseActions?.now(),
       setRecenseLayer: on => recenseActions?.toggle(Boolean(on)),
       setRecenseLens: name => recenseActions?.lens(String(name || '')),
+      // For checks (`recense draftpad-check`): how far recensing has got, and the wing card for a caret offset.
+      recenseStatus: () => (recense ? {
+        sections: recense.sections().length,
+        recensed: recense.sections().filter(s => recense.results.has(s.key)).length,
+        inflight: recense.inflight.size,
+        engines: [...new Set(recense.sections().map(s => recense.results.get(s.key)?.engine).filter(Boolean))],
+        lens: recense.getLens(), on: recense.isEnabled(), missing: recense.missing()
+      } : null),
+      // Per section: paragraphs, Gist lines, page-gist lines, filled extracts, dropped lines, lines in two languages.
+      recenseShape: () => (recense ? recense.sections().map(s => {
+        const r = recense.results.get(s.key);
+        const all = r ? [...(r.page || []), ...r.gist, ...r.reformat.lines] : [];
+        return { paras: new Set(s.sentences.map(x => x.p)).size, sentences: s.sentences.length, lang: r?.lang || '',
+          gist: r?.gist.length ?? -1, page: r?.page?.length ?? -1, extract: all.filter(l => l.extract).length,
+          dropped: r?.dropped ?? 0, droppedLines: r?.droppedLines || [], mixed: all.filter(l => !l.extract && isMixed({ ...l, lang: r.lang })).map(l => l.text) };
+      }) : null),
+      recenseCardAt: offset => {
+        const card = recense ? recense.cardFor(Number(offset)) : null;
+        if (dualWings) dualWings.setTypedLine(card);
+        return card;
+      },
       // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
       onPencilAction: action => {
         if ((action === 'squeeze' || action === 'doubleTap') && inkLayer) {

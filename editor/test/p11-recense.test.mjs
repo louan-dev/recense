@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pageSentences, pageSections, docSections, sentenceLine, reconcile, fnv1a } from '../src/typedlines.js';
-import { checkLines, extractive, settle, reformatKind, keyTerms } from '../src/lenses.js';
+import { checkLines, extractive, settle, reformatKind, keyTerms, isMixed } from '../src/lenses.js';
 import { createRecense, lensBlocks, QUIET_MS } from '../src/recense.js';
 import { chapterEntries } from '../src/chapters.js';
 
@@ -51,6 +51,8 @@ test('every lens line has `from` or is labelled added, and a line whose terms ar
   assert.deepEqual(kept.find(l => /influenza/.test(l.text)).from, [c]);
   assert.equal(kept.find(l => /bilateral/.test(l.text)).added, true);
   assert.deepEqual(kept.find(l => /Advertisement/.test(l.text)).from, [b]);
+  assert.equal(checkLines([{ text: 'Carlill caught influenza; [s3]', from: [c] }], ss).kept[0].text, 'Carlill caught influenza',
+    'a citation id written into the line is taken out');
   assert.ok(!kept.some(l => /farmland/.test(l.text)));
   void d;
 });
@@ -93,8 +95,11 @@ function harness(text) {
 
 const modelReply = (sec, title) => ({
   key: sec.key, engine: 'model', title,
-  whole: { text: 'An advertisement can be a unilateral offer.', from: [sec.sentences[1].key] },
-  gist: sec.sentences.map(s => ({ text: s.text, from: [s.key] })),
+  page: [{ text: 'An advertisement can be a unilateral offer.', from: [sec.sentences[1].key] }],
+  gist: [
+    { text: 'A contract needs offer, acceptance and consideration.', from: [sec.sentences[0].key], para: sec.sentences[0].p },
+    { text: 'Mrs Carlill caught influenza after using the smoke ball.', from: [sec.sentences[2].key], para: sec.sentences[2].p }
+  ],
   reformat: { kind: 'irac', lines: [{ text: 'Is an advertisement an offer?', from: [], role: 'issue' }] }
 });
 
@@ -128,10 +133,10 @@ test('editing a sentence redoes only the lens lines that cite it', () => {
   const old = h.rc.results.get(sec.key).gist;
   const { kept, stale } = reconcile(old, new Set(now.sentences.map(s => s.key)));
   assert.deepEqual(stale.map(l => l.from[0]), [edited.key]);
-  assert.equal(kept.length, 3);
+  assert.equal(kept.length, 1);
   const blocks = lensBlocks(h.rc.sections(), 'gist', { results: h.rc.results, stale: new Map([[now.key, kept]]) });
   assert.equal(blocks[0].tag, 'earlier');
-  assert.equal(blocks[0].lines.length, 3, 'the untouched lines stay on screen until the section is recensed');
+  assert.equal(blocks[0].lines.length, 1, 'the untouched lines stay on screen until the section is recensed');
   // Only the edited section goes out again.
   h.advance(QUIET_MS);
   h.rc.tick();
@@ -208,4 +213,82 @@ test('the wing card takes the caret paragraph’s lens line with its source, onl
   assert.match(card.original, /influenza/);
   assert.match(card.translation, /Mrs Carlill used/);
   assert.equal(h.rc.cardFor(-1), null);
+});
+
+const THREE = `Monday, November 9, 2026
+
+A contract needs an offer and an acceptance. The offer must be definite. An invitation to treat is not an offer.
+
+Consideration is something of value given in exchange. Past consideration is no consideration. A promise to pay later counts.
+
+Carlill v Carbolic Smoke Ball Co held that an advertisement was a unilateral offer. Mrs Carlill accepted by using the smoke ball. The company had to pay her the reward.`;
+
+test('Gist: a 3-paragraph page gives exactly 3 paragraph lines and a 3-line page gist, whatever the model sent', () => {
+  const [sec] = docSections(THREE);
+  const ss = sec.sentences;
+  assert.equal(new Set(ss.map(s => s.p)).size, 3);
+  // A model that wrote one line per sentence (the M1 shape) and one page line: still 3 + 3.
+  const perSentence = settle(sec, { key: sec.key, engine: 'model', title: 'Contract formation',
+    page: [{ text: 'A contract needs offer, acceptance and consideration.', from: [ss[0].key, ss[3].key] }],
+    gist: ss.map(s => ({ text: s.text, from: [s.key] })) });
+  assert.equal(perSentence.gist.length, 3, 'one Gist line per paragraph');
+  assert.deepEqual(perSentence.gist.map(l => ss.find(s => s.key === l.from[0]).p), [...new Set(ss.map(s => s.p))]);
+  assert.equal(perSentence.page.length, 3, 'a 3-line page gist');
+  assert.equal(perSentence.page[0].text, 'A contract needs offer, acceptance and consideration.');
+  assert.ok(perSentence.page.slice(1).every(l => l.extract), 'filled lines say they are extracts');
+  // The shape the app now asks for: one field per paragraph, three page lines.
+  const ps = [...new Set(ss.map(s => s.p))];
+  const shaped = settle(sec, { key: sec.key, engine: 'model', title: 'Contract formation',
+    page: [
+      { text: 'A contract needs a definite offer and an acceptance.', from: [ss[0].key, ss[1].key] },
+      { text: 'Consideration is value given in exchange; past consideration does not count.', from: [ss[3].key, ss[4].key] },
+      { text: 'Carlill: an advertisement can be a unilateral offer.', from: [ss[6].key] }],
+    gist: [
+      { text: 'An offer must be definite; an invitation to treat is not an offer.', from: [ss[1].key, ss[2].key], para: ps[0] },
+      { text: 'Consideration is value given in exchange, never past.', from: [ss[3].key, ss[4].key], para: ps[1] },
+      { text: 'Using the smoke ball accepted the advertisement’s unilateral offer.', from: [ss[6].key, ss[7].key], para: ps[2] },
+      { text: 'A fourth line the page did not ask for.', from: [ss[8].key], para: ps[2] }] });
+  assert.equal(shaped.gist.length, 3);
+  assert.equal(shaped.page.length, 3);
+  assert.ok(![...shaped.gist, ...shaped.page].some(l => l.extract), 'all the model’s own lines, checked');
+  // A page line that repeats a paragraph line is replaced (the M2 check found the model copying them).
+  const copied = settle(sec, { key: sec.key, engine: 'model', title: 'x',
+    page: [{ text: 'Consideration is value given in exchange, never past.', from: [ss[3].key] }],
+    gist: [{ text: 'Consideration is value given in exchange, never past.', from: [ss[3].key, ss[4].key], para: ps[1] }] });
+  assert.equal(copied.page.length, 3);
+  assert.ok(!copied.page.some(l => l.text === 'Consideration is value given in exchange, never past.'));
+  // No model at all: the same shape from the owner's sentences.
+  const ext = settle(sec, { key: sec.key, engine: 'none', why: 'off' });
+  assert.equal(ext.gist.length, 3);
+  assert.equal(ext.page.length, 3);
+  const blocks = lensBlocks([sec], 'gist', { results: new Map([[sec.key, shaped]]) });
+  assert.equal(blocks[0].lines.length, 3, 'the page gist sits above the section');
+  assert.deepEqual(blocks.slice(1).map(b => b.lines.length), [1, 1, 1], 'one line under each paragraph');
+});
+
+test('a lens line is in one language: an English Gist of a Vietnamese sentence is fully English', () => {
+  const MIXED = `Tuesday, November 10, 2026
+
+Theo Điều 385 Bộ luật Dân sự, hợp đồng là sự thỏa thuận giữa các bên. A contract also needs consideration in common law.`;
+  const [sec] = docSections(MIXED);
+  const [vi, en] = sec.sentences;
+  const sourceIn = { [vi.key]: 'According to Article 385 of the Civil Code, a contract is an agreement between the parties.' };
+  const r = settle(sec, { key: sec.key, engine: 'model', title: 'What a contract is', lang: 'en', sourceIn,
+    page: [
+      { text: 'Under Article 385 of the Civil Code, a contract is an agreement between the parties.', from: [vi.key], lang: 'en' },
+      { text: 'Common law adds consideration.', from: [en.key], lang: 'en' },
+      { text: 'A contract is a thỏa thuận giữa các bên.', from: [vi.key], lang: 'en' }],                  // mixed: dropped
+    gist: [{ text: 'The hợp đồng needs consideration giữa các bên.', from: [vi.key, en.key], lang: 'en', para: vi.p }] });
+  assert.equal(r.page[0].text, 'Under Article 385 of the Civil Code, a contract is an agreement between the parties.',
+    'an English line citing a Vietnamese sentence passes against its translation');
+  assert.equal(r.page[1].text, 'Common law adds consideration.');
+  assert.ok(!r.page.some(l => /thỏa thuận giữa/.test(l.text) && !l.extract), 'the mixed page line was dropped');
+  assert.equal(r.gist.length, 1);
+  assert.equal(r.gist[0].extract, true, 'the mixed paragraph line gives way to the owner’s own sentence');
+  assert.ok(r.dropped >= 2);
+  for (const l of [...r.page, ...r.gist].filter(l => !l.extract)) assert.equal(isMixed({ ...l, lang: 'en' }), false, l.text);
+  assert.equal(isMixed({ text: 'Hợp đồng là sự thỏa thuận of the parties and the court.', lang: 'vi' }), true);
+  assert.equal(isMixed({ text: 'Hợp đồng là sự thỏa thuận giữa các bên.', lang: 'vi' }), false);
+  assert.equal(isMixed({ text: 'The text of Bộ luật is short.', lang: 'en' }), true);
+  assert.equal(isMixed({ text: 'The Code’s Article 385 defines it.', lang: 'en' }), false);
 });

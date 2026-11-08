@@ -39,28 +39,45 @@ export function coverage(text, sourceTexts) {
 
 export const MIN_COVERAGE = 0.6;
 
+// Letters only Vietnamese uses (not French): a line meant to be English that holds two words with them is mixed.
+const VI_ONLY = /[ạảấầẩẫậăắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộơớờởỡợụủũưứừửữựỳỵỷỹđõã]/iu;
+const EN_GLUE = new Set('the of and is are was were which that with this from for'.split(' '));
+
+/** A line in two languages (the one-language rule): flagged by the app (`mixed`), or caught here as a backup. */
+export function isMixed(line) {
+  if (line?.mixed) return true;
+  const words = String(line?.text ?? '').toLowerCase().match(/[\p{L}]+/gu) || [];
+  if (line?.lang === 'en') return words.filter(w => VI_ONLY.test(w)).length >= 2;
+  if (line?.lang === 'vi') return words.filter(w => EN_GLUE.has(w)).length >= 2;
+  return false;
+}
+
 /**
- * The citation check. `lines`: [{text, from:[keys], role?}]; `sentences`: the section's [{key, text}].
- * Returns the lines that pass, each with `from` (only keys that exist) or `added: true`; the dropped ones apart.
+ * The citation check. `lines`: [{text, from:[keys], role?, lang?, mixed?}]; `sentences`: the section's [{key, text}];
+ * `alt`: {key: that sentence in the line's language}, so a line in English about a Vietnamese sentence is checked
+ * against its translation too. Returns the lines that pass, each with `from` (only keys that exist) or `added: true`;
+ * the dropped ones apart (not in what they cite, or in two languages).
  */
-export function checkLines(lines, sentences) {
-  const byKey = new Map(sentences.map(s => [s.key, s.text]));
+export function checkLines(lines, sentences, alt = {}) {
+  const pool = sentences.map(s => ({ key: s.key, text: alt[s.key] ? `${s.text} ${alt[s.key]}` : s.text }));
+  const byKey = new Map(pool.map(s => [s.key, s.text]));
   const kept = [], dropped = [];
   for (const l of lines || []) {
-    const text = String(l?.text ?? '').trim();
+    const text = String(l?.text ?? '').replace(/\s*[;,]?\s*\[s\d+(\s*,\s*s\d+)*\]/g, '').trim();   // ids belong in `from`
     if (!text) continue;
+    if (isMixed({ ...l, text })) { dropped.push({ ...l, text, why: 'two languages in one line' }); continue; }
     const from = (l.from || []).filter(k => byKey.has(k));
     if (from.length) {
       if (coverage(text, from.map(k => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
       else {
-        const repaired = repair(text, sentences);
+        const repaired = repair(text, pool);
         if (repaired) kept.push({ ...l, text, from: repaired });
         else if (/\?\s*$/.test(text)) kept.push({ ...l, text, from: [], added: true });   // a question claims nothing
         else dropped.push({ ...l, text, why: 'its words are not in the sentences it cites' });
       }
       continue;
     }
-    const repaired = repair(text, sentences);
+    const repaired = repair(text, pool);
     kept.push(repaired ? { ...l, text, from: repaired } : { ...l, text, from: [], added: true });
   }
   return { kept, dropped };
@@ -132,8 +149,13 @@ export function extractive(section, why = '') {
   const score = centrality(ss);
   const best = new Map();
   ss.forEach((s, i) => { if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] }); });
-  const gist = [...best.values()].slice(0, 6).map(({ s }) => ({ text: s.text, from: [s.key] }));
-  const top = ss.map((s, i) => [s, score[i]]).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const gist = [...best.values()].map(({ s }) => ({ text: s.text, from: [s.key], para: s.p }));
+  // The page gist: the most central sentences, those not already a paragraph line first, in the order written.
+  const used = new Set(gist.map(l => l.from[0]));
+  const ranked = ss.map((s, i) => [s, score[i]]).sort((a, b) => b[1] - a[1]).map(([s]) => s);
+  const pageN = Math.min(PAGE_LINES, ss.length);
+  const page = [...ranked.filter(s => !used.has(s.key)), ...ranked.filter(s => used.has(s.key))].slice(0, pageN)
+    .sort((a, b) => a.from - b.from).map(s => ({ text: s.text, from: [s.key] }));
   const freq = new Map(), cased = new Map();
   for (const s of ss) {
     for (const m of s.text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) if (!cased.has(m[0].toLowerCase())) cased.set(m[0].toLowerCase(), m[0]);
@@ -144,34 +166,70 @@ export function extractive(section, why = '') {
   const kind = reformatKind(ss);
   return {
     key: section.key, engine: 'extract', why, title,
-    // The single most central sentence, unless a paragraph line already shows it.
-    whole: top && !gist.some(l => l.from[0] === top.key) ? { text: top.text, from: [top.key] } : null,
+    page,
     gist,
     // No model: IRAC can't be written from patterns, so law sections show their outline instead.
     reformat: patternReformat(ss, kind === 'irac' ? 'outline' : kind)
   };
 }
 
+export const PAGE_LINES = 3;
+const normText = t => String(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** A result's page gist (older cached results kept one `whole` line). */
+export const pageGist = r => r?.page || (r?.whole ? [r.whole] : []);
+
 /**
- * One section's result as the layer shows it: the model's (or the extractive) lenses, each line checked; Reformat by
- * pattern where the model wrote none. Extractive lines are the owner's own sentences, so they pass by construction.
+ * One section's result as the layer shows it, enforced here whatever the model wrote:
+ * · Gist: exactly one line per paragraph. A paragraph whose model line is missing, uncited, mixed or not in its
+ *   sources gets its most central sentence instead, marked `extract`.
+ * · the page gist: up to three lines (fewer only when the section has fewer sentences), filled the same way.
+ * · Reformat by pattern where the model wrote none.
+ * Extractive lines are the owner's own sentences, so they pass by construction.
  */
 export function settle(section, result) {
-  const r = result && result.engine === 'model' ? result : extractive(section, result?.why || '');
-  const gist = checkLines(r.gist, section.sentences);
-  const whole = r.whole ? checkLines([r.whole], section.sentences) : { kept: [], dropped: [] };
+  const ss = section.sentences;
+  const ext = extractive(section, result?.why || '');
+  const model = result && result.engine === 'model';
+  const r = model ? result : ext;
+  const alt = r.sourceIn || {};
+  const pOf = new Map(ss.map(s => [s.key, s.p]));
+  const fill = l => (model ? { ...l, extract: true } : l);
+
+  const g = checkLines(r.gist, ss, alt);
+  const cited = g.kept.filter(l => l.from.length);
+  const extBy = new Map(ext.gist.map(l => [l.para, l]));
+  const gist = [...new Set(ss.map(s => s.p))].map(p =>
+    cited.find(l => l.para === p) ||
+    cited.find(l => l.para == null && l.from.every(k => pOf.get(k) === p)) ||
+    fill(extBy.get(p)));
+
+  const pageN = Math.min(PAGE_LINES, ss.length);
+  const pg = checkLines(pageGist(r), ss, alt);
+  // A page line that repeats a paragraph line adds nothing: it goes (counted as dropped), and the gap is filled.
+  const same = new Set(gist.map(l => normText(l.text)));
+  const repeats = pg.kept.filter(l => same.has(normText(l.text)));
+  const page = pg.kept.filter(l => l.from.length && !same.has(normText(l.text))).slice(0, pageN);
+  for (const l of ext.page) {
+    if (page.length >= pageN) break;
+    if (!page.some(x => x.from[0] === l.from[0])) page.push(fill(l));
+  }
+
   let reformat = r.reformat;
   if (!reformat || !reformat.lines?.length) {
-    const kind = reformatKind(section.sentences);
-    reformat = patternReformat(section.sentences, kind === 'irac' ? 'outline' : kind);
+    const kind = reformatKind(ss);
+    reformat = patternReformat(ss, kind === 'irac' ? 'outline' : kind);
   }
-  const ref = checkLines(reformat.lines, section.sentences);
+  const ref = checkLines(reformat.lines, ss, alt);
   return {
-    key: section.key, engine: r.engine, why: r.why || '', title: String(r.title || '').trim(),
-    whole: whole.kept[0] || null,
-    gist: gist.kept,
+    key: section.key, engine: r.engine, why: r.why || '', title: String(r.title || '').trim() || ext.title, lang: r.lang || '',
+    page, whole: page[0] || null,
+    gist,
     reformat: { kind: reformat.kind, lines: ref.kept },
-    dropped: gist.dropped.length + whole.dropped.length + ref.dropped.length,
+    dropped: g.dropped.length + pg.dropped.length + repeats.length + ref.dropped.length,
+    // What was dropped and why, so a check (and a curious reader) can see it; never shown as a lens line.
+    droppedLines: [...g.dropped, ...pg.dropped, ...repeats.map(l => ({ ...l, why: 'repeats a paragraph line' })), ...ref.dropped]
+      .map(l => ({ text: l.text, why: l.why })),
     at: Date.now()
   };
 }

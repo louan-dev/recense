@@ -1636,6 +1636,190 @@ html.rc-wings-page body {
 <div id="app"></div>
 <script>
 (() => {
+  // src/lenses.js
+  var STOP = new Set("the a an and or but if of to in on at by for with from as is are was were be been being it its this that these those there their they them he she his her we our you your i me my not no so than then also which who whom whose what when where how why all any each into over under about after before between because while would could should shall must may can will has have had do does did very more most such only own same other some just here out up down off again l\xE0 v\xE0 c\u1EE7a c\xE1c nh\u1EEFng m\u1ED9t cho v\u1EDBi trong \u0111\u01B0\u1EE3c kh\xF4ng c\xF3 n\xE0y \u0111\xF3 khi th\xEC \u0111\u1EC3 t\u1EEB theo nh\u01B0 ng\u01B0\u1EDDi c\u0169ng \u0111\xE3 s\u1EBD \u0111ang ra v\xE0o le la les un une des et ou de du en au aux est sont pour par avec dans sur que qui ne pas ce cette ces il elle ils".split(/\s+/));
+  function keyTerms(text) {
+    const out = [];
+    for (const m of String(text ?? "").toLowerCase().matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) {
+      const w = m[0].replace(/['’]s$/, "");
+      if (STOP.has(w)) continue;
+      if (/^\p{N}+$/u.test(w) || w.length >= 3 || /[^\x00-\x7f]/.test(w)) out.push(w);
+    }
+    return out;
+  }
+  var stem = (w) => w.length > 5 ? w.slice(0, 5) : w;
+  function coverage(text, sourceTexts) {
+    const terms = [...new Set(keyTerms(text))];
+    if (!terms.length) return 1;
+    const have = new Set(sourceTexts.flatMap(keyTerms).map(stem));
+    return terms.filter((t2) => have.has(stem(t2))).length / terms.length;
+  }
+  var MIN_COVERAGE = 0.6;
+  var VI_ONLY = /[ạảấầẩẫậăắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộơớờởỡợụủũưứừửữựỳỵỷỹđõã]/iu;
+  var EN_GLUE = new Set("the of and is are was were which that with this from for".split(" "));
+  function isMixed(line) {
+    if (line?.mixed) return true;
+    const words = String(line?.text ?? "").toLowerCase().match(/[\p{L}]+/gu) || [];
+    if (line?.lang === "en") return words.filter((w) => VI_ONLY.test(w)).length >= 2;
+    if (line?.lang === "vi") return words.filter((w) => EN_GLUE.has(w)).length >= 2;
+    return false;
+  }
+  function checkLines(lines, sentences, alt = {}) {
+    const pool = sentences.map((s) => ({ key: s.key, text: alt[s.key] ? `${s.text} ${alt[s.key]}` : s.text }));
+    const byKey = new Map(pool.map((s) => [s.key, s.text]));
+    const kept = [], dropped = [];
+    for (const l of lines || []) {
+      const text = String(l?.text ?? "").replace(/\s*[;,]?\s*\[s\d+(\s*,\s*s\d+)*\]/g, "").trim();
+      if (!text) continue;
+      if (isMixed({ ...l, text })) {
+        dropped.push({ ...l, text, why: "two languages in one line" });
+        continue;
+      }
+      const from = (l.from || []).filter((k) => byKey.has(k));
+      if (from.length) {
+        if (coverage(text, from.map((k) => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
+        else {
+          const repaired2 = repair(text, pool);
+          if (repaired2) kept.push({ ...l, text, from: repaired2 });
+          else if (/\?\s*$/.test(text)) kept.push({ ...l, text, from: [], added: true });
+          else dropped.push({ ...l, text, why: "its words are not in the sentences it cites" });
+        }
+        continue;
+      }
+      const repaired = repair(text, pool);
+      kept.push(repaired ? { ...l, text, from: repaired } : { ...l, text, from: [], added: true });
+    }
+    return { kept, dropped };
+  }
+  function repair(text, sentences) {
+    const terms = [...new Set(keyTerms(text).map(stem))];
+    if (!terms.length) return null;
+    const sets = sentences.map((s) => ({ key: s.key, have: new Set(keyTerms(s.text).map(stem)) }));
+    const missing = new Set(terms), pick = [];
+    while (missing.size && pick.length < 4) {
+      let best = null, gain = 0;
+      for (const s of sets) {
+        const g = [...missing].filter((t2) => s.have.has(t2)).length;
+        if (g > gain) {
+          best = s;
+          gain = g;
+        }
+      }
+      if (!best) break;
+      pick.push(best.key);
+      for (const t2 of [...missing]) if (best.have.has(t2)) missing.delete(t2);
+    }
+    return (terms.length - missing.size) / terms.length >= MIN_COVERAGE ? pick : null;
+  }
+  var LAW_RE = /\b(v\.?|vs\.?|held|court|statute|article|art\.|section|rule|plaintiff|defendant|liable|tort|contract|clause|điều|khoản|luật|bộ luật|toà|tòa|arrêt|cour|loi|alinéa)\b|§/iu;
+  var DATE_RE = /\b(1[5-9]\d\d|20\d\d)\b|\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|tháng\s+\d{1,2}|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b/iu;
+  var DEF_RE = /^(.{2,60}?)\s+(means|is defined as|refers to|is called|nghĩa là|là việc|được hiểu là|désigne|s'entend de)\s+(.+)$/iu;
+  function reformatKind(sentences) {
+    const texts = sentences.map((s) => s.text);
+    if (texts.filter((t2) => DEF_RE.test(t2)).length >= 2) return "definitions";
+    if (texts.filter((t2) => DATE_RE.test(t2)).length >= 2 && texts.filter((t2) => DATE_RE.test(t2)).length >= texts.length / 2) return "timeline";
+    if (texts.some((t2) => LAW_RE.test(t2))) return "irac";
+    return "outline";
+  }
+  function patternReformat(sentences, kind = reformatKind(sentences)) {
+    if (kind === "timeline") {
+      return { kind, lines: sentences.filter((s) => DATE_RE.test(s.text)).map((s) => ({ text: `${s.text.match(DATE_RE)[0]} \xB7 ${s.text.replace(/[.;]\s*$/, "")}`, from: [s.key], role: "when" })) };
+    }
+    if (kind === "definitions") {
+      return { kind, lines: sentences.map((s) => [s, DEF_RE.exec(s.text)]).filter(([, m]) => m).map(([s, m]) => ({ text: `${m[1].trim()}: ${m[3].replace(/[.;]\s*$/, "")}`, from: [s.key], role: "term" })) };
+    }
+    const firsts = /* @__PURE__ */ new Map();
+    for (const s of sentences) if (!firsts.has(s.p)) firsts.set(s.p, s);
+    return { kind: "outline", lines: [...firsts.values()].map((s) => ({ text: s.text, from: [s.key], role: "point" })) };
+  }
+  function centrality(sentences) {
+    const terms = sentences.map((s) => new Set(keyTerms(s.text).map(stem)));
+    const df = /* @__PURE__ */ new Map();
+    for (const set of terms) for (const t2 of set) df.set(t2, (df.get(t2) || 0) + 1);
+    return sentences.map((s, i) => {
+      let score = 0;
+      for (const t2 of terms[i]) score += (df.get(t2) || 1) - 1;
+      return score / Math.sqrt(terms[i].size || 1) + (i === 0 ? 0.5 : 0);
+    });
+  }
+  function extractive(section, why = "") {
+    const ss = section.sentences;
+    const score = centrality(ss);
+    const best = /* @__PURE__ */ new Map();
+    ss.forEach((s, i) => {
+      if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] });
+    });
+    const gist = [...best.values()].map(({ s }) => ({ text: s.text, from: [s.key], para: s.p }));
+    const used = new Set(gist.map((l) => l.from[0]));
+    const ranked = ss.map((s, i) => [s, score[i]]).sort((a, b) => b[1] - a[1]).map(([s]) => s);
+    const pageN = Math.min(PAGE_LINES, ss.length);
+    const page = [...ranked.filter((s) => !used.has(s.key)), ...ranked.filter((s) => used.has(s.key))].slice(0, pageN).sort((a, b) => a.from - b.from).map((s) => ({ text: s.text, from: [s.key] }));
+    const freq = /* @__PURE__ */ new Map(), cased = /* @__PURE__ */ new Map();
+    for (const s of ss) {
+      for (const m of s.text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) if (!cased.has(m[0].toLowerCase())) cased.set(m[0].toLowerCase(), m[0]);
+      for (const t2 of keyTerms(s.text)) if (t2.length > 3 && !/^\p{N}+$/u.test(t2)) freq.set(t2, (freq.get(t2) || 0) + 1);
+    }
+    const words = [...freq].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t2]) => cased.get(t2) || t2);
+    const title = words.length ? words.map((w, i) => i ? w : w[0].toUpperCase() + w.slice(1)).join(" \xB7 ") : "Untitled";
+    const kind = reformatKind(ss);
+    return {
+      key: section.key,
+      engine: "extract",
+      why,
+      title,
+      page,
+      gist,
+      // No model: IRAC can't be written from patterns, so law sections show their outline instead.
+      reformat: patternReformat(ss, kind === "irac" ? "outline" : kind)
+    };
+  }
+  var PAGE_LINES = 3;
+  var normText = (t2) => String(t2).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  var pageGist = (r) => r?.page || (r?.whole ? [r.whole] : []);
+  function settle(section, result) {
+    const ss = section.sentences;
+    const ext = extractive(section, result?.why || "");
+    const model = result && result.engine === "model";
+    const r = model ? result : ext;
+    const alt = r.sourceIn || {};
+    const pOf = new Map(ss.map((s) => [s.key, s.p]));
+    const fill = (l) => model ? { ...l, extract: true } : l;
+    const g = checkLines(r.gist, ss, alt);
+    const cited = g.kept.filter((l) => l.from.length);
+    const extBy = new Map(ext.gist.map((l) => [l.para, l]));
+    const gist = [...new Set(ss.map((s) => s.p))].map((p) => cited.find((l) => l.para === p) || cited.find((l) => l.para == null && l.from.every((k) => pOf.get(k) === p)) || fill(extBy.get(p)));
+    const pageN = Math.min(PAGE_LINES, ss.length);
+    const pg = checkLines(pageGist(r), ss, alt);
+    const same = new Set(gist.map((l) => normText(l.text)));
+    const repeats = pg.kept.filter((l) => same.has(normText(l.text)));
+    const page = pg.kept.filter((l) => l.from.length && !same.has(normText(l.text))).slice(0, pageN);
+    for (const l of ext.page) {
+      if (page.length >= pageN) break;
+      if (!page.some((x) => x.from[0] === l.from[0])) page.push(fill(l));
+    }
+    let reformat = r.reformat;
+    if (!reformat || !reformat.lines?.length) {
+      const kind = reformatKind(ss);
+      reformat = patternReformat(ss, kind === "irac" ? "outline" : kind);
+    }
+    const ref = checkLines(reformat.lines, ss, alt);
+    return {
+      key: section.key,
+      engine: r.engine,
+      why: r.why || "",
+      title: String(r.title || "").trim() || ext.title,
+      lang: r.lang || "",
+      page,
+      whole: page[0] || null,
+      gist,
+      reformat: { kind: reformat.kind, lines: ref.kept },
+      dropped: g.dropped.length + pg.dropped.length + repeats.length + ref.dropped.length,
+      // What was dropped and why, so a check (and a curious reader) can see it; never shown as a lens line.
+      droppedLines: [...g.dropped, ...pg.dropped, ...repeats.map((l) => ({ ...l, why: "repeats a paragraph line" })), ...ref.dropped].map((l) => ({ text: l.text, why: l.why })),
+      at: Date.now()
+    };
+  }
+
   // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
@@ -30477,150 +30661,6 @@ ${PAGE_MARKER}
     return { kept, stale };
   }
 
-  // src/lenses.js
-  var STOP = new Set("the a an and or but if of to in on at by for with from as is are was were be been being it its this that these those there their they them he she his her we our you your i me my not no so than then also which who whom whose what when where how why all any each into over under about after before between because while would could should shall must may can will has have had do does did very more most such only own same other some just here out up down off again l\xE0 v\xE0 c\u1EE7a c\xE1c nh\u1EEFng m\u1ED9t cho v\u1EDBi trong \u0111\u01B0\u1EE3c kh\xF4ng c\xF3 n\xE0y \u0111\xF3 khi th\xEC \u0111\u1EC3 t\u1EEB theo nh\u01B0 ng\u01B0\u1EDDi c\u0169ng \u0111\xE3 s\u1EBD \u0111ang ra v\xE0o le la les un une des et ou de du en au aux est sont pour par avec dans sur que qui ne pas ce cette ces il elle ils".split(/\s+/));
-  function keyTerms(text) {
-    const out = [];
-    for (const m of String(text ?? "").toLowerCase().matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) {
-      const w = m[0].replace(/['’]s$/, "");
-      if (STOP.has(w)) continue;
-      if (/^\p{N}+$/u.test(w) || w.length >= 3 || /[^\x00-\x7f]/.test(w)) out.push(w);
-    }
-    return out;
-  }
-  var stem = (w) => w.length > 5 ? w.slice(0, 5) : w;
-  function coverage(text, sourceTexts) {
-    const terms = [...new Set(keyTerms(text))];
-    if (!terms.length) return 1;
-    const have = new Set(sourceTexts.flatMap(keyTerms).map(stem));
-    return terms.filter((t2) => have.has(stem(t2))).length / terms.length;
-  }
-  var MIN_COVERAGE = 0.6;
-  function checkLines(lines, sentences) {
-    const byKey = new Map(sentences.map((s) => [s.key, s.text]));
-    const kept = [], dropped = [];
-    for (const l of lines || []) {
-      const text = String(l?.text ?? "").trim();
-      if (!text) continue;
-      const from = (l.from || []).filter((k) => byKey.has(k));
-      if (from.length) {
-        if (coverage(text, from.map((k) => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
-        else {
-          const repaired2 = repair(text, sentences);
-          if (repaired2) kept.push({ ...l, text, from: repaired2 });
-          else if (/\?\s*$/.test(text)) kept.push({ ...l, text, from: [], added: true });
-          else dropped.push({ ...l, text, why: "its words are not in the sentences it cites" });
-        }
-        continue;
-      }
-      const repaired = repair(text, sentences);
-      kept.push(repaired ? { ...l, text, from: repaired } : { ...l, text, from: [], added: true });
-    }
-    return { kept, dropped };
-  }
-  function repair(text, sentences) {
-    const terms = [...new Set(keyTerms(text).map(stem))];
-    if (!terms.length) return null;
-    const sets = sentences.map((s) => ({ key: s.key, have: new Set(keyTerms(s.text).map(stem)) }));
-    const missing = new Set(terms), pick = [];
-    while (missing.size && pick.length < 4) {
-      let best = null, gain = 0;
-      for (const s of sets) {
-        const g = [...missing].filter((t2) => s.have.has(t2)).length;
-        if (g > gain) {
-          best = s;
-          gain = g;
-        }
-      }
-      if (!best) break;
-      pick.push(best.key);
-      for (const t2 of [...missing]) if (best.have.has(t2)) missing.delete(t2);
-    }
-    return (terms.length - missing.size) / terms.length >= MIN_COVERAGE ? pick : null;
-  }
-  var LAW_RE = /\b(v\.?|vs\.?|held|court|statute|article|art\.|section|rule|plaintiff|defendant|liable|tort|contract|clause|điều|khoản|luật|bộ luật|toà|tòa|arrêt|cour|loi|alinéa)\b|§/iu;
-  var DATE_RE = /\b(1[5-9]\d\d|20\d\d)\b|\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\b(january|february|march|april|may|june|july|august|september|october|november|december|tháng\s+\d{1,2}|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b/iu;
-  var DEF_RE = /^(.{2,60}?)\s+(means|is defined as|refers to|is called|nghĩa là|là việc|được hiểu là|désigne|s'entend de)\s+(.+)$/iu;
-  function reformatKind(sentences) {
-    const texts = sentences.map((s) => s.text);
-    if (texts.filter((t2) => DEF_RE.test(t2)).length >= 2) return "definitions";
-    if (texts.filter((t2) => DATE_RE.test(t2)).length >= 2 && texts.filter((t2) => DATE_RE.test(t2)).length >= texts.length / 2) return "timeline";
-    if (texts.some((t2) => LAW_RE.test(t2))) return "irac";
-    return "outline";
-  }
-  function patternReformat(sentences, kind = reformatKind(sentences)) {
-    if (kind === "timeline") {
-      return { kind, lines: sentences.filter((s) => DATE_RE.test(s.text)).map((s) => ({ text: `${s.text.match(DATE_RE)[0]} \xB7 ${s.text.replace(/[.;]\s*$/, "")}`, from: [s.key], role: "when" })) };
-    }
-    if (kind === "definitions") {
-      return { kind, lines: sentences.map((s) => [s, DEF_RE.exec(s.text)]).filter(([, m]) => m).map(([s, m]) => ({ text: `${m[1].trim()}: ${m[3].replace(/[.;]\s*$/, "")}`, from: [s.key], role: "term" })) };
-    }
-    const firsts = /* @__PURE__ */ new Map();
-    for (const s of sentences) if (!firsts.has(s.p)) firsts.set(s.p, s);
-    return { kind: "outline", lines: [...firsts.values()].map((s) => ({ text: s.text, from: [s.key], role: "point" })) };
-  }
-  function centrality(sentences) {
-    const terms = sentences.map((s) => new Set(keyTerms(s.text).map(stem)));
-    const df = /* @__PURE__ */ new Map();
-    for (const set of terms) for (const t2 of set) df.set(t2, (df.get(t2) || 0) + 1);
-    return sentences.map((s, i) => {
-      let score = 0;
-      for (const t2 of terms[i]) score += (df.get(t2) || 1) - 1;
-      return score / Math.sqrt(terms[i].size || 1) + (i === 0 ? 0.5 : 0);
-    });
-  }
-  function extractive(section, why = "") {
-    const ss = section.sentences;
-    const score = centrality(ss);
-    const best = /* @__PURE__ */ new Map();
-    ss.forEach((s, i) => {
-      if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] });
-    });
-    const gist = [...best.values()].slice(0, 6).map(({ s }) => ({ text: s.text, from: [s.key] }));
-    const top2 = ss.map((s, i) => [s, score[i]]).sort((a, b) => b[1] - a[1])[0]?.[0];
-    const freq = /* @__PURE__ */ new Map(), cased = /* @__PURE__ */ new Map();
-    for (const s of ss) {
-      for (const m of s.text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) if (!cased.has(m[0].toLowerCase())) cased.set(m[0].toLowerCase(), m[0]);
-      for (const t2 of keyTerms(s.text)) if (t2.length > 3 && !/^\p{N}+$/u.test(t2)) freq.set(t2, (freq.get(t2) || 0) + 1);
-    }
-    const words = [...freq].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t2]) => cased.get(t2) || t2);
-    const title = words.length ? words.map((w, i) => i ? w : w[0].toUpperCase() + w.slice(1)).join(" \xB7 ") : "Untitled";
-    const kind = reformatKind(ss);
-    return {
-      key: section.key,
-      engine: "extract",
-      why,
-      title,
-      // The single most central sentence, unless a paragraph line already shows it.
-      whole: top2 && !gist.some((l) => l.from[0] === top2.key) ? { text: top2.text, from: [top2.key] } : null,
-      gist,
-      // No model: IRAC can't be written from patterns, so law sections show their outline instead.
-      reformat: patternReformat(ss, kind === "irac" ? "outline" : kind)
-    };
-  }
-  function settle(section, result) {
-    const r = result && result.engine === "model" ? result : extractive(section, result?.why || "");
-    const gist = checkLines(r.gist, section.sentences);
-    const whole = r.whole ? checkLines([r.whole], section.sentences) : { kept: [], dropped: [] };
-    let reformat = r.reformat;
-    if (!reformat || !reformat.lines?.length) {
-      const kind = reformatKind(section.sentences);
-      reformat = patternReformat(section.sentences, kind === "irac" ? "outline" : kind);
-    }
-    const ref = checkLines(reformat.lines, section.sentences);
-    return {
-      key: section.key,
-      engine: r.engine,
-      why: r.why || "",
-      title: String(r.title || "").trim(),
-      whole: whole.kept[0] || null,
-      gist: gist.kept,
-      reformat: { kind: reformat.kind, lines: ref.kept },
-      dropped: gist.dropped.length + whole.dropped.length + ref.dropped.length,
-      at: Date.now()
-    };
-  }
-
   // src/library.js
   var PAGE_KEEP_DAYS = 14;
   var DAY_MS = 864e5;
@@ -30916,6 +30956,7 @@ ${PAGE_MARKER}
         if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: ROLE_NAMES[l.role] }));
         row.append(document.createTextNode(l.text));
         if (l.added) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "added" }));
+        else if (l.extract) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "extract" }));
         row.title = l.added ? "Recense added this: it is not in your text" : "Tap to light the sentences it comes from";
         row.addEventListener("mousedown", (e) => e.preventDefault());
         row.addEventListener("click", (e) => {
@@ -30957,11 +30998,13 @@ ${PAGE_MARKER}
         continue;
       }
       if (lens === "gist") {
-        const top2 = r.whole ? [r.whole] : [];
+        const top2 = pageGist(r);
         if (r.title || top2.length) blocks.push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? "" : r.title, tag, why: r.why, lines: top2 });
+        const paraEnd = /* @__PURE__ */ new Map();
+        for (const x of s.sentences) paraEnd.set(x.p, Math.max(paraEnd.get(x.p) ?? -1, x.to));
         const groups = /* @__PURE__ */ new Map();
         for (const l of r.gist) {
-          const at = l.from.length ? endOf(l.from) : s.to;
+          const at = paraEnd.has(l.para) ? paraEnd.get(l.para) : l.from.length ? endOf(l.from) : s.to;
           if (!groups.has(at)) groups.set(at, []);
           groups.get(at).push(l);
         }
@@ -31033,7 +31076,7 @@ ${PAGE_MARKER}
     function staleLines() {
       const out = /* @__PURE__ */ new Map();
       const sentenceOwner = /* @__PURE__ */ new Map();
-      for (const [key, r] of results) for (const l of [...r.gist, ...r.reformat?.lines || [], ...r.whole ? [r.whole] : []]) for (const k of l.from) sentenceOwner.set(k, key);
+      for (const [key, r] of results) for (const l of [...r.gist, ...r.reformat?.lines || [], ...pageGist(r)]) for (const k of l.from) sentenceOwner.set(k, key);
       for (const s of current()) {
         if (results.has(s.key)) continue;
         const olds = new Set(s.sentences.map((x) => sentenceOwner.get(x.key)).filter(Boolean));
@@ -31231,7 +31274,8 @@ ${PAGE_MARKER}
             engine: r.engine,
             title: r.title,
             kind: r.reformat.kind,
-            gist: [r.whole, ...r.gist].filter(Boolean).map((l) => lensLineToLine(l, m++)),
+            page: pageGist(r).map((l) => lensLineToLine(l, m++)),
+            gist: r.gist.map((l) => ({ ...lensLineToLine(l, m++), para: l.para ?? null })),
             reformat: r.reformat.lines.map((l) => ({ ...lensLineToLine(l, m++), role: l.role || null }))
           };
         })
@@ -31240,7 +31284,7 @@ ${PAGE_MARKER}
     }
     function liveTitles() {
       const m = /* @__PURE__ */ new Map();
-      for (const [k, r] of results) if (r.title || r.whole) m.set(k, { title: r.title, gist: r.whole?.text || r.gist[0]?.text || "" });
+      for (const [k, r] of results) if (r.title || pageGist(r).length) m.set(k, { title: r.title, gist: pageGist(r)[0]?.text || r.gist[0]?.text || "" });
       return m;
     }
     function freeze() {
@@ -38372,6 +38416,37 @@ ${String(text ?? "")}`;
         recenseNow: () => recenseActions?.now(),
         setRecenseLayer: (on) => recenseActions?.toggle(Boolean(on)),
         setRecenseLens: (name2) => recenseActions?.lens(String(name2 || "")),
+        // For checks (`recense draftpad-check`): how far recensing has got, and the wing card for a caret offset.
+        recenseStatus: () => recense ? {
+          sections: recense.sections().length,
+          recensed: recense.sections().filter((s) => recense.results.has(s.key)).length,
+          inflight: recense.inflight.size,
+          engines: [...new Set(recense.sections().map((s) => recense.results.get(s.key)?.engine).filter(Boolean))],
+          lens: recense.getLens(),
+          on: recense.isEnabled(),
+          missing: recense.missing()
+        } : null,
+        // Per section: paragraphs, Gist lines, page-gist lines, filled extracts, dropped lines, lines in two languages.
+        recenseShape: () => recense ? recense.sections().map((s) => {
+          const r = recense.results.get(s.key);
+          const all = r ? [...r.page || [], ...r.gist, ...r.reformat.lines] : [];
+          return {
+            paras: new Set(s.sentences.map((x) => x.p)).size,
+            sentences: s.sentences.length,
+            lang: r?.lang || "",
+            gist: r?.gist.length ?? -1,
+            page: r?.page?.length ?? -1,
+            extract: all.filter((l) => l.extract).length,
+            dropped: r?.dropped ?? 0,
+            droppedLines: r?.droppedLines || [],
+            mixed: all.filter((l) => !l.extract && isMixed({ ...l, lang: r.lang })).map((l) => l.text)
+          };
+        }) : null,
+        recenseCardAt: (offset) => {
+          const card = recense ? recense.cardFor(Number(offset)) : null;
+          if (dualWings) dualWings.setTypedLine(card);
+          return card;
+        },
         // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
         onPencilAction: (action) => {
           if ((action === "squeeze" || action === "doubleTap") && inkLayer) {

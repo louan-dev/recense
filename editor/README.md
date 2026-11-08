@@ -94,13 +94,17 @@ Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text from yours (it never changes yours).
 - **The layer** (`src/recense.js`): off by default. Turn it on with ✦ in the toolbar, **··· › Recense layer**, or say
   "recense". One lens at a time, dimmed under your text, never in the file:
-  - **Gist**: the chapter's title and one-line gist above a section, a line per paragraph after it;
+  - **Gist**: the chapter's title and a three-line page gist above a section, then exactly one line under each
+    paragraph (enforced in `settle`, whatever the model sends; a missing or failed line is that paragraph's most
+    central sentence, marked **extract**). A page line that repeats a paragraph line is replaced;
   - **Reformat**: the structure already there (IRAC for law, a timeline for dates, definitions, else an outline);
-  - **Source**: each sentence's translation (English → Vietnamese, anything else → English;
+  - **Source**: each sentence's translation, chosen per sentence (English → Vietnamese, anything else → English;
     **Translate into** changes it for the page).
   Change the lens from **··· › Lens** or say "gist", "reformat", "source".
 - **Citations**: tap a lens line and the sentences it comes from light up. A line that cites nothing says **added**.
   A line whose words aren't in what it cites is dropped, never shown (`src/lenses.js`).
+  **One language per line**: a lens line is written wholly in the section's language (an English Gist of a Vietnamese
+  sentence is fully English, checked against that sentence's translation); a line mixing two languages is dropped.
 - **When it runs**: a section untouched for 60 s, on power or with the battery above 30 %; or **··· › Recense now**
   (or say "recense now"). Never while you type. Each section (≤ ~1,500 words, cut at your headings) is cached by a hash
   of its sentences, so an edit redoes only that section; lines that cite untouched sentences stay meanwhile ("earlier").

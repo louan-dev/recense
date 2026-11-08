@@ -123,7 +123,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// The page finished loading (and has its text, wings state and calendar ids).
     var onLoad: (() -> Void)?
 
-    init(frame: NSRect, vault: URL, cache: URL, wingSide: String? = nil) {
+    init(frame: NSRect, vault: URL, cache: URL, wingSide: String? = nil, ephemeral: Bool = false) {
         self.vault = vault
         self.wingSide = wingSide
         let cfg = WKWebViewConfiguration()
@@ -132,6 +132,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                 source: "window.__RECENSE_WING_SIDE = \(jsString(side));", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         cfg.websiteDataStore = .default()
+        if ephemeral { cfg.websiteDataStore = .nonPersistent() }   // `recense draftpad-check`: nothing of the owner's touched
         files = EmbedFiles(vault: vault, cache: cache)
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
         web = EditorWebView(frame: frame, configuration: cfg)
@@ -613,6 +614,13 @@ func recenseTextSelftest() -> Bool {
     check(RecenseText.target(for: "en", requested: nil) == "vi" && RecenseText.target(for: "fr", requested: nil) == "en"
           && RecenseText.target(for: "en", requested: "fr") == "fr", "English → Vietnamese, else → English; the page's pick wins")
     check(languageName("vi") == "Vietnamese", "languageName moved to shared")
+    let ps = RecenseText.paragraphs([.init(key: "a", text: "x", p: 0), .init(key: "b", text: "y", p: 0), .init(key: "c", text: "z", p: 1)])
+    check(ps == [[0, 1], [2]], "sentences group into paragraphs, one Gist line each", ps)
+    check(RecenseText.isMixed("The hợp đồng dân sự is a thỏa thuận giữa các bên here", lang: "en", among: ["en", "vi"])
+          && !RecenseText.isMixed("A contract needs an offer, acceptance and consideration.", lang: "en", among: ["en", "vi"])
+          && !RecenseText.isMixed("Hợp đồng là sự thỏa thuận giữa các bên về quyền và nghĩa vụ.", lang: "vi", among: ["en", "vi"]),
+          "a lens line in two languages is flagged; a one-language line is not")
+    check(RecenseText.otherLanguage("en") == "vi" && RecenseText.otherLanguage("fr") == "en", "Retell's other language: en ⇄ vi, else → en")
     #if canImport(ShowsKit)
     let tl = ls[0].transcriptLine(key: "a", chapter: "Offers")
     check(tl.id == "a" && tl.text == "A contract needs an offer and acceptance." && tl.chapter == "Offers" && tl.words.count == 7,
@@ -620,7 +628,10 @@ func recenseTextSelftest() -> Bool {
     #endif
     #if canImport(FoundationModels)
     if #available(macOS 26.0, *) {
-        check((try? RecenseText.gistSchema()) != nil && (try? RecenseText.iracSchema()) != nil, "the Gist and IRAC schemas build")
+        check((try? RecenseText.gistSchema(paragraphs: [[0], [1, 2], [3]], first: true, pageLines: 3, lang: "en")) != nil
+              && (try? RecenseText.iracSchema(lang: "vi")) != nil && (try? RecenseText.retellSchema(paragraphs: [[0]], lang: "en", other: "vi")) != nil
+              && (try? RecenseText.askSchema(lang: "en", count: 3)) != nil && (try? RecenseText.reapplySchema(lang: "en")) != nil,
+              "the Gist (one field per paragraph), IRAC, Retell, Ask and Reapply schemas build")
     }
     #endif
     let vault = FileManager.default.temporaryDirectory.appendingPathComponent("recense-text-\(UUID().uuidString)")
