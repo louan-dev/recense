@@ -299,7 +299,10 @@ cards are one state across both panels and the editor (`draftpad.wings.json`, ve
   wing closes). Esc or ✕ turns it back into the pill. Reduce Motion: a plain swap.
 - **Cards:** swipe left (or two fingers left on the trackpad) to **Remove**, with Undo for 5 s; swipe right to **Pin**
   (pinned cards stay on top with a pin mark; swipe right again to unpin). Hold a card and drag to reorder. Each card's
-  ··· menu has the same: Move up, Move down, Move to the other wing, Pin / Unpin, Remove.
+  ··· menu has the same: Move up, Move down, Move to the other wing, Pin / Unpin, Size, Remove.
+- **Card heights:** each card is 1–4 rows tall (S, M, L, XL), so neighbours line up; drag the bar on its bottom edge
+  (it snaps per row) or pick Size in its ··· menu. More rows show more (the Agenda one event per row, Recense more of its
+  line); the text never scales and what doesn't fit scrolls inside the card. Saved per card (`draftpad.wings.json` v3).
 
 - **Open (no Recense window needed):** three fingers right → left brings out the right wing; three fingers left → right
   brings out the left wing; both can stay open. Also: Recense menu or the editor's right-click menu → Show Left Wing /

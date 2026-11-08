@@ -1481,6 +1481,159 @@ html.rc-wings-page body {
   }
 }
 
+/* W3 rows: a card is 1-4 rows tall (S, M, L, XL), so neighbours line up; one row is the small card. Height only:
+   the text keeps its size and what doesn't fit scrolls inside the card. */
+.rc-wing-slot {
+  --rc-row: 112px;
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='1'] {
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='2'] {
+  --rc-card-h: calc(var(--rc-row) * 2 + 10px);
+}
+
+.rc-wing-slot[data-rows='3'] {
+  --rc-card-h: calc(var(--rc-row) * 3 + 20px);
+}
+
+.rc-wing-slot[data-rows='4'] {
+  --rc-card-h: calc(var(--rc-row) * 4 + 30px);
+}
+
+.rc-wing-slot > .rc-wing-card {
+  box-sizing: border-box;
+  height: var(--rc-card-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rc-wing-slot > .rc-wing-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* Media takes the height the rows give it. */
+.rc-wing-slot .rc-preview-img,
+.rc-wing-slot .rc-qt-video {
+  max-height: calc(var(--rc-card-h) - 84px);
+}
+
+.rc-wing-slot .rc-preview-pdf {
+  height: calc(var(--rc-card-h) - 84px);
+}
+
+/* Recense: more rows, more of its line (S one line each, then 3 / 2, 5 / 3, 7 / 4). */
+.rc-wing-slot .rc-recense-original,
+.rc-wing-slot .rc-recense-translation {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-original {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-translation {
+  -webkit-line-clamp: 2;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-original {
+  -webkit-line-clamp: 5;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-translation {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-original {
+  -webkit-line-clamp: 7;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-translation {
+  -webkit-line-clamp: 4;
+}
+
+.rc-cal-more {
+  opacity: 0.7;
+  padding-top: 4px;
+}
+
+/* The bottom-edge grabber: a short bar on the card's lower edge; drag it to snap the height to rows. */
+.rc-wing-resize {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -7px;
+  width: 64px;
+  height: 18px;
+  margin-left: -32px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.rc-wing-resize::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.rc-wing-resize:hover::before,
+.rc-wing-resize:focus-visible::before {
+  opacity: 0.75;
+}
+
+.rc-wing-resize:focus-visible {
+  outline: none;
+}
+
+.rc-wing-menu-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 16px;
+  border-top: 1px solid var(--rc-border);
+  border-bottom: 1px solid var(--rc-border);
+  font-size: 15px;
+}
+
+.rc-wing-menu-size-label {
+  flex: 1;
+}
+
+.rc-wing-menu-size-opt {
+  min-width: 34px;
+  padding: 5px 0;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-wing-menu-size-opt:hover,
+.rc-wing-menu-size-opt:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-size-opt.rc-on {
+  background: var(--rc-cyan);
+  color: #0b1a22;
+}
+/* W3 rows end */
+
 /* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
    wing can widen to it (wings.js preferredWidth), else it wraps. */
 .rc-recense-original {

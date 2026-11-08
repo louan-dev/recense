@@ -1488,6 +1488,159 @@ html.rc-wings-page body {
   }
 }
 
+/* W3 rows: a card is 1-4 rows tall (S, M, L, XL), so neighbours line up; one row is the small card. Height only:
+   the text keeps its size and what doesn't fit scrolls inside the card. */
+.rc-wing-slot {
+  --rc-row: 112px;
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='1'] {
+  --rc-card-h: var(--rc-row);
+}
+
+.rc-wing-slot[data-rows='2'] {
+  --rc-card-h: calc(var(--rc-row) * 2 + 10px);
+}
+
+.rc-wing-slot[data-rows='3'] {
+  --rc-card-h: calc(var(--rc-row) * 3 + 20px);
+}
+
+.rc-wing-slot[data-rows='4'] {
+  --rc-card-h: calc(var(--rc-row) * 4 + 30px);
+}
+
+.rc-wing-slot > .rc-wing-card {
+  box-sizing: border-box;
+  height: var(--rc-card-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rc-wing-slot > .rc-wing-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* Media takes the height the rows give it. */
+.rc-wing-slot .rc-preview-img,
+.rc-wing-slot .rc-qt-video {
+  max-height: calc(var(--rc-card-h) - 84px);
+}
+
+.rc-wing-slot .rc-preview-pdf {
+  height: calc(var(--rc-card-h) - 84px);
+}
+
+/* Recense: more rows, more of its line (S one line each, then 3 / 2, 5 / 3, 7 / 4). */
+.rc-wing-slot .rc-recense-original,
+.rc-wing-slot .rc-recense-translation {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-original {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='2'] .rc-recense-translation {
+  -webkit-line-clamp: 2;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-original {
+  -webkit-line-clamp: 5;
+}
+
+.rc-wing-slot[data-rows='3'] .rc-recense-translation {
+  -webkit-line-clamp: 3;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-original {
+  -webkit-line-clamp: 7;
+}
+
+.rc-wing-slot[data-rows='4'] .rc-recense-translation {
+  -webkit-line-clamp: 4;
+}
+
+.rc-cal-more {
+  opacity: 0.7;
+  padding-top: 4px;
+}
+
+/* The bottom-edge grabber: a short bar on the card's lower edge; drag it to snap the height to rows. */
+.rc-wing-resize {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -7px;
+  width: 64px;
+  height: 18px;
+  margin-left: -32px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.rc-wing-resize::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.rc-wing-resize:hover::before,
+.rc-wing-resize:focus-visible::before {
+  opacity: 0.75;
+}
+
+.rc-wing-resize:focus-visible {
+  outline: none;
+}
+
+.rc-wing-menu-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 16px;
+  border-top: 1px solid var(--rc-border);
+  border-bottom: 1px solid var(--rc-border);
+  font-size: 15px;
+}
+
+.rc-wing-menu-size-label {
+  flex: 1;
+}
+
+.rc-wing-menu-size-opt {
+  min-width: 34px;
+  padding: 5px 0;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-wing-menu-size-opt:hover,
+.rc-wing-menu-size-opt:focus-visible {
+  background: rgba(127, 127, 127, 0.2);
+  outline: none;
+}
+
+.rc-wing-menu-size-opt.rc-on {
+  background: var(--rc-cyan);
+  color: #0b1a22;
+}
+/* W3 rows end */
+
 /* Recense in the wings: the line on screen, its words above, the translation under; each row on one line when the
    wing can widen to it (wings.js preferredWidth), else it wraps. */
 .rc-recense-original {
@@ -35910,6 +36063,11 @@ ${clean(nextLineText)}`;
     const globalObj = options.globalObj || (typeof window !== "undefined" ? window : null);
     let leftWidgets = Array.isArray(options.leftWidgets) ? [...options.leftWidgets] : ["recense", "preview", "quicktime"];
     let rightWidgets = Array.isArray(options.rightWidgets) ? [...options.rightWidgets] : ["recense", "calendar"];
+    const DEFAULT_ROWS = { preview: 3, quicktime: 3, calendar: 2 };
+    let sizes = { left: {}, right: {} };
+    const rowsOf = (side, id2) => sizes[side]?.[id2] || DEFAULT_ROWS[id2] || 1;
+    const AGENDA_PER_ROWS = [0, 1, 2, 3, 4];
+    const agendaSide = () => rightWidgets.includes("calendar") || !leftWidgets.includes("calendar") ? "right" : "left";
     const HOST_WIDGETS = /* @__PURE__ */ new Set(["iphone"]);
     const enabledHostWidgets = /* @__PURE__ */ new Set();
     const leftEl = makeDomElement2(doc2, "aside", {}, {
@@ -36278,8 +36436,9 @@ ${clean(nextLineText)}`;
       header.appendChild(titleSpan);
       calendarCard.appendChild(header);
       const body = makeDomElement2(doc2, "div", {}, { class: "rc-widget-body rc-calendar-list" });
+      const fits = AGENDA_PER_ROWS[rowsOf(agendaSide(), "calendar")] || 1;
       if (calendarEvents.length > 0) {
-        for (const ev of calendarEvents) {
+        for (const ev of calendarEvents.slice(0, fits)) {
           const itemRow = makeDomElement2(doc2, "div", {}, {
             class: "rc-cal-item",
             "data-id": ev.id,
@@ -36329,6 +36488,11 @@ ${clean(nextLineText)}`;
             }
           });
           body.appendChild(itemRow);
+        }
+        if (calendarEvents.length > fits) {
+          body.appendChild(makeDomElement2(doc2, "div", {
+            textContent: `${calendarEvents.length - fits} more \xB7 make the card taller to see them`
+          }, { class: "rc-cal-more" }));
         }
       } else {
         const empty2 = makeDomElement2(doc2, "div", { textContent: "No Upcoming Agenda" }, { class: "rc-empty-state" });
@@ -36501,6 +36665,7 @@ ${clean(nextLineText)}`;
     const otherSide = (side) => side === "left" ? "right" : "left";
     const CARD_SWIPE = options.cardSwipeThreshold ?? 96;
     const HOLD_MS = 450;
+    const ROW_STEP = options.rowStep ?? 122;
     const UNDO_MS = 5e3;
     const later = (fn, ms) => globalObj?.setTimeout ? globalObj.setTimeout(fn, ms) : setTimeout(fn, ms);
     const cancelLater = (t2) => globalObj?.clearTimeout ? globalObj.clearTimeout(t2) : clearTimeout(t2);
@@ -36540,6 +36705,17 @@ ${clean(nextLineText)}`;
       postHaptic2("snap");
       changed();
       return want;
+    }
+    const SIZE_NAMES = ["", "S", "M", "L", "XL"];
+    function setSize(side, id2, rows, { quiet = false } = {}) {
+      if (!listOf(side).includes(id2)) return rowsOf(side, id2);
+      const n = Math.max(1, Math.min(4, Math.round(Number(rows) || 1)));
+      if (n === rowsOf(side, id2)) return n;
+      sizes[side] = { ...sizes[side], [id2]: n };
+      if (!quiet) postHaptic2("snap");
+      if (id2 === "calendar") updateCalendarCard();
+      changed();
+      return n;
     }
     let lastRemoved = null;
     function removeWidget(side, id2) {
@@ -36770,9 +36946,56 @@ ${clean(nextLineText)}`;
       menu.hidden = true;
       slot.appendChild(under);
       if (card) slot.appendChild(card);
+      const resize = makeDomElement2(doc2, "div", {}, {
+        class: "rc-wing-resize",
+        role: "slider",
+        tabindex: "0",
+        "aria-orientation": "vertical",
+        "aria-valuemin": "1",
+        "aria-valuemax": "4",
+        "aria-label": `Height of ${name2}`
+      });
       slot.appendChild(mark);
       slot.appendChild(more);
+      slot.appendChild(resize);
       slot.appendChild(menu);
+      let sizing = null;
+      resize.addEventListener("pointerdown", (e) => {
+        e.stopPropagation?.();
+        e.preventDefault?.();
+        sizing = { y: e.clientY, rows: rowsOf(side, id2), now: rowsOf(side, id2) };
+        if (typeof resize.setPointerCapture === "function" && e.pointerId !== void 0) {
+          try {
+            resize.setPointerCapture(e.pointerId);
+          } catch {
+          }
+        }
+      });
+      resize.addEventListener("pointermove", (e) => {
+        if (!sizing) return;
+        e.stopPropagation?.();
+        const n = Math.max(1, Math.min(4, sizing.rows + Math.round((e.clientY - sizing.y) / ROW_STEP)));
+        if (n !== sizing.now) {
+          sizing.now = n;
+          slot.setAttribute("data-rows", String(n));
+          postHaptic2("snap");
+        }
+      });
+      const endSizing = (e) => {
+        if (!sizing) return;
+        e?.stopPropagation?.();
+        const n = sizing.now;
+        sizing = null;
+        setSize(side, id2, n, { quiet: true });
+      };
+      resize.addEventListener("pointerup", endSizing);
+      resize.addEventListener("pointercancel", endSizing);
+      resize.addEventListener("keydown", (e) => {
+        const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault?.();
+        setSize(side, id2, rowsOf(side, id2) + d);
+      });
       function closeMenu() {
         menu.hidden = true;
         more.setAttribute("aria-expanded", "false");
@@ -36812,6 +37035,27 @@ ${clean(nextLineText)}`;
           menu.appendChild(item);
           if (enabled && !first) first = item;
         }
+        const sizeRow = makeDomElement2(doc2, "div", {}, { class: "rc-wing-menu-size", role: "group", "aria-label": "Size" });
+        sizeRow.appendChild(makeDomElement2(doc2, "span", { textContent: "Size" }, { class: "rc-wing-menu-size-label" }));
+        for (let n = 1; n <= 4; n++) {
+          const on = rowsOf(side, id2) === n;
+          const opt = makeDomElement2(doc2, "div", { textContent: SIZE_NAMES[n] }, {
+            class: `rc-wing-menu-size-opt${on ? " rc-on" : ""}`,
+            role: "menuitemradio",
+            tabindex: "0",
+            "aria-checked": String(on),
+            "aria-label": `Size ${SIZE_NAMES[n]}, ${n} row${n > 1 ? "s" : ""}`
+          });
+          const pick = (e) => {
+            if (e?.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+            closeMenu();
+            setSize(side, id2, n);
+          };
+          opt.addEventListener("click", pick);
+          opt.addEventListener("keydown", pick);
+          sizeRow.appendChild(opt);
+        }
+        menu.insertBefore ? menu.insertBefore(sizeRow, menu.lastChild) : menu.appendChild(sizeRow);
         menu.hidden = false;
         more.setAttribute("aria-expanded", "true");
         if (first && typeof first.focus === "function") first.focus();
@@ -36847,7 +37091,7 @@ ${clean(nextLineText)}`;
         else if (dx >= CARD_SWIPE) pinWidget(side, id2);
       }
       let drag = null;
-      const SKIP = "input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-card-pick-btn";
+      const SKIP = "input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-wing-resize, .rc-card-pick-btn";
       slot.addEventListener("pointerdown", (e) => {
         if ((e.button ?? 0) > 0 || e.target?.closest?.(SKIP)) return;
         drag = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, mode: null, dx: 0, dy: 0, armed: false };
@@ -36924,7 +37168,7 @@ ${clean(nextLineText)}`;
           endSwipe(acc);
         }, 160);
       }, { passive: false });
-      const s = { slot, card, mark, more, menu, openMenu, closeMenu, showSwipe, endSwipe };
+      const s = { slot, card, mark, more, resize, menu, openMenu, closeMenu, showSwipe, endSwipe };
       slots[side][id2] = s;
       return s;
     }
@@ -36951,6 +37195,10 @@ ${clean(nextLineText)}`;
           const s = slotFor(side, wId);
           if (!s.card) continue;
           cls(s.slot, "rc-wing-pinned", isPinned(side, wId));
+          const rows = rowsOf(side, wId);
+          s.slot.setAttribute("data-rows", String(rows));
+          s.resize.setAttribute("aria-valuenow", String(rows));
+          s.resize.setAttribute("aria-valuetext", `${SIZE_NAMES[rows]}, ${rows} row${rows > 1 ? "s" : ""}`);
           el5.appendChild(s.slot);
         }
         const t2 = toasts[side];
@@ -37042,10 +37290,11 @@ ${clean(nextLineText)}`;
     }
     function getState() {
       return {
-        version: 2,
+        version: 3,
         leftWidgets: [...leftWidgets],
         rightWidgets: [...rightWidgets],
         pinned: { left: [...pinned.left], right: [...pinned.right] },
+        sizes: { left: { ...sizes.left }, right: { ...sizes.right } },
         previewData: { ...previewData },
         qtData: { ...qtData, loopRange: [...qtData.loopRange] },
         findMyItems: [...findMyItems],
@@ -37085,6 +37334,10 @@ ${clean(nextLineText)}`;
       };
       settle2("left");
       settle2("right");
+      const z = parsed.sizes && typeof parsed.sizes === "object" ? parsed.sizes : {};
+      const rowsIn = (o) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => typeof k === "string" && Number.isInteger(v) && v >= 1 && v <= 4));
+      sizes = { left: rowsIn(z.left), right: rowsIn(z.right) };
+      updateCalendarCard();
       if (parsed.previewData && typeof parsed.previewData === "object") {
         previewData = {
           src: String(parsed.previewData.src || ""),
@@ -37117,6 +37370,7 @@ ${clean(nextLineText)}`;
       leftWidgets = rightWidgets;
       rightWidgets = temp;
       pinned = { left: pinned.right, right: pinned.left };
+      sizes = { left: sizes.right, right: sizes.left };
       renderWidgets();
       postHaptic2("snap");
       persistWingsState();
@@ -37133,6 +37387,7 @@ ${clean(nextLineText)}`;
         return;
       }
       const wasPinned = isPinned(from, widgetId);
+      if (sizes[from][widgetId]) sizes[targetSide] = { ...sizes[targetSide], [widgetId]: sizes[from][widgetId] };
       takeOut(from, widgetId);
       setList(targetSide, [...listOf(targetSide), widgetId]);
       if (wasPinned) pinned[targetSide].push(widgetId);
@@ -37283,6 +37538,8 @@ ${clean(nextLineText)}`;
       closeFind: (side) => finds[side]?.close(),
       isFindOpen: (side) => Boolean(finds[side]?.isOpen()),
       getPinned: () => ({ left: [...pinned.left], right: [...pinned.right] }),
+      setSize,
+      getSize: (side, id2) => rowsOf(side, id2),
       setRecenseLine,
       setTypedLine,
       preferredWidth,

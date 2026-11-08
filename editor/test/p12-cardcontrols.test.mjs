@@ -85,7 +85,7 @@ test('swipe right pins: the card goes first and stays first; swiping right again
   assert.equal(ids(wings, 'left')[0], 'quicktime');
   // The state carries the pin (draftpad.wings.json) and a fresh page restores it.
   const saved = JSON.stringify(wings.getState());
-  assert.equal(JSON.parse(saved).version, 2);
+  assert.ok(JSON.parse(saved).version >= 2);
   const again = setup().wings;
   again.setState(saved);
   assert.equal(ids(again, 'left')[0], 'quicktime');
@@ -208,7 +208,7 @@ test('nothing playing: the wing opens with "Show in wing…" already open, focus
   wings.destroy();
 });
 
-test('a v1 draftpad.wings.json loads unchanged (Recense still on top of both wings), and saves as v2', () => {
+test('a v1 draftpad.wings.json loads unchanged (Recense still on top of both wings), and saves as the current version', () => {
   const v1 = {
     version: 1,
     leftWidgets: ['calendar', 'preview'],
@@ -223,7 +223,7 @@ test('a v1 draftpad.wings.json loads unchanged (Recense still on top of both win
   assert.deepEqual(ids(wings, 'left'), ['recense', 'calendar', 'preview']);
   assert.deepEqual(ids(wings, 'right'), ['recense', 'quicktime', 'mail']);
   const st = wings.getState();
-  assert.equal(st.version, 2);
+  assert.ok(st.version >= 2);
   assert.deepEqual(st.previewData, v1.previewData);
   assert.equal(st.qtData.playbackRate, 1.25);
   assert.deepEqual(st.qtData.loopRange, [3, 9]);

@@ -541,6 +541,13 @@ export function createDualWings(container, options = {}) {
   let rightWidgets = Array.isArray(options.rightWidgets)
     ? [...options.rightWidgets]
     : ['recense', 'calendar'];
+  // Card heights in rows (W3): 1-4 = S, M, L, XL; one row is the small card. Defaults keep the look from before.
+  const DEFAULT_ROWS = { preview: 3, quicktime: 3, calendar: 2 };
+  let sizes = { left: {}, right: {} };
+  const rowsOf = (side, id) => sizes[side]?.[id] || DEFAULT_ROWS[id] || 1;
+  // The Agenda lists as many events as its rows hold; the rest are counted under them.
+  const AGENDA_PER_ROWS = [0, 1, 2, 3, 4]; // an event with its Add control is about one row tall
+  const agendaSide = () => (rightWidgets.includes('calendar') || !leftWidgets.includes('calendar') ? 'right' : 'left');
   // Widgets only some hosts can run (the Mac's iPhone Mirroring): shown once the host enables them.
   const HOST_WIDGETS = new Set(['iphone']);
   const enabledHostWidgets = new Set();
@@ -972,8 +979,9 @@ export function createDualWings(container, options = {}) {
     calendarCard.appendChild(header);
 
     const body = makeDomElement(doc, 'div', {}, { class: 'rc-widget-body rc-calendar-list' });
+    const fits = AGENDA_PER_ROWS[rowsOf(agendaSide(), 'calendar')] || 1;
     if (calendarEvents.length > 0) {
-      for (const ev of calendarEvents) {
+      for (const ev of calendarEvents.slice(0, fits)) {
         const itemRow = makeDomElement(doc, 'div', {}, {
           class: 'rc-cal-item',
           'data-id': ev.id,
@@ -1032,6 +1040,11 @@ export function createDualWings(container, options = {}) {
         });
 
         body.appendChild(itemRow);
+      }
+      if (calendarEvents.length > fits) {
+        body.appendChild(makeDomElement(doc, 'div', {
+          textContent: `${calendarEvents.length - fits} more · make the card taller to see them`
+        }, { class: 'rc-cal-more' }));
       }
     } else {
       const empty = makeDomElement(doc, 'div', { textContent: 'No Upcoming Agenda' }, { class: 'rc-empty-state' });
@@ -1214,6 +1227,7 @@ export function createDualWings(container, options = {}) {
   const otherSide = side => (side === 'left' ? 'right' : 'left');
   const CARD_SWIPE = options.cardSwipeThreshold ?? 96;
   const HOLD_MS = 450;
+  const ROW_STEP = options.rowStep ?? 122; // one row (styles.css --rc-row, 112) + the gap between cards (10)
   const UNDO_MS = 5000;
   const later = (fn, ms) => (globalObj?.setTimeout ? globalObj.setTimeout(fn, ms) : setTimeout(fn, ms));
   const cancelLater = t => (globalObj?.clearTimeout ? globalObj.clearTimeout(t) : clearTimeout(t));
@@ -1261,6 +1275,19 @@ export function createDualWings(container, options = {}) {
     postHaptic('snap');
     changed();
     return want;
+  }
+
+  const SIZE_NAMES = ['', 'S', 'M', 'L', 'XL'];
+  /** A card's height in rows (1-4), from its bottom grabber, its ··· menu or the API. Returns the rows it has now. */
+  function setSize(side, id, rows, { quiet = false } = {}) {
+    if (!listOf(side).includes(id)) return rowsOf(side, id);
+    const n = Math.max(1, Math.min(4, Math.round(Number(rows) || 1)));
+    if (n === rowsOf(side, id)) return n;
+    sizes[side] = { ...sizes[side], [id]: n };
+    if (!quiet) postHaptic('snap');
+    if (id === 'calendar') updateCalendarCard();
+    changed();
+    return n;
   }
 
   // The last removal, kept 5 s for Undo.
@@ -1498,9 +1525,49 @@ export function createDualWings(container, options = {}) {
     menu.hidden = true;
     slot.appendChild(under);
     if (card) slot.appendChild(card);
+    // The bottom-edge grabber: drag to snap the card's height to 1-4 rows (a haptic per row); ↑ / ↓ from the keyboard.
+    const resize = makeDomElement(doc, 'div', {}, {
+      class: 'rc-wing-resize', role: 'slider', tabindex: '0', 'aria-orientation': 'vertical',
+      'aria-valuemin': '1', 'aria-valuemax': '4', 'aria-label': `Height of ${name}`
+    });
     slot.appendChild(mark);
     slot.appendChild(more);
+    slot.appendChild(resize);
     slot.appendChild(menu);
+    let sizing = null;
+    resize.addEventListener('pointerdown', e => {
+      e.stopPropagation?.();
+      e.preventDefault?.();
+      sizing = { y: e.clientY, rows: rowsOf(side, id), now: rowsOf(side, id) };
+      if (typeof resize.setPointerCapture === 'function' && e.pointerId !== undefined) {
+        try { resize.setPointerCapture(e.pointerId); } catch { /* capture is a nicety */ }
+      }
+    });
+    resize.addEventListener('pointermove', e => {
+      if (!sizing) return;
+      e.stopPropagation?.();
+      const n = Math.max(1, Math.min(4, sizing.rows + Math.round((e.clientY - sizing.y) / ROW_STEP)));
+      if (n !== sizing.now) {
+        sizing.now = n;
+        slot.setAttribute('data-rows', String(n)); // live, before it is saved on release
+        postHaptic('snap');
+      }
+    });
+    const endSizing = e => {
+      if (!sizing) return;
+      e?.stopPropagation?.();
+      const n = sizing.now;
+      sizing = null;
+      setSize(side, id, n, { quiet: true });
+    };
+    resize.addEventListener('pointerup', endSizing);
+    resize.addEventListener('pointercancel', endSizing);
+    resize.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      e.preventDefault?.();
+      setSize(side, id, rowsOf(side, id) + d);
+    });
 
     function closeMenu() {
       menu.hidden = true;
@@ -1539,6 +1606,25 @@ export function createDualWings(container, options = {}) {
         menu.appendChild(item);
         if (enabled && !first) first = item;
       }
+      // Size: S / M / L / XL, the current one checked.
+      const sizeRow = makeDomElement(doc, 'div', {}, { class: 'rc-wing-menu-size', role: 'group', 'aria-label': 'Size' });
+      sizeRow.appendChild(makeDomElement(doc, 'span', { textContent: 'Size' }, { class: 'rc-wing-menu-size-label' }));
+      for (let n = 1; n <= 4; n++) {
+        const on = rowsOf(side, id) === n;
+        const opt = makeDomElement(doc, 'div', { textContent: SIZE_NAMES[n] }, {
+          class: `rc-wing-menu-size-opt${on ? ' rc-on' : ''}`, role: 'menuitemradio', tabindex: '0',
+          'aria-checked': String(on), 'aria-label': `Size ${SIZE_NAMES[n]}, ${n} row${n > 1 ? 's' : ''}`
+        });
+        const pick = e => {
+          if (e?.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+          closeMenu();
+          setSize(side, id, n);
+        };
+        opt.addEventListener('click', pick);
+        opt.addEventListener('keydown', pick);
+        sizeRow.appendChild(opt);
+      }
+      menu.insertBefore ? menu.insertBefore(sizeRow, menu.lastChild) : menu.appendChild(sizeRow);
       menu.hidden = false;
       more.setAttribute('aria-expanded', 'true');
       if (first && typeof first.focus === 'function') first.focus();
@@ -1577,7 +1663,7 @@ export function createDualWings(container, options = {}) {
     }
 
     let drag = null;
-    const SKIP = 'input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-card-pick-btn';
+    const SKIP = 'input, textarea, select, video, audio, iframe, .rc-wing-more, .rc-wing-menu, .rc-wing-resize, .rc-card-pick-btn';
     slot.addEventListener('pointerdown', e => {
       if ((e.button ?? 0) > 0 || e.target?.closest?.(SKIP)) return;
       drag = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, mode: null, dx: 0, dy: 0, armed: false };
@@ -1656,7 +1742,7 @@ export function createDualWings(container, options = {}) {
       }, 160);
     }, { passive: false });
 
-    const s = { slot, card, mark, more, menu, openMenu, closeMenu, showSwipe, endSwipe };
+    const s = { slot, card, mark, more, resize, menu, openMenu, closeMenu, showSwipe, endSwipe };
     slots[side][id] = s;
     return s;
   }
@@ -1687,6 +1773,10 @@ export function createDualWings(container, options = {}) {
         const s = slotFor(side, wId);
         if (!s.card) continue;
         cls(s.slot, 'rc-wing-pinned', isPinned(side, wId));
+        const rows = rowsOf(side, wId);
+        s.slot.setAttribute('data-rows', String(rows));
+        s.resize.setAttribute('aria-valuenow', String(rows));
+        s.resize.setAttribute('aria-valuetext', `${SIZE_NAMES[rows]}, ${rows} row${rows > 1 ? 's' : ''}`);
         el.appendChild(s.slot);
       }
       const t = toasts[side];
@@ -1793,10 +1883,11 @@ export function createDualWings(container, options = {}) {
 
   function getState() {
     return {
-      version: 2,
+      version: 3,
       leftWidgets: [...leftWidgets],
       rightWidgets: [...rightWidgets],
       pinned: { left: [...pinned.left], right: [...pinned.right] },
+      sizes: { left: { ...sizes.left }, right: { ...sizes.right } },
       previewData: { ...previewData },
       qtData: { ...qtData, loopRange: [...qtData.loopRange] },
       findMyItems: [...findMyItems],
@@ -1839,6 +1930,12 @@ export function createDualWings(container, options = {}) {
     };
     settle('left');
     settle('right');
+    // Version 3 adds sizes (rows per card); older files get the default heights.
+    const z = parsed.sizes && typeof parsed.sizes === 'object' ? parsed.sizes : {};
+    const rowsIn = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {})
+      .filter(([k, v]) => typeof k === 'string' && Number.isInteger(v) && v >= 1 && v <= 4));
+    sizes = { left: rowsIn(z.left), right: rowsIn(z.right) };
+    updateCalendarCard();
     if (parsed.previewData && typeof parsed.previewData === 'object') {
       previewData = {
         src: String(parsed.previewData.src || ''),
@@ -1872,6 +1969,7 @@ export function createDualWings(container, options = {}) {
     leftWidgets = rightWidgets;
     rightWidgets = temp;
     pinned = { left: pinned.right, right: pinned.left };
+    sizes = { left: sizes.right, right: sizes.left };
     renderWidgets();
     postHaptic('snap');
     persistWingsState();
@@ -1891,6 +1989,7 @@ export function createDualWings(container, options = {}) {
       return;
     }
     const wasPinned = isPinned(from, widgetId);
+    if (sizes[from][widgetId]) sizes[targetSide] = { ...sizes[targetSide], [widgetId]: sizes[from][widgetId] };
     takeOut(from, widgetId);
     setList(targetSide, [...listOf(targetSide), widgetId]);
     if (wasPinned) pinned[targetSide].push(widgetId);
@@ -2072,6 +2171,8 @@ export function createDualWings(container, options = {}) {
     closeFind: side => finds[side]?.close(),
     isFindOpen: side => Boolean(finds[side]?.isOpen()),
     getPinned: () => ({ left: [...pinned.left], right: [...pinned.right] }),
+    setSize,
+    getSize: (side, id) => rowsOf(side, id),
     setRecenseLine,
     setTypedLine,
     preferredWidth,
