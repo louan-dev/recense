@@ -199,6 +199,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   - `~/Recense/keep/.migrated-from-caches` records when the move was complete.
 - **⏯ (the strip's play button, `pause.circle` / `play.circle` like QuickTime's menu-bar control, CC On/Off):** plays and pauses Recense's loaded piece, however long its player has
   been quiet. The system's ⏯ key goes out only with nothing loaded, or from the menu: Recense → Play/Pause Other Apps.
+- **💡 Side Quest (the lightbulb left of the mic, Recense's own `lightbulb` symbol):** say a side quest, check it, and it
+  goes into Calendar. While it listens, the bulb becomes a waveform.
 
 ## Layout
 

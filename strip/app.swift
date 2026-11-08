@@ -5122,7 +5122,7 @@ final class RestStrip: NSObject {
         pause.title = ""
         pause.toolTip = "Pause whatever is playing"
         pause.target = self; pause.action = #selector(playPause)
-        sideQuest.symbol = "sparkles"; sideQuest.isBordered = false; sideQuest.title = ""
+        sideQuest.symbol = "lightbulb"; sideQuest.isBordered = false; sideQuest.title = ""
         sideQuest.toolTip = "New Side Quest: say it, check it, it goes into Calendar"
         sideQuest.target = self; sideQuest.action = #selector(runSideQuest)
         space.symbol = "square.grid.3x2"; space.isBordered = false; space.title = ""
@@ -5177,7 +5177,7 @@ final class RestStrip: NSObject {
         let v = VoiceEntry(store: store)
         v.anchor = { [weak self] in self?.window.frame ?? .zero }
         v.onListening = { [weak self] on in
-            self?.sideQuest.symbol = on ? "waveform" : "sparkles"
+            self?.sideQuest.symbol = on ? "waveform" : "lightbulb"
             self?.sideQuest.needsDisplay = true
         }
         return v
