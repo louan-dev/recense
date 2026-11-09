@@ -887,6 +887,16 @@ final class DayStrip: NSView {
         if event.phase == .ended || event.phase == .cancelled { settle() }
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// Pressing a day's number lands the strip on that day.
+    override func mouseDown(with event: NSEvent) {
+        let x = convert(event.locationInWindow, from: nil).x
+        let day = Int(((x - bounds.midX) / cellWidth + pos).rounded())
+        guard day != landed else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        glide(toOffset: day)
+    }
+
     /// The center reached a new day: click under the fingers, tell the calendar.
     private func land(_ day: Int) {
         guard day != landed else { return }
@@ -6018,6 +6028,81 @@ struct EventDraft {
     var alert: TimeInterval? = nil          // seconds relative to start (0 = at start)
 }
 
+/// The draft as an iCalendar file (RFC 5545), for a calendar that doesn't sync with this Mac's: AirDrop, Mail or
+/// Messages it and Calendar offers to add it. Timed events are written in UTC so every device shows the right hour.
+func icsText(_ d: EventDraft, uid: String = UUID().uuidString, now: Date = Date()) -> String {
+    let utc = DateFormatter(); utc.locale = Locale(identifier: "en_US_POSIX")
+    utc.timeZone = TimeZone(identifier: "UTC"); utc.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+    let day = DateFormatter(); day.locale = Locale(identifier: "en_US_POSIX"); day.dateFormat = "yyyyMMdd"
+    func esc(_ t: String) -> String {
+        t.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: ";", with: "\\;")
+         .replacingOccurrences(of: ",", with: "\\,").replacingOccurrences(of: "\r\n", with: "\\n")
+         .replacingOccurrences(of: "\n", with: "\\n")
+    }
+    // Lines longer than 75 bytes continue on the next line after a space; never split inside a character.
+    func fold(_ line: String) -> String {
+        var out = "", count = 0
+        for ch in line {
+            let n = String(ch).utf8.count
+            if count + n > 75 { out += "\r\n "; count = 1 }
+            out.append(ch); count += n
+        }
+        return out
+    }
+    var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Recense//Side Quest//EN", "CALSCALE:GREGORIAN",
+                 "METHOD:PUBLISH", "BEGIN:VEVENT", "UID:\(uid)", "DTSTAMP:\(utc.string(from: now))"]
+    if d.allDay {
+        let end = d.end > d.start ? d.end : Calendar.current.date(byAdding: .day, value: 1, to: d.start)!
+        lines += ["DTSTART;VALUE=DATE:\(day.string(from: d.start))", "DTEND;VALUE=DATE:\(day.string(from: end))"]
+    } else {
+        lines += ["DTSTART:\(utc.string(from: d.start))", "DTEND:\(utc.string(from: max(d.end, d.start)))"]
+    }
+    lines.append("SUMMARY:\(esc(d.title))")
+    if !d.location.isEmpty { lines.append("LOCATION:\(esc(d.location))") }
+    if !d.notes.isEmpty { lines.append("DESCRIPTION:\(esc(d.notes))") }
+    if let a = d.alert {
+        let m = Int(-a / 60)
+        lines += ["BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:\(esc(d.title))",
+                  m == 0 ? "TRIGGER:PT0S" : "TRIGGER:\(m > 0 ? "-" : "")PT\(abs(m))M", "END:VALARM"]
+    }
+    lines += ["END:VEVENT", "END:VCALENDAR"]
+    return lines.map(fold).joined(separator: "\r\n") + "\r\n"
+}
+
+/// Where Side Quest's invitations are kept: ~/Recense/invites/<date> <title>.ics.
+func saveICS(_ d: EventDraft, uid: String) throws -> URL {
+    let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Recense/invites")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HHmm"
+    let safe = d.title.components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>")).joined(separator: "-").prefix(60)
+    let url = dir.appendingPathComponent("\(f.string(from: d.start)) \(safe).ics")
+    try icsText(d, uid: uid).write(to: url, atomically: true, encoding: .utf8)
+    return url
+}
+
+/// `recense selftest`: the .ics invitation is well formed, escaped, folded and timed in UTC.
+func icsSelftest() -> Bool {
+    var d = EventDraft()
+    d.title = "Lunch, with Lan; café"; d.location = "Hà Nội"; d.notes = "line one\nline two"; d.alert = -900
+    d.start = Date(timeIntervalSince1970: 1_793_620_800)   // 2026-11-02 12:00 UTC
+    d.end = d.start.addingTimeInterval(3600)
+    let t = icsText(d, uid: "U1", now: d.start)
+    var ok = true
+    func want(_ c: Bool, _ m: String) { if !c { print("FAIL ics: \(m)"); ok = false } }
+    want(t.hasPrefix("BEGIN:VCALENDAR\r\n") && t.hasSuffix("END:VCALENDAR\r\n"), "envelope")
+    want(t.contains("DTSTART:20261102T120000Z\r\n") && t.contains("DTEND:20261102T130000Z\r\n"), "UTC times")
+    want(t.contains("SUMMARY:Lunch\\, with Lan\\; café"), "escaping")
+    want(t.contains("DESCRIPTION:line one\\nline two"), "newlines")
+    want(t.contains("TRIGGER:-PT15M"), "alert")
+    want(!t.replacingOccurrences(of: "\r\n", with: "").contains("\n"), "bare newlines")
+    d.title = String(repeating: "é", count: 80); d.allDay = true; d.alert = nil
+    let a = icsText(d, uid: "U2", now: d.start)
+    want(a.components(separatedBy: "\r\n").allSatisfy { $0.utf8.count <= 75 }, "folding")
+    want(a.contains("DTSTART;VALUE=DATE:"), "all-day")
+    if ok { print("ok ics invitation") }
+    return ok
+}
+
 /// Local, rule-based reading of a spoken sentence. Apple's date detector finds the when; the words before it are the
 /// title, the words after are the notes. "before / by 4 pm" is a deadline: a 30-minute block ending then, alert at its
 /// start. A time on its own ("at 2 pm") starts a 30-minute block. A date without a time is all-day.
@@ -6178,6 +6263,8 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
     private var transcript = ""
     private var draft = EventDraft()
     private var lastSaved: EKEvent?
+    private var lastICS: URL?
+    private let days = DayStrip()           // the essentials panel's slidable days: slide or press a number
     var anchor: () -> NSRect = { .zero }           // the strip's frame on screen
     var onListening: ((Bool) -> Void)?
 
@@ -6203,7 +6290,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         place.placeholderAttributedString = NSAttributedString(string: "Location (optional)", attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.6), .font: roundedFont(12, .medium)])
         notes.placeholderAttributedString = NSAttributedString(string: "Notes", attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.6), .font: roundedFont(12, .medium)])
         when.font = roundedFont(12.5, .semibold); when.textColor = bioCyan
-        for (b, t, sel) in [(save, "Save  ⏎", #selector(saveTapped)), (smarter, "Smarter", #selector(smarterTapped)), (cancel, "Cancel", #selector(cancelTapped))] {
+        for (b, t, sel) in [(save, "Add + .ics  ⏎", #selector(saveTapped)), (smarter, "Smarter", #selector(smarterTapped)), (cancel, "Cancel", #selector(cancelTapped))] {
             b.isBordered = false; b.title = ""
             b.attributedTitle = NSAttributedString(string: t, attributes: [.foregroundColor: b === save ? bioCyan : NSColor.white, .font: roundedFont(12.5, .semibold)])
             b.target = self; b.action = sel
@@ -6214,7 +6301,9 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
         close.contentTintColor = NSColor.white.withAlphaComponent(0.6)
         close.target = self; close.action = #selector(closeTapped)
-        [heard, status, title, when, notes, place, save, smarter, cancel, close].forEach(root.addSubview)
+        [heard, status, title, when, days, notes, place, save, smarter, cancel, close].forEach(root.addSubview)
+        days.cellWidth = 46
+        days.onSelect = { [weak self] d in self?.moveDraft(to: d) }
     }
 
     // MARK: Listening
@@ -6289,14 +6378,14 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
 
     private func present() {
         let a = anchor()
-        let w: CGFloat = 520, h: CGFloat = listening ? 96 : 236
+        let w: CGFloat = 520, h: CGFloat = listening ? 96 : 290
         window.setFrame(NSRect(x: a.midX - w / 2, y: a.minY - h - 8, width: w, height: h), display: true)
         close.frame = NSRect(x: w - 30, y: h - 30, width: 18, height: 18)      // top right, in every state
         window.orderFrontRegardless()
     }
 
     private func layout(listeningMode: Bool) {
-        for v in [title, when, notes, place, save, smarter, cancel] { v.isHidden = listeningMode }
+        for v in [title, when, days, notes, place, save, smarter, cancel] { v.isHidden = listeningMode }
         heard.isHidden = false
     }
 
@@ -6310,8 +6399,10 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         status.frame = .zero
         title.frame = NSRect(x: 16, y: h - 70, width: w - 32, height: 26)
         when.frame = NSRect(x: 18, y: h - 96, width: w - 36, height: 18)
-        notes.frame = NSRect(x: 16, y: h - 150, width: w - 32, height: 46)
-        place.frame = NSRect(x: 16, y: h - 180, width: w - 32, height: 22)
+        days.frame = NSRect(x: 16, y: h - 146, width: w - 32, height: 44)
+        days.reset(to: draft.start)
+        notes.frame = NSRect(x: 16, y: h - 204, width: w - 32, height: 46)
+        place.frame = NSRect(x: 16, y: h - 234, width: w - 32, height: 22)
         cancel.frame = NSRect(x: 14, y: 12, width: 70, height: 22)
         smarter.frame = NSRect(x: w - 190, y: 12, width: 80, height: 22)
         save.frame = NSRect(x: w - 100, y: 12, width: 86, height: 22)
@@ -6329,9 +6420,18 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         let tf = DateFormatter(); tf.setLocalizedDateFormatFromTemplate("jmm")
         var s = draft.allDay ? "\(df.string(from: draft.start)) · All day" : "\(df.string(from: draft.start)) · \(tf.string(from: draft.start)) – \(tf.string(from: draft.end))"
         if let a = draft.alert { s += a == 0 ? " · alert at start" : " · alert \(Int(-a / 60)) min before" }
-        let t = draft.start.timeIntervalSinceNow
-        if t > 0 { s += "   ·   NOW + " + (t < 3600 ? "\(Int((t / 60).rounded(.up))) min" : lifeSpan(t)) }
         when.stringValue = s
+    }
+
+    /// The day strip landed on a day: the event moves there, keeping its times and length.
+    private func moveDraft(to day: Date) {
+        let cal = Calendar.current
+        let shift = cal.dateComponents([.day], from: cal.startOfDay(for: draft.start), to: cal.startOfDay(for: day)).day ?? 0
+        guard shift != 0 else { return }
+        draft.start = cal.date(byAdding: .day, value: shift, to: draft.start)!
+        draft.end = cal.date(byAdding: .day, value: shift, to: draft.end)!
+        draft.title = title.stringValue; draft.notes = notes.stringValue; draft.location = place.stringValue
+        fill()
     }
 
     private func layoutMessage() {
@@ -6393,6 +6493,7 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         do {
             try store.save(e, span: .thisEvent, commit: true)
             lastSaved = e
+            lastICS = try? saveICS(draft, uid: e.calendarItemExternalIdentifier ?? UUID().uuidString)
             confirmSaved()
         } catch {
             when.stringValue = "Couldn't save: \(error.localizedDescription)"
@@ -6411,18 +6512,49 @@ final class VoiceEntry: NSObject, NSTextFieldDelegate {
         undo.frame = NSRect(x: window.frame.width - 80, y: 10, width: 64, height: 22)
         undo.identifier = NSUserInterfaceItemIdentifier("undo")
         window.contentView?.addSubview(undo)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+        let share = NSButton(title: "", target: self, action: #selector(shareICS(_:)))
+        share.isBordered = false
+        share.attributedTitle = NSAttributedString(string: "Share .ics", attributes: [.foregroundColor: bioCyan, .font: roundedFont(12.5, .semibold)])
+        share.toolTip = "Send this event as a calendar file (AirDrop, Mail, Messages) to a calendar that doesn't sync"
+        share.frame = NSRect(x: window.frame.width - 170, y: 10, width: 86, height: 22)
+        share.identifier = NSUserInterfaceItemIdentifier("undo")
+        share.isHidden = lastICS == nil
+        window.contentView?.addSubview(share)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            if self?.sharing == true { return }
+            share.removeFromSuperview()
             undo.removeFromSuperview()
             if self?.title.isHidden == true && self?.listening == false { self?.window.orderOut(nil) }
         }
     }
 
+    private var sharing = false
+    /// AirDrop, Mail, Messages… the .ics saved in ~/Recense/invites; the card stays until the picker closes.
+    @objc func shareICS(_ sender: NSButton) {
+        guard let url = lastICS else { return }
+        sharing = true
+        let picker = NSSharingServicePicker(items: [url])
+        picker.delegate = self
+        picker.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+    }
+
     @objc func undoSave() {
         if let e = lastSaved { try? store.remove(e, span: .thisEvent, commit: true) }
+        if let u = lastICS { try? FileManager.default.trashItem(at: u, resultingItemURL: nil) }
+        lastICS = nil
         lastSaved = nil
         window.contentView?.subviews.filter { $0.identifier?.rawValue == "undo" }.forEach { $0.removeFromSuperview() }
         heard.stringValue = "Removed"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.window.orderOut(nil) }
+    }
+}
+
+extension VoiceEntry: NSSharingServicePickerDelegate {
+    func sharingServicePicker(_ p: NSSharingServicePicker, didChoose service: NSSharingService?) {
+        sharing = false
+        window.contentView?.subviews.filter { $0.identifier?.rawValue == "undo" }.forEach { $0.removeFromSuperview() }
+        heard.stringValue = service == nil ? "Saved to Calendar: \(draft.title)" : "Sent .ics: \(draft.title)"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.window.orderOut(nil) }
     }
 }
 
@@ -7896,8 +8028,8 @@ func stripSelftest() -> Bool {
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
-    let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k ? 0 : 1)
+    let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l ? 0 : 1)
 }
 
 // `recense draftpad-check [folder]`: the Recense layer on the real path, off screen, with a test page (draftpadcheck.swift).
