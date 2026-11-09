@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pageSentences, pageSections, docSections, sentenceLine, reconcile, fnv1a } from '../src/typedlines.js';
-import { checkLines, extractive, settle, reformatKind, keyTerms, isMixed } from '../src/lenses.js';
-import { createRecense, lensBlocks, QUIET_MS } from '../src/recense.js';
+import { checkLines, extractive, settle, settleExtra, askExtract, reformatKind, keyTerms, isMixed, ownLanguageProse } from '../src/lenses.js';
+import { createRecense, lensBlocks, QUIET_MS, LENSES } from '../src/recense.js';
 import { chapterEntries } from '../src/chapters.js';
 
 const PAGE = `Sunday, November 8, 2026
@@ -291,4 +291,92 @@ Theo Điều 385 Bộ luật Dân sự, hợp đồng là sự thỏa thuận gi
   assert.equal(isMixed({ text: 'Hợp đồng là sự thỏa thuận giữa các bên.', lang: 'vi' }), false);
   assert.equal(isMixed({ text: 'The text of Bộ luật is short.', lang: 'en' }), true);
   assert.equal(isMixed({ text: 'The Code’s Article 385 defines it.', lang: 'en' }), false);
+});
+
+test('a statute, article, case name or glossary term cited in its own language is not mixing; a half-translated clause is', () => {
+  const VI = 'The court said the deposit of £1,000 showed the company meant its promise. Theo Điều 385 Bộ luật Dân sự 2015, hợp đồng là sự thỏa thuận giữa các bên.';
+  const ok = { text: 'The £1,000 deposit showed the company meant its promise, aligning with Theo Điều 385 Bộ luật Dân sự 2015.', lang: 'en' };
+  assert.equal(isMixed(ok, [VI]), false, 'Điều 385 and Bộ luật Dân sự 2015 are cited as written');
+  assert.equal(isMixed(ok, ['A sentence that does not hold the reference.']), true, 'only spans found word for word in the source');
+  const half = { text: 'Under Điều 385 Bộ luật Dân sự 2015, a contract is a thỏa thuận giữa các bên.', lang: 'en' };
+  assert.equal(isMixed(half, [VI]), true, 'the half-translated clause still mixes');
+  assert.match(ownLanguageProse(half.text, [VI]), /thỏa thuận giữa các bên/);
+  const gl = { text: 'The plaintiff claimed bồi thường thiệt hại for the loss.', lang: 'en' };
+  assert.equal(isMixed(gl, ['Nguyên đơn yêu cầu bồi thường thiệt hại.']), true);
+  assert.equal(isMixed(gl, ['Nguyên đơn yêu cầu bồi thường thiệt hại.'], ['bồi thường thiệt hại']), false, 'a glossary term');
+  const [sec] = docSections(`Wednesday, November 11, 2026\n\n${VI}`);
+  const r = settle(sec, { key: sec.key, engine: 'model', title: 'Deposit', lang: 'en',
+    page: [ok], gist: [{ ...ok, from: [sec.sentences[0].key, sec.sentences[1].key], para: sec.sentences[0].p }] });
+  assert.equal(r.gist[0].text, ok.text, 'the line with the cited statute stays in');
+  assert.ok(!r.gist[0].extract);
+});
+
+test('Retell: per paragraph a plain line and one retold in the other language, each checked; no model, no retell', () => {
+  const [sec] = docSections(THREE);
+  const ss = sec.sentences, ps = [...new Set(ss.map(s => s.p))];
+  const sourceOther = Object.fromEntries(ss.map(s => [s.key, `[vi] ${s.text}`]));
+  sourceOther[ss[0].key] = 'Hợp đồng cần có đề nghị và chấp nhận.';
+  const r = settleExtra(sec, 'retell', { key: sec.key, engine: 'model', lang: 'en', other: 'vi', sourceOther, retell: { lines: [
+    { text: 'To make a contract, someone offers and someone accepts.', from: [ss[0].key], role: 'plain', para: ps[0], lang: 'en' },
+    { text: 'Muốn có hợp đồng, phải có đề nghị và chấp nhận.', from: [ss[0].key], role: 'other', para: ps[0], lang: 'vi' },
+    { text: 'Consideration is something of value given in exchange.', from: [ss[3].key], role: 'plain', para: ps[1], lang: 'en' },
+    { text: 'Đền bù is a thing of value given in exchange.', from: [ss[3].key], role: 'other', para: ps[1], lang: 'vi' }    // mixed: dropped
+  ] } });
+  assert.deepEqual(r.lines.map(l => l.role), ['plain', 'other', 'plain']);
+  assert.equal(r.lines[1].lang, 'vi', 'the other-language line is checked against the sentence’s translation into it');
+  assert.equal(r.dropped, 1);
+  const none = settleExtra(sec, 'retell', { key: sec.key, engine: 'none', why: 'off' });
+  assert.equal(none.lines.length, 0);
+  assert.match(none.why, /needs the on-device model/);
+  const blocks = lensBlocks([sec], 'retell', { results: new Map([[sec.key, { ...settle(sec, null), extra: { retell: r } }]]) });
+  assert.deepEqual(blocks.map(b => b.lines.length), [2, 1], 'under their paragraphs');
+});
+
+test('Ask: question and answer both checked, the answer behind its own button; no model, cloze from key terms', () => {
+  const [sec] = docSections(THREE);
+  const ss = sec.sentences;
+  const x = settleExtra(sec, 'ask', { key: sec.key, engine: 'model', ask: { lines: [
+    { text: 'What did Carlill v Carbolic Smoke Ball Co hold about the advertisement?', from: [ss[6].key], role: 'question' },
+    { text: 'That the advertisement was a unilateral offer.', from: [ss[6].key], role: 'answer' },
+    { text: 'What is the penalty for breach in Ohio?', from: [], role: 'question' },
+    { text: 'Ten years in a farmland lease.', from: [ss[0].key], role: 'answer' }          // not in the notes: both go
+  ] } });
+  assert.equal(x.lines.length, 1);
+  assert.equal(x.lines[0].answer, 'That the advertisement was a unilateral offer.');
+  const cloze = askExtract(sec);
+  assert.equal(cloze.length, 3, 'a card per paragraph');
+  for (const c of cloze) {
+    assert.match(c.text, /_____/);
+    assert.equal(ss.find(s => s.key === c.from[0]).text, c.text.replace('_____', c.answer));
+  }
+  assert.equal(settleExtra(sec, 'ask', { key: sec.key, engine: 'none' }).engine, 'key terms');
+});
+
+test('Reapply: the rule is cited, the new facts and question say added, and your answer is kept beside them', () => {
+  const h = harness(THREE);
+  h.rc.setEnabled(true);
+  h.rc.setLens('reapply');
+  assert.ok(LENSES.includes('retell') && LENSES.includes('ask') && LENSES.includes('reapply'));
+  const [sec] = h.rc.sections();
+  const ss = sec.sentences;
+  const id = h.rc.recenseNow();
+  const sent = h.posts.filter(p => p.recenseSections).at(-1).recenseSections;
+  assert.deepEqual(sent.lenses, ['gist', 'reformat', 'reapply'], 'the lens on screen is asked for with the rest');
+  h.rc.setSection(id, { ...modelReply(sec, 'Offers'), reapply: { lines: [
+    { text: 'An advertisement can be a unilateral offer accepted by using the smoke ball.', from: [ss[6].key, ss[7].key], role: 'rule' },
+    { text: 'A shop promises a free bike to anyone who runs a marathon; Lan runs one.', from: [], role: 'facts', added: true },
+    { text: 'Must the shop give Lan the bike?', from: [], role: 'question', added: true }] } });
+  h.rc.recenseDone(id);
+  const r = h.rc.results.get(sec.key).extra.reapply;
+  assert.deepEqual(r.lines.map(l => [l.role, Boolean(l.added)]), [['rule', false], ['facts', true], ['question', true]]);
+  const [b] = lensBlocks(h.rc.sections(), 'reapply', { results: h.rc.results, answers: h.rc.answers });
+  assert.ok(b.answerKey.startsWith(sec.key));
+  h.rc.setAnswer(b.answerKey, 'Yes: the advert is a unilateral offer; running the marathon accepts it.');
+  const [b2] = lensBlocks(h.rc.sections(), 'reapply', { results: h.rc.results, answers: h.rc.answers });
+  assert.match(b2.answer, /unilateral offer/);
+  assert.equal(h.state.writes.length, 0, 'the answer never goes into the page');
+  // Switching lens asks only for what is missing.
+  h.rc.setLens('retell');
+  const last = h.posts.filter(p => p.recenseSections).at(-1).recenseSections;
+  assert.deepEqual(last.lenses, ['retell']);
 });

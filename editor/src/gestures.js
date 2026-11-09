@@ -416,12 +416,15 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: true, action: 'deleteEmptyWindow' };
   }
 
-  // 3b. Recense what you typed: "recense now", "recense layer" (on/off), "gist" / "reformat" / "source" lens.
+  // 3b. Recense what you typed: "recense now", "recense layer" (on/off), the lenses (gist, retell, reformat, ask me,
+  //     reapply, source).
   if (hasPhrase('recense now') || hasPhrase('recense lại') || hasPhrase('recenser maintenant')) {
     if (typeof handlers.recenseNow === 'function') handlers.recenseNow();
     return { matched: true, action: 'recenseNow' };
   }
-  for (const [lens, words] of [['gist', ['gist', 'ý chính']], ['reformat', ['reformat', 'irac', 'trình bày lại']], ['source', ['source lens', 'show source', 'bản dịch']]]) {
+  for (const [lens, words] of [['gist', ['gist', 'ý chính']], ['reformat', ['reformat', 'irac', 'trình bày lại']], ['source', ['source lens', 'show source', 'bản dịch']],
+    ['retell', ['retell', 'kể lại', 'reformuler']], ['ask', ['ask me', 'quiz me', 'hỏi tôi', 'interroge-moi']],
+    ['reapply', ['reapply', 'apply it', 'áp dụng lại', 'réappliquer']]]) {
     if (words.some(w => (w.includes(' ') ? hasPhrase(w) : hasWord(w)))) {
       if (typeof handlers.setRecenseLens === 'function') handlers.setRecenseLens(lens);
       return { matched: true, action: 'setRecenseLens', lens };

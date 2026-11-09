@@ -1984,6 +1984,24 @@ html.rc-wings-page body {
 }
 .rc-lens-line:hover, .rc-lens-line:focus-visible { color: var(--rc-text); outline: none; }
 .rc-lens-role { font-weight: 600; margin-right: 6px; color: var(--rc-text); opacity: 0.7; }
+/* Ask: the answer waits behind one button; Reapply: your answer under the new facts. */
+.rc-lens-reveal { font: inherit; font-size: 0.85em; color: var(--rc-cyan); background: none; border: 0; padding: 2px 0 6px; cursor: pointer; }
+.rc-lens-answer { padding: 0 0 8px 12px; color: var(--rc-text); opacity: 0.85; }
+.rc-lens-reply { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 4px; font: inherit; color: var(--rc-text);
+  background: color-mix(in srgb, var(--rc-text) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rc-text) 18%, transparent);
+  border-radius: 6px; padding: 8px; resize: vertical; }
+/* Ask: one button shows the answer under its question. Reapply: your answer, beside the facts. */
+.rc-lens-reveal {
+  font: inherit; font-size: 0.86em; color: var(--rc-muted); background: none;
+  border: 1px solid var(--rc-border); border-radius: 8px; padding: 2px 10px; margin: 2px 0 6px; cursor: pointer;
+}
+.rc-lens-reveal:hover, .rc-lens-reveal:focus-visible { color: var(--rc-text); outline: none; }
+.rc-lens-answer { color: var(--rc-text); opacity: 0.85; padding: 0 0 6px; }
+.rc-lens-reply {
+  display: block; width: 100%; box-sizing: border-box; margin: 6px 0 2px; padding: 6px 8px;
+  font: inherit; color: var(--rc-text); background: transparent;
+  border: 1px solid var(--rc-border); border-radius: 8px; resize: vertical;
+}
 .rc-recense-cited { background: color-mix(in srgb, var(--rc-cyan) 22%, transparent); border-radius: 3px; }
 @media (prefers-reduced-motion: no-preference) {
   .rc-recense-cited { transition: background 160ms ease-out; }
@@ -2058,25 +2076,42 @@ html.rc-wings-page body {
   var MIN_COVERAGE = 0.6;
   var VI_ONLY = /[ạảấầẩẫậăắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộơớờởỡợụủũưứừửữựỳỵỷỹđõã]/iu;
   var EN_GLUE = new Set("the of and is are was were which that with this from for".split(" "));
-  function isMixed(line) {
+  var REF_RE = /(?<![\p{L}\p{N}])(?:Điều|Khoản|Điểm|Mục|Chương|Article|Art\.|Section|Sec\.|§)\s*\d+[a-z]?/gu;
+  var CODE_RE = /(?<![\p{L}\p{N}])(?:Bộ luật|Luật|Nghị định|Thông tư|Hiến pháp|Code civil|Code|Act|Loi)(?:\s+\p{Lu}\p{L}*(?:\s+\p{Ll}\p{L}*)?)?(?:\s+(?:năm\s+)?\d{4})?/gu;
+  var NAME_RE = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}'’-]*(?:(?:\s+(?:v\.?|vs\.?))?\s+\p{Lu}[\p{L}'’-]*)+/gu;
+  var squash = (t2) => String(t2).replace(/\s+/g, " ").trim();
+  function ownLanguageProse(text, sources = [], glossary = []) {
+    const src = sources.map(squash);
+    let out = String(text ?? "");
+    for (const re of [REF_RE, CODE_RE, NAME_RE]) {
+      out = out.replace(re, (m) => src.some((s) => s.includes(squash(m))) ? " " : m);
+    }
+    for (const g of glossary) {
+      const t2 = squash(g);
+      if (t2) out = out.split(new RegExp(t2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu")).join(" ");
+    }
+    return out;
+  }
+  function isMixed(line, sources = [], glossary = []) {
     if (line?.mixed) return true;
-    const words = String(line?.text ?? "").toLowerCase().match(/[\p{L}]+/gu) || [];
+    const words = ownLanguageProse(line?.text, sources, glossary).toLowerCase().match(/[\p{L}]+/gu) || [];
     if (line?.lang === "en") return words.filter((w) => VI_ONLY.test(w)).length >= 2;
     if (line?.lang === "vi") return words.filter((w) => EN_GLUE.has(w)).length >= 2;
     return false;
   }
-  function checkLines(lines, sentences, alt = {}) {
+  function checkLines(lines, sentences, alt = {}, glossary = []) {
     const pool = sentences.map((s) => ({ key: s.key, text: alt[s.key] ? `${s.text} ${alt[s.key]}` : s.text }));
     const byKey = new Map(pool.map((s) => [s.key, s.text]));
     const kept = [], dropped = [];
     for (const l of lines || []) {
       const text = String(l?.text ?? "").replace(/\s*[;,]?\s*\[s\d+(\s*,\s*s\d+)*\]/g, "").trim();
       if (!text) continue;
-      if (isMixed({ ...l, text })) {
+      const from = (l.from || []).filter((k) => byKey.has(k));
+      const cites = (from.length ? sentences.filter((x) => from.includes(x.key)) : sentences).map((x) => x.text);
+      if (isMixed({ ...l, text }, cites, glossary)) {
         dropped.push({ ...l, text, why: "two languages in one line" });
         continue;
       }
-      const from = (l.from || []).filter((k) => byKey.has(k));
       if (from.length) {
         if (coverage(text, from.map((k) => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
         else {
@@ -2183,14 +2218,15 @@ html.rc-wings-page body {
     const model = result && result.engine === "model";
     const r = model ? result : ext;
     const alt = r.sourceIn || {};
+    const gl = r.glossary || [];
     const pOf = new Map(ss.map((s) => [s.key, s.p]));
     const fill = (l) => model ? { ...l, extract: true } : l;
-    const g = checkLines(r.gist, ss, alt);
+    const g = checkLines(r.gist, ss, alt, gl);
     const cited = g.kept.filter((l) => l.from.length);
     const extBy = new Map(ext.gist.map((l) => [l.para, l]));
     const gist = [...new Set(ss.map((s) => s.p))].map((p) => cited.find((l) => l.para === p) || cited.find((l) => l.para == null && l.from.every((k) => pOf.get(k) === p)) || fill(extBy.get(p)));
     const pageN = Math.min(PAGE_LINES, ss.length);
-    const pg = checkLines(pageGist(r), ss, alt);
+    const pg = checkLines(pageGist(r), ss, alt, gl);
     const same = new Set(gist.map((l) => normText(l.text)));
     const repeats = pg.kept.filter((l) => same.has(normText(l.text)));
     const page = pg.kept.filter((l) => l.from.length && !same.has(normText(l.text))).slice(0, pageN);
@@ -2203,11 +2239,12 @@ html.rc-wings-page body {
       const kind = reformatKind(ss);
       reformat = patternReformat(ss, kind === "irac" ? "outline" : kind);
     }
-    const ref = checkLines(reformat.lines, ss, alt);
+    const ref = checkLines(reformat.lines, ss, alt, gl);
     return {
       key: section.key,
       engine: r.engine,
       why: r.why || "",
+      glossary: gl,
       title: String(r.title || "").trim() || ext.title,
       lang: r.lang || "",
       page,
@@ -2220,8 +2257,69 @@ html.rc-wings-page body {
       at: Date.now()
     };
   }
+  var EXTRA_LENSES = ["retell", "ask", "reapply"];
+  function askExtract(section) {
+    const ss = section.sentences;
+    const df = /* @__PURE__ */ new Map();
+    for (const s of ss) for (const t2 of new Set(keyTerms(s.text))) df.set(t2, (df.get(t2) || 0) + 1);
+    const score = centrality(ss);
+    const best = /* @__PURE__ */ new Map();
+    ss.forEach((s, i) => {
+      if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] });
+    });
+    const lines = [];
+    for (const { s } of best.values()) {
+      const terms = [...new Set(keyTerms(s.text))].filter((t2) => t2.length >= 5 && !/^\p{N}+$/u.test(t2));
+      if (!terms.length) continue;
+      const term = terms.sort((a, b) => df.get(a) - df.get(b) || b.length - a.length)[0];
+      const at = s.text.toLowerCase().indexOf(term);
+      if (at < 0) continue;
+      const answer = s.text.slice(at, at + term.length);
+      lines.push({ text: `${s.text.slice(0, at)}_____${s.text.slice(at + term.length)}`, from: [s.key], role: "cloze", answer, para: s.p });
+    }
+    return lines;
+  }
+  function settleExtra(section, lens, result) {
+    const ss = section.sentences;
+    const model = result && result.engine === "model";
+    const got = model ? result[lens] : null;
+    const gl = result?.glossary || [];
+    if (!got) {
+      if (lens === "ask") return { engine: "key terms", why: result?.why || "", lines: askExtract(section) };
+      return { engine: "none", why: lens === "retell" ? "Retell needs the on-device model" : "Reapply needs the on-device model", lines: [] };
+    }
+    const alt = result.sourceIn || {};
+    let lines = [], dropped = 0;
+    if (lens === "retell") {
+      const plain = checkLines(got.lines.filter((l) => l.role !== "other"), ss, alt, gl);
+      const other = checkLines(got.lines.filter((l) => l.role === "other"), ss, result.sourceOther || {}, gl);
+      dropped = plain.dropped.length + other.dropped.length;
+      const paras = [...new Set(ss.map((s) => s.p))];
+      for (const p of paras) {
+        const a = plain.kept.find((l) => l.para === p && l.from.length);
+        const b = other.kept.find((l) => l.para === p && l.from.length);
+        if (a) lines.push(a);
+        if (b) lines.push(b);
+      }
+    } else if (lens === "ask") {
+      const ls = got.lines;
+      for (let i = 0; i + 1 < ls.length; i += 2) {
+        const q = checkLines([ls[i]], ss, alt, gl).kept[0];
+        const a = checkLines([ls[i + 1]], ss, alt, gl).kept[0];
+        if (q && a && a.from.length) lines.push({ ...q, from: q.from.length ? q.from : a.from, added: false, answer: a.text });
+        else dropped += 2;
+      }
+    } else {
+      const [rule, ...rest] = got.lines;
+      const r = checkLines([rule], ss, alt, gl);
+      dropped = r.dropped.length;
+      lines = [...r.kept, ...rest.filter((l) => String(l.text || "").trim()).map((l) => ({ ...l, from: [], added: true }))];
+    }
+    const why = lines.length ? "" : lens === "reapply" ? "no rule found in these notes" : "no line passed the check";
+    return { engine: "model", why, lines, dropped };
+  }
 
-  // node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2295,7 +2393,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // node_modules/@codemirror/state/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -5707,7 +5805,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // node_modules/style-mod/src/style-mod.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -5843,7 +5941,7 @@ html.rc-wings-page body {
     }
   };
 
-  // node_modules/w3c-keyname/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -5949,7 +6047,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // node_modules/crelt/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -5978,7 +6076,7 @@ html.rc-wings-page body {
     }
   }
 
-  // node_modules/@codemirror/view/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -15478,7 +15576,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // node_modules/@lezer/common/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -17539,7 +17637,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // node_modules/@lezer/highlight/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18263,7 +18361,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // node_modules/@codemirror/language/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -19749,7 +19847,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // node_modules/@codemirror/commands/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -20843,7 +20941,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -21308,7 +21406,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // node_modules/@lezer/markdown/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -23396,7 +23494,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // node_modules/@lezer/lr/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25174,7 +25272,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // node_modules/@lezer/html/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -25518,7 +25616,7 @@ html.rc-wings-page body {
     });
   }
 
-  // node_modules/@lezer/css/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -25698,7 +25796,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // node_modules/@codemirror/lang-css/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -26559,7 +26657,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // node_modules/@lezer/javascript/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -26771,7 +26869,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27083,7 +27181,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-html/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -27823,7 +27921,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -28663,7 +28761,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // node_modules/@codemirror/search/dist/index.js
+  // ../../../../../../../../Users/chauphan/Developer/recense/editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -31312,12 +31410,19 @@ ${PAGE_MARKER}
   }
 
   // src/recense.js
-  var LENSES = ["gist", "reformat", "source"];
-  var LENS_NAMES = { gist: "Gist", reformat: "Reformat", source: "Source" };
+  var LENSES = ["gist", "retell", "reformat", "ask", "reapply", "source"];
+  var LENS_NAMES = { gist: "Gist", retell: "Retell", reformat: "Reformat", ask: "Ask", reapply: "Reapply", source: "Source" };
   var QUIET_MS = 6e4;
   var MIN_BATTERY = 30;
   var CACHE_MAX = 400;
-  var ROLE_NAMES = { issue: "Issue", rule: "Rule", application: "Application", conclusion: "Conclusion" };
+  var ROLE_NAMES = { issue: "Issue", rule: "Rule", application: "Application", conclusion: "Conclusion", facts: "Facts", question: "Question" };
+  var LANG_TAGS = { en: "EN", vi: "VI", fr: "FR" };
+  function lensPool(r, lens) {
+    if (!r) return [];
+    if (lens === "gist") return r.gist;
+    if (lens === "reformat") return r.reformat.lines;
+    return r.extra?.[lens]?.lines || [];
+  }
   var KIND_NAMES = { irac: "IRAC", timeline: "Timeline", definitions: "Definitions", outline: "Outline" };
   var setRecenseDecos = StateEffect.define();
   var recenseField = StateField.define({
@@ -31330,10 +31435,11 @@ ${PAGE_MARKER}
     provide: (f) => EditorView.decorations.from(f)
   });
   var LensWidget = class extends WidgetType {
-    constructor(block, onTap) {
+    constructor(block, onTap, onAnswer) {
       super();
       this.block = block;
       this.onTap = onTap;
+      this.onAnswer = onAnswer;
       this.sig = JSON.stringify(block);
     }
     eq(other) {
@@ -31355,6 +31461,7 @@ ${PAGE_MARKER}
         row.type = "button";
         row.className = "rc-lens-line";
         if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: ROLE_NAMES[l.role] }));
+        if (l.role === "other" && LANG_TAGS[l.lang]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: LANG_TAGS[l.lang] }));
         row.append(document.createTextNode(l.text));
         if (l.added) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "added" }));
         else if (l.extract) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "extract" }));
@@ -31365,6 +31472,28 @@ ${PAGE_MARKER}
           this.onTap?.(l.from || []);
         });
         box.appendChild(row);
+        if (l.answer) {
+          const btn = Object.assign(document.createElement("button"), { type: "button", className: "rc-lens-reveal", textContent: "Show answer" });
+          const ans = Object.assign(document.createElement("div"), { className: "rc-lens-answer", textContent: l.answer, hidden: true });
+          btn.addEventListener("mousedown", (e) => e.preventDefault());
+          btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            ans.hidden = !ans.hidden;
+            btn.textContent = ans.hidden ? "Show answer" : "Hide answer";
+          });
+          box.append(btn, ans);
+        }
+        if (l.role === "question" && l.added && this.block.answerKey) {
+          const field = Object.assign(document.createElement("textarea"), {
+            className: "rc-lens-reply",
+            rows: 3,
+            placeholder: "Your answer",
+            value: this.block.answer || ""
+          });
+          field.setAttribute("aria-label", "Your answer to these facts");
+          field.addEventListener("change", () => this.onAnswer?.(this.block.answerKey, field.value));
+          box.appendChild(field);
+        }
       }
       return box;
     }
@@ -31373,7 +31502,7 @@ ${PAGE_MARKER}
     }
   };
   var citedMark = Decoration.mark({ class: "rc-recense-cited" });
-  function lensBlocks(sections, lens, { results, translations = /* @__PURE__ */ new Map(), stale = /* @__PURE__ */ new Map() }) {
+  function lensBlocks(sections, lens, { results, translations = /* @__PURE__ */ new Map(), stale = /* @__PURE__ */ new Map(), answers = /* @__PURE__ */ new Map() }) {
     const blocks = [];
     for (const s of sections) {
       const byKey = new Map(s.sentences.map((x) => [x.key, x]));
@@ -31410,8 +31539,35 @@ ${PAGE_MARKER}
           groups.get(at).push(l);
         }
         for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
-      } else {
+      } else if (lens === "reformat") {
         blocks.push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || "", tag, why: r.why, lines: r.reformat.lines });
+      } else {
+        const x = r.extra?.[lens];
+        if (!x) continue;
+        const xtag = x.engine === "model" ? "" : x.engine === "key terms" ? "key terms" : "";
+        if (!x.lines.length) {
+          blocks.push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || "nothing found", why: x.why, lines: [] });
+          continue;
+        }
+        if (lens === "retell") {
+          const paraEnd = /* @__PURE__ */ new Map();
+          for (const y of s.sentences) paraEnd.set(y.p, Math.max(paraEnd.get(y.p) ?? -1, y.to));
+          const groups = /* @__PURE__ */ new Map();
+          for (const l of x.lines) {
+            const at = paraEnd.get(l.para) ?? s.to;
+            if (!groups.has(at)) groups.set(at, []);
+            groups.get(at).push(l);
+          }
+          for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+        } else {
+          const b = { at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: xtag, why: x.why, lines: x.lines };
+          if (lens === "reapply") {
+            const facts = x.lines.find((l) => l.role === "facts")?.text || "";
+            b.answerKey = `${s.key}:${fnv1a(facts)}`;
+            b.answer = answers.get(b.answerKey) || "";
+          }
+          blocks.push(b);
+        }
       }
     }
     return blocks;
@@ -31451,6 +31607,15 @@ ${PAGE_MARKER}
     let lastDone = Number(load("rc-recense-last", 0)) || 0;
     let power = { onPower: true, percent: 100, at: 0 };
     let cited = [];
+    const answers = new Map(load("rc-recense-answers", []));
+    const reqLenses = /* @__PURE__ */ new Map();
+    function setAnswer(key, text) {
+      if (String(text).trim()) answers.set(key, String(text));
+      else answers.delete(key);
+      save("rc-recense-answers", [...answers].slice(-CACHE_MAX));
+      const s = current().find((x) => key.startsWith(`${x.key}:`));
+      if (s) saveRecensed(s.pageIndex);
+    }
     let frozen = null;
     let lastCard = "null";
     let reqN = 0;
@@ -31477,7 +31642,7 @@ ${PAGE_MARKER}
     function staleLines() {
       const out = /* @__PURE__ */ new Map();
       const sentenceOwner = /* @__PURE__ */ new Map();
-      for (const [key, r] of results) for (const l of [...r.gist, ...r.reformat?.lines || [], ...pageGist(r)]) for (const k of l.from) sentenceOwner.set(k, key);
+      for (const [key, r] of results) for (const l of [...r.gist, ...r.reformat?.lines || [], ...pageGist(r), ...EXTRA_LENSES.flatMap((x) => lensPool(r, x))]) for (const k of l.from) sentenceOwner.set(k, key);
       for (const s of current()) {
         if (results.has(s.key)) continue;
         const olds = new Set(s.sentences.map((x) => sentenceOwner.get(x.key)).filter(Boolean));
@@ -31485,7 +31650,7 @@ ${PAGE_MARKER}
         const lines = [];
         for (const k of olds) {
           const r = results.get(k);
-          const pool = lens === "gist" ? r.gist : lens === "reformat" ? r.reformat.lines : [];
+          const pool = lensPool(r, lens);
           lines.push(...reconcile(pool.filter((l) => l.from.length), live2).kept);
         }
         if (lines.length) out.set(s.key, lines);
@@ -31511,7 +31676,7 @@ ${PAGE_MARKER}
     function redraw() {
       const ranges = [];
       if (enabled) {
-        const blocks = lensBlocks(current(), lens, { results, translations: shownTranslations(), stale: staleLines() });
+        const blocks = lensBlocks(current(), lens, { results, translations: shownTranslations(), stale: staleLines(), answers });
         const text = getText();
         for (const b of blocks) {
           if (!b.lines.length && !b.head) continue;
@@ -31520,7 +31685,7 @@ ${PAGE_MARKER}
             const nl = text.indexOf("\n", at);
             at = nl < 0 ? text.length : nl;
           } else at = text.lastIndexOf("\n", at - 1) + 1;
-          ranges.push(Decoration.widget({ widget: new LensWidget(b, tap), block: true, side: b.side }).range(at));
+          ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer), block: true, side: b.side }).range(at));
         }
         const byKey = new Map(current().flatMap((s) => s.sentences.map((x) => [x.key, x])));
         for (const k of cited) {
@@ -31555,7 +31720,7 @@ ${PAGE_MARKER}
       } else {
         const r = results.get(s.key);
         if (!r) return null;
-        const pool = lens === "gist" ? r.gist : r.reformat.lines;
+        const pool = lensPool(r, lens);
         lines = pool.filter((l) => l.from.some((k) => inPara.has(k)));
       }
       if (!lines.length) return null;
@@ -31577,12 +31742,16 @@ ${PAGE_MARKER}
       const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
       return current().filter((s) => !results.has(s.key) && !busy.has(s.key) && t2 - (seen.get(s.key) ?? t2) >= QUIET_MS);
     }
-    function send(list) {
+    function lensesFor() {
+      return ["gist", "reformat", ...EXTRA_LENSES.includes(lens) && enabled ? [lens] : []];
+    }
+    function send(list, lenses = lensesFor()) {
       if (!list.length) return null;
       const id2 = `r${++reqN}`;
       inflight.set(id2, new Map(list.map((s) => [s.key, s])));
+      reqLenses.set(id2, lenses);
       if (post) {
-        post({ recenseSections: { id: id2, sections: list.map((s) => ({ key: s.key, kind: s.kind, sentences: s.sentences.map((x) => ({ key: x.key, text: x.text, p: x.p })) })) } });
+        post({ recenseSections: { id: id2, lenses, sections: list.map((s) => ({ key: s.key, kind: s.kind, sentences: s.sentences.map((x) => ({ key: x.key, text: x.text, p: x.p })) })) } });
       } else {
         for (const s of list) setSection(id2, { key: s.key, engine: "none", why: "no Recense app here" });
         done(id2);
@@ -31599,13 +31768,23 @@ ${PAGE_MARKER}
       const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
       const id2 = send(current().filter((s) => !results.has(s.key) && !busy.has(s.key)));
       if (lens === "source" && enabled) requestSource();
+      requestExtra();
       return id2;
+    }
+    function requestExtra() {
+      if (!enabled || !EXTRA_LENSES.includes(lens)) return null;
+      const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
+      return send(current().filter((s) => results.has(s.key) && !results.get(s.key).extra?.[lens] && !busy.has(s.key)), [lens]);
     }
     function setSection(id2, json) {
       const r = typeof json === "string" ? JSON.parse(json) : json;
       const s = inflight.get(id2)?.get(r?.key) || current().find((x) => x.key === r?.key);
       if (!s) return false;
-      const settled = settle(s, r);
+      const asked = reqLenses.get(id2) || ["gist", "reformat"];
+      const before = results.get(s.key);
+      const settled = asked.includes("gist") || !before ? settle(s, r) : before;
+      settled.extra = { ...before?.extra || {} };
+      for (const x of asked.filter((l) => EXTRA_LENSES.includes(l))) settled.extra[x] = settleExtra(s, x, r);
       results.set(s.key, settled);
       persist();
       saveRecensed(s.pageIndex);
@@ -31614,6 +31793,7 @@ ${PAGE_MARKER}
     }
     function done(id2) {
       inflight.delete(id2);
+      reqLenses.delete(id2);
       lastDone = now();
       persist();
       onChaptersChanged?.();
@@ -31677,7 +31857,14 @@ ${PAGE_MARKER}
             kind: r.reformat.kind,
             page: pageGist(r).map((l) => lensLineToLine(l, m++)),
             gist: r.gist.map((l) => ({ ...lensLineToLine(l, m++), para: l.para ?? null })),
-            reformat: r.reformat.lines.map((l) => ({ ...lensLineToLine(l, m++), role: l.role || null }))
+            reformat: r.reformat.lines.map((l) => ({ ...lensLineToLine(l, m++), role: l.role || null })),
+            ...Object.fromEntries(Object.entries(r.extra || {}).map(([x, v]) => [x, v.lines.map((l) => ({
+              ...lensLineToLine(l, m++),
+              role: l.role || null,
+              ...l.answer ? { answer: l.answer } : {},
+              ...l.lang ? { lang: l.lang } : {}
+            }))])),
+            answers: Object.fromEntries([...answers].filter(([k]) => k.startsWith(`${s.key}:`)))
           };
         })
       };
@@ -31710,6 +31897,7 @@ ${PAGE_MARKER}
       enabled = Boolean(on);
       save("rc-recense-on", enabled);
       if (enabled && lens === "source") requestSource();
+      requestExtra();
       redraw();
       return enabled;
     }
@@ -31718,6 +31906,7 @@ ${PAGE_MARKER}
       lens = name2;
       save("rc-recense-lens", lens);
       if (enabled && lens === "source") requestSource();
+      requestExtra();
       redraw();
       return lens;
     }
@@ -31787,7 +31976,9 @@ ${PAGE_MARKER}
       lastDone: () => lastDone,
       missing: () => missing,
       cardFor,
-      inflight
+      inflight,
+      answers,
+      setAnswer
     };
   }
 
@@ -32861,7 +33052,14 @@ ${PAGE_MARKER}
       if (typeof handlers2.recenseNow === "function") handlers2.recenseNow();
       return { matched: true, action: "recenseNow" };
     }
-    for (const [lens, words] of [["gist", ["gist", "\xFD ch\xEDnh"]], ["reformat", ["reformat", "irac", "tr\xECnh b\xE0y l\u1EA1i"]], ["source", ["source lens", "show source", "b\u1EA3n d\u1ECBch"]]]) {
+    for (const [lens, words] of [
+      ["gist", ["gist", "\xFD ch\xEDnh"]],
+      ["reformat", ["reformat", "irac", "tr\xECnh b\xE0y l\u1EA1i"]],
+      ["source", ["source lens", "show source", "b\u1EA3n d\u1ECBch"]],
+      ["retell", ["retell", "k\u1EC3 l\u1EA1i", "reformuler"]],
+      ["ask", ["ask me", "quiz me", "h\u1ECFi t\xF4i", "interroge-moi"]],
+      ["reapply", ["reapply", "apply it", "\xE1p d\u1EE5ng l\u1EA1i", "r\xE9appliquer"]]
+    ]) {
       if (words.some((w) => w.includes(" ") ? hasPhrase(w) : hasWord(w))) {
         if (typeof handlers2.setRecenseLens === "function") handlers2.setRecenseLens(lens);
         return { matched: true, action: "setRecenseLens", lens };
@@ -38713,7 +38911,7 @@ ${clean(nextLineText)}`;
     }
     const outlineToggleBtn = makeMenuItem("rc-outline-toggle-btn", "Chapters", "Chapters, Saved and Playlists");
     const recenseLayerBtn = makeMenuItem("rc-recense-layer-btn", "Recense layer", "Show recensed lines under your text");
-    const recenseLensBtn = makeMenuItem("rc-recense-lens-btn", "Lens: Gist", "Change the lens: Gist, Reformat, Source");
+    const recenseLensBtn = makeMenuItem("rc-recense-lens-btn", "Lens: Gist", "Change the lens: Gist, Retell, Reformat, Ask, Reapply, Source");
     const recenseNowBtn = makeMenuItem("rc-recense-now-btn", "Recense now", "Recense every section not yet recensed");
     const recenseIntoBtn = makeMenuItem("rc-recense-into-btn", "Translate into: Auto", "The Source lens\u2019s language for this page");
     const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
@@ -39377,7 +39575,11 @@ ${String(text ?? "")}`;
             extract: all.filter((l) => l.extract).length,
             dropped: r?.dropped ?? 0,
             droppedLines: r?.droppedLines || [],
-            mixed: all.filter((l) => !l.extract && isMixed({ ...l, lang: r.lang })).map((l) => l.text)
+            mixed: all.filter((l) => !l.extract && isMixed(
+              { ...l, lang: r.lang },
+              s.sentences.filter((x) => l.from.includes(x.key)).map((x) => x.text),
+              r.glossary
+            )).map((l) => l.text)
           };
         }) : null,
         recenseCardAt: (offset) => {

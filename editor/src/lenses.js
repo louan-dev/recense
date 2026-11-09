@@ -43,10 +43,35 @@ export const MIN_COVERAGE = 0.6;
 const VI_ONLY = /[ạảấầẩẫậăắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộơớờởỡợụủũưứừửữựỳỵỷỹđõã]/iu;
 const EN_GLUE = new Set('the of and is are was were which that with this from for'.split(' '));
 
-/** A line in two languages (the one-language rule): flagged by the app (`mixed`), or caught here as a backup. */
-export function isMixed(line) {
+// Cited in their own language, so never "mixing" (coordinator, M2): legal references (Điều 385, Article 6, § 2), code
+// and statute names (Bộ luật Dân sự 2015, Civil Code), names of two or more capitalised words (Carlill v Carbolic), when
+// they appear word for word in the sentences the line cites; and the glossary's terms. Only the rest must be one language.
+const REF_RE = /(?<![\p{L}\p{N}])(?:Điều|Khoản|Điểm|Mục|Chương|Article|Art\.|Section|Sec\.|§)\s*\d+[a-z]?/gu;
+const CODE_RE = /(?<![\p{L}\p{N}])(?:Bộ luật|Luật|Nghị định|Thông tư|Hiến pháp|Code civil|Code|Act|Loi)(?:\s+\p{Lu}\p{L}*(?:\s+\p{Ll}\p{L}*)?)?(?:\s+(?:năm\s+)?\d{4})?/gu;
+const NAME_RE = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}'’-]*(?:(?:\s+(?:v\.?|vs\.?))?\s+\p{Lu}[\p{L}'’-]*)+/gu;
+const squash = t => String(t).replace(/\s+/g, ' ').trim();
+
+/** The line without the spans that keep their own language (see above). */
+export function ownLanguageProse(text, sources = [], glossary = []) {
+  const src = sources.map(squash);
+  let out = String(text ?? '');
+  for (const re of [REF_RE, CODE_RE, NAME_RE]) {
+    out = out.replace(re, m => (src.some(s => s.includes(squash(m))) ? ' ' : m));
+  }
+  for (const g of glossary) {
+    const t = squash(g);
+    if (t) out = out.split(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu')).join(' ');
+  }
+  return out;
+}
+
+/**
+ * A line in two languages (the one-language rule): flagged by the app (`mixed`), or caught here as a backup, on the
+ * line's prose only (`sources`: the sentences it cites; `glossary`: terms kept as they are).
+ */
+export function isMixed(line, sources = [], glossary = []) {
   if (line?.mixed) return true;
-  const words = String(line?.text ?? '').toLowerCase().match(/[\p{L}]+/gu) || [];
+  const words = ownLanguageProse(line?.text, sources, glossary).toLowerCase().match(/[\p{L}]+/gu) || [];
   if (line?.lang === 'en') return words.filter(w => VI_ONLY.test(w)).length >= 2;
   if (line?.lang === 'vi') return words.filter(w => EN_GLUE.has(w)).length >= 2;
   return false;
@@ -58,15 +83,16 @@ export function isMixed(line) {
  * against its translation too. Returns the lines that pass, each with `from` (only keys that exist) or `added: true`;
  * the dropped ones apart (not in what they cite, or in two languages).
  */
-export function checkLines(lines, sentences, alt = {}) {
+export function checkLines(lines, sentences, alt = {}, glossary = []) {
   const pool = sentences.map(s => ({ key: s.key, text: alt[s.key] ? `${s.text} ${alt[s.key]}` : s.text }));
   const byKey = new Map(pool.map(s => [s.key, s.text]));
   const kept = [], dropped = [];
   for (const l of lines || []) {
     const text = String(l?.text ?? '').replace(/\s*[;,]?\s*\[s\d+(\s*,\s*s\d+)*\]/g, '').trim();   // ids belong in `from`
     if (!text) continue;
-    if (isMixed({ ...l, text })) { dropped.push({ ...l, text, why: 'two languages in one line' }); continue; }
     const from = (l.from || []).filter(k => byKey.has(k));
+    const cites = (from.length ? sentences.filter(x => from.includes(x.key)) : sentences).map(x => x.text);
+    if (isMixed({ ...l, text }, cites, glossary)) { dropped.push({ ...l, text, why: 'two languages in one line' }); continue; }
     if (from.length) {
       if (coverage(text, from.map(k => byKey.get(k))) >= MIN_COVERAGE) kept.push({ ...l, text, from });
       else {
@@ -193,10 +219,11 @@ export function settle(section, result) {
   const model = result && result.engine === 'model';
   const r = model ? result : ext;
   const alt = r.sourceIn || {};
+  const gl = r.glossary || [];
   const pOf = new Map(ss.map(s => [s.key, s.p]));
   const fill = l => (model ? { ...l, extract: true } : l);
 
-  const g = checkLines(r.gist, ss, alt);
+  const g = checkLines(r.gist, ss, alt, gl);
   const cited = g.kept.filter(l => l.from.length);
   const extBy = new Map(ext.gist.map(l => [l.para, l]));
   const gist = [...new Set(ss.map(s => s.p))].map(p =>
@@ -205,7 +232,7 @@ export function settle(section, result) {
     fill(extBy.get(p)));
 
   const pageN = Math.min(PAGE_LINES, ss.length);
-  const pg = checkLines(pageGist(r), ss, alt);
+  const pg = checkLines(pageGist(r), ss, alt, gl);
   // A page line that repeats a paragraph line adds nothing: it goes (counted as dropped), and the gap is filled.
   const same = new Set(gist.map(l => normText(l.text)));
   const repeats = pg.kept.filter(l => same.has(normText(l.text)));
@@ -220,9 +247,9 @@ export function settle(section, result) {
     const kind = reformatKind(ss);
     reformat = patternReformat(ss, kind === 'irac' ? 'outline' : kind);
   }
-  const ref = checkLines(reformat.lines, ss, alt);
+  const ref = checkLines(reformat.lines, ss, alt, gl);
   return {
-    key: section.key, engine: r.engine, why: r.why || '', title: String(r.title || '').trim() || ext.title, lang: r.lang || '',
+    key: section.key, engine: r.engine, why: r.why || '', glossary: gl, title: String(r.title || '').trim() || ext.title, lang: r.lang || '',
     page, whole: page[0] || null,
     gist,
     reformat: { kind: reformat.kind, lines: ref.kept },
@@ -232,4 +259,79 @@ export function settle(section, result) {
       .map(l => ({ text: l.text, why: l.why })),
     at: Date.now()
   };
+}
+
+// ── Retell, Ask, Reapply (M2) ─────────────────────────────────────────────────────────────────────────────────────
+export const EXTRA_LENSES = ['retell', 'ask', 'reapply'];
+
+/**
+ * Ask without a model: cloze cards from the key terms (brief: "Ask = cloze from NLTagger terms", labelled "key
+ * terms"). Per paragraph, its most central sentence with its rarest long term blanked; the term is the answer.
+ */
+export function askExtract(section) {
+  const ss = section.sentences;
+  const df = new Map();
+  for (const s of ss) for (const t of new Set(keyTerms(s.text))) df.set(t, (df.get(t) || 0) + 1);
+  const score = centrality(ss);
+  const best = new Map();
+  ss.forEach((s, i) => { if (!best.has(s.p) || score[i] > best.get(s.p).score) best.set(s.p, { s, score: score[i] }); });
+  const lines = [];
+  for (const { s } of best.values()) {
+    const terms = [...new Set(keyTerms(s.text))].filter(t => t.length >= 5 && !/^\p{N}+$/u.test(t));
+    if (!terms.length) continue;
+    const term = terms.sort((a, b) => (df.get(a) - df.get(b)) || (b.length - a.length))[0];
+    const at = s.text.toLowerCase().indexOf(term);
+    if (at < 0) continue;
+    const answer = s.text.slice(at, at + term.length);
+    lines.push({ text: `${s.text.slice(0, at)}_____${s.text.slice(at + term.length)}`, from: [s.key], role: 'cloze', answer, para: s.p });
+  }
+  return lines;
+}
+
+/**
+ * One extra lens for one section, checked: {engine, why, lines}.
+ * · Retell: per paragraph, a plain line (the notes' language) and one retold in the other language, checked against
+ *   the sentences' translations into it. Model only: no model, no retell (brief), said so.
+ * · Ask: questions with answers; a question whose answer fails the check goes with it. No model: cloze, "key terms".
+ * · Reapply: the rule (checked), then new facts and a question, labelled added. Model only.
+ */
+export function settleExtra(section, lens, result) {
+  const ss = section.sentences;
+  const model = result && result.engine === 'model';
+  const got = model ? result[lens] : null;
+  const gl = result?.glossary || [];
+  if (!got) {
+    if (lens === 'ask') return { engine: 'key terms', why: result?.why || '', lines: askExtract(section) };
+    return { engine: 'none', why: lens === 'retell' ? 'Retell needs the on-device model' : 'Reapply needs the on-device model', lines: [] };
+  }
+  const alt = result.sourceIn || {};
+  let lines = [], dropped = 0;
+  if (lens === 'retell') {
+    const plain = checkLines(got.lines.filter(l => l.role !== 'other'), ss, alt, gl);
+    const other = checkLines(got.lines.filter(l => l.role === 'other'), ss, result.sourceOther || {}, gl);
+    dropped = plain.dropped.length + other.dropped.length;
+    const paras = [...new Set(ss.map(s => s.p))];
+    for (const p of paras) {
+      const a = plain.kept.find(l => l.para === p && l.from.length);
+      const b = other.kept.find(l => l.para === p && l.from.length);
+      if (a) lines.push(a);
+      if (b) lines.push(b);
+    }
+  } else if (lens === 'ask') {
+    const ls = got.lines;
+    for (let i = 0; i + 1 < ls.length; i += 2) {
+      const q = checkLines([ls[i]], ss, alt, gl).kept[0];
+      const a = checkLines([ls[i + 1]], ss, alt, gl).kept[0];
+      // The question shows; its answer waits behind its own button (retrieval first).
+      if (q && a && a.from.length) lines.push({ ...q, from: q.from.length ? q.from : a.from, added: false, answer: a.text });
+      else dropped += 2;
+    }
+  } else {
+    const [rule, ...rest] = got.lines;
+    const r = checkLines([rule], ss, alt, gl);
+    dropped = r.dropped.length;
+    lines = [...r.kept, ...rest.filter(l => String(l.text || '').trim()).map(l => ({ ...l, from: [], added: true }))];
+  }
+  const why = lines.length ? '' : lens === 'reapply' ? 'no rule found in these notes' : 'no line passed the check';
+  return { engine: 'model', why, lines, dropped };
 }

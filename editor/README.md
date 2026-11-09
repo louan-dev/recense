@@ -102,11 +102,20 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   - **Reformat**: the structure already there (IRAC for law, a timeline for dates, definitions, else an outline);
   - **Source**: each sentence's translation, chosen per sentence (English → Vietnamese, anything else → English;
     **Translate into** changes it for the page).
-  Change the lens from **··· › Lens** or say "gist", "reformat", "source".
+  - **Retell**: under each paragraph, the same idea in plain words and retold (not translated) in the other language
+    (English ⇄ Vietnamese, anything else → English), tagged EN / VI. Needs the on-device model;
+  - **Ask**: questions that test understanding, each with its answer behind **Show answer**. Without the model: cloze
+    cards from your key terms, labelled **key terms**;
+  - **Reapply**: the rule you wrote, then new facts and a question (labelled **added**) and a field for your answer,
+    kept beside them (saved with the page's lenses, never in your text). Needs the on-device model;
+  Change the lens from **··· › Lens** or say "gist", "retell", "reformat", "ask me", "reapply", "source". A lens is
+  asked for only when you open it; after that it's cached like the rest.
 - **Citations**: tap a lens line and the sentences it comes from light up. A line that cites nothing says **added**.
   A line whose words aren't in what it cites is dropped, never shown (`src/lenses.js`).
   **One language per line**: a lens line is written wholly in the section's language (an English Gist of a Vietnamese
   sentence is fully English, checked against that sentence's translation); a line mixing two languages is dropped.
+  A statute, article or case name quoted word for word from your text (Điều 385 Bộ luật Dân sự 2015, Carlill v
+  Carbolic) and the glossary's terms keep their own language: only the rest of the line counts.
 - **When it runs**: a section untouched for 60 s, on power or with the battery above 30 %; or **··· › Recense now**
   (or say "recense now"). Never while you type. Each section (≤ ~1,500 words, cut at your headings) is cached by a hash
   of its sentences, so an edit redoes only that section; lines that cite untouched sentences stay meanwhile ("earlier").

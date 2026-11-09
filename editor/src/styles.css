@@ -1977,6 +1977,24 @@ html.rc-wings-page body {
 }
 .rc-lens-line:hover, .rc-lens-line:focus-visible { color: var(--rc-text); outline: none; }
 .rc-lens-role { font-weight: 600; margin-right: 6px; color: var(--rc-text); opacity: 0.7; }
+/* Ask: the answer waits behind one button; Reapply: your answer under the new facts. */
+.rc-lens-reveal { font: inherit; font-size: 0.85em; color: var(--rc-cyan); background: none; border: 0; padding: 2px 0 6px; cursor: pointer; }
+.rc-lens-answer { padding: 0 0 8px 12px; color: var(--rc-text); opacity: 0.85; }
+.rc-lens-reply { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 4px; font: inherit; color: var(--rc-text);
+  background: color-mix(in srgb, var(--rc-text) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rc-text) 18%, transparent);
+  border-radius: 6px; padding: 8px; resize: vertical; }
+/* Ask: one button shows the answer under its question. Reapply: your answer, beside the facts. */
+.rc-lens-reveal {
+  font: inherit; font-size: 0.86em; color: var(--rc-muted); background: none;
+  border: 1px solid var(--rc-border); border-radius: 8px; padding: 2px 10px; margin: 2px 0 6px; cursor: pointer;
+}
+.rc-lens-reveal:hover, .rc-lens-reveal:focus-visible { color: var(--rc-text); outline: none; }
+.rc-lens-answer { color: var(--rc-text); opacity: 0.85; padding: 0 0 6px; }
+.rc-lens-reply {
+  display: block; width: 100%; box-sizing: border-box; margin: 6px 0 2px; padding: 6px 8px;
+  font: inherit; color: var(--rc-text); background: transparent;
+  border: 1px solid var(--rc-border); border-radius: 8px; resize: vertical;
+}
 .rc-recense-cited { background: color-mix(in srgb, var(--rc-cyan) 22%, transparent); border-radius: 3px; }
 @media (prefers-reduced-motion: no-preference) {
   .rc-recense-cited { transition: background 160ms ease-out; }

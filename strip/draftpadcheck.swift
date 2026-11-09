@@ -65,6 +65,21 @@ func draftpadCheck(out: URL) -> Never {
             then()
         }
     }
+    /// M2's lenses, one at a time: switch, wait until every section has it (the model writes it then), screenshot.
+    func lensSteps(_ steps: [(String, String)], _ then: @escaping () -> Void) {
+        guard let (lens, name) = steps.first else { return then() }
+        let t = Date()
+        js("window.recenseEditor.closeWing('both'); window.recenseEditor.setRecenseLens('\(lens)'); true") { _ in
+            until("(s => s && s.inflight === 0 && document.querySelectorAll('.rc-lens-\(lens)').length > 0)(window.recenseEditor.recenseStatus())", timeout: 240) { ok in
+                js("[...document.querySelectorAll('.rc-lens-\(lens)')].map(e => e.innerText.replace(/\\s+/g, ' ')).join(' ¦ ')") { v in
+                    let text = (v as? String) ?? ""
+                    print("     \(lens): \(text.prefix(700))")
+                    note(ok && !text.contains("needs the model"), "\(lens) written by the on-device model in \(Int(Date().timeIntervalSince(t))) s")
+                    wait(0.6) { shot(name) { lensSteps(Array(steps.dropFirst()), then) } }
+                }
+            }
+        }
+    }
     func status(_ then: @escaping ([String: Any]) -> Void) { js("JSON.stringify(window.recenseEditor.recenseStatus())") { v in
         then((v as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? [:]) } }
     func finish() -> Never {
@@ -109,7 +124,7 @@ func draftpadCheck(out: URL) -> Never {
                                                         wait(0.8) { shot("5-wing-card") {
                                                             js("JSON.stringify({buttons: [...document.querySelectorAll('.rc-toolbar button')].filter(b => b.offsetParent).map(b => b.getAttribute('aria-label') || b.textContent.trim()), menu: [...document.querySelectorAll('.rc-menu-item')].filter(b => !b.hidden).map(b => b.textContent)})") { v in
                                                                 print("     ui: \(v ?? "")")
-                                                                finish()
+                                                                lensSteps([("retell", "6-retell"), ("ask", "7-ask"), ("reapply", "8-reapply")]) { finish() }
                                                             }
                                                         } }
                                                     }
@@ -126,7 +141,7 @@ func draftpadCheck(out: URL) -> Never {
         }
     }
     // Never hang: give up after 6 minutes.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 360) { note(false, "finished within 6 minutes"); finish() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 600) { note(false, "finished within 10 minutes"); finish() }
     app.run()
     exit(1)
 }

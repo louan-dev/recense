@@ -131,6 +131,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             cfg.userContentController.addUserScript(WKUserScript(
                 source: "window.__RECENSE_WING_SIDE = \(jsString(side));", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        RecenseText.glossary = { Glossary.terms.values.flatMap { $0.keys } }
         cfg.websiteDataStore = .default()
         if ephemeral { cfg.websiteDataStore = .nonPersistent() }   // `recense draftpad-check`: nothing of the owner's touched
         files = EmbedFiles(vault: vault, cache: cache)
@@ -620,6 +621,13 @@ func recenseTextSelftest() -> Bool {
           && !RecenseText.isMixed("A contract needs an offer, acceptance and consideration.", lang: "en", among: ["en", "vi"])
           && !RecenseText.isMixed("Hợp đồng là sự thỏa thuận giữa các bên về quyền và nghĩa vụ.", lang: "vi", among: ["en", "vi"]),
           "a lens line in two languages is flagged; a one-language line is not")
+    let viSrc = "The court said the deposit showed it. Theo Điều 385 Bộ luật Dân sự 2015, hợp đồng là sự thỏa thuận giữa các bên."
+    let prose = RecenseText.ownLanguageProse("The deposit showed intent, aligning with Theo Điều 385 Bộ luật Dân sự 2015.", sources: [viSrc])
+    check(!prose.contains("Điều") && !prose.contains("Dân sự"), "a statute cited as written is not prose", prose)
+    let half = RecenseText.ownLanguageProse("Under Điều 385 Bộ luật Dân sự 2015, a contract is a thỏa thuận giữa các bên.", sources: [viSrc])
+    check(half.contains("thỏa thuận giữa các bên"), "a half-translated clause stays prose (and counts)", half)
+    check(RecenseText.ownLanguageProse("He claimed bồi thường thiệt hại here.", sources: [], glossary: ["bồi thường thiệt hại"]).contains("bồi") == false,
+          "a glossary term keeps its language")
     check(RecenseText.otherLanguage("en") == "vi" && RecenseText.otherLanguage("fr") == "en", "Retell's other language: en ⇄ vi, else → en")
     #if canImport(ShowsKit)
     let tl = ls[0].transcriptLine(key: "a", chapter: "Offers")

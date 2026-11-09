@@ -14,18 +14,27 @@
 //   → {recenseCard:{original, translation} | null}: the wing card shows the caret's lens line while you write.
 import { StateField, StateEffect } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
-import { docSections, reconcile, sentenceLine, lensLineToLine } from './typedlines.js';
-import { settle, reformatKind, pageGist } from './lenses.js';
+import { docSections, reconcile, sentenceLine, lensLineToLine, fnv1a } from './typedlines.js';
+import { settle, settleExtra, reformatKind, pageGist, EXTRA_LENSES } from './lenses.js';
 import { inspectDraftpadPages } from './pages.js';
 import { pageSavedId, pageTitle } from './library.js';
 import { headingInsert } from './chapters.js';
 
-export const LENSES = ['gist', 'reformat', 'source'];
-export const LENS_NAMES = { gist: 'Gist', reformat: 'Reformat', source: 'Source' };
+export const LENSES = ['gist', 'retell', 'reformat', 'ask', 'reapply', 'source'];
+export const LENS_NAMES = { gist: 'Gist', retell: 'Retell', reformat: 'Reformat', ask: 'Ask', reapply: 'Reapply', source: 'Source' };
 export const QUIET_MS = 60_000;
 export const MIN_BATTERY = 30;
 const CACHE_MAX = 400;
-const ROLE_NAMES = { issue: 'Issue', rule: 'Rule', application: 'Application', conclusion: 'Conclusion' };
+const ROLE_NAMES = { issue: 'Issue', rule: 'Rule', application: 'Application', conclusion: 'Conclusion', facts: 'Facts', question: 'Question' };
+const LANG_TAGS = { en: 'EN', vi: 'VI', fr: 'FR' };
+
+/** The lines a lens shows for one settled result (Gist's paragraph lines, Reformat's, or an extra lens's). */
+export function lensPool(r, lens) {
+  if (!r) return [];
+  if (lens === 'gist') return r.gist;
+  if (lens === 'reformat') return r.reformat.lines;
+  return r.extra?.[lens]?.lines || [];
+}
 const KIND_NAMES = { irac: 'IRAC', timeline: 'Timeline', definitions: 'Definitions', outline: 'Outline' };
 
 // ── The layer's decorations (a state field: block widgets must come from one) ───────────────────────────────────────
@@ -41,7 +50,7 @@ export const recenseField = StateField.define({
 });
 
 class LensWidget extends WidgetType {
-  constructor(block, onTap) { super(); this.block = block; this.onTap = onTap; this.sig = JSON.stringify(block); }
+  constructor(block, onTap, onAnswer) { super(); this.block = block; this.onTap = onTap; this.onAnswer = onAnswer; this.sig = JSON.stringify(block); }
   eq(other) { return other.sig === this.sig; }
   toDOM() {
     const box = document.createElement('div');
@@ -59,6 +68,7 @@ class LensWidget extends WidgetType {
       row.type = 'button';
       row.className = 'rc-lens-line';
       if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-role', textContent: ROLE_NAMES[l.role] }));
+      if (l.role === 'other' && LANG_TAGS[l.lang]) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-role', textContent: LANG_TAGS[l.lang] }));
       row.append(document.createTextNode(l.text));
       if (l.added) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'added' }));
       else if (l.extract) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'extract' }));
@@ -66,6 +76,22 @@ class LensWidget extends WidgetType {
       row.addEventListener('mousedown', e => e.preventDefault());
       row.addEventListener('click', e => { e.preventDefault(); this.onTap?.(l.from || []); });
       box.appendChild(row);
+      if (l.answer) {
+        // Ask: the answer waits behind one button, so the question is answered from memory first.
+        const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'rc-lens-reveal', textContent: 'Show answer' });
+        const ans = Object.assign(document.createElement('div'), { className: 'rc-lens-answer', textContent: l.answer, hidden: true });
+        btn.addEventListener('mousedown', e => e.preventDefault());
+        btn.addEventListener('click', e => { e.preventDefault(); ans.hidden = !ans.hidden; btn.textContent = ans.hidden ? 'Show answer' : 'Hide answer'; });
+        box.append(btn, ans);
+      }
+      if (l.role === 'question' && l.added && this.block.answerKey) {
+        // Reapply: the student's answer, kept beside the facts (saved when the field is left).
+        const field = Object.assign(document.createElement('textarea'), { className: 'rc-lens-reply', rows: 3,
+          placeholder: 'Your answer', value: this.block.answer || '' });
+        field.setAttribute('aria-label', 'Your answer to these facts');
+        field.addEventListener('change', () => this.onAnswer?.(this.block.answerKey, field.value));
+        box.appendChild(field);
+      }
     }
     return box;
   }
@@ -78,7 +104,7 @@ const citedMark = Decoration.mark({ class: 'rc-recense-cited' });
  * The lens blocks for the sections, as plain data: [{at, side, lens, head?, tag?, why?, lines}] (at: a doc offset; the
  * block sits under that line, or above it with side −1). Pure, so tests read it without a DOM.
  */
-export function lensBlocks(sections, lens, { results, translations = new Map(), stale = new Map() }) {
+export function lensBlocks(sections, lens, { results, translations = new Map(), stale = new Map(), answers = new Map() }) {
   const blocks = [];
   for (const s of sections) {
     const byKey = new Map(s.sentences.map(x => [x.key, x]));
@@ -117,8 +143,32 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
         groups.get(at).push(l);
       }
       for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
-    } else {
+    } else if (lens === 'reformat') {
       blocks.push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || '', tag, why: r.why, lines: r.reformat.lines });
+    } else {
+      const x = r.extra?.[lens];
+      if (!x) continue;                                   // asked for; on its way
+      const xtag = x.engine === 'model' ? '' : x.engine === 'key terms' ? 'key terms' : '';
+      if (!x.lines.length) { blocks.push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || 'nothing found', why: x.why, lines: [] }); continue; }
+      if (lens === 'retell') {
+        const paraEnd = new Map();
+        for (const y of s.sentences) paraEnd.set(y.p, Math.max(paraEnd.get(y.p) ?? -1, y.to));
+        const groups = new Map();
+        for (const l of x.lines) {
+          const at = paraEnd.get(l.para) ?? s.to;
+          if (!groups.has(at)) groups.set(at, []);
+          groups.get(at).push(l);
+        }
+        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+      } else {
+        const b = { at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: xtag, why: x.why, lines: x.lines };
+        if (lens === 'reapply') {
+          const facts = x.lines.find(l => l.role === 'facts')?.text || '';
+          b.answerKey = `${s.key}:${fnv1a(facts)}`;
+          b.answer = answers.get(b.answerKey) || '';
+        }
+        blocks.push(b);
+      }
     }
   }
   return blocks;
@@ -141,6 +191,14 @@ export function createRecense({
   let lastDone = Number(load('rc-recense-last', 0)) || 0;
   let power = { onPower: true, percent: 100, at: 0 };
   let cited = [];
+  const answers = new Map(load('rc-recense-answers', []));        // Reapply: section key + facts hash → your answer
+  const reqLenses = new Map();                                    // request id → the lenses it asked for
+  function setAnswer(key, text) {
+    if (String(text).trim()) answers.set(key, String(text)); else answers.delete(key);
+    save('rc-recense-answers', [...answers].slice(-CACHE_MAX));
+    const s = current().find(x => key.startsWith(`${x.key}:`));
+    if (s) saveRecensed(s.pageIndex);
+  }
   let frozen = null;                                              // the titles as the Chapters panel opened
   let lastCard = 'null';
   let reqN = 0;
@@ -171,7 +229,7 @@ export function createRecense({
   function staleLines() {
     const out = new Map();
     const sentenceOwner = new Map();
-    for (const [key, r] of results) for (const l of [...r.gist, ...(r.reformat?.lines || []), ...pageGist(r)]) for (const k of l.from) sentenceOwner.set(k, key);
+    for (const [key, r] of results) for (const l of [...r.gist, ...(r.reformat?.lines || []), ...pageGist(r), ...EXTRA_LENSES.flatMap(x => lensPool(r, x))]) for (const k of l.from) sentenceOwner.set(k, key);
     for (const s of current()) {
       if (results.has(s.key)) continue;
       const olds = new Set(s.sentences.map(x => sentenceOwner.get(x.key)).filter(Boolean));
@@ -179,7 +237,7 @@ export function createRecense({
       const lines = [];
       for (const k of olds) {
         const r = results.get(k);
-        const pool = lens === 'gist' ? r.gist : lens === 'reformat' ? r.reformat.lines : [];
+        const pool = lensPool(r, lens);
         lines.push(...reconcile(pool.filter(l => l.from.length), live).kept);
       }
       if (lines.length) out.set(s.key, lines);
@@ -208,7 +266,7 @@ export function createRecense({
   function redraw() {
     const ranges = [];
     if (enabled) {
-      const blocks = lensBlocks(current(), lens, { results, translations: shownTranslations(), stale: staleLines() });
+      const blocks = lensBlocks(current(), lens, { results, translations: shownTranslations(), stale: staleLines(), answers });
       const text = getText();
       for (const b of blocks) {
         if (!b.lines.length && !b.head) continue;
@@ -216,7 +274,7 @@ export function createRecense({
         let at = Math.max(0, Math.min(text.length, b.at));
         if (b.side > 0) { const nl = text.indexOf('\n', at); at = nl < 0 ? text.length : nl; }
         else at = text.lastIndexOf('\n', at - 1) + 1;
-        ranges.push(Decoration.widget({ widget: new LensWidget(b, tap), block: true, side: b.side }).range(at));
+        ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer), block: true, side: b.side }).range(at));
       }
       const byKey = new Map(current().flatMap(s => s.sentences.map(x => [x.key, x])));
       for (const k of cited) { const x = byKey.get(k); if (x && x.to > x.from) ranges.push(citedMark.range(x.from, x.to)); }
@@ -248,7 +306,7 @@ export function createRecense({
     } else {
       const r = results.get(s.key);
       if (!r) return null;
-      const pool = lens === 'gist' ? r.gist : r.reformat.lines;
+      const pool = lensPool(r, lens);
       lines = pool.filter(l => l.from.some(k => inPara.has(k)));
     }
     if (!lines.length) return null;
@@ -273,12 +331,16 @@ export function createRecense({
     return current().filter(s => !results.has(s.key) && !busy.has(s.key) && t - (seen.get(s.key) ?? t) >= QUIET_MS);
   }
 
-  function send(list) {
+  /** What a pass asks for: Gist and Reformat always (chapters need the title), plus the lens on screen if extra. */
+  function lensesFor() { return ['gist', 'reformat', ...(EXTRA_LENSES.includes(lens) && enabled ? [lens] : [])]; }
+
+  function send(list, lenses = lensesFor()) {
     if (!list.length) return null;
     const id = `r${++reqN}`;
     inflight.set(id, new Map(list.map(s => [s.key, s])));
+    reqLenses.set(id, lenses);
     if (post) {
-      post({ recenseSections: { id, sections: list.map(s => ({ key: s.key, kind: s.kind, sentences: s.sentences.map(x => ({ key: x.key, text: x.text, p: x.p })) })) } });
+      post({ recenseSections: { id, lenses, sections: list.map(s => ({ key: s.key, kind: s.kind, sentences: s.sentences.map(x => ({ key: x.key, text: x.text, p: x.p })) })) } });
     } else {
       // No host (a browser): the extractive lenses, at once.
       for (const s of list) setSection(id, { key: s.key, engine: 'none', why: 'no Recense app here' });
@@ -300,14 +362,26 @@ export function createRecense({
     const busy = new Set([...inflight.values()].flatMap(m => [...m.keys()]));
     const id = send(current().filter(s => !results.has(s.key) && !busy.has(s.key)));
     if (lens === 'source' && enabled) requestSource();
+    requestExtra();
     return id;
+  }
+
+  /** The extra lens on screen, for sections recensed without it (asked once; the answer is cached like the rest). */
+  function requestExtra() {
+    if (!enabled || !EXTRA_LENSES.includes(lens)) return null;
+    const busy = new Set([...inflight.values()].flatMap(m => [...m.keys()]));
+    return send(current().filter(s => results.has(s.key) && !results.get(s.key).extra?.[lens] && !busy.has(s.key)), [lens]);
   }
 
   function setSection(id, json) {
     const r = typeof json === 'string' ? JSON.parse(json) : json;
     const s = inflight.get(id)?.get(r?.key) || current().find(x => x.key === r?.key);
     if (!s) return false;
-    const settled = settle(s, r);
+    const asked = reqLenses.get(id) || ['gist', 'reformat'];
+    const before = results.get(s.key);
+    const settled = asked.includes('gist') || !before ? settle(s, r) : before;
+    settled.extra = { ...(before?.extra || {}) };
+    for (const x of asked.filter(l => EXTRA_LENSES.includes(l))) settled.extra[x] = settleExtra(s, x, r);
     results.set(s.key, settled);
     persist();
     saveRecensed(s.pageIndex);
@@ -317,6 +391,7 @@ export function createRecense({
 
   function done(id) {
     inflight.delete(id);
+    reqLenses.delete(id);
     lastDone = now();
     persist();
     onChaptersChanged?.();
@@ -374,7 +449,10 @@ export function createRecense({
         return { key: s.key, engine: r.engine, title: r.title, kind: r.reformat.kind,
           page: pageGist(r).map(l => lensLineToLine(l, m++)),
           gist: r.gist.map(l => ({ ...lensLineToLine(l, m++), para: l.para ?? null })),
-          reformat: r.reformat.lines.map(l => ({ ...lensLineToLine(l, m++), role: l.role || null })) };
+          reformat: r.reformat.lines.map(l => ({ ...lensLineToLine(l, m++), role: l.role || null })),
+          ...Object.fromEntries(Object.entries(r.extra || {}).map(([x, v]) => [x, v.lines.map(l => ({ ...lensLineToLine(l, m++),
+            role: l.role || null, ...(l.answer ? { answer: l.answer } : {}), ...(l.lang ? { lang: l.lang } : {}) }))])),
+          answers: Object.fromEntries([...answers].filter(([k]) => k.startsWith(`${s.key}:`))) };
       })
     };
     post({ recenseSave: { pageId, json: JSON.stringify(doc) } });
@@ -405,6 +483,7 @@ export function createRecense({
     enabled = Boolean(on);
     save('rc-recense-on', enabled);
     if (enabled && lens === 'source') requestSource();
+    requestExtra();
     redraw();
     return enabled;
   }
@@ -413,6 +492,7 @@ export function createRecense({
     lens = name;
     save('rc-recense-lens', lens);
     if (enabled && lens === 'source') requestSource();
+    requestExtra();
     redraw();
     return lens;
   }
@@ -455,6 +535,6 @@ export function createRecense({
     setEnabled, isEnabled: () => enabled, setLens, nextLens, getLens: () => lens, setTarget, getTarget: targetFor,
     setPowerState: (onPower, percent) => { power = { onPower: Boolean(onPower), percent: Number(percent) || 0, at: now() }; },
     powerOK, due, sections: current, results, freeze, unfreeze, titles, makeHeading,
-    lastDone: () => lastDone, missing: () => missing, cardFor, inflight
+    lastDone: () => lastDone, missing: () => missing, cardFor, inflight, answers, setAnswer
   };
 }

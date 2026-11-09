@@ -249,7 +249,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   // Recense what you typed (recense.js): the layer, its lens, and recensing now. Translate into: the Source lens's
   // language for this page (Auto: English → Vietnamese, anything else → English).
   const recenseLayerBtn = makeMenuItem('rc-recense-layer-btn', 'Recense layer', 'Show recensed lines under your text');
-  const recenseLensBtn = makeMenuItem('rc-recense-lens-btn', 'Lens: Gist', 'Change the lens: Gist, Reformat, Source');
+  const recenseLensBtn = makeMenuItem('rc-recense-lens-btn', 'Lens: Gist', 'Change the lens: Gist, Retell, Reformat, Ask, Reapply, Source');
   const recenseNowBtn = makeMenuItem('rc-recense-now-btn', 'Recense now', 'Recense every section not yet recensed');
   const recenseIntoBtn = makeMenuItem('rc-recense-into-btn', 'Translate into: Auto', 'The Source lens’s language for this page');
   const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
@@ -910,7 +910,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
         const all = r ? [...(r.page || []), ...r.gist, ...r.reformat.lines] : [];
         return { paras: new Set(s.sentences.map(x => x.p)).size, sentences: s.sentences.length, lang: r?.lang || '',
           gist: r?.gist.length ?? -1, page: r?.page?.length ?? -1, extract: all.filter(l => l.extract).length,
-          dropped: r?.dropped ?? 0, droppedLines: r?.droppedLines || [], mixed: all.filter(l => !l.extract && isMixed({ ...l, lang: r.lang })).map(l => l.text) };
+          dropped: r?.dropped ?? 0, droppedLines: r?.droppedLines || [], mixed: all.filter(l => !l.extract && isMixed({ ...l, lang: r.lang },
+            s.sentences.filter(x => l.from.includes(x.key)).map(x => x.text), r.glossary)).map(l => l.text) };
       }) : null),
       recenseCardAt: offset => {
         const card = recense ? recense.cardFor(Number(offset)) : null;

@@ -367,7 +367,12 @@ the page gist; every line is asked for in the section's language by name, a line
 (`isMixed`), and the section's other-language sentences go to the page translated, for the citation check.
 **Check the real app without touching your notes:** `strip/recense draftpad-check <folder>` runs the installed editor,
 this file and the on-device model on a test page in an off-screen window with throwaway storage, checks the Gist shape,
-one language per line, per-sentence Source, Chapters and the wing card, and saves a PNG per view (about 40 s on the M1).
+one language per line, per-sentence Source, Chapters, the wing card, then Retell, Ask and Reapply, and saves a PNG per
+view (about 4 min on the M1: ~20 s a section for Gist + IRAC, ~25–30 s a section for each further lens).
+M2 slice 2: Retell (plain line + the other language, given the sentences' own translation as its term reference), Ask
+(question + answer) and Reapply (rule + new facts that turn on its elements, never the outcome) are asked for only when
+the page opens that lens. Statutes, articles and case names quoted from the notes, and the glossary's terms
+(`RecenseText.glossary`, set from `Glossary` on the Mac), keep their own language inside a line.
 `shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
 `phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
 the same copy.

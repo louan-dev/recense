@@ -108,10 +108,37 @@ enum RecenseText {
         return out
     }
 
-    /// A line written partly in another language: two or more 3-word stretches read confidently as another language.
-    /// (One is noise, or a case name kept as it is.)
-    static func isMixed(_ text: String, lang: String, among: [String]) -> Bool {
-        let w = text.split(whereSeparator: \.isWhitespace).map(String.init)
+    /// Terms kept as they are (the Mac's transcription glossary; empty on iOS until it has one). Set by the host.
+    @MainActor static var glossary: () -> [String] = { [] }
+
+    // Cited in their own language, so never "mixing" (coordinator, M2): legal references, code and statute names and
+    // names of two or more capitalised words found word for word in the cited sentences, and glossary terms. The same
+    // rule as `ownLanguageProse` in editor/src/lenses.js.
+    static let ownLanguagePatterns = [
+        #"(?<![\p{L}\p{N}])(?:Điều|Khoản|Điểm|Mục|Chương|Article|Art\.|Section|Sec\.|§)\s*\d+[a-z]?"#,
+        #"(?<![\p{L}\p{N}])(?:Bộ luật|Luật|Nghị định|Thông tư|Hiến pháp|Code civil|Code|Act|Loi)(?:\s+\p{Lu}\p{L}*(?:\s+\p{Ll}\p{L}*)?)?(?:\s+(?:năm\s+)?\d{4})?"#,
+        #"(?<![\p{L}\p{N}])\p{Lu}[\p{L}'’-]*(?:(?:\s+(?:v\.?|vs\.?))?\s+\p{Lu}[\p{L}'’-]*)+"#
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
+
+    static func ownLanguageProse(_ text: String, sources: [String], glossary: [String] = []) -> String {
+        let squash = { (t: String) in t.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let src = sources.map(squash)
+        var out = text
+        for re in ownLanguagePatterns {
+            let ns = out as NSString
+            for m in re.matches(in: out, range: NSRange(location: 0, length: ns.length)).reversed() {
+                let span = ns.substring(with: m.range)
+                if src.contains(where: { $0.contains(squash(span)) }) { out = (out as NSString).replacingCharacters(in: m.range, with: " ") }
+            }
+        }
+        for g in glossary where !g.isEmpty { out = out.replacingOccurrences(of: g, with: " ", options: [.caseInsensitive]) }
+        return out
+    }
+
+    /// A line written partly in another language: two or more 3-word stretches of its prose read confidently as another
+    /// language. (One is noise.) `sources`: the sentences it cites, for the spans that keep their own language.
+    static func isMixed(_ text: String, lang: String, among: [String], sources: [String] = [], glossary: [String] = []) -> Bool {
+        let w = ownLanguageProse(text, sources: sources, glossary: glossary).split(whereSeparator: \.isWhitespace).map(String.init)
         guard w.count >= 3 else { return false }
         var other = 0
         for i in 0...(w.count - 3) {
@@ -215,8 +242,8 @@ enum RecenseText {
         var props: [DynamicGenerationSchema.Property] = []
         for (n, idx) in ps.enumerated() {
             let ids = idx.map { "s\($0 + 1)" }.joined(separator: ", ")
-            props.append(cited("p\(n + 1)", "Paragraph \(n + 1) (sentences \(ids)) said again in plain everyday \(l), as to a friend; cite only \(ids)"))
-            props.append(cited("p\(n + 1)\(other)", "The same idea retold for a \(o) speaker, written entirely in \(o) (not a word-for-word translation); cite only \(ids)"))
+            props.append(cited("p\(n + 1)", "Paragraph \(n + 1) (sentences \(ids)) said again in plain everyday \(l), as to a friend, keeping the notes' legal terms exactly as written; cite only \(ids)"))
+            props.append(cited("p\(n + 1)\(other)", "The same idea retold for a \(o) speaker, written entirely in \(o) (not a word-for-word translation), using the legal terms of the reference translation; cite only \(ids)"))
         }
         return try GenerationSchema(root: DynamicGenerationSchema(name: "Retell", properties: props), dependencies: [citedSchema])
     }
@@ -238,7 +265,7 @@ enum RecenseText {
         let name = languageName(lang)
         return try GenerationSchema(root: DynamicGenerationSchema(name: "Reapply", properties: [
             cited("rule", "The rule of law the notes state, in \(name), as they state it"),
-            field("facts", "A new, short set of facts in \(name) (different people, a different setting) where that rule decides the outcome; 2 or 3 sentences",
+            field("facts", "A new, short set of facts in \(name) (different people, a different setting) that turns on each element of that rule, so applying the rule decides it; 2 or 3 sentences; never state the outcome",
                   DynamicGenerationSchema(type: String.self)),
             field("question", "The question to answer about those facts, in \(name), ending with ?", DynamicGenerationSchema(type: String.self))
         ]), dependencies: [citedSchema])
@@ -280,7 +307,8 @@ enum RecenseText {
                 .trimmingCharacters(in: .whitespaces)
             let from = (try c.value([String].self, forProperty: "from")).compactMap { toKey[$0.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))] }
             var o: [String: Any] = ["text": t, "from": from, "lang": lineLang]
-            if isMixed(t, lang: lineLang, among: langs) { o["mixed"] = true }
+            let cites = section.sentences.filter { from.contains($0.key) }.map(\.text)
+            if isMixed(t, lang: lineLang, among: langs, sources: cites.isEmpty ? section.sentences.map(\.text) : cites, glossary: gloss) { o["mixed"] = true }
             if let role { o["role"] = role }
             if let para { o["para"] = para }
             return o
@@ -292,7 +320,9 @@ enum RecenseText {
             try await LanguageModelSession(instructions: instructions(lang)).respond(to: prompt, schema: schema, options: options).content
         }
         let paraOf = ps.map { section.sentences[$0[0]].p ?? 0 }
-        var out: [String: Any] = ["key": section.key, "engine": "model", "lang": lang, "other": other]
+        let lower = text.lowercased()
+        let gloss = await MainActor.run { glossary() }.filter { $0.count >= 3 && lower.contains($0.lowercased()) }
+        var out: [String: Any] = ["key": section.key, "engine": "model", "lang": lang, "other": other, "glossary": gloss]
         do {
             if want.contains("gist") {
                 var lines: [[String: Any]] = []
@@ -319,16 +349,21 @@ enum RecenseText {
             }
             if want.contains("retell") {
                 var lines: [[String: Any]] = []
+                let sourceOther = await sourceIn(other, section.sentences)
                 for start in stride(from: 0, to: ps.count, by: retellChunk) {
                     let group = Array(ps[start..<min(ps.count, start + retellChunk)])
-                    let r = try await ask("Retell these notes, paragraph by paragraph.\n\(page(group))", try retellSchema(paragraphs: group, lang: lang, other: other))
+                    // The sentences' own translation, as the term reference for the other-language line (M2 check: without
+                    // it the model drifted to "Giao ước" for "hợp đồng").
+                    let ref = sourceOther.isEmpty ? "" : "\n\nReference translation into \(languageName(other)), for terms only:\n" +
+                        group.flatMap { $0 }.compactMap { i in sourceOther[section.sentences[i].key].map { "[s\(i + 1)] \($0)" } }.joined(separator: "\n")
+                    let r = try await ask("Retell these notes, paragraph by paragraph.\n\(page(group))\(ref)", try retellSchema(paragraphs: group, lang: lang, other: other))
                     for n in group.indices {
                         lines.append(try cite(try r.value(GeneratedContent.self, forProperty: "p\(n + 1)"), role: "plain", para: paraOf[start + n]))
                         lines.append(try cite(try r.value(GeneratedContent.self, forProperty: "p\(n + 1)\(other)"), role: "other", para: paraOf[start + n], lineLang: other))
                     }
                 }
                 out["retell"] = ["lines": lines]
-                out["sourceOther"] = await sourceIn(other, section.sentences)
+                out["sourceOther"] = sourceOther
             }
             if want.contains("ask") {
                 let a = try await ask("Write questions that test whether someone understood these notes.\n\(page())",
@@ -340,8 +375,8 @@ enum RecenseText {
                 }
                 out["ask"] = ["lines": lines]
             }
-            if want.contains("reapply"), (section.kind ?? "irac") == "irac" {
-                let r = try await ask("State the rule in these notes, then invent new facts that test it.\n\(page())", try reapplySchema(lang: lang))
+            if want.contains("reapply") {
+                let r = try await ask("State the rule in these notes, then invent new facts that test each of its elements, without giving the answer.\n\(page())", try reapplySchema(lang: lang))
                 out["reapply"] = ["lines": [
                     try cite(try r.value(GeneratedContent.self, forProperty: "rule"), role: "rule"),
                     ["text": try r.value(String.self, forProperty: "facts"), "from": [String](), "role": "facts", "lang": lang, "added": true],
