@@ -32,6 +32,9 @@ public struct TranscriptLine: Identifiable, Codable, Hashable, Sendable {
 
 /// What is lit at a time: the rules, apart from the view, so they can be tested.
 public enum TranscriptLight {
+    /// How often the lit word is redrawn: the screen's rate, capped at 60 a second (the Mac's light runs on its display
+    /// link). At 12 a second a word could light up to 83 ms late, over the 50 ms the owner allows against the Mac.
+    public static let frame: Double = 1.0 / 60
     /// The line being heard at `t`: the last one that has begun (nil before the first).
     public static func active(_ lines: [TranscriptLine], at t: Double) -> Int? {
         var lo = 0, hi = lines.count
@@ -112,7 +115,7 @@ public struct TranscriptView<Extra: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// - lines: in time order. title: the episode's (shared lines say where they're from). seed: the show's colours.
-    /// - time: the playhead now (nil: nothing is playing, so nothing is lit). ticking: read it ~12 times a second.
+    /// - time: the playhead now (nil: nothing is playing, so nothing is lit). ticking: read it every frame (TranscriptLight.frame).
     /// - active: the line being heard, when the host knows it better than the times do (Listen's live captions).
     /// - seek: plays from a time; nil where the audio can't be moved (another app's).
     /// - duration: the episode's length; with `seek`, our scrubber sits under the transcript (Scrubber.swift), and it
@@ -138,7 +141,7 @@ public struct TranscriptView<Extra: View>: View {
                 Text(empty).font(.system(.title2, design: .serif)).foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center).padding(Theme.gutter).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                TimelineView(.periodic(from: .now, by: ticking ? 1.0 / 12 : 3600)) { _ in
+                TimelineView(.animation(minimumInterval: TranscriptLight.frame, paused: !ticking)) { _ in
                     let t = now()
                     let a = active ?? t.flatMap { TranscriptLight.active(lines, at: $0) }
                     ScrollViewReader { proxy in

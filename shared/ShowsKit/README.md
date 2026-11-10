@@ -34,6 +34,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Reduce Motion: it jumps instead of scrolling. `TranscriptLine` / `TranscriptWord` are its data; `TranscriptLight`
     its rules (which line, how much of it is said: by word times, else by time at a whole word, in any language).
     Used by iOS Listen and Now Playing.
+    The light redraws every screen frame, at most 60 a second (`TranscriptLight.frame`), as the Mac's display link
+    does; at the old 12 a second a word could light up to 83 ms late (the owner's bar is 50 ms against the Mac).
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

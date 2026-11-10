@@ -100,4 +100,14 @@ final class TranscriptTests: XCTestCase {
         t.skip(-15)
         XCTAssertEqual(t.time, 5)
     }
+
+    /// The light may be at most one frame late, and a frame must stay well inside the owner's 50 ms bar against the Mac
+    /// (it was 1/12 s: up to 83 ms late). The view's light must use this frame, not a slower timer of its own.
+    func testLightRedrawsWellInsideFiftyMilliseconds() throws {
+        XCTAssertLessThanOrEqual(TranscriptLight.frame, 1.0 / 60 + 1e-9)
+        let src = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Sources/ShowsKit/Views/Transcript.swift").standardizedFileURL, encoding: .utf8)
+        XCTAssertTrue(src.contains("TimelineView(.animation(minimumInterval: TranscriptLight.frame"))
+        XCTAssertFalse(src.contains("by: ticking ? 1.0 / 12"))
+    }
 }
