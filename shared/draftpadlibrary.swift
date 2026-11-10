@@ -80,6 +80,9 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
         synth.delegate = self
     }
 
+    /// 1 normally; `recense draftpad-check` sets 0 so its read-aloud step makes no sound on the owner's Mac.
+    static var volume: Float = 1
+
     func speak(id: String, parts: [String], lang: String?) {
         stop()
         self.id = id
@@ -88,6 +91,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
             let u = AVSpeechUtterance(string: p)
             u.rate = AVSpeechUtteranceDefaultSpeechRate
             u.voice = ReadAloud.bestVoice(for: p, lang: lang)
+            u.volume = ReadAloud.volume
             index[ObjectIdentifier(u)] = k
             remaining += 1
             synth.speak(u)

@@ -418,6 +418,10 @@ export function executeVoiceMove(commandStr, handlers = {}) {
 
   // 3b. Recense what you typed: "recense now", "recense layer" (on/off), the lenses (gist, retell, reformat, ask me,
   //     reapply, source).
+  if (['read lens', 'read the lens', 'read lens aloud', 'đọc lens', 'đọc to lens', 'lire la lentille'].some(p => hasPhrase(p))) {
+    if (typeof handlers.readRecenseLens === 'function') handlers.readRecenseLens();
+    return { matched: true, action: 'readRecenseLens' };
+  }
   if (hasPhrase('recense now') || hasPhrase('recense lại') || hasPhrase('recenser maintenant')) {
     if (typeof handlers.recenseNow === 'function') handlers.recenseNow();
     return { matched: true, action: 'recenseNow' };

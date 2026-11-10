@@ -50,12 +50,24 @@ export const recenseField = StateField.define({
 });
 
 class LensWidget extends WidgetType {
-  constructor(block, onTap, onAnswer) { super(); this.block = block; this.onTap = onTap; this.onAnswer = onAnswer; this.sig = JSON.stringify(block); }
+  constructor(block, onTap, onAnswer, onPlay) {
+    super(); this.block = block; this.onTap = onTap; this.onAnswer = onAnswer; this.onPlay = onPlay; this.sig = JSON.stringify(block);
+  }
   eq(other) { return other.sig === this.sig; }
   toDOM() {
     const box = document.createElement('div');
     box.className = `rc-lens rc-lens-${this.block.lens}`;
     box.setAttribute('aria-label', `Recense ${LENS_NAMES[this.block.lens] || ''}`);
+    if (this.block.sec) box.dataset.sec = this.block.sec;
+    if (this.block.lines.length && this.onPlay) {
+      // Read this block aloud (every lens can be heard); pressed again, it stops.
+      const play = Object.assign(document.createElement('button'), { type: 'button', className: 'rc-lens-play', textContent: '▶' });
+      play.setAttribute('aria-label', 'Read this lens aloud');
+      play.title = 'Read aloud';
+      play.addEventListener('mousedown', e => e.preventDefault());
+      play.addEventListener('click', e => { e.preventDefault(); this.onPlay([box]); });
+      box.appendChild(play);
+    }
     if (this.block.head || this.block.tag) {
       const head = document.createElement('div');
       head.className = 'rc-lens-head';
@@ -69,7 +81,8 @@ class LensWidget extends WidgetType {
       row.className = 'rc-lens-line';
       if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-role', textContent: ROLE_NAMES[l.role] }));
       if (l.role === 'other' && LANG_TAGS[l.lang]) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-role', textContent: LANG_TAGS[l.lang] }));
-      row.append(document.createTextNode(l.text));
+      row._rcText = document.createTextNode(l.text);      // read aloud: the word being spoken is lit in here
+      row.append(row._rcText);
       if (l.added) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'added' }));
       else if (l.extract) row.append(Object.assign(document.createElement('span'), { className: 'rc-lens-added', textContent: 'extract' }));
       row.title = l.added ? 'Recense added this: it is not in your text' : 'Tap to light the sentences it comes from';
@@ -107,6 +120,7 @@ const citedMark = Decoration.mark({ class: 'rc-recense-cited' });
 export function lensBlocks(sections, lens, { results, translations = new Map(), stale = new Map(), answers = new Map() }) {
   const blocks = [];
   for (const s of sections) {
+    const push = b => blocks.push({ ...b, sec: s.key });   // `sec`: read aloud finds the section's blocks by it
     const byKey = new Map(s.sentences.map(x => [x.key, x]));
     const endOf = keys => Math.max(...keys.map(k => byKey.get(k)?.to ?? -1));
     if (lens === 'source') {
@@ -119,7 +133,7 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
         g.at = Math.max(g.at, x.to);
         g.lines.push({ text: t, from: [x.key] });
       }
-      for (const g of byPara.values()) blocks.push({ at: g.at, side: 1, lens, lines: g.lines });
+      for (const g of byPara.values()) push({ at: g.at, side: 1, lens, lines: g.lines });
       continue;
     }
     const r = results.get(s.key);
@@ -127,12 +141,12 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
     if (!r) {
       // Not recensed in this form yet: the lines of an earlier recense that still cite live sentences stay.
       const kept = stale.get(s.key) || [];
-      if (kept.length) blocks.push({ at: s.to, side: 1, lens, tag: 'earlier', why: 'from before your last edit', lines: kept });
+      if (kept.length) push({ at: s.to, side: 1, lens, tag: 'earlier', why: 'from before your last edit', lines: kept });
       continue;
     }
     if (lens === 'gist') {
       const top = pageGist(r);
-      if (r.title || top.length) blocks.push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? '' : r.title, tag, why: r.why, lines: top });
+      if (r.title || top.length) push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? '' : r.title, tag, why: r.why, lines: top });
       // One line per paragraph, under that paragraph.
       const paraEnd = new Map();
       for (const x of s.sentences) paraEnd.set(x.p, Math.max(paraEnd.get(x.p) ?? -1, x.to));
@@ -142,14 +156,14 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
         if (!groups.has(at)) groups.set(at, []);
         groups.get(at).push(l);
       }
-      for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+      for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) push({ at, side: 1, lens, lines });
     } else if (lens === 'reformat') {
-      blocks.push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || '', tag, why: r.why, lines: r.reformat.lines });
+      push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || '', tag, why: r.why, lines: r.reformat.lines });
     } else {
       const x = r.extra?.[lens];
       if (!x) continue;                                   // asked for; on its way
       const xtag = x.engine === 'model' ? '' : x.engine === 'key terms' ? 'key terms' : '';
-      if (!x.lines.length) { blocks.push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || 'nothing found', why: x.why, lines: [] }); continue; }
+      if (!x.lines.length) { push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || 'nothing found', why: x.why, lines: [] }); continue; }
       if (lens === 'retell') {
         const paraEnd = new Map();
         for (const y of s.sentences) paraEnd.set(y.p, Math.max(paraEnd.get(y.p) ?? -1, y.to));
@@ -159,7 +173,7 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
           if (!groups.has(at)) groups.set(at, []);
           groups.get(at).push(l);
         }
-        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) push({ at, side: 1, lens, lines });
       } else {
         const b = { at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: xtag, why: x.why, lines: x.lines };
         if (lens === 'reapply') {
@@ -167,7 +181,7 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
           b.answerKey = `${s.key}:${fnv1a(facts)}`;
           b.answer = answers.get(b.answerKey) || '';
         }
-        blocks.push(b);
+        push(b);
       }
     }
   }
@@ -176,7 +190,8 @@ export function lensBlocks(sections, lens, { results, translations = new Map(), 
 
 export function createRecense({
   getText, dispatch, getCaret = () => -1, hasFocus = () => false,
-  post = null, storage = null, now = () => Date.now(), wingCard = null, onChaptersChanged = null
+  post = null, storage = null, now = () => Date.now(), wingCard = null, onChaptersChanged = null,
+  speak = null, stopSpeaking = null, root = null
 }) {
   const load = (k, d) => { try { const v = storage?.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
   const save = (k, v) => { try { storage?.setItem(k, JSON.stringify(v)); } catch { /* private window: per-session only */ } };
@@ -274,13 +289,60 @@ export function createRecense({
         let at = Math.max(0, Math.min(text.length, b.at));
         if (b.side > 0) { const nl = text.indexOf('\n', at); at = nl < 0 ? text.length : nl; }
         else at = text.lastIndexOf('\n', at - 1) + 1;
-        ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer), block: true, side: b.side }).range(at));
+        ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer, speak ? play : null), block: true, side: b.side }).range(at));
       }
       const byKey = new Map(current().flatMap(s => s.sentences.map(x => [x.key, x])));
       for (const k of cited) { const x = byKey.get(k); if (x && x.to > x.from) ranges.push(citedMark.range(x.from, x.to)); }
     }
     dispatch({ effects: setRecenseDecos.of(Decoration.set(ranges, true)) });
     updateCard();
+  }
+
+  // ── Read aloud: any lens can be heard (the host's voice per line's language; the spoken word is lit) ─────────────
+  let playing = null;                                   // { boxes } while a lens is being read
+  const hasHighlights = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined';
+  function clearLight(rows) {
+    if (hasHighlights) CSS.highlights.delete('rc-say');
+    for (const r of rows || []) r.classList.remove('rc-lens-saying');
+  }
+  /** Reads the lines of these lens blocks in order; pressed again on the same blocks, stops. */
+  function play(boxes) {
+    if (!speak) return false;
+    const same = playing && playing.boxes.length === boxes.length && playing.boxes.every((b, i) => b === boxes[i]);
+    if (playing) { stopSpeaking?.(); if (same) return false; }
+    const rows = boxes.flatMap(b => [...b.querySelectorAll('.rc-lens-line')]).filter(r => r._rcText?.data);
+    if (!rows.length) return false;
+    for (const b of boxes) b.classList.add('rc-lens-playing');
+    const me = { boxes, rows };
+    playing = me;
+    speak(rows.map(r => r._rcText.data), {
+      onWord: (part, from, len) => {
+        const row = rows[part];
+        if (!row || playing !== me) return;
+        clearLight(rows);
+        row.classList.add('rc-lens-saying');
+        if (hasHighlights && len > 0) {
+          const range = document.createRange();
+          range.setStart(row._rcText, Math.min(from, row._rcText.length));
+          range.setEnd(row._rcText, Math.min(from + len, row._rcText.length));
+          CSS.highlights.set('rc-say', new Highlight(range));
+        }
+      },
+      onDone: () => {
+        clearLight(rows);
+        for (const b of boxes) b.classList.remove('rc-lens-playing');
+        if (playing === me) playing = null;
+      }
+    });
+    return true;
+  }
+  /** "Read lens aloud" (menu, voice): the lens blocks of the section at the caret, else the first one on screen. */
+  function readAloudAt(caret) {
+    if (!enabled || !root) return false;
+    const s = current().find(x => caret >= x.from && caret <= x.to + 1) || current()[0];
+    let boxes = s ? [...root.querySelectorAll(`.rc-lens[data-sec="${s.key}"]`)] : [];
+    if (!boxes.length) boxes = [...root.querySelectorAll('.rc-lens')].slice(0, 1);
+    return boxes.length ? play(boxes) : false;
   }
 
   let citedTimer = null;
@@ -535,6 +597,7 @@ export function createRecense({
     setEnabled, isEnabled: () => enabled, setLens, nextLens, getLens: () => lens, setTarget, getTarget: targetFor,
     setPowerState: (onPower, percent) => { power = { onPower: Boolean(onPower), percent: Number(percent) || 0, at: now() }; },
     powerOK, due, sections: current, results, freeze, unfreeze, titles, makeHeading,
-    lastDone: () => lastDone, missing: () => missing, cardFor, inflight, answers, setAnswer
+    lastDone: () => lastDone, missing: () => missing, cardFor, inflight, answers, setAnswer, play, readAloudAt,
+    isPlaying: () => Boolean(playing), stopReading: () => { if (playing) stopSpeaking?.(); }
   };
 }

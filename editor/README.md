@@ -110,6 +110,11 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
     kept beside them (saved with the page's lenses, never in your text). Needs the on-device model;
   Change the lens from **··· › Lens** or say "gist", "retell", "reformat", "ask me", "reapply", "source". A lens is
   asked for only when you open it; after that it's cached like the rest.
+- **Read aloud** (M2): every lens can be heard. ▶ at a lens block's top right, **··· › Read lens aloud** (the section
+  you're in) or say "read the lens" / "đọc lens" / "lire la lentille"; the same again stops it. Each line is read in its
+  own language by the device's voice, and the word being read is lit. Both hosts call the page as
+  `window.recenseEditor.<fn>`, so `speechProgress` / `speechDone` are forwarded from there to `speech.js` (before
+  this, a read on the Mac or iPhone never lit its words or ended on the page).
 - **Citations**: tap a lens line and the sentences it comes from light up. A line that cites nothing says **added**.
   A line whose words aren't in what it cites is dropped, never shown (`src/lenses.js`).
   **One language per line**: a lens line is written wholly in the section's language (an English Gist of a Vietnamese

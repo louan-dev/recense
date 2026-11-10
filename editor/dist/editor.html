@@ -1990,6 +1990,18 @@ html.rc-wings-page body {
 .rc-lens-reply { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 4px; font: inherit; color: var(--rc-text);
   background: color-mix(in srgb, var(--rc-text) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rc-text) 18%, transparent);
   border-radius: 6px; padding: 8px; resize: vertical; }
+/* Read aloud: ▶ at the block's top right (always there, for touch); the line being read, and its word, lit. */
+.rc-lens { position: relative; }
+.rc-lens-play {
+  position: absolute; top: 2px; right: 0; width: 28px; height: 28px; padding: 0;
+  font: inherit; font-size: 0.8em; line-height: 28px; text-align: center; color: var(--rc-muted);
+  background: none; border: 1px solid transparent; border-radius: 14px; cursor: pointer; opacity: 0.6;
+}
+.rc-lens-play:hover, .rc-lens-play:focus-visible { opacity: 1; border-color: var(--rc-border); outline: none; }
+.rc-lens-playing .rc-lens-play { opacity: 1; color: var(--rc-cyan); }
+.rc-lens:has(> .rc-lens-play) { padding-right: 32px; }   /* a gutter for ▶: it never covers a line */
+.rc-lens-saying { color: var(--rc-text); }
+::highlight(rc-say) { background-color: color-mix(in srgb, var(--rc-cyan) 30%, transparent); color: inherit; }
 /* Ask: one button shows the answer under its question. Reapply: your answer, beside the facts. */
 .rc-lens-reveal {
   font: inherit; font-size: 0.86em; color: var(--rc-muted); background: none;
@@ -31435,11 +31447,12 @@ ${PAGE_MARKER}
     provide: (f) => EditorView.decorations.from(f)
   });
   var LensWidget = class extends WidgetType {
-    constructor(block, onTap, onAnswer) {
+    constructor(block, onTap, onAnswer, onPlay) {
       super();
       this.block = block;
       this.onTap = onTap;
       this.onAnswer = onAnswer;
+      this.onPlay = onPlay;
       this.sig = JSON.stringify(block);
     }
     eq(other) {
@@ -31449,6 +31462,18 @@ ${PAGE_MARKER}
       const box = document.createElement("div");
       box.className = `rc-lens rc-lens-${this.block.lens}`;
       box.setAttribute("aria-label", `Recense ${LENS_NAMES[this.block.lens] || ""}`);
+      if (this.block.sec) box.dataset.sec = this.block.sec;
+      if (this.block.lines.length && this.onPlay) {
+        const play = Object.assign(document.createElement("button"), { type: "button", className: "rc-lens-play", textContent: "\u25B6" });
+        play.setAttribute("aria-label", "Read this lens aloud");
+        play.title = "Read aloud";
+        play.addEventListener("mousedown", (e) => e.preventDefault());
+        play.addEventListener("click", (e) => {
+          e.preventDefault();
+          this.onPlay([box]);
+        });
+        box.appendChild(play);
+      }
       if (this.block.head || this.block.tag) {
         const head = document.createElement("div");
         head.className = "rc-lens-head";
@@ -31462,7 +31487,8 @@ ${PAGE_MARKER}
         row.className = "rc-lens-line";
         if (ROLE_NAMES[l.role]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: ROLE_NAMES[l.role] }));
         if (l.role === "other" && LANG_TAGS[l.lang]) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-role", textContent: LANG_TAGS[l.lang] }));
-        row.append(document.createTextNode(l.text));
+        row._rcText = document.createTextNode(l.text);
+        row.append(row._rcText);
         if (l.added) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "added" }));
         else if (l.extract) row.append(Object.assign(document.createElement("span"), { className: "rc-lens-added", textContent: "extract" }));
         row.title = l.added ? "Recense added this: it is not in your text" : "Tap to light the sentences it comes from";
@@ -31505,6 +31531,7 @@ ${PAGE_MARKER}
   function lensBlocks(sections, lens, { results, translations = /* @__PURE__ */ new Map(), stale = /* @__PURE__ */ new Map(), answers = /* @__PURE__ */ new Map() }) {
     const blocks = [];
     for (const s of sections) {
+      const push = (b) => blocks.push({ ...b, sec: s.key });
       const byKey = new Map(s.sentences.map((x) => [x.key, x]));
       const endOf = (keys) => Math.max(...keys.map((k) => byKey.get(k)?.to ?? -1));
       if (lens === "source") {
@@ -31517,19 +31544,19 @@ ${PAGE_MARKER}
           g.at = Math.max(g.at, x.to);
           g.lines.push({ text: t2, from: [x.key] });
         }
-        for (const g of byPara.values()) blocks.push({ at: g.at, side: 1, lens, lines: g.lines });
+        for (const g of byPara.values()) push({ at: g.at, side: 1, lens, lines: g.lines });
         continue;
       }
       const r = results.get(s.key);
       const tag = r ? r.engine === "model" ? "" : "extract" : stale.get(s.key) ? "earlier" : "";
       if (!r) {
         const kept = stale.get(s.key) || [];
-        if (kept.length) blocks.push({ at: s.to, side: 1, lens, tag: "earlier", why: "from before your last edit", lines: kept });
+        if (kept.length) push({ at: s.to, side: 1, lens, tag: "earlier", why: "from before your last edit", lines: kept });
         continue;
       }
       if (lens === "gist") {
         const top2 = pageGist(r);
-        if (r.title || top2.length) blocks.push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? "" : r.title, tag, why: r.why, lines: top2 });
+        if (r.title || top2.length) push({ at: s.sentences[0].from, side: -1, lens, head: s.heading ? "" : r.title, tag, why: r.why, lines: top2 });
         const paraEnd = /* @__PURE__ */ new Map();
         for (const x of s.sentences) paraEnd.set(x.p, Math.max(paraEnd.get(x.p) ?? -1, x.to));
         const groups = /* @__PURE__ */ new Map();
@@ -31538,15 +31565,15 @@ ${PAGE_MARKER}
           if (!groups.has(at)) groups.set(at, []);
           groups.get(at).push(l);
         }
-        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+        for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) push({ at, side: 1, lens, lines });
       } else if (lens === "reformat") {
-        blocks.push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || "", tag, why: r.why, lines: r.reformat.lines });
+        push({ at: s.to, side: 1, lens, head: KIND_NAMES[r.reformat.kind] || "", tag, why: r.why, lines: r.reformat.lines });
       } else {
         const x = r.extra?.[lens];
         if (!x) continue;
         const xtag = x.engine === "model" ? "" : x.engine === "key terms" ? "key terms" : "";
         if (!x.lines.length) {
-          blocks.push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || "nothing found", why: x.why, lines: [] });
+          push({ at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: x.why || "nothing found", why: x.why, lines: [] });
           continue;
         }
         if (lens === "retell") {
@@ -31558,7 +31585,7 @@ ${PAGE_MARKER}
             if (!groups.has(at)) groups.set(at, []);
             groups.get(at).push(l);
           }
-          for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) blocks.push({ at, side: 1, lens, lines });
+          for (const [at, lines] of [...groups].sort((a, b) => a[0] - b[0])) push({ at, side: 1, lens, lines });
         } else {
           const b = { at: s.to, side: 1, lens, head: LENS_NAMES[lens], tag: xtag, why: x.why, lines: x.lines };
           if (lens === "reapply") {
@@ -31566,7 +31593,7 @@ ${PAGE_MARKER}
             b.answerKey = `${s.key}:${fnv1a(facts)}`;
             b.answer = answers.get(b.answerKey) || "";
           }
-          blocks.push(b);
+          push(b);
         }
       }
     }
@@ -31581,7 +31608,10 @@ ${PAGE_MARKER}
     storage = null,
     now = () => Date.now(),
     wingCard = null,
-    onChaptersChanged = null
+    onChaptersChanged = null,
+    speak = null,
+    stopSpeaking = null,
+    root = null
   }) {
     const load = (k, d) => {
       try {
@@ -31685,7 +31715,7 @@ ${PAGE_MARKER}
             const nl = text.indexOf("\n", at);
             at = nl < 0 ? text.length : nl;
           } else at = text.lastIndexOf("\n", at - 1) + 1;
-          ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer), block: true, side: b.side }).range(at));
+          ranges.push(Decoration.widget({ widget: new LensWidget(b, tap, setAnswer, speak ? play : null), block: true, side: b.side }).range(at));
         }
         const byKey = new Map(current().flatMap((s) => s.sentences.map((x) => [x.key, x])));
         for (const k of cited) {
@@ -31695,6 +31725,52 @@ ${PAGE_MARKER}
       }
       dispatch({ effects: setRecenseDecos.of(Decoration.set(ranges, true)) });
       updateCard();
+    }
+    let playing = null;
+    const hasHighlights = typeof CSS !== "undefined" && CSS.highlights && typeof Highlight !== "undefined";
+    function clearLight(rows) {
+      if (hasHighlights) CSS.highlights.delete("rc-say");
+      for (const r of rows || []) r.classList.remove("rc-lens-saying");
+    }
+    function play(boxes) {
+      if (!speak) return false;
+      const same = playing && playing.boxes.length === boxes.length && playing.boxes.every((b, i) => b === boxes[i]);
+      if (playing) {
+        stopSpeaking?.();
+        if (same) return false;
+      }
+      const rows = boxes.flatMap((b) => [...b.querySelectorAll(".rc-lens-line")]).filter((r) => r._rcText?.data);
+      if (!rows.length) return false;
+      for (const b of boxes) b.classList.add("rc-lens-playing");
+      const me = { boxes, rows };
+      playing = me;
+      speak(rows.map((r) => r._rcText.data), {
+        onWord: (part, from, len) => {
+          const row = rows[part];
+          if (!row || playing !== me) return;
+          clearLight(rows);
+          row.classList.add("rc-lens-saying");
+          if (hasHighlights && len > 0) {
+            const range = document.createRange();
+            range.setStart(row._rcText, Math.min(from, row._rcText.length));
+            range.setEnd(row._rcText, Math.min(from + len, row._rcText.length));
+            CSS.highlights.set("rc-say", new Highlight(range));
+          }
+        },
+        onDone: () => {
+          clearLight(rows);
+          for (const b of boxes) b.classList.remove("rc-lens-playing");
+          if (playing === me) playing = null;
+        }
+      });
+      return true;
+    }
+    function readAloudAt(caret) {
+      if (!enabled || !root) return false;
+      const s = current().find((x) => caret >= x.from && caret <= x.to + 1) || current()[0];
+      let boxes = s ? [...root.querySelectorAll(`.rc-lens[data-sec="${s.key}"]`)] : [];
+      if (!boxes.length) boxes = [...root.querySelectorAll(".rc-lens")].slice(0, 1);
+      return boxes.length ? play(boxes) : false;
     }
     let citedTimer = null;
     function tap(keys) {
@@ -31978,7 +32054,13 @@ ${PAGE_MARKER}
       cardFor,
       inflight,
       answers,
-      setAnswer
+      setAnswer,
+      play,
+      readAloudAt,
+      isPlaying: () => Boolean(playing),
+      stopReading: () => {
+        if (playing) stopSpeaking?.();
+      }
     };
   }
 
@@ -33047,6 +33129,10 @@ ${PAGE_MARKER}
         handlers2.deleteEmptyWindow();
       }
       return { matched: true, action: "deleteEmptyWindow" };
+    }
+    if (["read lens", "read the lens", "read lens aloud", "\u0111\u1ECDc lens", "\u0111\u1ECDc to lens", "lire la lentille"].some((p) => hasPhrase(p))) {
+      if (typeof handlers2.readRecenseLens === "function") handlers2.readRecenseLens();
+      return { matched: true, action: "readRecenseLens" };
     }
     if (hasPhrase("recense now") || hasPhrase("recense l\u1EA1i") || hasPhrase("recenser maintenant")) {
       if (typeof handlers2.recenseNow === "function") handlers2.recenseNow();
@@ -38913,6 +38999,7 @@ ${clean(nextLineText)}`;
     const recenseLayerBtn = makeMenuItem("rc-recense-layer-btn", "Recense layer", "Show recensed lines under your text");
     const recenseLensBtn = makeMenuItem("rc-recense-lens-btn", "Lens: Gist", "Change the lens: Gist, Retell, Reformat, Ask, Reapply, Source");
     const recenseNowBtn = makeMenuItem("rc-recense-now-btn", "Recense now", "Recense every section not yet recensed");
+    const recenseReadBtn = makeMenuItem("rc-recense-read-btn", "Read lens aloud", "Hear the lens lines of the section you are in");
     const recenseIntoBtn = makeMenuItem("rc-recense-into-btn", "Translate into: Auto", "The Source lens\u2019s language for this page");
     const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
     const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "Newer page (\u2318[)");
@@ -38930,6 +39017,7 @@ ${clean(nextLineText)}`;
       recenseLayerBtn,
       recenseLensBtn,
       recenseNowBtn,
+      recenseReadBtn,
       recenseIntoBtn,
       searchBtn,
       prevPageBtn,
@@ -39271,7 +39359,10 @@ ${String(text ?? "")}`;
       wingCard: (card) => dualWings ? dualWings.setTypedLine(card) : null,
       onChaptersChanged: () => {
         if (!outlineVisible) renderOutline();
-      }
+      },
+      speak: (parts, handlers2) => speaker?.speak(parts, handlers2),
+      stopSpeaking: () => speaker?.stop(),
+      root: editorHost
     });
     const recenseBtn = document.createElement("button");
     recenseBtn.type = "button";
@@ -39289,6 +39380,7 @@ ${String(text ?? "")}`;
       recenseLensBtn.textContent = `Lens: ${LENS_NAMES[recense.getLens()]}`;
       recenseLensBtn.hidden = !on;
       recenseIntoBtn.hidden = !on || recense.getLens() !== "source";
+      recenseReadBtn.hidden = !on || recense.getLens() === "source";
       recenseIntoBtn.textContent = `Translate into: ${INTO_NAMES[recense.getTarget(currentPage(view.state))] || "Auto"}`;
     }
     recenseActions = {
@@ -39302,6 +39394,19 @@ ${String(text ?? "")}`;
         const l = name2 ? recense.setLens(name2) : recense.nextLens();
         syncRecenseControls();
         return l;
+      },
+      readAloud: () => {
+        if (recense.isPlaying()) {
+          recense.stopReading();
+          return false;
+        }
+        if (!recense.isEnabled()) {
+          recense.setEnabled(true);
+          syncRecenseControls();
+        }
+        const ok = recense.readAloudAt(view.state.selection.main.head);
+        if (!ok && !recense.isPlaying()) library?.toast("Nothing recensed here yet");
+        return ok;
       },
       now: () => {
         const id2 = recense.recenseNow();
@@ -39328,6 +39433,10 @@ ${String(text ?? "")}`;
     recenseNowBtn.addEventListener("click", () => {
       closeMenu();
       recenseActions.now();
+    });
+    recenseReadBtn.addEventListener("click", () => {
+      closeMenu();
+      recenseActions.readAloud();
     });
     recenseIntoBtn.addEventListener("click", () => {
       closeMenu();
@@ -39472,6 +39581,7 @@ ${String(text ?? "")}`;
       closeWing: (side) => dualWings ? dualWings.closeWing(side) : null,
       swapWings: () => dualWings ? dualWings.swapWings() : null,
       recenseNow: () => recenseActions?.now(),
+      readRecenseLens: () => recenseActions?.readAloud(),
       toggleRecense: (on) => recenseActions?.toggle(on),
       setRecenseLens: (name2) => recenseActions?.lens(name2)
     };
@@ -39550,6 +39660,12 @@ ${String(text ?? "")}`;
           return recense.tick();
         },
         recenseNow: () => recenseActions?.now(),
+        readRecenseLens: () => recenseActions?.readAloud(),
+        // Read-aloud word reports and the end, from the host's voice (shared/draftpadlibrary.swift ReadAloud). Both hosts
+        // call `window.recenseEditor.<fn>`, so speech.js's window hooks are reached through here; without this the spoken
+        // word was never lit and a read never ended on the page (Chapters' Play, playlists, lenses).
+        speechProgress: (id2, part, from, len) => typeof window !== "undefined" ? window.speechProgress?.(id2, part, from, len) : void 0,
+        speechDone: (id2) => typeof window !== "undefined" ? window.speechDone?.(id2) : void 0,
         setRecenseLayer: (on) => recenseActions?.toggle(Boolean(on)),
         setRecenseLens: (name2) => recenseActions?.lens(String(name2 || "")),
         // For checks (`recense draftpad-check`): how far recensing has got, and the wing card for a caret offset.

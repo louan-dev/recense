@@ -251,6 +251,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const recenseLayerBtn = makeMenuItem('rc-recense-layer-btn', 'Recense layer', 'Show recensed lines under your text');
   const recenseLensBtn = makeMenuItem('rc-recense-lens-btn', 'Lens: Gist', 'Change the lens: Gist, Retell, Reformat, Ask, Reapply, Source');
   const recenseNowBtn = makeMenuItem('rc-recense-now-btn', 'Recense now', 'Recense every section not yet recensed');
+  const recenseReadBtn = makeMenuItem('rc-recense-read-btn', 'Read lens aloud', 'Hear the lens lines of the section you are in');
   const recenseIntoBtn = makeMenuItem('rc-recense-into-btn', 'Translate into: Auto', 'The Source lens’s language for this page');
   const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
   const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'Newer page (⌘[)');
@@ -269,6 +270,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     recenseLayerBtn,
     recenseLensBtn,
     recenseNowBtn,
+    recenseReadBtn,
     recenseIntoBtn,
     searchBtn,
     prevPageBtn,
@@ -619,7 +621,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
     storage,
     // In-page wings (iOS, the browser) take the typed line directly; the Mac's wing panels get it from the host.
     wingCard: card => (dualWings ? dualWings.setTypedLine(card) : null),
-    onChaptersChanged: () => { if (!outlineVisible) renderOutline(); }
+    onChaptersChanged: () => { if (!outlineVisible) renderOutline(); },
+    speak: (parts, handlers) => speaker?.speak(parts, handlers),
+    stopSpeaking: () => speaker?.stop(),
+    root: editorHost
   });
   const recenseBtn = document.createElement('button');
   recenseBtn.type = 'button';
@@ -637,11 +642,19 @@ export function mountEditor(root = document.body, initialDoc = '') {
     recenseLensBtn.textContent = `Lens: ${LENS_NAMES[recense.getLens()]}`;
     recenseLensBtn.hidden = !on;
     recenseIntoBtn.hidden = !on || recense.getLens() !== 'source';
+    recenseReadBtn.hidden = !on || recense.getLens() === 'source';
     recenseIntoBtn.textContent = `Translate into: ${INTO_NAMES[recense.getTarget(currentPage(view.state))] || 'Auto'}`;
   }
   recenseActions = {
     toggle: on => { recense.setEnabled(on ?? !recense.isEnabled()); syncRecenseControls(); return recense.isEnabled(); },
     lens: name => { if (!recense.isEnabled()) recense.setEnabled(true); const l = name ? recense.setLens(name) : recense.nextLens(); syncRecenseControls(); return l; },
+    readAloud: () => {
+      if (recense.isPlaying()) { recense.stopReading(); return false; }      // the same command again stops it
+      if (!recense.isEnabled()) { recense.setEnabled(true); syncRecenseControls(); }
+      const ok = recense.readAloudAt(view.state.selection.main.head);
+      if (!ok && !recense.isPlaying()) library?.toast('Nothing recensed here yet');
+      return ok;
+    },
     now: () => { const id = recense.recenseNow(); library?.toast(id ? 'Recensing in the background' : 'Everything is recensed'); return id; },
     into: () => {
       const i = currentPage(view.state);
@@ -655,6 +668,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   recenseLayerBtn.addEventListener('click', () => { closeMenu(); recenseActions.toggle(); });
   recenseLensBtn.addEventListener('click', () => { closeMenu(); recenseActions.lens(); });
   recenseNowBtn.addEventListener('click', () => { closeMenu(); recenseActions.now(); });
+  recenseReadBtn.addEventListener('click', () => { closeMenu(); recenseActions.readAloud(); });
   recenseIntoBtn.addEventListener('click', () => { closeMenu(); recenseActions.into(); });
   syncRecenseControls();
   recense.redraw();
@@ -811,6 +825,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     closeWing: side => (dualWings ? dualWings.closeWing(side) : null),
     swapWings: () => (dualWings ? dualWings.swapWings() : null),
     recenseNow: () => recenseActions?.now(),
+    readRecenseLens: () => recenseActions?.readAloud(),
     toggleRecense: on => recenseActions?.toggle(on),
     setRecenseLens: name => recenseActions?.lens(name)
   };
@@ -894,6 +909,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return recense.tick();
       },
       recenseNow: () => recenseActions?.now(),
+      readRecenseLens: () => recenseActions?.readAloud(),
+      // Read-aloud word reports and the end, from the host's voice (shared/draftpadlibrary.swift ReadAloud). Both hosts
+      // call `window.recenseEditor.<fn>`, so speech.js's window hooks are reached through here; without this the spoken
+      // word was never lit and a read never ended on the page (Chapters' Play, playlists, lenses).
+      speechProgress: (id, part, from, len) => (typeof window !== 'undefined' ? window.speechProgress?.(id, part, from, len) : undefined),
+      speechDone: id => (typeof window !== 'undefined' ? window.speechDone?.(id) : undefined),
       setRecenseLayer: on => recenseActions?.toggle(Boolean(on)),
       setRecenseLens: name => recenseActions?.lens(String(name || '')),
       // For checks (`recense draftpad-check`): how far recensing has got, and the wing card for a caret offset.

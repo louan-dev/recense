@@ -80,6 +80,27 @@ func draftpadCheck(out: URL) -> Never {
             }
         }
     }
+    // Read aloud (muted): the menu's "Read lens aloud" on the Gist lens; the host's voice reports words and the
+    // spoken word is lit in the lens line.
+    func readAloudStep(_ then: @escaping () -> Void) {
+        ReadAloud.volume = 0
+        js("window.recenseEditor.closeWing('both'); window.recenseEditor.setRecenseLens('gist'); true") { _ in wait(1.0) {
+            js("window.recenseEditor.readRecenseLens()") { v in
+                until("document.querySelector('.rc-lens-playing .rc-lens-saying') !== null", timeout: 20) { ok in
+                    js("JSON.stringify({ret: \(String(describing: v ?? "nil").debugDescription), boxes: document.querySelectorAll('.rc-lens').length, playing: document.querySelectorAll('.rc-lens-playing').length, saying: document.querySelectorAll('.rc-lens-saying').length, isPlaying: window.recenseEditor.recenseStatus() && document.querySelector('.rc-lens-play') !== null})") { d in print("     read aloud: \(d ?? "nil")") }
+                    note((v as? Bool) == true && ok, "Read lens aloud: the host's voice reads the lens and the line being read is lit")
+                    shot("9-read-aloud") {
+                        js("window.recenseEditor.readRecenseLens(); true") { _ in
+                            until("document.querySelector('.rc-lens-playing') === null", timeout: 10) { stopped in
+                                note(stopped, "pressed again, it stops")
+                                then()
+                            }
+                        }
+                    }
+                }
+            }
+        } }
+    }
     func status(_ then: @escaping ([String: Any]) -> Void) { js("JSON.stringify(window.recenseEditor.recenseStatus())") { v in
         then((v as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? [:]) } }
     func finish() -> Never {
@@ -124,7 +145,7 @@ func draftpadCheck(out: URL) -> Never {
                                                         wait(0.8) { shot("5-wing-card") {
                                                             js("JSON.stringify({buttons: [...document.querySelectorAll('.rc-toolbar button')].filter(b => b.offsetParent).map(b => b.getAttribute('aria-label') || b.textContent.trim()), menu: [...document.querySelectorAll('.rc-menu-item')].filter(b => !b.hidden).map(b => b.textContent)})") { v in
                                                                 print("     ui: \(v ?? "")")
-                                                                lensSteps([("retell", "6-retell"), ("ask", "7-ask"), ("reapply", "8-reapply")]) { finish() }
+                                                                lensSteps([("retell", "6-retell"), ("ask", "7-ask"), ("reapply", "8-reapply")]) { readAloudStep { finish() } }
                                                             }
                                                         } }
                                                     }

@@ -1983,6 +1983,18 @@ html.rc-wings-page body {
 .rc-lens-reply { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 4px; font: inherit; color: var(--rc-text);
   background: color-mix(in srgb, var(--rc-text) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rc-text) 18%, transparent);
   border-radius: 6px; padding: 8px; resize: vertical; }
+/* Read aloud: ▶ at the block's top right (always there, for touch); the line being read, and its word, lit. */
+.rc-lens { position: relative; }
+.rc-lens-play {
+  position: absolute; top: 2px; right: 0; width: 28px; height: 28px; padding: 0;
+  font: inherit; font-size: 0.8em; line-height: 28px; text-align: center; color: var(--rc-muted);
+  background: none; border: 1px solid transparent; border-radius: 14px; cursor: pointer; opacity: 0.6;
+}
+.rc-lens-play:hover, .rc-lens-play:focus-visible { opacity: 1; border-color: var(--rc-border); outline: none; }
+.rc-lens-playing .rc-lens-play { opacity: 1; color: var(--rc-cyan); }
+.rc-lens:has(> .rc-lens-play) { padding-right: 32px; }   /* a gutter for ▶: it never covers a line */
+.rc-lens-saying { color: var(--rc-text); }
+::highlight(rc-say) { background-color: color-mix(in srgb, var(--rc-cyan) 30%, transparent); color: inherit; }
 /* Ask: one button shows the answer under its question. Reapply: your answer, beside the facts. */
 .rc-lens-reveal {
   font: inherit; font-size: 0.86em; color: var(--rc-muted); background: none;

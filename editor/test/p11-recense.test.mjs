@@ -380,3 +380,53 @@ test('Reapply: the rule is cited, the new facts and question say added, and your
   const last = h.posts.filter(p => p.recenseSections).at(-1).recenseSections;
   assert.deepEqual(last.lenses, ['retell']);
 });
+
+test('read aloud: every lens block names its section; the menu, voice and ▶ read its lines; again stops', async () => {
+  const [sec] = docSections(THREE);
+  const blocks = lensBlocks([sec], 'gist', { results: new Map([[sec.key, settle(sec, null)]]) });
+  assert.ok(blocks.length && blocks.every(b => b.sec === sec.key), 'read aloud finds a section’s blocks by this');
+  const { executeVoiceMove } = await import('../src/gestures.js');
+  let read = 0;
+  for (const said of ['read the lens', 'đọc lens', 'lire la lentille']) {
+    assert.equal(executeVoiceMove(said, { readRecenseLens: () => read++ }).action, 'readRecenseLens', said);
+  }
+  assert.equal(read, 3);
+  assert.equal(executeVoiceMove('retell', { setRecenseLens: () => {} }).lens, 'retell');
+  // play(): the parts are the lines' own text; pressed again on the same blocks, it stops.
+  const spoken = [];
+  let stops = 0;
+  const rc = createRecense({ getText: () => THREE, dispatch: () => {}, speak: (parts, h) => { spoken.push({ parts, h }); },
+    stopSpeaking: () => { stops++; spoken.at(-1)?.h.onDone(); } });
+  const row = t => ({ _rcText: { data: t, length: t.length }, classList: { add() {}, remove() {} } });
+  const box = { classList: { add() {}, remove() {} }, querySelectorAll: () => [row('One line.'), row('Một dòng.')] };
+  assert.equal(rc.play([box]), true);
+  assert.deepEqual(spoken[0].parts, ['One line.', 'Một dòng.'], 'each line in its own language: the host picks the voice');
+  assert.equal(rc.isPlaying(), true);
+  assert.equal(rc.play([box]), false, 'the same ▶ again stops');
+  assert.equal(stops, 1);
+  assert.equal(rc.isPlaying(), false);
+});
+
+test('the hosts’ read-aloud calls reach the page: recenseEditor forwards speechProgress and speechDone', async () => {
+  // Both hosts evaluate `window.recenseEditor.<call>` (strip/editorhost.swift call(), Draftpad.swift); speech.js listens
+  // on window.speechProgress / window.speechDone. The M2 real-app check found the word never lit until this forward.
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.match(src, /speechProgress: \(id, part, from, len\) => [^\n]*window\.speechProgress\?\.\(id, part, from, len\)/);
+  assert.match(src, /speechDone: id => [^\n]*window\.speechDone\?\.\(id\)/);
+  for (const host of ['../../strip/editorhost.swift', '../../mobile/HostApp/iOS/Draftpad.swift']) {
+    assert.match(fs.readFileSync(new URL(host, import.meta.url), 'utf8'), /window\.recenseEditor && window\.recenseEditor\./, host);
+  }
+  const { createSpeaker } = await import('../src/speech.js');
+  const posted = [];
+  const g = { webkit: { messageHandlers: { ui: { postMessage: m => posted.push(m) } } } };
+  const sp = createSpeaker(g);
+  const words = [];
+  let ended = 0;
+  sp.speak(['One line.'], { onWord: (...a) => words.push(a), onDone: () => ended++ });
+  const id = posted[0].speakParts.id;
+  g.speechProgress(id, 0, 4, 4);
+  g.speechDone(id);
+  assert.deepEqual(words, [[0, 4, 4]]);
+  assert.equal(ended, 1);
+});
