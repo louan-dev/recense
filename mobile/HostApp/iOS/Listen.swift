@@ -919,7 +919,10 @@ struct ListenView: View {
             if l.episodes.contains(where: { $0.key != l.episode?.key }) {
                 Section("Episodes") {
                     ForEach(l.episodes.filter { $0.key != l.episode?.key }) { e in
-                        NavigationLink(value: e) {
+                        // a view link, never NavigationLink(value:) + navigationDestination(for:): Library pushes Listen
+                        // with a view link, and a value pushed onto that stack opened a second Listen instead of the
+                        // episode (two Listens then fight over the one floating-window layer)
+                        NavigationLink { Self.episodePage(l, e) } label: {
                             HStack(spacing: 14) {
                                 Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
                                     .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
@@ -949,13 +952,6 @@ struct ListenView: View {
                 }
             }
         }
-        .navigationDestination(for: Episode.self) { e in
-            Self.transcript(l, e.sentences, place: e.place, title: e.title, live: false, two: e.heard.prefix(2) != e.into.prefix(2))
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle(e.title).navigationBarTitleDisplayMode(.inline)
-                .tint(Theme.accent)
-                .toolbar { ToolbarItem(placement: .primaryAction) { MoreMenu { Button { l.choose(e.title) } label: { Label("Now Playing", systemImage: "play.circle") } } } }
-        }
         .fullScreenCover(isPresented: $full) {
             NavigationStack {
                 Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
@@ -974,6 +970,15 @@ struct ListenView: View {
 }
 
 extension ListenView {
+    /// One past episode: its transcript, read only, with Now Playing in the ··· menu.
+    static func episodePage(_ l: Listener, _ e: Episode) -> some View {
+        transcript(l, e.sentences, place: e.place, title: e.title, live: false, two: e.heard.prefix(2) != e.into.prefix(2))
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle(e.title).navigationBarTitleDisplayMode(.inline)
+            .tint(Theme.accent)
+            .toolbar { ToolbarItem(placement: .primaryAction) { MoreMenu { Button { l.choose(e.title) } label: { Label("Now Playing", systemImage: "play.circle") } } } }
+    }
+
     /// What was heard, in the shared transcript view (ShowsKit's TranscriptView, the one Now Playing has): the
     /// sentence being heard bold, its words lit at the voice's pace (SpeechAnalyzer's times, `lag` behind), the
     /// translation under each line. Another app's audio can't be moved from here, so a line has no Play.
