@@ -26,7 +26,7 @@ struct Sentence: Identifiable, Codable, Equatable, Hashable {
     var time: Double { t ?? at }
 }
 
-// One episode's whole transcript, kept on the device (Documents/Listen/episodes/<key>.json) and in Gallery
+// One episode's whole transcript, kept on the device (Documents/Recense/library/Listen/<key>.json) and in Gallery
 // (keep/listen/<key>.json, src/listen.js) so the Mac and the other devices find it by title. place: the sentence
 // last heard, where Read along opens and where new sentences go when this episode is played again.
 struct Episode: Identifiable, Codable, Hashable {
@@ -237,10 +237,39 @@ final class Listener: NSObject, ObservableObject {
 
     // MARK: episodes
 
-    private static var folder: URL {
-        let u = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Listen/episodes", isDirectory: true)
+    // Episodes live in the Recense home's library (the places contract): Documents/Recense/library/Listen/ here,
+    // ~/Recense/library/Listen/ on the Mac. Until 11-09 they were in Documents/Listen/episodes/: moved on first launch.
+    private static let folder: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let u = docs.appendingPathComponent("Recense/library/Listen", isDirectory: true)
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        migrate(from: docs.appendingPathComponent("Listen/episodes", isDirectory: true), to: u,
+                trash: docs.appendingPathComponent("Recense/trash", isDirectory: true))
         return u
+    }()
+
+    /// Moves every episode from the old folder. When both places hold the same episode, the newer copy stays and the
+    /// older goes to the Recense trash (which never empties by itself): nothing is lost.
+    static func migrate(from old: URL, to new: URL, trash: URL) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: old, includingPropertiesForKeys: nil) else { return }
+        for f in files where f.pathExtension == "json" {
+            let dest = new.appendingPathComponent(f.lastPathComponent)
+            if fm.fileExists(atPath: dest.path) {
+                let updated = { (u: URL) in (try? JSONDecoder().decode(Episode.self, from: Data(contentsOf: u)))?.updated ?? 0 }
+                let (keep, drop) = updated(f) > updated(dest) ? (f, dest) : (dest, f)
+                try? fm.createDirectory(at: trash, withIntermediateDirectories: true)
+                let gone = trash.appendingPathComponent("listen-\(Int(Date().timeIntervalSince1970))-" + drop.lastPathComponent)
+                guard (try? fm.moveItem(at: drop, to: gone)) != nil else { continue }
+                if keep == f { try? fm.moveItem(at: f, to: dest) }
+            } else {
+                try? fm.moveItem(at: f, to: dest)
+            }
+        }
+        // the old folders go once empty (Documents/Listen/episodes, then Documents/Listen)
+        for d in [old, old.deletingLastPathComponent()] where (try? fm.contentsOfDirectory(atPath: d.path))?.isEmpty == true {
+            try? fm.removeItem(at: d)
+        }
     }
 
     private func loadEpisodes() {

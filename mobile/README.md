@@ -70,7 +70,9 @@ updates in place.
   transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
   under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
-  kept per episode in the same transcript store as the Mac (each sentence's timed words too).
+  kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
+  `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
+  first launch, the older of two copies going to `Recense/trash/`).
   Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (the only time Listen needs a
   connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
