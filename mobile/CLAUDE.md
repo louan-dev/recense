@@ -8,7 +8,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   - **Draftpad:** `../editor/` (bundled `editor/dist/editor.html`), `HostApp/iOS/Draftpad.swift` here, `strip/editorhost.swift` on the Mac, sync in `../shared/notesync.swift`.
   - **The player:** one home, `../library/src/client/`; Mac, mobile and web all use it. Test all three.
   - **The skin** (Podcasts-style spaces, shows, episodes) and the **strip controls** that carry over: Swift goes in `../shared/`, never copied into one app.
-- Mac-only (stay in `strip/`): menu-bar hider, brightness, CoreAudio volume, vault, terminal. iOS-only: the broadcast extension, Pencil.
+- Mac-only (stay in `strip/`): menu-bar hider, brightness, CoreAudio volume, vault, the Mac's own terminal (the iPhone and iPad SSH to it from Library › Terminal, `../shared/SSHKit`, owner 11-10). iOS-only: the broadcast extension, Pencil.
 
 ## Build and check
 - `zsh mobile/ios/build.sh [device]`: builds and installs on a connected iPhone or iPad (free team, 7-day profile; `sync/bin/resign-ios.zsh` renews daily).
@@ -49,7 +49,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   prints nothing (`shared/pieces` was missed on 11-09; its Package.swift and XCTest tests would have compiled into the app).
 - A worktree has no `ios/Secrets/`: link the main checkout's (`ln -s ~/Developer/recense/mobile/ios/Secrets mobile/ios/Secrets`); never stage the link.
 - After a Draftpad or shared change, also run `zsh strip/build.sh` and `recense selftest`, and `npm test` in `editor/`.
-- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except the Swift packages, excluded from the synchronized group (exception set `…E2`): `../shared/ShowsKit/` (linked as a local package, `…E3`–`E5`; its files compile only as the package) and `../shared/pieces/` (not linked yet; its Package.swift and XCTest tests must never join the app). A new package under `../shared/` goes on that list in the same commit. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
+- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except the Swift packages, excluded from the synchronized group (exception set `…E2`): `../shared/ShowsKit/` (linked as a local package, `…E3`–`E5`; its files compile only as the package), `../shared/SSHKit/` (local package `…E6`–`EA`: products SSHKit and SSHTerminal) and `../shared/pieces/` (not linked yet; its Package.swift and XCTest tests must never join the app). A new package under `../shared/` goes on that list in the same commit. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
 
 ## Never
 - Commit `ios/Secrets/` (the device token) or `build/` (`mobile/.gitignore`).
