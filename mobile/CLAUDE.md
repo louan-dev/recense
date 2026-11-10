@@ -17,6 +17,12 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   It needs CoreDevice and the Keychain: in a sandboxed session run it outside the sandbox, or the owner is left on an old build.
   Install fails with "device disconnected immediately": the Wi-Fi tunnel dropped; check `xcrun devicectl device info details --device <UDID>` shows connected, then reinstall the same `.app`.
 - One iOS build at a time across sessions (`.handoff/MERGE-QUEUE`).
+- **Test on the real iPhone through iPhone Mirroring, never the simulator (owner, 2026-11-10).** After the install:
+  `zsh mobile/ios/mirror-shot.zsh "$TMPDIR/shots/<screen>.png" --launch` (launches Recense on the iPhone, opens iPhone
+  Mirroring, screenshots only its window; outside the sandbox). Look at every screen you touched in it, drive it there, and
+  name the shots in the Checked: line. A simulator screenshot is not evidence.
+  "could not create image": the app running the session (Terminal; a session agent-resume started runs under launchd and
+  has none) lacks System Settings › Privacy & Security › Screen & System Audio Recording; say so and ask the owner to check.
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
 - Listen's alignment (`HostApp/iOS/Align.swift`), after any change to it or to `Listener.rebuild()`:

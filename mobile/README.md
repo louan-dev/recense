@@ -129,3 +129,6 @@ Signed with a free Personal Team, so the iOS profile lasts 7 days. `sync/bin/res
 each device on its own: one whose app is missing or was installed 5 or more days ago is reinstalled (the cached
 profile is renewed first when 2 days or less are left). Per-device stamps: `~/Library/Application Support/recense/resign-ios/`. The device's Access token comes from the Keychain (`gallery-access-<device>`, else
 `gallery-access`) into `Secrets/token.json`, which git ignores.
+
+## Testing on the iPhone
+`zsh mobile/ios/mirror-shot.zsh <out.png> --launch` opens Recense on the iPhone through iPhone Mirroring and screenshots that window; builds are checked there, not in the simulator.
