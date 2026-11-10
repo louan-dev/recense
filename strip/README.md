@@ -154,6 +154,9 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   them.
 - **Knows a recording it has heard:** the same piece from a video site, a podcast feed or a file on disk is recognised
   by an acoustic fingerprint and reuses its transcript.
+  The fingerprint lives in `../shared/fingerprint.swift`, one copy for the Mac and the iPhone and iPad. Its
+  `locateLive` places the last 15-20 s of live sound in a known recording to within 32 ms, so the phone can light a
+  transcript in time with sound tapped from another app (trusted once two calls in a row agree within 0.1 s).
 - **Lights the words as sung:** syllables heard from the vocal stem (Demucs), words hung on them, unsung words left
   dark, held notes held, each syllable swept at its sung speed; the eye follows the voice instead of reading ahead.
   Word timing by ear in the editor's toolbar: the word loops, Start and End are tapped as it is sung (two fingers on a
@@ -221,6 +224,7 @@ strip/
   prosody.swift      prosody notation
   speech.swift       on-device transcription (SpeechAnalyzer): the Mac's choices (open ears, canon, lexicon)
   speechcore.swift   link to ../shared/speechcore.swift: the engine both apps hear with (models, hearing, word times)
+  fingerprint.swift  link to ../shared/fingerprint.swift: the acoustic fingerprint both apps place sound with (recense selftest)
   openears.swift     the open ears (ears/omni.py)
   canon.swift        recited texts (canon/*.json)
   voiceprint.swift   voice matching
