@@ -8029,7 +8029,33 @@ func stripSelftest() -> Bool {
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l ? 0 : 1)
+    let m = downloadsSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m ? 0 : 1)
+}
+
+// `recense download <link> [audio|av|video]`, `--queue` (run what other devices asked for), `--adopt` (record files put
+// into ~/Recense/downloads by Pulltube, Finder or AirDrop), `--pulltube <link>` (open it in Pulltube) (mediadownload.swift).
+if CommandLine.arguments.dropFirst().first == "download" {
+    let a = Array(CommandLine.arguments.dropFirst(2))
+    let usage = "usage: recense download <link> [audio|av|video] | --queue | --adopt | --pulltube <link>"
+    let sem = DispatchSemaphore(value: 0); var code: Int32 = 0
+    Task.detached {
+        do {
+            switch a.first {
+            case "--queue": print("\(await Downloads.drain()) downloaded")
+            case "--adopt": for e in try Downloads.adopt() { print("adopted \(e.name)") }
+            case "--pulltube":
+                if a.count < 2 || !Downloads.openInPulltube(a[1]) { fputs("Pulltube isn't installed, or no link\n", stderr); code = 1 }
+            case let link? where !link.hasPrefix("-"):
+                guard let mode = DownloadMode(rawValue: a.count > 1 ? a[1] : "audio") else { fputs(usage + "\n", stderr); code = 64; break }
+                let e = try await Downloads.fetch(link, mode: mode)
+                print("\(e.name)\t\(mode.label)\t\(e.bytes) bytes\tsha256 \(e.sha256)")
+            default: fputs(usage + "\n", stderr); code = 64
+            }
+        } catch { fputs("couldn't download: \(error)\n", stderr); code = 1 }
+        sem.signal()
+    }
+    sem.wait(); exit(code)
 }
 
 // `recense draftpad-check [folder]`: the Recense layer on the real path, off screen, with a test page (draftpadcheck.swift).

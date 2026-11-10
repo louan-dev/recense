@@ -376,3 +376,6 @@ the page opens that lens. Statutes, articles and case names quoted from the note
 `shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
 `phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
 the same copy.
+
+## Downloads (`recense download`)
+Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + ffmpeg; direct links fetched as they are), with `manifest.json` (source, mode, size, SHA-256). `recense download <link> [audio|av|video]`, `--queue` (requests other devices left in `downloads/.queue/`), `--adopt` (files Pulltube, Finder or AirDrop put there), `--pulltube <link>`. Code: `shared/mediadownload.swift`.
