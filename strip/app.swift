@@ -8033,26 +8033,34 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     exit(a && b && c && d && e && f && g && h && i && j && k && l && m ? 0 : 1)
 }
 
-// `recense download <link> [audio|av|video]`, `--queue` (run what other devices asked for), `--adopt` (record files put
-// into ~/Recense/downloads by Pulltube, Finder or AirDrop), `--pulltube <link>` (open it in Pulltube) (mediadownload.swift).
+// `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`, `--queue` (run what other
+// devices asked for), `--adopt` (record files put into ~/Recense/downloads or its Pulltube/ folder by Pulltube, Finder or
+// AirDrop), `--pulltube <link>` (open it in Pulltube) (mediadownload.swift). Exit 75: no connection, queued for later.
 if CommandLine.arguments.dropFirst().first == "download" {
     let a = Array(CommandLine.arguments.dropFirst(2))
-    let usage = "usage: recense download <link> [audio|av|video] | --queue | --adopt | --pulltube <link>"
+    let usage = "usage: recense download <link> [audio|av|video] [--max <height>] [--section <from-to>] [--no-subs] | --queue | --adopt | --pulltube <link>"
+    func value(_ flag: String) -> String? { a.firstIndex(of: flag).flatMap { a.index(after: $0) < a.count ? a[a.index(after: $0)] : nil } }
     let sem = DispatchSemaphore(value: 0); var code: Int32 = 0
     Task.detached {
         do {
             switch a.first {
             case "--queue": print("\(await Downloads.drain()) downloaded")
-            case "--adopt": for e in try Downloads.adopt() { print("adopted \(e.name)") }
+            case "--adopt": for e in try await Downloads.adoptAndCheck() { print("adopted \(e.name)\t\(e.mode.label)\t\(e.codecs ?? "")") }
             case "--pulltube":
                 if a.count < 2 || !Downloads.openInPulltube(a[1]) { fputs("Pulltube isn't installed, or no link\n", stderr); code = 1 }
             case let link? where !link.hasPrefix("-"):
-                guard let mode = DownloadMode(rawValue: a.count > 1 ? a[1] : "audio") else { fputs(usage + "\n", stderr); code = 64; break }
-                let e = try await Downloads.fetch(link, mode: mode)
-                print("\(e.name)\t\(mode.label)\t\(e.bytes) bytes\tsha256 \(e.sha256)")
+                let m = a.count > 1 && !a[1].hasPrefix("-") ? a[1] : "audio"
+                guard let mode = DownloadMode(rawValue: m) else { fputs(usage + "\n", stderr); code = 64; break }
+                var o = DownloadOptions()
+                if let h = value("--max").flatMap(Int.init) { o.maxHeight = h }
+                o.section = value("--section"); o.subtitles = !a.contains("--no-subs")
+                let e = try await Downloads.fetch(link, mode: mode, options: o)
+                print("\(e.name)\t\(e.mode.label)\t\(e.bytes) bytes\t\(e.codecs ?? "")\tsha256 \(e.sha256)")
+                for s in e.subtitles ?? [] { print("subtitles\t\(s)") }
             default: fputs(usage + "\n", stderr); code = 64
             }
-        } catch { fputs("couldn't download: \(error)\n", stderr); code = 1 }
+        } catch Downloads.Failure.queued { fputs("\(Downloads.Failure.queued)\n", stderr); code = 75 }
+        catch { fputs("couldn't download: \(error)\n", stderr); code = 1 }
         sem.signal()
     }
     sem.wait(); exit(code)

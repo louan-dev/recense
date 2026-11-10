@@ -378,4 +378,10 @@ the page opens that lens. Statutes, articles and case names quoted from the note
 the same copy.
 
 ## Downloads (`recense download`)
-Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + ffmpeg; direct links fetched as they are), with `manifest.json` (source, mode, size, SHA-256). `recense download <link> [audio|av|video]`, `--queue` (requests other devices left in `downloads/.queue/`), `--adopt` (files Pulltube, Finder or AirDrop put there), `--pulltube <link>`. Code: `shared/mediadownload.swift`.
+Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + ffmpeg; direct links fetched as they are), with `manifest.json` (source, mode, size, codecs, SHA-256, subtitles).
+- `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`
+- Offline first: a link already downloaded in that mode is served from the device. With no connection the request is queued (exit 75) and `recense download --queue` runs it later.
+- Downloads resume and retry (8 parallel fragments); title, chapters and cover are embedded; the site's en/vi/fr captions are saved beside the file as `.vtt`.
+- Anything an iPhone can't play (VP9, AV1) is converted to H.264/AAC MP4 on the Mac's hardware encoder.
+- Pulltube (optional): set its download folder to `~/Recense/downloads/Pulltube`; `recense download --adopt` records what it saves (and anything put in `downloads/` by Finder or AirDrop). `--pulltube <link>` opens a link in it.
+- Other devices ask through `downloads/.queue/` (one JSON file per request). Code: `shared/mediadownload.swift`.

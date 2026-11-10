@@ -16,12 +16,14 @@ enum DownloadMode: String, Codable, CaseIterable, Sendable {
 
     /// yt-dlp's format choice. Video is H.264 and audio AAC, the codecs every iPhone, iPad and Mac plays natively
     /// (checked 11-10 with ffprobe on a CC BY test video); the audio mode is the one Recense already uses.
-    var ytdlpArgs: [String] {
+    var ytdlpArgs: [String] { ytdlpArgs(maxHeight: 1080) }
+
+    func ytdlpArgs(maxHeight h: Int) -> [String] {
         switch self {
         case .audio: ["-f", "bestaudio[ext=m4a]/bestaudio/best", "-x", "--audio-format", "m4a"]
-        case .av:    ["-f", "bv*[vcodec^=avc1][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/bv*+ba/b",
+        case .av:    ["-f", "bv*[vcodec^=avc1][height<=\(h)]+ba[ext=m4a]/b[ext=mp4][height<=\(h)]/bv*[height<=\(h)]+ba/b",
                       "--merge-output-format", "mp4"]
-        case .video: ["-f", "bv*[vcodec^=avc1][height<=1080]/bv*", "--remux-video", "mp4"]
+        case .video: ["-f", "bv*[vcodec^=avc1][height<=\(h)]/bv*[height<=\(h)]/bv*", "--remux-video", "mp4"]
         }
     }
 }
@@ -34,6 +36,15 @@ struct DownloadEntry: Codable, Equatable, Sendable {
     var sha256: String
     var saved: String       // ISO 8601
     var via: String         // "yt-dlp", "direct" or "adopted"
+    var subtitles: [String]? = nil   // sidecar .vtt files beside it (en, vi, fr), the site's own captions
+    var codecs: String? = nil        // as ffprobe read them, e.g. "h264,aac"
+}
+
+/// Pulltube-style choices (studied 11-10 in Pulltube 1.8.6: quality 360-2160, trim by timecodes, subtitles).
+struct DownloadOptions: Sendable {
+    var maxHeight = 1080
+    var section: String? = nil       // "1:00-2:30": only that stretch
+    var subtitles = true
 }
 
 struct DownloadRequest: Codable, Equatable, Sendable {
@@ -116,14 +127,45 @@ enum Downloads {
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let known = Set(manifest().map(\.name))
         var added: [DownloadEntry] = []
-        for f in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        // downloads/ itself and downloads/Pulltube/ (set as a destination in Pulltube; its files keep that subfolder)
+        let pull = root.appendingPathComponent(pulltubeFolder, isDirectory: true)
+        let found = ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
+            + ((try? fm.contentsOfDirectory(at: pull, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
+        for f in found {
             let ext = f.pathExtension.lowercased()
-            guard mediaExtensions.contains(ext), !known.contains(f.lastPathComponent),
-                  !f.lastPathComponent.hasSuffix(".part") else { continue }
-            let e = try entry(for: f, source: "", mode: videoExtensions.contains(ext) ? .av : .audio, via: "adopted")
+            let name = f.deletingLastPathComponent().standardizedFileURL == pull.standardizedFileURL
+                ? pulltubeFolder + "/" + f.lastPathComponent : f.lastPathComponent
+            guard mediaExtensions.contains(ext), !known.contains(name), !f.lastPathComponent.hasSuffix(".part") else { continue }
+            var e = try entry(for: f, source: "", mode: videoExtensions.contains(ext) ? .av : .audio, via: "adopted")
+            e.name = name
             try record(e); added.append(e)
         }
         return added
+    }
+
+    static let pulltubeFolder = "Pulltube"
+
+    /// The file an entry names (entries in Pulltube/ keep that subfolder in their name).
+    static func file(_ e: DownloadEntry) -> URL { root.appendingPathComponent(e.name) }
+
+    /// Offline first: the same link in the same mode already here, with its bytes intact, is used without the network.
+    static func existing(_ link: String, mode: DownloadMode) -> DownloadEntry? {
+        manifest().first { e in
+            e.source == link && e.mode == mode && FileManager.default.fileExists(atPath: file(e).path)
+                && (try? sha256(file(e))) == e.sha256
+        }
+    }
+
+    /// Would retrying later help? (no connection, DNS, timeouts: yes; a removed video or a bad link: no)
+    static func isOffline(_ error: Error) -> Bool {
+        if let u = error as? URLError {
+            return [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
+                    .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff].contains(u.code)
+        }
+        let s = String(describing: error).lowercased()
+        return ["nodename nor servname", "getaddrinfo", "network is unreachable", "timed out", "no route to host",
+                "connection refused", "temporary failure in name resolution", "internet connection appears to be offline"]
+            .contains { s.contains($0) }
     }
 
     // MARK: queue (other devices ask the Mac)
@@ -153,8 +195,14 @@ import AppKit
 
 extension Downloads {
     enum Failure: Error, CustomStringConvertible {
-        case noTool(String), failed(String)
-        var description: String { switch self { case .noTool(let t): "\(t) isn't installed (brew install \(t))"; case .failed(let m): m } }
+        case noTool(String), failed(String), queued
+        var description: String {
+            switch self {
+            case .noTool(let t): "\(t) isn't installed (brew install \(t))"
+            case .failed(let m): m
+            case .queued: "no connection: queued, it downloads when the connection returns (recense download --queue)"
+            }
+        }
     }
 
     static func tool(_ name: String) -> String? {
@@ -162,16 +210,33 @@ extension Downloads {
     }
 
     /// Downloads `link` in `mode` into downloads/ and records it. A direct media link is fetched as it is.
-    static func fetch(_ link: String, mode: DownloadMode) async throws -> DownloadEntry {
+    static func fetch(_ link: String, mode: DownloadMode, options: DownloadOptions = DownloadOptions(),
+                      queueWhenOffline: Bool = true) async throws -> DownloadEntry {
         guard let url = URL(string: link) else { throw Failure.failed("not a link: \(link)") }
+        // 1. already on this device (no network)
+        if options.section == nil, let e = existing(link, mode: mode) { return e }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // 2. from the source: resumable, retried; 3. offline, it waits in the queue and never blocks
+        do {
+            var e = try await fromSource(url, link: link, mode: mode, options: options)
+            e = try await makePlayable(e)
+            if options.subtitles, url.scheme?.hasPrefix("http") == true, !isDirectMedia(url) {
+                e.subtitles = await subtitles(link, beside: file(e))
+            }
+            try record(e); return e
+        } catch where queueWhenOffline && isOffline(error) {
+            _ = try ask(link, mode: mode, from: Host.current().localizedName ?? "Mac")
+            throw Failure.queued
+        }
+    }
+
+    static func fromSource(_ url: URL, link: String, mode: DownloadMode, options: DownloadOptions) async throws -> DownloadEntry {
         if isDirectMedia(url) {
             let tmp: URL
             if url.isFileURL { tmp = url } else { tmp = try await URLSession.shared.download(from: url).0 }
             let dest = root.appendingPathComponent(freeName(url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent))
             if url.isFileURL { try FileManager.default.copyItem(at: tmp, to: dest) } else { try FileManager.default.moveItem(at: tmp, to: dest) }
-            let e = try entry(for: dest, source: link, mode: mode, via: "direct")
-            try record(e); return e
+            return try entry(for: dest, source: link, mode: mode, via: "direct")
         }
         guard let ytdlp = tool("yt-dlp") else { throw Failure.noTool("yt-dlp") }
         guard let ffmpeg = tool("ffmpeg") else { throw Failure.noTool("ffmpeg") }
@@ -180,14 +245,87 @@ extension Downloads {
         let args = ["-q", "--no-warnings", "--no-playlist", "--no-simulate", "--restrict-filenames", "--trim-filenames", "120",
                     "--ffmpeg-location", (ffmpeg as NSString).deletingLastPathComponent,
                     "-P", root.path, "-o", "%(title)s [%(id)s]\(suffix).%(ext)s",
-                    "--print", "after_move:filepath"] + mode.ytdlpArgs + [link]
+                    // Pulltube's speed and resilience, from yt-dlp itself: parallel fragments, resume, retries
+                    "-N", "8", "--continue", "--retries", "20", "--fragment-retries", "20",
+                    // the file describes itself on any device, offline: title, artist, date, chapters, cover
+                    "--embed-metadata", "--embed-chapters"] + (mode == .video ? [] : ["--embed-thumbnail"])
+            + (options.section.map { ["--download-sections", "*" + $0] } ?? [])
+            + ["--print", "after_move:filepath"] + mode.ytdlpArgs(maxHeight: options.maxHeight) + [link]
         let (status, out, err) = try await run(ytdlp, args, timeout: 3600)
         let path = out.split(separator: "\n").last.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
         guard status == 0, !path.isEmpty, FileManager.default.fileExists(atPath: path) else {
             throw Failure.failed("yt-dlp couldn't download it: " + (err.split(separator: "\n").last.map(String.init) ?? "exit \(status)"))
         }
-        let e = try entry(for: URL(fileURLWithPath: path), source: link, mode: mode, via: "yt-dlp")
-        try record(e); return e
+        var e = try entry(for: URL(fileURLWithPath: path), source: link, mode: mode, via: "yt-dlp")
+        e.name = URL(fileURLWithPath: path).standardizedFileURL.path.replacingOccurrences(of: root.standardizedFileURL.path + "/", with: "")
+        return e
+    }
+
+    /// The site's own captions in English, Vietnamese and French, saved beside the file as .vtt (best effort: a
+    /// failure here never fails the download). They seed the transcript before Recense hears a word.
+    static func subtitles(_ link: String, beside media: URL) async -> [String] {
+        guard let ytdlp = tool("yt-dlp") else { return [] }
+        let base = media.deletingPathExtension().lastPathComponent.replacingOccurrences(of: " (video)", with: "")
+        let dir = media.deletingLastPathComponent()
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+        _ = try? await run(ytdlp, ["-q", "--no-warnings", "--no-playlist", "--skip-download", "--write-subs", "--write-auto-subs",
+                                   "--sub-langs", "en.*,vi.*,fr.*,-live_chat", "--convert-subs", "vtt",
+                                   "--ffmpeg-location", (tool("ffmpeg").map { ($0 as NSString).deletingLastPathComponent } ?? "/opt/homebrew/bin"),
+                                   "-P", dir.path, "-o", base + ".%(ext)s", link], timeout: 300)
+        let after = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+        return after.subtracting(before).filter { $0.hasSuffix(".vtt") }.sorted()
+    }
+
+    /// The streams ffprobe reads in a file, e.g. ["h264", "aac"], and whether it has video and audio.
+    static func probe(_ f: URL) async -> (codecs: [String], video: Bool, audio: Bool) {
+        guard let ffprobe = tool("ffprobe"),
+              let (s, out, _) = try? await run(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,codec_name",
+                                                       "-of", "csv=p=0", f.path], timeout: 60), s == 0 else { return ([], false, false) }
+        var codecs: [String] = [], video = false, audio = false
+        for line in out.split(separator: "\n") {
+            let p = line.split(separator: ","); guard p.count >= 2 else { continue }
+            if p[0] == "mjpeg" || p[0] == "png" { continue }        // embedded cover art, not a video stream
+            codecs.append(String(p[0]))
+            if p[1] == "video" { video = true } else if p[1] == "audio" { audio = true }
+        }
+        return (codecs, video, audio)
+    }
+
+    /// Codecs every iPhone, iPad and Mac plays without an extra app.
+    static let playableCodecs: Set<String> = ["h264", "hevc", "aac", "mp3", "alac", "flac", "opus", "ac3", "eac3", "pcm_s16le"]
+
+    /// A file in a codec AVFoundation can't play (VP9, AV1 in WebM or MKV) becomes H.264/AAC MP4 on the Mac's hardware
+    /// encoder, so every device plays it offline; the original goes to the Trash. Also reads the real mode and codecs.
+    static func makePlayable(_ e: DownloadEntry) async throws -> DownloadEntry {
+        let f = file(e)
+        let p = await probe(f)
+        var e = e
+        e.codecs = p.codecs.joined(separator: ",")
+        if p.video { e.mode = p.audio ? .av : .video } else if p.audio { e.mode = .audio }
+        guard !p.codecs.isEmpty, !p.codecs.allSatisfy(playableCodecs.contains), let ffmpeg = tool("ffmpeg") else { return e }
+        let out = f.deletingPathExtension().appendingPathExtension("mp4")
+        let dest = out.path == f.path ? f.deletingPathExtension().appendingPathExtension("converted.mp4") : out
+        let (s, _, err) = try await run(ffmpeg, ["-y", "-v", "error", "-i", f.path, "-map", "0:v?", "-map", "0:a?",
+                                                 "-c:v", "h264_videotoolbox", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k",
+                                                 "-movflags", "+faststart", dest.path], timeout: 7200)
+        guard s == 0 else { throw Failure.failed("couldn't convert \(f.lastPathComponent): \(err.prefix(200))") }
+        try? FileManager.default.trashItem(at: f, resultingItemURL: nil)
+        var c = try entry(for: dest, source: e.source, mode: e.mode, via: e.via)
+        c.name = (e.name as NSString).deletingLastPathComponent.isEmpty ? dest.lastPathComponent
+            : (e.name as NSString).deletingLastPathComponent + "/" + dest.lastPathComponent
+        c.codecs = (await probe(dest)).codecs.joined(separator: ",")
+        return c
+    }
+
+    /// adopt(), then each new file's real mode and codecs from ffprobe, converted when a device couldn't play it.
+    static func adoptAndCheck() async throws -> [DownloadEntry] {
+        var out: [DownloadEntry] = []
+        for e in try adopt() {
+            let c = try await makePlayable(e)
+            if c.name != e.name { try write(manifest().filter { $0.name != e.name }) }
+            try record(c); out.append(c)
+        }
+        return out
     }
 
     /// Runs every queued request (oldest first); a done or failed one leaves the queue, a failure logged in .queue/failed/.
@@ -195,9 +333,11 @@ extension Downloads {
         var done = 0
         for (file, r) in queued() {
             do {
-                let e = try await fetch(r.url, mode: r.mode)
+                let e = try await fetch(r.url, mode: r.mode, queueWhenOffline: false)
                 log("downloaded \(e.name) (\(r.mode.label), for \(r.from))"); done += 1
                 try? FileManager.default.removeItem(at: file)
+            } catch where isOffline(error) {
+                log("still offline: \(r.url) stays queued"); break     // the rest would fail the same way
             } catch {
                 log("couldn't download \(r.url): \(error)")
                 let failed = queueDir.appendingPathComponent("failed", isDirectory: true)
@@ -278,6 +418,30 @@ func downloadsSelftest() -> Bool {
     check(got?.via == "direct" && FileManager.default.fileExists(atPath: dir.appendingPathComponent(got?.name ?? "-").path),
           "a direct link lands in downloads/", got as Any)
     check(Downloads.manifest().count == 2, "and is in the manifest", Downloads.manifest().map(\.name))
+
+    // offline first: the same link and mode again is served from the device, no second file
+    let sem2 = DispatchSemaphore(value: 0); var again: DownloadEntry?
+    Task.detached { again = try? await Downloads.fetch(src.absoluteString, mode: .audio); sem2.signal() }
+    sem2.wait()
+    check(again?.name == got?.name && Downloads.manifest().count == 2, "a second ask uses the copy already here", again as Any)
+    check(Downloads.existing(src.absoluteString, mode: .video) == nil, "another mode is a new download")
+
+    // a dropped connection queues for later; a dead link doesn't
+    check(Downloads.isOffline(URLError(.notConnectedToInternet)), "no internet counts as offline")
+    check(Downloads.isOffline(Downloads.Failure.failed("yt-dlp couldn't download it: [Errno 8] nodename nor servname provided")), "a DNS failure counts as offline")
+    check(!Downloads.isOffline(Downloads.Failure.failed("yt-dlp couldn't download it: Video unavailable")), "a removed video isn't retried")
+
+    // Pulltube's folder: what it saves into downloads/Pulltube/ is adopted with that subfolder in its name
+    let pt = dir.appendingPathComponent("Pulltube", isDirectory: true)
+    try? FileManager.default.createDirectory(at: pt, withIntermediateDirectories: true)
+    try? Data("pt".utf8).write(to: pt.appendingPathComponent("talk.m4a"))
+    let ptAdded = (try? Downloads.adopt()) ?? []
+    check(ptAdded.map(\.name) == ["Pulltube/talk.m4a"] && ptAdded.first?.mode == .audio, "a Pulltube download is adopted", ptAdded.map(\.name))
+    check(FileManager.default.fileExists(atPath: Downloads.file(ptAdded.first ?? got!).path), "and its entry finds the file")
+
+    // quality: the height cap reaches yt-dlp's format choice
+    check(DownloadMode.av.ytdlpArgs(maxHeight: 720).joined().contains("height<=720") &&
+          !DownloadMode.av.ytdlpArgs(maxHeight: 720).joined().contains("1080"), "--max 720 caps the height")
     return ok
 }
 #endif
