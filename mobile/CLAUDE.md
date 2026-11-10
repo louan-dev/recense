@@ -34,6 +34,14 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - Places opened from Library navigate with view links only. After any change to `HostApp/iOS/Listen.swift` or `Browser.swift`:
   `grep -nE '^[^/]*(NavigationLink\(value:|navigationDestination\(for:)' mobile/HostApp/iOS/Listen.swift mobile/HostApp/iOS/Browser.swift`
   prints nothing (a value push opened a second Listen, and Archive's top level instead of the folder, 11-09).
+- Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
+  or `Listener.name`: each line prints what it says.
+  `grep -c 'guard Host.owner === self' mobile/HostApp/iOS/Listen.swift` prints 1 (Home and Listen took the one layer from
+  each other on every layout; iOS's watchdog ended Recense, 0x8BADF00D, when Now Playing opened).
+  `grep -nE 'Button *\{ *l\.start\(\)' mobile/HostApp/iOS/*.swift` prints nothing: the Start a person taps is the system
+  picker (`StartBroadcast`); iOS ignores the picker tapped from code (probe 11-10).
+  `grep -n '"Automatic (' mobile/HostApp/iOS/*.swift` prints nothing (the row wrapped after "English,").
+  iPhone Mirroring can't show the broadcast sheet or use the phone's mic: the last step (Start Broadcast, words appear) is checked on the phone in hand.
 - Every Swift package under `../shared/` stays out of the app's synchronized folder. After adding one, and before any iOS build:
   `for d in shared/*/Package.swift; do n=$(basename $(dirname $d)); grep -qE "membershipExceptions = \([^)]*\b$n\b" mobile/ios/GalleryFiles.xcodeproj/project.pbxproj || echo "NOT EXCLUDED: $n"; done`
   prints nothing (`shared/pieces` was missed on 11-09; its Package.swift and XCTest tests would have compiled into the app).

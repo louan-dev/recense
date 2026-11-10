@@ -34,7 +34,7 @@ import ShowsKit
             model?.transcript = Self.lines(ps)
             model?.transcriptNote = a.map { $0.finished ? nil : "Hearing ahead of the playhead…" } ?? nil
         }
-        model.transcriptNote = "Hearing \(Listener.name(lang)) on this device…"
+        model.transcriptNote = "Hearing \(Listener.short(lang)) on this device…"
         ahead = a
         a.start()
     }

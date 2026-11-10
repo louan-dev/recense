@@ -265,9 +265,17 @@ final class Listener: NSObject, ObservableObject {
             ? "Heard on this device by SFSpeechRecognizer (no word times)." : "This device can't hear \(name(id)) offline."
     }
     static let into = ["en", "vi", "fr"]  // Recense's tr/en|vi|fr
+    /// A language's name for a picker row: "English (United States)", or "Automatic". The three languages Automatic
+    /// follows are said under the picker: in the row they wrapped after "English," on the iPhone (11-10).
     static func name(_ id: String) -> String {
-        id == Captions.automatic ? "Automatic (English, French, Vietnamese)" : Locale.current.localizedString(forIdentifier: id) ?? id
+        id == Captions.automatic ? "Automatic" : Locale.current.localizedString(forIdentifier: id) ?? id
     }
+    /// The short name for status lines and episode titles: "English", so "… · English (United States)" never wraps.
+    static func short(_ id: String) -> String {
+        id == Captions.automatic ? "Automatic"
+            : Locale.current.localizedString(forLanguageCode: Locale(identifier: id).language.languageCode?.identifier ?? id) ?? id
+    }
+    static let automaticNote = "Automatic follows English, French and Vietnamese, whichever is spoken."
 
     private func stateChanged() {
         let s = Captions.state()
@@ -371,11 +379,18 @@ final class Listener: NSObject, ObservableObject {
         prompts.resumed(); savePrompts()
         redecide()
     }
-    func dismissPrompt() {
-        prompts.dismiss(); savePrompts(); prompting = false
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["listen.stop"])
-    }
     private func savePrompts() { UserDefaults.standard.set(try? JSONEncoder().encode(prompts), forKey: "listen.prompts") }
+
+    /// The one listening button, the same on Home and Listen: Resume when paused, Pause while hearing, Start when
+    /// nothing hears (opens iOS's broadcast sheet). Until 11-10 both offered "Pause listening" while not hearing.
+    /// Whether the one button is Start, drawn over the system's picker (StartBroadcast) instead of a plain Button.
+    var startsBroadcast: Bool { !paused && !stopping && !hearing }
+    var control: (title: String, symbol: String, act: () -> Void) {
+        if paused { return ("Resume listening", "play.circle.fill", { self.resume() }) }
+        if stopping { return ("Pausing…", "pause.circle.fill", {}) }
+        if hearing { return ("Pause listening", "pause.circle.fill", { self.pause() }) }
+        return ("Start listening", "record.circle", { self.start() })
+    }
 
     /// Why the prompt shows, in one line.
     var promptWhy: String {
@@ -453,6 +468,10 @@ final class Listener: NSObject, ObservableObject {
     private func loadEpisodes() {
         let files = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: nil)) ?? []
         episodes = files.compactMap { try? JSONDecoder().decode(Episode.self, from: Data(contentsOf: $0)) }.sorted { $0.updated > $1.updated }
+        // an episode that heard nothing is not kept (11-10: every launch left a "0 sentences" one in Episodes and
+        // Recently Played); the one in use stays
+        let current = UserDefaults.standard.string(forKey: "listen.episode")
+        for e in episodes where e.sentences.isEmpty && e.key != current { delete(e) }
     }
 
     private func save() {
@@ -472,17 +491,17 @@ final class Listener: NSObject, ObservableObject {
     func fresh(ear: String = "broadcast") {
         lastLineAt = Date()
         // the mic's episodes say so in their title too, so one begun the same minute as a broadcast stays apart
-        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.name(lang) + (ear == "mic" ? " · Microphone" : ""))
-        episode?.ear = ear
+        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.short(lang) + (ear == "mic" ? " · Microphone" : ""), ear: ear)
     }
 
-    func choose(_ title: String) {
+    func choose(_ title: String, ear: String? = nil) {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         save()
+        if let e = episode, e.sentences.isEmpty, e.key != Episode.key(t) { delete(e) }  // it heard nothing: not kept
         if let e = episode, unsent.contains(e.key) { let copy = e; Task { await send(copy) } }
         let key = Episode.key(t)
-        episode = episodes.first { $0.key == key } ?? Episode(key: key, title: t, heard: heard, into: into, updated: Date().timeIntervalSince1970 * 1000)
+        episode = episodes.first { $0.key == key } ?? Episode(key: key, title: t, heard: heard, into: into, updated: Date().timeIntervalSince1970 * 1000, ear: ear)  // its ear from the start (it was set after the first save, and the row said "Broadcast")
         UserDefaults.standard.set(key, forKey: "listen.episode")
         // what the extension already heard belongs to the episode before
         for (n, text) in lines { skip[n] = Self.split(text).count }
@@ -1120,16 +1139,31 @@ extension Listener: AVPictureInPictureSampleBufferPlaybackDelegate {
 // (the layer's frame follows the view's layout; set from updateUIView it stayed 0×0, and PiP never became possible)
 struct CaptionLayer: UIViewRepresentable {
     final class Host: UIView {
+        // One host holds the layer: the last to come on screen. Until 11-10 Home's card and Listen's preview (both on
+        // screen while Listen opens) took it from each other on every layout; each move resized it, PiP measured it
+        // again and asked for another layout, and iOS's watchdog ended Recense (0x8BADF00D) before Listen showed.
+        nonisolated(unsafe) static weak var owner: Host?
+        nonisolated(unsafe) static let all = NSHashTable<Host>.weakObjects()
+
         override func layoutSubviews() {
             super.layoutSubviews()
+            guard Host.owner === self else { return }
             let l = Listener.shared.layer
+            CATransaction.begin(); CATransaction.setDisableActions(true)
             if l.superlayer !== layer { layer.addSublayer(l) }
-            l.frame = bounds
+            if l.frame != bounds { l.frame = bounds }  // an unchanged frame set again still makes PiP measure again
+            CATransaction.commit()
         }
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            // Home and Listen both host it: the one coming on screen takes the layer back
-            if window != nil { setNeedsLayout(); Task { @MainActor in Listener.shared.makePiP() } }
+            Host.all.add(self)
+            if window != nil {
+                Host.owner = self; setNeedsLayout(); Task { @MainActor in Listener.shared.makePiP() }
+            } else if Host.owner === self {
+                // leaving: the host still on screen (Home under a closing Listen) takes the layer back
+                Host.owner = Host.all.allObjects.first { $0 !== self && $0.window != nil }
+                Host.owner?.setNeedsLayout()
+            }
         }
     }
     func makeUIView(context: Context) -> Host {
@@ -1155,32 +1189,25 @@ struct ListenView: View {
                     Text("Hears whatever is playing in any app, on this device, then shows it in a window that floats over every app.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                // the one Pause (both ears, kept across launches); hearing starts by itself otherwise (ListenEars.swift)
-                Button { if l.paused { l.resume() } else { l.pause() } } label: {
-                    Label(l.paused ? "Resume listening" : l.stopping ? "Pausing…" : "Pause listening",
-                          systemImage: l.paused ? "play.circle.fill" : "pause.circle.fill")
-                        .font(.title3.weight(.semibold))
+                // the one button (Listener.control, as on Home): Start, Pause (both ears, kept across launches), Resume
+                if l.startsBroadcast {
+                    StartBroadcast { Label(l.control.title, systemImage: l.control.symbol).font(.title3.weight(.semibold)).foregroundStyle(Theme.accent) }
+                } else {
+                    Button { l.control.act() } label: {
+                        Label(l.control.title, systemImage: l.control.symbol).font(.title3.weight(.semibold))
+                    }
+                    .disabled(l.stopping)
                 }
-                .disabled(l.stopping)
-                // the broadcast hears other apps directly (also with headphones): one tap on iOS's sheet. When hearing
-                // stopped, the prompt below asks for that tap instead, so the two never show together.
-                if !l.paused, !l.on, !l.prompting {
-                    Button { l.start() } label: { Label("Hear other apps directly", systemImage: "record.circle") }
+                // why nothing hears now (headphones, sound elsewhere, mic off): Start above is the one tap
+                if l.prompting { Text(l.promptWhy).font(.subheadline).foregroundStyle(.secondary) }
+                // while the mic hears the room, the broadcast can hear other apps directly instead (one tap on iOS's sheet)
+                if l.ear == .mic {
+                    StartBroadcast { Label("Hear other apps directly", systemImage: "record.circle").foregroundStyle(Theme.accent) }
                 }
                 if let e = l.episode, l.hearing { LabeledContent("Now", value: e.title) }
                 if let e = l.error { Text(e).font(.footnote).foregroundStyle(.blue) }
             } footer: {
                 Text("Recense hears the room while you play something on the speaker, and keeps text only, never audio.")
-            }
-            if l.prompting {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Tap once to keep hearing").font(.headline)
-                        Text(l.promptWhy).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Button { l.start() } label: { Label("Keep hearing", systemImage: "record.circle") }
-                    Button("Not now") { l.dismissPrompt() }
-                }
             }
             Section {
                 CaptionLayer().aspectRatio(640 / 300, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: Theme.artCorner, style: .continuous))
@@ -1202,7 +1229,7 @@ struct ListenView: View {
                 }
                 Button { l.fetchAll() } label: { Label(l.fetching == nil ? "Download" : "Downloading…", systemImage: "arrow.down.circle") }
                     .disabled(l.fetching != nil)
-            } header: { Text("Language") } footer: { Text([l.ears, l.pack, l.fetchNote].filter { !$0.isEmpty }.joined(separator: "\n")) }
+            } header: { Text("Language") } footer: { Text([l.heard == Captions.automatic ? Listener.automaticNote : "", l.ears, l.pack, l.fetchNote].filter { !$0.isEmpty }.joined(separator: "\n")) }
             Section {
                 Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
                     .frame(height: 420)
@@ -1224,10 +1251,12 @@ struct ListenView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 MoreMenu {
-                    Button { if l.paused { l.resume() } else { l.pause() } } label: {
-                        Label(l.paused ? "Resume Listening" : "Pause Listening", systemImage: l.paused ? "play.circle" : "pause.circle")
-                    }.disabled(l.stopping)
-                    if !l.paused, !l.on { Button { l.start() } label: { Label("Hear Other Apps Directly", systemImage: "record.circle") } }
+                    // Pause or Resume as the page's button says; Start is only the page's own button (StartBroadcast):
+                    // a menu item can't hold the system's picker, and iOS ignores the picker tapped from code
+                    if !l.startsBroadcast {
+                        Button { l.control.act() } label: { Label(l.control.title.capitalized, systemImage: l.control.symbol) }
+                            .disabled(l.stopping)
+                    }
                     Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                     Button { clearing = true } label: { Label("Clear This Episode", systemImage: "trash") }.disabled(l.sentences.isEmpty)
                 }
@@ -1276,7 +1305,43 @@ extension ListenView {
     }
 }
 
-// the system's start/stop broadcast button, preset to Gallery's extension so the sheet has one choice
+/// Start listening as iOS accepts it: the system's broadcast picker lies under the finger, our label drawn over it.
+/// iOS no longer opens the sheet for a picker tapped from code (11-10 probe on the iPhone: picker on screen, its
+/// button found, sendActions sent, no sheet), so every Start the owner taps is this view.
+struct StartBroadcast<Content: View>: View {
+    let content: Content
+    init(@ViewBuilder _ content: () -> Content) { self.content = content() }
+    var body: some View {
+        content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            .overlay { PickerFill() }
+            .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The picker stretched over its label, nearly clear (UIKit still delivers touches at alpha 0.02, not under 0.01).
+private struct PickerFill: UIViewRepresentable {
+    final class Host: UIView {
+        let picker = RPSystemBroadcastPickerView()
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            picker.preferredExtension = "com.chauphan.galleryfiles.broadcast"
+            picker.showsMicrophoneButton = false
+            picker.alpha = 0.02
+            addSubview(picker)
+        }
+        required init?(coder: NSCoder) { nil }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            picker.frame = bounds
+            picker.subviews.forEach { $0.frame = picker.bounds }  // its button, centred at 44 pt, fills the label
+        }
+    }
+    func makeUIView(context: Context) -> Host { Host() }
+    func updateUIView(_ v: Host, context: Context) { v.setNeedsLayout() }
+}
+
+// the system's start/stop broadcast button, preset to Gallery's extension so the sheet has one choice. Tapped from
+// code (start(): the stop notification) it no longer opens the sheet on iOS 26+; StartBroadcast is the owner's Start.
 struct BroadcastButton: UIViewRepresentable {
     nonisolated(unsafe) static weak var view: RPSystemBroadcastPickerView?
     static func tap() {
