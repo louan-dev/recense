@@ -25,7 +25,7 @@ updates in place.
   is in `···` › View.
   Library opens a place with a view link, so a place opens its own rows with view links too (`NavigationLink { … }`),
   never `NavigationLink(value:)` + `navigationDestination(for:)`: on that stack a value push opened a second Listen
-  instead of the episode (fixed 11-09; Archive's folders still push by value).
+  instead of the episode, and Archive's top level instead of the tapped folder (both fixed 11-09).
 - **The root (11-07): the Podcasts-style shell** (`HostApp/iOS/Shows.swift`, from `../shared/ShowsKit/`): Home (Up Next,
   Recently Played), New (what landed in `Recense/inbox/`), Library (Shows, Study, Folio, Matters with Face ID, Saved,
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
