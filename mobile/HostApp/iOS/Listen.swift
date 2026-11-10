@@ -21,6 +21,7 @@ struct Sentence: Identifiable, Codable, Equatable, Hashable {
     var at: Double  // about where in the episode, in seconds of listening (iOS can't see the other app's clock)
     var t: Double? = nil  // the episode's own time, when the Mac wrote it (Recense, handoff.swift)
     var words: [TranscriptWord]? = nil  // each word as SpeechAnalyzer timed it, in seconds since 1970 (the transcript lights them)
+    var replays: Int? = nil  // how many times it was heard again (a rewind or a replay), never added twice (Align.swift)
     var time: Double { t ?? at }
 }
 
@@ -205,7 +206,7 @@ final class Listener: NSObject, ObservableObject {
             stopping = false
             catchUp()  // the end of the broadcast before, if the app missed it
             if on {
-                lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []
+                lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []
                 if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
                 if floats { startPiP() } else { keepAwake(true) }
             } else {
@@ -312,9 +313,9 @@ final class Listener: NSObject, ObservableObject {
         guard theirs.updated > (ours?.updated ?? 0) || timed else { return }
         // ours is newer but theirs is the Mac's whole timed transcript: take it, and keep our place, found by its words
         if let ours, ours.updated >= theirs.updated, ours.sentences.indices.contains(ours.place) {
-            let w = Self.words(ours.sentences[ours.place].heard)
-            if let j = theirs.sentences.indices.max(by: { Self.overlap(w, Self.words(theirs.sentences[$0].heard)) < Self.overlap(w, Self.words(theirs.sentences[$1].heard)) }),
-               Self.overlap(w, Self.words(theirs.sentences[j].heard)) >= 0.6 { theirs.place = j }
+            let w = Align.words(ours.sentences[ours.place].heard)
+            if let j = theirs.sentences.indices.max(by: { Align.overlap(w, Align.words(theirs.sentences[$0].heard)) < Align.overlap(w, Align.words(theirs.sentences[$1].heard)) }),
+               Align.overlap(w, Align.words(theirs.sentences[j].heard)) >= 0.6 { theirs.place = j }
             theirs.updated = ours.updated; theirs.by = ours.by
             unsent.insert(theirs.key)
         }
@@ -389,10 +390,6 @@ final class Listener: NSObject, ObservableObject {
         return out
     }
 
-    static func overlap(_ a: Set<String>, _ b: Set<String>) -> Double {
-        a.isEmpty || b.isEmpty ? 0 : Double(a.intersection(b).count) / Double(min(a.count, b.count))
-    }
-
     // the index of every episode in Gallery (the Mac's too), for the picker
     @Published var everywhere: [(key: String, title: String)] = []
     func fetchIndex() async {
@@ -402,23 +399,49 @@ final class Listener: NSObject, ObservableObject {
             .sorted { (eps[$0.key]?["updated"] as? Double ?? 0) > (eps[$1.key]?["updated"] as? Double ?? 0) }
     }
 
-    private static func words(_ s: String) -> Set<String> {
-        Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 })
-    }
-
     // is this sentence one the episode already has (the user went back, or played it again)? the closest to where
     // they are wins when several are alike
     private func match(_ text: String, besides: String? = nil) -> Int? {
         guard let e = episode else { return nil }
-        let w = Self.words(text)
-        guard w.count >= 4 else { return nil }
-        var best: (i: Int, score: Double)?
-        for (i, s) in e.sentences.enumerated() where s.id != besides {
-            let o = Self.words(s.heard)
-            let score = Double(w.intersection(o).count) / Double(max(1, min(w.count, o.count)))
-            if score >= 0.7, best == nil || score > best!.score || (score == best!.score && abs(i - e.place) < abs(best!.i - e.place)) { best = (i, score) }
+        let after = lastMatch.flatMap { id in e.sentences.firstIndex { $0.id == id } }
+        let not = besides.flatMap { id in e.sentences.firstIndex { $0.id == id } }
+        return Align.match(text, in: e.sentences.map(\.heard), place: e.place, after: after, besides: not)
+    }
+    private var lastMatch: String?             // the sentence placed last (a short one is only known right after it)
+    private var replayedNow: Set<String> = []  // sentences counted as replayed in this listening
+
+    /// A sentence heard before, cut short then (the content was left mid-sentence), is kept whole now.
+    private func complete(_ i: Int, _ text: String, _ ws: [TranscriptWord]?) {
+        let old = episode!.sentences[i].heard
+        guard let end = old.trimmingCharacters(in: .whitespaces).last, !Self.stops.contains(end), Align.completes(text, old) else { return }
+        episode!.sentences[i].heard = text
+        if let ws { episode!.sentences[i].words = ws }
+        episode!.sentences[i].said = config == nil ? text : said[text] ?? ""
+        translate(text)
+        touch()
+    }
+
+    /// Content left partway in another episode and resumed now: when the sentences this listening added continue an
+    /// episode of the last 30 days (three in a row, in order), they belong there. They move over (matched, never
+    /// added twice) and that episode goes on from where they are; this one is removed if they were all it had.
+    private func adoptIfResumed() -> Bool {
+        guard let e = episode, !added.isEmpty, added.count <= 20 else { return false }
+        let mine = e.sentences.filter { added.contains($0.id) }.map(\.heard)
+        let since = Date().timeIntervalSince1970 * 1000 - 30 * 86_400_000
+        for o in episodes where o.key != e.key && o.updated > since {
+            guard let j = Align.continues(mine, in: o.sentences.map(\.heard)) else { continue }
+            var left = e
+            left.sentences.removeAll { added.contains($0.id) }
+            if left.sentences.isEmpty { delete(e) } else { episode = left; dirty = true; save() }
+            episode = o
+            episode!.place = j
+            UserDefaults.standard.set(o.key, forKey: "listen.episode")
+            map = [:]; added = []; lastMatch = nil
+            touch()
+            rebuild()
+            return true
         }
-        return best?.i
+        return false
     }
 
     private func translate(_ text: String) {
@@ -436,12 +459,13 @@ final class Listener: NSObject, ObservableObject {
                 let ws = timed.flatMap { k < $0.count && !$0[k].isEmpty ? $0[k] : nil }
                 let lid = "\(n).\(k)"
                 if let sid = map[lid], let i = episode!.sentences.firstIndex(where: { $0.id == sid }) {
-                    guard episode!.sentences[i].heard != text, added.contains(sid) else { continue }
+                    guard episode!.sentences[i].heard != text else { continue }
+                    guard added.contains(sid) else { complete(i, text, ws); continue }
                     // it grew: if it is now plainly one heard before, use that one and drop the copy
                     if let j = match(text, besides: sid) {
                         let keep = episode!.sentences[j].id
                         episode!.sentences.remove(at: i)
-                        added.remove(sid); map[lid] = keep
+                        added.remove(sid); map[lid] = keep; lastMatch = keep
                         episode!.place = episode!.sentences.firstIndex { $0.id == keep } ?? episode!.place
                     } else {
                         episode!.sentences[i].heard = text
@@ -451,8 +475,12 @@ final class Listener: NSObject, ObservableObject {
                     }
                     touch()
                 } else if let j = match(text) {
-                    map[lid] = episode!.sentences[j].id
+                    let sid = episode!.sentences[j].id
+                    map[lid] = sid
                     episode!.place = j
+                    lastMatch = sid
+                    if !replayedNow.contains(sid) { replayedNow.insert(sid); episode!.sentences[j].replays = (episode!.sentences[j].replays ?? 0) + 1 }
+                    complete(j, text, ws)
                     lastHeard = Date()
                     touch()
                 } else {
@@ -463,10 +491,11 @@ final class Listener: NSObject, ObservableObject {
                                      at: prev + min(30, Date().timeIntervalSince(lastHeard)), words: ws)
                     episode!.sentences.insert(s, at: min(at, episode!.sentences.count))
                     episode!.place = min(at, episode!.sentences.count - 1)
-                    map[lid] = s.id; added.insert(s.id)
+                    map[lid] = s.id; added.insert(s.id); lastMatch = s.id
                     lastHeard = Date()
                     translate(text)
                     touch()
+                    if adoptIfResumed() { return }
                 }
             }
         }

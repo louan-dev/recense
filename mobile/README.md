@@ -79,6 +79,12 @@ updates in place.
   Offline translation: the line under the language pickers says whether the pair translates on this device;
   **Download for offline** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
   be translated says "not translated (pack missing)" instead of staying blank, and is translated once the pack is there.
+  One transcript, never twice (`HostApp/iOS/Align.swift`): content left partway and resumed, rewound, or replayed from
+  the start lands on the sentences the episode already has (a sentence left cut short is completed; a short one like
+  "Oui." is recognised only right after the sentence it follows); new stretches are spliced in after the last place
+  recognised. A listening whose first sentences continue another episode of the last 30 days (three in a row, in order)
+  joins that episode, so two shows that share an intro stay apart. Text only for now: the speech engines still hear a
+  replay (acoustic fingerprints come next).
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).
