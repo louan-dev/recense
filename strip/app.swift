@@ -6784,6 +6784,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     var hoverWork: DispatchWorkItem?
     var terminal: RecenseTerminal?
     var terminalStarted = false
+    var sshNext: SSHHost?                // Topic › Connect To: the terminal's next session is ssh to this host
     let hubView = DevonHub(frame: .zero)
     let notebookView = NotebookPanel(frame: .zero)
     let mediaView = MediaPanel(frame: .zero)
@@ -7111,6 +7112,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let hideItem = page.addItem(withTitle: "Hide", action: #selector(hidePanel), keyEquivalent: "w")
         let clear = page.addItem(withTitle: "Clear Terminal", action: #selector(clearTerminal), keyEquivalent: "k")
         [prev, next, hideItem, clear].forEach { $0.target = self }
+        let connect = page.addItem(withTitle: "Connect To", action: nil, keyEquivalent: "")
+        connect.submenu = sshMenu()
+        page.delegate = self
         page.addItem(.separator())
         editorMenuItems().forEach { page.addItem($0) }
 
@@ -7684,8 +7688,48 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         DispatchQueue.main.async {
             self.terminalStarted = false
             self.terminal?.getTerminal().resetToInitialState()
-            if self.mode == .notebook && self.panel.isVisible { self.startTerminalIfNeeded() }
+            if self.sshNext != nil || (self.mode == .notebook && self.panel.isVisible) { self.startTerminalIfNeeded() }
         }
+    }
+
+    /// Topic › Connect To › <host>: the terminal's session becomes ssh to that host over the first route that answers
+    /// (LAN, then Tailscale, then a tunnel; sshhosts.swift). When ssh ends, the terminal starts its own session again.
+    @objc func connectSSH(_ sender: NSMenuItem) {
+        guard let h = sender.representedObject as? SSHHost else { return }
+        sshNext = h
+        if terminalStarted, let t = terminal { t.process.terminate() }      // processTerminated starts the ssh session
+        present(.notebook)
+    }
+
+    func startSSH(_ h: SSHHost) {
+        guard let t = terminal else { return }
+        terminalStarted = true
+        t.getTerminal().resetToInitialState()
+        var env = ProcessInfo.processInfo.environment
+        env["TERM"] = "xterm-256color"
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        t.startProcess(executable: "/bin/zsh", args: ["-f", "-c", SSHHosts.connectScript(h)],
+                       environment: env.map { "\($0)=\($1)" }, execName: "zsh")
+    }
+
+    /// Topic › Connect To › Edit Hosts…: ~/Recense/ssh/hosts.json (made from ~/.ssh/config the first time).
+    @objc func editSSHHosts() {
+        if !FileManager.default.fileExists(atPath: SSHHosts.file.path) { try? SSHHosts.save(SSHHosts.load()) }
+        NSWorkspace.shared.open(SSHHosts.file)
+    }
+
+    /// The Connect To menu, rebuilt each time it opens so an edited hosts.json shows at once.
+    func sshMenu() -> NSMenu {
+        let m = NSMenu(title: "Connect To")
+        for h in SSHHosts.load() {
+            let i = m.addItem(withTitle: h.name, action: #selector(connectSSH(_:)), keyEquivalent: "")
+            i.representedObject = h; i.target = self
+            i.toolTip = h.routes.map { "\($0.kind.rawValue): \($0.address)" }.joined(separator: " → ")
+        }
+        if m.items.isEmpty { m.addItem(withTitle: "No hosts yet", action: nil, keyEquivalent: "").isEnabled = false }
+        m.addItem(.separator())
+        m.addItem(withTitle: "Edit Hosts…", action: #selector(editSSHHosts), keyEquivalent: "").target = self
+        return m
     }
 
     /// ⌘K: clear the screen and the scrollback, keep the session (like Terminal.app).
@@ -7699,6 +7743,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     /// so your usual setup applies). If Claude exits, the next visit starts it again.
     func startTerminalIfNeeded() {
         guard !terminalStarted, let t = terminal else { return }
+        if let h = sshNext { sshNext = nil; startSSH(h); return }
         terminalStarted = true
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let vault = (notePath as NSString).deletingLastPathComponent
@@ -8029,8 +8074,8 @@ func stripSelftest() -> Bool {
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
-    let m = downloadsSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m ? 0 : 1)
+    let m = downloadsSelftest(), n = sshSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n ? 0 : 1)
 }
 
 // `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`, `--queue` (run what other
@@ -8130,6 +8175,7 @@ app.run()
 extension App: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
+        menu.items.first { $0.title == "Connect To" }?.submenu = sshMenu()
         // The wing entries say Show or Hide as the wings are now.
         if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {
             let fresh = wingMenuItems()
