@@ -23,6 +23,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `swiftc -O mobile/HostApp/iOS/Align.swift mobile/ios/Tests/align/main.swift -o "$TMPDIR/align" && "$TMPDIR/align"` (ALL OK).
 - Listen's ears (`HostApp/iOS/ListenEars.swift`, which ear hears, the once-per-stop prompt), after any change to it or to `Listener.redecide()`:
   `swiftc -O mobile/HostApp/iOS/ListenEars.swift mobile/ios/Tests/ears/main.swift -o "$TMPDIR/ears" && "$TMPDIR/ears"` (ALL OK).
+- The floating window's show/hide rule (`HostApp/iOS/Floating.swift`), after any change to it or to `Listener.floatTick()`:
+  `swiftc -O mobile/HostApp/iOS/Floating.swift mobile/ios/Tests/floating/main.swift -o "$TMPDIR/floating" && "$TMPDIR/floating"` (ALL OK).
 - Places opened from Library navigate with view links only. After any change to `HostApp/iOS/Listen.swift` or `Browser.swift`:
   `grep -nE '^[^/]*(NavigationLink\(value:|navigationDestination\(for:)' mobile/HostApp/iOS/Listen.swift mobile/HostApp/iOS/Browser.swift`
   prints nothing (a value push opened a second Listen, and Archive's top level instead of the folder, 11-09).

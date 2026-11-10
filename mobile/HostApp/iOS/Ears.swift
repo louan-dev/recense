@@ -27,7 +27,7 @@ import ShowsKit
         ahead?.stop(); ahead = nil; key = e.id
         model.transcript = []
         guard let url = Self.file(e) else { model.transcriptNote = "This episode isn't on this device yet, so it can't be heard here."; return }
-        let lang = Listener.shared.heard
+        let lang = Listener.shared.lang
         let a = SpeechAhead(url: url, lang: lang, duration: e.duration ?? Self.length(url))
         a.playhead = { [weak model] in model?.transport?.time ?? 0 }
         a.changed = { [weak model, weak a] ps in

@@ -71,16 +71,27 @@ final class Listener: NSObject, ObservableObject {
         .flatMap { try? JSONDecoder().decode(Ears.Prompts.self, from: $0) } ?? Ears.Prompts()
     @Published var episode: Episode?
     @Published var episodes: [Episode] = []  // every one kept on this device, newest first
+    /// Under Automatic (heard == Captions.automatic), the language last heard: lines say it (Line.locale).
+    @Published var spoken = Captions.state().detected ?? "en"
+    private var lastCheck: String?
+    /// The language being heard now: the chosen one, or under Automatic the one spoken.
+    var lang: String { heard == Captions.automatic ? spoken : heard }
     @Published var heard = Captions.state().heard { didSet {
         var s = Captions.state(); s.heard = heard; Captions.put(s); retarget(); Task { await readyEars() }
         if mic.running { mic.stop(); redecide() }  // the mic hears the new language from now
     } }
     @Published var into = UserDefaults.standard.string(forKey: "listen.into") ?? "en" { didSet { UserDefaults.standard.set(into, forKey: "listen.into"); retarget() } }
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
-    // Float: the window goes over other apps when Gallery is left. Dock: it stays in Gallery and doesn't follow.
-    @Published var floats = UserDefaults.standard.object(forKey: "listen.floats") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(floats, forKey: "listen.floats"); pip?.canStartPictureInPictureAutomaticallyFromInline = floats }
-    }
+    // The floating window shows by itself while another app plays and Recense is behind, and hides on pause
+    // (Floating.swift; owner 11-10, no Dock). Whether iOS lets it reopen from behind is measured once and kept.
+    private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind") ?? "") ?? .unknown
+    private var quietFrom: Date?
+    private var tried = false
+    private var reshowing = false
+    private var lastFloat = ""
+    private var closing = false
+    private var ticking = false
+    private(set) var hidBehind = false   // Recense hid the window on a pause behind; stays awake to reopen it
     @Published var config: TranslationSession.Configuration?
     // the translation pack (Apple Translation's on-device language models): said under the pickers, so a missing one
     // is never a silent blank (playbook rule 3). fetching: the pair being downloaded once, for offline use.
@@ -125,6 +136,10 @@ final class Listener: NSObject, ObservableObject {
         super.init()
         Captions.observe(Captions.changed) { [weak self] in if self?.on == true, let l = Captions.line() { self?.take(l) } }
         Captions.observe(Captions.stateChanged) { [weak self] in self?.stateChanged() }
+        if !UserDefaults.standard.bool(forKey: "listen.autoSet") {
+            UserDefaults.standard.set(true, forKey: "listen.autoSet")
+            var s = Captions.state(); s.heard = Captions.automatic; Captions.put(s); heard = Captions.automatic
+        }
         loadEpisodes()
         if let k = UserDefaults.standard.string(forKey: "listen.episode") { episode = episodes.first { $0.key == k } }
         retarget()
@@ -165,7 +180,7 @@ final class Listener: NSObject, ObservableObject {
 
     // a silent sound mixed under whatever is playing keeps the app running behind the other app (UIBackgroundModes
     // audio), so it can take lines from the extension, translate them and redraw the floating window
-    private func keepAwake(_ on: Bool) {
+    func keepAwake(_ on: Bool) {
         if on, !engine.isRunning {
             let src = AVAudioSourceNode { _, _, _, abl in
                 for b in UnsafeMutableAudioBufferListPointer(abl) { memset(b.mData, 0, Int(b.mDataByteSize)) }
@@ -204,12 +219,12 @@ final class Listener: NSObject, ObservableObject {
         }
         #endif
         matchHeard()
-        ears = Self.legacyEars(heard)
+        ears = Self.legacyEars(lang)
     }
 
     /// "en_US" (the device's locale) and "en-US" (the recognizer's) are one language: the picker shows it chosen.
     private func matchHeard() {
-        if !hearable.contains(where: { $0.identifier == heard }),
+        if heard != Captions.automatic, !hearable.contains(where: { $0.identifier == heard }),
            let same = hearable.first(where: { $0.identifier(.bcp47) == Locale(identifier: heard).identifier(.bcp47) }) { heard = same.identifier }
     }
 
@@ -219,6 +234,20 @@ final class Listener: NSObject, ObservableObject {
         #if compiler(>=6.2)
         if #available(iOS 26, *) {
             let id = heard
+            if id == Captions.automatic {
+                // all three models once, so the ears can check which is spoken (the extension never downloads)
+                var missing: [String] = []
+                for c in SpeechCore.auto {
+                    guard let (m, l) = await SpeechEngine.module(c) else { missing.append(Self.name(c)); continue }
+                    if await SpeechEngine.installed(m, l) { _ = await SpeechEngine.prepare(m, l, keep: Set(SpeechCore.auto), download: false); continue }
+                    ears = "Downloading \(Self.name(c)), once…"
+                    if !(await SpeechEngine.prepare(m, l, keep: Set(SpeechCore.auto))) { missing.append(Self.name(c)) }
+                }
+                guard id == heard else { return }
+                ears = missing.isEmpty ? "Follows whichever of English, French and Vietnamese is spoken, on this device, word by word."
+                    : "Not downloaded yet (needs a connection once): \(missing.joined(separator: ", ")). The others are followed."
+                return
+            }
             guard let (m, l) = await SpeechEngine.module(id) else { ears = Self.legacyEars(id); return }
             let kind = m == .speech ? "SpeechTranscriber" : "DictationTranscriber"
             if await SpeechEngine.installed(m, l) { ears = "Heard on this device by \(kind), word by word."; _ = await SpeechEngine.prepare(m, l, download: false); return }
@@ -229,18 +258,27 @@ final class Listener: NSObject, ObservableObject {
             return
         }
         #endif
-        ears = Self.legacyEars(heard)
+        ears = Self.legacyEars(lang)
     }
     static func legacyEars(_ id: String) -> String {
         SFSpeechRecognizer(locale: Locale(identifier: id))?.supportsOnDeviceRecognition == true
             ? "Heard on this device by SFSpeechRecognizer (no word times)." : "This device can't hear \(name(id)) offline."
     }
     static let into = ["en", "vi", "fr"]  // Recense's tr/en|vi|fr
-    static func name(_ id: String) -> String { Locale.current.localizedString(forIdentifier: id) ?? id }
+    static func name(_ id: String) -> String {
+        id == Captions.automatic ? "Automatic (English, French, Vietnamese)" : Locale.current.localizedString(forIdentifier: id) ?? id
+    }
 
     private func stateChanged() {
         let s = Captions.state()
         error = s.error
+        // the ears' language checks, the last 20, where a run can be read back (Library/Preferences, listen.checks)
+        if let c = s.check, c != lastCheck {
+            lastCheck = c
+            var all = UserDefaults.standard.stringArray(forKey: "listen.checks") ?? []
+            all.append(Date().formatted(date: .omitted, time: .standard) + " " + c)
+            UserDefaults.standard.set(Array(all.suffix(20)), forKey: "listen.checks")
+        }
         if s.live != on {
             on = s.live
             stopping = false
@@ -291,6 +329,7 @@ final class Listener: NSObject, ObservableObject {
         if prompting, !shows { UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["listen.stop"]) }
         prompting = shows
         if c.ear != ear { switchEar(to: c.ear) }
+        floatTick()
     }
 
     private func startMic() {
@@ -309,7 +348,7 @@ final class Listener: NSObject, ObservableObject {
         let was = ear
         ear = e
         if e == .mic { beginListening(); fresh(ear: "mic") }  // the broadcast's own episode starts in stateChanged
-        if e != .none, was == .none { if floats { startPiP() } else { keepAwake(true) } }
+        if e != .none, was == .none { keepAwake(true) }
         if e == .none {
             save(); Task { await upload() }
             Listener.held = false; pip?.stopPictureInPicture(); keepAwake(false)
@@ -363,7 +402,7 @@ final class Listener: NSObject, ObservableObject {
     /// Start listening: the floating window gets ready and the system's Start Broadcast sheet opens (the one tap
     /// iOS requires before another app's sound reaches Recense).
     func start() {
-        startPiP()
+        makePiP()
         Task { try? await Task.sleep(for: .milliseconds(300)); BroadcastButton.tap() }
     }
 
@@ -433,7 +472,7 @@ final class Listener: NSObject, ObservableObject {
     func fresh(ear: String = "broadcast") {
         lastLineAt = Date()
         // the mic's episodes say so in their title too, so one begun the same minute as a broadcast stays apart
-        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.name(heard) + (ear == "mic" ? " · Microphone" : ""))
+        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.name(lang) + (ear == "mic" ? " · Microphone" : ""))
         episode?.ear = ear
     }
 
@@ -527,7 +566,7 @@ final class Listener: NSObject, ObservableObject {
     // MARK: sentences and translation (.translationTask on the root view keeps the session alive)
 
     private func retarget() {
-        let from = Locale.Language(identifier: heard), to = Locale.Language(identifier: into)
+        let from = Locale.Language(identifier: lang), to = Locale.Language(identifier: into)
         config = from.languageCode == to.languageCode ? nil : .init(source: from, target: to)
         said = [:]
         Task { await checkPack() }
@@ -542,7 +581,7 @@ final class Listener: NSObject, ObservableObject {
 
     // "Bonjour. Ça va ? Oui" → ["Bonjour.", "Ça va ?", "Oui"]; "你好吗？我很好。" → ["你好吗？", "我很好。"] (row 30: scripts
     // without spaces end a sentence at their own stops, which need no space after them; Arabic ؟ and Ge'ez ። too)
-    static let stops: Set<Character> = [".", "?", "!", "…", "。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
+    static let stops = Align.stops
     static let wideStops: Set<Character> = ["。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
     static func split(_ text: String) -> [String] {
         var out: [String] = [], cur = ""
@@ -633,14 +672,19 @@ final class Listener: NSObject, ObservableObject {
         guard episode != nil else { draw(); return }
         for n in lines.keys.sorted() {
             let timed = lineWords[n].map { Self.timed(lines[n] ?? "", $0) }
-            for (k, text) in Self.split(lines[n] ?? "").enumerated() where k >= skip[n, default: 0] {
+            let parts = Self.split(lines[n] ?? "")
+            for (k, text) in parts.enumerated() where k >= skip[n, default: 0] {
                 let ws = timed.flatMap { k < $0.count && !$0[k].isEmpty ? $0[k] : nil }
                 let lid = "\(n).\(k)"
+                // still being heard (the last of its line, no stop yet): new, growing in place; only a finished one is
+                // compared with what was heard before (a beginning like "And the judge" matched an old sentence and
+                // the new one was lost, 11-09; mobile/ios/Tests/align "growing live captions")
+                let done = k < parts.count - 1 || Align.complete(text)
                 if let sid = map[lid], let i = episode!.sentences.firstIndex(where: { $0.id == sid }) {
                     guard episode!.sentences[i].heard != text else { continue }
                     guard added.contains(sid) else { complete(i, text, ws); continue }
                     // it grew: if it is now plainly one heard before, use that one and drop the copy
-                    if let j = match(text, besides: sid) {
+                    if done, let j = match(text, besides: sid) {
                         let keep = episode!.sentences[j].id
                         episode!.sentences.remove(at: i)
                         added.remove(sid); map[lid] = keep; lastMatch = keep
@@ -652,7 +696,7 @@ final class Listener: NSObject, ObservableObject {
                         translate(text)
                     }
                     touch()
-                } else if let j = match(text) {
+                } else if done, let j = match(text) {
                     let sid = episode!.sentences[j].id
                     map[lid] = sid
                     episode!.place = j
@@ -715,6 +759,9 @@ final class Listener: NSObject, ObservableObject {
         }
         lastLineAt = Date()
         if mic { lastMic = l } else { last = l }
+        if heard == Captions.automatic, SpeechCore.code(l.locale) != spoken, SpeechCore.auto.contains(SpeechCore.code(l.locale)) {
+            spoken = SpeechCore.code(l.locale); retarget()
+        }
         lines[l.n] = l.text
         if let ws = l.words, let t0 = l.t0 {
             lineWords[l.n] = ws.map { TranscriptWord(text: $0.text, start: t0 + $0.start, end: t0 + $0.end) }
@@ -812,14 +859,32 @@ final class Listener: NSObject, ObservableObject {
         }
         let p = AVPictureInPictureController(contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self))
         p.delegate = self
-        p.canStartPictureInPictureAutomaticallyFromInline = floats
+        p.canStartPictureInPictureAutomaticallyFromInline = false   // floatTick opens it only while something plays
         p.requiresLinearPlayback = true
         pip = p
         pipObs = p.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { _, _ in Task { @MainActor in Listener.shared.pipNote() } }
-        pipActive = p.observe(\.isPictureInPictureActive, options: [.new]) { _, _ in Task { @MainActor in Listener.shared.pipNote() } }
+        pipActive = p.observe(\.isPictureInPictureActive, options: [.new]) { c, _ in
+            let open = c.isPictureInPictureActive
+            Task { @MainActor in
+                let me = Listener.shared
+                me.pipNote()
+                // iOS suspends Recense behind other apps unless it plays: the silent sound keeps it awake while the
+                // window shows, so the window can hide on pause (11-10 iPhone: it stayed up without this)
+                if open { me.keepAwake(true) } else if !me.hearing, !me.hidBehind { me.keepAwake(false) }
+            }
+        }
         draw()
         // a still frame goes stale for PiP; draw again each second
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw() } }
+        if !ticking {   // once: makePiP runs again after dropPiP
+            ticking = true
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw(); Listener.shared.floatTick() } }
+        }
+    }
+    /// Lets go of the floating window's controller (its window closes with it); makePiP makes a new one.
+    private func dropPiP() {
+        pipObs = nil; pipActive = nil
+        pip = nil
+        pipNote()
     }
     private var pipObs: NSKeyValueObservation?
     private var pipActive: NSKeyValueObservation?
@@ -829,9 +894,66 @@ final class Listener: NSObject, ObservableObject {
         pipState = pip.isPictureInPictureActive ? "Floating window: open" : pip.isPictureInPicturePossible ? "Floating window: ready" : "Floating window: not ready"
     }
 
-    // Float puts the window over other apps now and whenever Gallery is left; Dock brings it back into Gallery
-    func float() { floats = true; startPiP() }
-    func dock() { floats = false; pip?.stopPictureInPicture() }
+    /// Once a second and at every sound change: open the window as Recense is left while something plays, hide it
+    /// in Recense (Home shows the transcript) and after 3 s of the other app paused behind it.
+    func floatTick() {
+        if pip == nil, UIApplication.shared.applicationState == .active { makePiP() }   // after dropPiP
+        guard let pip else { return }
+        let s = AVAudioSession.sharedInstance()
+        let playing = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
+        let front = UIApplication.shared.applicationState == .active
+        pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(playing: playing, paused: paused)
+        if playing { quietFrom = nil } else if quietFrom == nil { quietFrom = Date() }
+        if !playing || front { tried = false }
+        if front { hidBehind = false }
+        if hidBehind, !playing, Date().timeIntervalSince(quietFrom ?? Date()) > Floating.stayAwake {
+            hidBehind = false
+            if !hearing { keepAwake(false) }
+        }
+        let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
+                                        quiet: quietFrom.map { Date().timeIntervalSince($0) } ?? 0, reshow: reshow, tried: tried,
+                                        hid: hidBehind))
+        let key = "\(front ? "front" : "behind") \(playing ? "playing" : "quiet") \(pip.isPictureInPictureActive ? "open" : "closed") \(act)"
+        if key != lastFloat { lastFloat = key; floatNote("\(key) reshow=\(reshow.rawValue) awake=\(engine.isRunning)") }
+        switch act {
+        case .hide:
+            hidBehind = !front && !paused
+            guard !closing else { break }
+            closing = true
+            pip.stopPictureInPicture()
+            // 11-10 iPhone: behind other apps iOS ignored stop (no "will stop", still open a second later), so the
+            // window is taken apart instead: first its content, then the controller (made again when Recense is in front)
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                if pip.isPictureInPictureActive { floatNote("stop ignored; detaching content"); pip.contentSource = nil }
+                try? await Task.sleep(for: .seconds(1))
+                if pip.isPictureInPictureActive { floatNote("still open; releasing the controller"); dropPiP() }
+                floatNote("hide done: \(self.pip?.isPictureInPictureActive == true ? "still open" : "closed")")
+                closing = false
+            }
+        case .show:
+            tried = true; reshowing = true; hidBehind = false
+            if pip.contentSource == nil {   // detached to hide it (below): give it the layer back first
+                pip.contentSource = .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
+            }
+            floatNote("reopen: possible=\(pip.isPictureInPicturePossible)")
+            startPiP()
+            Task { try? await Task.sleep(for: .seconds(2)); if reshowing { learn(pip.isPictureInPictureActive ? .works : .refused) } }
+        case .none: break
+        }
+    }
+    /// The floating window's log for the device run (Library/Preferences listen.floatLog, last 30 lines).
+    func floatNote(_ line: String) {
+        var log = UserDefaults.standard.stringArray(forKey: "listen.floatLog") ?? []
+        log.append("\(Date().formatted(date: .omitted, time: .standard)) \(line)")
+        UserDefaults.standard.set(Array(log.suffix(30)), forKey: "listen.floatLog")
+    }
+    func learn(_ r: Floating.Reshow) {
+        reshowing = false
+        guard r != reshow else { return }
+        reshow = r; UserDefaults.standard.set(r.rawValue, forKey: "listen.reshowFromBehind")
+    }
+    var reshowTrying: Bool { reshowing }
 
     func startPiP() {
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -872,24 +994,6 @@ final class Listener: NSObject, ObservableObject {
         }
     }
 
-    // the last word, by the language's own word breaks (Chinese, Thai, Tibetan have no spaces), with what trails it
-    static func lastWord(_ text: String) -> Range<String.Index>? {
-        let t = NLTokenizer(unit: .word); t.string = text
-        var last: Range<String.Index>?
-        t.enumerateTokens(in: text.startIndex..<text.endIndex) { r, _ in last = r; return true }
-        return last.map { $0.lowerBound..<text.endIndex } ?? text.range(of: #"\S+$"#, options: .regularExpression)
-    }
-
-    static let lit = UIColor(red: 1, green: 0.84, blue: 0.2, alpha: 1)  // the word being heard, Recense's yellow (Overlay.current)
-
-    // the sentence with its newest word lit, as Recense's light follows the voice
-    static func karaoke(_ text: String, size: CGFloat, weight: UIFont.Weight, color: UIColor, lit on: Bool, alpha: CGFloat = 1, center: Bool = true) -> NSAttributedString {
-        let style = NSMutableParagraphStyle(); style.alignment = center ? .center : .natural; style.baseWritingDirection = .natural; style.lineBreakMode = .byWordWrapping
-        let a = NSMutableAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color.withAlphaComponent(alpha), .paragraphStyle: style])
-        if on, let r = lastWord(text) { a.addAttribute(.foregroundColor, value: lit.withAlphaComponent(alpha), range: NSRange(r, in: text)) }
-        return a
-    }
-
     // the floating window's middle button: holds the words where they are (Listen keeps hearing; play shows the newest)
     nonisolated(unsafe) static var held = false
     func hold(_ on: Bool) {
@@ -898,54 +1002,65 @@ final class Listener: NSObject, ObservableObject {
         if !on { draw() }
     }
 
+    /// The floating window's canvas in points, drawn at 3x: the window shows it at about this size, so the transcript's
+    /// own type reads large and sharp. (Until 11-10: 640x300 at 1x, stretched by iOS, soft and small; centred, so every
+    /// new word moved every other one; older lines cut through at the top.)
+    static let canvas = CGSize(width: 400, height: 188)
+    private var drawnKey = ""
+    private var drawnAt = Date.distantPast
+    private var drawSoon = false
+
+    /// Draws what the floating window shows, in the transcript's look (ShowsKit's TranscriptLineText, as Read along):
+    /// a new picture only when what it shows changes, at most 10 a second; the same one again each second, as PiP
+    /// goes stale without frames.
     func draw() {
         if Listener.held { return }
-        let size = CGSize(width: 640, height: 300), w = size.width - 40
-        let img = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { c in
-            UIColor(white: 0.04, alpha: 1).setFill(); c.fill(CGRect(origin: .zero, size: size))  // Recense's panel
-            // draws s so its last line sits on box's bottom (older lines go up and off the top) or centred in box
-            func put(_ s: NSAttributedString, in box: CGRect, bottom: Bool = true) {
-                let h = ceil(s.boundingRect(with: CGSize(width: w, height: 5000), options: .usesLineFragmentOrigin, context: nil).height)
-                let y = bottom || h > box.height ? box.maxY - h : box.midY - h / 2
-                c.cgContext.saveGState(); c.cgContext.clip(to: box)
-                s.draw(with: CGRect(x: box.minX, y: y, width: w, height: h), options: .usesLineFragmentOrigin, context: nil)
-                c.cgContext.restoreGState()
-            }
-            guard let p = episode?.place, p < sentences.count else {
-                put(Self.karaoke(hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off", size: 34, weight: .medium, color: .gray, lit: false), in: CGRect(x: 20, y: 0, width: w, height: size.height), bottom: false)
-                return
-            }
-            let cur = sentences[p], two = config != nil
-            if look == "learn" {
-                // two places taking turns; each sentence starts in the language heard, the light on its newest word,
-                // and once heard dissolves into its translation in the same place (website Learn: fade out 0.15 s,
-                // fade in 0.4 s, turn 0.3 s)
-                for k in 0..<2 {
-                    let box = CGRect(x: 20, y: k == 0 ? 12 : size.height / 2 + 6, width: w, height: size.height / 2 - 18)
-                    let t = Date().timeIntervalSince(slots[k].since)
-                    let old = t < 0.15
-                    let (s, a): (Sentence?, CGFloat) = old ? (slots[k].was, 1 - t / 0.15) : (slots[k].now, min(1, (t - 0.15) / 0.4))
-                    guard let s else { continue }
-                    // the was-sentence leaving had been heard; the current one turns once heard, if there is a translation
-                    let turned: CGFloat = !two || s.said.isEmpty || s.id == cur.id ? 0
-                        : old ? 1 : min(1, Date().timeIntervalSince(slots[k].heard ?? Date()) / 0.3)
-                    if turned < 1 { put(Self.karaoke(s.heard, size: 28, weight: .semibold, color: .white, lit: s.id == cur.id, alpha: a * (1 - turned)), in: box, bottom: false) }
-                    if turned > 0 { put(Self.karaoke(s.said, size: 28, weight: .regular, color: UIColor(white: 1, alpha: 0.8), lit: false, alpha: a * turned), in: box, bottom: false) }
-                }
-            } else {
-                // Follow: the sentence being heard on top, what it says below, both with the newest word lit
-                if two {
-                    // as Recense: the heard words semibold white, what they say a step quieter (regular, 80 %)
-                    put(Self.karaoke(cur.heard, size: 27, weight: .semibold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: 126))
-                    put(Self.karaoke(cur.said.isEmpty ? "…" : cur.said, size: 24, weight: .regular, color: UIColor(white: 1, alpha: 0.8), lit: true), in: CGRect(x: 20, y: 152, width: w, height: 136))
-                } else {
-                    put(Self.karaoke(cur.heard, size: 32, weight: .semibold, color: .white, lit: true), in: CGRect(x: 20, y: 12, width: w, height: size.height - 24))
-                }
-            }
+        let (rows, note) = frame()
+        let key = rows.map { "\($0.line.id)|\($0.line.text)|\($0.line.translation ?? "")|\($0.cut)|\(Int($0.alpha * 10))|\(Int($0.turned * 10))" }.joined(separator: "/") + (note ?? "")
+        let since = Date().timeIntervalSince(drawnAt)
+        if key == drawnKey, since < 1 { return }
+        if since < 0.1 {
+            guard !drawSoon else { return }
+            drawSoon = true
+            Task { try? await Task.sleep(for: .milliseconds(100)); drawSoon = false; draw() }
+            return
         }
-        guard let cg = img.cgImage, let sb = Self.sample(cg) else { return }
+        drawnKey = key; drawnAt = Date()
+        let r = ImageRenderer(content: FloatingCaption(rows: rows, learn: look == "learn", note: note)
+            .frame(width: Self.canvas.width, height: Self.canvas.height)
+            .environment(\.dynamicTypeSize, .xLarge))
+        r.scale = 3
+        guard let cg = r.cgImage, let sb = Self.sample(cg) else { return }
         if layer.status == .failed { layer.flush() }
         layer.enqueue(sb)
+    }
+
+    /// What the window shows now: Follow, the sentence before (quiet) and the one being heard (lit as it's said, its
+    /// translation under it); Learn, two places taking turns, each sentence dissolving into its translation once heard.
+    private func frame() -> ([FloatingCaption.Row], String?) {
+        guard let p = episode?.place, p < sentences.count else {
+            return ([], hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off")
+        }
+        let two = config != nil, now = Date().timeIntervalSince1970 - lag
+        func line(_ s: Sentence, said: Bool) -> TranscriptLine {
+            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: s.words ?? [],
+                           translation: said && two && !s.said.isEmpty ? s.said : nil)
+        }
+        if look == "learn" {
+            let cur = sentences[p]
+            return ((0..<2).compactMap { k -> FloatingCaption.Row? in
+                let t = Date().timeIntervalSince(slots[k].since), old = t < 0.15
+                guard let s = old ? slots[k].was : slots[k].now else { return nil }
+                let a = old ? 1 - t / 0.15 : min(1, (t - 0.15) / 0.4)
+                let turned = !two || s.said.isEmpty || s.id == cur.id ? 0 : old ? 1 : min(1, Date().timeIntervalSince(slots[k].heard ?? Date()) / 0.3)
+                let on = s.id == cur.id
+                return FloatingCaption.Row(line: line(s, said: false), on: on, t: on ? now : nil, alpha: a, said: s.said.isEmpty ? nil : s.said, turned: turned)
+            }, nil)
+        }
+        var rows: [FloatingCaption.Row] = []
+        if p > 0 { rows.append(FloatingCaption.Row(line: line(sentences[p - 1], said: false), on: false, t: nil)) }
+        rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now))
+        return (rows, nil)
     }
 
     private static func sample(_ cg: CGImage) -> CMSampleBuffer? {
@@ -973,8 +1088,18 @@ final class Listener: NSObject, ObservableObject {
 }
 
 extension Listener: AVPictureInPictureControllerDelegate {
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ c: AVPictureInPictureController) {
+        Task { @MainActor in Listener.shared.floatNote("iOS: will stop") }
+    }
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
+        Task { @MainActor in Listener.shared.floatNote("iOS: did stop") }
+    }
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError e: Error) {
-        Task { @MainActor in Listener.shared.error = "The floating window didn't open: \(e.localizedDescription)" }
+        Task { @MainActor in
+            let me = Listener.shared
+            if me.reshowTrying { me.learn(.refused) }   // iOS won't reopen it from behind: it stays open on pause from now
+            else { me.error = "The floating window didn't open: \(e.localizedDescription)" }
+        }
     }
 }
 
@@ -990,8 +1115,8 @@ extension Listener: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval i: CMTime) async {}
 }
 
-// the layer PiP draws from. PiP only starts from a layer that is really on screen, so it is the preview on the
-// Listen screen; leaving the app from there (home, another app) turns it into the floating window.
+// the layer PiP draws from. PiP only starts from a layer that is really on screen: it sits behind Home's transcript
+// (ListeningCard) and is the preview on Listen; leaving the app from either turns it into the floating window.
 // (the layer's frame follows the view's layout; set from updateUIView it stayed 0×0, and PiP never became possible)
 struct CaptionLayer: UIViewRepresentable {
     final class Host: UIView {
@@ -1003,7 +1128,8 @@ struct CaptionLayer: UIViewRepresentable {
         }
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window != nil { Task { @MainActor in Listener.shared.makePiP() } }
+            // Home and Listen both host it: the one coming on screen takes the layer back
+            if window != nil { setNeedsLayout(); Task { @MainActor in Listener.shared.makePiP() } }
         }
     }
     func makeUIView(context: Context) -> Host {
@@ -1063,17 +1189,12 @@ struct ListenView: View {
                     Text("Follow").tag("follow")
                     Text("Learn").tag("learn")
                 }.pickerStyle(.segmented)
-                if l.floats {
-                    Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") }
-                } else {
-                    Button { l.float() } label: { Label("Float over apps", systemImage: "pip.exit") }
-                }
             } footer: {
-                Text(l.floats ? "Floats: leave Recense and the window stays on top of other apps. \(l.pipState)"
-                              : "Docked: the window stays here in Recense and doesn't follow you out.")
+                Text("Leave Recense while something plays and this window floats over it; it hides when the sound pauses. \(l.pipState)")
             }
             Section {
                 Picker("Hear in", selection: $l.heard) {
+                    Text(Listener.name(Captions.automatic)).tag(Captions.automatic)
                     ForEach(l.hearable, id: \.identifier) { Text(Listener.name($0.identifier)).tag($0.identifier) }
                 }
                 Picker("Show in", selection: $l.into) {
@@ -1093,17 +1214,7 @@ struct ListenView: View {
                         // a view link, never NavigationLink(value:) + navigationDestination(for:): Library pushes Listen
                         // with a view link, and a value pushed onto that stack opened a second Listen instead of the
                         // episode (two Listens then fight over the one floating-window layer)
-                        NavigationLink { Self.episodePage(l, e) } label: {
-                            HStack(spacing: 14) {
-                                Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
-                                    .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(e.title).font(.title3).lineLimit(2)
-                                    Text("\(e.sentences.count) sentences · \(e.ear == "mic" ? "Microphone" : "Broadcast") · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
-                                        .font(.subheadline).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                        ListenEpisodeRow(e: e)
                         .swipeActions { Button("Delete") { l.delete(e) }.tint(.blue) }
                     }
                 }
@@ -1117,8 +1228,6 @@ struct ListenView: View {
                         Label(l.paused ? "Resume Listening" : "Pause Listening", systemImage: l.paused ? "play.circle" : "pause.circle")
                     }.disabled(l.stopping)
                     if !l.paused, !l.on { Button { l.start() } label: { Label("Hear Other Apps Directly", systemImage: "record.circle") } }
-                    if l.floats { Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") } }
-                    else { Button { l.float() } label: { Label("Float over Apps", systemImage: "pip.exit") } }
                     Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                     Button { clearing = true } label: { Label("Clear This Episode", systemImage: "trash") }.disabled(l.sentences.isEmpty)
                 }
@@ -1211,5 +1320,77 @@ extension Listener: UNUserNotificationCenterDelegate {
     }
     nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
         n.request.identifier == "listen.stop" ? [] : [.banner, .sound]
+    }
+}
+
+/// The floating window's picture (Listener.draw() renders it): the transcript's own line look, left-aligned, newest at
+/// the bottom; what's older fades out at the top instead of being cut through.
+struct FloatingCaption: View {
+    struct Row {
+        var line: TranscriptLine
+        var on: Bool
+        var t: Double?
+        var alpha = 1.0
+        var said: String? = nil   // Learn: the translation it dissolves into
+        var turned = 0.0
+        /// how much of the line is lit, so a frame is drawn again when the light moves
+        var cut: Int { guard on, let t else { return -1 }; return line.text.distance(from: line.text.startIndex, to: TranscriptLight.spoken(line, at: t)) }
+    }
+    let rows: [Row]
+    let learn: Bool
+    let note: String?
+
+    var body: some View {
+        ZStack {
+            Color(white: 0.04)
+            if let note {
+                Text(note).font(.system(.title2, design: .serif)).foregroundStyle(.white.opacity(0.6)).padding(18)
+            } else if learn {
+                VStack(spacing: 10) {
+                    ForEach(rows.indices, id: \.self) { i in
+                        let r = rows[i]
+                        ZStack(alignment: .topLeading) {
+                            TranscriptLineText(r.line, on: r.on, at: r.t, translation: false).opacity(r.alpha * (1 - r.turned))
+                            if let said = r.said, r.turned > 0 {
+                                TranscriptLineText(TranscriptLine(id: r.line.id + ".said", start: 0, end: 0, text: said), on: true, at: nil, translation: false)
+                                    .opacity(r.alpha * r.turned)
+                            }
+                        }
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(rows.indices, id: \.self) { i in TranscriptLineText(rows[i].line, on: rows[i].on, at: rows[i].t).opacity(rows[i].alpha) }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.22)], startPoint: .top, endPoint: .bottom))
+            }
+        }
+        .clipped()
+    }
+}
+
+/// One heard episode as a row that opens its transcript: Listen's Episodes and Home's Recently Played (a newer
+/// listening bumps it there, owner 11-10). A view link, as every way into Listen's pages.
+struct ListenEpisodeRow: View {
+    let e: Episode
+    var body: some View {
+        NavigationLink { ListenView.episodePage(Listener.shared, e) } label: {
+            HStack(spacing: 14) {
+                Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
+                    .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(e.title).font(.title3).lineLimit(2)
+                    Text("\(e.sentences.count) sentences · \(e.ear == "mic" ? "Microphone" : "Broadcast") · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

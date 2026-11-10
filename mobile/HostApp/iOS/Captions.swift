@@ -5,6 +5,8 @@ import Foundation
 import Security
 
 enum Captions {
+    /// State.heard for "follow whichever language is spoken" (S6).
+    static let automatic = "auto"
     static let group = "48RZ72DNP3.com.chauphan.galleryfiles"
     static let changed = "com.chauphan.galleryfiles.caption" as CFString
     static let stateChanged = "com.chauphan.galleryfiles.broadcast" as CFString
@@ -31,6 +33,13 @@ enum Captions {
         // analyzerFailed: when that happened; the extension then hears with SFSpeechRecognizer for a day.
         var engine: String? = nil; var analyzerFailed: Date? = nil
         var b: Double? = nil  // the running (or last) broadcast, as in Line.b
+        // heard == "auto" (S6): the ears follow whichever of SpeechCore.auto is spoken; detected is the last one heard
+        // ("en", "fr", "vi"), where the next hearing starts
+        var detected: String? = nil
+        var check: String? = nil  // the last language check (SpeechAuto.onNote), kept by the app in listen.checks
+        var auto: Bool { heard == Captions.automatic }
+        /// The language a hearing starts in: the chosen one, or under Automatic the last one heard.
+        var start: String { auto ? (detected ?? "en") : heard }
         var live: Bool { on && (beat.map { Date().timeIntervalSince($0) < 6 } ?? false) }
     }
 

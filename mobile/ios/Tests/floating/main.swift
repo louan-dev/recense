@@ -1,0 +1,34 @@
+// swiftc -O mobile/HostApp/iOS/Floating.swift mobile/ios/Tests/floating/main.swift -o "$TMPDIR/floating" && "$TMPDIR/floating"
+var bad = 0
+func check(_ name: String, _ got: Floating.Act, _ want: Floating.Act) {
+    if got != want { bad += 1; print("FAIL \(name): got \(got), want \(want)") }
+}
+func now(front: Bool = false, playing: Bool = false, paused: Bool = false, open: Bool = false, quiet: Double = 0,
+         reshow: Floating.Reshow = .unknown, tried: Bool = false, hid: Bool = true) -> Floating.Now {
+    .init(front: front, playing: playing, paused: paused, open: open, quiet: quiet, reshow: reshow, tried: tried, hid: hid)
+}
+
+// in Recense: never floats (Home shows the transcript)
+check("front, open", Floating.decide(now(front: true, playing: true, open: true)), .hide)
+check("front, closed", Floating.decide(now(front: true, playing: true)), .none)
+// Pause hides it anywhere
+check("paused behind", Floating.decide(now(playing: true, paused: true, open: true)), .hide)
+// behind, playing: opens once per stretch of sound, not when iOS refused before
+check("play behind", Floating.decide(now(playing: true)), .show)
+check("play behind, tried", Floating.decide(now(playing: true, tried: true)), .none)
+check("play behind, refused", Floating.decide(now(playing: true, reshow: .refused)), .none)
+// regression 11-10 (iPhone): just after leaving Recense iOS opens it by itself; a second start read as "refused"
+check("play behind, not hid by us", Floating.decide(now(playing: true, hid: false)), .none)
+check("play behind, open", Floating.decide(now(playing: true, open: true)), .none)
+// behind, paused sound: hides after 3 s, not before; never when it couldn't come back
+check("quiet 1 s", Floating.decide(now(open: true, quiet: 1)), .none)
+check("quiet 3 s", Floating.decide(now(open: true, quiet: 3)), .hide)
+check("quiet 3 s, works", Floating.decide(now(open: true, quiet: 5, reshow: .works)), .hide)
+check("quiet, refused keeps it", Floating.decide(now(open: true, quiet: 60, reshow: .refused)), .none)
+check("quiet, closed", Floating.decide(now(quiet: 9)), .none)
+// leaving Recense opens it only while something plays
+if Floating.autoOpen(playing: false, paused: false) { bad += 1; print("FAIL autoOpen silent") }
+if Floating.autoOpen(playing: true, paused: true) { bad += 1; print("FAIL autoOpen paused") }
+if !Floating.autoOpen(playing: true, paused: false) { bad += 1; print("FAIL autoOpen playing") }
+
+print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

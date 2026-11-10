@@ -34,10 +34,22 @@ enum Align {
         var best: (i: Int, score: Double)?
         for (i, s) in stored.enumerated() where i != besides {
             let o = words(s)
-            let score = Double(w.intersection(o).count) / Double(max(1, min(w.count, o.count)))
+            // measured against the longer one: a short sentence whose words all occur in a long one is not that one
+            // (it was, until 11-09, and new sentences were lost). A stored sentence left unfinished is the exception:
+            // the whole one completes it.
+            var score = Double(w.intersection(o).count) / Double(max(1, w.count, o.count))
+            if score < 0.7, !complete(s), completes(text, s) { score = 0.7 }
             if score >= 0.7, best == nil || score > best!.score || (score == best!.score && abs(i - place) < abs(best!.i - place)) { best = (i, score) }
         }
         return best?.i
+    }
+
+    /// The marks that end a sentence, every script Listen hears (Listener.split() cuts on them).
+    static let stops: Set<Character> = [".", "?", "!", "…", "。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
+
+    /// Whether a sentence is finished (ends with a stop), so it can be compared with what was heard before.
+    static func complete(_ s: String) -> Bool {
+        s.trimmingCharacters(in: .whitespaces).last.map(stops.contains) ?? false
     }
 
     /// Whether `stored` sentence i is an unfinished version of `text` (the content was left mid-sentence): the new one

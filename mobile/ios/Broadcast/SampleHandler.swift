@@ -19,10 +19,12 @@ class SampleHandler: RPBroadcastSampleHandler {
     private var n = 0
     private var started = Date()
     private let q = DispatchQueue(label: "speech")
-    private var live: AnyObject?            // SpeechLive (iOS 26)
+    private var live: AnyObject?            // SpeechAuto (iOS 26): one language, or under Automatic whichever is spoken
     private var t0: Double?                 // when the analyzer's stream began (s since 1970)
     private var finals: [SpeechCore.Phrase] = []
-    private var locale = ""
+    private var locale = ""                // the language of the line being heard (Captions.Line.locale)
+    private var lang = ""                  // the engine's language ("en"), to tell a change
+    private var auto = false
     private var b = Date().timeIntervalSince1970   // this broadcast (Captions.Line.b)
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
@@ -33,7 +35,8 @@ class SampleHandler: RPBroadcastSampleHandler {
         s.stop = false
         s.beat = Date()
         s.error = nil
-        locale = s.heard
+        auto = s.auto
+        locale = auto ? SpeechCore.locale(s.start).identifier : s.heard
         b = Date().timeIntervalSince1970
         s.b = b
         let useAnalyzer = s.analyzerFailed.map { Date().timeIntervalSince($0) > 86_400 } ?? true
@@ -58,7 +61,7 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     override func broadcastFinished() {
         q.sync { beat?.cancel(); task?.cancel(); request?.endAudio() }
-        if #available(iOS 26, *), let l = live as? SpeechLive { l.cancel() }
+        if #available(iOS 26, *), let l = live as? SpeechAuto { l.cancel() }
         var s = Captions.state()
         s.on = false
         s.beat = nil
@@ -69,7 +72,7 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     override func processSampleBuffer(_ sb: CMSampleBuffer, with type: RPSampleBufferType) {
         guard type == .audioApp else { return }
-        if #available(iOS 26, *), let l = live as? SpeechLive {
+        if #available(iOS 26, *), let l = live as? SpeechAuto {
             guard let pcm = SpeechCore.pcm(sb) else { return }
             q.async {
                 if self.t0 == nil { self.t0 = Date().timeIntervalSince1970 }
@@ -88,12 +91,13 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     @available(iOS 26, *)
     private func startAnalyzer() {
-        let lang = locale
+        let start = auto ? Captions.state().start : locale, among = auto ? SpeechCore.auto : []
         Task { @MainActor in
-            let l = try? await SpeechLive.start(lang: lang, download: false) { [weak self] p, final in
-                self?.q.async { self?.heard(p, final: final) }
+            let l = await SpeechAuto.start(lang: start, among: among) { [weak self] p, final, lang in
+                self?.q.async { self?.heard(p, final: final, lang: lang) }
             }
             guard let l else { self.q.async { self.startLegacy() }; return }
+            l.onNote = { n in var s = Captions.state(); s.check = n; Captions.put(s) }
             self.q.async { self.live = l }
             var s = Captions.state(); s.engine = "SpeechAnalyzer…"; Captions.put(s)
         }
@@ -101,7 +105,16 @@ class SampleHandler: RPBroadcastSampleHandler {
 
     // One line a stretch of about 50 s, as the SFSpeechRecognizer requests were: the finished phrases, then the live
     // guess at what follows them (replaced by the next result). Words timed from t0.
-    private func heard(_ p: SpeechCore.Phrase, final: Bool) {
+    // Under Automatic, a change of language starts a new line in it, and the app learns it (State.detected).
+    private func heard(_ p: SpeechCore.Phrase, final: Bool, lang: String) {
+        if lang != self.lang {
+            if !self.lang.isEmpty, !finals.isEmpty { n += 1; finals = [] }
+            self.lang = lang
+            if auto {
+                locale = SpeechCore.locale(lang).identifier
+                var s = Captions.state(); s.detected = lang; Captions.put(s)
+            }
+        }
         if final { finals.append(p) }
         let ps = finals + (final ? [] : [p])
         guard !ps.isEmpty else { return }
@@ -113,7 +126,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     // MARK: SFSpeechRecognizer (the fallback)
 
     private func startLegacy() {
-        let id = locale
+        let id = locale  // under Automatic, the last language heard (SFSpeechRecognizer can't tell)
         recognizer = SFSpeechRecognizer(locale: Locale(identifier: id))
         var s = Captions.state()
         s.engine = "SFSpeechRecognizer"

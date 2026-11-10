@@ -17,8 +17,8 @@ Gallery Worker (`../library/`) only through its API, so a push here never redepl
 ## Recense for iPhone and iPad (`ios/`, `HostApp/iOS/`; formerly Gallery)
 The home-screen name is **Recense** (11-06) with Gallery's icon; the bundle id stays `com.chauphan.galleryfiles`, so it
 updates in place.
-- **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Listen, Archive, Main, Ask, Data, Exhibits,
-  Shared) as ShowsKit `Place`s, rows in Library (B2 redo, 11-07). Each wears the skin: native screens a large title and
+- **Places** (`HostApp/iOS/Places.swift`): the app's own screens (Draftpad, Archive, Main, Ask, Data, Exhibits,
+  Shared) as ShowsKit `Place`s, rows in Library; Listen is on Home instead (below) (B2 redo, 11-07). Each wears the skin: native screens a large title and
   the accent (`.recenseScreen`), web places and the Draftpad editor an inline title (`.webPlace`), round toolbar buttons
   (`.glassCircle()`, glass on iOS 26) and a `···` menu holding every action (`MoreMenu`). Archive and Listen's episodes
   are rows like Podcasts' Recently Played (square picture, title, detail); inside a folder rows are the default, Icons
@@ -63,7 +63,10 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad. It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
+- **Listen**: Recense on the iPhone and iPad, first on **Home** as the "Now Playing" card (`HostApp/iOS/ListeningCard.swift`,
+  11-10): which ear hears and in which language, the live transcript of what plays (ShowsKit's `TranscriptView`),
+  and the one Pause; "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
+  Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
   with the sound on the device's own speaker, the microphone hears what plays, fed to the speech engine only while
   another app plays, text only, never audio (iOS asks once for the microphone; denied: no mic, nothing nags).
   "Hear other apps directly" starts the broadcast (one tap on the system sheet, as iOS requires; or Control Center ›
@@ -76,18 +79,32 @@ updates in place.
   episode joins it (below). The broadcast
   extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
-  in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, the shared
+  in Follow (the sentence before, quiet, then the one being heard lit as it's said, its translation under it) or Learn
+  (two sentences taking turns), drawn with ShowsKit's `TranscriptLineText` (the transcript's own line) at 3x on a
+  400x188 pt canvas, left-aligned, older text fading at the top, a new picture only when it changes (at most 10 a
+  second); in the app, the shared
   transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
   under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
   kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
   `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
   first launch, the older of two copies going to `Recense/trash/`).
-  Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (the only time Listen needs a
+  **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
+  spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
+  or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new
+  engine re-hears those 8 s before the old one stops, so nothing is lost. The heard language in the wrong model scored
+  91-100 % word errors on FLEURS; in its own, en 9.2 %, fr 8.0 %, vi 21.2 %. Each check is logged in the app's
+  `listen.checks` (Library/Preferences). Choosing a language in "Hear in" pins it.
+  Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (Automatic: all three) (the only time Listen needs a
   connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
-  The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
-  its middle button holds the words where they are and play shows the newest.
+  The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
+  Recense (Home shows the transcript) and after 3 s of that app paused (`HostApp/iOS/Floating.swift`, tested in
+  `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
+  device and kept (`listen.reshowFromBehind`: works or refused); Recense stays awake up to 10 minutes after hiding it, to reopen it on play; if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
+  stop, so hiding detaches the window's content. Each decision is logged in `listen.floatLog` (Library/Preferences).
+  Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it.
+  The floating window's middle button holds the words where they are and play shows the newest.
   Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
   heard while iOS had the app asleep or closed still reaches the episode.

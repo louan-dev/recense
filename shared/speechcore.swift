@@ -17,6 +17,7 @@
 import Foundation
 import AVFoundation
 import CoreMedia
+import NaturalLanguage
 #if canImport(Speech)
 import Speech
 #endif
@@ -43,6 +44,81 @@ enum SpeechCore {
     /// "en-US" → "en"; "vi_VN" → "vi".
     static func code(_ identifier: String) -> String {
         String(identifier.split(whereSeparator: { $0 == "-" || $0 == "_" }).first ?? Substring(identifier)).lowercased()
+    }
+
+    /// The languages Listen follows by itself (S6, owner 11-09): whichever of them is spoken is heard in its own model.
+    static let auto = ["en", "fr", "vi"]
+
+    /// How surely words were heard in their language: their length × confidence, × how much they read as that language
+    /// among the candidates (a model hearing another language writes its own words, unsurely). Moved here from the Mac's
+    /// Speech.score() (which adds its script check), so the live language check (SpeechAuto) is the same rule.
+    static func sureness(_ ws: [W], _ lang: String, among: [String]) -> Double {
+        guard !ws.isEmpty else { return 0 }
+        let sure = ws.reduce(0) { $0 + max(0.05, $1.end - $1.start) * $1.c }
+        var agree = 0.5
+        if ws.count >= 3 {
+            let r = NLLanguageRecognizer()
+            r.languageConstraints = among.map { NLLanguage($0) }
+            r.processString(ws.map(\.text).joined(separator: " "))
+            agree = r.languageHypotheses(withMaximum: among.count)[NLLanguage(lang)] ?? 0
+        }
+        return sure * (0.25 + 0.75 * agree)
+    }
+
+    /// When to check which language is spoken (S6). Pure, so mobile/ios/Tests/pick runs it on the Mac.
+    /// - the first check after 3 s of sound;
+    /// - then on doubt, read over the last ~8 s (not since the last check: a long good stretch hid a minute of
+    ///   another language, 11-10): few words (under 1.2 a second of sound; a model's own language gave ~2, French in
+    ///   the English model ~0.9) or unsure ones (under 0.6), at least 8 s after the last check; or a minute of sound;
+    /// - sound with no speech in any language (music) waits twice as long after each such check, up to 2 minutes.
+    struct Doubt: Equatable, Sendable {
+        var sound = 0.0     // seconds of sound since the last check
+        var checks = 0
+        var empty = 0       // checks in a row that heard no speech at all
+        var recentSound = 0.0, recentWords = 0.0, recentSure = 0.0   // the last ~8 s (decaying)
+        static let window = 8.0
+
+        /// `seconds` of audio went by, `sound` of it sound.
+        mutating func tick(sound s: Double, seconds dt: Double) {
+            let k = exp(-dt / Self.window)
+            recentSound = recentSound * k + s; recentWords *= k; recentSure *= k
+            sound += s
+        }
+        mutating func heard(_ ws: [W]) { recentWords += Double(ws.count); recentSure += ws.reduce(0) { $0 + $1.c } }
+        func due() -> Bool {
+            if checks == 0 { return sound >= 3 }
+            let wait = min(120, 8 * pow(2, Double(empty)))
+            guard sound >= wait else { return false }
+            if empty > 0 { return true }
+            let rate = recentSound > 0 ? recentWords / recentSound : 0, c = recentWords > 0 ? recentSure / recentWords : 0
+            return rate < 1.2 || c < 0.6 || sound >= 60
+        }
+        mutating func checked(speech: Bool) {
+            checks += 1; empty = speech ? 0 : empty + 1
+            sound = 0
+        }
+    }
+
+    /// The language to change to, or nil to stay: the surest, by a clear margin (1.5× the one hearing now), so a
+    /// sentence with a word or two of another language never flips it.
+    static func pick(_ scores: [String: Double], current: String) -> String? {
+        guard let best = scores.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }),
+              best.key != current, best.value > 0 else { return nil }
+        return best.value >= 1.5 * (scores[current] ?? 0) ? best.key : nil
+    }
+
+    /// Seconds of sound (20 ms frames above -60 dBFS) in mono samples. Quiet speech counts (a FLEURS clip's median is
+    /// -58 dBFS; -45 counted a tenth of it, so checks came 10x late, 11-10); a paused app sends digital silence.
+    static func loud(_ s: UnsafePointer<Float>, _ n: Int, rate: Double) -> Double {
+        let f = max(1, Int(rate / 50))
+        var secs = 0.0, i = 0
+        while i + f <= n {
+            var e: Float = 0
+            for j in i..<(i + f) { e += s[j] * s[j] }
+            if e / Float(f) > 0.001 * 0.001 { secs += Double(f) / rate }
+            i += f
+        }
+        return secs
     }
 
     /// A model hearing speech in a language it doesn't know may write one word of its own over all of it ("Bonjour",
@@ -130,6 +206,13 @@ final class SpeechConverter {
         }
         return err == nil && out.frameLength > 0 ? out : nil
     }
+}
+
+/// Runs its block the first time only (whichever of two racing tasks gets there first).
+final class Once: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func run(_ f: () -> Void) { lock.lock(); let first = !done; done = true; lock.unlock(); if first { f() } }
 }
 
 /// Results arriving from the analyzer's task, gathered under a lock.
@@ -375,6 +458,131 @@ final class SpeechLive: @unchecked Sendable {
         _ = try? await collect.value
     }
     func cancel() { input.finish(); collect.cancel(); Task { await analyzer.cancelAndFinishNow() } }
+}
+
+/// A live stream heard in the language being spoken (S6, owner 11-09: the wrong language's model writes 91-100 % wrong
+/// words). One SpeechLive at a time. With `among`, the last 8 s stay in memory (never written anywhere); when
+/// SpeechCore.Doubt says so, the last 4 s are heard in each candidate and SpeechCore.pick() decides. On a change, the
+/// new language's engine starts and hears those 8 s again before the old one is let go, so nothing heard is lost to
+/// the wrong language. Without `among` (a language the owner chose) it never changes.
+/// Phrase times are seconds of audio since the start, across engines. Used by the broadcast extension, the mic ear and
+/// the Mac's accuracy bench alike.
+@available(macOS 26, iOS 26, *)
+final class SpeechAuto: @unchecked Sendable {
+    typealias Each = @Sendable (_ p: SpeechCore.Phrase, _ final: Bool, _ lang: String) -> Void
+    let among: [String]
+    var onNote: (@Sendable (String) -> Void)?   // one line per check (when, scores, the change, how long), for diagnosis
+    private let lock = NSLock()
+    private let each: Each
+    private var live: SpeechLive?
+    private var lang: String
+    private var gen = 0
+    private var bases: [Int: Double] = [:]  // where each engine's 0 is, in seconds of audio
+    private var ring: [Float] = []          // 16 kHz mono, the last `keep` seconds
+    private var fed = 0.0                   // seconds of audio given so far
+    private var doubt = SpeechCore.Doubt()
+    private var checking = false
+    private let conv = SpeechConverter(to: AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!)
+    static let keep = 8.0, window = 4.0
+
+    private init(lang: String, among: [String], each: @escaping Each) { self.lang = lang; self.among = among; self.each = each }
+
+    /// The language hearing now.
+    var current: String { lock.lock(); defer { lock.unlock() }; return lang }
+
+    /// nil: no SpeechAnalyzer model for `lang` on this device (the caller falls back).
+    @MainActor static func start(lang: String, among: [String], each: @escaping Each) async -> SpeechAuto? {
+        let a = SpeechAuto(lang: lang, among: among.contains(lang) || among.isEmpty ? among : among + [lang], each: each)
+        a.bases[0] = 0
+        guard let l = await a.engine(lang, gen: 0) else { return nil }
+        a.live = l
+        return a
+    }
+
+    @MainActor private func engine(_ lang: String, gen g: Int) async -> SpeechLive? {
+        try? await SpeechLive.start(lang: lang, download: false) { [weak self] p, fin in self?.heard(p, fin, gen: g, lang: lang) }
+    }
+
+    private func heard(_ p: SpeechCore.Phrase, _ final: Bool, gen g: Int, lang l: String) {
+        lock.lock()
+        guard g == gen, let base = bases[g] else { lock.unlock(); return }  // a let-go engine's last words
+        if final { doubt.heard(p.words) }
+        lock.unlock()
+        each(SpeechCore.shift([p], by: base)[0], final, l)
+    }
+
+    func append(_ buf: AVAudioPCMBuffer) {
+        lock.lock()
+        live?.append(buf)
+        fed += Double(buf.frameLength) / buf.format.sampleRate
+        var due = false
+        if among.count > 1, let m = conv.convert(buf), let s = m.floatChannelData?[0] {
+            ring.append(contentsOf: UnsafeBufferPointer(start: s, count: Int(m.frameLength)))
+            let cap = Int(16000 * Self.keep)
+            if ring.count > cap + 32000 { ring.removeFirst(ring.count - cap) }
+            doubt.tick(sound: SpeechCore.loud(s, Int(m.frameLength), rate: 16000), seconds: Double(m.frameLength) / 16000)
+            if !checking, doubt.due() { checking = true; due = true }
+        }
+        lock.unlock()
+        if due { Task { @MainActor in await self.check() } }
+    }
+
+    /// Which language the last seconds are in: each candidate hears them (in memory, through the same live path),
+    /// the surest by a clear margin wins.
+    @MainActor private func check() async {
+        let (samples, cur) = lock.withLock { (Array(ring.suffix(Int(16000 * Self.window))), lang) }
+        let t0 = Date(), at = lock.withLock { fed }
+        var scores: [String: Double] = [:]
+        if let buf = Self.buffer(samples) {
+            for l in among {
+                let box = SpeechBox()
+                guard let probe = try? await SpeechLive.start(lang: l, download: false, each: { p, fin in if fin { box.add(p) } }) else { continue }
+                probe.append(buf)
+                // a probe that doesn't finish in 10 s is let go, so one stuck probe never holds every later check
+                // (a task group would still wait for it: its children are awaited at the end of its scope)
+                let done: Bool = await withCheckedContinuation { c in
+                    let once = Once()
+                    Task { await probe.finish(); once.run { c.resume(returning: true) } }
+                    Task { try? await Task.sleep(for: .seconds(10)); once.run { c.resume(returning: false) } }
+                }
+                if !done { probe.cancel(); continue }
+                scores[l] = SpeechCore.sureness(box.all.flatMap(\.words), l, among: among)
+            }
+        }
+        let to = SpeechCore.pick(scores, current: cur)
+        onNote?(String(format: "check at %.1f s: ", at) + scores.keys.sorted().map { String(format: "%@=%.1f", $0, scores[$0]!) }.joined(separator: " ")
+                + " -> \(to ?? "stay") (\(String(format: "%.1f", Date().timeIntervalSince(t0))) s)")
+        if let to { await change(to) }
+        lock.withLock { doubt.checked(speech: scores.values.contains { $0 > 0 }); checking = false }
+    }
+
+    /// The new language's engine first, then the last seconds again into it, then the old one let go.
+    @MainActor private func change(_ to: String) async {
+        let g = lock.withLock { gen + 1 }
+        guard let new = await engine(to, gen: g) else { return }
+        let old = lock.withLock {
+            let old = live
+            bases[g] = fed - Double(ring.count) / 16000
+            gen = g; lang = to; live = new
+            if let again = Self.buffer(ring) { new.append(again) }
+            return old
+        }
+        old?.cancel()
+    }
+
+    static func buffer(_ s: [Float]) -> AVAudioPCMBuffer? {
+        guard !s.isEmpty, let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false),
+              let b = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: AVAudioFrameCount(s.count)) else { return nil }
+        b.frameLength = AVAudioFrameCount(s.count)
+        s.withUnsafeBufferPointer { b.floatChannelData![0].update(from: $0.baseAddress!, count: s.count) }
+        return b
+    }
+
+    func finish() async {
+        let l = lock.withLock { live }
+        await l?.finish()
+    }
+    func cancel() { lock.lock(); let l = live; live = nil; gen += 1; lock.unlock(); l?.cancel() }
 }
 #endif
 

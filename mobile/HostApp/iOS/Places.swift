@@ -7,7 +7,7 @@ enum RecensePlaces {
     @MainActor static var all: [Place] {
         [
             Place(id: "draftpad", title: "Draftpad", symbol: "square.and.pencil") { DraftpadView() },
-            Place(id: "listen", title: "Listen", symbol: "captions.bubble") { ListenView() },
+            // Listen: on Home, as the "Listening" card (ListeningCard.swift, owner 11-09), no longer a row here
             Place(id: "archive", title: "Archive", symbol: "icloud") { FolderView(path: Gallery.rootPath) },
             Place(id: "main", title: "Main", symbol: "square.grid.2x2") { MainView() },
             Place(id: "ask", title: "Ask", symbol: "lightbulb") {
