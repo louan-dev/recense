@@ -82,5 +82,61 @@ for t in viClip { vi.hear(t) }
 for t in viClip { vi.hear(t) }
 check(vi.s == viClip, "Vietnamese replay adds nothing")
 
+// Live captions arrive growing ("And the judge" … "And the judge said nothing more."), the way Listener.rebuild()
+// sees them. Regression (owner 11-09, "insanely inaccurate"): a new sentence whose first words all occur in some
+// longer sentence heard earlier was taken for that one, and the new sentence was lost. Driver as rebuild(): a growing
+// sentence is matched only once it is complete (Align.complete); before that it is new and grows in place.
+struct Live {
+    var s: [String] = []
+    var place = 0
+    var last: Int?
+    mutating func hear(_ full: String) {
+        let w = full.split(separator: " ").map(String.init)
+        var mine: Int?            // the sentence this one is growing in (added as new)
+        var placed: Int?          // matched to one heard before
+        for k in 1...w.count {
+            let text = w[0..<k].joined(separator: " ")
+            let done = k == w.count
+            if let p = placed { if let end = s[p].last, !stops.contains(end), Align.completes(text, s[p]) { s[p] = text }; continue }
+            if let m = mine {
+                s[m] = text
+                if done, let j = Align.match(text, in: s, place: place, after: last, besides: m) {
+                    s.remove(at: m); let jj = j > m ? j - 1 : j
+                    if let end = s[jj].last, !stops.contains(end), Align.completes(text, s[jj]) { s[jj] = text }
+                    place = jj; last = jj; mine = nil; placed = jj
+                }
+                continue
+            }
+            if done || Align.complete(text), let j = Align.match(text, in: s, place: place, after: last) {
+                if let end = s[j].last, !stops.contains(end), Align.completes(text, s[j]) { s[j] = text }
+                place = j; last = j; placed = j
+            } else {
+                let at = s.isEmpty ? 0 : place + 1
+                s.insert(text, at: at); place = at; last = at; mine = at
+            }
+        }
+    }
+}
+let talk = [
+    "So the thing you have to know about the court is that it is slow and it is expensive.",
+    "The judge said the contract was void and the parties had to give everything back.",
+    "You have to know that.",
+    "And the judge said nothing more about the appeal that day.",
+    "It is slow.",
+    "But the court is not the only place where this happens, you know.",
+    "Is that the thing?",
+    "The parties had to wait two more years for the appeal.",
+]
+var lv = Live()
+for t in talk { lv.hear(t) }
+check(lv.s == talk, "growing live captions: every new sentence kept, in order (none taken for an older one)")
+for t in talk { lv.hear(t) }
+check(lv.s == talk, "growing live captions replayed: nothing added twice")
+var lc = Live()
+for t in clip[0..<4] { lc.hear(t) }
+lc.hear("Le contrat est nul sous")
+for t in clip[4...] { lc.hear(t) }
+check(lc.s == clip, "growing: exit mid-sentence then resume completes the cut sentence")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
