@@ -17,6 +17,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   It needs CoreDevice and the Keychain: in a sandboxed session run it outside the sandbox, or the owner is left on an old build.
   Install fails with "device disconnected immediately": the Wi-Fi tunnel dropped; check `xcrun devicectl device info details --device <UDID>` shows connected, then reinstall the same `.app`.
 - One iOS build at a time across sessions (`.handoff/MERGE-QUEUE`).
+- Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
+  `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
+- A worktree has no `ios/Secrets/`: link the main checkout's (`ln -s ~/Developer/recense/mobile/ios/Secrets mobile/ios/Secrets`); never stage the link.
 - After a Draftpad or shared change, also run `zsh strip/build.sh` and `recense selftest`, and `npm test` in `editor/`.
 - New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except `../shared/ShowsKit/`: a Swift package, excluded from the synchronized group (exception set `…E2`) and linked as a local package (`…E3`–`E5`); its files compile only as the package. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
 

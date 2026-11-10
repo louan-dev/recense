@@ -61,6 +61,12 @@ final class Listener: NSObject, ObservableObject {
         didSet { UserDefaults.standard.set(floats, forKey: "listen.floats"); pip?.canStartPictureInPictureAutomaticallyFromInline = floats }
     }
     @Published var config: TranslationSession.Configuration?
+    // the translation pack (Apple Translation's on-device language models): said under the pickers, so a missing one
+    // is never a silent blank (playbook rule 3). fetching: the pair being downloaded once, for offline use.
+    @Published var pack = ""
+    @Published var fetching: TranslationSession.Configuration?
+    private var toFetch: [(String, String)] = []
+    static let missing = "not translated (pack missing)"
     var sentences: [Sentence] { episode?.sentences ?? [] }
 
     let layer = AVSampleBufferDisplayLayer()
@@ -78,6 +84,11 @@ final class Listener: NSObject, ObservableObject {
     private var wake: CheckedContinuation<Void, Never>?
     private let engine = AVAudioEngine()
     private var last: Captions.Line?
+    // the ring (CaptionRing.swift): which version of each line was taken (kept across launches, so a line is taken
+    // once), and the numbers given to lines of an earlier broadcast (their n would collide with this one's)
+    private var seen: [String: UInt64] = (UserDefaults.standard.dictionary(forKey: "listen.ringSeen") as? [String: String] ?? [:])
+        .compactMapValues { UInt64($0) }
+    private var nums: [String: Int] = [:]
     private var lastHeard = Date()
     private var dirty = false
 
@@ -88,6 +99,7 @@ final class Listener: NSObject, ObservableObject {
         loadEpisodes()
         if let k = UserDefaults.standard.string(forKey: "listen.episode") { episode = episodes.first { $0.key == k } }
         retarget()
+        catchUp()
         draw()
         Task { await findEars() }
         // Darwin notifications can be missed while the app is between states: also look twice a second
@@ -99,7 +111,10 @@ final class Listener: NSObject, ObservableObject {
             }
         }
         // kept on the device every 10 s while it changes, sent to Gallery every minute
-        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in Task { @MainActor in Listener.shared.save() } }
+        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in Task { @MainActor in Listener.shared.catchUp(); Listener.shared.save() } }
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in Listener.shared.catchUp() }
+        }
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in
             let me = Listener.shared
             await me.upload()
@@ -188,6 +203,7 @@ final class Listener: NSObject, ObservableObject {
         if s.live != on {
             on = s.live
             stopping = false
+            catchUp()  // the end of the broadcast before, if the app missed it
             if on {
                 lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []
                 if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
@@ -326,6 +342,7 @@ final class Listener: NSObject, ObservableObject {
         let from = Locale.Language(identifier: heard), to = Locale.Language(identifier: into)
         config = from.languageCode == to.languageCode ? nil : .init(source: from, target: to)
         said = [:]
+        Task { await checkPack() }
         // translations made into another language are made again
         if let e = episode, e.into != into || e.heard != heard {
             episode!.into = into; episode!.heard = heard
@@ -455,12 +472,36 @@ final class Listener: NSObject, ObservableObject {
         }
         // sentences translated before this app run, or into another language, get done as they come into view
         if let e = episode, config != nil {
-            for s in e.sentences[max(0, e.place - 3)..<min(e.sentences.count, e.place + 4)] where s.said.isEmpty { translate(s.heard) }
+            for s in e.sentences[max(0, e.place - 3)..<min(e.sentences.count, e.place + 4)] where s.said.isEmpty || s.said == Self.missing { translate(s.heard) }
         }
         changed()
     }
 
-    private func take(_ l: Captions.Line) {
+    /// Takes the lines the extension heard while this app was asleep or not running. Lines of an earlier broadcast
+    /// get numbers of their own, so they don't overwrite this broadcast's lines.
+    func catchUp() {
+        let ring = Captions.ring()
+        defer {  // what was taken live counts too: kept every 10 s, so a relaunch doesn't take it twice
+            if seen.count > 600 { let keep = Set(ring.lines.map(\.ringKey)); seen = seen.filter { keep.contains($0.key) } }
+            UserDefaults.standard.set(seen.mapValues { String($0) }, forKey: "listen.ringSeen")
+        }
+        let missed = ring.unseen(seen)
+        guard !missed.isEmpty else { return }
+        if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
+        let now = Captions.state().b
+        for l in missed {
+            var x = l
+            if l.b != now {
+                if nums[l.ringKey] == nil { nums[l.ringKey] = 1_000_000 + nums.count }
+                x.n = nums[l.ringKey]!
+            }
+            take(x, key: l.ringKey)
+        }
+    }
+
+    private func take(_ l: Captions.Line, key: String? = nil) {
+        seen[key ?? l.ringKey] = l.ringStamp
+        if key != nil { lines[l.n] = l.text; rebuild(); return }  // from the ring: text only, not the live line
         last = l
         lines[l.n] = l.text
         if let ws = l.words, let t0 = l.t0 {
@@ -470,13 +511,59 @@ final class Listener: NSObject, ObservableObject {
         rebuild()
     }
 
+    /// Whether the chosen pair translates on this device, said in one line.
+    func checkPack() async {
+        guard let c = config, let from = c.source, let to = c.target else { pack = ""; return }
+        let names = "\(Self.name(from.minimalIdentifier)) → \(Self.name(to.minimalIdentifier))"
+        switch await LanguageAvailability().status(from: from, to: to) {
+        case .installed: pack = "Translation \(names): on this device, works offline."
+        case .supported: pack = "Translation \(names): needs a one-time download. Tap Download for offline."
+        case .unsupported: pack = "Translation \(names) isn't available on this device."
+        @unknown default: pack = ""
+        }
+    }
+
+    /// Downloads English, Vietnamese and French for every direction between them, once, while the app is open (iOS
+    /// asks before each download). Afterwards translation needs no connection.
+    func fetchAll() {
+        toFetch = []
+        for a in Self.into { for b in Self.into where a != b { toFetch.append((a, b)) } }
+        fetchNext()
+    }
+    private func fetchNext() {
+        guard !toFetch.isEmpty else {
+            fetching = nil
+            // what said "pack missing" is translated again now
+            if episode != nil { for i in episode!.sentences.indices where episode!.sentences[i].said == Self.missing { episode!.sentences[i].said = "" } }
+            said = [:]; rebuild()
+            Task { await checkPack() }
+            return
+        }
+        let (a, b) = toFetch.removeFirst()
+        fetching = .init(source: .init(identifier: a), target: .init(identifier: b))
+    }
+    func fetched(_ session: TranslationSession) async {
+        try? await session.prepareTranslation()
+        fetchNext()
+    }
+
     func serve(_ session: TranslationSession) async {
         try? await session.prepareTranslation()
+        await checkPack()
         while !Task.isCancelled {
             if pending.isEmpty { await withCheckedContinuation { wake = $0 } }
             guard !pending.isEmpty else { continue }
             let text = pending.removeFirst()
-            guard let r = try? await session.translate(text) else { continue }
+            guard let r = try? await session.translate(text) else {
+                // offline without the pack (or any other failure): the sentence says so instead of staying blank
+                await checkPack()
+                guard episode != nil else { continue }
+                for i in episode!.sentences.indices where episode!.sentences[i].heard == text && episode!.sentences[i].said.isEmpty {
+                    episode!.sentences[i].said = Self.missing
+                }
+                touch(); changed()
+                continue
+            }
             said[text] = r.targetText
             guard episode != nil else { continue }
             for i in episode!.sentences.indices where episode!.sentences[i].heard == text { episode!.sentences[i].said = r.targetText }
@@ -756,7 +843,9 @@ struct ListenView: View {
                 Picker("Show in", selection: $l.into) {
                     ForEach(Listener.into, id: \.self) { Text(Listener.name($0)).tag($0) }
                 }
-            } header: { Text("Language") } footer: { Text(l.ears) }
+                Button { l.fetchAll() } label: { Label(l.fetching == nil ? "Download for offline" : "Downloading…", systemImage: "arrow.down.circle") }
+                    .disabled(l.fetching != nil)
+            } header: { Text("Language") } footer: { Text([l.ears, l.pack].filter { !$0.isEmpty }.joined(separator: "\n")) }
             Section {
                 Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
                     .frame(height: 420)
@@ -923,5 +1012,6 @@ private struct Listening: ViewModifier {
     func body(content: Content) -> some View {
         content
             .translationTask(l.config) { await l.serve($0) }
+            .translationTask(l.fetching) { await l.fetched($0) }
     }
 }

@@ -73,6 +73,12 @@ updates in place.
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
   The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
   its middle button holds the words where they are and play shows the newest.
+  Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
+  200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
+  heard while iOS had the app asleep or closed still reaches the episode.
+  Offline translation: the line under the language pickers says whether the pair translates on this device;
+  **Download for offline** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
+  be translated says "not translated (pack missing)" instead of staying blank, and is translated once the pack is there.
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).
