@@ -60,19 +60,36 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad. Start it from Control Center › Screen Recording › Gallery; the broadcast
+- **Listen**: Recense on the iPhone and iPad. Start listening opens the system's Start Broadcast sheet at once (or
+  Control Center › Screen Recording, long press › Recense); nothing to choose or type: each listening is its own episode,
+  named by when it began and its language, a silence of 3 minutes starts the next, and one that continues an older
+  episode joins it (below). The broadcast
   extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
   in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, the shared
   transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
   under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
-  kept per episode in the same transcript store as the Mac (each sentence's timed words too).
+  kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
+  `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
+  first launch, the older of two copies going to `Recense/trash/`).
   Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (the only time Listen needs a
   connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
   The floating window draws as Recense's overlay does (same yellow, semibold words, the translation a step quieter);
   its middle button holds the words where they are and play shows the newest.
+  Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
+  200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
+  heard while iOS had the app asleep or closed still reaches the episode.
+  Offline translation: the line under the language pickers says whether the pair translates on this device;
+  **Download for offline** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
+  be translated says "not translated (pack missing)" instead of staying blank, and is translated once the pack is there.
+  One transcript, never twice (`HostApp/iOS/Align.swift`): content left partway and resumed, rewound, or replayed from
+  the start lands on the sentences the episode already has (a sentence left cut short is completed; a short one like
+  "Oui." is recognised only right after the sentence it follows); new stretches are spliced in after the last place
+  recognised. A listening whose first sentences continue another episode of the last 30 days (three in a row, in order)
+  joins that episode, so two shows that share an intro stay apart. Text only for now: the speech engines still hear a
+  replay (acoustic fingerprints come next).
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).

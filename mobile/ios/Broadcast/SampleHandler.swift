@@ -23,6 +23,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     private var t0: Double?                 // when the analyzer's stream began (s since 1970)
     private var finals: [SpeechCore.Phrase] = []
     private var locale = ""
+    private var b = Date().timeIntervalSince1970   // this broadcast (Captions.Line.b)
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         var s = Captions.state()
@@ -33,6 +34,8 @@ class SampleHandler: RPBroadcastSampleHandler {
         s.beat = Date()
         s.error = nil
         locale = s.heard
+        b = Date().timeIntervalSince1970
+        s.b = b
         let useAnalyzer = s.analyzerFailed.map { Date().timeIntervalSince($0) > 86_400 } ?? true
         Captions.put(s)
         if #available(iOS 26, *), useAnalyzer { startAnalyzer() } else { startLegacy() }
@@ -103,7 +106,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         let ps = finals + (final ? [] : [p])
         guard !ps.isEmpty else { return }
         Captions.put(Captions.Line(n: n, text: ps.map(\.text).joined(separator: " "), final: final, locale: locale,
-                                   words: ps.flatMap(\.words), t0: t0))
+                                   words: ps.flatMap(\.words), t0: t0, b: b))
         if final, let first = finals.first, p.end - first.start > 50 { n += 1; finals = [] }
     }
 
@@ -140,12 +143,12 @@ class SampleHandler: RPBroadcastSampleHandler {
         request = r
         started = Date()
         n += 1
-        let mine = n, locale = recognizer.locale.identifier
+        let mine = n, locale = recognizer.locale.identifier, bid = b
         // one line per request (about 50 s): partial results keep rewriting earlier words, so splitting them into
         // sentences here cut lines into single words; the app shows it as running text instead
         task = recognizer.recognitionTask(with: r) { result, _ in
             guard let result, !result.bestTranscription.segments.isEmpty else { return }
-            Captions.put(Captions.Line(n: mine, text: Self.join(result.bestTranscription.segments[...]), final: result.isFinal, locale: locale))
+            Captions.put(Captions.Line(n: mine, text: Self.join(result.bestTranscription.segments[...]), final: result.isFinal, locale: locale, b: bid))
         }
     }
 }
