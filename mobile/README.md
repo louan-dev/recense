@@ -92,7 +92,8 @@ updates in place.
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
   heard while iOS had the app asleep or closed still reaches the episode.
   Offline translation: the line under the language pickers says whether the pair translates on this device;
-  **Download** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
+  **Download** fetches English, Vietnamese and French once (iOS asks before each), counting each direction as it goes, then
+  says which arrived and, for any that didn't, iOS's reason (a declined sheet used to look like nothing happened). A sentence that couldn't
   be translated says "not translated (pack missing)" instead of staying blank, and is translated once the pack is there.
   One transcript, never twice (`HostApp/iOS/Align.swift`): content left partway and resumed, rewound, or replayed from
   the start lands on the sentences the episode already has (a sentence left cut short is completed; a short one like

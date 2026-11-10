@@ -87,6 +87,12 @@ final class Listener: NSObject, ObservableObject {
     @Published var pack = ""
     @Published var fetching: TranslationSession.Configuration?
     private var toFetch: [(String, String)] = []
+    // what Download did, said under the pickers: each pair's progress, then which ones didn't arrive and why
+    // (iOS declines silently otherwise: a refused sheet or a failed download looked like nothing happened)
+    @Published var fetchNote = ""
+    private var fetchTotal = 0, fetchHad = 0, fetchGot = 0
+    private var fetchFailed: [String] = []
+    private var fetchPair = ""
     static let missing = "not translated (pack missing)"
     var sentences: [Sentence] { episode?.sentences ?? [] }
 
@@ -723,7 +729,7 @@ final class Listener: NSObject, ObservableObject {
         let names = "\(Self.name(from.minimalIdentifier)) → \(Self.name(to.minimalIdentifier))"
         switch await LanguageAvailability().status(from: from, to: to) {
         case .installed: pack = "Translation \(names): on this device, works offline."
-        case .supported: pack = "Translation \(names): needs a one-time download. Tap Download for offline."
+        case .supported: pack = "Translation \(names): needs a one-time download. Tap Download."
         case .unsupported: pack = "Translation \(names) isn't available on this device."
         @unknown default: pack = ""
         }
@@ -732,13 +738,23 @@ final class Listener: NSObject, ObservableObject {
     /// Downloads English, Vietnamese and French for every direction between them, once, while the app is open (iOS
     /// asks before each download). Afterwards translation needs no connection.
     func fetchAll() {
-        toFetch = []
-        for a in Self.into { for b in Self.into where a != b { toFetch.append((a, b)) } }
-        fetchNext()
+        Task {
+            toFetch = []; fetchHad = 0; fetchGot = 0; fetchFailed = []
+            for a in Self.into { for b in Self.into where a != b {
+                let st = await LanguageAvailability().status(from: .init(identifier: a), to: .init(identifier: b))
+                if st == .installed { fetchHad += 1 } else { toFetch.append((a, b)) }
+            } }
+            fetchTotal = toFetch.count
+            fetchNext()
+        }
     }
     private func fetchNext() {
         guard !toFetch.isEmpty else {
             fetching = nil
+            let had = fetchHad + fetchGot, all = fetchHad + fetchTotal
+            fetchNote = fetchFailed.isEmpty
+                ? "Translation: all \(all) directions between English, Vietnamese and French are on this device."
+                : "Translation: \(had) of \(all) directions on this device. Not downloaded: " + fetchFailed.joined(separator: "; ") + "."
             // what said "pack missing" is translated again now
             if episode != nil { for i in episode!.sentences.indices where episode!.sentences[i].said == Self.missing { episode!.sentences[i].said = "" } }
             said = [:]; rebuild()
@@ -746,10 +762,14 @@ final class Listener: NSObject, ObservableObject {
             return
         }
         let (a, b) = toFetch.removeFirst()
+        fetchPair = "\(Self.name(a)) → \(Self.name(b))"
+        fetchNote = "Downloading \(fetchPair) (\(fetchTotal - toFetch.count) of \(fetchTotal))…"
         fetching = .init(source: .init(identifier: a), target: .init(identifier: b))
     }
     func fetched(_ session: TranslationSession) async {
-        try? await session.prepareTranslation()
+        let names = fetchPair
+        do { try await session.prepareTranslation(); fetchGot += 1 }
+        catch { fetchFailed.append("\(names) (\(error.localizedDescription))") }
         fetchNext()
     }
 
@@ -1061,7 +1081,7 @@ struct ListenView: View {
                 }
                 Button { l.fetchAll() } label: { Label(l.fetching == nil ? "Download" : "Downloading…", systemImage: "arrow.down.circle") }
                     .disabled(l.fetching != nil)
-            } header: { Text("Language") } footer: { Text([l.ears, l.pack].filter { !$0.isEmpty }.joined(separator: "\n")) }
+            } header: { Text("Language") } footer: { Text([l.ears, l.pack, l.fetchNote].filter { !$0.isEmpty }.joined(separator: "\n")) }
             Section {
                 Self.transcript(l, l.sentences, place: l.episode?.place, title: l.episode?.title ?? "Listen", live: true)
                     .frame(height: 420)
