@@ -243,7 +243,9 @@ gallery/
     client/             CSS and browser scripts (gallery.js, learn.js, cadence.js, prosody.js, prosogram*.js, keylabel.js,
                         homebar.js, room.js, assistant.js, sharedview.js, upload.js). learn.js holds Learn's pure
                         rules (phrases, beats, clause ends; global RecenseLearn), loaded before gallery.js and shared
-                        with Draftpad's editor
+                        with Draftpad's editor. pieces.js (global RecensePieces) is the share lane's byte layer in
+                        the browser: encrypted pieces, key only in the link's #fragment; twin of ../shared/pieces
+                        (see its README, including what a shared link can never undo). No page loads it yet (X2)
   test/                 route, transcript, cadence, feed, assistant and page tests (npm test)
   (the iPhone, iPad and Mac apps moved to ../mobile/ on 11-06)
   docs/architecture.md  File Provider design and the app's interface

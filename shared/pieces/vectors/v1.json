@@ -1,0 +1,61 @@
+{
+ "about": "Shared test vectors for shared/pieces (Swift) and library/src/client/pieces.js (JS): both must reproduce every field byte for byte. Generated once by the JS twin; never regenerate to make a failing side pass.",
+ "groupSecret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+ "plaintext": "byte[i] = (i * 31 + 7) mod 256",
+ "tamper": {
+  "case": 0,
+  "piece": 1,
+  "byte": 100,
+  "xor": 1
+ },
+ "edited": {
+  "case": 0,
+  "byte": 300000,
+  "xor": 1,
+  "itemKey": "52f71e9d48712af9e044b3412807e729dfea72ca95fa1080bb36d8c3091afafc"
+ },
+ "cases": [
+  {
+   "label": "three pieces, short last, Vietnamese name with quote, slash, tab",
+   "size": 600001,
+   "name": "Bài \"giảng\" 1/2\tĐiều 5 – hợp đồng.m4a",
+   "type": "audio/mp4",
+   "origin": "recense:draftpad",
+   "created": 1762700000000,
+   "manifestNonce": "a0a1a2a3a4a5a6a7a8a9aaab",
+   "fileHash": "e0d161e38618bc74e8e7c22eb9650ae2ea2b1d1050806feb393da5b645731813",
+   "itemKey": "eff0d1d86ed341dd6e41cf05895f88d2eda5fb59d85ce794afa4d33ab91237f8",
+   "manifestKey": "953f6d5309305ab0c762520bdd1ed774f77b1ffcaf769aea9d15d93a32dfbed6",
+   "pieceKey": "80bbd43c079090e2a30392f494f2080fe4994f34a696e0705653a8e4c1d4f444",
+   "pieceSize": 262144,
+   "pieces": [
+    "078c943dbe4739e5b90b75b37bf7cd360ad94956c48b4f931c757c4c1441af9a",
+    "9257702c6316c2870cf62b6d41fa52f69888b5e5a0fbd3595367850587d03342",
+    "054d6fbfe7cbabc5b14706f06181ce6a7ab5375f870181ecf11015e7c0d96840"
+   ],
+   "manifest": "{\"created\":1762700000000,\"file\":\"e0d161e38618bc74e8e7c22eb9650ae2ea2b1d1050806feb393da5b645731813\",\"name\":\"Bài \\\"giảng\\\" 1/2\\u0009Điều 5 – hợp đồng.m4a\",\"origin\":\"recense:draftpad\",\"piece\":262144,\"pieces\":[\"078c943dbe4739e5b90b75b37bf7cd360ad94956c48b4f931c757c4c1441af9a\",\"9257702c6316c2870cf62b6d41fa52f69888b5e5a0fbd3595367850587d03342\",\"054d6fbfe7cbabc5b14706f06181ce6a7ab5375f870181ecf11015e7c0d96840\"],\"size\":600001,\"type\":\"audio/mp4\",\"v\":1}",
+   "blob": "a0a1a2a3a4a5a6a7a8a9aaab761f7cb6f50a8d51e91d0dcfdb10cfc81c516868acea59997233e1c7035c77911fa3f740598de5464816ad44fb5c04576b89ec85b33a1e047967c22e77aecbed8117d199303358894c61b80d165373f6c19eaf5d42ec4a11e5f44f7c984b4420e13550870a4473a5c2177e3e00226f3630d2a826039ba204b165cd07f364fdaf8abca9a788d1a9792223fd0086342f19c5c27d1883cac105cc25fd29788619d54dff3b56fbdec86375924d633ebe0a07e0d68c5fa8ed317a34549182efb5a53ff9b6e44aaa9102dd75854b7981dedab34fd35317c6d325a397f1a3a754ca477af2f28ec51be3d2610b0e08ef3f61f3d032b60e07d4ce4fbf778532ff18c610f03297200a5f02829978ac5d9632dfd0666189673fcc1fbdf5195ef5065fe75369a74a815ba5cf415183669e4e6254f418219218583269cb497b061ba4953773f531444a82f19a8e925a5cf982df09ea3ecf005ad2cd5866c10a97ed7176aac9b94df41f710627eec4c87600935a976968cce34b70af2bfe10fea4a728e371b6cd3b31577caf5c66d7eb14ae6602512dbe8bf84a1791d4e641fc5cf2dc2ef269bb368b10927a380f4ec929715e5f4c93dbdab2dee6066745b5510a4859b893f1616a6bd7b657568c074f251a995b78df4911adf80c13b51848ba13a6e1",
+   "id": "778e3320051b8270610aaa356bc24d3b7b8bbb04b062d3be699abce6090188c4",
+   "link": "https://seed.example/x/778e3320051b8270610aaa356bc24d3b7b8bbb04b062d3be699abce6090188c4#7_DR2G7TQd1uQc8FiV-I0u2l-1nYXOeUr6TTOrkSN_g"
+  },
+  {
+   "label": "empty file",
+   "size": 0,
+   "name": "empty.txt",
+   "type": "text/plain",
+   "origin": "recense:files",
+   "created": 1762700000001,
+   "manifestNonce": "a0a1a2a3a4a5a6a7a8a9aaab",
+   "fileHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "itemKey": "739360857e6f7079a301b61cc7ef519d9fe51b067ecb119f05fb48dbad3ea766",
+   "manifestKey": "814de64d41a7f867364186015914c66e653dbaab2e6991af05b301fdaca07460",
+   "pieceKey": "62fb891d61dabd1f8acded1affac0479e7c046f3ffe132578a8407592d270622",
+   "pieceSize": 262144,
+   "pieces": [],
+   "manifest": "{\"created\":1762700000001,\"file\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"name\":\"empty.txt\",\"origin\":\"recense:files\",\"piece\":262144,\"pieces\":[],\"size\":0,\"type\":\"text/plain\",\"v\":1}",
+   "blob": "a0a1a2a3a4a5a6a7a8a9aaab3981f8241ed32d49677c87c8de90d0c1e1b2c809a3cc33c0c08f5fde207beefc82910cdb243b191c1b6afa0ea9742afa2c05c33b850ac792e52bb98796e040f0139b6b60977f5bafcea6d7bfd0e96e9be85bdc27cd036b31561a88185d7c0879fd3ad0c2e95ba3864e5014a5247290c61ded0410c7c0dee7c2052db82fb43f9ef4b32670645fd6582f19dd542bcc7bfd18e0c550bcf2b64cfb4921f97b8495a8324f34d519b11feba780649159addc5b7c906c7b9f86d74427518fe672d94f42b0e79d56fa3d17c4f8b6e1637caa459d006c1fac37796ef7cc4218761b",
+   "id": "800f92fa0d51a8e915e5e427882ea33e77ece7dced5f3e0e4d65ee5ef3978f62",
+   "link": "https://seed.example/x/800f92fa0d51a8e915e5e427882ea33e77ece7dced5f3e0e4d65ee5ef3978f62#c5NghX5vcHmjAbYcx-9RnZ_lGwZ-yxGfBftI260-p2Y"
+  }
+ ]
+}
