@@ -131,19 +131,9 @@ import Speech
 
     /// How surely a hearing heard its language: its words' length × confidence, × how much they read as that
     /// language among the candidates (a model hearing another language writes its own words, unsurely).
+    /// (SpeechCore.sureness, shared with the iPhone's live language check, times the script check here.)
     static func score(_ h: Hearing, among: [String]) -> Double {
-        let ws = h.words
-        guard !ws.isEmpty else { return 0 }
-        let sure = ws.reduce(0) { $0 + max(0.05, $1.end - $1.start) * $1.c }
-        let text = ws.map(\.text).joined(separator: " ")
-        var agree = 0.5
-        if ws.count >= 3 {
-            let r = NLLanguageRecognizer()
-            r.languageConstraints = among.map { NLLanguage($0) }
-            r.processString(text)
-            agree = r.languageHypotheses(withMaximum: among.count)[NLLanguage(h.lang)] ?? 0
-        }
-        return sure * (0.25 + 0.75 * agree) * (inOwnScript(h) ? 1 : 0.3)
+        SpeechCore.sureness(h.words, h.lang, among: among) * (inOwnScript(h) ? 1 : 0.3)
     }
     static func quality(_ h: Hearing) -> Double {
         let ws = h.words, d = ws.reduce(0) { $0 + max(0.05, $1.end - $1.start) }

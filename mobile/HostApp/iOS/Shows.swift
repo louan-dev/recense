@@ -10,7 +10,7 @@ struct RecenseRoot: View {
     @State private var model = ShowsModel(store: MemoryCatalog.sample(device: UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"))
 
     var body: some View {
-        ShowsRoot(model: model, places: RecensePlaces.all) { _ in
+        ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(ListeningCard())) { _ in
             VStack(spacing: 12) {
                 Image(systemName: "play.rectangle").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
                 Text("Our player plays here from B3, offline, from this device.").font(.title3)

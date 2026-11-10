@@ -10,10 +10,12 @@ public struct ShowsRoot<Player: View>: View {
     @Bindable var model: ShowsModel
     let places: [Place]
     let player: (Episode) -> Player
+    let home: AnyView?
     @Environment(\.scenePhase) private var phase
 
-    public init(model: ShowsModel, places: [Place] = [], @ViewBuilder player: @escaping (Episode) -> Player) {
-        self.model = model; self.places = places; self.player = player
+    /// - home: the app's own card at the top of Home (the iPhone's and iPad's "Listening", 11-10); nil: none.
+    public init(model: ShowsModel, places: [Place] = [], home: AnyView? = nil, @ViewBuilder player: @escaping (Episode) -> Player) {
+        self.model = model; self.places = places; self.home = home; self.player = player
     }
 
     public var body: some View {
@@ -31,7 +33,7 @@ public struct ShowsRoot<Player: View>: View {
     private var tabs: some View {
         TabView(selection: $model.tab) {
             Tab("Home", systemImage: "house.fill", value: ShowsModel.Tab.home) {
-                NavigationStack { HomeView(model: model).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))
+                NavigationStack { HomeView(model: model, top: home).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))
             }
             Tab("New", systemImage: "square.grid.2x2.fill", value: ShowsModel.Tab.new) {
                 NavigationStack { NewView(model: model).toolbar { ProfileButton(model: model) } }.tint(Theme.accent).modifier(TabMini(model: model))

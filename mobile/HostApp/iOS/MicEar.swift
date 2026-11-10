@@ -12,7 +12,7 @@ import Speech
     private final class Sink: @unchecked Sendable {
         let lock = NSLock()
         var feeding = false
-        var live: AnyObject?                                 // SpeechLive (iOS 26)
+        var live: AnyObject?                                 // SpeechAuto (iOS 26)
         var request: SFSpeechAudioBufferRecognitionRequest?  // the fallback
         var seconds = 0.0                                    // how much sound the engine has had
         var lastFed: Date?
@@ -28,7 +28,7 @@ import Speech
             }
             lastFed = now
             seconds += Double(buf.frameLength) / buf.format.sampleRate
-            if #available(iOS 26, *), let l = live as? SpeechLive { l.append(buf); return }
+            if #available(iOS 26, *), let l = live as? SpeechAuto { l.append(buf); return }
             request?.append(buf)
         }
     }
@@ -41,7 +41,9 @@ import Speech
     private var restart: Timer?
     private var n = 0
     private var finals: [SpeechCore.Phrase] = []
-    private var locale = ""
+    private var locale = ""            // the language of the line being heard (Captions.Line.locale)
+    private var lang = ""              // the engine's language, to tell a change
+    private var auto = false
     private(set) var b = 0.0           // this run (Captions.Line.b)
     private(set) var running = false
     var onLine: (Captions.Line) -> Void = { _ in }
@@ -52,7 +54,8 @@ import Speech
         set { sink.lock.lock(); sink.feeding = newValue; sink.lock.unlock() }
     }
 
-    /// Starts hearing in `lang`. Call only while Recense is in front. false: the session or the input refused.
+    /// Starts hearing in `lang` (Captions.automatic: whichever of SpeechCore.auto is spoken). Call only while Recense is
+    /// in front. false: the session or the input refused.
     func start(lang: String) async -> Bool {
         guard !running else { return true }
         let s = AVAudioSession.sharedInstance()
@@ -61,11 +64,15 @@ import Speech
             try s.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
             try s.setActive(true)
         } catch { return false }
-        locale = lang; b = Date().timeIntervalSince1970; n = 0; finals = []
+        auto = lang == Captions.automatic
+        let first = auto ? Captions.state().start : lang
+        locale = auto ? SpeechCore.locale(first).identifier : lang; self.lang = ""
+        b = Date().timeIntervalSince1970; n = 0; finals = []
         sink.lock.lock(); sink.seconds = 0; sink.lastFed = nil; sink.t0 = nil; sink.gap = false; sink.lock.unlock()
-        if #available(iOS 26, *), let l = try? await SpeechLive.start(lang: lang, download: false, each: { [weak self] p, fin in
-            Task { @MainActor in self?.heard(p, final: fin) }
+        if #available(iOS 26, *), let l = await SpeechAuto.start(lang: first, among: auto ? SpeechCore.auto : [], each: { [weak self] p, fin, l in
+            Task { @MainActor in self?.heard(p, final: fin, lang: l) }
         }) {
+            l.onNote = { n in var s = Captions.state(); s.check = "mic " + n; Captions.put(s) }
             sink.lock.lock(); sink.live = l; sink.lock.unlock()
         } else {
             beginLegacy()
@@ -94,7 +101,7 @@ import Speech
         let live = sink.live, req = sink.request
         sink.live = nil; sink.request = nil; sink.feeding = false
         sink.lock.unlock()
-        if #available(iOS 26, *), let l = live as? SpeechLive { Task { await l.finish() } }
+        if #available(iOS 26, *), let l = live as? SpeechAuto { Task { await l.finish() } }
         req?.endAudio(); task?.finish(); task = nil
         running = false
     }
@@ -108,10 +115,15 @@ import Speech
         return (sink.t0, g)
     }
 
-    // the extension's heard(_:final:), with a new line wherever the mic was not fed for a while
-    private func heard(_ p: SpeechCore.Phrase, final: Bool) {
+    // the extension's heard(_:final:lang:), with a new line wherever the mic was not fed for a while
+    private func heard(_ p: SpeechCore.Phrase, final: Bool, lang: String) {
         let (t0, fresh) = stretch()
         if fresh, !finals.isEmpty { n += 1; finals = [] }
+        if lang != self.lang {
+            if !self.lang.isEmpty, !finals.isEmpty { n += 1; finals = [] }
+            self.lang = lang
+            if auto { locale = SpeechCore.locale(lang).identifier; var s = Captions.state(); s.detected = lang; Captions.put(s) }
+        }
         if final { finals.append(p) }
         let ps = finals + (final ? [] : [p])
         guard !ps.isEmpty else { return }

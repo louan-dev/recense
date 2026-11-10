@@ -96,6 +96,42 @@ final class TranscriptState: ObservableObject {
     var lastActive: Int?
 }
 
+/// One line in the transcript's look (as Podcasts: serif, the active line semibold with what's been said bright and the
+/// rest dim, the translation a step quieter below). The transcript's rows and Listen's floating window both draw with it,
+/// so the two never look different.
+public struct TranscriptLineText: View {
+    let line: TranscriptLine, on: Bool, t: Double?, translation: Bool
+    public init(_ line: TranscriptLine, on: Bool, at t: Double?, translation: Bool = true) {
+        self.line = line; self.on = on; self.t = t; self.translation = translation
+    }
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Self.lit(line, on: on, t: t))
+                .font(.system(.title2, design: .serif).weight(on ? .semibold : .regular))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            if translation, let tr = line.translation, !tr.isEmpty {
+                Text(tr).font(.system(.title3, design: .serif)).foregroundStyle(.white.opacity(on ? 0.75 : 0.4))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The active line: what's been said bright, the rest dim. Other lines: quieter, all alike (as Podcasts).
+    static func lit(_ line: TranscriptLine, on: Bool, t: Double?) -> AttributedString {
+        guard on else {
+            var a = AttributedString(line.text); a.foregroundColor = .white.opacity(0.45); return a
+        }
+        guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
+        let cut = TranscriptLight.spoken(line, at: t)
+        var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
+        said.foregroundColor = .white
+        rest.foregroundColor = .white.opacity(0.4)
+        return said + rest
+    }
+}
+
 public struct TranscriptView<Extra: View>: View {
     let lines: [TranscriptLine]
     let title: String
@@ -201,14 +237,7 @@ public struct TranscriptView<Extra: View>: View {
                 Text(c).font(.title3.weight(.bold)).foregroundStyle(.white).padding(.top, i == 0 ? 0 : 14)
                     .accessibilityAddTraits(.isHeader)
             }
-            Text(lit(line, on: on, t: t))
-                .font(.system(.title2, design: .serif).weight(on ? .semibold : .regular))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-            if state.translations, let tr = line.translation, !tr.isEmpty {
-                Text(tr).font(.system(.title3, design: .serif)).foregroundStyle(.white.opacity(on ? 0.75 : 0.4))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            TranscriptLineText(line, on: on, at: t, translation: state.translations)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -220,19 +249,6 @@ public struct TranscriptView<Extra: View>: View {
             } else { content }
         }
         .contextMenu { lineMenu(line) }
-    }
-
-    /// The active line: what's been said bright, the rest dim. Other lines: quieter, all alike (as Podcasts).
-    private func lit(_ line: TranscriptLine, on: Bool, t: Double?) -> AttributedString {
-        guard on else {
-            var a = AttributedString(line.text); a.foregroundColor = .white.opacity(0.45); return a
-        }
-        guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
-        let cut = TranscriptLight.spoken(line, at: t)
-        var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
-        said.foregroundColor = .white
-        rest.foregroundColor = .white.opacity(0.4)
-        return said + rest
     }
 
     @ViewBuilder private func lineMenu(_ line: TranscriptLine) -> some View {

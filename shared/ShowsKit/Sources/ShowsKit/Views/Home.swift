@@ -3,11 +3,13 @@ import SwiftUI
 
 struct HomeView: View {
     let model: ShowsModel
+    var top: AnyView? = nil   // the app's own card, first (ShowsRoot's `home`)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                if model.upNext.isEmpty && model.recentlyPlayed.isEmpty {
+                if let top { top }
+                if top == nil, model.upNext.isEmpty && model.recentlyPlayed.isEmpty {
                     Text("Nothing to play yet. What lands in New appears here.")
                         .font(.title3).foregroundStyle(.secondary).padding(.horizontal, Theme.gutter).padding(.top, 20)
                 }
