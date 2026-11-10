@@ -380,3 +380,17 @@ the page opens that lens. Statutes, articles and case names quoted from the note
 `shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
 `phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
 the same copy.
+
+## Downloads (`recense download`)
+Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + ffmpeg; direct links fetched as they are), with `manifest.json` (source, mode, size, codecs, SHA-256, subtitles).
+- `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`
+- Offline first: a link already downloaded in that mode is served from the device. With no connection the request is queued (exit 75) and `recense download --queue` runs it later.
+- Downloads resume and retry (8 parallel fragments); title, chapters and cover are embedded; the site's en/vi/fr captions are saved beside the file as `.vtt`.
+- Anything an iPhone can't play (VP9, AV1) is converted to H.264/AAC MP4 on the Mac's hardware encoder.
+- Pulltube (optional): set its download folder to `~/Recense/downloads/Pulltube`; `recense download --adopt` records what it saves (and anything put in `downloads/` by Finder or AirDrop). `--pulltube <link>` opens a link in it.
+- In the home bar's menu: Download the played audio (as before), Download audio + video, Download the video, Open in Pulltube.
+- The queue runs by itself whenever the Mac gains a connection (and at launch).
+- Other devices ask through `downloads/.queue/` (one JSON file per request). Code: `shared/mediadownload.swift`.
+
+## SSH (Topic › Connect To)
+The terminal connects to any host in `~/Recense/ssh/hosts.json` (made from `~/.ssh/config` the first time; Topic › Connect To › Edit Hosts…). Each host lists routes tried in order: `lan` (same network, no internet), `tailscale`, `tunnel` (Cloudflare Tunnel through cloudflared, only when installed); the first that answers in 3 s is used. When ssh ends, the terminal goes back to its own session. Code: `shared/sshhosts.swift`.

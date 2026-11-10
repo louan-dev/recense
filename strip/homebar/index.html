@@ -97,6 +97,13 @@
   let bar = null;
   let tray = null;
   const I = Homebar.ICONS;
+  // Downloads beyond the played audio (mediadownload.swift): drawn like Homebar's icons, each its own shape.
+  const ICON = (inner) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + "</svg>";
+  const DL = {
+    av: ICON('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 7v6"/><path d="m9 10 3 3 3-3"/><path d="M8 20h8"/>'),
+    video: ICON('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>'),
+    pulltube: ICON('<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>'),
+  };
 
   bar = Homebar.horizontal({
     time: now,
@@ -286,6 +293,9 @@
       { id: "timing", label: "Timing by ear: set each word's light", icon: I.timing, act: () => post({ k: "timing" }) },
       { id: "clear", label: "Clear the whole transcript", icon: I.clear, act: () => post({ k: "clear" }) },
       { id: "download", label: "Download the played audio", icon: I.download, act: () => post({ k: "download" }) },
+      { id: "download-av", label: "Download audio + video", icon: DL.av, act: () => post({ k: "download", mode: "av" }) },
+      { id: "download-video", label: "Download the video", icon: DL.video, act: () => post({ k: "download", mode: "video" }) },
+      { id: "pulltube", label: "Open in Pulltube", icon: DL.pulltube, act: () => post({ k: "pulltube" }) },
       { id: "share", label: "Share", icon: I.share, act: () => post({ k: "share" }) },
       { id: "retranscribe", label: "Retranscribe and retranslate", icon: I.retranscribe, act: () => post({ k: "retranscribe", lang: st.lang }) },
       { id: "md", label: "Export as MD", icon: I.markdown, act: () => post({ k: "export", as: "md" }) },
