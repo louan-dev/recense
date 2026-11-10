@@ -65,7 +65,7 @@ updates in place.
   Add Media (Photos or Files), New Folder. Writes never overwrite.
 - **Listen**: Recense on the iPhone and iPad, first on **Home** as the "Now Playing" card (`HostApp/iOS/ListeningCard.swift`,
   11-10): which ear hears and in which language, the live transcript of what plays (ShowsKit's `TranscriptView`),
-  and the one Pause; "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
+  and the one "Pause listening" button (worded so it is not read as pausing the podcast player below); "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
   Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
   with the sound on the device's own speaker, the microphone hears what plays, fed to the speech engine only while
   another app plays, text only, never audio (iOS asks once for the microphone; denied: no mic, nothing nags).

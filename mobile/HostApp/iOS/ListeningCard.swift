@@ -32,7 +32,7 @@ struct ListeningCard: View {
                 .frame(height: 360)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Button { l.paused ? l.resume() : l.pause() } label: {
-                    Label(l.paused ? "Resume" : "Pause", systemImage: l.paused ? "play.fill" : "pause.fill")
+                    Label(l.paused ? "Resume listening" : "Pause listening", systemImage: l.paused ? "play.fill" : "pause.fill")
                         .font(.headline).frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
