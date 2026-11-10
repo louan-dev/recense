@@ -7,7 +7,7 @@
 	objects = {
 		A0C0FFEE00000000000000E0 = {isa = PBXFileSystemSynchronizedRootGroup; path = ../HostApp/iOS; sourceTree = SOURCE_ROOT; };
 		A0C0FFEE00000000000000E1 = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A0C0FFEE00000000000000E2); path = ../../shared; sourceTree = SOURCE_ROOT; };
-		A0C0FFEE00000000000000E2 = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (ShowsKit); target = A0C0FFEE0000000000000022; };
+		A0C0FFEE00000000000000E2 = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (ShowsKit, pieces); target = A0C0FFEE0000000000000022; };
 		A0C0FFEE00000000000000E3 = {isa = XCLocalSwiftPackageReference; relativePath = ../../shared/ShowsKit; };
 		A0C0FFEE00000000000000E4 = {isa = XCSwiftPackageProductDependency; package = A0C0FFEE00000000000000E3; productName = ShowsKit; };
 		A0C0FFEE00000000000000E5 = {isa = PBXBuildFile; productRef = A0C0FFEE00000000000000E4; };

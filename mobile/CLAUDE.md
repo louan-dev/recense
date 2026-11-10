@@ -28,7 +28,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   prints nothing (a value push opened a second Listen, and Archive's top level instead of the folder, 11-09).
 - A worktree has no `ios/Secrets/`: link the main checkout's (`ln -s ~/Developer/recense/mobile/ios/Secrets mobile/ios/Secrets`); never stage the link.
 - After a Draftpad or shared change, also run `zsh strip/build.sh` and `recense selftest`, and `npm test` in `editor/`.
-- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except `../shared/ShowsKit/`: a Swift package, excluded from the synchronized group (exception set `…E2`) and linked as a local package (`…E3`–`E5`); its files compile only as the package. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
+- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except the Swift packages, excluded from the synchronized group (exception set `…E2`): `../shared/ShowsKit/` (linked as a local package, `…E3`–`E5`; its files compile only as the package) and `../shared/pieces/` (not linked yet; its Package.swift and XCTest tests must never join the app). A new package under `../shared/` goes on that list in the same commit. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
 
 ## Never
 - Commit `ios/Secrets/` (the device token) or `build/` (`mobile/.gitignore`).
