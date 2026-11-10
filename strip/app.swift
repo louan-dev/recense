@@ -8029,7 +8029,8 @@ func stripSelftest() -> Bool {
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l ? 0 : 1)
+    let m = fingerprintSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m ? 0 : 1)
 }
 
 // `recense draftpad-check [folder]`: the Recense layer on the real path, off screen, with a test page (draftpadcheck.swift).

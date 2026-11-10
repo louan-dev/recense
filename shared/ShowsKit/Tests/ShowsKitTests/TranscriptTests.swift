@@ -100,4 +100,35 @@ final class TranscriptTests: XCTestCase {
         t.skip(-15)
         XCTAssertEqual(t.time, 5)
     }
+
+    /// The light may be at most one frame late, and a frame must stay well inside the owner's 50 ms bar against the Mac
+    /// (it was 1/12 s: up to 83 ms late). The view's light must use this frame, not a slower timer of its own.
+    func testLightRedrawsWellInsideFiftyMilliseconds() throws {
+        XCTAssertLessThanOrEqual(TranscriptLight.frame, 1.0 / 60 + 1e-9)
+        let src = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Sources/ShowsKit/Views/Transcript.swift").standardizedFileURL, encoding: .utf8)
+        XCTAssertTrue(src.contains("TimelineView(.animation(minimumInterval: TranscriptLight.frame"))
+        XCTAssertFalse(src.contains("by: ticking ? 1.0 / 12"))
+    }
+
+    /// The view scrolls to a line before it begins, by the scroll's own length, so its first word lights in place
+    /// (blind critic, 11-10: the first word of a new line was seen ~450 ms late while the view scrolled to it).
+    func testViewScrollsToTheNextLineBeforeItBegins() {
+        let lines = TranscriptLine.sample                                    // line 2 begins at 6 s
+        let last = lines[0].words.last!.start                                // line 1's last word, ~5.54 s
+        let turn = TranscriptLight.turn(lines, to: 1)
+        XCTAssertEqual(TranscriptLight.active(lines, at: 5.7), 0)            // the light stays on the true clock
+        XCTAssertEqual(TranscriptLight.following(lines, at: last + 0.05), 0) // the last word lights on a still, bold line
+        XCTAssertEqual(TranscriptLight.following(lines, at: turn.at), 1)     // then the view is on its way
+        XCTAssertGreaterThanOrEqual(turn.at, last + TranscriptLight.hold)
+        XCTAssertLessThanOrEqual(turn.at + turn.scroll + TranscriptLight.rest, 6 + 1e-9)   // still before it lights
+        XCTAssertGreaterThanOrEqual(turn.scroll, TranscriptLight.quickest)
+        XCTAssertEqual(TranscriptLight.following(lines, at: 5.7, jump: true), 0)   // Reduce Motion jumps on time
+        XCTAssertEqual(TranscriptLight.following(lines, at: 5.2), 0)
+        // a long pause before the next line: the full lead and the full scroll
+        let paused = [TranscriptLine(id: "a", start: 0, end: 2, text: "Hi", words: [TranscriptWord(text: "Hi", start: 0, end: 1)]),
+                      TranscriptLine(id: "b", start: 5, end: 6, text: "Yes")]
+        XCTAssertEqual(TranscriptLight.turn(paused, to: 1).at, 5 - TranscriptLight.lead, accuracy: 1e-9)
+        XCTAssertEqual(TranscriptLight.turn(paused, to: 1).scroll, TranscriptLight.scroll)
+    }
 }

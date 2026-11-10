@@ -5568,48 +5568,8 @@ enum Cadence {
     }
 }
 
-// ---------- content identity: the same recording, whatever the source ----------
-// A transcript is keyed by address, so the same song from YouTube, a downloaded mp3 or Music was transcribed and
-// translated again from scratch — a day's quota spent on something already done. Each piece's audio gets a
-// fingerprint instead (Haitsma–Kalker, the Philips scheme): one 32-bit word per 128 ms, each bit the sign of how
-// the (log) energy difference between two neighbouring bands (33 bands, 300–2000 Hz) changed since the frame before.
-// Re-encoding (YouTube's AAC vs. an mp3), level and EQ barely move those signs; a different recording flips half.
-enum Fingerprint {
-    static let sr = 16000.0, frame = 4096, hop = 2048, phases = 4
-    static let step = Double(hop) / sr                  // seconds per word
-    static let maxSeconds = 600.0                       // what's kept: a song whole, a long piece's first 10 min
-    static let edges: [Int] = (0...33).map { Int(300 * pow(2000.0 / 300, Double($0) / 33) / sr * Double(frame)) }
-
-    /// One word per hop from `start` samples in.
-    static func words(_ s: [Float], start: Int = 0) -> [UInt32] {
-        let n = (s.count - start - frame) / hop + 1
-        guard n > 1, let setup = vDSP_create_fftsetup(12, FFTRadix(kFFTRadix2)) else { return [] }
-        defer { vDSP_destroy_fftsetup(setup) }
-        var window = [Float](repeating: 0, count: frame)
-        vDSP_hann_window(&window, vDSP_Length(frame), Int32(vDSP_HANN_NORM))
-        var x = [Float](repeating: 0, count: frame), re = [Float](repeating: 0, count: frame / 2),
-            im = [Float](repeating: 0, count: frame / 2), power = [Float](repeating: 0, count: frame / 2)
-        var prev: [Float] = [], out: [UInt32] = []
-        out.reserveCapacity(n)
-        for f in 0..<n {
-            s.withUnsafeBufferPointer { vDSP_vmul($0.baseAddress! + start + f * hop, 1, window, 1, &x, 1, vDSP_Length(frame)) }
-            re.withUnsafeMutableBufferPointer { r in im.withUnsafeMutableBufferPointer { i in
-                var z = DSPSplitComplex(realp: r.baseAddress!, imagp: i.baseAddress!)
-                x.withUnsafeBytes { vDSP_ctoz($0.bindMemory(to: DSPComplex.self).baseAddress!, 2, &z, 1, vDSP_Length(frame / 2)) }
-                vDSP_fft_zrip(setup, &z, 1, 12, FFTDirection(FFT_FORWARD))
-                vDSP_zvmags(&z, 1, &power, 1, vDSP_Length(frame / 2))
-            } }
-            let e = (0..<33).map { m in log(power[edges[m]..<edges[m + 1]].reduce(0, +) + 1e-9) }   // log: gain and EQ cancel
-            if !prev.isEmpty {
-                var w: UInt32 = 0
-                for m in 0..<32 where (e[m] - e[m + 1]) - (prev[m] - prev[m + 1]) > 0 { w |= 1 << m }
-                out.append(w)
-            }
-            prev = e
-        }
-        return out
-    }
-
+// ---------- content identity: the fingerprint itself lives in shared/fingerprint.swift (both apps) ----------
+extension Fingerprint {
     /// The first `maxSeconds` of a file at 16 kHz mono, decoded two minutes at a time (whole, a long piece in its
     /// own format would take hundreds of MB).
     static func read(_ f: URL) -> [Float] {
@@ -5617,54 +5577,69 @@ enum Fingerprint {
         while a < maxSeconds, let s = try? decodeChunk(f, from: a, to: min(maxSeconds, a + 120)), !s.isEmpty { out += s; a += 120 }
         return out
     }
+}
 
-    /// The words of `s` (16 kHz mono) at each of `phases` sub-hop offsets: a match can then line up within 32 ms.
-    static func phased(_ s: [Float]) -> [[UInt32]] { (0..<phases).map { words(s, start: $0 * hop / phases) } }
-
-    /// Where `q` sits best in `ref`: the word index there and the share of bits that differ.
-    static func locate(_ q: ArraySlice<UInt32>, in ref: [UInt32]) -> (at: Int, ber: Double) {
-        guard q.count > 0, ref.count >= q.count else { return (0, 1) }
-        var best = (at: 0, errors: Int.max)
-        let qa = Array(q)
-        ref.withUnsafeBufferPointer { r in
-            for j in 0...(r.count - qa.count) {
-                var e = 0
-                for k in 0..<qa.count { e += (qa[k] ^ r[j + k]).nonzeroBitCount; if e >= best.errors { break } }
-                if e < best.errors { best = (j, e) }
-            }
+/// `recense selftest`: live sound placed in a known recording (Fingerprint.locateLive) after the iPhone's path. Public
+/// speech only (FLEURS, CC BY 4.0, in the bench folder); without it the check says so and is skipped.
+func fingerprintSelftest() -> Bool {
+    let bench = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/context/recense/bench/listen-s6/fleurs")
+    /// a mono Float buffer from rate `a` to rate `b`, through AVAudioConverter as the apps do
+    func resample(_ x: [Float], _ a: Double, _ b: Double) -> [Float] {
+        guard a != b else { return x }
+        let fa = AVAudioFormat(standardFormatWithSampleRate: a, channels: 1)!, fb = AVAudioFormat(standardFormatWithSampleRate: b, channels: 1)!
+        let src = AVAudioPCMBuffer(pcmFormat: fa, frameCapacity: AVAudioFrameCount(x.count))!
+        src.frameLength = AVAudioFrameCount(x.count)
+        x.withUnsafeBufferPointer { src.floatChannelData![0].update(from: $0.baseAddress!, count: x.count) }
+        let dst = AVAudioPCMBuffer(pcmFormat: fb, frameCapacity: AVAudioFrameCount(Double(x.count) * b / a) + 4096)!
+        var given = false
+        AVAudioConverter(from: fa, to: fb)!.convert(to: dst, error: nil) { _, st in
+            if given { st.pointee = .endOfStream; return nil }; given = true; st.pointee = .haveData; return src }
+        return Array(UnsafeBufferPointer(start: dst.floatChannelData![0], count: Int(dst.frameLength)))
+    }
+    /// one language's clips joined with 1 s of quiet between them, at 16 kHz mono (the bench's `joined`)
+    func joined(_ lang: String) -> [Float]? {
+        let dir = bench.appendingPathComponent(lang)
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path).filter({ $0.hasSuffix(".wav") }).sorted(),
+              !files.isEmpty else { return nil }
+        var out = [Float](repeating: 0, count: 16000)
+        for name in files {
+            guard let f = try? AVAudioFile(forReading: dir.appendingPathComponent(name)),
+                  let b = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(f.length)),
+                  (try? f.read(into: b)) != nil, let ch = b.floatChannelData else { return nil }
+            out += resample(Array(UnsafeBufferPointer(start: ch[0], count: Int(b.frameLength))), f.processingFormat.sampleRate, 16000)
+            out += [Float](repeating: 0, count: 16000)
         }
-        return (best.at, Double(best.errors) / Double(32 * qa.count))
+        return out
     }
-
-    /// Whether the new audio (phased words of its first `maxSeconds`) is the recording `ref` holds, and if so its
-    /// offset (new time − ref time). Two stretches of ~15 s, far apart and with sound in them, must both match
-    /// closely (≤ 30 % bits off; another recording gives ~50 %) at the same offset — one alone could be a shared
-    /// sample or an intro.
-    static func offset(_ new: [[UInt32]], in ref: [UInt32]) -> (shift: Double, ber: Double)? {
-        let w = 120, n = new[0].count
-        guard n >= 2 * w, ref.count >= w else { return nil }
-        var found: [(shift: Double, ber: Double)] = []
-        for share in [0.3, 0.7] {
-            var q0 = min(n - w, max(0, Int(Double(n) * share) - w / 2))
-            // Silence is all zero words, which match any other silence: start where there's sound.
-            while q0 + w < n, new[0][q0..<(q0 + w)].filter({ $0 == 0 }).count > w / 10 { q0 += w / 4 }
-            guard q0 + w <= n else { return nil }
-            var best: (shift: Double, ber: Double) = (0, 1)
-            for (p, words) in new.enumerated() where words.count >= q0 + w {
-                let (at, ber) = locate(words[q0..<(q0 + w)], in: ref)
-                if ber < best.ber { best = ((Double(q0 * hop + p * hop / phases) - Double(at * hop)) / sr, ber) }
-            }
-            found.append(best)
-        }
-        guard found.allSatisfy({ $0.ber <= 0.3 }), abs(found[0].shift - found[1].shift) < 0.3 else { return nil }
-        return ((found[0].shift + found[1].shift) / 2, max(found[0].ber, found[1].ber))
+    /// what ReplayKit hands the broadcast extension (44.1 kHz, Int16, two channels interleaved, big-endian), and back
+    /// to 16 kHz mono Float as the extension takes it
+    func replaykit(_ x: [Float]) -> [Float] {
+        let up = resample(x, 16000, 44100)
+        var lr = [Int16](repeating: 0, count: up.count * 2)
+        for (i, v) in up.enumerated() { let q = Int16(max(-1, min(1, v)) * 32767).byteSwapped; lr[2 * i] = q; lr[2 * i + 1] = q }
+        let mono = (0..<up.count).map { (Float(Int16(bigEndian: lr[2 * $0])) + Float(Int16(bigEndian: lr[2 * $0 + 1]))) / 2 / 32768 }
+        return resample(mono, 44100, 16000)
     }
-
-    static func encode(_ w: [UInt32]) -> String { w.withUnsafeBytes { Data($0) }.base64EncodedString() }
-    static func decode(_ s: String) -> [UInt32] {
-        guard let d = Data(base64Encoded: s) else { return [] }
-        return d.withUnsafeBytes { Array($0.bindMemory(to: UInt32.self)) }
+    guard let en = joined("en_us"), let fr = joined("fr_fr") else {
+        print("ok   fingerprint, live sound placed in a known recording (skipped: no public clips in \(bench.path))")
+        return true
     }
+    var all = true
+    func check(_ ok: Bool, _ what: String) { all = all && ok; print("\(ok ? "ok  " : "FAIL") fingerprint, \(what)") }
+    let t0 = Date(), at = 47.3, ref = Fingerprint.words(en)
+    guard en.count >= Int((at + 22) * 16000), fr.count >= 52 * 16000 else { check(false, "the public clips are too short"); return false }
+    // 22 s heard on the phone; two calls 2 s apart, each on the latest 20 s
+    let heard = replaykit(Array(en[Int(at * 16000)..<Int((at + 22) * 16000)]))
+    let one = Fingerprint.locateLive(Fingerprint.phased(Array(heard[0..<320000])), in: ref)
+    let two = Fingerprint.locateLive(Fingerprint.phased(Array(heard[32000..<352000])), in: ref)
+    func show(_ r: (shift: Double, ber: Double)?) -> String { r.map { String(format: "shift %.3f s, ber %.3f", $0.shift, $0.ber) } ?? "nil" }
+    check(one.map { abs($0.shift + at) <= 0.032 && $0.ber <= 0.3 } ?? false,
+          "20 s of English after ReplayKit's path found \(at) s in (shift = live − ref, want −\(at)): \(show(one))")
+    check(one != nil && two != nil && abs((2 + two!.shift) - one!.shift) <= 0.1, "two calls 2 s apart agree within 0.1 s: \(show(two))")
+    let other = Fingerprint.locateLive(Fingerprint.phased(replaykit(Array(fr[(30 * 16000)..<(50 * 16000)]))), in: ref)
+    check(other == nil, "20 s of French isn't found in the English: \(show(other))")
+    check(Date().timeIntervalSince(t0) < 10, String(format: "in %.1f s", Date().timeIntervalSince(t0)))
+    return all
 }
 
 // ---------- library: what was done once is never paid for again ----------
