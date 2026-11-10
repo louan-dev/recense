@@ -310,7 +310,6 @@ struct FolderView: View {
         .alert("Something went wrong", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(failed ?? "") }
-        .navigationDestination(for: String.self) { FolderView(path: $0) }
         .fullScreenCover(item: $playing) { r in
             PlayerView(folder: parentPath(r.inArchive), open: r.inArchive)
                 .ignoresSafeArea()
@@ -494,7 +493,9 @@ struct FolderView: View {
                 }
                 .buttonStyle(.plain)
             }
-            else if r.dir { NavigationLink(value: r.path) { label() }.buttonStyle(.plain) }
+            // a view link, never NavigationLink(value:) + navigationDestination(for:): Library pushes Archive with a view
+            // link, and a value pushed onto that stack showed Archive's top level again instead of the folder
+            else if r.dir { NavigationLink { FolderView(path: r.path) } label: { label() }.buttonStyle(.plain) }
             else { Button { playing = r } label: { label() }.buttonStyle(.plain) }
         }
         .contextMenu {
@@ -590,8 +591,7 @@ struct FolderView: View {
                     Text(r.name).font(.title3).lineLimit(2)
                     Text(r.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Spacer(minLength: 0)
-                if r.dir { Image(systemName: "chevron.right").font(.subheadline.bold()).foregroundStyle(.tertiary) }
+                Spacer(minLength: 0)  // a folder's › is the List's own (its NavigationLink), never a second drawn here
             }
             .contentShape(Rectangle())
         }
