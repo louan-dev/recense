@@ -63,8 +63,15 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad. Start listening opens the system's Start Broadcast sheet at once (or
-  Control Center › Screen Recording, long press › Recense); nothing to choose or type: each listening is its own episode,
+- **Listen**: Recense on the iPhone and iPad. It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
+  with the sound on the device's own speaker, the microphone hears what plays, fed to the speech engine only while
+  another app plays, text only, never audio (iOS asks once for the microphone; denied: no mic, nothing nags).
+  "Hear other apps directly" starts the broadcast (one tap on the system sheet, as iOS requires; or Control Center ›
+  Screen Recording, long press › Recense), which hears through headphones too. With neither (headphones and no
+  broadcast, or iOS ended it) Listen asks once per stop, "Tap once to keep hearing", in the page and a notification.
+  iOS won't start the microphone while Recense is in the background, so there it asks instead.
+  One **Pause** (page and ··· menu) stops both and is kept across launches. Every input's outcome is a written-down
+  truth table, `ios/Tests/ears/main.swift`. Each listening is its own episode,
   named by when it began and its language, a silence of 3 minutes starts the next, and one that continues an older
   episode joins it (below). The broadcast
   extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
@@ -85,7 +92,7 @@ updates in place.
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
   heard while iOS had the app asleep or closed still reaches the episode.
   Offline translation: the line under the language pickers says whether the pair translates on this device;
-  **Download for offline** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
+  **Download** fetches English, Vietnamese and French once (iOS asks before each). A sentence that couldn't
   be translated says "not translated (pack missing)" instead of staying blank, and is translated once the pack is there.
   One transcript, never twice (`HostApp/iOS/Align.swift`): content left partway and resumed, rewound, or replayed from
   the start lands on the sentences the episode already has (a sentence left cut short is completed; a short one like

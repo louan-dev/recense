@@ -6,6 +6,8 @@
 	<string>Recense adds an event to your calendar only when you press Add to Calendar on a dated line in Draftpad.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Recense opens Matters and Raven only with Face ID.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Recense hears the room while you play something on the speaker, and keeps text only, never audio.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recense turns what's playing into captions on this device.</string>
 	<key>UIBackgroundModes</key>
