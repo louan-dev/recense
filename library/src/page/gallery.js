@@ -10,6 +10,7 @@ import viewerShellCss from "../client/viewer-shell.css";
 import viewerSheet from "../client/viewer-sheet.js";
 import viewerSheetCss from "../client/viewer-sheet.css";
 import keylabel from "../client/keylabel.js";
+import learn from "../client/learn.js";
 import prosody from "../client/prosody.js";
 import prosogram from "../client/prosogram.js";
 import prosogramMain from "../client/prosogram-main.js";
@@ -258,6 +259,9 @@ ${homebar}
 </script>
 <script>
 ${cadence}
+</script>
+<script>
+${learn}
 </script>
 <script>
 ${js}

@@ -240,8 +240,10 @@ gallery/
     player-key.js       serves the player's Key processor
     page/               the HTML pages; page/ui/README.md holds the interface rules (the reference images
                         were removed 11-05; git history keeps them)
-    client/             CSS and browser scripts (gallery.js, cadence.js, prosody.js, prosogram*.js, keylabel.js,
-                        homebar.js, room.js, assistant.js, sharedview.js, upload.js)
+    client/             CSS and browser scripts (gallery.js, learn.js, cadence.js, prosody.js, prosogram*.js, keylabel.js,
+                        homebar.js, room.js, assistant.js, sharedview.js, upload.js). learn.js holds Learn's pure
+                        rules (phrases, beats, clause ends; global RecenseLearn), loaded before gallery.js and shared
+                        with Draftpad's editor
   test/                 route, transcript, cadence, feed, assistant and page tests (npm test)
   (the iPhone, iPad and Mac apps moved to ../mobile/ on 11-06)
   docs/architecture.md  File Provider design and the app's interface
