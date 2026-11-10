@@ -60,7 +60,10 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad. Start it from Control Center › Screen Recording › Gallery; the broadcast
+- **Listen**: Recense on the iPhone and iPad. Start listening opens the system's Start Broadcast sheet at once (or
+  Control Center › Screen Recording, long press › Recense); nothing to choose or type: each listening is its own episode,
+  named by when it began and its language, a silence of 3 minutes starts the next, and one that continues an older
+  episode joins it (below). The broadcast
   extension hears whatever is playing in any app, recognised on the device in its own language, cut into sentences
   and translated with Apple's on-device Translation. Lines float in a Picture in Picture window over every app,
   in Follow (sentence and translation, newest word lit) or Learn (two sentences taking turns); in the app, the shared

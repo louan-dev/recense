@@ -3,8 +3,9 @@
 // chosen language (Apple's on-device Translation, as Recense does), and drawn into a Picture in Picture window, the
 // floating window that stays over every app until Listen is turned off. Two looks, as on the Mac: Follow (the
 // sentence and its translation, the newest word lit) and Learn (two sentences, top and bottom, taking turns).
-// In the app: Read along (Spotify's look) with Copy, Clear and full screen. What's heard is kept per episode (the
-// user says what's playing; iOS can't see other apps), so going back to one opens where it was left (Episode).
+// In the app: Read along (Spotify's look) with Copy, Clear and full screen. What's heard is kept per episode, made
+// by itself (named by when it began and its language; a long silence starts the next), and joined to an older episode
+// when what plays continues it (Align.swift), so going back to something opens where it was left (Episode).
 import SwiftUI
 import ShowsKit
 import AVKit
@@ -36,6 +37,7 @@ struct Episode: Identifiable, Codable, Hashable {
     var place: Int = 0
     var updated: Double = 0  // ms since 1970, the newer copy wins
     var by: String? = nil    // "iphone", "ipad" or "mac": who played it last (the Mac resumes where another left off)
+    var ear: String? = nil   // what heard it: "broadcast" (another app's sound itself) or, later, "mic" (the room)
     var sentences: [Sentence] = []
     var id: String { key }
 
@@ -91,6 +93,7 @@ final class Listener: NSObject, ObservableObject {
         .compactMapValues { UInt64($0) }
     private var nums: [String: Int] = [:]
     private var lastHeard = Date()
+    private var lastLineAt = Date()  // when the extension last said something (a long silence starts a new episode)
     private var dirty = false
 
     override init() {
@@ -207,7 +210,7 @@ final class Listener: NSObject, ObservableObject {
             catchUp()  // the end of the broadcast before, if the app missed it
             if on {
                 lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []
-                if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
+                fresh()  // every broadcast starts its own; Align joins it to an older one when the content continues
                 if floats { startPiP() } else { keepAwake(true) }
             } else {
                 save(); Task { await upload() }
@@ -218,6 +221,13 @@ final class Listener: NSObject, ObservableObject {
 
     @Published var stopping = false
     // the extension ends its own broadcast when it sees this (within 2 s); the app can't end it otherwise
+    /// Start listening: the floating window gets ready and the system's Start Broadcast sheet opens (the one tap
+    /// iOS requires before another app's sound reaches Recense).
+    func start() {
+        startPiP()
+        Task { try? await Task.sleep(for: .milliseconds(300)); BroadcastButton.tap() }
+    }
+
     func stop() {
         var s = Captions.state()
         s.stop = true
@@ -250,6 +260,14 @@ final class Listener: NSObject, ObservableObject {
 
     // what's playing now: the episode before is kept as it is (where it was, all it heard) and leaves Read along;
     // this one comes in with all it heard before, open where it was left. Gallery's copy is taken if newer.
+    /// A new episode, named by when it began and what it's heard in ("9 Nov 2026 at 21:40 · French"): nothing to
+    /// choose or type. If what plays turns out to continue an older episode, adoptIfResumed() moves it there.
+    func fresh() {
+        lastLineAt = Date()
+        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.name(heard))
+        episode?.ear = "broadcast"
+    }
+
     func choose(_ title: String) {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
@@ -390,15 +408,6 @@ final class Listener: NSObject, ObservableObject {
         return out
     }
 
-    // the index of every episode in Gallery (the Mac's too), for the picker
-    @Published var everywhere: [(key: String, title: String)] = []
-    func fetchIndex() async {
-        guard let r = request(""), let (d, res) = try? await URLSession.shared.data(for: r), (res as? HTTPURLResponse)?.statusCode == 200,
-              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let eps = j["episodes"] as? [String: [String: Any]] else { return }
-        everywhere = eps.compactMap { k, v in (v["title"] as? String).map { (k, $0) } }
-            .sorted { (eps[$0.key]?["updated"] as? Double ?? 0) > (eps[$1.key]?["updated"] as? Double ?? 0) }
-    }
-
     // is this sentence one the episode already has (the user went back, or played it again)? the closest to where
     // they are wins when several are alike
     private func match(_ text: String, besides: String? = nil) -> Int? {
@@ -516,7 +525,7 @@ final class Listener: NSObject, ObservableObject {
         }
         let missed = ring.unseen(seen)
         guard !missed.isEmpty else { return }
-        if episode == nil { choose(Date().formatted(date: .abbreviated, time: .shortened)) }
+        if episode == nil { fresh() }
         let now = Captions.state().b
         for l in missed {
             var x = l
@@ -531,6 +540,9 @@ final class Listener: NSObject, ObservableObject {
     private func take(_ l: Captions.Line, key: String? = nil) {
         seen[key ?? l.ringKey] = l.ringStamp
         if key != nil { lines[l.n] = l.text; rebuild(); return }  // from the ring: text only, not the live line
+        // 3 minutes without a word, then speech: something else is playing now, so it starts its own episode
+        if on, l != last, Date().timeIntervalSince(lastLineAt) > 180, !added.isEmpty { fresh() }
+        lastLineAt = Date()
         last = l
         lines[l.n] = l.text
         if let ws = l.words, let t0 = l.t0 {
@@ -821,8 +833,6 @@ struct CaptionLayer: UIViewRepresentable {
 struct ListenView: View {
     @ObservedObject var l = Listener.shared
     @State private var full = false
-    @State private var picking = false
-    @State private var startAfterPick = false
     @State private var clearing = false
 
     var body: some View {
@@ -833,20 +843,17 @@ struct ListenView: View {
                     Text("Hears whatever is playing in any app, on this device, then shows it in a window that floats over every app.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                // Start asks what's playing, then opens the system's Start Broadcast sheet (its own button can draw as
-                // nothing, so a real button taps it); Stop tells the extension to end the broadcast, no sheet
+                // Start opens the system's Start Broadcast sheet at once (iOS's own button can draw as nothing, so a
+                // real button taps it); nothing to choose: episodes name themselves. Stop tells the extension to end it.
                 Button {
-                    if l.on { l.stop() } else { startAfterPick = true; picking = true }
+                    if l.on { l.stop() } else { l.start() }
                 } label: {
                     Label(l.stopping ? "Stopping…" : l.on ? "Stop listening" : "Start listening", systemImage: l.on ? "stop.circle.fill" : "record.circle")
                         .font(.title3.weight(.semibold))
                 }
                 .disabled(l.stopping)
                 .background(BroadcastButton().frame(width: 1, height: 1).opacity(0.01))
-                Button { startAfterPick = false; picking = true } label: {
-                    LabeledContent("Playing", value: l.episode?.title ?? "Choose…")
-                }
-                .foregroundStyle(.primary)
+                if let e = l.episode, l.on { LabeledContent("Now", value: e.title) }
                 if let e = l.error { Text(e).font(.footnote).foregroundStyle(.blue) }
             }
             Section {
@@ -903,10 +910,9 @@ struct ListenView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 MoreMenu {
-                    Button { if l.on { l.stop() } else { startAfterPick = true; picking = true } } label: {
+                    Button { if l.on { l.stop() } else { l.start() } } label: {
                         Label(l.on ? "Stop Listening" : "Start Listening", systemImage: l.on ? "stop.circle" : "record.circle")
                     }.disabled(l.stopping)
-                    Button { startAfterPick = false; picking = true } label: { Label("Choose What's Playing", systemImage: "music.note.list") }
                     if l.floats { Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") } }
                     else { Button { l.float() } label: { Label("Float over Apps", systemImage: "pip.exit") } }
                     Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
@@ -930,69 +936,11 @@ struct ListenView: View {
             }
             .tint(Theme.accent)
         }
-        .sheet(isPresented: $picking) {
-            EpisodePicker { title in
-                l.choose(title)
-                picking = false
-                if startAfterPick {
-                    l.startPiP()
-                    Task { try? await Task.sleep(for: .milliseconds(600)); BroadcastButton.tap() }
-                }
-            }
-        }
         .confirmationDialog("Clear what was heard in this episode?", isPresented: $clearing, titleVisibility: .visible) {
             Button("Clear") { l.clear() }
             Button("Cancel", role: .cancel) {}
         }
         .onAppear { l.allowSpeech() }
-    }
-}
-
-// What's playing? An episode heard before (it opens where it was left) or a new title. iOS doesn't tell an app what
-// another app plays, so the user says; the title is also how the Mac finds the transcript.
-struct EpisodePicker: View {
-    @ObservedObject var l = Listener.shared
-    var pick: (String) -> Void
-    @State private var title = ""
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    TextField("Episode or talk title", text: $title).submitLabel(.done).onSubmit { pick(title) }
-                    if let s = UIPasteboard.general.hasStrings ? UIPasteboard.general.string : nil, s.count < 200, title.isEmpty {
-                        Button("Paste “\(s.prefix(50))”") { title = s }
-                    }
-                } footer: { Text("Use the same title on the Mac and the transcript is there too.") }
-                let others = l.everywhere.filter { e in !l.episodes.contains { $0.key == e.key } && (title.isEmpty || e.title.localizedCaseInsensitiveContains(title)) }
-                if !others.isEmpty {
-                    Section("From your Mac and iPad") {
-                        ForEach(others, id: \.key) { e in Button(e.title) { pick(e.title) }.foregroundStyle(.primary) }
-                    }
-                }
-                if !l.episodes.isEmpty {
-                    Section("Heard before") {
-                        ForEach(l.episodes.filter { title.isEmpty || $0.title.localizedCaseInsensitiveContains(title) }) { e in
-                            Button { pick(e.title) } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(e.title).foregroundStyle(.primary)
-                                    Text("\(e.sentences.count) sentences").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("What's playing?").navigationBarTitleDisplayMode(.inline)
-            .task { await l.fetchIndex() }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { pick(title) }.disabled(title.trimmingCharacters(in: .whitespaces).isEmpty) }
-            }
-        }
-        .tint(Theme.accent)
-        .presentationDetents([.medium, .large])
     }
 }
 
