@@ -63,9 +63,10 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
-- **Listen**: Recense on the iPhone and iPad, first on **Home** as the "Listening" card (`HostApp/iOS/ListeningCard.swift`,
-  11-10): which ear hears and in which language, the line being heard in the transcript's look, and the one Pause;
-  tapping it opens Listen. It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
+- **Listen**: Recense on the iPhone and iPad, first on **Home** as the "Now Playing" card (`HostApp/iOS/ListeningCard.swift`,
+  11-10): which ear hears and in which language, the live transcript of what plays (ShowsKit's `TranscriptView`),
+  and the one Pause; "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
+  Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
   with the sound on the device's own speaker, the microphone hears what plays, fed to the speech engine only while
   another app plays, text only, never audio (iOS asks once for the microphone; denied: no mic, nothing nags).
   "Hear other apps directly" starts the broadcast (one tap on the system sheet, as iOS requires; or Control Center ›
@@ -97,6 +98,12 @@ updates in place.
   Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (Automatic: all three) (the only time Listen needs a
   connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
+  The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
+  Recense (Home shows the transcript) and after 3 s of that app paused (`HostApp/iOS/Floating.swift`, tested in
+  `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
+  device and kept (`listen.reshowFromBehind`: works or refused); Recense stays awake up to 10 minutes after hiding it, to reopen it on play; if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
+  stop, so hiding detaches the window's content. Each decision is logged in `listen.floatLog` (Library/Preferences).
+  Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it.
   The floating window's middle button holds the words where they are and play shows the newest.
   Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch

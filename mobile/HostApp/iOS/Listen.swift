@@ -82,10 +82,16 @@ final class Listener: NSObject, ObservableObject {
     } }
     @Published var into = UserDefaults.standard.string(forKey: "listen.into") ?? "en" { didSet { UserDefaults.standard.set(into, forKey: "listen.into"); retarget() } }
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
-    // Float: the window goes over other apps when Gallery is left. Dock: it stays in Gallery and doesn't follow.
-    @Published var floats = UserDefaults.standard.object(forKey: "listen.floats") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(floats, forKey: "listen.floats"); pip?.canStartPictureInPictureAutomaticallyFromInline = floats }
-    }
+    // The floating window shows by itself while another app plays and Recense is behind, and hides on pause
+    // (Floating.swift; owner 11-10, no Dock). Whether iOS lets it reopen from behind is measured once and kept.
+    private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind") ?? "") ?? .unknown
+    private var quietFrom: Date?
+    private var tried = false
+    private var reshowing = false
+    private var lastFloat = ""
+    private var closing = false
+    private var ticking = false
+    private(set) var hidBehind = false   // Recense hid the window on a pause behind; stays awake to reopen it
     @Published var config: TranslationSession.Configuration?
     // the translation pack (Apple Translation's on-device language models): said under the pickers, so a missing one
     // is never a silent blank (playbook rule 3). fetching: the pair being downloaded once, for offline use.
@@ -174,7 +180,7 @@ final class Listener: NSObject, ObservableObject {
 
     // a silent sound mixed under whatever is playing keeps the app running behind the other app (UIBackgroundModes
     // audio), so it can take lines from the extension, translate them and redraw the floating window
-    private func keepAwake(_ on: Bool) {
+    func keepAwake(_ on: Bool) {
         if on, !engine.isRunning {
             let src = AVAudioSourceNode { _, _, _, abl in
                 for b in UnsafeMutableAudioBufferListPointer(abl) { memset(b.mData, 0, Int(b.mDataByteSize)) }
@@ -323,6 +329,7 @@ final class Listener: NSObject, ObservableObject {
         if prompting, !shows { UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["listen.stop"]) }
         prompting = shows
         if c.ear != ear { switchEar(to: c.ear) }
+        floatTick()
     }
 
     private func startMic() {
@@ -341,7 +348,7 @@ final class Listener: NSObject, ObservableObject {
         let was = ear
         ear = e
         if e == .mic { beginListening(); fresh(ear: "mic") }  // the broadcast's own episode starts in stateChanged
-        if e != .none, was == .none { if floats { startPiP() } else { keepAwake(true) } }
+        if e != .none, was == .none { keepAwake(true) }
         if e == .none {
             save(); Task { await upload() }
             Listener.held = false; pip?.stopPictureInPicture(); keepAwake(false)
@@ -395,7 +402,7 @@ final class Listener: NSObject, ObservableObject {
     /// Start listening: the floating window gets ready and the system's Start Broadcast sheet opens (the one tap
     /// iOS requires before another app's sound reaches Recense).
     func start() {
-        startPiP()
+        makePiP()
         Task { try? await Task.sleep(for: .milliseconds(300)); BroadcastButton.tap() }
     }
 
@@ -852,14 +859,32 @@ final class Listener: NSObject, ObservableObject {
         }
         let p = AVPictureInPictureController(contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self))
         p.delegate = self
-        p.canStartPictureInPictureAutomaticallyFromInline = floats
+        p.canStartPictureInPictureAutomaticallyFromInline = false   // floatTick opens it only while something plays
         p.requiresLinearPlayback = true
         pip = p
         pipObs = p.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { _, _ in Task { @MainActor in Listener.shared.pipNote() } }
-        pipActive = p.observe(\.isPictureInPictureActive, options: [.new]) { _, _ in Task { @MainActor in Listener.shared.pipNote() } }
+        pipActive = p.observe(\.isPictureInPictureActive, options: [.new]) { c, _ in
+            let open = c.isPictureInPictureActive
+            Task { @MainActor in
+                let me = Listener.shared
+                me.pipNote()
+                // iOS suspends Recense behind other apps unless it plays: the silent sound keeps it awake while the
+                // window shows, so the window can hide on pause (11-10 iPhone: it stayed up without this)
+                if open { me.keepAwake(true) } else if !me.hearing, !me.hidBehind { me.keepAwake(false) }
+            }
+        }
         draw()
         // a still frame goes stale for PiP; draw again each second
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw() } }
+        if !ticking {   // once: makePiP runs again after dropPiP
+            ticking = true
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw(); Listener.shared.floatTick() } }
+        }
+    }
+    /// Lets go of the floating window's controller (its window closes with it); makePiP makes a new one.
+    private func dropPiP() {
+        pipObs = nil; pipActive = nil
+        pip = nil
+        pipNote()
     }
     private var pipObs: NSKeyValueObservation?
     private var pipActive: NSKeyValueObservation?
@@ -869,9 +894,66 @@ final class Listener: NSObject, ObservableObject {
         pipState = pip.isPictureInPictureActive ? "Floating window: open" : pip.isPictureInPicturePossible ? "Floating window: ready" : "Floating window: not ready"
     }
 
-    // Float puts the window over other apps now and whenever Gallery is left; Dock brings it back into Gallery
-    func float() { floats = true; startPiP() }
-    func dock() { floats = false; pip?.stopPictureInPicture() }
+    /// Once a second and at every sound change: open the window as Recense is left while something plays, hide it
+    /// in Recense (Home shows the transcript) and after 3 s of the other app paused behind it.
+    func floatTick() {
+        if pip == nil, UIApplication.shared.applicationState == .active { makePiP() }   // after dropPiP
+        guard let pip else { return }
+        let s = AVAudioSession.sharedInstance()
+        let playing = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
+        let front = UIApplication.shared.applicationState == .active
+        pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(playing: playing, paused: paused)
+        if playing { quietFrom = nil } else if quietFrom == nil { quietFrom = Date() }
+        if !playing || front { tried = false }
+        if front { hidBehind = false }
+        if hidBehind, !playing, Date().timeIntervalSince(quietFrom ?? Date()) > Floating.stayAwake {
+            hidBehind = false
+            if !hearing { keepAwake(false) }
+        }
+        let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
+                                        quiet: quietFrom.map { Date().timeIntervalSince($0) } ?? 0, reshow: reshow, tried: tried,
+                                        hid: hidBehind))
+        let key = "\(front ? "front" : "behind") \(playing ? "playing" : "quiet") \(pip.isPictureInPictureActive ? "open" : "closed") \(act)"
+        if key != lastFloat { lastFloat = key; floatNote("\(key) reshow=\(reshow.rawValue) awake=\(engine.isRunning)") }
+        switch act {
+        case .hide:
+            hidBehind = !front && !paused
+            guard !closing else { break }
+            closing = true
+            pip.stopPictureInPicture()
+            // 11-10 iPhone: behind other apps iOS ignored stop (no "will stop", still open a second later), so the
+            // window is taken apart instead: first its content, then the controller (made again when Recense is in front)
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                if pip.isPictureInPictureActive { floatNote("stop ignored; detaching content"); pip.contentSource = nil }
+                try? await Task.sleep(for: .seconds(1))
+                if pip.isPictureInPictureActive { floatNote("still open; releasing the controller"); dropPiP() }
+                floatNote("hide done: \(self.pip?.isPictureInPictureActive == true ? "still open" : "closed")")
+                closing = false
+            }
+        case .show:
+            tried = true; reshowing = true; hidBehind = false
+            if pip.contentSource == nil {   // detached to hide it (below): give it the layer back first
+                pip.contentSource = .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
+            }
+            floatNote("reopen: possible=\(pip.isPictureInPicturePossible)")
+            startPiP()
+            Task { try? await Task.sleep(for: .seconds(2)); if reshowing { learn(pip.isPictureInPictureActive ? .works : .refused) } }
+        case .none: break
+        }
+    }
+    /// The floating window's log for the device run (Library/Preferences listen.floatLog, last 30 lines).
+    func floatNote(_ line: String) {
+        var log = UserDefaults.standard.stringArray(forKey: "listen.floatLog") ?? []
+        log.append("\(Date().formatted(date: .omitted, time: .standard)) \(line)")
+        UserDefaults.standard.set(Array(log.suffix(30)), forKey: "listen.floatLog")
+    }
+    func learn(_ r: Floating.Reshow) {
+        reshowing = false
+        guard r != reshow else { return }
+        reshow = r; UserDefaults.standard.set(r.rawValue, forKey: "listen.reshowFromBehind")
+    }
+    var reshowTrying: Bool { reshowing }
 
     func startPiP() {
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -1006,8 +1088,18 @@ final class Listener: NSObject, ObservableObject {
 }
 
 extension Listener: AVPictureInPictureControllerDelegate {
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ c: AVPictureInPictureController) {
+        Task { @MainActor in Listener.shared.floatNote("iOS: will stop") }
+    }
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
+        Task { @MainActor in Listener.shared.floatNote("iOS: did stop") }
+    }
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError e: Error) {
-        Task { @MainActor in Listener.shared.error = "The floating window didn't open: \(e.localizedDescription)" }
+        Task { @MainActor in
+            let me = Listener.shared
+            if me.reshowTrying { me.learn(.refused) }   // iOS won't reopen it from behind: it stays open on pause from now
+            else { me.error = "The floating window didn't open: \(e.localizedDescription)" }
+        }
     }
 }
 
@@ -1023,8 +1115,8 @@ extension Listener: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval i: CMTime) async {}
 }
 
-// the layer PiP draws from. PiP only starts from a layer that is really on screen, so it is the preview on the
-// Listen screen; leaving the app from there (home, another app) turns it into the floating window.
+// the layer PiP draws from. PiP only starts from a layer that is really on screen: it sits behind Home's transcript
+// (ListeningCard) and is the preview on Listen; leaving the app from either turns it into the floating window.
 // (the layer's frame follows the view's layout; set from updateUIView it stayed 0×0, and PiP never became possible)
 struct CaptionLayer: UIViewRepresentable {
     final class Host: UIView {
@@ -1036,7 +1128,8 @@ struct CaptionLayer: UIViewRepresentable {
         }
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window != nil { Task { @MainActor in Listener.shared.makePiP() } }
+            // Home and Listen both host it: the one coming on screen takes the layer back
+            if window != nil { setNeedsLayout(); Task { @MainActor in Listener.shared.makePiP() } }
         }
     }
     func makeUIView(context: Context) -> Host {
@@ -1096,14 +1189,8 @@ struct ListenView: View {
                     Text("Follow").tag("follow")
                     Text("Learn").tag("learn")
                 }.pickerStyle(.segmented)
-                if l.floats {
-                    Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") }
-                } else {
-                    Button { l.float() } label: { Label("Float over apps", systemImage: "pip.exit") }
-                }
             } footer: {
-                Text(l.floats ? "Floats: leave Recense and the window stays on top of other apps. \(l.pipState)"
-                              : "Docked: the window stays here in Recense and doesn't follow you out.")
+                Text("Leave Recense while something plays and this window floats over it; it hides when the sound pauses. \(l.pipState)")
             }
             Section {
                 Picker("Hear in", selection: $l.heard) {
@@ -1127,17 +1214,7 @@ struct ListenView: View {
                         // a view link, never NavigationLink(value:) + navigationDestination(for:): Library pushes Listen
                         // with a view link, and a value pushed onto that stack opened a second Listen instead of the
                         // episode (two Listens then fight over the one floating-window layer)
-                        NavigationLink { Self.episodePage(l, e) } label: {
-                            HStack(spacing: 14) {
-                                Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
-                                    .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(e.title).font(.title3).lineLimit(2)
-                                    Text("\(e.sentences.count) sentences · \(e.ear == "mic" ? "Microphone" : "Broadcast") · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
-                                        .font(.subheadline).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                        ListenEpisodeRow(e: e)
                         .swipeActions { Button("Delete") { l.delete(e) }.tint(.blue) }
                     }
                 }
@@ -1151,8 +1228,6 @@ struct ListenView: View {
                         Label(l.paused ? "Resume Listening" : "Pause Listening", systemImage: l.paused ? "play.circle" : "pause.circle")
                     }.disabled(l.stopping)
                     if !l.paused, !l.on { Button { l.start() } label: { Label("Hear Other Apps Directly", systemImage: "record.circle") } }
-                    if l.floats { Button { l.dock() } label: { Label("Dock in Recense", systemImage: "pip.enter") } }
-                    else { Button { l.float() } label: { Label("Float over Apps", systemImage: "pip.exit") } }
                     Button { full = true } label: { Label("Read Along Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                     Button { clearing = true } label: { Label("Clear This Episode", systemImage: "trash") }.disabled(l.sentences.isEmpty)
                 }
@@ -1295,5 +1370,27 @@ struct FloatingCaption: View {
             }
         }
         .clipped()
+    }
+}
+
+/// One heard episode as a row that opens its transcript: Listen's Episodes and Home's Recently Played (a newer
+/// listening bumps it there, owner 11-10). A view link, as every way into Listen's pages.
+struct ListenEpisodeRow: View {
+    let e: Episode
+    var body: some View {
+        NavigationLink { ListenView.episodePage(Listener.shared, e) } label: {
+            HStack(spacing: 14) {
+                Artwork(title: e.title, corner: 8, named: false).frame(width: 56, height: 56)
+                    .overlay { Image(systemName: "captions.bubble").font(.title3).foregroundStyle(.white.opacity(0.9)) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(e.title).font(.title3).lineLimit(2)
+                    Text("\(e.sentences.count) sentences · \(e.ear == "mic" ? "Microphone" : "Broadcast") · \(Date(timeIntervalSince1970: e.updated / 1000).formatted(date: .abbreviated, time: .shortened))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

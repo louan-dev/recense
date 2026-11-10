@@ -7,10 +7,12 @@ import ShowsKit
 struct RecenseRoot: View {
     @State private var launchPlace: Place?
     @State private var sampleClock: SampleTransport?   // held here: the model's transport is weak
+    @State private var extras = HomeExtras()   // Listen's earlier episodes, in Home's Recently Played
+    @ObservedObject private var listen = Listener.shared
     @State private var model = ShowsModel(store: MemoryCatalog.sample(device: UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"))
 
     var body: some View {
-        ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(ListeningCard())) { _ in
+        ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(ListeningCard()), extras: extras) { _ in
             VStack(spacing: 12) {
                 Image(systemName: "play.rectangle").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
                 Text("Our player plays here from B3, offline, from this device.").font(.title3)
@@ -18,6 +20,8 @@ struct RecenseRoot: View {
             }
             .padding(24)
         }
+        // owner 11-10: the newest listening is Now Playing; a newer one bumps it down to Recently Played
+        .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab
             switch ProcessInfo.processInfo.environment["RECENSE_TAB"] {
             case "new": model.tab = .new
@@ -49,4 +53,13 @@ struct RecenseRoot: View {
 struct ShowsPreview: View {
     let close: () -> Void
     var body: some View { RecenseRoot() }
+}
+
+extension RecenseRoot {
+    /// Every heard episode but the one Now Playing shows, as Recently Played rows, by when it was last heard.
+    private func recentFromListen() {
+        extras.recent = listen.episodes.filter { $0.key != listen.episode?.key && !$0.sentences.isEmpty }.map {
+            RecentItem(id: "listen:" + $0.key, at: Int64($0.updated), row: AnyView(ListenEpisodeRow(e: $0)))
+        }
+    }
 }
