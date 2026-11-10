@@ -192,6 +192,10 @@ enum Downloads {
 
 #if os(macOS)
 import AppKit
+import Network
+
+private let connection = NWPathMonitor()
+private var draining = false
 
 extension Downloads {
     enum Failure: Error, CustomStringConvertible {
@@ -326,6 +330,17 @@ extension Downloads {
             try record(c); out.append(c)
         }
         return out
+    }
+
+    /// When the Mac (re)gains a connection, the queue is run: a request made offline, here or on another device, goes
+    /// without anyone pressing anything. Runs at launch too, once the first path arrives.
+    static func watchConnection() {
+        connection.pathUpdateHandler = { path in
+            guard path.status == .satisfied, !queued().isEmpty, !draining else { return }
+            draining = true
+            Task.detached { _ = await drain(log: { NSLog("recense: \($0)") }); draining = false }
+        }
+        connection.start(queue: DispatchQueue(label: "recense.downloads.connection"))
     }
 
     /// Runs every queued request (oldest first); a done or failed one leaves the queue, a failure logged in .queue/failed/.

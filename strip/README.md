@@ -384,6 +384,8 @@ Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + f
 - Downloads resume and retry (8 parallel fragments); title, chapters and cover are embedded; the site's en/vi/fr captions are saved beside the file as `.vtt`.
 - Anything an iPhone can't play (VP9, AV1) is converted to H.264/AAC MP4 on the Mac's hardware encoder.
 - Pulltube (optional): set its download folder to `~/Recense/downloads/Pulltube`; `recense download --adopt` records what it saves (and anything put in `downloads/` by Finder or AirDrop). `--pulltube <link>` opens a link in it.
+- In the home bar's menu: Download the played audio (as before), Download audio + video, Download the video, Open in Pulltube.
+- The queue runs by itself whenever the Mac gains a connection (and at launch).
 - Other devices ask through `downloads/.queue/` (one JSON file per request). Code: `shared/mediadownload.swift`.
 
 ## SSH (Topic › Connect To)

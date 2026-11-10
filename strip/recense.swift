@@ -7207,7 +7207,9 @@ final class NativeSources {
             case "jump": if let t = (b["t"] as? NSNumber)?.doubleValue { self.command(.seek(t)) }
             case "retranscribe": self.retranscribe()
             case "export": self.export(audiobook: b["as"] as? String == "m4b")
-            case "download": self.downloadPlayed()
+            case "download":
+                if let m = b["mode"] as? String, let mode = DownloadMode(rawValue: m) { self.downloadMedia(mode) } else { self.downloadPlayed() }
+            case "pulltube": self.openInPulltube()
             case "clear": self.clearTranscript()
             case "timing": if let l = self.editable { self.timeLine(l) } else { self.overlay.toast.say("Edit a line, then Timing") }
             case "share": self.shareSource()
@@ -7546,6 +7548,29 @@ final class NativeSources {
             log("downloaded \(f.path)")
             NSWorkspace.shared.activateFileViewerSelecting([f])
         } catch { fail(error.localizedDescription) }
+    }
+
+    /// Download audio + video, or the video alone, of what's playing into ~/Recense/downloads (mediadownload.swift).
+    /// The played audio keeps its own Download (downloadPlayed). With no connection it's queued, never lost.
+    func downloadMedia(_ mode: DownloadMode) {
+        guard let ep = episode else { return overlay.toast.say("Nothing playing to download") }
+        let link = ep.page ?? ep.url
+        overlay.toast.say("Downloading \(mode.label.lowercased())…")
+        Task { @MainActor in
+            do {
+                let e = try await Downloads.fetch(link, mode: mode)
+                log("downloaded \(e.name) (\(mode.label))")
+                overlay.toast.say("Downloaded \(mode.label.lowercased())")
+                NSWorkspace.shared.activateFileViewerSelecting([Downloads.file(e)])
+            } catch Downloads.Failure.queued {
+                overlay.toast.say("No connection: it downloads when you're back online")
+            } catch { fail("Couldn't download: \(error)") }
+        }
+    }
+
+    func openInPulltube() {
+        guard let ep = episode else { return overlay.toast.say("Nothing playing") }
+        if !Downloads.openInPulltube(ep.page ?? ep.url) { overlay.toast.say("Pulltube isn't installed") }
     }
 
     func export(audiobook: Bool) {

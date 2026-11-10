@@ -6801,6 +6801,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     // MARK: Launch
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
 
         buildMenu()
