@@ -35,6 +35,17 @@ public enum TranscriptLight {
     /// How often the lit word is redrawn: the screen's rate, capped at 60 a second (the Mac's light runs on its display
     /// link). At 12 a second a word could light up to 83 ms late, over the 50 ms the owner allows against the Mac.
     public static let frame: Double = 1.0 / 60
+    /// How long the view takes to scroll to the next line.
+    public static let scroll: Double = 0.45
+    /// How far ahead the view turns to the next line: its scroll, plus a moment for the line to be still, bold and
+    /// wrapped before its first word lights (blind critics, 11-10: started on the word, it was seen ~450 ms late;
+    /// started one scroll ahead, the line was still moving and re-wrapping as the word lit).
+    public static let lead: Double = scroll + 0.15
+    /// The line the view turns to at `t` (scrolls to, draws bold): the one that begins within the next `lead`
+    /// seconds, else the active one. With Reduce Motion the view jumps, so it goes to the active line.
+    public static func following(_ lines: [TranscriptLine], at t: Double, jump: Bool = false) -> Int? {
+        active(lines, at: jump ? t : t + lead)
+    }
     /// The line being heard at `t`: the last one that has begun (nil before the first).
     public static func active(_ lines: [TranscriptLine], at t: Double) -> Int? {
         var lo = 0, hi = lines.count
@@ -144,11 +155,12 @@ public struct TranscriptView<Extra: View>: View {
                 TimelineView(.animation(minimumInterval: TranscriptLight.frame, paused: !ticking)) { _ in
                     let t = now()
                     let a = active ?? t.flatMap { TranscriptLight.active(lines, at: $0) }
+                    let ahead = active ?? t.flatMap { TranscriptLight.following(lines, at: $0, jump: reduceMotion) }
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 22) {
                                 ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
-                                    row(line, i: i, active: a, t: t).id(line.id)
+                                    row(line, i: i, active: a, focus: ahead, t: t).id(line.id)
                                 }
                             }
                             .padding(.horizontal, Theme.gutter).padding(.vertical, 120)
@@ -161,7 +173,7 @@ public struct TranscriptView<Extra: View>: View {
                                                      .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
                                              startPoint: .top, endPoint: .bottom))
                         .onAppear { if let a { proxy.scrollTo(lines[a].id, anchor: UnitPoint(x: 0.5, y: 0.3)) } }
-                        .onChange(of: a) { _, now in follow(proxy, now) }
+                        .onChange(of: ahead) { _, now in follow(proxy, now) }
                         .onChange(of: state.following) { _, on in if on { follow(proxy, a, force: true) } }
                     }
                 }
@@ -194,22 +206,24 @@ public struct TranscriptView<Extra: View>: View {
         guard let a, state.following, force || a != state.lastActive else { return }
         state.lastActive = a
         let go = { proxy.scrollTo(lines[a].id, anchor: UnitPoint(x: 0.5, y: 0.3)) }
-        if reduceMotion { go() } else { withAnimation(.easeInOut(duration: 0.45)) { go() } }
+        if reduceMotion { go() } else { withAnimation(.easeInOut(duration: TranscriptLight.scroll)) { go() } }
     }
 
-    @ViewBuilder private func row(_ line: TranscriptLine, i: Int, active a: Int?, t: Double?) -> some View {
-        let on = i == a
+    /// - active: the line being heard (its words light by their times). focus: the line the view has turned to
+    ///   (bold, its translation brighter): the next one just before it begins, so it doesn't re-wrap as its word lights.
+    @ViewBuilder private func row(_ line: TranscriptLine, i: Int, active a: Int?, focus: Int?, t: Double?) -> some View {
+        let on = i == a, bold = i == (focus ?? a)
         let content = VStack(alignment: .leading, spacing: 8) {
             if let c = line.chapter {
                 Text(c).font(.title3.weight(.bold)).foregroundStyle(.white).padding(.top, i == 0 ? 0 : 14)
                     .accessibilityAddTraits(.isHeader)
             }
             Text(lit(line, on: on, t: t))
-                .font(.system(.title2, design: .serif).weight(on ? .semibold : .regular))
+                .font(.system(.title2, design: .serif).weight(bold ? .semibold : .regular))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             if state.translations, let tr = line.translation, !tr.isEmpty {
-                Text(tr).font(.system(.title3, design: .serif)).foregroundStyle(.white.opacity(on ? 0.75 : 0.4))
+                Text(tr).font(.system(.title3, design: .serif)).foregroundStyle(.white.opacity(bold ? 0.75 : 0.4))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

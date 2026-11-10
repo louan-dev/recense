@@ -36,6 +36,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Used by iOS Listen and Now Playing.
     The light redraws every screen frame, at most 60 a second (`TranscriptLight.frame`), as the Mac's display link
     does; at the old 12 a second a word could light up to 83 ms late (the owner's bar is 50 ms against the Mac).
+    The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
+    before its first word lights, so the eye lands on a resting line.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

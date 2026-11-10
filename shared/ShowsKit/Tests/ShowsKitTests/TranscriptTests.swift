@@ -110,4 +110,16 @@ final class TranscriptTests: XCTestCase {
         XCTAssertTrue(src.contains("TimelineView(.animation(minimumInterval: TranscriptLight.frame"))
         XCTAssertFalse(src.contains("by: ticking ? 1.0 / 12"))
     }
+
+    /// The view scrolls to a line before it begins, by the scroll's own length, so its first word lights in place
+    /// (blind critic, 11-10: the first word of a new line was seen ~450 ms late while the view scrolled to it).
+    func testViewScrollsToTheNextLineBeforeItBegins() {
+        let lines = TranscriptLine.sample                                    // line 2 begins at 6 s
+        XCTAssertEqual(TranscriptLight.active(lines, at: 5.6), 0)            // the light stays on the true clock
+        XCTAssertEqual(TranscriptLight.following(lines, at: 5.6), 1)         // the view is already on its way
+        XCTAssertEqual(TranscriptLight.following(lines, at: 6 - TranscriptLight.scroll - 0.1), 1)   // still before it lights
+        XCTAssertGreaterThan(TranscriptLight.lead, TranscriptLight.scroll)
+        XCTAssertEqual(TranscriptLight.following(lines, at: 5.6, jump: true), 0)   // Reduce Motion jumps on time
+        XCTAssertEqual(TranscriptLight.following(lines, at: 5.2), 0)
+    }
 }
