@@ -102,6 +102,9 @@ updates in place.
   Ears (iOS 26): choosing "Hear in" downloads that language's SpeechAnalyzer model once (Automatic: all three) (the only time Listen needs a
   connection); the line under the picker says which ears hear it here. Without it (iOS 18-25, or no model), and for a
   day after iOS ends a broadcast that used it, SFSpeechRecognizer on the device hears instead (no word times).
+  Word times run on the sound's own clock (`HostApp/iOS/SoundClock.swift`): t0 is the first buffer's presentation
+  stamp, not when it reached the extension, and a pause in the other app stays a pause (up to 2 s fed as silence, the
+  rest added to later words). Before (11-10) every pause pulled the words after it early by its length.
   The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
   Recense (Home shows the transcript) and after 3 s of that app paused (`HostApp/iOS/Floating.swift`, tested in
   `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the

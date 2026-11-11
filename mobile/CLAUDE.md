@@ -25,6 +25,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   has none) lacks System Settings › Privacy & Security › Screen & System Audio Recording; say so and ask the owner to check.
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
+- The broadcast's clock (`HostApp/iOS/SoundClock.swift`: t0 from the sound's stamps, pauses kept), after any change to it or to `SampleHandler.processSampleBuffer`:
+  `swiftc -O mobile/HostApp/iOS/SoundClock.swift mobile/ios/Tests/soundclock/main.swift -o "$TMPDIR/soundclock" && "$TMPDIR/soundclock"` (ALL OK).
 - Listen's alignment (`HostApp/iOS/Align.swift`), after any change to it or to `Listener.rebuild()`:
   `swiftc -O mobile/HostApp/iOS/Align.swift mobile/ios/Tests/align/main.swift -o "$TMPDIR/align" && "$TMPDIR/align"` (ALL OK).
 - Listen's ears (`HostApp/iOS/ListenEars.swift`, which ear hears, the once-per-stop prompt), after any change to it or to `Listener.redecide()`:

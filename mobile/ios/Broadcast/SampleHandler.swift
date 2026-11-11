@@ -20,7 +20,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     private var started = Date()
     private let q = DispatchQueue(label: "speech")
     private var live: AnyObject?            // SpeechAuto (iOS 26): one language, or under Automatic whichever is spoken
-    private var t0: Double?                 // when the analyzer's stream began (s since 1970)
+    private var clock = SoundClock()        // the analyzer's time against the sound's own stamps (t0, gaps); on q only
     private var finals: [SpeechCore.Phrase] = []
     private var locale = ""                // the language of the line being heard (Captions.Line.locale)
     private var lang = ""                  // the engine's language ("en"), to tell a change
@@ -74,9 +74,15 @@ class SampleHandler: RPBroadcastSampleHandler {
         guard type == .audioApp else { return }
         if #available(iOS 26, *), let l = live as? SpeechAuto {
             guard let pcm = SpeechCore.pcm(sb) else { return }
+            // the sound's own stamp (host clock), read with now on both clocks before the queue adds its delay
+            let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds
+            let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds, wall = Date().timeIntervalSince1970
             q.async {
-                if self.t0 == nil { self.t0 = Date().timeIntervalSince1970 }
-                l.append(pcm)
+                let gap = self.clock.before(pts: pts, hostNow: host, wallNow: wall)
+                if gap > 0, let z = Self.silence(like: pcm, seconds: gap) {
+                    l.append(z); self.clock.gave(Double(z.frameLength) / z.format.sampleRate)
+                }
+                l.append(pcm); self.clock.gave(Double(pcm.frameLength) / pcm.format.sampleRate)
             }
             return
         }
@@ -119,8 +125,24 @@ class SampleHandler: RPBroadcastSampleHandler {
         let ps = finals + (final ? [] : [p])
         guard !ps.isEmpty else { return }
         Captions.put(Captions.Line(n: n, text: ps.map(\.text).joined(separator: " "), final: final, locale: locale,
-                                   words: ps.flatMap(\.words), t0: t0, b: b))
+                                   words: ps.flatMap(\.words).map(onClock), t0: clock.t0, b: b))
         if final, let first = finals.first, p.end - first.start > 50 { n += 1; finals = [] }
+    }
+
+    /// A word in t0's time: what a long pause before it took off the analyzer's clock goes back on (SoundClock).
+    private func onClock(_ w: SpeechCore.W) -> SpeechCore.W {
+        let k = clock.skew(at: w.start)
+        guard k != 0 else { return w }
+        var v = w; v.start += k; v.end += k; return v
+    }
+
+    /// `seconds` of silence in `like`'s format: a pause in the other app fed as what it was.
+    private static func silence(like: AVAudioPCMBuffer, seconds: Double) -> AVAudioPCMBuffer? {
+        let n = AVAudioFrameCount(seconds * like.format.sampleRate)
+        guard n > 0, let z = AVAudioPCMBuffer(pcmFormat: like.format, frameCapacity: n) else { return nil }
+        z.frameLength = n
+        for b in UnsafeMutableAudioBufferListPointer(z.mutableAudioBufferList) { if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) } }
+        return z
     }
 
     // MARK: SFSpeechRecognizer (the fallback)
