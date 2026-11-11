@@ -33,6 +33,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         if s.engine == "SpeechAnalyzer…" { s.analyzerFailed = Date() }
         s.on = true
         s.stop = false
+        s.hold = nil   // a new broadcast is a clear "hear"
         s.beat = Date()
         s.error = nil
         auto = s.auto
@@ -52,12 +53,13 @@ class SampleHandler: RPBroadcastSampleHandler {
                 if s.engine == "SpeechAnalyzer…" { s.engine = "SpeechAnalyzer" }
                 Captions.put(s)
                 self?.finishBroadcastWithError(NSError(domain: "Gallery", code: 0, userInfo: [NSLocalizedDescriptionKey: "Listening stopped."]))
-            } else { s.on = true; s.beat = Date(); Captions.put(s) }
+            } else { self?.holding = s.hold == true; s.on = true; s.beat = Date(); Captions.put(s) }
         }
         t.resume()
         beat = t
     }
     private var beat: DispatchSourceTimer?
+    private var holding = false   // Listen's Pause (State.hold): sound arriving now is dropped; the clock keeps the gap
 
     override func broadcastFinished() {
         q.sync { beat?.cancel(); task?.cancel(); request?.endAudio() }
@@ -71,7 +73,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func processSampleBuffer(_ sb: CMSampleBuffer, with type: RPSampleBufferType) {
-        guard type == .audioApp else { return }
+        guard type == .audioApp, !holding else { return }
         if #available(iOS 26, *), let l = live as? SpeechAuto {
             guard let pcm = SpeechCore.pcm(sb) else { return }
             // the sound's own stamp (host clock), read with now on both clocks before the queue adds its delay

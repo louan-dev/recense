@@ -163,7 +163,9 @@ Keychain group they were signed with (`Captions.group`, read at runtime), so a r
 Now Playing rules fixed 11-10 (owner's iPad videos): on iPad, Recense counts as in front only while its window has the
 focus (another app's window can cover it while it stays active), so the floating window opens under a full-screen app
 (`Floating.front`); a line heard again (a song's chorus) stays in order at the end and keeps the light, and only three
-in a row, or a replay that reaches where the listening was, counts as a rewind (`Align.fit`).
+in a row, or a replay that reaches where the listening was, counts as a rewind (`Align.fit`). Pause rests the broadcast
+instead of ending it (`Captions.State.hold`; the extension drops the sound and its clock keeps the gap), so iOS shows
+no "stopped" alert and Resume needs no broadcast sheet.
 
 New Swift files in `HostApp/iOS/` or `../shared/` are built in automatically (synchronized folders); others go into the project by hand.
 `../shared/ShowsKit/` is the exception: a Swift package the app links (`import ShowsKit`), excluded from the synchronized group.

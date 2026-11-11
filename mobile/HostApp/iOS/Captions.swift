@@ -46,6 +46,9 @@ enum Captions {
     // heard: the language it listens for (set by the app)
     struct State: Codable {
         var on = false; var beat: Date?; var stop = false; var heard = Locale.current.identifier; var error: String?
+        // hold: Listen's Pause. The broadcast stays on and its ears rest, so iOS shows no "stopped" alert and Resume
+        // needs no broadcast sheet (owner's iPad video 11-10). Optional: a state written before it decodes as nil.
+        var hold: Bool? = nil
         // engine: which ears the extension hears with ("SpeechAnalyzer", "SFSpeechRecognizer"; "SpeechAnalyzer…" while a
         // broadcast with it runs, so one that iOS ended without a word, over the extension's 50 MB, is told apart).
         // analyzerFailed: when that happened; the extension then hears with SFSpeechRecognizer for a day.

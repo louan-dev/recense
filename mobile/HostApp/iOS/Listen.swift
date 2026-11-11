@@ -325,6 +325,7 @@ final class Listener: NSObject, ObservableObject {
     /// Which ear hears, decided again at every change. The broadcast first; the mic only on the speaker, fed only
     /// while another app plays; otherwise nothing, and one "Tap once to keep hearing" per stop.
     func redecide() {
+        if on { restBroadcast(paused) }   // the extension rewrites the state every 2 s: a Pause written between its read and write was lost
         let s = AVAudioSession.sharedInstance()
         route = Ears.route(s.currentRoute.outputs.map(\.portType.rawValue))
         let other = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
@@ -384,13 +385,20 @@ final class Listener: NSObject, ObservableObject {
     /// The one Pause: both ears stop and nothing asks to hear until Resume. Kept across launches.
     func pause() {
         paused = true; UserDefaults.standard.set(true, forKey: "listen.paused")
-        if on { stop() }
+        restBroadcast(true)   // the broadcast stays on, resting: ending it showed iOS's "stopped" alert, and Resume needed the sheet
         redecide()
     }
     func resume() {
         paused = false; UserDefaults.standard.set(false, forKey: "listen.paused")
+        restBroadcast(false)
         prompts.resumed(); savePrompts()
         redecide()
+    }
+    private func restBroadcast(_ on: Bool) {
+        var s = Captions.state()
+        guard (s.hold == true) != on else { return }
+        s.hold = on
+        Captions.put(s)
     }
     private func savePrompts() { UserDefaults.standard.set(try? JSONEncoder().encode(prompts), forKey: "listen.prompts") }
 
