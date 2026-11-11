@@ -106,7 +106,8 @@ updates in place.
   Recense (Home shows the transcript) and after 3 s of that app paused (`HostApp/iOS/Floating.swift`, tested in
   `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
   device and kept (`listen.reshowFromBehind`: works or refused); Recense stays awake up to 10 minutes after hiding it, to reopen it on play; if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
-  stop, so hiding detaches the window's content. Each decision is logged in `listen.floatLog` (Library/Preferences).
+  stop, so hiding detaches the window's content; the next tick gives it back once it's closed (`Floating.reattach`),
+  or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
   time, the last on screen (11-10: both took it on every layout and iOS's watchdog ended Recense as Now Playing opened).
   The floating window's middle button holds the words where they are and play shows the newest.

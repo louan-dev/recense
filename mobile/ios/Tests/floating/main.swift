@@ -31,4 +31,10 @@ if Floating.autoOpen(playing: false, paused: false) { bad += 1; print("FAIL auto
 if Floating.autoOpen(playing: true, paused: true) { bad += 1; print("FAIL autoOpen paused") }
 if !Floating.autoOpen(playing: true, paused: false) { bad += 1; print("FAIL autoOpen playing") }
 
+// regression 11-10 (iPhone log): a hide detached the content and nothing gave it back, so leaving Recense never opened it
+if !Floating.reattach(open: false, attached: false, closing: false) { bad += 1; print("FAIL reattach after a hide") }
+if Floating.reattach(open: false, attached: false, closing: true) { bad += 1; print("FAIL reattach mid-hide") }
+if Floating.reattach(open: true, attached: false, closing: false) { bad += 1; print("FAIL reattach while open") }
+if Floating.reattach(open: false, attached: true, closing: false) { bad += 1; print("FAIL reattach attached") }
+
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

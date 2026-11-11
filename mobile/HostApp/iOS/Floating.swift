@@ -30,6 +30,10 @@ enum Floating {
     /// Whether iOS should open the window as Recense is left: only while something plays.
     static func autoOpen(playing: Bool, paused: Bool) -> Bool { playing && !paused }
 
+    /// Give the window its content back: a hide detaches it, and iOS can't open a window with none as Recense is left
+    /// (iPhone log 11-10 17:44–17:47: hidden in front, then "behind playing closed" on every leave).
+    static func reattach(open: Bool, attached: Bool, closing: Bool) -> Bool { !open && !attached && !closing }
+
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
         if n.playing { return !n.open && n.hid && !n.tried && n.reshow != .refused ? .show : .none }

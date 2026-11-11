@@ -918,6 +918,10 @@ final class Listener: NSObject, ObservableObject {
     func floatTick() {
         if pip == nil, UIApplication.shared.applicationState == .active { makePiP() }   // after dropPiP
         guard let pip else { return }
+        if Floating.reattach(open: pip.isPictureInPictureActive, attached: pip.contentSource != nil, closing: closing) {
+            pip.contentSource = .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
+            floatNote("content attached again")
+        }
         let s = AVAudioSession.sharedInstance()
         let playing = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
         let front = UIApplication.shared.applicationState == .active
@@ -1116,6 +1120,8 @@ extension Listener: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, failedToStartPictureInPictureWithError e: Error) {
         Task { @MainActor in
             let me = Listener.shared
+            let n = e as NSError
+            me.floatNote("iOS: failed to start (\(n.domain) \(n.code): \(n.localizedDescription))")
             if me.reshowTrying { me.learn(.refused) }   // iOS won't reopen it from behind: it stays open on pause from now
             else { me.error = "The floating window didn't open: \(e.localizedDescription)" }
         }
