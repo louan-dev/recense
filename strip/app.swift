@@ -7318,6 +7318,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "wing-left":  wingPanels.show(.left)
         case "wing-right": wingPanels.show(.right)
         case "wing-close": wingPanels.hideAll()
+        case "words-sooner-on":  EarMode.set(sooner: true)
+        case "words-sooner-off": EarMode.set(sooner: false)
         default:       present(.time)
         }
     }
@@ -8059,7 +8061,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
                 "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go",
-                "wing-left", "wing-right", "wing-close"]
+                "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off"]
 
 func stripSelftest() -> Bool {
     let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))

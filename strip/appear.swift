@@ -325,6 +325,18 @@ final class AppTap {
 }
 
 /// The live transcript of one app at a time, for the window (AppDelegate.renderLive) and `recense hear-app`.
+/// "Show Words Sooner (Less Accurate)" (Recense menu, `recense words-sooner-on|off`): the quick second transcriber's
+/// guesses within a second, at the cost of the finals (11-11 clean runs: 74-76 vs 86-88 words matched, WER 55-57 vs
+/// 50-51 %). Off by default (coordinator 11-11): the finals are the transcript that is kept, studied and exported.
+enum EarMode {
+    static let key = "earWordsSooner", changed = Notification.Name("recense.earMode")
+    static func sooner(_ d: UserDefaults = .standard) -> Bool { d.bool(forKey: key) }
+    static func set(sooner on: Bool, _ d: UserDefaults = .standard) {
+        d.set(on, forKey: key)
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
+}
+
 @MainActor final class LiveEar {
     nonisolated static var available: Bool {
         #if compiler(>=6.2) && canImport(Speech)
@@ -355,7 +367,7 @@ final class AppTap {
 
     /// Hears `p` from now on (in `first`, or whichever of English, French and Vietnamese is spoken). False: no tap
     /// (no permission, the app went quiet) or no on-device model.
-    func start(_ p: AppEar.Player, first: String = "en", among: [String] = SpeechCore.auto, fast: Bool = true) async -> Bool {
+    func start(_ p: AppEar.Player, first: String = "en", among: [String] = SpeechCore.auto, fast: Bool = false) async -> Bool {
         stop()
         #if compiler(>=6.2) && canImport(Speech)
         guard #available(macOS 26, *) else { return false }
@@ -460,7 +472,7 @@ func hearAppCommand(_ a: [String]) -> Never {
         #endif
         let began = Date()
         ear.onNote = { print(String(format: "%6.1f  %@", ear.seconds, $0)); fflush(stdout) }
-        guard await ear.start(p, first: lang, among: a.contains("--fixed") ? [] : SpeechCore.auto, fast: !a.contains("--single")) else {
+        guard await ear.start(p, first: lang, among: a.contains("--fixed") ? [] : SpeechCore.auto, fast: a.contains("--sooner")) else {
             fputs(ear.refused ? "no System Audio Recording permission: System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording ▸ System Audio Recording Only\n"
                   : "couldn't hear \(p.name)\n", stderr)
             exit(1)
@@ -553,6 +565,14 @@ func appEarSelftest() -> Bool {
     check(ahead.final(whole) == nil && texts() == ["Ma", "sœur", "chante."] && t.lines.allSatisfy { $0.id < LiveLines.guessBase },
           "fast: once the finals reach the guess, no guess is left")
     // the two transcribers time words apart: a fast clock 0.3 s early or late shows no word twice and hides none
+    let suite = "recense.selftest.earmode.\(getpid())"
+    if let d = UserDefaults(suiteName: suite) {
+        let off = !EarMode.sooner(d)
+        EarMode.set(sooner: true, d)
+        let kept = UserDefaults(suiteName: suite).map { EarMode.sooner($0) } ?? false
+        d.removePersistentDomain(forName: suite)
+        check(off && kept, "words sooner: off by default (one careful transcriber), and the choice is kept")
+    }
     var skewOK = true
     for d in [-0.3, 0, 0.3] {
         let ah = SpeechCore.Ahead()

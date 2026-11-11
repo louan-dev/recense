@@ -7229,6 +7229,17 @@ final class NativeSources {
         let ly = m.addItem(withTitle: "Hide Captions for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
         ly.target = self
         lyricsItem = ly
+        // P7: guesses within a second from a quicker second transcriber, at the finals' cost; off by default
+        let soon = m.addItem(withTitle: "Show Words Sooner (Less Accurate)", action: #selector(toggleWordsSooner), keyEquivalent: "")
+        soon.target = self
+        soon.state = EarMode.sooner() ? .on : .off
+        soonerItem = soon
+        NotificationCenter.default.addObserver(forName: EarMode.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.soonerItem?.state = EarMode.sooner() ? .on : .off
+                if self?.liveEar.running == true { self?.liveEar.stop() }   // heard again, the new way, within a second
+            }
+        }
         // Text Size and Balance: two compact rows, applied as they move
         let redraw = { [weak self] in self?.overlay.lastKey = ""; self?.overlay.fits = [:] }
         var sizeRow: ReaderRow!
@@ -7473,7 +7484,7 @@ final class NativeSources {
                     self.liveEar.denied = refused
                     if refused { self.liveRetry = Date().addingTimeInterval(60); return }
                     guard let p = AppEar.choose(loud, followed: self.followedBundle, front: NSWorkspace.shared.frontmostApplication?.processIdentifier) else { return }
-                    let ok = await self.liveEar.start(p, first: self.liveEar.lang)
+                    let ok = await self.liveEar.start(p, first: self.liveEar.lang, fast: EarMode.sooner())
                     if !ok { self.liveRetry = Date().addingTimeInterval(self.liveEar.refused ? 60 : 10) }
                 }
             }
@@ -7528,6 +7539,8 @@ final class NativeSources {
         lyricsGate = (ep.key, ep.lines.count, ep.features != nil, off)
         return off
     }
+    var soonerItem: NSMenuItem?
+    @objc func toggleWordsSooner() { EarMode.set(sooner: !EarMode.sooner()) }
     @objc func toggleLyrics() {
         guard let ep = episode else { return }
         var c = lyricsChoice; c[ep.key] = lyricsOff(ep); lyricsChoice = c
