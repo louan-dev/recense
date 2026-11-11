@@ -1837,7 +1837,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     func setStatus(_ s: String) { if status.stringValue != s { status.stringValue = s }; status.isHidden = s.isEmpty }
 
     /// Bilingual: the original over its English, both lit as they're spoken. No English when the speech is English.
-    func render(_ line: Line?, at t: Double, upcomingOnly: Bool = false) {
+    func render(_ line: Line?, at t: Double, upcomingOnly: Bool = false, guess: Bool = false) {
         if blankCanvas() { return }
         guard let line else {
             if lastKey != "none" { words.places = nil; words.drum = nil; words.blocks = []; lastKey = "none" }
@@ -1848,7 +1848,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let box = area.bounds.size
         let translated = english.map { !$0.isEmpty } ?? false
         // Redraw every frame while time moves (the light is continuous); nothing to do while paused.
-        let key = "\(line.id)/\(upcomingOnly ? -1 : Int((t * 1000).rounded()))/\(english?.count ?? -1)/\(Int(width))x\(Int(box.height))/r\(Reader.stamp)"
+        let key = "\(line.id)/\(guess)/\(upcomingOnly ? -1 : Int((t * 1000).rounded()))/\(english?.count ?? -1)/\(Int(width))x\(Int(box.height))/r\(Reader.stamp)"
         guard key != lastKey else { return }
         lastKey = key
 
@@ -1865,7 +1865,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         func build(_ base: CGFloat) -> Bool {
             let big = NSFont.systemFont(ofSize: base * mx.l1, weight: .semibold)
             let small = NSFont.systemFont(ofSize: base * mx.l2, weight: .regular)
-            blocks = showL1 ? [sourceBeats(line).map { .init(top: dim(ink($0, at: at, font: big), translated ? mx.a1 : 1)) }] : []
+            blocks = showL1 ? [sourceBeats(line).map { .init(top: dim(ink($0, at: at, font: big), (translated ? mx.a1 : 1) * (guess ? 0.5 : 1))) }] : []
             if let english, translated {
                 if showL2 { blocks.append(englishBeats(line, english).map { .init(top: dim(ink($0, at: at, font: small), mx.a2)) }) }
             } else if english == nil, showL2 {
@@ -7490,7 +7490,7 @@ final class NativeSources {
         let t = liveEar.seconds, lines = liveEar.lines
         let last = lines.last { $0.start - 0.15 <= t }
         editable = nil
-        overlay.render(last.flatMap { t <= $0.end + 6 ? $0 : nil }, at: t)
+        overlay.render(last.flatMap { t <= $0.end + 6 ? $0 : nil }, at: t, guess: (last?.id ?? 0) >= LiveLines.guessBase)   // a guess is dim until final
         if overlay.browserControls { overlay.setControls(false) }
         if Date() > statusUntil {
             overlay.setStatus(liveEar.quiet > 8 ? "Hearing only silence from \(p.name) — another sound tool may hold its audio"

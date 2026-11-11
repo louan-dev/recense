@@ -124,13 +124,20 @@ enum AppEar {
 /// Phrases as they arrive (SpeechAnalyzer's volatile guesses, then its final words) made into Lines: the final words
 /// stay; the latest guess shows after them until its stretch is final. One sentence a line (splitWords).
 struct LiveLines {
+    /// Ids from here up are guesses (volatile): drawn dim until their stretch is final.
+    static let guessBase = 1_000_000
     private(set) var finals: [SpeechCore.Phrase] = []
     private var guess: SpeechCore.Phrase?
     private(set) var version = 0
     private var cache: [Line] = [], cached = -1
 
-    mutating func add(_ p: SpeechCore.Phrase, final: Bool) {
+    /// How far into the sound the shown words reach, and when (`at`, tap seconds): [audio end, shown at], guesses
+    /// included. The lag of the first visible text is `shown at − a word's end` at the first entry that reaches it.
+    private(set) var shown: [[Double]] = []
+
+    mutating func add(_ p: SpeechCore.Phrase, final: Bool, at: Double = 0) {
         version += 1
+        if let e = p.words.last?.end, e > (shown.last?[0] ?? 0) { shown.append([e, at]) }
         if final {
             if !p.words.isEmpty { finals.append(p); finals.sort { $0.start < $1.start } }
             if let g = guess, g.end <= p.end + 0.05 { guess = nil }   // its stretch is final now
@@ -147,7 +154,7 @@ struct LiveLines {
             }
             if let g = guess {
                 let ws = g.words.filter { $0.start >= done - 0.05 }.map(LiveLines.word)
-                for part in splitWords(ws) where !part.isEmpty { out.append(Line(id: 1_000_000 + id, words: part, english: [])); id += 1 }
+                for part in splitWords(ws) where !part.isEmpty { out.append(Line(id: LiveLines.guessBase + id, words: part, english: [])); id += 1 }
             }
             cache = out; cached = version
             return out
@@ -317,11 +324,11 @@ final class AppTap {
 
     /// Hears `p` from now on (in `first`, or whichever of English, French and Vietnamese is spoken). False: no tap
     /// (no permission, the app went quiet) or no on-device model.
-    func start(_ p: AppEar.Player, first: String = "en", among: [String] = SpeechCore.auto) async -> Bool {
+    func start(_ p: AppEar.Player, first: String = "en", among: [String] = SpeechCore.auto, fast: Bool = true) async -> Bool {
         stop()
         #if compiler(>=6.2) && canImport(Speech)
         guard #available(macOS 26, *) else { return false }
-        let a = await SpeechAuto.start(lang: first, among: among) { [weak self] ph, fin, l in
+        let a = await SpeechAuto.start(lang: first, among: among, fast: fast) { [weak self] ph, fin, l in
             Task { @MainActor in self?.heard(ph, fin, l) }
         }
         guard let a else { log("app ear: no on-device model for \(first)"); return false }
@@ -350,7 +357,7 @@ final class AppTap {
         guard tap != nil else { return }
         lang = l
         if final, let e = p.words.last?.end { lag = max(0, seconds - e) }
-        live.add(p, final: final)
+        live.add(p, final: final, at: seconds)
         if final, !p.text.isEmpty { onNote?(p.text) }
     }
 
@@ -384,8 +391,8 @@ final class AppTap {
 
     /// The transcript as keep/'s v2 shape needs it for comparing: lines of timed words.
     func json() -> [String: Any] {
-        ["app": player?.bundle ?? "", "startedAt": startedAt?.timeIntervalSince1970 ?? 0, "language": lang, "lag": lag,
-         "lines": live.lines.filter { $0.id < 1_000_000 }.map { l in
+        ["app": player?.bundle ?? "", "startedAt": startedAt?.timeIntervalSince1970 ?? 0, "language": lang, "lag": lag, "shown": live.shown,
+         "lines": live.lines.filter { $0.id < LiveLines.guessBase }.map { l in
             ["id": l.id, "words": l.words.map { ["text": $0.text, "start": $0.start, "end": $0.end, "lang": $0.lang ?? lang] }] }]
     }
 }
@@ -418,7 +425,7 @@ func hearAppCommand(_ a: [String]) -> Never {
         let ear = LiveEar()
         let began = Date()
         ear.onNote = { print(String(format: "%6.1f  %@", ear.seconds, $0)); fflush(stdout) }
-        guard await ear.start(p, first: lang, among: a.contains("--fixed") ? [] : SpeechCore.auto) else {
+        guard await ear.start(p, first: lang, among: a.contains("--fixed") ? [] : SpeechCore.auto, fast: !a.contains("--single")) else {
             fputs(ear.refused ? "no System Audio Recording permission: System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording ▸ System Audio Recording Only\n"
                   : "couldn't hear \(p.name)\n", stderr)
             exit(1)
@@ -479,6 +486,29 @@ func appEarSelftest() -> Bool {
     check(l.lines.map { $0.words.map(\.text) } == [["Ma", "sœur", "chante."], ["Et", "moi"]], "a guess shows only what isn't final yet")
     check(l.lines[1].words[0].start == 2.6 && l.lines[1].words[0].lang == "fr", "words keep their times and language")
     check(l.lines.allSatisfy { ($0.english ?? []).isEmpty }, "no line waits on a translation")
+    var s = LiveLines()
+    s.add(p([("Ma", 1.0, 1.2)]), final: false, at: 1.5)
+    s.add(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: false, at: 2.0)
+    s.add(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: true, at: 9.0)
+    check(s.shown == [[1.2, 1.5], [1.7, 2.0]] && s.lines[0].id < LiveLines.guessBase,
+          "a guess counts as shown when it arrives; its final, later, doesn't move that time")
+    // two transcribers (SpeechLive fast): the quick one's words show as one guess until the sure finals cover their span
+    let ahead = SpeechCore.Ahead()
+    var t = LiveLines()
+    func feed(_ g: SpeechCore.Phrase?) { if let g { t.add(g, final: false) } }
+    func texts() -> [String] { t.lines.flatMap { $0.words.map(\.text) } }
+    feed(ahead.guess(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: true))
+    feed(ahead.guess(p([("chante", 1.8, 2.3)]), final: false))
+    check(texts() == ["Ma", "sœur", "chante"] && t.lines.allSatisfy { $0.id >= LiveLines.guessBase },
+          "fast: its own finals and its latest guess show together, all as guesses")
+    let sure = p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)])
+    t.add(sure, final: true); feed(ahead.final(sure))
+    check(texts() == ["Ma", "sœur", "chante"] && t.lines.first?.id ?? 0 < LiveLines.guessBase && t.lines.last?.id ?? 0 >= LiveLines.guessBase,
+          "fast: a sure final replaces the guess over its span only, nothing shown twice")
+    let whole = p([("chante.", 1.8, 2.3)])   // the next sure final: its own span, after the last
+    t.add(whole, final: true)
+    check(ahead.final(whole) == nil && texts() == ["Ma", "sœur", "chante."] && t.lines.allSatisfy { $0.id < LiveLines.guessBase },
+          "fast: once the finals reach the guess, no guess is left")
     let long = p((0..<28).map { (i: Int) -> (String, Double, Double) in ("mot\(i)", Double(i) * 0.3, Double(i) * 0.3 + 0.25) })
     var m = LiveLines(); m.add(long, final: true)
     check(m.lines.count == 2 && m.lines.allSatisfy { $0.words.count <= 14 }, "a long phrase is cut into lines of one sentence's length")

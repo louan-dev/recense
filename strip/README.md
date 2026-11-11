@@ -290,6 +290,10 @@ kept inside the vault, the power check, the `Line` → ShowsKit `TranscriptLine`
 `hear-app [app] [--seconds N] [--lang en|fr|vi] [--out file.json]` taps one app's sound (Safari through WebKit's
 GPU process) and transcribes it on this Mac, printing words as they come; `--out` saves them with their times.
 When several running processes share the name, it hears the newest one and prints which pid it chose.
+In the window, words show as soon as the ears guess them, drawn dim, and turn solid where the final words land. Two
+transcribers share one analyzer: a quick one (Apple's fast results) for the guesses, the careful one for the final words;
+`--single` hears with the careful one alone.
+`--out` also records `shown`: how far into the sound the shown words reached, and when, for measuring first-text lag.
 
 `RECENSE_INSTANCE=<name>` runs a separate copy of a build beside the installed one (its own lock, command channel and
 state file), for trying a build without replacing Recense.app: point it at a scratch vault with `DRAFTPAD=` and send it
