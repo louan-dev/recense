@@ -150,7 +150,20 @@ updates in place.
 ```
 zsh mobile/ios/build.sh [device name or id]   # builds and installs on a connected iPhone or iPad
 zsh mobile/macos/build.sh                     # builds and installs the Mac app in /Applications
+zsh mobile/ios/build.sh --guest [device]      # Recense Guest: installs it and writes an unsigned .ipa
 ```
+
+**Recense Guest** (iPhone only; targets `RecenseGuest` + `RecenseGuestBroadcast`, entry `HostApp/iOS/GuestApp.swift`,
+compiled with the `GUEST` flag): Now Playing only (start listening, the live transcript, languages, the floating window,
+earlier episodes). Same Listen code as Recense; no Library, Draftpad, Archive in Files or Gallery token, so nothing in
+it reaches Gallery. `build.sh --guest` installs it here and writes `build/guest-<date>/RecenseGuest.ipa`, unsigned, for
+the guest to sign in Sideloadly with their own Apple ID. The app and its broadcast extension find each other through the
+Keychain group they were signed with (`Captions.group`, read at runtime), so a re-signed build still works.
+
+Now Playing rules fixed 11-10 (owner's iPad videos): on iPad, Recense counts as in front only while its window has the
+focus (another app's window can cover it while it stays active), so the floating window opens under a full-screen app
+(`Floating.front`); a line heard again (a song's chorus) stays in order at the end and keeps the light, and only three
+in a row, or a replay that reaches where the listening was, counts as a rewind (`Align.fit`).
 
 New Swift files in `HostApp/iOS/` or `../shared/` are built in automatically (synchronized folders); others go into the project by hand.
 `../shared/ShowsKit/` is the exception: a Swift package the app links (`import ShowsKit`), excluded from the synchronized group.

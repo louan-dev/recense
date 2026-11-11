@@ -7,9 +7,27 @@ import Security
 enum Captions {
     /// State.heard for "follow whichever language is spoken" (S6).
     static let automatic = "auto"
-    static let group = "48RZ72DNP3.com.chauphan.galleryfiles"
-    static let changed = "com.chauphan.galleryfiles.caption" as CFString
-    static let stateChanged = "com.chauphan.galleryfiles.broadcast" as CFString
+    /// The shared Keychain group, read from how this build was signed (its first keychain-access-groups entry, the
+    /// one iOS files an item under when none is named), so a build signed by another Apple ID (the guest, re-signed
+    /// in Sideloadly) still reaches its own extension. Recense: "48RZ72DNP3.com.chauphan.galleryfiles", as before.
+    static let group: String = {
+        let probe: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "recense.group",
+                                    kSecAttrAccount as String: "probe"]
+        var q = probe; q[kSecReturnAttributes as String] = true
+        var out: CFTypeRef?
+        var st = SecItemCopyMatching(q as CFDictionary, &out)
+        if st == errSecItemNotFound {
+            var add = probe; add[kSecValueData as String] = Data(); add[kSecReturnAttributes as String] = true
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            st = SecItemAdd(add as CFDictionary, &out)
+        }
+        if st == errSecSuccess, let a = out as? [String: Any], let g = a[kSecAttrAccessGroup as String] as? String { return g }
+        return "48RZ72DNP3.com.chauphan.galleryfiles"
+    }()
+    /// The group without its team prefix: the Darwin notifications' names ("com.chauphan.galleryfiles.caption").
+    static var base: String { String(group.split(separator: ".", maxSplits: 1).last ?? "") }
+    static let changed = (base + ".caption") as CFString
+    static let stateChanged = (base + ".broadcast") as CFString
 
     struct Line: Codable, Equatable {
         var n: Int          // which utterance; a new n starts a new line

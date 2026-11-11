@@ -12,14 +12,29 @@ struct Episode {
     var s: [String] = []
     var place = 0
     var last: Int?
+    var run: [(copy: Int, old: Int)] = []   // held: new for now, each like stored sentence `old` (Align.fit)
+    var anchor: Int?
     mutating func hear(_ text: String) {
-        if let j = Align.match(text, in: s, place: place, after: last) {
-            if let end = s[j].last, !stops.contains(end), Align.completes(text, s[j]) { s[j] = text }
-            place = j; last = j
-        } else {
-            let at = s.isEmpty ? 0 : place + 1
-            s.insert(text, at: at); place = at; last = at
-        }
+        if let j = Align.match(text, in: s, place: place, after: run.last?.old ?? last) {
+            switch Align.fit(j, after: last, end: place, run: run.map(\.old), anchor: anchor) {
+            case .next: merge(j, text)
+            case .merge(let c):
+                if c { for k in run.map(\.copy).sorted(by: >) { s.remove(at: k) } }
+                run = []; anchor = nil; merge(j, text)
+            case .hold(let c):
+                let was = place
+                add(text)
+                if c { run.append((place, j)) } else { run = [(place, j)]; anchor = was }
+            }
+        } else { run = []; anchor = nil; add(text) }
+    }
+    mutating func merge(_ j: Int, _ text: String) {
+        if let end = s[j].last, !stops.contains(end), Align.completes(text, s[j]) { s[j] = text }
+        place = j; last = j
+    }
+    mutating func add(_ text: String) {
+        let at = s.isEmpty ? 0 : place + 1
+        s.insert(text, at: at); place = at; last = at
     }
 }
 
@@ -90,6 +105,8 @@ struct Live {
     var s: [String] = []
     var place = 0
     var last: Int?
+    var run: [(copy: Int, old: Int)] = []
+    var anchor: Int?
     mutating func hear(_ full: String) {
         let w = full.split(separator: " ").map(String.init)
         var mine: Int?            // the sentence this one is growing in (added as new)
@@ -100,16 +117,38 @@ struct Live {
             if let p = placed { if let end = s[p].last, !stops.contains(end), Align.completes(text, s[p]) { s[p] = text }; continue }
             if let m = mine {
                 s[m] = text
-                if done, let j = Align.match(text, in: s, place: place, after: last, besides: m) {
-                    s.remove(at: m); let jj = j > m ? j - 1 : j
-                    if let end = s[jj].last, !stops.contains(end), Align.completes(text, s[jj]) { s[jj] = text }
-                    place = jj; last = jj; mine = nil; placed = jj
-                }
+                guard done else { continue }
+                // as rebuild(): the copy grew whole; it merges only when Align.fit says so, else it stays new (held)
+                if let j = Align.match(text, in: s, place: place, after: run.last?.old ?? last, besides: m) {
+                    // after: the copy itself (the stored sentence after it is the one that follows); end: before it
+                    let f = Align.fit(j, after: m, end: m - 1, run: run.map(\.old), anchor: anchor)
+                    switch f {
+                    case .next, .merge:
+                        let gone = ([m] + (f == .merge(continues: true) ? run.map(\.copy) : [])).sorted(by: >)
+                        for k in gone { s.remove(at: k) }
+                        let jj = j - gone.filter { $0 < j }.count
+                        if let end = s[jj].last, !stops.contains(end), Align.completes(text, s[jj]) { s[jj] = text }
+                        place = jj; last = jj; placed = jj; run = []; anchor = nil
+                    case .hold(let c):
+                        if c { run.append((m, j)) } else { run = [(m, j)]; anchor = m - 1 }
+                    }
+                } else { run = []; anchor = nil }
+                mine = nil
                 continue
             }
-            if done || Align.complete(text), let j = Align.match(text, in: s, place: place, after: last) {
-                if let end = s[j].last, !stops.contains(end), Align.completes(text, s[j]) { s[j] = text }
-                place = j; last = j; placed = j
+            if done || Align.complete(text), let j = Align.match(text, in: s, place: place, after: run.last?.old ?? last) {
+                let f = Align.fit(j, after: last, end: place, run: run.map(\.old), anchor: anchor)
+                if case .hold(let c) = f {   // new for now, at the end
+                    let was = place, at = s.isEmpty ? 0 : place + 1
+                    s.insert(text, at: at); place = at; last = at; placed = at
+                    if c { run.append((at, j)) } else { run = [(at, j)]; anchor = was }
+                    continue
+                }
+                let gone = (f == .merge(continues: true) ? run.map(\.copy) : []).sorted(by: >)
+                for k in gone { s.remove(at: k) }
+                let jj = j - gone.filter { $0 < j }.count
+                if let end = s[jj].last, !stops.contains(end), Align.completes(text, s[jj]) { s[jj] = text }
+                place = jj; last = jj; placed = jj; run = []; anchor = nil
             } else {
                 let at = s.isEmpty ? 0 : place + 1
                 s.insert(text, at: at); place = at; last = at; mine = at
@@ -137,6 +176,41 @@ for t in clip[0..<4] { lc.hear(t) }
 lc.hear("Le contrat est nul sous")
 for t in clip[4...] { lc.hear(t) }
 check(lc.s == clip, "growing: exit mid-sentence then resume completes the cut sentence")
+
+// Regression (owner's iPad videos 11-10, Dua Lipa "Dance the Night"): a song's chorus comes back. Each repeated line
+// read like its first time, so the light jumped back there and every new line was spliced in mid-transcript. A
+// repeat stays where it is heard, at the end; only a run of 3 in a row, or one that reaches where the listening was,
+// is a rewind.
+let song = [
+    "Baby I can feel your halo tonight and it is shining bright.",
+    "Coming now, following my lead.",
+    "I'm not afraid to tell you when you're wrong.",
+    "Ooh yeah I think it's tough as we got it all the love the passion.",
+    "Diamond under my eyes turn the rhythm don't you wanna just come with me.",
+    "Coming now, following my lead.",
+    "You can see my heartbeat tonight I can take the heat baby best believe.",
+]
+var sg = Episode()
+for t in song { sg.hear(t) }
+check(sg.s == song, "song: a chorus line heard again stays in order at the end (Episode)")
+check(sg.place == song.count - 1, "song: the light is on the newest line, not the earlier chorus")
+var sl = Live()
+for t in song { sl.hear(t) }
+check(sl.s == song, "song: a chorus line heard again stays in order at the end (growing live captions)")
+check(sl.place == song.count - 1, "song (live): the light is on the newest line")
+// a two-line chorus repeated, then a new verse: both chorus lines stay, in order, before the verse
+let two = ["Watch me dance dance the night away tonight.", "My heart could be burning but you won't see it on my face.",
+           "Something completely new about the summer and the city lights.",
+           "Watch me dance dance the night away tonight.", "My heart could be burning but you won't see it on my face.",
+           "And a verse nobody has heard before in this song at all."]
+var tw = Live()
+for t in two { tw.hear(t) }
+check(tw.s == two, "song: a two-line chorus repeated keeps both lines, in order")
+// a 2-sentence rewind that catches up with where the listening was still merges (no duplicate)
+var r2 = Live()
+for t in clip[0..<7] { r2.hear(t) }
+for t in clip[5..<9] { r2.hear(t) }
+check(r2.s == Array(clip[0..<9]), "growing: a 2-sentence rewind that reaches the place merges, then continues")
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

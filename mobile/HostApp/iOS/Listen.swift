@@ -87,6 +87,8 @@ final class Listener: NSObject, ObservableObject {
     private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind2") ?? "") ?? .unknown
     private var quietFrom: Date?
     private var leftAt: Date?            // when Recense was last left for another app (Floating.settle)
+    private var wasFront = true          // iPad windows: the focus moving to another app counts as leaving (leftAt)
+    private var startedActive = false    // this start came from an active iPad app: says nothing about "behind"
     private var resting = false          // the window rests as a thin strip behind (Floating.rest)
     private var tried = false
     private var reshowing = false
@@ -315,7 +317,7 @@ final class Listener: NSObject, ObservableObject {
     }
 
     private func beginListening() {
-        lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []
+        lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []; clearRun()
     }
 
     // MARK: the ears (S3b, ListenEars.swift)
@@ -650,11 +652,35 @@ final class Listener: NSObject, ObservableObject {
     // they are wins when several are alike
     private func match(_ text: String, besides: String? = nil) -> Int? {
         guard let e = episode else { return nil }
-        let after = lastMatch.flatMap { id in e.sentences.firstIndex { $0.id == id } }
+        let after = (run.last?.old ?? lastMatch).flatMap { id in e.sentences.firstIndex { $0.id == id } }
         let not = besides.flatMap { id in e.sentences.firstIndex { $0.id == id } }
         return Align.match(text, in: e.sentences.map(\.heard), place: e.place, after: after, besides: not)
     }
     private var lastMatch: String?             // the sentence placed last (a short one is only known right after it)
+    // held (Align.fit): finished sentences kept as new for now, each like an older one (`old`), until they prove a
+    // rewind; a song's chorus never does, so it stays in order at the end and the light stays on it (owner, 11-10)
+    private var run: [(copy: String, old: String)] = []
+    private var runAnchor: String?             // where the listening was when the run began
+
+    private func index(_ id: String?) -> Int? { id.flatMap { id in episode?.sentences.firstIndex { $0.id == id } } }
+    /// Align.fit for a finished sentence like stored sentence j; copy: where it grew as a new one, if it did.
+    private func fit(_ j: Int, copy: Int?) -> Align.Fit {
+        Align.fit(j, after: copy ?? index(lastMatch), end: copy.map { $0 - 1 } ?? episode!.place,
+                  run: run.compactMap { index($0.old) }, anchor: index(runAnchor))
+    }
+    /// The held run proved a rewind: its copies go, and what pointed at them points at the sentences they repeat.
+    private func dropRun() {
+        for r in run {
+            episode!.sentences.removeAll { $0.id == r.copy }
+            added.remove(r.copy)
+            for (k, v) in map where v == r.copy { map[k] = r.old }
+        }
+        clearRun()
+    }
+    private func clearRun() { run = []; runAnchor = nil }
+    private func hold(_ copy: String, like old: String, continues: Bool, end: String?) {
+        if continues { run.append((copy, old)) } else { run = [(copy, old)]; runAnchor = end }
+    }
     private var replayedNow: Set<String> = []  // sentences counted as replayed in this listening
 
     /// A sentence heard before, cut short then (the content was left mid-sentence), is kept whole now.
@@ -683,7 +709,7 @@ final class Listener: NSObject, ObservableObject {
             episode = o
             episode!.place = j
             UserDefaults.standard.set(o.key, forKey: "listen.episode")
-            map = [:]; added = []; lastMatch = nil
+            map = [:]; added = []; lastMatch = nil; clearRun()
             touch()
             rebuild()
             return true
@@ -713,21 +739,30 @@ final class Listener: NSObject, ObservableObject {
                 if let sid = map[lid], let i = episode!.sentences.firstIndex(where: { $0.id == sid }) {
                     guard episode!.sentences[i].heard != text else { continue }
                     guard added.contains(sid) else { complete(i, text, ws); continue }
-                    // it grew: if it is now plainly one heard before, use that one and drop the copy
-                    if done, let j = match(text, besides: sid) {
+                    // it grew whole: if it is one heard before and Align.fit says so (it follows the last one
+                    // recognised, or a held run proved a rewind), use that one and drop the copy; else it stays new
+                    let j = done ? match(text, besides: sid) : nil
+                    let f = j.map { fit($0, copy: i) }
+                    if let j, let f, !f.holds {
                         let keep = episode!.sentences[j].id
-                        episode!.sentences.remove(at: i)
+                        if f == .merge(continues: true) { dropRun() } else { clearRun() }
+                        episode!.sentences.removeAll { $0.id == sid }
                         added.remove(sid); map[lid] = keep; lastMatch = keep
-                        episode!.place = episode!.sentences.firstIndex { $0.id == keep } ?? episode!.place
+                        episode!.place = index(keep) ?? episode!.place
+                        if let k = index(keep) { complete(k, text, ws) }
                     } else {
+                        if let j, case .hold(let c) = f { hold(sid, like: episode!.sentences[j].id, continues: c, end: i > 0 ? episode!.sentences[i - 1].id : nil) }
+                        else if done { clearRun() }
                         episode!.sentences[i].heard = text
                         if let ws { episode!.sentences[i].words = ws }
                         episode!.sentences[i].said = config == nil ? text : said[text] ?? episode!.sentences[i].said
                         translate(text)
                     }
                     touch()
-                } else if done, let j = match(text) {
+                } else if done, let j = match(text), case let f = fit(j, copy: nil), !f.holds {
                     let sid = episode!.sentences[j].id
+                    if f == .merge(continues: true) { dropRun() } else { clearRun() }
+                    let j = index(sid) ?? j
                     map[lid] = sid
                     episode!.place = j
                     lastMatch = sid
@@ -736,7 +771,12 @@ final class Listener: NSObject, ObservableObject {
                     lastHeard = Date()
                     touch()
                 } else {
-                    // new: goes after where the user is, and becomes where they are
+                    // new: goes after where the user is, and becomes where they are. A finished one like an older
+                    // sentence is held (new for now: a chorus, a repeated phrase) until it proves a rewind (Align.fit)
+                    let like = done ? match(text) : nil
+                    let likeId = like.map { episode!.sentences[$0].id }
+                    let holds = like.map { fit($0, copy: nil) }
+                    let end = episode!.sentences.isEmpty ? nil : episode!.sentences[min(episode!.place, episode!.sentences.count - 1)].id
                     let at = episode!.sentences.isEmpty ? 0 : episode!.place + 1
                     let prev = at > 0 ? episode!.sentences[at - 1].at : 0
                     let s = Sentence(id: UUID().uuidString.prefix(12).lowercased(), heard: text, said: config == nil ? text : said[text] ?? "",
@@ -744,6 +784,8 @@ final class Listener: NSObject, ObservableObject {
                     episode!.sentences.insert(s, at: min(at, episode!.sentences.count))
                     episode!.place = min(at, episode!.sentences.count - 1)
                     map[lid] = s.id; added.insert(s.id); lastMatch = s.id
+                    if let likeId, case .hold(let c)? = holds { hold(s.id, like: likeId, continues: c, end: end) }
+                    else if done { clearRun() }
                     lastHeard = Date()
                     translate(text)
                     touch()
@@ -937,7 +979,18 @@ final class Listener: NSObject, ObservableObject {
         }
         let s = AVAudioSession.sharedInstance()
         let playing = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
-        let front = UIApplication.shared.applicationState == .active
+        // iPad windows: another app's window can cover Recense while it stays active (11-10 iPad log: "front playing" for
+        // 2 min under a full-screen Firefox), so in front also needs the focus; active without it may start the window
+        let active = UIApplication.shared.applicationState == .active
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
+        let key = UIApplication.shared.connectedScenes.contains { ($0 as? UIWindowScene)?.windows.contains { $0.isKeyWindow } == true }
+        let front = Floating.front(active: active, pad: pad, key: key)
+        let canStart = active && !front
+        if wasFront != front {
+            if !front { leftAt = Date(); if quietFrom != nil { quietFrom = Date() } }
+            floatNote("focus: \(front ? "Recense" : "another app") (active=\(active) key=\(key))")
+            wasFront = front
+        }
         pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(playing: playing, paused: paused)
         if playing { quietFrom = nil } else if quietFrom == nil { quietFrom = Date() }
         if !playing || front { tried = false }
@@ -945,7 +998,7 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
-        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, refused: reshow == .refused, quiet: quiet, paused: paused)
+        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, refused: reshow == .refused, quiet: quiet, paused: paused, canStart: canStart)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
             floatNote(rest ? "rest: thin strip (iOS won't reopen it behind)" : "wake: full captions")
@@ -953,9 +1006,9 @@ final class Listener: NSObject, ObservableObject {
         }
         let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
                                         quiet: quietFrom.map { Date().timeIntervalSince($0) } ?? 0, reshow: reshow, tried: tried,
-                                        hid: hidBehind, left: leftAt.map { Date().timeIntervalSince($0) } ?? 9))
-        let key = "\(front ? "front" : "behind") \(playing ? "playing" : "quiet") \(pip.isPictureInPictureActive ? "open" : "closed") \(act)"
-        if key != lastFloat { lastFloat = key; floatNote("\(key) reshow=\(reshow.rawValue) awake=\(engine.isRunning)") }
+                                        hid: hidBehind, left: leftAt.map { Date().timeIntervalSince($0) } ?? 9, canStart: canStart))
+        let line = "\(front ? "front" : canStart ? "unfocused" : "behind") \(playing ? "playing" : "quiet") \(pip.isPictureInPictureActive ? "open" : "closed") \(act)"
+        if line != lastFloat { lastFloat = line; floatNote("\(line) reshow=\(reshow.rawValue) awake=\(engine.isRunning)") }
         switch act {
         case .hide:
             hidBehind = !front && !paused
@@ -973,7 +1026,7 @@ final class Listener: NSObject, ObservableObject {
                 closing = false
             }
         case .show:
-            tried = true; reshowing = true; hidBehind = false
+            tried = true; reshowing = true; hidBehind = false; startedActive = canStart
             if pip.contentSource == nil {   // detached to hide it (below): give it the layer back first
                 pip.contentSource = .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
             }
@@ -984,7 +1037,7 @@ final class Listener: NSObject, ObservableObject {
             Task {
                 try? await Task.sleep(for: .seconds(2))
                 guard reshowing else { return }
-                if pip.isPictureInPictureActive { learn(.works) }
+                if pip.isPictureInPictureActive { if startedActive { reshowing = false } else { learn(.works) } }
                 else { reshowing = false; floatNote("reopen: not open after 2 s, no error; tried again on the next play") }
             }
         case .none: break
@@ -1001,7 +1054,7 @@ final class Listener: NSObject, ObservableObject {
         guard r != reshow else { return }
         reshow = r; UserDefaults.standard.set(r.rawValue, forKey: "listen.reshowFromBehind2")
     }
-    var reshowTrying: Bool { reshowing }
+    var reshowTrying: Bool { reshowing && !startedActive }   // a refusal while active (iPad) says nothing about behind
 
     func startPiP() {
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -1196,6 +1249,7 @@ extension Listener: AVPictureInPictureControllerDelegate {
             let n = e as NSError
             me.floatNote("iOS: failed to start (\(n.domain) \(n.code): \(n.localizedDescription))")
             if me.reshowTrying { me.learn(.refused) }   // iOS won't reopen it from behind: it stays open on pause from now
+            else if me.reshowing { me.reshowing = false }   // iPad, active: tried again on the next play
             else { me.error = "The floating window didn't open: \(e.localizedDescription)" }
         }
     }
@@ -1256,6 +1310,7 @@ struct CaptionLayer: UIViewRepresentable {
 
 struct ListenView: View {
     @ObservedObject var l = Listener.shared
+    var title = "Listen"   // the guest app's one screen says "Now Playing"
     @State private var full = false
     @State private var clearing = false
 
@@ -1326,7 +1381,7 @@ struct ListenView: View {
                 }
             }
         }
-        .recenseScreen("Listen")
+        .recenseScreen(title)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 MoreMenu {
@@ -1403,7 +1458,7 @@ private struct PickerFill: UIViewRepresentable {
         let picker = RPSystemBroadcastPickerView()
         override init(frame: CGRect) {
             super.init(frame: frame)
-            picker.preferredExtension = "com.chauphan.galleryfiles.broadcast"
+            picker.preferredExtension = (Bundle.main.bundleIdentifier ?? "com.chauphan.galleryfiles") + ".broadcast"
             picker.showsMicrophoneButton = false
             picker.alpha = 0.02
             addSubview(picker)
@@ -1429,7 +1484,7 @@ struct BroadcastButton: UIViewRepresentable {
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
         let v = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
         BroadcastButton.view = v
-        v.preferredExtension = "com.chauphan.galleryfiles.broadcast"
+        v.preferredExtension = (Bundle.main.bundleIdentifier ?? "com.chauphan.galleryfiles") + ".broadcast"
         v.showsMicrophoneButton = false
         return v
     }

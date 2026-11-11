@@ -52,4 +52,17 @@ if !Floating.rest(front: false, open: true, refused: true, quiet: 0.3, paused: f
 if Floating.rest(front: false, open: true, refused: true, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
 if Floating.rest(front: true, open: true, refused: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest in front") }
 if Floating.rest(front: false, open: true, refused: false, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
+// regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
+// 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
+if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }
+if !Floating.front(active: true, pad: true, key: true) { bad += 1; print("FAIL iPad focused is front") }
+if !Floating.front(active: true, pad: false, key: false) { bad += 1; print("FAIL iPhone active is front") }
+if Floating.front(active: false, pad: false, key: true) { bad += 1; print("FAIL behind is not front") }
+var ipad = now(playing: true, reshow: .refused, hid: false, left: 2); ipad.canStart = true
+check("iPad unfocused, playing, refused behind before", Floating.decide(ipad), .show)
+ipad.left = 0.4
+check("iPad unfocused, just switched", Floating.decide(ipad), .none)
+var ipadQuiet = now(open: true, quiet: 0.5, reshow: .refused); ipadQuiet.canStart = true
+check("iPad unfocused, paused: hides", Floating.decide(ipadQuiet), .hide)
+if Floating.rest(front: false, open: true, refused: true, quiet: 9, paused: false, canStart: true) { bad += 1; print("FAIL iPad rests instead of hiding") }
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

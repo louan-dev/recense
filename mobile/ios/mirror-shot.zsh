@@ -7,7 +7,7 @@
 emulate -L zsh
 out=${1:?usage: mirror-shot.zsh <out.png> [--launch]}
 IPHONE=${IPHONE_UDID:-00008101-001A50643A98001E}
-APP=com.chauphan.galleryfiles
+APP=${APP_ID:-com.chauphan.galleryfiles}   # APP_ID=com.chauphan.recense.guest for Recense Guest
 
 if [[ $2 == --launch ]]; then
   xcrun devicectl device process launch --terminate-existing --device $IPHONE $APP >/dev/null \

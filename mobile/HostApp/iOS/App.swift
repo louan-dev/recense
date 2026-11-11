@@ -7,6 +7,7 @@ import FileProvider
 
 let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("archive"), displayName: "Archive")
 
+#if !GUEST   // the guest build's entry is GuestApp.swift
 @main
 struct GalleryFilesApp: App {
     @State private var status = "Adding Archive to Files…"
@@ -41,6 +42,8 @@ struct GalleryFilesApp: App {
         }
     }
 }
+
+#endif
 
 /// Captions' listener on the root; simulator screenshots set RECENSE_NO_LISTEN to skip its speech prompt.
 struct MaybeListening: ViewModifier {

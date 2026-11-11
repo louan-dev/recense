@@ -21,7 +21,14 @@ enum Floating {
         var hid: Bool            // Recense hid it on a pause behind
         var left: Double = 9     // seconds since Recense was left: as it's left iOS opens the window by itself, and a
                                  // second start in that moment failed and read as "refused" (11-10), so wait `settle`
+        var canStart = false     // iPad windows: Recense is still active but another app has the focus, so iOS lets
+                                 // it open and close the window itself (iPad log 11-10 19:29: "front playing" for 2 min
+                                 // under a full-screen Firefox, and the window never came)
     }
+
+    /// Recense is in front: active, and on iPad also holding the focus (its window is key). An iPad app another app's
+    /// window covers stays active (iPadOS windows), so `active` alone said "in front" under Firefox (11-10).
+    static func front(active: Bool, pad: Bool, key: Bool) -> Bool { active && (!pad || key) }
 
     /// Seconds of silence before the window hides (owner's bar: hidden within 0.5 s of pause; decided 10 times a
     /// second, so it's gone 0.3–0.45 s after). A gap between two tracks may blink it; it's back on the next sound.
@@ -59,15 +66,16 @@ enum Floating {
     /// iOS won't open the window from behind (iPhone 11-10 19:19:42: AVKitErrorDomain -1001 with Recense awake and the
     /// window possible), so once it's up behind it stays up, and a pause there rests it instead of closing it: a thin
     /// dark strip, back to full captions on the next sound.
-    static func rest(front: Bool, open: Bool, refused: Bool, quiet: Double, paused: Bool) -> Bool {
-        !front && open && refused && !paused && quiet >= hideAfter
+    static func rest(front: Bool, open: Bool, refused: Bool, quiet: Double, paused: Bool, canStart: Bool = false) -> Bool {
+        !front && open && refused && !canStart && !paused && quiet >= hideAfter
     }
 
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
-        if n.playing { return !n.open && !n.tried && n.reshow != .refused && (n.hid || n.left >= settle) ? .show : .none }
+        let reopens = n.canStart || n.reshow != .refused   // "refused" was measured behind; an active iPad app may start it
+        if n.playing { return !n.open && !n.tried && reopens && (n.hid || n.left >= settle) ? .show : .none }
         // the sound paused behind: hide, unless iOS can't bring it back on play, so captions are never lost
-        if n.open, n.quiet >= hideAfter, n.reshow != .refused { return .hide }
+        if n.open, n.quiet >= hideAfter, reopens { return .hide }
         return .none
     }
 }

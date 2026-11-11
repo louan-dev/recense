@@ -44,6 +44,27 @@ enum Align {
         return best?.i
     }
 
+    /// What a finished sentence that reads like stored sentence `j` does (owner's iPad videos 11-10: a song's chorus
+    /// line matched its first time, and the light and every new line were pulled back there, mid-transcript).
+    /// - next: it follows the last one recognised (`after`): merge, as before.
+    /// - hold: kept as a new sentence at the end for now; `continues` says it extends the run held before.
+    /// - merge: the held run proved a rewind or replay (`rewindNeeds` in a row, in order, or it reached `end`, where
+    ///   the listening was when the run began): the held copies go and the light moves back to `j`.
+    enum Fit: Equatable {
+        case next, hold(continues: Bool), merge(continues: Bool)
+        var holds: Bool { if case .hold = self { true } else { false } }
+    }
+    static let rewindNeeds = 3
+
+    /// - run: the stored sentences the held copies matched, in order. end: where the listening was before them.
+    static func fit(_ j: Int, after: Int?, end: Int, run: [Int], anchor: Int?) -> Fit {
+        if run.isEmpty, let a = after, j == a + 1 { return .next }
+        let continues = run.last.map { j == $0 + 1 } ?? false
+        let length = continues ? run.count + 1 : 1
+        let reached = j == (continues ? anchor ?? end : end)
+        return reached || length >= rewindNeeds ? .merge(continues: continues) : .hold(continues: continues)
+    }
+
     /// The marks that end a sentence, every script Listen hears (Listener.split() cuts on them).
     static let stops: Set<Character> = [".", "?", "!", "…", "。", "？", "！", "؟", "።", "፧", "།", "॥", "।"]
 
