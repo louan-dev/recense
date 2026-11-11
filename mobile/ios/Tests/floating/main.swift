@@ -47,4 +47,9 @@ if !Floating.onsets([10.0], after: 10.0).isEmpty { bad += 1; print("FAIL onset a
 if !Floating.awake(front: false, open: false, hearing: false, quiet: 30) { bad += 1; print("FAIL awake after leaving quiet") }
 if Floating.awake(front: false, open: false, hearing: false, quiet: 601) { bad += 1; print("FAIL asleep after 10 min quiet") }
 if !Floating.awake(front: false, open: true, hearing: false, quiet: 9999) { bad += 1; print("FAIL awake while open") }
+// iOS refuses to reopen it behind (-1001): a pause there rests it (thin strip), a sound wakes it
+if !Floating.rest(front: false, open: true, refused: true, quiet: 0.3, paused: false) { bad += 1; print("FAIL rest on pause behind") }
+if Floating.rest(front: false, open: true, refused: true, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
+if Floating.rest(front: true, open: true, refused: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest in front") }
+if Floating.rest(front: false, open: true, refused: false, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

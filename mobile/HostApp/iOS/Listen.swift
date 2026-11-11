@@ -87,6 +87,7 @@ final class Listener: NSObject, ObservableObject {
     private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind2") ?? "") ?? .unknown
     private var quietFrom: Date?
     private var leftAt: Date?            // when Recense was last left for another app (Floating.settle)
+    private var resting = false          // the window rests as a thin strip behind (Floating.rest)
     private var tried = false
     private var reshowing = false
     private var lastFloat = ""
@@ -944,6 +945,12 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
+        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, refused: reshow == .refused, quiet: quiet, paused: paused)
+        if rest != resting {
+            resting = rest; drawnKey = ""; drawnAt = .distantPast
+            floatNote(rest ? "rest: thin strip (iOS won't reopen it behind)" : "wake: full captions")
+            draw()
+        }
         let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
                                         quiet: quietFrom.map { Date().timeIntervalSince($0) } ?? 0, reshow: reshow, tried: tried,
                                         hid: hidBehind, left: leftAt.map { Date().timeIntervalSince($0) } ?? 9))
@@ -1058,6 +1065,12 @@ final class Listener: NSObject, ObservableObject {
     /// a second late behind other apps).
     func draw() {
         if Listener.held { if !queued.isEmpty { layer.flush(); queued = [] }; return }
+        if resting {
+            guard drawnKey != "rest" || Date().timeIntervalSince(drawnAt) >= 1, let sb = Self.restPicture() else { return }
+            layer.flush(); queued = []; queuedShape = ""
+            layer.enqueue(sb); drawnKey = "rest"; drawnAt = Date()
+            return
+        }
         let wall = Date(), nowL = wall.timeIntervalSince1970 - lag
         let (rows, note) = frame(at: wall)
         let key = Self.key(rows, note), shape = Self.key(rows.map(\.unlit), note)
@@ -1135,6 +1148,14 @@ final class Listener: NSObject, ObservableObject {
         if p > 0 { rows.append(FloatingCaption.Row(line: line(sentences[p - 1], said: false), on: false, t: nil)) }
         rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now))
         return (rows, nil)
+    }
+
+    /// The resting window: a thin dark strip (PiP sizes the window to the picture's shape).
+    private static func restPicture() -> CMSampleBuffer? {
+        guard let ctx = CGContext(data: nil, width: 1200, height: 40, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(gray: 0.06, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 40))
+        return ctx.makeImage().flatMap { sample($0) }
     }
 
     private static func sample(_ cg: CGImage, at: Double? = nil) -> CMSampleBuffer? {

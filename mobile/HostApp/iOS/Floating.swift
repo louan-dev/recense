@@ -56,6 +56,13 @@ enum Floating {
         Array(Set(starts.filter { $0 > now && $0 <= now + ahead })).sorted()
     }
 
+    /// iOS won't open the window from behind (iPhone 11-10 19:19:42: AVKitErrorDomain -1001 with Recense awake and the
+    /// window possible), so once it's up behind it stays up, and a pause there rests it instead of closing it: a thin
+    /// dark strip, back to full captions on the next sound.
+    static func rest(front: Bool, open: Bool, refused: Bool, quiet: Double, paused: Bool) -> Bool {
+        !front && open && refused && !paused && quiet >= hideAfter
+    }
+
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
         if n.playing { return !n.open && !n.tried && n.reshow != .refused && (n.hid || n.left >= settle) ? .show : .none }
