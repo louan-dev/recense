@@ -67,17 +67,17 @@ updates in place.
   11-10): which ear hears and in which language, the live transcript of what plays (ShowsKit's `TranscriptView`),
   and one button that says what it does now (`Listener.control`, the same on Listen): **Start listening** when nothing hears,
   **Pause listening** while hearing, **Resume listening** when paused; "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
-  Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears by itself (`HostApp/iOS/ListenEars.swift`, `MicEar.swift`):
-  with the sound on the device's own speaker, the microphone hears what plays, fed to the speech engine only while
-  another app plays, text only, never audio (iOS asks once for the microphone; denied: no mic, nothing nags).
-  "Start listening" (or, while the mic hears, "Hear other apps directly") starts the broadcast: the button is the system's
+  Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears the media only, never the room
+  (owner, 2026-11-10, "Yes, no mic"): captions come from the broadcast (another app's sound itself,
+  `ios/Broadcast/SampleHandler.swift`) or Recense's own player. `HostApp/iOS/ListenEars.swift` never picks the
+  microphone, on any route, allowed or not; `MicEar.swift` and Listen.swift's mic calls are unreachable, to be removed.
+  "Start listening" starts the broadcast: the button is the system's
   own broadcast picker under our label (`StartBroadcast`), because iOS no longer opens the sheet for a picker tapped from
   code (11-10); then one tap on the sheet's Start Broadcast (or Control Center › Screen Recording, long press › Recense).
-  It hears through headphones too. With neither (headphones and no broadcast, or iOS ended it) the page says why under
+  It hears through headphones too. With no broadcast (any route, or iOS ended it) the page says why under
   Start, and a notification asks once per stop. An episode that heard nothing is not kept.
-  iPhone Mirroring can't show that sheet or lend the phone's mic: check hearing on the phone in hand.
-  iOS won't start the microphone while Recense is in the background, so there it asks instead.
-  One **Pause** (page and ··· menu) stops both and is kept across launches. Every input's outcome is a written-down
+  iPhone Mirroring can't show that sheet: check hearing on the phone in hand.
+  One **Pause** (page and ··· menu) stops hearing and is kept across launches. Every input's outcome is a written-down
   truth table, `ios/Tests/ears/main.swift`. Each listening is its own episode,
   named by when it began and its language, a silence of 3 minutes starts the next, and one that continues an older
   episode joins it (below). The broadcast

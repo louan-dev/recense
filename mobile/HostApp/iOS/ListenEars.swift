@@ -1,6 +1,7 @@
 // Which ear Listen hears with, decided again at every change (S3b): the broadcast (another app's sound itself, before
-// the speaker or headphones), the microphone as a stand-in (only on the speaker, only while nothing better hears), or
-// none, with one "Tap once to keep hearing" per stop. Pure logic, Foundation only, so mobile/ios/Tests/ears/main.swift
+// the speaker or headphones), or none, with one "Tap once to keep hearing" per stop. The microphone is never a media
+// ear on iPhone or iPad (owner, 2026-11-10, "Yes, no mic"): it would hear the room, not the media. `.mic` stays in the
+// enum only so Listen.swift still compiles; decide never returns it. Pure logic, Foundation only, so mobile/ios/Tests/ears/main.swift
 // runs it on the Mac. Run:
 //   swiftc -O mobile/HostApp/iOS/ListenEars.swift mobile/ios/Tests/ears/main.swift -o "$TMPDIR/ears" && "$TMPDIR/ears"
 import Foundation
@@ -25,25 +26,25 @@ enum Ears {
         var broadcast: Bool         // the broadcast extension is live
         var route: Route
         var paused: Bool            // the one Pause
-        var micAllowed: Bool        // the owner allowed the microphone
+        var micAllowed: Bool        // the owner allowed the microphone (ignored: the mic is never a media ear)
         var otherAudio: Bool        // another app is playing sound
     }
 
     struct Choice: Equatable {
         var ear: Ear
-        var feed: Bool              // the mic's sound goes to the speech engine (only while something plays)
+        var feed: Bool              // the mic's sound goes to the speech engine (always false: no mic ear)
         var prompt: Bool            // "Tap once to keep hearing" is due (shown once per stop, see Prompts)
     }
 
     static func decide(_ i: Input) -> Choice {
         if i.paused { return Choice(ear: .none, feed: false, prompt: false) }
         if i.broadcast { return Choice(ear: .broadcast, feed: false, prompt: false) }
-        if i.route == .speaker, i.micAllowed { return Choice(ear: .mic, feed: i.otherAudio, prompt: false) }
         return Choice(ear: .none, feed: false, prompt: true)
     }
 
     /// What can hear right now: iOS won't start the mic while Recense is in the background, so a mic that is due
-    /// but not running there hears nothing yet, and the owner is asked for the one tap instead.
+    /// but not running there hears nothing yet, and the owner is asked for the one tap instead. Since decide never
+    /// picks the mic, this passes every choice through unchanged; kept until Listen.swift's mic path is removed.
     static func reachable(_ c: Choice, micRunning: Bool, foreground: Bool) -> Choice {
         c.ear == .mic && !micRunning && !foreground ? Choice(ear: .none, feed: false, prompt: true) : c
     }

@@ -11,8 +11,8 @@ typealias Row = (Bool, Ears.Route, Bool, Bool, Bool, Ears.Ear, Bool, Bool)
 let table: [Row] = [
     (false, .speaker   , false, false, false,   .none     , false, true ),
     (false, .speaker   , false, false, true ,   .none     , false, true ),
-    (false, .speaker   , false, true , false,   .mic      , false, false),
-    (false, .speaker   , false, true , true ,   .mic      , true , false),
+    (false, .speaker   , false, true , false,   .none     , false, true ),
+    (false, .speaker   , false, true , true ,   .none     , false, true ),
     (false, .speaker   , true , false, false,   .none     , false, false),
     (false, .speaker   , true , false, true ,   .none     , false, false),
     (false, .speaker   , true , true , false,   .none     , false, false),
@@ -69,8 +69,23 @@ for (b, r, p, m, o, ear, feed, prompt) in table {
 }
 check(wrong == 0, "decide matches every row of the truth table")
 check(!table.contains { $0.2 && ($0.5 != .none || $0.7) }, "paused: never an ear, never a prompt")
-check(!table.contains { !$0.3 && $0.5 == .mic }, "mic denied: never the mic ear")
-check(!table.contains { $0.5 == .mic && $0.6 != $0.4 }, "the mic is fed only while another app plays")
+// no mic as a media ear on iPhone/iPad (owner, 2026-11-10): the table, and every input computed afresh
+check(!table.contains { $0.5 == .mic || $0.6 }, "the table never picks the mic, never feeds it")
+var micPicked = 0
+for b in [false, true] { for r in [Ears.Route.speaker, .headphones, .other] { for p in [false, true] {
+    for m in [false, true] { for o in [false, true] {
+        let c = Ears.decide(.init(broadcast: b, route: r, paused: p, micAllowed: m, otherAudio: o))
+        for running in [false, true] { for front in [false, true] {
+            let r2 = Ears.reachable(c, micRunning: running, foreground: front)
+            if c.ear == .mic || c.feed || r2.ear == .mic || r2.feed { micPicked += 1 }
+        } }
+    } }
+} } }
+check(micPicked == 0, "no input, in front or behind, mic running or not, yields the mic")
+// regression (S3b stand-in heard the room): speaker, mic allowed, another app playing, no broadcast → no mic,
+// and the prompt to start the broadcast instead
+check(Ears.decide(.init(broadcast: false, route: .speaker, paused: false, micAllowed: true, otherAudio: true))
+      == .init(ear: .none, feed: false, prompt: true), "speaker + mic allowed + other audio, no broadcast: no ear, the prompt")
 
 // where the sound goes, from AVAudioSession.Port raw values
 check(Ears.route(["Speaker"]) == .speaker, "built-in speaker")
@@ -82,7 +97,6 @@ check(Ears.route(["AirPlay"]) == .other && Ears.route(["CarAudio"]) == .other, "
 check(Ears.route([]) == .speaker, "no output listed: the device's own speaker")
 
 // one prompt per stop
-let mic = Ears.decide(.init(broadcast: false, route: .speaker, paused: false, micAllowed: true, otherAudio: true))
 let heads = Ears.decide(.init(broadcast: false, route: .headphones, paused: false, micAllowed: true, otherAudio: true))
 let cast = Ears.decide(.init(broadcast: true, route: .headphones, paused: false, micAllowed: true, otherAudio: true))
 let paused = Ears.decide(.init(broadcast: false, route: .headphones, paused: true, micAllowed: true, otherAudio: true))
@@ -94,9 +108,9 @@ pr.dismiss()
 check(!pr.shows(heads), "dismissed: gone")
 pr.update(before: .none, now: heads)                       // still nothing hearing: the same stop
 check(!pr.shows(heads), "dismissed stays dismissed until the next stop")
-pr.update(before: .none, now: mic)                         // back on the speaker: the mic hears
-check(!pr.shows(mic), "while an ear hears, no prompt")
-pr.update(before: .mic, now: heads)                        // headphones again: a new stop
+pr.update(before: .none, now: cast)                        // the broadcast hears again
+check(!pr.shows(cast), "while an ear hears, no prompt")
+pr.update(before: .broadcast, now: heads)                  // the broadcast ended again: a new stop
 check(pr.shows(heads) && pr.notify(heads), "a new stop prompts again, once")
 pr.update(before: .none, now: cast)
 pr.update(before: .broadcast, now: paused)                 // the owner's Pause is not a stop
