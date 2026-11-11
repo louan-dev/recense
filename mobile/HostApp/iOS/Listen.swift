@@ -84,8 +84,9 @@ final class Listener: NSObject, ObservableObject {
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
     // The floating window shows by itself while another app plays and Recense is behind, and hides on pause
     // (Floating.swift; owner 11-10, no Dock). Whether iOS lets it reopen from behind is measured once and kept.
-    private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind") ?? "") ?? .unknown
+    private var reshow = Floating.Reshow(rawValue: UserDefaults.standard.string(forKey: "listen.reshowFromBehind2") ?? "") ?? .unknown
     private var quietFrom: Date?
+    private var leftAt: Date?            // when Recense was last left for another app (Floating.settle)
     private var tried = false
     private var reshowing = false
     private var lastFloat = ""
@@ -159,6 +160,15 @@ final class Listener: NSObject, ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in Task { @MainActor in Listener.shared.catchUp(); Listener.shared.save() } }
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in Listener.shared.catchUp() }
+        }
+        // left for another app: stay awake so a play there shows the window (quiet counted from now, Floating.awake)
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                let me = Listener.shared
+                me.leftAt = Date()
+                if me.quietFrom != nil { me.quietFrom = Date() }
+                me.keepAwake(true); me.floatTick()
+            }
         }
         // the ears: decided again whenever the sound moves (speaker ↔ headphones), another app starts or stops sound,
         // a call interrupts, or Recense comes to the front (the only time iOS lets the mic start)
@@ -896,7 +906,9 @@ final class Listener: NSObject, ObservableObject {
         // a still frame goes stale for PiP; draw again each second
         if !ticking {   // once: makePiP runs again after dropPiP
             ticking = true
-            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw(); Listener.shared.floatTick() } }
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in Task { @MainActor in Listener.shared.draw() } }
+            // show and hide decided 10 times a second: on play or pause the window follows within the owner's 0.5 s
+            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in Task { @MainActor in Listener.shared.floatTick() } }
         }
     }
     /// Lets go of the floating window's controller (its window closes with it); makePiP makes a new one.
@@ -929,13 +941,12 @@ final class Listener: NSObject, ObservableObject {
         if playing { quietFrom = nil } else if quietFrom == nil { quietFrom = Date() }
         if !playing || front { tried = false }
         if front { hidBehind = false }
-        if hidBehind, !playing, Date().timeIntervalSince(quietFrom ?? Date()) > Floating.stayAwake {
-            hidBehind = false
-            if !hearing { keepAwake(false) }
-        }
+        // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
+        let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
+        if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
         let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
                                         quiet: quietFrom.map { Date().timeIntervalSince($0) } ?? 0, reshow: reshow, tried: tried,
-                                        hid: hidBehind))
+                                        hid: hidBehind, left: leftAt.map { Date().timeIntervalSince($0) } ?? 9))
         let key = "\(front ? "front" : "behind") \(playing ? "playing" : "quiet") \(pip.isPictureInPictureActive ? "open" : "closed") \(act)"
         if key != lastFloat { lastFloat = key; floatNote("\(key) reshow=\(reshow.rawValue) awake=\(engine.isRunning)") }
         switch act {
@@ -947,7 +958,7 @@ final class Listener: NSObject, ObservableObject {
             // 11-10 iPhone: behind other apps iOS ignored stop (no "will stop", still open a second later), so the
             // window is taken apart instead: first its content, then the controller (made again when Recense is in front)
             Task {
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .milliseconds(150))   // the owner's bar is 0.5 s from pause to gone
                 if pip.isPictureInPictureActive { floatNote("stop ignored; detaching content"); pip.contentSource = nil }
                 try? await Task.sleep(for: .seconds(1))
                 if pip.isPictureInPictureActive { floatNote("still open; releasing the controller"); dropPiP() }
@@ -961,7 +972,14 @@ final class Listener: NSObject, ObservableObject {
             }
             floatNote("reopen: possible=\(pip.isPictureInPicturePossible)")
             startPiP()
-            Task { try? await Task.sleep(for: .seconds(2)); if reshowing { learn(pip.isPictureInPictureActive ? .works : .refused) } }
+            // works when it opened; refused only on iOS's own error (the delegate), never on a silent wait: one silent
+            // try read as "refused" on 11-10 and the window never came back (listen.reshowFromBehind is set aside for it)
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard reshowing else { return }
+                if pip.isPictureInPictureActive { learn(.works) }
+                else { reshowing = false; floatNote("reopen: not open after 2 s, no error; tried again on the next play") }
+            }
         case .none: break
         }
     }
@@ -974,7 +992,7 @@ final class Listener: NSObject, ObservableObject {
     func learn(_ r: Floating.Reshow) {
         reshowing = false
         guard r != reshow else { return }
-        reshow = r; UserDefaults.standard.set(r.rawValue, forKey: "listen.reshowFromBehind")
+        reshow = r; UserDefaults.standard.set(r.rawValue, forKey: "listen.reshowFromBehind2")
     }
     var reshowTrying: Bool { reshowing }
 

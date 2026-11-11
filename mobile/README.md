@@ -106,9 +106,11 @@ updates in place.
   stamp, not when it reached the extension, and a pause in the other app stays a pause (up to 2 s fed as silence, the
   rest added to later words). Before (11-10) every pause pulled the words after it early by its length.
   The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
-  Recense (Home shows the transcript) and after 3 s of that app paused (`HostApp/iOS/Floating.swift`, tested in
+  Recense (Home shows the transcript) and 0.3 s after that app pauses, decided 10 times a second (`HostApp/iOS/Floating.swift`, tested in
   `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
-  device and kept (`listen.reshowFromBehind`: works or refused); Recense stays awake up to 10 minutes after hiding it, to reopen it on play; if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
+  device and kept (`listen.reshowFromBehind2`: works, or refused only on iOS's own error; 11-10's "refused" came from a
+  silent wait and is set aside); behind other apps Recense stays awake while the window is open and for 10 minutes of
+  quiet (`Floating.awake`), so a play there shows it, 1 s after leaving at the earliest (`Floating.settle`); if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
   stop, so hiding detaches the window's content; the next tick gives it back once it's closed (`Floating.reattach`),
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
