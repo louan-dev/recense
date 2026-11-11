@@ -221,6 +221,7 @@ strip/
   recense.swift      Recense: players, transcripts, light, editor, export
   keephome.swift     where transcripts live (~/Recense/keep), the move out of the cache (recense selftest)
   soundengine.swift  process tap and EQ/Key/Space chain
+  appear.swift       the app ear: any app's sound, transcribed live on this Mac (recense hear-app, recense selftest)
   cadence.swift      the karaoke light's timing
   prosody.swift      prosody notation
   speech.swift       on-device transcription (SpeechAnalyzer): the Mac's choices (open ears, canon, lexicon)
@@ -285,6 +286,10 @@ kept inside the vault, the power check, the `Line` → ShowsKit `TranscriptLine`
 `background` launches it hidden (the login item uses this).
 `show-icons` shows the menu-bar hider's hidden icons (launching Recense hidden first if it isn't running).
 `wing-left` / `wing-right` open a wing panel, `wing-close` closes both.
+
+`hear-app [app] [--seconds N] [--lang en|fr|vi] [--out file.json]` taps one app's sound (Safari through WebKit's
+GPU process) and transcribes it on this Mac, printing words as they come; `--out` saves them with their times.
+When several running processes share the name, it hears the newest one and prints which pid it chose.
 
 `RECENSE_INSTANCE=<name>` runs a separate copy of a build beside the installed one (its own lock, command channel and
 state file), for trying a build without replacing Recense.app: point it at a scratch vault with `DRAFTPAD=` and send it

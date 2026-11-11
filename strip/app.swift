@@ -8075,8 +8075,8 @@ func stripSelftest() -> Bool {
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
-    let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o ? 0 : 1)
+    let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p ? 0 : 1)
 }
 
 // `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`, `--queue` (run what other
@@ -8111,6 +8111,9 @@ if CommandLine.arguments.dropFirst().first == "download" {
     }
     sem.wait(); exit(code)
 }
+
+// `recense hear-app [app] [--seconds N] [--lang en|fr|vi] [--out file.json]`: any app's sound, transcribed live on this Mac (appear.swift).
+if CommandLine.arguments.dropFirst().first == "hear-app" { hearAppCommand(Array(CommandLine.arguments.dropFirst(2))) }
 
 // `recense draftpad-check [folder]`: the Recense layer on the real path, off screen, with a test page (draftpadcheck.swift).
 if CommandLine.arguments.dropFirst().first == "draftpad-check" {
