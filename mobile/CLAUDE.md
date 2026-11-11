@@ -47,9 +47,13 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - Every Swift package under `../shared/` stays out of the app's synchronized folder. After adding one, and before any iOS build:
   `for d in shared/*/Package.swift; do n=$(basename $(dirname $d)); grep -qE "membershipExceptions = \([^)]*\b$n\b" mobile/ios/GalleryFiles.xcodeproj/project.pbxproj || echo "NOT EXCLUDED: $n"; done`
   prints nothing (`shared/pieces` was missed on 11-09; its Package.swift and XCTest tests would have compiled into the app).
+- Recense Guest compiles every file in `HostApp/iOS/` with the `GUEST` flag, but links only ShowsKit. A file that imports
+  another package (SSHKit, SSHTerminal) puts an empty stub under `#if GUEST` (as `Terminal.swift` does). After any change to
+  the packages, `Places.swift` or the pbxproj: `xcodebuild -project mobile/ios/GalleryFiles.xcodeproj -scheme RecenseGuest
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` ends BUILD SUCCEEDED (it failed on CNIOAtomics, 11-10).
 - A worktree has no `ios/Secrets/`: link the main checkout's (`ln -s ~/Developer/recense/mobile/ios/Secrets mobile/ios/Secrets`); never stage the link.
 - After a Draftpad or shared change, also run `zsh strip/build.sh` and `recense selftest`, and `npm test` in `editor/`.
-- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except the Swift packages, excluded from the synchronized group (exception set `…E2`): `../shared/ShowsKit/` (linked as a local package, `…E3`–`E5`; its files compile only as the package), `../shared/SSHKit/` (local package `…E6`–`EA`: products SSHKit and SSHTerminal) and `../shared/pieces/` (not linked yet; its Package.swift and XCTest tests must never join the app). A new package under `../shared/` goes on that list in the same commit. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
+- New source files: anything in `HostApp/iOS/` or `../shared/` joins the app by itself (Xcode synchronized folders, objectVersion 77; don't put non-app files there). Except the Swift packages, excluded from the synchronized group (exception sets `…E2`, and `…601F` for Recense Guest): `../shared/ShowsKit/` (linked as a local package, `…E3`–`E5`; its files compile only as the package), `../shared/SSHKit/` (local package `…E6`–`EA`: products SSHKit and SSHTerminal) and `../shared/pieces/` (not linked yet; its Package.swift and XCTest tests must never join the app). A new package under `../shared/` goes on that list in the same commit. Files outside them (the extensions, `FileProviderCore/Core.swift`, `editor.html`, assets) are still listed by hand in `ios/GalleryFiles.xcodeproj/project.pbxproj`.
 
 ## Never
 - Commit `ios/Secrets/` (the device token) or `build/` (`mobile/.gitignore`).

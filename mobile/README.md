@@ -156,7 +156,7 @@ zsh mobile/ios/build.sh --guest [device]      # Recense Guest: installs it and w
 **Recense Guest** (iPhone only; targets `RecenseGuest` + `RecenseGuestBroadcast`, entry `HostApp/iOS/GuestApp.swift`,
 compiled with the `GUEST` flag): Now Playing only (start listening, the live transcript, languages, the floating window,
 earlier episodes). Same Listen code as Recense; no Library, Draftpad, Archive in Files or Gallery token, so nothing in
-it reaches Gallery. `build.sh --guest` installs it here and writes `build/guest-<date>/RecenseGuest.ipa`, unsigned, for
+it reaches Gallery, and no SSH (`Terminal.swift` is an empty stub under `GUEST`, so the app links no SwiftNIO). `build.sh --guest` installs it here and writes `build/guest-<date>/RecenseGuest.ipa`, unsigned, for
 the guest to sign in Sideloadly with their own Apple ID. The app and its broadcast extension find each other through the
 Keychain group they were signed with (`Captions.group`, read at runtime), so a re-signed build still works.
 

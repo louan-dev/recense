@@ -1,6 +1,12 @@
 // Terminal (C2, owner 11-10: "SSH into a terminal from every device"): the Macs in Recense/ssh/hosts.json, each opened
 // in a terminal over SSH. Routes are tried in order, LAN first, then Tailscale; the tunnel route is Mac-only for now.
 // This device's own key lives in its Keychain; the owner adds its public line to the Mac's ~/.ssh/authorized_keys once.
+#if GUEST
+// Recense Guest (GuestApp.swift) has no Library and no SSH: Places.swift still names TerminalPlace, empty here,
+// so the Guest app links no SwiftNIO.
+import SwiftUI
+struct TerminalPlace: View { var body: some View { EmptyView() } }
+#else
 import ShowsKit
 import SSHKit
 import SSHTerminal
@@ -147,3 +153,4 @@ struct TerminalSessionView: View {
         Task { await session.connect(routes: DeviceSSH.routes(host), user: host.user, key: key, pins: DeviceSSH.pins) }
     }
 }
+#endif
