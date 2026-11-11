@@ -134,13 +134,26 @@ struct LiveLines {
     /// How far into the sound the shown words reach, and when (`at`, tap seconds): [audio end, shown at], guesses
     /// included. The lag of the first visible text is `shown at − a word's end` at the first entry that reaches it.
     private(set) var shown: [[Double]] = []
+    /// For measuring (hear-app --out): each word the first time it was shown, guesses included: [text, start, end, at].
+    var recordWords = false
+    /// The guesses come cut already (SpeechCore.Ahead, by content): show every word of them; a time cut here would hide
+    /// the fast transcriber's words it times early.
+    var guessesCut = false
+    private(set) var seen: [[Any]] = []
+    private var seenKeys = Set<String>()
 
     mutating func add(_ p: SpeechCore.Phrase, final: Bool, at: Double = 0) {
         version += 1
         if let e = p.words.last?.end, e > (shown.last?[0] ?? 0) { shown.append([e, at]) }
+        if recordWords {
+            for w in p.words where seenKeys.insert("\(w.text.lowercased())@\(Int((w.start * 2).rounded()))").inserted {
+                seen.append([w.text, w.start, w.end, at])
+            }
+        }
         if final {
             if !p.words.isEmpty { finals.append(p); finals.sort { $0.start < $1.start } }
-            if let g = guess, g.end <= p.end + 0.05 { guess = nil }   // its stretch is final now
+            if guessesCut { guess = nil }                              // Ahead sends the guess past this final next
+            else if let g = guess, g.end <= p.end + 0.05 { guess = nil }   // its stretch is final now
         } else { guess = p }
     }
 
@@ -153,7 +166,7 @@ struct LiveLines {
                 for ws in splitWords(p.words.map(LiveLines.word)) { out.append(Line(id: id, words: ws, english: [])); id += 1 }
             }
             if let g = guess {
-                let ws = g.words.filter { $0.start >= done - 0.05 }.map(LiveLines.word)
+                let ws = (guessesCut ? g.words : g.words.filter { $0.start >= done - 0.05 }).map(LiveLines.word)
                 for part in splitWords(ws) where !part.isEmpty { out.append(Line(id: LiveLines.guessBase + id, words: part, english: [])); id += 1 }
             }
             cache = out; cached = version
@@ -222,7 +235,9 @@ final class AppTap {
             kAudioAggregateDeviceTapAutoStartKey: true,
             kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: d.uuid.uuidString, kAudioSubTapDriftCompensationKey: true]],
         ]
-        if let out = AppTap.outputUID() {
+        // ...but only a device with no input: a headset's (AirPods, USB) mic stream would join the aggregate, reach the
+        // transcript and could turn the mic on (P7 critic 11-11). Such an output leaves the tap as its own clock.
+        if let out = AppTap.clock(AppTap.outputUID(), inputs: AppTap.outputInputs()) {
             agg[kAudioAggregateDeviceMainSubDeviceKey] = out
             agg[kAudioAggregateDeviceSubDeviceListKey] = [[kAudioSubDeviceUIDKey: out]]
         }
@@ -282,6 +297,20 @@ final class AppTap {
     /// The app's audio objects and its helpers' (SoundTap's rule: its children; for Safari, WebKit's processes).
     static func objects(_ pid: pid_t) -> [AudioObjectID] { AppAudio.objects(for: pid) }
 
+    /// The output to clock the aggregate by: only one with no input streams (no mic ever enters the ear).
+    static func clock(_ uid: String?, inputs: Int) -> String? { inputs == 0 ? uid : nil }
+
+    /// Input streams of the device the system plays to (a headset's mic); -1 if unreadable, which counts as "has some".
+    static func outputInputs() -> Int {
+        var dev = AudioObjectID(kAudioObjectUnknown), n = UInt32(MemoryLayout<AudioObjectID>.size)
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &n, &dev) == noErr, dev != kAudioObjectUnknown else { return -1 }
+        a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(dev, &a, 0, nil, &size) == noErr else { return -1 }
+        return Int(size) / MemoryLayout<AudioStreamID>.size
+    }
+
     /// The UID of the device the system plays to (the aggregate's clock).
     static func outputUID() -> String? {
         var dev = AudioObjectID(kAudioObjectUnknown), n = UInt32(MemoryLayout<AudioObjectID>.size)
@@ -310,6 +339,8 @@ final class AppTap {
     /// How late words arrive after they're said (seconds, the latest final): the gap a delayed replay would close.
     private(set) var lag = 0.0
     var onNote: ((String) -> Void)?
+    /// Keep each shown word with when it was shown (hear-app's measuring; off in the app, where it would only grow).
+    var recordWords = false
     private var tap: AnyObject?
     private var ears: AnyObject?
     private let feed = DispatchQueue(label: "recense.ear.feed")
@@ -345,7 +376,7 @@ final class AppTap {
             b.floatChannelData![0].update(from: s, count: n)
             feed.async { a.append(b) }
         }) else { a.cancel(); return false }
-        tap = t; ears = a; player = p; lang = first; live = LiveLines(); startedAt = Date(); lag = 0
+        tap = t; ears = a; player = p; lang = first; live = LiveLines(); live.recordWords = recordWords; live.guessesCut = fast; startedAt = Date(); lag = 0
         log("app ear: hearing \(p.name) (\(p.bundle), pid \(p.pid)) in \(first) among \(among)")
         return true
         #else
@@ -391,7 +422,7 @@ final class AppTap {
 
     /// The transcript as keep/'s v2 shape needs it for comparing: lines of timed words.
     func json() -> [String: Any] {
-        ["app": player?.bundle ?? "", "startedAt": startedAt?.timeIntervalSince1970 ?? 0, "language": lang, "lag": lag, "shown": live.shown,
+        ["app": player?.bundle ?? "", "startedAt": startedAt?.timeIntervalSince1970 ?? 0, "language": lang, "lag": lag, "shown": live.shown, "seen": live.seen,
          "lines": live.lines.filter { $0.id < LiveLines.guessBase }.map { l in
             ["id": l.id, "words": l.words.map { ["text": $0.text, "start": $0.start, "end": $0.end, "lang": $0.lang ?? lang] }] }]
     }
@@ -423,6 +454,10 @@ func hearAppCommand(_ a: [String]) -> Never {
         }
         guard let p else { fputs("nothing playing\(want.map { " in \($0)" } ?? "") within 15 s\n", stderr); exit(1) }
         let ear = LiveEar()
+        ear.recordWords = out != nil
+        #if compiler(>=6.2) && canImport(Speech)
+        if #available(macOS 26, *) { SpeechLive.split = a.contains("--split") }
+        #endif
         let began = Date()
         ear.onNote = { print(String(format: "%6.1f  %@", ear.seconds, $0)); fflush(stdout) }
         guard await ear.start(p, first: lang, among: a.contains("--fixed") ? [] : SpeechCore.auto, fast: !a.contains("--single")) else {
@@ -464,6 +499,10 @@ func appEarSelftest() -> Bool {
     check(AppEar.newest([oldPlay, afplay], started: { $0 == 31 ? 100 : 200 }) == afplay
           && AppEar.newest([afplay, oldPlay], started: { $0 == 31 ? 100 : 200 }) == afplay
           && AppEar.newest([], started: { _ in 0 }) == nil, "two players with one name: the newest is heard")
+    if #available(macOS 14.2, *) {
+        check(AppTap.clock("speakers", inputs: 0) == "speakers" && AppTap.clock("airpods", inputs: 1) == nil
+              && AppTap.clock("unknown", inputs: -1) == nil, "an output with a mic (or unreadable) never clocks the ear: no mic stream joins it")
+    }
     check(AppEar.startTime(getpid()) > 0 && AppEar.startTime(getpid()) <= Date().timeIntervalSince1970, "a process's start time is read")
     check(!AppEar.listenable("com.apple.systemsoundserverd") && !AppEar.listenable("local.recense") && AppEar.listenable("com.spotify.client")
           && AppEar.listenable("afplay"), "system sounds and Recense's own aren't heard; Spotify and afplay are")
@@ -490,6 +529,10 @@ func appEarSelftest() -> Bool {
     s.add(p([("Ma", 1.0, 1.2)]), final: false, at: 1.5)
     s.add(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: false, at: 2.0)
     s.add(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: true, at: 9.0)
+    var r = LiveLines(); r.recordWords = true
+    r.add(p([("Ma", 1.0, 1.2)]), final: false, at: 1.5); r.add(p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]), final: true, at: 9.0)
+    check(r.seen.count == 2 && (r.seen[0][3] as? Double) == 1.5 && (r.seen[1][3] as? Double) == 9.0 && LiveLines().seen.isEmpty,
+          "measuring: each word kept once, when first shown; nothing kept unless asked")
     check(s.shown == [[1.2, 1.5], [1.7, 2.0]] && s.lines[0].id < LiveLines.guessBase,
           "a guess counts as shown when it arrives; its final, later, doesn't move that time")
     // two transcribers (SpeechLive fast): the quick one's words show as one guess until the sure finals cover their span
@@ -509,6 +552,23 @@ func appEarSelftest() -> Bool {
     t.add(whole, final: true)
     check(ahead.final(whole) == nil && texts() == ["Ma", "sœur", "chante."] && t.lines.allSatisfy { $0.id < LiveLines.guessBase },
           "fast: once the finals reach the guess, no guess is left")
+    // the two transcribers time words apart: a fast clock 0.3 s early or late shows no word twice and hides none
+    var skewOK = true
+    for d in [-0.3, 0, 0.3] {
+        let ah = SpeechCore.Ahead()
+        var v = LiveLines(); v.guessesCut = true
+        func show() -> [String] { v.lines.flatMap { $0.words.map(\.text) } }
+        func q(_ ws: [(String, Double, Double)]) -> SpeechCore.Phrase { p(ws.map { ($0.0, $0.1 + d, $0.2 + d) }) }
+        if let g = ah.guess(q([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7), ("est", 1.8, 1.92)]), final: true) { v.add(g, final: false) }
+        if let g = ah.guess(q([("né", 2.0, 2.4)]), final: false) { v.add(g, final: false) }
+        let a1 = show()
+        let fa = p([("Ma", 1.0, 1.2), ("sœur", 1.2, 1.7)]); v.add(fa, final: true); if let g = ah.final(fa) { v.add(g, final: false) }
+        let a2 = show()
+        let fb = p([("est", 1.8, 1.92), ("né", 2.0, 2.4)]); v.add(fb, final: true); let left = ah.final(fb); if let g = left { v.add(g, final: false) }
+        let a3 = show(), want = ["Ma", "sœur", "est", "né"]
+        skewOK = skewOK && a1 == want && a2 == want && a3 == want && left == nil
+    }
+    check(skewOK, "fast: with its clock 0.3 s early or late, no word shows twice and none vanishes")
     let long = p((0..<28).map { (i: Int) -> (String, Double, Double) in ("mot\(i)", Double(i) * 0.3, Double(i) * 0.3 + 0.25) })
     var m = LiveLines(); m.add(long, final: true)
     check(m.lines.count == 2 && m.lines.allSatisfy { $0.words.count <= 14 }, "a long phrase is cut into lines of one sentence's length")

@@ -34,19 +34,36 @@ enum SpeechCore {
     }
     /// The fast transcriber's words past the sure one's finals, as one guess (SpeechLive `fast`): its own finals are
     /// kept as guesses until the sure finals reach them, then its latest volatile result follows them.
+    /// Where the sure finals end in the fast words is found by content, not by either clock: the two transcribers time
+    /// the same word apart (±0.3 s and more), and a time cut showed a short word twice or hid the next one. The cut is
+    /// after the fast word that is the last final word (same text, within `near` s); with no such word, by time.
     final class Ahead: @unchecked Sendable {
         private let lock = NSLock()
-        private var done: [Phrase] = [], now: Phrase?, sure = 0.0
+        private var done: [Phrase] = [], now: Phrase?, sure = 0.0, last: W?
+        static let near = 1.5
         /// A fast result in; the guess to show (nil: nothing past the finals).
         func guess(_ p: Phrase, final: Bool) -> Phrase? {
             lock.withLock { if final { done.append(p); now = nil } else { now = p }; return merged() }
         }
         /// A sure final in; the guess still to show past it.
         func final(_ p: Phrase) -> Phrase? {
-            lock.withLock { sure = max(sure, p.end); done.removeAll { $0.end <= sure + 0.05 }; return merged() }
+            lock.withLock {
+                if p.end >= sure, let w = p.words.last { sure = p.end; last = w }
+                let out = merged()
+                done.removeAll { $0.end < sure - Self.near }   // far behind the finals on any clock
+                return out
+            }
         }
+        static func key(_ t: String) -> String { t.lowercased().filter { $0.isLetter || $0.isNumber } }
         private func merged() -> Phrase? {
-            let ws = (done + (now.map { [$0] } ?? [])).flatMap(\.words).filter { $0.start >= sure - 0.05 }
+            let all = (done + (now.map { [$0] } ?? [])).flatMap(\.words)
+            var from = 0
+            if let last {
+                let k = Self.key(last.text)
+                if let i = all.lastIndex(where: { Self.key($0.text) == k && abs($0.end - last.end) <= Self.near }) { from = i + 1 }
+                else { from = all.firstIndex { $0.start >= sure - 0.05 } ?? all.count }
+            }
+            let ws = Array(all[from...])
             guard let a = ws.first, let b = ws.last else { return nil }
             return Phrase(start: a.start, end: b.end, text: ws.map(\.text).joined(separator: " "), words: ws)
         }
@@ -464,11 +481,21 @@ final class SpeechLive: @unchecked Sendable {
             if let g = ahead.final(p) { each(g, false) }     // what the fast one heard past these finals stays shown
         }
         var modules: [any SpeechModule] = [module], collect = sure
+        var side: Side?
         if two {
             let (quick, guesses) = SpeechEngine.make(m, l, lang, live: true, fast: true, custom: nil) { p, fin in
                 if let g = ahead.guess(SpeechEngine.unlead([p])[0], final: fin) { each(g, false) }
             }
-            modules.append(quick)
+            if Self.split, let qf = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [quick]) {
+                // measuring (hear-app --split): the fast module on its own analyzer, fed the same sound
+                let (qs, qi) = AsyncStream.makeStream(of: AnalyzerInput.self)
+                let qa = SpeechAnalyzer(modules: [quick], options: .init(priority: .userInitiated, modelRetention: .whileInUse))
+                try await qa.start(inputSequence: qs)
+                if let quiet = AVAudioPCMBuffer(pcmFormat: qf, frameCapacity: AVAudioFrameCount(qf.sampleRate * SpeechEngine.lead)) {
+                    quiet.frameLength = quiet.frameCapacity; qi.yield(AnalyzerInput(buffer: quiet))
+                }
+                side = Side(input: qi, conv: SpeechConverter(to: qf), analyzer: qa)
+            } else { modules.append(quick) }
             collect = Task { try await withTaskCancellationHandler { _ = try await sure.value; _ = try await guesses.value }
                              onCancel: { sure.cancel(); guesses.cancel() } }
         }
@@ -480,21 +507,34 @@ final class SpeechLive: @unchecked Sendable {
         if let quiet = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(fmt.sampleRate * SpeechEngine.lead)) {
             quiet.frameLength = quiet.frameCapacity; input.yield(AnalyzerInput(buffer: quiet))
         }
-        return SpeechLive(lang: lang, module: m, input: input, conv: SpeechConverter(to: fmt), analyzer: analyzer, collect: collect)
+        let s = SpeechLive(lang: lang, module: m, input: input, conv: SpeechConverter(to: fmt), analyzer: analyzer, collect: collect)
+        s.side = side
+        return s
     }
+
+    /// Measuring only (hear-app --split): the fast transcriber on a second analyzer instead of sharing the first.
+    nonisolated(unsafe) static var split = false
+    struct Side { let input: AsyncStream<AnalyzerInput>.Continuation; let conv: SpeechConverter; let analyzer: SpeechAnalyzer }
+    private var side: Side?
 
     func append(_ buf: AVAudioPCMBuffer) {
         lock.lock(); defer { lock.unlock() }
         if let c = conv.convert(buf) { input.yield(AnalyzerInput(buffer: c)) }
+        if let side, let c = side.conv.convert(buf) { side.input.yield(AnalyzerInput(buffer: c)) }
     }
 
     /// The last words finalized, then the stream let go.
     func finish() async {
-        input.finish()
+        input.finish(); side?.input.finish()
         try? await analyzer.finalizeAndFinishThroughEndOfInput()
+        if let side { try? await side.analyzer.finalizeAndFinishThroughEndOfInput() }
         _ = try? await collect.value
     }
-    func cancel() { input.finish(); collect.cancel(); Task { await analyzer.cancelAndFinishNow() } }
+    func cancel() {
+        input.finish(); side?.input.finish(); collect.cancel()
+        let a = analyzer, b = side?.analyzer
+        Task { await a.cancelAndFinishNow(); await b?.cancelAndFinishNow() }
+    }
 }
 
 /// A live stream heard in the language being spoken (S6, owner 11-09: the wrong language's model writes 91-100 % wrong

@@ -7490,7 +7490,10 @@ final class NativeSources {
         let t = liveEar.seconds, lines = liveEar.lines
         let last = lines.last { $0.start - 0.15 <= t }
         editable = nil
-        overlay.render(last.flatMap { t <= $0.end + 6 ? $0 : nil }, at: t, guess: (last?.id ?? 0) >= LiveLines.guessBase)   // a guess is dim until final
+        // a guess is dim until final, and leaves 2 s after its last word (a final stays 6 s): a guess never confirmed
+        // (the music took over) doesn't hang on into the instrumental (P7 critic 11-11)
+        let guess = (last?.id ?? 0) >= LiveLines.guessBase
+        overlay.render(last.flatMap { t <= $0.end + (guess ? 2 : 6) ? $0 : nil }, at: t, guess: guess)
         if overlay.browserControls { overlay.setControls(false) }
         if Date() > statusUntil {
             overlay.setStatus(liveEar.quiet > 8 ? "Hearing only silence from \(p.name) — another sound tool may hold its audio"

@@ -290,10 +290,16 @@ kept inside the vault, the power check, the `Line` → ShowsKit `TranscriptLine`
 `hear-app [app] [--seconds N] [--lang en|fr|vi] [--out file.json]` taps one app's sound (Safari through WebKit's
 GPU process) and transcribes it on this Mac, printing words as they come; `--out` saves them with their times.
 When several running processes share the name, it hears the newest one and prints which pid it chose.
-In the window, words show as soon as the ears guess them, drawn dim, and turn solid where the final words land. Two
-transcribers share one analyzer: a quick one (Apple's fast results) for the guesses, the careful one for the final words;
-`--single` hears with the careful one alone.
-`--out` also records `shown`: how far into the sound the shown words reached, and when, for measuring first-text lag.
+In the window, words show as soon as the ears guess them, drawn dim, and turn solid where the final words land; a guess
+leaves 2 s after its last word. Two transcribers share one analyzer, a quick one (Apple's fast results) for the guesses
+and the careful one for the final words. The ear takes the output device as its clock only when it has no microphone,
+so a headset's mic stays out of it. `--single` hears with the careful one alone; `--split` gives the quick one its own analyzer.
+Measured on Sororité through afplay, two clean runs each (11-11, this M1):
+- one analyzer, the default: first text 0.6 s after the word (median), p95 1.05 s; finals 74 and 76 words matched, WER 57 and 55 %; CPU 12 %
+- `--single`: first text 4.7 to 5.3 s, words arriving in 11.4 s batches; finals 86 and 88 matched, WER 50 and 51 %; CPU 11 %
+- `--split`: first text 0.9 to 1.0 s with stalls, p95 13 to 15 s; finals 83 and 87 matched, WER 51 and 52 %; CPU 21 %
+The known cost of the default is about 12 fewer exact final words in this song, the price of seeing words within a second.
+`--out` also records `seen`, each word with the moment it first showed, for measuring first-text lag.
 
 `RECENSE_INSTANCE=<name>` runs a separate copy of a build beside the installed one (its own lock, command channel and
 state file), for trying a build without replacing Recense.app: point it at a scratch vault with `DRAFTPAD=` and send it
