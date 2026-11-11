@@ -8111,7 +8111,10 @@ final class NativeSources {
             // The offset is heard time (media runs at `rate`); `shift` maps this source's clock onto a transcript
             // made from another source of the same recording.
             // ... less what Recense's own sound chain (EQ, Key, Space, the extractor) holds back, at the player's speed
-            let t = smoothTime() + (cfg.syncOffset - soundEngine.latency) * pos.rate - ep.shift
+            // ... and read for the moment this frame reaches the screen, one refresh after it's drawn (owner 11-10: the light
+            // was a frame late; FrameClock.lead, ShowsKit, the same rule the iPhone and iPad use)
+            let shown = displayLink.map(frameLead) ?? 0
+            let t = smoothTime() + (cfg.syncOffset - soundEngine.latency + shown) * pos.rate - ep.shift
             // a dense track (a choir): its words start Off, with Show in the Recense menu (item 22)
             let quiet = !ep.instrumental && lyricsOff(ep)
             lyricsItem?.title = quiet ? "Show Captions for This Track" : "Hide Captions for This Track"

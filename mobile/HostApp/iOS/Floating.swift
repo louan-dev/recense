@@ -34,6 +34,17 @@ enum Floating {
     /// (iPhone log 11-10 17:44–17:47: hidden in front, then "behind playing closed" on every leave).
     static func reattach(open: Bool, attached: Bool, closing: Bool) -> Bool { !open && !attached && !closing }
 
+    /// How far ahead the window's pictures are drawn and stamped (longer than the 1 s tick that draws them).
+    static let ahead = 1.5
+
+    /// When the lit line changes in the next `ahead` seconds after `now`, in the light's time: each word's start,
+    /// once each, in order. Each gets its own picture, stamped for that moment, so the window shows it on the refresh the
+    /// word starts on instead of at the next 10-a-second redraw (owner 11-10: "time each word light to the moment the
+    /// screen actually shows it").
+    static func onsets(_ starts: [Double], after now: Double, ahead: Double = ahead) -> [Double] {
+        Array(Set(starts.filter { $0 > now && $0 <= now + ahead })).sorted()
+    }
+
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
         if n.playing { return !n.open && n.hid && !n.tried && n.reshow != .refused ? .show : .none }

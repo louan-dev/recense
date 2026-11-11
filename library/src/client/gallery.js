@@ -5067,6 +5067,17 @@
     // being heard, at every speed, through Safari's deck and the output latency alike (item 22).
     // It reads the lines the captions show too (`version` changes whenever they do), so both draw the same times.
     const hook = { media: el, now: clock, lines: () => lines, version: 0 };
+    // A frame drawn now is on screen at the next refresh: the light is read for that moment, not for now (owner 11-10:
+    // "time each word light to the moment the screen actually shows it"; the Mac and iOS add the same lead, FrameClock).
+    // The refresh is the frame's start plus one period, the period learned from the frames' own spacing.
+    let fp = { ts: 0, dur: 1000 / 60 };
+    const shownLead = (ts) => {
+      if (!(ts > 0)) return 0;
+      const d = ts - fp.ts;
+      if (fp.ts > 0 && d > 4 && d < 34) fp.dur = 0.8 * fp.dur + 0.2 * d;
+      fp.ts = ts;
+      return Math.max(0, Math.min(fp.dur, ts + fp.dur - performance.now())) / 1000;
+    };
     globalThis.GalleryClock = hook;
 
     const box = mkEl("div", "tx learn");
@@ -6141,7 +6152,7 @@
 
     let gapNow = false;
     ambient(host, el, () => gapNow, false, () => openAll()); // between lines too, a tap is the editor
-    const paint = () => {
+    const paint = (ts) => {
       if (!box.isConnected) {
         if (globalThis.GalleryClock === hook) globalThis.GalleryClock = null;
         if (quiet) quiet.remove();
@@ -6149,7 +6160,7 @@
       }
       if (editing) return requestAnimationFrame(paint);
 
-      const now = clock();
+      const now = clock() + (el.paused ? 0 : shownLead(ts) * (el.playbackRate || 1));
       const follow = prefs.view === "follow";
       const shown = follow ? followPlaces(now) : learningPlaces(lines, now, el.paused);
       gapNow = !shown.length;

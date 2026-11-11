@@ -136,7 +136,8 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
   surest is kept (an English lesson they named Arabic came out empty); a correction leaves unchanged words on the voice.
 - **Translates** on this Mac with Apple's Translation framework, so the meaning sits beside the sound.
 - **Two ways of reading** (M switches). Follow puts the original above and the translation below; a band of light
-  crosses each word as it is spoken and the matching translated word at the same moment, so the light keeps its
+  crosses each word as it is spoken and the matching translated word at the same moment (read for the moment the frame
+  reaches the screen, one refresh after it's drawn: `frameLead`, 11-10), so the light keeps its
   direction even where word order doubles back. Learn keeps the original ahead to read and say along with, and lets
   a phrase turn into its translation once it has been heard.
 - **Learns from being corrected:** a word a correction introduces joins that language's glossary, which shapes what

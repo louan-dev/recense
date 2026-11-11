@@ -191,8 +191,9 @@ public struct TranscriptView<Extra: View>: View {
         self.active = active; self.seek = seek; self.duration = duration; self.empty = empty; self.extra = extra()
     }
 
-    /// The one playhead: the scrubber's while it's held, else the player's.
-    private func now() -> Double? { scrub.held ?? time() }
+    /// The one playhead: the scrubber's while it's held, else the player's at the moment this frame reaches the screen
+    /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed).
+    private func now() -> Double? { scrub.held ?? time().map { ticking ? $0 + FrameClock.shared.lead : $0 } }
 
     private var hasTranslations: Bool { lines.contains { !($0.translation ?? "").isEmpty } }
 
@@ -249,6 +250,8 @@ public struct TranscriptView<Extra: View>: View {
         }
         .background(LinearGradient(colors: [deep, Color(white: 0.06)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .onChange(of: scrub.held != nil) { _, held in if held { state.following = true } }
+        .onAppear { FrameClock.shared.start() }
+        .onDisappear { FrameClock.shared.stop() }
         .sheet(isPresented: $state.selecting) {
             SelectTextSheet(text: TranscriptLight.text(lines, translations: hasTranslations && state.translations), close: { state.selecting = false })
         }

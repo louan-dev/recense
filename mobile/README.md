@@ -111,6 +111,9 @@ updates in place.
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
   time, the last on screen (11-10: both took it on every layout and iOS's watchdog ended Recense as Now Playing opened).
   The floating window's middle button holds the words where they are and play shows the newest.
+  Its words light on the refresh they start on: each coming word's picture is drawn up to 1.5 s ahead and stamped for
+  that moment (`Floating.onsets`); the layer runs on the host clock and shows it then. Before (11-10), a word waited
+  for the next redraw, at most 10 a second and up to a second behind other apps.
   Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
   heard while iOS had the app asleep or closed still reaches the episode.

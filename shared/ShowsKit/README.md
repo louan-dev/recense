@@ -36,6 +36,9 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Used by iOS Listen and Now Playing.
     The light redraws every screen frame, at most 60 a second (`TranscriptLight.frame`), as the Mac's display link
     does; at the old 12 a second a word could light up to 83 ms late (the owner's bar is 50 ms against the Mac).
+    Each frame reads the playhead for the moment it reaches the screen, one refresh after it's drawn (`FrameClock`,
+    the display link's target time; 11-10: lit for "now", every word was a frame late). The Mac's window and the web
+    player add the same lead.
     The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
     before its first word lights, so the eye lands on a resting line. It waits for the outgoing line's last word first
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.

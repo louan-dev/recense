@@ -37,4 +37,8 @@ if Floating.reattach(open: false, attached: false, closing: true) { bad += 1; pr
 if Floating.reattach(open: true, attached: false, closing: false) { bad += 1; print("FAIL reattach while open") }
 if Floating.reattach(open: false, attached: true, closing: false) { bad += 1; print("FAIL reattach attached") }
 
+// each coming word gets its own picture, stamped for its start; past ones and ones too far ahead don't
+let on = Floating.onsets([9.0, 10.2, 10.2, 10.6, 11.4, 13.0], after: 10.0, ahead: 1.5)
+if on != [10.2, 10.6, 11.4] { bad += 1; print("FAIL onsets \(on)") }
+if !Floating.onsets([10.0], after: 10.0).isEmpty { bad += 1; print("FAIL onset at now is already shown") }
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

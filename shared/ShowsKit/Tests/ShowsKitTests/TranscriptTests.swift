@@ -131,4 +131,18 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(TranscriptLight.turn(paused, to: 1).at, 5 - TranscriptLight.lead, accuracy: 1e-9)
         XCTAssertEqual(TranscriptLight.turn(paused, to: 1).scroll, TranscriptLight.scroll)
     }
+
+    /// A light worked out for "now" is seen one refresh later: the playhead is read at the frame's on-screen time.
+    func testFrameLeadIsTheTimeToTheNextRefresh() {
+        let p = 1.0 / 60
+        XCTAssertEqual(FrameClock.lead(now: 10.000, target: 10.010, period: p), 0.010, accuracy: 1e-9)
+        // a target already passed moves on by whole refreshes
+        XCTAssertEqual(FrameClock.lead(now: 10.020, target: 10.010, period: p), 10.010 + p - 10.020, accuracy: 1e-9)
+        XCTAssertEqual(FrameClock.lead(now: 10.050, target: 10.010, period: p), 10.010 + 3 * p - 10.050, accuracy: 1e-9)
+        // no refresh seen yet: one period (the frame being drawn shows at the next refresh)
+        XCTAssertEqual(FrameClock.lead(now: 10, target: 0, period: p), p, accuracy: 1e-9)
+        // never more than one refresh, never negative
+        XCTAssertLessThanOrEqual(FrameClock.lead(now: 5, target: 9, period: p), p)
+        XCTAssertGreaterThanOrEqual(FrameClock.lead(now: 10.010, target: 10.010, period: p), 0)
+    }
 }

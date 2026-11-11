@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import QuartzCore
 #if canImport(ShowsKit)
 import ShowsKit
 #endif
@@ -187,3 +188,9 @@ extension Line {
     }
 }
 #endif
+
+/// Seconds until a frame drawn in this display link's callback reaches the screen (ShowsKit's FrameClock.lead): the
+/// Mac's light adds it, so a word lights on the refresh its sound is heard, not one after (owner 11-10).
+@MainActor func frameLead(_ l: CADisplayLink) -> Double {
+    FrameClock.lead(now: CACurrentMediaTime(), target: l.targetTimestamp, period: l.targetTimestamp - l.timestamp)
+}

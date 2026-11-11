@@ -1034,37 +1034,70 @@ final class Listener: NSObject, ObservableObject {
     private var drawSoon = false
 
     /// Draws what the floating window shows, in the transcript's look (ShowsKit's TranscriptLineText, as Read along):
-    /// a new picture only when what it shows changes, at most 10 a second; the same one again each second, as PiP
-    /// goes stale without frames.
+    /// a new picture when what it shows changes (at most 10 a second), the same one again each second, as PiP goes stale
+    /// without frames; and, ahead of time, one picture per coming word, stamped for the moment it starts (the layer runs on
+    /// the host clock and shows each on the refresh its word starts on; before, a word waited for the next redraw, up to
+    /// a second late behind other apps).
     func draw() {
-        if Listener.held { return }
-        let (rows, note) = frame()
-        let key = rows.map { "\($0.line.id)|\($0.line.text)|\($0.line.translation ?? "")|\($0.cut)|\(Int($0.alpha * 10))|\(Int($0.turned * 10))" }.joined(separator: "/") + (note ?? "")
-        let since = Date().timeIntervalSince(drawnAt)
-        if key == drawnKey, since < 1 { return }
-        if since < 0.1 {
-            guard !drawSoon else { return }
-            drawSoon = true
-            Task { try? await Task.sleep(for: .milliseconds(100)); drawSoon = false; draw() }
-            return
+        if Listener.held { if !queued.isEmpty { layer.flush(); queued = [] }; return }
+        let wall = Date(), nowL = wall.timeIntervalSince1970 - lag
+        let (rows, note) = frame(at: wall)
+        let key = Self.key(rows, note), shape = Self.key(rows.map(\.unlit), note)
+        // a picture stamped ahead that's on screen by now already shows this
+        if let shown = queued.last(where: { $0.at <= nowL }) { drawnKey = shown.key; drawnAt = wall }
+        queued.removeAll { $0.at <= nowL }
+        let stale = shape != queuedShape || abs(lag - queuedLag) > 0.008
+        let since = wall.timeIntervalSince(drawnAt)
+        if key != drawnKey || since >= 1 || stale {
+            if since < 0.1 {
+                guard !drawSoon else { return }
+                drawSoon = true
+                Task { try? await Task.sleep(for: .milliseconds(100)); drawSoon = false; draw() }
+                return
+            }
+            guard let sb = picture(rows, note, at: nil) else { return }
+            if layer.status == .failed || !queued.isEmpty || stale { layer.flush() }   // keeps the picture on screen
+            queued = []; queuedShape = shape; queuedLag = lag
+            drawnKey = key; drawnAt = wall
+            layer.enqueue(sb)
         }
-        drawnKey = key; drawnAt = Date()
+        // the coming words of the lit line(s), each in its own picture stamped for its start
+        let starts = rows.filter(\.on).flatMap { $0.line.words.map(\.start) }
+        let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+        for at in Floating.onsets(starts, after: queued.last?.at ?? nowL) where at - nowL > 0.004 {
+            let (r, n) = frame(at: Date(timeIntervalSince1970: at + lag + 0.0005))
+            guard let sb = picture(r, n, at: host + (at - nowL)) else { break }
+            layer.enqueue(sb)
+            queued.append((at, Self.key(r, n)))
+        }
+    }
+    /// Pictures stamped ahead, in the light's time, with what each shows; the shape (lines without their light) and lag
+    /// they were drawn for: either changing makes them wrong, so they're dropped and drawn again.
+    private var queued: [(at: Double, key: String)] = []
+    private var queuedShape = ""
+    private var queuedLag = 0.0
+
+    private static func key(_ rows: [FloatingCaption.Row], _ note: String?) -> String {
+        rows.map { "\($0.line.id)|\($0.line.text)|\($0.line.translation ?? "")|\($0.cut)|\(Int($0.alpha * 10))|\(Int($0.turned * 10))" }.joined(separator: "/") + (note ?? "")
+    }
+
+    /// One picture of the window; `at` (host-clock seconds) stamps it for that moment, nil shows it at once.
+    private func picture(_ rows: [FloatingCaption.Row], _ note: String?, at: Double?) -> CMSampleBuffer? {
         let r = ImageRenderer(content: FloatingCaption(rows: rows, learn: look == "learn", note: note)
             .frame(width: Self.canvas.width, height: Self.canvas.height)
             .environment(\.dynamicTypeSize, .xLarge))
         r.scale = 3
-        guard let cg = r.cgImage, let sb = Self.sample(cg) else { return }
-        if layer.status == .failed { layer.flush() }
-        layer.enqueue(sb)
+        guard let cg = r.cgImage else { return nil }
+        return Self.sample(cg, at: at)
     }
 
     /// What the window shows now: Follow, the sentence before (quiet) and the one being heard (lit as it's said, its
     /// translation under it); Learn, two places taking turns, each sentence dissolving into its translation once heard.
-    private func frame() -> ([FloatingCaption.Row], String?) {
+    private func frame(at wall: Date = Date()) -> ([FloatingCaption.Row], String?) {
         guard let p = episode?.place, p < sentences.count else {
             return ([], hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off")
         }
-        let two = config != nil, now = Date().timeIntervalSince1970 - lag
+        let two = config != nil, now = wall.timeIntervalSince1970 - lag
         func line(_ s: Sentence, said: Bool) -> TranscriptLine {
             TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: s.words ?? [],
                            translation: said && two && !s.said.isEmpty ? s.said : nil)
@@ -1072,10 +1105,10 @@ final class Listener: NSObject, ObservableObject {
         if look == "learn" {
             let cur = sentences[p]
             return ((0..<2).compactMap { k -> FloatingCaption.Row? in
-                let t = Date().timeIntervalSince(slots[k].since), old = t < 0.15
+                let t = wall.timeIntervalSince(slots[k].since), old = t < 0.15
                 guard let s = old ? slots[k].was : slots[k].now else { return nil }
                 let a = old ? 1 - t / 0.15 : min(1, (t - 0.15) / 0.4)
-                let turned = !two || s.said.isEmpty || s.id == cur.id ? 0 : old ? 1 : min(1, Date().timeIntervalSince(slots[k].heard ?? Date()) / 0.3)
+                let turned = !two || s.said.isEmpty || s.id == cur.id ? 0 : old ? 1 : min(1, wall.timeIntervalSince(slots[k].heard ?? wall) / 0.3)
                 let on = s.id == cur.id
                 return FloatingCaption.Row(line: line(s, said: false), on: on, t: on ? now : nil, alpha: a, said: s.said.isEmpty ? nil : s.said, turned: turned)
             }, nil)
@@ -1086,7 +1119,7 @@ final class Listener: NSObject, ObservableObject {
         return (rows, nil)
     }
 
-    private static func sample(_ cg: CGImage) -> CMSampleBuffer? {
+    private static func sample(_ cg: CGImage, at: Double? = nil) -> CMSampleBuffer? {
         var pb: CVPixelBuffer?
         let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
         guard CVPixelBufferCreate(nil, cg.width, cg.height, kCVPixelFormatType_32BGRA, attrs, &pb) == kCVReturnSuccess, let pb else { return nil }
@@ -1099,10 +1132,11 @@ final class Listener: NSObject, ObservableObject {
         var fmt: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pb, formatDescriptionOut: &fmt)
         guard let fmt else { return nil }
-        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
+        let pts = at.map { CMTime(seconds: $0, preferredTimescale: 1_000_000_000) } ?? CMClockGetTime(CMClockGetHostTimeClock())
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: pts, decodeTimeStamp: .invalid)
         var sb: CMSampleBuffer?
         CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pb, formatDescription: fmt, sampleTiming: &timing, sampleBufferOut: &sb)
-        if let sb, let a = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true), CFArrayGetCount(a) > 0 {
+        if at == nil, let sb, let a = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true), CFArrayGetCount(a) > 0 {
             let d = unsafeBitCast(CFArrayGetValueAtIndex(a, 0), to: CFMutableDictionary.self)
             CFDictionarySetValue(d, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
@@ -1406,6 +1440,8 @@ struct FloatingCaption: View {
         var turned = 0.0
         /// how much of the line is lit, so a frame is drawn again when the light moves
         var cut: Int { guard on, let t else { return -1 }; return line.text.distance(from: line.text.startIndex, to: TranscriptLight.spoken(line, at: t)) }
+        /// The same row without its light: what it shows apart from how far it's been said.
+        var unlit: Row { var r = self; r.t = nil; return r }
     }
     let rows: [Row]
     let learn: Bool
