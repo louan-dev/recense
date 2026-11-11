@@ -43,6 +43,7 @@ struct Config {
     var language = "", delay = 8.0, syncOffset = 0.0
     var geniusToken = ""                       // optional: finds a song's lyrics from the words sung when its title doesn't
     var r2Account = "", r2Key = "", r2Secret = "", r2Bucket = "recense-tmp"   // optional: offsite, self-deleting media cache
+    var earOut = ""                            // optional, for measuring: a folder each live transcript (appear.swift) is written to when it stops
     static func load() -> Config {
         var kv: [String: String] = [:]
         let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/recense/config")
@@ -62,6 +63,7 @@ struct Config {
         c.geniusToken = kv["GENIUS_TOKEN"] ?? ""
         c.r2Account = kv["R2_ACCOUNT_ID"] ?? ""; c.r2Key = kv["R2_ACCESS_KEY_ID"] ?? ""; c.r2Secret = kv["R2_SECRET_ACCESS_KEY"] ?? ""
         c.r2Bucket = kv["R2_BUCKET"] ?? c.r2Bucket
+        c.earOut = kv["RECENSE_EAR_OUT"] ?? ""
         return c
     }
 }
@@ -1835,7 +1837,7 @@ final class Overlay: NSObject, NSWindowDelegate {
     func setStatus(_ s: String) { if status.stringValue != s { status.stringValue = s }; status.isHidden = s.isEmpty }
 
     /// Bilingual: the original over its English, both lit as they're spoken. No English when the speech is English.
-    func render(_ line: Line?, at t: Double, upcomingOnly: Bool = false) {
+    func render(_ line: Line?, at t: Double, upcomingOnly: Bool = false, guess: Bool = false) {
         if blankCanvas() { return }
         guard let line else {
             if lastKey != "none" { words.places = nil; words.drum = nil; words.blocks = []; lastKey = "none" }
@@ -1846,7 +1848,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         let box = area.bounds.size
         let translated = english.map { !$0.isEmpty } ?? false
         // Redraw every frame while time moves (the light is continuous); nothing to do while paused.
-        let key = "\(line.id)/\(upcomingOnly ? -1 : Int((t * 1000).rounded()))/\(english?.count ?? -1)/\(Int(width))x\(Int(box.height))/r\(Reader.stamp)"
+        let key = "\(line.id)/\(guess)/\(upcomingOnly ? -1 : Int((t * 1000).rounded()))/\(english?.count ?? -1)/\(Int(width))x\(Int(box.height))/r\(Reader.stamp)"
         guard key != lastKey else { return }
         lastKey = key
 
@@ -1863,7 +1865,7 @@ final class Overlay: NSObject, NSWindowDelegate {
         func build(_ base: CGFloat) -> Bool {
             let big = NSFont.systemFont(ofSize: base * mx.l1, weight: .semibold)
             let small = NSFont.systemFont(ofSize: base * mx.l2, weight: .regular)
-            blocks = showL1 ? [sourceBeats(line).map { .init(top: dim(ink($0, at: at, font: big), translated ? mx.a1 : 1)) }] : []
+            blocks = showL1 ? [sourceBeats(line).map { .init(top: dim(ink($0, at: at, font: big), (translated ? mx.a1 : 1) * (guess ? 0.5 : 1))) }] : []
             if let english, translated {
                 if showL2 { blocks.append(englishBeats(line, english).map { .init(top: dim(ink($0, at: at, font: small), mx.a2)) }) }
             } else if english == nil, showL2 {
@@ -7059,7 +7061,12 @@ final class NativeSources {
     var sigint: DispatchSourceSignal?, sigterm: DispatchSourceSignal?
     var server: Server?
     var episode: Episode?
-    var episodeState = ""                      // loading | ready | need-bytes | failed
+    var episodeState = "" { didSet { if episodeState != oldValue { episodeStateSince = Date() } } }   // loading | ready | need-bytes | failed
+    var episodeStateSince = Date()
+    /// P7: any app's own sound heard live on this Mac when nothing followed has a transcript (appear.swift).
+    let liveEar = LiveEar()
+    var liveChecked = 0.0, liveQuietSince: Date?, liveRetry = Date.distantPast, liveStarting = false
+    var liveSilent: [pid_t: Date] = [:]   // apps with an open stream found silent, not probed again for 15 s
     var browserMode = false                    // a player with exact sync has the window
     var exportItem: NSMenuItem!
     var globalPaused = true     // the system's ⏯ state as last pressed here (macOS 15.4+ won't say what is playing)
@@ -7222,6 +7229,17 @@ final class NativeSources {
         let ly = m.addItem(withTitle: "Hide Captions for This Track", action: #selector(toggleLyrics), keyEquivalent: "")
         ly.target = self
         lyricsItem = ly
+        // P7: guesses within a second from a quicker second transcriber, at the finals' cost; off by default
+        let soon = m.addItem(withTitle: "Show Words Sooner (Less Accurate)", action: #selector(toggleWordsSooner), keyEquivalent: "")
+        soon.target = self
+        soon.state = EarMode.sooner() ? .on : .off
+        soonerItem = soon
+        NotificationCenter.default.addObserver(forName: EarMode.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.soonerItem?.state = EarMode.sooner() ? .on : .off
+                if self?.liveEar.running == true { self?.liveEar.stop() }   // heard again, the new way, within a second
+            }
+        }
         // Text Size and Balance: two compact rows, applied as they move
         let redraw = { [weak self] in self?.overlay.lastKey = ""; self?.overlay.fits = [:] }
         var sizeRow: ReaderRow!
@@ -7428,6 +7446,73 @@ final class NativeSources {
         guard var b = Bookmarks.all[bookmarkKey], b.indices.contains(i.tag) else { return }
         b.remove(at: i.tag); Bookmarks.all[bookmarkKey] = b.isEmpty ? nil : b; Bookmarks.save()
     }
+    /// The app the followed player lives in, by bundle id (nil: none reports).
+    var followedBundle: String? {
+        guard reported, !pos.url.isEmpty else { return nil }
+        switch pos.source {
+        case "browser": return "org.mozilla.firefox"
+        case "quicktime": return "com.apple.QuickTimePlayerX"
+        case "music": return "com.apple.Music"
+        default: return pos.source
+        }
+    }
+
+    /// P7: no followed player has words to show (none reports, or its audio can't be fetched): whatever app is
+    /// playing is heard live from its own sound, on this Mac, and its words shown as they come. Checked once a second;
+    /// an app quiet for 5 s is let go. True when the window shows the live words.
+    @discardableResult func renderLive() -> Bool {
+        guard LiveEar.available else { return false }
+        let now = CACurrentMediaTime()
+        if now - liveChecked > 1, !liveStarting {
+            liveChecked = now
+            let playing = AppEar.playing()
+            if let p = liveEar.player {
+                liveEar.refresh()
+                // an open stream gone silent for 12 s: the ear lets go, so an app that plays can have it
+                if liveEar.quiet > 12 { liveEar.stop(); liveSilent[p.pid] = Date(); liveQuietSince = nil }
+                else if playing.contains(where: { $0.pid == p.pid }) { liveQuietSince = nil }
+                else if Date().timeIntervalSince(liveQuietSince ?? { liveQuietSince = Date(); return Date() }()) > 5 { liveEar.stop(); liveQuietSince = nil }
+            }
+            let fresh = playing.filter { Date().timeIntervalSince(liveSilent[$0.pid] ?? .distantPast) > 15 }
+            if !liveEar.running, Date() > liveRetry, !fresh.isEmpty, #available(macOS 14.2, *) {
+                liveStarting = true
+                Task { @MainActor in
+                    defer { self.liveStarting = false }
+                    // only an app that is sounding is heard (an open, silent stream isn't playing)
+                    let (loud, refused) = await AppEar.audible(fresh)
+                    for p in fresh where !loud.contains(p) { self.liveSilent[p.pid] = Date() }
+                    self.liveEar.denied = refused
+                    if refused { self.liveRetry = Date().addingTimeInterval(60); return }
+                    guard let p = AppEar.choose(loud, followed: self.followedBundle, front: NSWorkspace.shared.frontmostApplication?.processIdentifier) else { return }
+                    let ok = await self.liveEar.start(p, first: self.liveEar.lang, fast: EarMode.sooner())
+                    if !ok { self.liveRetry = Date().addingTimeInterval(self.liveEar.refused ? 60 : 10) }
+                }
+            }
+        }
+        guard let p = liveEar.player else {
+            if liveEar.refused, Date() > statusUntil {
+                overlay.render(nil, at: 0)
+                overlay.setStatus("To hear other apps: System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording ▸ Recense")
+                return true
+            }
+            return false
+        }
+        // the words are timed on the app's own sound since the tap began; they show as they're heard
+        let t = liveEar.seconds, lines = liveEar.lines
+        let last = lines.last { $0.start - 0.15 <= t }
+        editable = nil
+        // a guess is dim until final, and leaves 2 s after its last word (a final stays 6 s): a guess never confirmed
+        // (the music took over) doesn't hang on into the instrumental (P7 critic 11-11)
+        let guess = (last?.id ?? 0) >= LiveLines.guessBase
+        overlay.render(last.flatMap { t <= $0.end + (guess ? 2 : 6) ? $0 : nil }, at: t, guess: guess)
+        if overlay.browserControls { overlay.setControls(false) }
+        if Date() > statusUntil {
+            overlay.setStatus(liveEar.quiet > 8 ? "Hearing only silence from \(p.name) — another sound tool may hold its audio"
+                              : "Live from \(p.name) · heard on this Mac")
+        }
+        return true
+    }
+
     var sourceName: String {
         switch pos.source {
         case "browser": return "browser tab"
@@ -7454,6 +7539,8 @@ final class NativeSources {
         lyricsGate = (ep.key, ep.lines.count, ep.features != nil, off)
         return off
     }
+    var soonerItem: NSMenuItem?
+    @objc func toggleWordsSooner() { EarMode.set(sooner: !EarMode.sooner()) }
     @objc func toggleLyrics() {
         guard let ep = episode else { return }
         var c = lyricsChoice; c[ep.key] = lyricsOff(ep); lyricsChoice = c
@@ -8100,6 +8187,10 @@ final class NativeSources {
             return
         }
         if browserMode, let ep = episode {
+            // its audio can't be fetched (a stream with no address, no connection): heard live from the app instead
+            let stuck = AppEar.stuck(hasLines: !ep.lines.isEmpty, state: episodeState, for: Date().timeIntervalSince(episodeStateSince))
+            if stuck, Date().timeIntervalSince(episodeStateSince) > 3, renderLive() { return }
+            if !stuck, liveEar.running { liveEar.stop() }
             // A stream whose length isn't the transcribed audio's: an ad is playing in the page's player.
             let length = ep.playDuration ?? ep.duration
             if ep.url.hasPrefix("blob:"), pos.dur > 0, length > 0, abs(pos.dur - length) > 3 {
@@ -8166,7 +8257,8 @@ final class NativeSources {
             else { overlay.setStatus("") }
             return
         }
-        // Nothing with exact sync is playing: no guessing at other apps' audio.
+        // Nothing with exact sync is playing: whatever app plays is heard live from its own sound (P7).
+        if renderLive() { return }
         editable = nil
         overlay.render(nil, at: 0)
         // A player is reporting but there's no transcript (no speech, or its audio couldn't be fetched): the home bar

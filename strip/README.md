@@ -228,6 +228,7 @@ strip/
   recense.swift      Recense: players, transcripts, light, editor, export
   keephome.swift     where transcripts live (~/Recense/keep), the move out of the cache (recense selftest)
   soundengine.swift  process tap and EQ/Key/Space chain
+  appear.swift       the app ear: any app's sound, transcribed live on this Mac (recense hear-app, recense selftest)
   cadence.swift      the karaoke light's timing
   prosody.swift      prosody notation
   speech.swift       on-device transcription (SpeechAnalyzer): the Mac's choices (open ears, canon, lexicon)
@@ -276,7 +277,7 @@ macOS 27 SDK, which on-device hearing needs.
 
 ## Commands
 
-`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons | draftpad-flip | draftpad-flip-go | wing-left | wing-right | wing-close`
+`./recense up | down | pad | time | show | hide | toggle | quit | status | background | editor-new | editor-classic | show-icons | draftpad-flip | draftpad-flip-go | wing-left | wing-right | wing-close | words-sooner-on | words-sooner-off`
 
 `selftest` runs the checks that need no running copy, network or permissions, and exits 1 if any fails: measuring audio
 too short for one 10 ms frame (it crashed Recense while idle on 11-03 and 11-04), that the hider watches no key or
@@ -293,6 +294,20 @@ kept inside the vault, the power check, the `Line` → ShowsKit `TranscriptLine`
 `background` launches it hidden (the login item uses this).
 `show-icons` shows the menu-bar hider's hidden icons (launching Recense hidden first if it isn't running).
 `wing-left` / `wing-right` open a wing panel, `wing-close` closes both.
+
+`hear-app [app] [--seconds N] [--lang en|fr|vi] [--out file.json]` taps one app's sound (Safari through WebKit's
+GPU process) and transcribes it on this Mac, printing words as they come; `--out` saves them with their times.
+When several running processes share the name, it hears the newest one and prints which pid it chose.
+In the window, words show as soon as the ears guess them, drawn dim, and turn solid where the final words land; a guess
+leaves 2 s after its last word. The careful transcriber hears by default, for the most exact final words, the transcript that is kept, studied and exported.
+Recense's menu ▸ Show Words Sooner (Less Accurate), or `./recense words-sooner-on` / `words-sooner-off`, adds a quick
+second transcriber (Apple's fast results) on the same analyzer for the guesses; `hear-app --sooner` does the same.
+The ear takes the output device as its clock only when it has no microphone, so a headset's mic stays out of it.
+`--split` (measuring only) gives the quick one its own analyzer. Sororité through afplay, two clean runs each (11-11, this M1):
+- careful alone, the default: first text 4.7 to 5.3 s after the word (median), in 11.4 s batches; finals 86 and 88 words matched, WER 50 and 51 %; CPU 11 %
+- Show Words Sooner: first text 0.6 s (median), p95 1.05 s; finals 74 and 76 matched, WER 57 and 55 %; CPU 12 %
+- `--split`: first text 0.9 to 1.0 s with stalls, p95 13 to 15 s; finals 83 and 87 matched, WER 51 and 52 %; CPU 21 %
+`--out` also records `seen`, each word with the moment it first showed, for measuring first-text lag.
 
 `RECENSE_INSTANCE=<name>` runs a separate copy of a build beside the installed one (its own lock, command channel and
 state file), for trying a build without replacing Recense.app: point it at a scratch vault with `DRAFTPAD=` and send it
