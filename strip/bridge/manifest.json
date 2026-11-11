@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Recense Bridge",
-  "version": "2.1.15",
+  "version": "2.1.16",
   "description": "Sends the playing audio/video and its exact position to the Recense Mac app.",
   "browser_specific_settings": {
     "gecko": {

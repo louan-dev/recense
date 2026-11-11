@@ -319,11 +319,16 @@
   const AD_PLAYER = ".ad-showing, .ad-interrupting, .vjs-ad-playing, .vjs-ad-loading, .jw-flag-ads, .ima-ad-container, " +
     "[id^='google_ads_iframe'], [data-ad-slot], [data-google-query-id]";
   const AD_TOKEN = /(^|[\s_-])(ad|ads|advert|adverts|advertisement|preroll|midroll|adslot|adunit|ad-?container|sponsored)([\s_-]|$)/i;
+  // A player that says itself when it shows an ad (AD_PLAYER) is believed: its other names say nothing about now.
+  // YouTube keeps "ad-created" on its player for the whole video once an ad has loaded, and that word alone made the
+  // video an ad: Skip Ad then ran the video itself to its end, and it was never transcribed (P6, 2026-11-10).
+  const PLAYER = ".html5-video-player, .video-js, .jwplayer";
   function adNow(m) {
     if (adFrame) return true;
     try {
       if (m.closest(AD_PLAYER)) return true;
       if (AD_HOSTS.test(hostOf(m.currentSrc))) return true;
+      if (m.closest(PLAYER)) return false;
       let el = m.parentElement;
       for (let i = 0; el && i < 6; i++, el = el.parentElement) {
         if (AD_TOKEN.test(el.id || "") || AD_TOKEN.test(typeof el.className === "string" ? el.className : "")) return true;
@@ -334,15 +339,17 @@
   // Skip: the player's own Skip button when it shows one, and the ad run to its end either way: YouTube ignores a
   // script's click on its button (not isTrusted), so the click alone did nothing (notes 39). An ad with no end
   // (a stream) is sped through; one in its own element (not the page's player, which the video plays in next) is
-  // muted so the video takes back over.
+  // muted so the video takes back over. Between an ad and the video the element has no source (duration NaN): there
+  // is nothing to skip, and muting or speeding it then left the video that came next muted.
   const SKIP = ".ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, .vjs-ad-skip, " +
     ".jw-skip, .skip-ad, .skipAd, [class*='skip-ad' i], [class*='skipad' i], [aria-label*='skip ad' i]";
   function skipAd(m) {
-    const root = m.closest(".html5-video-player, .video-js, .jwplayer") || m.getRootNode() || document;
+    const root = m.closest(PLAYER) || m.getRootNode() || document;
     const btns = [...root.querySelectorAll(SKIP), ...[...root.querySelectorAll("button, [role=button]")].filter((b) => /^\s*skip( ad)?\b/i.test(b.textContent || ""))];
     const btn = btns.find((b) => b.offsetParent !== null || b.getClientRects().length);
     if (btn) { try { btn.click(); } catch (e) {} }
     if (Number.isFinite(m.duration) && m.duration > 0) { try { m.currentTime = Math.max(0, m.duration - 0.05); } catch (e) {} }
+    else if (!m.currentSrc || Number.isNaN(m.duration)) return;
     else { try { m.muted = true; m.playbackRate = 16; } catch (e) {} }
     if (m.paused) m.play().catch(() => {});
     if (!m.closest(".html5-video-player")) m.muted = true;

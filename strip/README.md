@@ -125,6 +125,13 @@ the panel from any layer. Moving the pointer off the panel never closes it: once
 Recense is built for learning by ear, eye and rhythm together; each feature below adds a sense to the same line.
 - **Follows what plays** in QuickTime, Music, Safari, Chrome, Firefox and Gallery pages, or opens local files; the
   transcript shows as a see-through strip below the menu bar and notch, or in its own window.
+- **Skip Ad** (the window's button, shown only while the followed page plays an ad) skips only the ad: the page
+  player's own Skip button when it shows one, otherwise the ad run to its end; the video then plays from where it was
+  (0:00 after a pre-roll). The Firefox bridge (`bridge/content.js`) decides what is an ad by the player's own flag
+  (`ad-showing` on YouTube): YouTube leaves `ad-created` on its player for the whole video, and that word alone once
+  made the video itself an ad, so Skip Ad ran it to its end (fixed in bridge 2.1.16). Test:
+  `node strip/bridge/test/ads.test.mjs` (headless Chromium on a page that mimics YouTube's ad states; needs
+  `npm install` in `library/` for Playwright).
 - **Hears** on this Mac: Apple SpeechAnalyzer for each system language (corrections teach it), the open ears
   (Omnilingual ASR) for the rest, and the canon for recited texts. A song is heard in one script (Amharic in Ge'ez,
   not the Arabic letters the open ears drift into), and lines heard again keep the song's language.
@@ -234,6 +241,7 @@ strip/
   ears/omni.py       the open ears' worker (Omnilingual ASR)
   canon/             recited texts (Pali, Sanskrit) and tools/mkcanon.py
   homebar/           the home-bar host page
+  bridge/            the Firefox bridge (reports the playing media, runs the window's controls, Skip Ad); test/ads.test.mjs
   Sources/recense/   links to the files above for the Swift package
   build.sh, Package.swift, scripts/, launchagent/
 ```
