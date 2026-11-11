@@ -1,0 +1,46 @@
+{
+  "manifest_version": 2,
+  "name": "Recense Bridge",
+  "version": "2.1.15",
+  "description": "Sends the playing audio/video and its exact position to the Recense Mac app.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "recense@local",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "<all_urls>",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "room.js",
+        "content.js"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_start"
+    }
+  ],
+  "browser_action": {
+    "default_title": "Recense",
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    "player-key.js"
+  ]
+}
