@@ -179,4 +179,6 @@ profile is renewed first when 2 days or less are left). Per-device stamps: `~/Li
 `gallery-access`) into `Secrets/token.json`, which git ignores.
 
 ## Testing on the iPhone
-`zsh mobile/ios/mirror-shot.zsh <out.png> --launch` opens Recense on the iPhone through iPhone Mirroring and screenshots that window; builds are checked there, not in the simulator.
+`zsh mobile/ios/mirror-shot.zsh <out.png> --launch` opens Recense on the iPhone through iPhone Mirroring and screenshots that window; builds are checked there, not in the simulator. It
+launches Recense paused for that run (its mic otherwise blocks Mirroring); Mirroring ignores scrolling sent from the Mac, so screens below
+the fold are checked on the phone in hand.

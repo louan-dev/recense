@@ -10,7 +10,9 @@ IPHONE=${IPHONE_UDID:-00008101-001A50643A98001E}
 APP=${APP_ID:-com.chauphan.galleryfiles}   # APP_ID=com.chauphan.recense.guest for Recense Guest
 
 if [[ $2 == --launch ]]; then
-  xcrun devicectl device process launch --terminate-existing --device $IPHONE $APP >/dev/null \
+  # launched paused (this run only; the saved setting stays): Listen's mic otherwise holds the iPhone microphone, and
+  # iPhone Mirroring won't connect while it's in use ("iPhone Microphone in Use", 11-10)
+  xcrun devicectl device process launch --terminate-existing --device $IPHONE $APP -- -listen.paused YES >/dev/null \
     || { print -u2 "couldn't launch $APP on $IPHONE (is it installed and connected?)"; exit 1; }
 fi
 
