@@ -1,1 +1,1 @@
-"NSMicrophoneUsageDescription" = "Recense nghe âm thanh trong phòng khi bạn phát nội dung qua loa, và chỉ giữ lại văn bản, không bao giờ giữ âm thanh.";
+/* Kept so iOS lists this app in French and Vietnamese; the microphone text went with the mic (11-11). */

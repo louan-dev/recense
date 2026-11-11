@@ -38,7 +38,7 @@ struct Episode: Identifiable, Codable, Hashable {
     var place: Int = 0
     var updated: Double = 0  // ms since 1970, the newer copy wins
     var by: String? = nil    // "iphone", "ipad" or "mac": who played it last (the Mac resumes where another left off)
-    var ear: String? = nil   // what heard it: "broadcast" (another app's sound itself) or "mic" (the room, MicEar.swift)
+    var ear: String? = nil   // what heard it: "broadcast" (another app's sound itself); "mic" (the room) before 11-11
     var sentences: [Sentence] = []
     var id: String { key }
 
@@ -61,11 +61,7 @@ final class Listener: NSObject, ObservableObject {
     @Published var route: Ears.Route = .speaker
     @Published var paused = UserDefaults.standard.bool(forKey: "listen.paused") { didSet { if paused != oldValue { draw() } } }
     @Published var prompting = false
-    @Published var micDenied = AVAudioApplication.shared.recordPermission == .denied
     var hearing: Bool { ear != .none }
-    let mic = MicEar()
-    private var micStarting = false
-    private var micBroken = false   // the mic refused to start (an error, not the owner): tried again when Recense is opened
     private var lastOther: Bool?
     private var prompts = UserDefaults.standard.data(forKey: "listen.prompts")
         .flatMap { try? JSONDecoder().decode(Ears.Prompts.self, from: $0) } ?? Ears.Prompts()
@@ -78,7 +74,6 @@ final class Listener: NSObject, ObservableObject {
     var lang: String { heard == Captions.automatic ? spoken : heard }
     @Published var heard = Captions.state().heard { didSet {
         var s = Captions.state(); s.heard = heard; Captions.put(s); retarget(); Task { await readyEars() }
-        if mic.running { mic.stop(); redecide() }  // the mic hears the new language from now
     } }
     @Published var into = UserDefaults.standard.string(forKey: "listen.into") ?? "en" { didSet { UserDefaults.standard.set(into, forKey: "listen.into"); retarget() } }
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
@@ -126,7 +121,6 @@ final class Listener: NSObject, ObservableObject {
     private var wake: CheckedContinuation<Void, Never>?
     private let engine = AVAudioEngine()
     private var last: Captions.Line?      // the extension's last line taken
-    private var lastMic: Captions.Line?   // the mic's
     // the ring (CaptionRing.swift): which version of each line was taken (kept across launches, so a line is taken
     // once), and the numbers given to lines of an earlier broadcast (their n would collide with this one's)
     private var seen: [String: UInt64] = (UserDefaults.standard.dictionary(forKey: "listen.ringSeen") as? [String: String] ?? [:])
@@ -174,13 +168,11 @@ final class Listener: NSObject, ObservableObject {
             }
         }
         // the ears: decided again whenever the sound moves (speaker ↔ headphones), another app starts or stops sound,
-        // a call interrupts, or Recense comes to the front (the only time iOS lets the mic start)
-        mic.onLine = { [weak self] l in self?.take(l, mic: true) }
+        // a call interrupts, or Recense comes to the front
         for n in [AVAudioSession.routeChangeNotification, AVAudioSession.silenceSecondaryAudioHintNotification,
                   AVAudioSession.interruptionNotification, UIApplication.didBecomeActiveNotification] {
-            NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { note in
-                let front = note.name == UIApplication.didBecomeActiveNotification
-                Task { @MainActor in if front { Listener.shared.micBroken = false }; Listener.shared.redecide() }
+            NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { _ in
+                Task { @MainActor in Listener.shared.redecide() }
             }
         }
         UNUserNotificationCenter.current().delegate = self
@@ -306,7 +298,6 @@ final class Listener: NSObject, ObservableObject {
             catchUp()  // the end of the broadcast before, if the app missed it
             if on {
                 if paused { resume() }  // a broadcast started from Control Center is a clear "hear"
-                if mic.running { mic.stop(); playbackSession() }
                 beginListening()
                 fresh()  // every broadcast starts its own; Align joins it to an older one when the content continues
             } else {
@@ -322,8 +313,8 @@ final class Listener: NSObject, ObservableObject {
 
     // MARK: the ears (S3b, ListenEars.swift)
 
-    /// Which ear hears, decided again at every change. The broadcast first; the mic only on the speaker, fed only
-    /// while another app plays; otherwise nothing, and one "Tap once to keep hearing" per stop.
+    /// Which ear hears, decided again at every change: the broadcast, or nothing and one "Tap once to keep hearing"
+    /// per stop. Never the mic (owner, 11-10).
     func redecide() {
         if on { restBroadcast(paused) }   // the extension rewrites the state every 2 s: a Pause written between its read and write was lost
         let s = AVAudioSession.sharedInstance()
@@ -335,14 +326,7 @@ final class Listener: NSObject, ObservableObject {
             UserDefaults.standard.set(UserDefaults.standard.integer(forKey: "listen.gateFlipsBehind") + 1, forKey: "listen.gateFlipsBehind")
         }
         lastOther = other
-        micDenied = AVAudioApplication.shared.recordPermission == .denied
-        if mic.running, !mic.alive { mic.stop(); playbackSession() }  // a call or another interruption stopped it
-        let c = Ears.reachable(Ears.decide(.init(broadcast: on, route: route, paused: paused, micAllowed: !micDenied && !micBroken,
-                                                 otherAudio: other)),
-                               micRunning: mic.running || micStarting, foreground: front)
-        if c.ear == .mic, !mic.running, !micStarting { startMic() }
-        if c.ear != .mic, mic.running { mic.stop(); playbackSession() }
-        mic.feed = c.feed
+        let c = Ears.decide(.init(broadcast: on, route: route, paused: paused, otherAudio: other))
         var p = prompts
         p.update(before: ear, now: c)
         if p.notify(c) { notifyStop() }
@@ -354,32 +338,14 @@ final class Listener: NSObject, ObservableObject {
         floatTick()
     }
 
-    private func startMic() {
-        micStarting = true
-        Task {
-            // iOS's own dialog, once, is the consent (NSMicrophoneUsageDescription says what the mic is for)
-            if AVAudioApplication.shared.recordPermission == .undetermined { _ = await AVAudioApplication.requestRecordPermission() }
-            let ok = AVAudioApplication.shared.recordPermission == .granted ? await mic.start(lang: heard) : false
-            micStarting = false
-            if !ok, AVAudioApplication.shared.recordPermission == .granted { micBroken = true }
-            redecide()
-        }
-    }
-
     private func switchEar(to e: Ears.Ear) {
         let was = ear
         ear = e
-        if e == .mic { beginListening(); fresh(ear: "mic") }  // the broadcast's own episode starts in stateChanged
         if e != .none, was == .none { keepAwake(true) }
         if e == .none {
             save(); Task { await upload() }
             Listener.held = false; pip?.stopPictureInPicture(); keepAwake(false)
         }
-    }
-
-    /// What the floating window needs once the mic is off (MicEar sets play-and-record).
-    private func playbackSession() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers)
     }
 
     /// The one Pause: both ears stop and nothing asks to hear until Resume. Kept across launches.
@@ -415,10 +381,7 @@ final class Listener: NSObject, ObservableObject {
 
     /// Why the prompt shows, in one line.
     var promptWhy: String {
-        if micDenied { return "The microphone is off for Recense, so the broadcast hears what plays." }
-        if route == .headphones { return "With headphones, only the broadcast hears what plays." }
-        if route == .other { return "The sound plays elsewhere, so only the broadcast hears it." }
-        return "Listening stopped. The broadcast hears what plays, on the speaker or headphones."
+        "Recense hears what other apps play through the broadcast, on the speaker or headphones."
     }
 
     /// The one notification of a stop (local; nothing leaves the device). Tapping it opens the broadcast sheet.
@@ -509,10 +472,9 @@ final class Listener: NSObject, ObservableObject {
     // this one comes in with all it heard before, open where it was left. Gallery's copy is taken if newer.
     /// A new episode, named by when it began and what it's heard in ("9 Nov 2026 at 21:40 · French"): nothing to
     /// choose or type. If what plays turns out to continue an older episode, adoptIfResumed() moves it there.
-    func fresh(ear: String = "broadcast") {
+    func fresh() {
         lastLineAt = Date()
-        // the mic's episodes say so in their title too, so one begun the same minute as a broadcast stays apart
-        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.short(lang) + (ear == "mic" ? " · Microphone" : ""), ear: ear)
+        choose(Date().formatted(date: .abbreviated, time: .shortened) + " · " + Self.short(lang), ear: "broadcast")
     }
 
     func choose(_ title: String, ear: String? = nil) {
@@ -830,15 +792,15 @@ final class Listener: NSObject, ObservableObject {
         }
     }
 
-    private func take(_ l: Captions.Line, key: String? = nil, mic: Bool = false) {
-        if !mic { seen[key ?? l.ringKey] = l.ringStamp }  // the ring is the extension's; the mic's lines never go there
+    private func take(_ l: Captions.Line, key: String? = nil) {
+        seen[key ?? l.ringKey] = l.ringStamp
         if key != nil { lines[l.n] = l.text; rebuild(); return }  // from the ring: text only, not the live line
         // 3 minutes without a word, then speech: something else is playing now, so it starts its own episode
-        if hearing, l != (mic ? lastMic : last), Date().timeIntervalSince(lastLineAt) > 180, !added.isEmpty {
-            beginListening(); fresh(ear: mic ? "mic" : "broadcast")
+        if hearing, l != last, Date().timeIntervalSince(lastLineAt) > 180, !added.isEmpty {
+            beginListening(); fresh()
         }
         lastLineAt = Date()
-        if mic { lastMic = l } else { last = l }
+        last = l
         if heard == Captions.automatic, SpeechCore.code(l.locale) != spoken, SpeechCore.auto.contains(SpeechCore.code(l.locale)) {
             spoken = SpeechCore.code(l.locale); retarget()
         }
@@ -1326,7 +1288,7 @@ struct ListenView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(l.paused ? "Paused" : l.ear == .broadcast ? "Listening" : l.ear == .mic ? "Listening through the microphone" : "Not hearing")
+                    Text(l.paused ? "Paused" : l.ear == .broadcast ? "Listening" : "Not hearing")
                         .font(.title3.bold())
                     Text("Hears whatever is playing in any app, on this device, then shows it in a window that floats over every app.")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -1340,16 +1302,12 @@ struct ListenView: View {
                     }
                     .disabled(l.stopping)
                 }
-                // why nothing hears now (headphones, sound elsewhere, mic off): Start above is the one tap
+                // why nothing hears now: Start above is the one tap
                 if l.prompting { Text(l.promptWhy).font(.subheadline).foregroundStyle(.secondary) }
-                // while the mic hears the room, the broadcast can hear other apps directly instead (one tap on iOS's sheet)
-                if l.ear == .mic {
-                    StartBroadcast { Label("Hear other apps directly", systemImage: "record.circle").foregroundStyle(Theme.accent) }
-                }
                 if let e = l.episode, l.hearing { LabeledContent("Now", value: e.title) }
                 if let e = l.error { Text(e).font(.footnote).foregroundStyle(.blue) }
             } footer: {
-                Text("Recense hears the room while you play something on the speaker, and keeps text only, never audio.")
+                Text("Recense hears only what other apps play, never the room, and keeps only the text.")
             }
             Section {
                 CaptionLayer().aspectRatio(640 / 300, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: Theme.artCorner, style: .continuous))
@@ -1527,58 +1485,6 @@ extension Listener: UNUserNotificationCenterDelegate {
     }
     nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
         n.request.identifier == "listen.stop" ? [] : [.banner, .sound]
-    }
-}
-
-/// The floating window's picture (Listener.draw() renders it): the transcript's own line look, left-aligned, newest at
-/// the bottom; what's older fades out at the top instead of being cut through.
-struct FloatingCaption: View {
-    struct Row {
-        var line: TranscriptLine
-        var on: Bool
-        var t: Double?
-        var alpha = 1.0
-        var said: String? = nil   // Learn: the translation it dissolves into
-        var turned = 0.0
-        /// how much of the line is lit, so a frame is drawn again when the light moves
-        var cut: Int { guard on, let t else { return -1 }; return line.text.distance(from: line.text.startIndex, to: TranscriptLight.spoken(line, at: t)) }
-        /// The same row without its light: what it shows apart from how far it's been said.
-        var unlit: Row { var r = self; r.t = nil; return r }
-    }
-    let rows: [Row]
-    let learn: Bool
-    let note: String?
-
-    var body: some View {
-        ZStack {
-            Color(white: 0.04)
-            if let note {
-                Text(note).font(.system(.title2, design: .serif)).foregroundStyle(.white.opacity(0.6)).padding(18)
-            } else if learn {
-                VStack(spacing: 10) {
-                    ForEach(rows.indices, id: \.self) { i in
-                        let r = rows[i]
-                        ZStack(alignment: .topLeading) {
-                            TranscriptLineText(r.line, on: r.on, at: r.t, translation: false).opacity(r.alpha * (1 - r.turned))
-                            if let said = r.said, r.turned > 0 {
-                                TranscriptLineText(TranscriptLine(id: r.line.id + ".said", start: 0, end: 0, text: said), on: true, at: nil, translation: false)
-                                    .opacity(r.alpha * r.turned)
-                            }
-                        }
-                        .frame(maxHeight: .infinity, alignment: .top)
-                    }
-                }
-                .padding(.horizontal, 18).padding(.vertical, 12)
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(rows.indices, id: \.self) { i in TranscriptLineText(rows[i].line, on: rows[i].on, at: rows[i].t).opacity(rows[i].alpha) }
-                }
-                .padding(.horizontal, 18).padding(.vertical, 12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.22)], startPoint: .top, endPoint: .bottom))
-            }
-        }
-        .clipped()
     }
 }
 

@@ -69,8 +69,9 @@ updates in place.
   **Pause listening** while hearing, **Resume listening** when paused; "Now Playing ›" opens Listen. A newer listening takes the card and bumps the one before down to
   Home's Recently Played, merged with the catalog's by when each played (ShowsKit `HomeExtras`, `ListenEpisodeRow`). It hears the media only, never the room
   (owner, 2026-11-10, "Yes, no mic"): captions come from the broadcast (another app's sound itself,
-  `ios/Broadcast/SampleHandler.swift`) or Recense's own player. `HostApp/iOS/ListenEars.swift` never picks the
-  microphone, on any route, allowed or not; `MicEar.swift` and Listen.swift's mic calls are unreachable, to be removed.
+  `ios/Broadcast/SampleHandler.swift`) or Recense's own player. The mic code and the microphone permission went on 11-11
+  (`MicEar.swift`, Listen's mic calls, `NSMicrophoneUsageDescription`), so iOS never asks for it. The stop notification
+  comes only after hearing really ended, never on a launch or a Resume with no broadcast (`ListenEars.swift`, `Prompts.ended`).
   "Start listening" starts the broadcast: the button is the system's
   own broadcast picker under our label (`StartBroadcast`), because iOS no longer opens the sheet for a picker tapped from
   code (11-10); then one tap on the sheet's Start Broadcast (or Control Center › Screen Recording, long press › Recense).
@@ -165,7 +166,9 @@ focus (another app's window can cover it while it stays active), so the floating
 (`Floating.front`); a line heard again (a song's chorus) stays in order at the end and keeps the light, and only three
 in a row, or a replay that reaches where the listening was, counts as a rewind (`Align.fit`). Pause rests the broadcast
 instead of ending it (`Captions.State.hold`; the extension drops the sound and its clock keeps the gap), so iOS shows
-no "stopped" alert and Resume needs no broadcast sheet.
+no "stopped" alert and Resume needs no broadcast sheet. The floating window shows whole lines only: the sentence before
+only when it fits with the current one, and a current line taller than the window keeps its newest words at the bottom
+and fades its start (`HostApp/iOS/FloatingCaption.swift`, rendered on the Mac by `ios/Tests/floatingcaption`).
 
 New Swift files in `HostApp/iOS/` or `../shared/` are built in automatically (synchronized folders); others go into the project by hand.
 `../shared/ShowsKit/` is the exception: a Swift package the app links (`import ShowsKit`), excluded from the synchronized group.

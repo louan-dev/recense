@@ -14,7 +14,6 @@ struct ListeningCard: View {
         if l.paused { return "Paused" }
         switch l.ear {
         case .broadcast: return "Listening · \(Listener.short(l.lang))"
-        case .mic: return "Listening (mic) · \(Listener.short(l.lang))"
         case .none: return "Not hearing"   // the button under the transcript says what to do
         }
     }

@@ -1,1 +1,1 @@
-"NSMicrophoneUsageDescription" = "Recense écoute la pièce quand vous faites jouer quelque chose sur le haut-parleur, et ne garde que le texte, jamais l’audio.";
+/* Kept so iOS lists this app in French and Vietnamese; the microphone text went with the mic (11-11). */

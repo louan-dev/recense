@@ -5,87 +5,49 @@ import Foundation
 var failed = 0
 func check(_ ok: Bool, _ what: String) { print(ok ? "ok  " : "FAIL", what); if !ok { failed += 1 } }
 
-// Every input, its output written down (2 × 3 × 2 × 2 × 2 = 48 rows).
-// broadcast, route, paused, mic allowed, other audio  →  ear, feed the mic's sound, prompt due
-typealias Row = (Bool, Ears.Route, Bool, Bool, Bool, Ears.Ear, Bool, Bool)
+// Every input, its output written down (2 × 3 × 2 × 2 = 24 rows). No mic: it's not an ear (owner, 2026-11-10).
+// broadcast, route, paused, other audio  →  ear, prompt due
+typealias Row = (Bool, Ears.Route, Bool, Bool, Ears.Ear, Bool)
 let table: [Row] = [
-    (false, .speaker   , false, false, false,   .none     , false, true ),
-    (false, .speaker   , false, false, true ,   .none     , false, true ),
-    (false, .speaker   , false, true , false,   .none     , false, true ),
-    (false, .speaker   , false, true , true ,   .none     , false, true ),
-    (false, .speaker   , true , false, false,   .none     , false, false),
-    (false, .speaker   , true , false, true ,   .none     , false, false),
-    (false, .speaker   , true , true , false,   .none     , false, false),
-    (false, .speaker   , true , true , true ,   .none     , false, false),
-    (false, .headphones, false, false, false,   .none     , false, true ),
-    (false, .headphones, false, false, true ,   .none     , false, true ),
-    (false, .headphones, false, true , false,   .none     , false, true ),
-    (false, .headphones, false, true , true ,   .none     , false, true ),
-    (false, .headphones, true , false, false,   .none     , false, false),
-    (false, .headphones, true , false, true ,   .none     , false, false),
-    (false, .headphones, true , true , false,   .none     , false, false),
-    (false, .headphones, true , true , true ,   .none     , false, false),
-    (false, .other     , false, false, false,   .none     , false, true ),
-    (false, .other     , false, false, true ,   .none     , false, true ),
-    (false, .other     , false, true , false,   .none     , false, true ),
-    (false, .other     , false, true , true ,   .none     , false, true ),
-    (false, .other     , true , false, false,   .none     , false, false),
-    (false, .other     , true , false, true ,   .none     , false, false),
-    (false, .other     , true , true , false,   .none     , false, false),
-    (false, .other     , true , true , true ,   .none     , false, false),
-    (true , .speaker   , false, false, false,   .broadcast, false, false),
-    (true , .speaker   , false, false, true ,   .broadcast, false, false),
-    (true , .speaker   , false, true , false,   .broadcast, false, false),
-    (true , .speaker   , false, true , true ,   .broadcast, false, false),
-    (true , .speaker   , true , false, false,   .none     , false, false),
-    (true , .speaker   , true , false, true ,   .none     , false, false),
-    (true , .speaker   , true , true , false,   .none     , false, false),
-    (true , .speaker   , true , true , true ,   .none     , false, false),
-    (true , .headphones, false, false, false,   .broadcast, false, false),
-    (true , .headphones, false, false, true ,   .broadcast, false, false),
-    (true , .headphones, false, true , false,   .broadcast, false, false),
-    (true , .headphones, false, true , true ,   .broadcast, false, false),
-    (true , .headphones, true , false, false,   .none     , false, false),
-    (true , .headphones, true , false, true ,   .none     , false, false),
-    (true , .headphones, true , true , false,   .none     , false, false),
-    (true , .headphones, true , true , true ,   .none     , false, false),
-    (true , .other     , false, false, false,   .broadcast, false, false),
-    (true , .other     , false, false, true ,   .broadcast, false, false),
-    (true , .other     , false, true , false,   .broadcast, false, false),
-    (true , .other     , false, true , true ,   .broadcast, false, false),
-    (true , .other     , true , false, false,   .none     , false, false),
-    (true , .other     , true , false, true ,   .none     , false, false),
-    (true , .other     , true , true , false,   .none     , false, false),
-    (true , .other     , true , true , true ,   .none     , false, false),
+    (false, .speaker   , false, false,   .none     , true ),
+    (false, .speaker   , false, true ,   .none     , true ),
+    (false, .speaker   , true , false,   .none     , false),
+    (false, .speaker   , true , true ,   .none     , false),
+    (false, .headphones, false, false,   .none     , true ),
+    (false, .headphones, false, true ,   .none     , true ),
+    (false, .headphones, true , false,   .none     , false),
+    (false, .headphones, true , true ,   .none     , false),
+    (false, .other     , false, false,   .none     , true ),
+    (false, .other     , false, true ,   .none     , true ),
+    (false, .other     , true , false,   .none     , false),
+    (false, .other     , true , true ,   .none     , false),
+    (true , .speaker   , false, false,   .broadcast, false),
+    (true , .speaker   , false, true ,   .broadcast, false),
+    (true , .speaker   , true , false,   .none     , false),
+    (true , .speaker   , true , true ,   .none     , false),
+    (true , .headphones, false, false,   .broadcast, false),
+    (true , .headphones, false, true ,   .broadcast, false),
+    (true , .headphones, true , false,   .none     , false),
+    (true , .headphones, true , true ,   .none     , false),
+    (true , .other     , false, false,   .broadcast, false),
+    (true , .other     , false, true ,   .broadcast, false),
+    (true , .other     , true , false,   .none     , false),
+    (true , .other     , true , true ,   .none     , false),
 ]
-check(table.count == 48, "the table covers every input (48 rows)")
+check(table.count == 24, "the table covers every input (24 rows)")
 var wrong = 0
-for (b, r, p, m, o, ear, feed, prompt) in table {
-    let got = Ears.decide(.init(broadcast: b, route: r, paused: p, micAllowed: m, otherAudio: o))
-    if got != .init(ear: ear, feed: feed, prompt: prompt) {
+for (b, r, p, o, ear, prompt) in table {
+    let got = Ears.decide(.init(broadcast: b, route: r, paused: p, otherAudio: o))
+    if got != .init(ear: ear, prompt: prompt) {
         wrong += 1
-        print("  row broadcast=\(b) route=\(r) paused=\(p) mic=\(m) other=\(o): got \(got)")
+        print("  row broadcast=\(b) route=\(r) paused=\(p) other=\(o): got \(got)")
     }
 }
 check(wrong == 0, "decide matches every row of the truth table")
-check(!table.contains { $0.2 && ($0.5 != .none || $0.7) }, "paused: never an ear, never a prompt")
-// no mic as a media ear on iPhone/iPad (owner, 2026-11-10): the table, and every input computed afresh
-check(!table.contains { $0.5 == .mic || $0.6 }, "the table never picks the mic, never feeds it")
-var micPicked = 0
-for b in [false, true] { for r in [Ears.Route.speaker, .headphones, .other] { for p in [false, true] {
-    for m in [false, true] { for o in [false, true] {
-        let c = Ears.decide(.init(broadcast: b, route: r, paused: p, micAllowed: m, otherAudio: o))
-        for running in [false, true] { for front in [false, true] {
-            let r2 = Ears.reachable(c, micRunning: running, foreground: front)
-            if c.ear == .mic || c.feed || r2.ear == .mic || r2.feed { micPicked += 1 }
-        } }
-    } }
-} } }
-check(micPicked == 0, "no input, in front or behind, mic running or not, yields the mic")
-// regression (S3b stand-in heard the room): speaker, mic allowed, another app playing, no broadcast → no mic,
-// and the prompt to start the broadcast instead
-check(Ears.decide(.init(broadcast: false, route: .speaker, paused: false, micAllowed: true, otherAudio: true))
-      == .init(ear: .none, feed: false, prompt: true), "speaker + mic allowed + other audio, no broadcast: no ear, the prompt")
+check(!table.contains { $0.2 && ($0.4 != .none || $0.5) }, "paused: never an ear, never a prompt")
+// regression (S3b stand-in heard the room): speaker, another app playing, no broadcast → no ear, the prompt to start it
+check(Ears.decide(.init(broadcast: false, route: .speaker, paused: false, otherAudio: true))
+      == .init(ear: .none, prompt: true), "speaker + other audio, no broadcast: no ear, the prompt")
 
 // where the sound goes, from AVAudioSession.Port raw values
 check(Ears.route(["Speaker"]) == .speaker, "built-in speaker")
@@ -97,9 +59,15 @@ check(Ears.route(["AirPlay"]) == .other && Ears.route(["CarAudio"]) == .other, "
 check(Ears.route([]) == .speaker, "no output listed: the device's own speaker")
 
 // one prompt per stop
-let heads = Ears.decide(.init(broadcast: false, route: .headphones, paused: false, micAllowed: true, otherAudio: true))
-let cast = Ears.decide(.init(broadcast: true, route: .headphones, paused: false, micAllowed: true, otherAudio: true))
-let paused = Ears.decide(.init(broadcast: false, route: .headphones, paused: true, micAllowed: true, otherAudio: true))
+let heads = Ears.decide(.init(broadcast: false, route: .headphones, paused: false, otherAudio: true))
+let cast = Ears.decide(.init(broadcast: true, route: .headphones, paused: false, otherAudio: true))
+let paused = Ears.decide(.init(broadcast: false, route: .headphones, paused: true, otherAudio: true))
+// regression 11-11 (gauntlet's review): a launch with no broadcast showed the prompt and also sent "stopped hearing",
+// though nothing had been heard. The page prompts; only a stop where hearing ended sends the notification.
+var fresh = Ears.Prompts()
+fresh.update(before: .none, now: heads)
+check(fresh.shows(heads), "a launch with no broadcast shows the prompt on the page")
+check(!fresh.notify(heads), "a launch with no broadcast sends no notification")
 var pr = Ears.Prompts()
 pr.update(before: .broadcast, now: heads)                  // iOS ended the broadcast, headphones on
 check(pr.shows(heads), "a stop shows the prompt")
@@ -121,27 +89,12 @@ check(pr.stop == s, "Pause doesn't count as a stop")
 pr.dismiss()
 pr.resumed()
 check(pr.shows(heads), "Resume after Pause: the prompt can show again")
-
-// a mic that is due but can't start (Recense in the background): every case written down
-let none = Ears.Choice(ear: .none, feed: false, prompt: true)
-let micFed = Ears.Choice(ear: .mic, feed: true, prompt: false)
-let castC = Ears.Choice(ear: .broadcast, feed: false, prompt: false)
-let quiet = Ears.Choice(ear: .none, feed: false, prompt: false)
-// choice, mic running, in front  →  what hears
-let reach: [(Ears.Choice, Bool, Bool, Ears.Choice)] = [
-    (micFed, false, false, none),     // due, not running, behind: nothing hears, ask for the tap
-    (micFed, false, true,  micFed),   // due, not running, in front: it starts
-    (micFed, true,  false, micFed),   // already running behind: keeps hearing
-    (micFed, true,  true,  micFed),
-    (castC,  false, false, castC),    // the broadcast is never held back
-    (castC,  true,  true,  castC),
-    (none,   false, false, none),
-    (quiet,  false, false, quiet),    // paused stays quiet
-]
-check(reach.allSatisfy { Ears.reachable($0.0, micRunning: $0.1, foreground: $0.2) == $0.3 }, "reachable: every row as written")
+check(!pr.notify(heads), "Resume with no broadcast sends no notification (the owner is in Recense)")
 
 let data = try! JSONEncoder().encode(pr)
 check((try? JSONDecoder().decode(Ears.Prompts.self, from: data)) == pr, "the prompt state survives a relaunch (Codable)")
+let before = #"{"stop":2,"dismissed":1,"notified":2}"#.data(using: .utf8)!
+check((try? JSONDecoder().decode(Ears.Prompts.self, from: before))?.ended == nil, "a state saved before 11-11 still loads")
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

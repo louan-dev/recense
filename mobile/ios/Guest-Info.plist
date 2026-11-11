@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Recense Guest hears the room while you play something on the speaker, and keeps text only, never audio.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recense Guest turns what's playing into captions on this device.</string>
 	<key>UIBackgroundModes</key>
