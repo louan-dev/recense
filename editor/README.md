@@ -152,3 +152,9 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   pauses (3 s): title, day, times, all day, place, notes. Nothing is saved until **Add to Calendar**; **Don't add**
   is remembered (`x:<id>` in `draftpad.events.json`); tapping outside or Esc asks again next time. Not in wing panels.
 - Read-aloud for playlists: `src/speech.js` (host voice with word ranges, `shared/draftpadlibrary.swift`).
+
+## Selecting and Enter (2026-11-12)
+- **Cmd+A, and Edit > Select All, select the page on screen** (page mode) or the page holding the cursor, never the
+  whole file (`selectPage`, `src/pagemode.js`; test `test/p14-selectpage.test.mjs`).
+- **Enter on a numbered (legal) line with text selected replaces the selection** before starting the next item
+  (`src/legal.js`; test `test/t0001-enter.test.mjs`, T-0003).
