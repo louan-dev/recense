@@ -158,6 +158,7 @@ selftest() {
     git -C $R add . && git -C $R $G commit -qm init
     printf '# t\nNext ID: T-0002\n\n# Inbox\n- \n\n# Open\nArea: UI | Other\n\n## T-0001 · bug\n! NEW · UI · 2026-11-12 · owner\n> bug\nWhere: app/main.js\nRepro: x (guess)\n' > $TRIAGE_FILE
     git -C $R worktree add -q $R/.claude/worktrees/t-0001 -b work/t-0001
+    git -C $R rev-parse main > $TRIAGE_STATE/t-0001.base
     print 'work/t-0001 · fix · ready' >> $R/.handoff/MERGE-QUEUE.md
     printf 'red 1\ngreen 0\n' > $TRIAGE_STATE/T-0001.tests
   }

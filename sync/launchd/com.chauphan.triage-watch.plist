@@ -11,6 +11,8 @@
   <!-- hourly: a P1 queued while offline or capped starts once it can -->
   <key>StartInterval</key><integer>3600</integer>
   <key>ThrottleInterval</key><integer>10</integer>
+  <!-- the fixer outlives this job: launchd must not kill its process group (T-0001) -->
+  <key>AbandonProcessGroup</key><true/>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>/Users/chauphan/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
   <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/triage-watch.log</string>

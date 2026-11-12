@@ -120,7 +120,7 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 
 ## Triage watch (save triage.md → bug gets worked on)
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
-  - `!` first (or the old `P1 -`) = urgent: an agent starts. Any other line is only filed.
+  - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
   Local, instant, no network: each line becomes `T-####` (urgent → `! NEW`, else `NEW`). Two priorities only: `!` = now, blank = later..
 - **Scout** (urgent only): `claude -p --model haiku --effort low --max-budget-usd 0.10`, read/grep tools only.
