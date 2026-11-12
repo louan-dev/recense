@@ -135,6 +135,7 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - **Caps:** `$3.00` a day (scout + fixer, `TRIAGE_DAILY_BUDGET_USD`), backstop 3 fixer runs a day (`TRIAGE_DAILY_CAP`).
   Over the cap, entries wait in the queue with a notification.
 - **Offline:** filing never needs the network. Scout and fixer (Anthropic) run as catch-up on the next save or hourly run.
+- **Phone edits:** md-mirror (two-way bisync, every 5 min) carries an Obsidian edit to the source, which fires the watcher. Risk: an edit on the phone in the same 5 min as the watcher rewrites the file → the newer wins, the other is kept as `triage.md.conflictN`.
 - **Usage:** every run's cost and turns go to `~/.local/state/triage-watch/usage.log`; weekly line: `zsh bin/triage-watch.zsh weekly`.
 - Log: `~/.local/state/triage-watch/log`, launchd log `~/Library/Logs/triage-watch.log`.
 - Test: `zsh bin/triage-watch.zsh selftest` (part of `npm test`).
