@@ -418,6 +418,11 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 
 ## CHANGELOG
 
+### 2026-11-12 · BUG-03 T-0031 · DONE
+- Change: `mobile/HostApp/iOS/Listen.swift` follow branch of `frame()`: read `slots[p % 2].since` and compute `curAlpha` matching learn's 0.15 s gap + 0.4 s ramp; `animate()` was already firing.
+- Validation: `swiftc floating` ALL OK; unsigned iOS BUILD SUCCEEDED (b31803c).
+- Next: on-device check via iPhone Mirroring when Listen has content in follow mode.
+
 ### 2026-11-06 21:50 PST · B0.5 ShowsKit contract (starry-squishing-knuth) · DONE
 - Change: `shared/ShowsKit/`, a Swift package: `Model.swift` (ContentKey, HLC, PoolItem, ItemState, ListenPosition,
   Space/Show/Season/Episode, ShowManifest, CatalogEvent/ChangesPage, OutboxOp), `Rules.swift` (layout, locks, expiry,
