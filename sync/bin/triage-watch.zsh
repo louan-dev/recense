@@ -9,6 +9,7 @@ set -u
 SELF=${0:A}
 [[ ${1:-} == selftest ]] && export TRIAGE_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tw-state.XXXX")
 setopt null_glob
+unsetopt bg_nice
 
 REPO=${TRIAGE_REPO:-/Users/chauphan/Developer/recense}
 TRIAGE=${TRIAGE_FILE:-$REPO/docs/specs/triage.md}
@@ -19,6 +20,7 @@ DAILY_CAP=${TRIAGE_DAILY_CAP:-3}
 QUEUE=$STATE/queue            # one T-#### per line, waiting to start
 STARTS=$STATE/starts          # "YYYY-MM-DD T-####" per auto-start
 LOG=$STATE/log
+RUNNING=$STATE/running        # "<pid> T-####" while an agent runs
 
 mkdir -p "$STATE"
 touch "$QUEUE" "$STARTS"
@@ -83,10 +85,15 @@ start_agent() {
   local id=$1 slug=${1:l} wt
   wt=$REPO/.claude/worktrees/$slug
   if [[ -n ${TRIAGE_DRY:-} ]]; then say "DRY start $id"; print "$(date +%F) $id" >> "$STARTS"; return 0; fi
-  git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $id"; return 1; }
+  if [[ -n ${TRIAGE_NO_WORKTREE:-} ]]; then wt=$REPO
+  else git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $id"; return 1; }; fi
   print "$(date +%F) $id" >> "$STARTS"
   notify "Agent started on $id"
+  # Regression guard: the running marker is owned by the background agent, not by drain's lock,
+  # so a second save can never start a second agent while the first still runs.
+  print "starting $id" > "$RUNNING"
   (
+    trap 'rm -f "$RUNNING"' EXIT INT TERM HUP
     cd "$wt" && "$CLAUDE" -p --permission-mode default --add-dir "$REPO/docs/specs" \
 "/bug $id
 The entry is in $TRIAGE (absolute path; git-ignored, so not in this worktree). Read only that entry and write its status lines there.
@@ -99,6 +106,16 @@ If a permission prompt or anything else blocks you, write '$id blocked: <why>' t
     say "agent $id exit $rc"
     notify "Agent finished $id (exit $rc); see the merge queue"
   ) &!
+  print "$! $id" > "$RUNNING"
+}
+
+# True while a started agent is still alive; clears a marker whose process is gone.
+agent_running() {
+  [[ -f $RUNNING ]] || return 1
+  local pid; pid=$(awk '{print $1}' "$RUNNING")
+  [[ $pid == starting ]] && return 0
+  kill -0 "$pid" 2>/dev/null && return 0
+  say "stale running marker ($pid) cleared"; rm -f "$RUNNING"; return 1
 }
 
 # Start queued P1s, one at a time, within the daily cap, online, BUILD LOCK free.
@@ -108,6 +125,7 @@ drain() {
     local id
     id=$(head -1 "$QUEUE")
     [[ -z $id ]] && return 0
+    agent_running && { say "$id queued: an agent is still running"; return 0; }
     if (( $(starts_today) >= DAILY_CAP )); then notify "$id waits: $DAILY_CAP auto-starts used today"; return 0; fi
     online || { say "$id queued: offline"; return 0; }
     build_lock_free || { say "$id queued: BUILD LOCK taken"; return 0; }
@@ -168,6 +186,20 @@ EOF
   : > $TRIAGE_STATE/starts
   TRIAGE_ONLINE=1 zsh $SELF run
   grep -q 'T-0005' $TRIAGE_STATE/starts && bad "BUILD LOCK respected" || ok "BUILD LOCK respected"
+  # Regression guard: one agent at a time while a real (background) agent runs.
+  : > $TRIAGE_STATE/starts; : > $TRIAGE_STATE/queue
+  sed -i '' 's/^BUILD LOCK: .*/BUILD LOCK: free/' $d/.handoff/MERGE-QUEUE.md
+  print '#!/bin/zsh\nsleep 3' > $d/fake-claude; chmod +x $d/fake-claude
+  ( unset TRIAGE_DRY; export TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1 TRIAGE_ONLINE=1
+    sed -i '' 's/^- $/P1 - slow agent A/' $TRIAGE_FILE; zsh $SELF run
+    sleep 1
+    sed -i '' 's/^- $/P1 - slow agent B/' $TRIAGE_FILE; zsh $SELF run )
+  local a=$(grep -c . $TRIAGE_STATE/starts)
+  [[ $a == 1 ]] && grep -q '^T-0007$' $TRIAGE_STATE/queue && ok "two saves 1 s apart: one agent, second queued" || bad "one agent at a time (starts=$a)"
+  sleep 3
+  ( unset TRIAGE_DRY; export TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1 TRIAGE_ONLINE=1; zsh $SELF run )
+  grep -q 'T-0007' $TRIAGE_STATE/starts && ok "drains after the first agent exits" || bad "drain after exit"
+  sleep 4
   rm -rf $d
   (( fail )) && { print "selftest FAILED"; exit 1; } || print "selftest ok"
 }
