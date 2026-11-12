@@ -58,6 +58,7 @@ enum Captions {
         // ("en", "fr", "vi"), where the next hearing starts
         var detected: String? = nil
         var check: String? = nil  // the last language check (SpeechAuto.onNote), kept by the app in listen.checks
+        var sooner: Bool? = nil  // "Show Words Sooner": fast: true on SpeechAuto (guesses in <1 s, finals slightly less accurate)
         var auto: Bool { heard == Captions.automatic }
         /// The language a hearing starts in: the chosen one, or under Automatic the last one heard.
         var start: String { auto ? (detected ?? "en") : heard }

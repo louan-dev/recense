@@ -101,7 +101,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     private func startAnalyzer() {
         let start = auto ? Captions.state().start : locale, among = auto ? SpeechCore.auto : []
         Task { @MainActor in
-            let l = await SpeechAuto.start(lang: start, among: among) { [weak self] p, final, lang in
+            let l = await SpeechAuto.start(lang: start, among: among, fast: Captions.state().sooner ?? false) { [weak self] p, final, lang in
                 self?.q.async { self?.heard(p, final: final, lang: lang) }
             }
             guard let l else { self.q.async { self.startLegacy() }; return }

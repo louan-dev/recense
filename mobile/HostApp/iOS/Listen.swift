@@ -75,6 +75,9 @@ final class Listener: NSObject, ObservableObject {
     @Published var heard = Captions.state().heard { didSet {
         var s = Captions.state(); s.heard = heard; Captions.put(s); retarget(); Task { await readyEars() }
     } }
+    @Published var sooner = Captions.state().sooner ?? false { didSet {
+        var s = Captions.state(); s.sooner = sooner; Captions.put(s)
+    } }
     @Published var into = UserDefaults.standard.string(forKey: "listen.into") ?? "en" { didSet { UserDefaults.standard.set(into, forKey: "listen.into"); retarget() } }
     @Published var look = UserDefaults.standard.string(forKey: "listen.look") ?? "follow" { didSet { UserDefaults.standard.set(look, forKey: "listen.look"); draw() } }
     // The floating window shows by itself while another app plays and Recense is behind, and hides on pause
@@ -1327,6 +1330,7 @@ struct ListenView: View {
                 Picker("Show in", selection: $l.into) {
                     ForEach(Listener.into, id: \.self) { Text(Listener.name($0)).tag($0) }
                 }
+                Toggle("Show Words Sooner (Less Accurate)", isOn: $l.sooner)
                 Button { l.fetchAll() } label: { Label(l.fetching == nil ? "Download" : "Downloading…", systemImage: "arrow.down.circle") }
                     .disabled(l.fetching != nil)
             } header: { Text("Language") } footer: { Text([l.heard == Captions.automatic ? Listener.automaticNote : "", l.ears, l.pack, l.fetchNote].filter { !$0.isEmpty }.joined(separator: "\n")) }
