@@ -130,6 +130,13 @@ file_inbox_awk() {
   cat "$STATE/awk.urgent"
 }
 
+# A read-only Terminal window that follows the agent's output; the owner closes it. TRIAGE_WATCH_WINDOW=0 turns it off.
+watch_window() {
+  [[ ${TRIAGE_WATCH_WINDOW:-1} == 1 && -z ${TRIAGE_NO_NOTIFY:-} ]] || return 0
+  : >> "$STATE/$1.out"
+  osascript -e "tell application \"Terminal\" to set custom title of (do script \"printf '\\\\e]0;$1\\\\a'; tail -f '$STATE/$1.out'\") to \"$1\"" >/dev/null 2>&1 &!
+}
+
 # ---------- entry helpers ----------
 entry()      { awk -v id="$1" '/^## T-/{on=($2==id)} on' "$TRIAGE"; }
 entry_area() { entry "$1" | awk 'NR==2{split($0,a," · "); print a[2]}'; }
@@ -264,6 +271,10 @@ fixer_job() {
   # The prompt goes on stdin: --add-dir takes several folders and would swallow a trailing prompt (bug 11-12).
   # Steps written out, not "/bug": a slash skill may be missing on main (it was, 11-12: "/bug isn't available").
   local prompt="Fix bug ${ids//,/ } the red-green way: write a regression test that fails now, make the smallest fix, run it again until it passes.
+Each entry is a goal: reach it. Its kind only chose your model; if it is really a feature, build it test-first just the same.
+A platform limit is a boundary, not a stop sign: name the rule and its source, build the nearest sanctioned route to the goal,
+and list related boundaries (memory, background time, permissions) with how each is handled. 'Not reproducible as a logic bug' is never an ending.
+Write BLOCKED only when the owner must act (a device check, a choice), with the exact steps for them.
 Entries (from $TRIAGE, git-ignored, absolute path; write status lines there):
 $brief
 Work only in the files named on the Where: lines. Do not explore beyond them unless a failing test shows the cause is elsewhere.
@@ -273,6 +284,7 @@ Stop at a commit here plus one line in $REPO/.handoff/MERGE-QUEUE.md starting 'w
 Take the BUILD LOCK in that file before any build and free it after.
 If this needs a stronger model, end your reply with the line 'BLOCKED: needs opus: <why>' and stop.
 If a permission prompt, a platform limit or anything else blocks you, end your reply with the line 'BLOCKED: <why>' and stop."
+  watch_window "$first"
   cd "$wt" && print -r -- "$prompt" | ask_claude fixer "$ids" --model sonnet --effort medium --max-budget-usd "$FIX_BUDGET" \
     --permission-mode default --add-dir "$REPO/docs/specs" "$STATE" "$REPO/.handoff" >> "$STATE/$first.out"
   rc=$?
@@ -414,7 +426,7 @@ if [[ "\$*" == *haiku* ]]; then
   print -r -- "{\"result\":\"\$r\",\"total_cost_usd\":0.02,\"num_turns\":3}"
 else
   [[ "\$*" == *"--add-dir"*"$d/state"*"$d/.handoff"* ]] || { print -u2 "fixer can't write state or .handoff"; exit 1; }
-  in=\$(cat); [[ "\$in" == "Fix bug "* ]] || { print -u2 "Error: Input must be provided either through stdin or as a prompt argument"; exit 1; }
+  in=\$(cat); print -r -- "\$in" > $d/last-prompt; [[ "\$in" == "Fix bug "* ]] || { print -u2 "Error: Input must be provided either through stdin or as a prompt argument"; exit 1; }
   for i in \$(print -r -- "\${in%%the red-green*}" | grep -oE 'T-[0-9]{4}'); do
     [[ -f $d/nogreen ]] && print 'red 1\ngreen 1' > $d/state/\$i.tests || print 'red 1\ngreen 0' > $d/state/\$i.tests
   done
@@ -568,6 +580,10 @@ EOF
   print "T-0001 $(date +%s)" >> $TRIAGE_STATE/queue; zsh $SELF run; waitfix
   [[ $(grep -c ' fixer T-0001' $TRIAGE_STATE/usage.log) == 2 ]] && ok "held entry gets no third run" || bad "third run happened"
   rm -f $d/nogreen
+
+  # goals, not categories: the fixer prompt tells it to build even when the "bug" is a feature
+  grep -q 'if it is really a feature, build it' $d/last-prompt && grep -q 'boundary, not a stop sign' $d/last-prompt && ! grep -qi 'not reproducible as a logic bug.*stop' $d/last-prompt \
+    && ok "fixer prompt: goal rule, limits are boundaries, feature still builds" || bad "goal rule missing"
 
   # the agent's BLOCKED: line → HELD needs you (the watcher writes it, not the agent)
   reset; scout_says $'WHERE: a.js\nAREA: UI\nREPRO: guess'; touch $d/blocked; inbox "! platform wall"; zsh $SELF run; waitfix

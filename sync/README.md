@@ -122,6 +122,8 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
 - The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
 - The scout reads "mobile" as iPhone and iPad.
+- Every entry is a goal: its kind only picks the model, never whether work happens. A platform limit is a boundary: the fixer names it, builds the nearest sanctioned route, and asks you (HELD) only for a device check or a choice.
+- When a fixer starts, a Terminal window titled with the ID follows its output (`tail -f`); close it yourself. Off: `TRIAGE_WATCH_WINDOW=0`.
 - A fixer that is blocked ends its reply with `BLOCKED: <why>`; the watcher writes HELD "needs you: <why>" (the agent can't write outside its worktree). Two failed runs on one entry → HELD too, with no third run.
 - The fixer prompt spells out the red → green steps (no `/bug` skill needed: it wasn't on main, 11-12).
 - A fixer run with 0 usage in 0 turns is "void" (moved to `starts.void`), logged "void: exit N". Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
