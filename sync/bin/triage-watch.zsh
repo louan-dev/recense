@@ -1,8 +1,13 @@
 #!/bin/zsh
-# triage-watch: runs when docs/specs/triage.md is saved (launchd WatchPaths).
-# 1. Files every Inbox line "P1 - ...", "P2 - ...", "P3 - ..." as T-#### TRIAGED Pn. Local, instant, no network.
-# 2. Each P1 is queued; the queue starts one `claude -p "/bug T-####"` at a time, in its own worktree,
-#    at most 3 a day, only when online and the BUILD LOCK is free. Network is catch-up only.
+# triage-watch: runs when docs/specs/triage.md is saved (launchd WatchPaths) and hourly.
+# The owner writes one plain line under # Inbox, any language. "!" first (or "P1 -") = urgent.
+# 1. Filing: every Inbox line becomes a T-#### entry. Local, instant, no network.
+#    Urgent → TRIAGED P1 and queued; "P2 -"/"P3 -" → TRIAGED P2/P3; anything else → NEW. Only urgent auto-starts.
+# 2. Scout (Haiku, low effort, $0.10, read-only tools): writes Where:/Area:/Repro: (guess) under the entry, stops.
+#    No files found → entry stays filed with a note + a notification; nothing more is spent.
+# 3. Fixer (Sonnet, medium effort, per-run $ cap): /bug in its own worktree, narrow brief, one at a time.
+#    Gates: daily $ budget (+ run count backstop), online, BUILD LOCK free, no duplicate FIXING entry or lane.
+#    Urgent entries in the same Area filed within 10 min go into one run. Cost and turns → $STATE/usage.log.
 # Off switch: launchctl bootout gui/$(id -u)/com.chauphan.triage-watch
 # Selftest: zsh triage-watch.zsh selftest
 set -u
@@ -16,14 +21,19 @@ TRIAGE=${TRIAGE_FILE:-$REPO/docs/specs/triage.md}
 STATE=${TRIAGE_STATE:-$HOME/.local/state/triage-watch}
 CLAUDE=${TRIAGE_CLAUDE:-$HOME/.local/bin/claude}
 DEBOUNCE=${TRIAGE_DEBOUNCE:-5}
-DAILY_CAP=${TRIAGE_DAILY_CAP:-3}
-QUEUE=$STATE/queue            # one T-#### per line, waiting to start
-STARTS=$STATE/starts          # "YYYY-MM-DD T-####" per auto-start
+DAILY_CAP=${TRIAGE_DAILY_CAP:-3}                 # backstop: fixer runs a day
+DAILY_BUDGET=${TRIAGE_DAILY_BUDGET_USD:-3.00}    # main cap: dollars a day (scout + fixer)
+SCOUT_BUDGET=${TRIAGE_SCOUT_BUDGET_USD:-0.10}
+FIX_BUDGET=${TRIAGE_FIX_BUDGET_USD:-1.50}
+BATCH_MIN=${TRIAGE_BATCH_MIN:-10}
+QUEUE=$STATE/queue            # "T-#### <epoch filed>" per line, waiting
+STARTS=$STATE/starts          # "YYYY-MM-DD T-####[,T-####]" per fixer start
+USAGE=$STATE/usage.log        # "YYYY-MM-DD HH:MM role ids cost=<usd> turns=<n>"
 LOG=$STATE/log
-RUNNING=$STATE/running        # "<pid> T-####" while an agent runs
+RUNNING=$STATE/running        # "<pid> T-####" while a fixer runs
 
 mkdir -p "$STATE"
-touch "$QUEUE" "$STARTS"
+touch "$QUEUE" "$STARTS" "$USAGE"
 say()    { print -r -- "$(date '+%F %T') $*" >> "$LOG"; }
 notify() { [[ -n ${TRIAGE_NO_NOTIFY:-} ]] || osascript -e "display notification \"$1\" with title \"Recense triage\"" >/dev/null 2>&1; say "notify: $1"; }
 
@@ -33,7 +43,6 @@ online() {
 }
 build_lock_free() { grep -q '^BUILD LOCK: free' "$REPO/.handoff/MERGE-QUEUE.md" 2>/dev/null; }
 
-# Wait until the file has been quiet for DEBOUNCE seconds (editors write several times).
 debounce() {
   local last now
   last=$(stat -f %m "$TRIAGE" 2>/dev/null) || return 1
@@ -45,71 +54,123 @@ debounce() {
   done
 }
 
-# File P-lines from the Inbox. Idempotent: a filed line leaves the Inbox, so a second run finds nothing.
-# Prints the IDs of new P1 entries.
+# ---------- filing (offline) ----------
+# Every non-empty Inbox line except the header is a note. Idempotent: a filed note leaves the Inbox.
+# Prints "T-#### <epoch>" for each urgent entry.
 file_inbox() {
   [[ -f $TRIAGE ]] || return 0
-  local tmp=$TRIAGE.tmp.$$
-  TODAY=$(date +%F) perl -e '
-    my $f = shift; open my $in, "<", $f or die; my @l = <$in>; close $in;
+  TODAY=$(date +%F) NOW=$(date +%s) perl -CSD -e 'use utf8;
+    my $f = shift; open my $in, "<:encoding(UTF-8)", $f or die; my @l = <$in>; close $in;
     my ($next) = map { /^Next ID: T-(\d+)/ ? $1 : () } @l; defined $next or exit 0;
     my (@keep, @new, $inbox);
     for (@l) {
-      $inbox = 1 if /^# Inbox/; $inbox = 0 if /^# Open/;
-      if ($inbox && /^\s*-?\s*P([123])\s*-\s*(\S.*?)\s*$/) { push @new, [$1, $2]; next }
+      if (/^# Inbox/) { $inbox = 1; push @keep, $_; next }
+      $inbox = 0 if /^# /;
+      if ($inbox) {
+        my $t = $_; $t =~ s/^\s+|\s+$//g;
+        if ($t eq "" || $t eq "-" || $t =~ /^Write what went wrong/ || $t =~ /^Start with !/ || $t =~ /^Write here/) { push @keep, $_; next }
+        $t =~ s/^-\s*//;
+        my $p = 0;
+        if    ($t =~ s/^!+\s*//)                 { $p = 1 }
+        elsif ($t =~ s/^P([123])\s*-\s*//)       { $p = $1 }
+        push @new, [$p, $t] if length $t; next;
+      }
       push @keep, $_;
     }
     exit 0 unless @new;
-    # keep exactly one empty "- " line in the Inbox
-    unless (grep { /^- \s*$/ } @keep) {
+    unless (grep { /^-\s*$/ } @keep) {
       for my $i (0..$#keep) { if ($keep[$i] =~ /^# Open/) { splice @keep, $i, 0, "- \n", "\n"; last } }
     }
-    my @p1; my $out = "";
+    my (@urgent, $out);
     for my $n (@new) {
       my ($p, $txt) = @$n; my $id = sprintf "T-%04d", $next++;
       my @w = split /\s+/, $txt; my $title = join " ", @w[0 .. ($#w < 7 ? $#w : 7)];
-      $out .= "\n## $id · $title\nTRIAGED P$p · Other · $ENV{TODAY} · owner\n> P$p - $txt\n";
-      push @p1, $id if $p == 1;
+      my $status = $p ? "TRIAGED P$p" : "NEW";
+      $out .= "\n## $id · $title\n$status · Other · $ENV{TODAY} · owner\n> $txt\n";
+      push @urgent, $id if $p == 1;
     }
     s/^Next ID: T-\d+/sprintf "Next ID: T-%04d", $next/e for @keep;
     $keep[-1] .= "\n" unless $keep[-1] =~ /\n$/;
-    open my $o, ">", "$f.tmp.$$" or die; print $o @keep, $out; close $o;
+    open my $o, ">:encoding(UTF-8)", "$f.tmp.$$" or die; print $o @keep, $out; close $o;
     rename "$f.tmp.$$", $f or die;
-    print "$_\n" for @p1;
+    print "$_ $ENV{NOW}\n" for @urgent;
   ' "$TRIAGE"
 }
 
-starts_today() { grep -c "^$(date +%F) " "$STARTS" 2>/dev/null || true; }
+# ---------- entry helpers ----------
+entry()      { awk -v id="$1" '/^## T-/{on=($2==id)} on' "$TRIAGE"; }
+entry_area() { entry "$1" | awk 'NR==2{split($0,a," · "); print a[2]}'; }
+entry_where(){ entry "$1" | sed -n 's/^Where: //p' | head -1; }
+# Insert lines right after an entry's quote line.
+add_lines() {
+  local id=$1; shift
+  ID=$id ADDTXT="$(printf '%s\n' "$@")" perl -CSD -i -pe '
+    BEGIN { use Encode; $id = $ENV{ID}; $add = decode_utf8($ENV{ADDTXT}); $add .= "\n" unless $add =~ /\n$/ }
+    $on = ($_ =~ /^## \Q$id\E /) ? 1 : (/^## T-/ ? 0 : $on);
+    if ($on && /^> /) { $_ .= $add; $on = 0 }
+  ' "$TRIAGE"
+}
+set_area() { ID=$1 AREA=$2 perl -CSD -i -pe 'use utf8; $on = /^## \Q$ENV{ID}\E / ? 1 : (/^## T-/ ? 0 : $on); if ($on && / · Other · /) { s/ · Other · / · $ENV{AREA} · /; $on = 0 }' "$TRIAGE"; }
 
-start_agent() {
-  local id=$1 slug=${1:l} wt
-  wt=$REPO/.claude/worktrees/$slug
-  if [[ -n ${TRIAGE_DRY:-} ]]; then say "DRY start $id"; print "$(date +%F) $id" >> "$STARTS"; return 0; fi
-  if [[ -n ${TRIAGE_NO_WORKTREE:-} ]]; then wt=$REPO
-  else git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $id"; return 1; }; fi
-  print "$(date +%F) $id" >> "$STARTS"
-  notify "Agent started on $id"
-  # Regression guard: the running marker is owned by the background agent, not by drain's lock,
-  # so a second save can never start a second agent while the first still runs.
-  print "starting $id" > "$RUNNING"
-  (
-    trap 'rm -f "$RUNNING"' EXIT INT TERM HUP
-    cd "$wt" && "$CLAUDE" -p --permission-mode default --add-dir "$REPO/docs/specs" \
-"/bug $id
-The entry is in $TRIAGE (absolute path; git-ignored, so not in this worktree). Read only that entry and write its status lines there.
-You are in worktree $wt on branch work/$slug. Fix it test-first as /bug says.
-Stop at a commit on this branch plus one line in $REPO/.handoff/MERGE-QUEUE.md. Never merge, push or install.
-Take the BUILD LOCK in that file before any build and free it after.
-If a permission prompt or anything else blocks you, write '$id blocked: <why>' to $STATE/blocked and stop." \
-      >> "$STATE/$id.out" 2>&1
-    rc=$?
-    say "agent $id exit $rc"
-    notify "Agent finished $id (exit $rc); see the merge queue"
-  ) &!
-  print "$! $id" > "$RUNNING"
+spent_today() { awk -v d="$(date +%F)" '$1==d { sub("cost=","",$5); s+=$5 } END { printf "%.4f", s+0 }' "$USAGE"; }
+starts_today() { grep -c "^$(date +%F) " "$STARTS" 2>/dev/null || true; }
+over_budget() { awk -v a="$(spent_today)" -v b="$DAILY_BUDGET" 'BEGIN{exit !(a+0>=b+0)}'; }
+
+# Run claude -p, log cost and turns, print the result text.
+ask_claude() {
+  local role=$1 ids=$2 out; shift 2
+  out=$STATE/$role-${ids//,/_}.json
+  "$CLAUDE" -p --output-format json "$@" > "$out" 2>> "$LOG"
+  local rc=$? cost turns
+  cost=$(plutil -extract total_cost_usd raw -o - "$out" 2>/dev/null || print 0)
+  turns=$(plutil -extract num_turns raw -o - "$out" 2>/dev/null || print 0)
+  print "$(date '+%F %H:%M') $role $ids cost=$cost turns=$turns" >> "$USAGE"
+  plutil -extract result raw -o - "$out" 2>/dev/null
+  return $rc
 }
 
-# True while a started agent is still alive; clears a marker whose process is gone.
+# ---------- scout ----------
+# Returns 0 when it found files (Where: written), 1 when not.
+scout() {
+  local id=$1 res where area repro
+  [[ -n $(entry_where "$id") ]] && return 0
+  res=$(cd "$REPO" && ask_claude scout "$id" --model haiku --effort low --max-budget-usd "$SCOUT_BUDGET" \
+    --tools "Read,Grep,Glob" --permission-mode default \
+"You are a scout for bug $id in this repo. Do not fix anything, do not edit files.
+The owner's words: $(entry "$id" | sed -n 's/^> //p')
+Find the 1-5 source files most likely involved (grep for names, UI strings, features). Keep it short.
+Answer with exactly these lines and nothing else:
+WHERE: <comma-separated repo paths, or NONE>
+AREA: <one of: $(sed -n 's/^Area: //p' "$TRIAGE" | head -1)>
+REPRO: <one-line guess at how to reproduce>")
+  where=$(print -r -- "$res" | sed -n 's/^WHERE: *//p' | head -1)
+  area=$(print -r -- "$res" | sed -n 's/^AREA: *//p' | head -1)
+  repro=$(print -r -- "$res" | sed -n 's/^REPRO: *//p' | head -1)
+  if [[ -z $where || $where == NONE ]]; then
+    add_lines "$id" "- $(date +%F) · scout found no files: tell me where you saw it · scout"
+    notify "$id: tell me where you saw it (scout found no files)"
+    return 1
+  fi
+  add_lines "$id" "Where: $where" "Repro: $repro (guess)"
+  [[ -n $area ]] && set_area "$id" "$area"
+  return 0
+}
+
+# ---------- dedupe ----------
+# Duplicate when another Open entry is FIXING on any of the same files, or a LANES line names one.
+is_duplicate() {
+  local id=$1 f others
+  local -a files; files=(${(s:, :)$(entry_where "$id")})
+  others=$(awk -v id="$1" '/^## T-/{cur=$2} cur!=id' "$TRIAGE" | awk '/^## T-/{e=$0; fx=0} / FIXING /{fx=1} /^Where: /{ if (fx) print }')
+  for f in $files; do
+    [[ -z $f ]] && continue
+    print -r -- "$others" | grep -qF -- "$f" && { say "$id duplicate: $f already FIXING"; return 0; }
+    grep -v '· done\|MERGED\|OUT' "$REPO/.handoff/LANES.md" 2>/dev/null | grep -qF -- "$f" && { say "$id duplicate: lane on $f"; return 0; }
+  done
+  return 1
+}
+
+# ---------- fixer ----------
 agent_running() {
   [[ -f $RUNNING ]] || return 1
   local pid; pid=$(awk '{print $1}' "$RUNNING")
@@ -118,19 +179,72 @@ agent_running() {
   say "stale running marker ($pid) cleared"; rm -f "$RUNNING"; return 1
 }
 
-# Start queued P1s, one at a time, within the daily cap, online, BUILD LOCK free.
+start_fixer() {
+  local ids=$1 first=${1%%,*} slug wt brief id
+  slug=${first:l}; wt=$REPO/.claude/worktrees/$slug
+  print "$(date +%F) $ids" >> "$STARTS"
+  if [[ -n ${TRIAGE_DRY:-} ]]; then say "DRY fixer $ids"; return 0; fi
+  if [[ -n ${TRIAGE_NO_WORKTREE:-} ]]; then wt=$REPO
+  else git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $ids"; return 1; }; fi
+  brief=""
+  for id in ${(s:,:)ids}; do
+    brief+="$(entry "$id")"$'\n\n'
+    add_lines "$id" "- $(date +%F) · FIXING · triage-watch · worktree work/$slug"
+  done
+  notify "Fixing $ids"
+  # Regression guard: the running marker is owned by the background fixer, so a second save never starts a second one.
+  print "starting $ids" > "$RUNNING"
+  (
+    trap 'rm -f "$RUNNING"' EXIT INT TERM HUP
+    cd "$wt" && ask_claude fixer "$ids" --model sonnet --effort medium --max-budget-usd "$FIX_BUDGET" \
+      --permission-mode default --add-dir "$REPO/docs/specs" \
+"/bug ${ids//,/ }
+Entries (from $TRIAGE, git-ignored, absolute path; write status lines there):
+$brief
+Work only in the files named on the Where: lines. Do not explore beyond them unless a failing test shows the cause is elsewhere.
+The Repro: lines are a scout's guess; confirm with a test.
+You are in worktree $wt on branch work/$slug. Stop at a commit here plus one line in $REPO/.handoff/MERGE-QUEUE.md. Never merge, push or install.
+Take the BUILD LOCK in that file before any build and free it after.
+If this needs a stronger model, write '$ids needs opus: <why>' to $QUEUE.blocked and stop.
+If a permission prompt or anything else blocks you, write '$ids blocked: <why>' to $QUEUE.blocked and stop." >> "$STATE/$first.out"
+    rc=$?
+    say "fixer $ids exit $rc"
+    notify "Done with $ids (exit $rc); see the merge queue"
+  ) &!
+  print "$! $ids" > "$RUNNING"
+}
+
+# ---------- drain ----------
 drain() {
-  mkdir "$STATE/agent.lock" 2>/dev/null || { say "agent running; queue waits"; return 0; }
+  mkdir "$STATE/agent.lock" 2>/dev/null || { say "drain busy"; return 0; }
   {
-    local id
-    id=$(head -1 "$QUEUE")
-    [[ -z $id ]] && return 0
-    agent_running && { say "$id queued: an agent is still running"; return 0; }
-    if (( $(starts_today) >= DAILY_CAP )); then notify "$id waits: $DAILY_CAP auto-starts used today"; return 0; fi
+    local head id t area ids batch_end
+    head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
+    id=${head%% *}; t=${head##* }
+    agent_running && { say "$id queued: a fixer is still running"; return 0; }
+    if over_budget; then notify "$id waits: today's budget \$$DAILY_BUDGET is used"; return 0; fi
+    if (( $(starts_today) >= DAILY_CAP )); then notify "$id waits: $DAILY_CAP runs used today"; return 0; fi
     online || { say "$id queued: offline"; return 0; }
     build_lock_free || { say "$id queued: BUILD LOCK taken"; return 0; }
-    sed -i '' '1d' "$QUEUE"
-    start_agent "$id"
+    # scout every queued entry still without Where:
+    local line qid
+    for line in ${(f)"$(<$QUEUE)"}; do
+      qid=${line%% *}
+      if ! scout "$qid"; then sed -i '' "/^$qid /d" "$QUEUE"; fi
+    done
+    head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
+    id=${head%% *}; t=${head##* }
+    if is_duplicate "$id"; then
+      sed -i '' "/^$id /d" "$QUEUE"; add_lines "$id" "- $(date +%F) · skipped: same files already being fixed · triage-watch"; return 0
+    fi
+    # batch: same Area, filed within BATCH_MIN minutes of the head
+    area=$(entry_area "$id"); ids=$id; batch_end=$(( t + BATCH_MIN * 60 ))
+    for line in ${(f)"$(tail -n +2 $QUEUE)"}; do
+      qid=${line%% *}
+      (( ${line##* } <= batch_end )) && [[ $(entry_area "$qid") == $area ]] && ! is_duplicate "$qid" && ids+=",$qid"
+    done
+    for qid in ${(s:,:)ids}; do sed -i '' "/^$qid /d" "$QUEUE"; done
+    start_fixer "$ids"
   } always { rmdir "$STATE/agent.lock" 2>/dev/null }
 }
 
@@ -138,74 +252,108 @@ run() {
   mkdir "$STATE/file.lock" 2>/dev/null || exit 0
   {
     [[ -n ${TRIAGE_NO_DEBOUNCE:-} ]] || debounce || exit 0
-    local ids; ids=$(file_inbox)
-    for id in ${(f)ids}; do print "$id" >> "$QUEUE"; say "filed $id (P1), queued"; done
+    local filed; filed=$(file_inbox)
+    for line in ${(f)filed}; do print "$line" >> "$QUEUE"; say "filed ${line%% *} (urgent), queued"; done
     drain
   } always { rmdir "$STATE/file.lock" 2>/dev/null }
 }
 
+weekly() {  # one line for the README: last 7 days
+  awk -v since="$(date -v-7d +%F)" '$1>=since { sub("cost=","",$5); sub("turns=","",$6); c+=$5; t+=$6; n++ }
+    END { printf "last 7 days: %d runs, $%.2f, %d turns\n", n, c, t }' "$USAGE"
+}
+
+# ---------- selftest ----------
 selftest() {
-  local d; d=$(mktemp -d "${TMPDIR:-/tmp}/tw.XXXX") || exit 1
-  export TRIAGE_FILE=$d/triage.md TRIAGE_STATE=$d/state TRIAGE_NO_DEBOUNCE=1 TRIAGE_NO_NOTIFY=1 TRIAGE_DRY=1 TRIAGE_REPO=$d
-  mkdir -p $d/.handoff; print "BUILD LOCK: free" > $d/.handoff/MERGE-QUEUE.md
-  cat > $TRIAGE_FILE <<'EOF'
+  local d fail=0; d=$(mktemp -d "${TMPDIR:-/tmp}/tw.XXXX") || exit 1
+  ok()  { print "ok   $1"; }
+  bad() { print "FAIL $1"; fail=1; }
+  export TRIAGE_FILE=$d/triage.md TRIAGE_STATE=$d/state TRIAGE_NO_DEBOUNCE=1 TRIAGE_NO_NOTIFY=1 TRIAGE_REPO=$d \
+         TRIAGE_ONLINE=1 TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1
+  mkdir -p $d/.handoff; print "BUILD LOCK: free" > $d/.handoff/MERGE-QUEUE.md; : > $d/.handoff/LANES.md
+  # fake claude: scout answers from $d/scout-answer; fixer sleeps $d/fix-sleep seconds
+  cat > $d/fake-claude <<EOF
+#!/bin/zsh
+if [[ "\$*" == *haiku* ]]; then
+  r=\$(cat $d/scout-answer); r=\${r//\$'\n'/\\\\n}
+  print -r -- "{\"result\":\"\$r\",\"total_cost_usd\":0.02,\"num_turns\":3}"
+else
+  sleep \$(cat $d/fix-sleep 2>/dev/null || print 0)
+  print -r -- '{"result":"fixed","total_cost_usd":0.50,"num_turns":12}'
+fi
+EOF
+  chmod +x $d/fake-claude; print 0 > $d/fix-sleep
+  scout_says() { print -r -- "$1" > $d/scout-answer; }
+  newfile() { cat > $TRIAGE_FILE <<'EOF'
 # Recense triage
 Next ID: T-0001
 
 # Inbox
-Write here.
+Write what went wrong, one line.
+Start with ! if it should be fixed now.
 
-P1 - no floating window over youtube.com in Safari
-P2 - calendar colours too bright at night
 -
 
 # Open
-Area: Other
+Area: Cadence | Ears | Bridge | Gallery | Sync | UI | Draftpad | Specs | Build | Other
 EOF
-  local fail=0
-  ok()  { print "ok   $1"; }
-  bad() { print "FAIL $1"; fail=1; }
-  TRIAGE_ONLINE=1 zsh $SELF run
-  grep -q '^## T-0001 · no floating window over youtube.com in Safari' $TRIAGE_FILE && grep -q '^TRIAGED P1 ' $TRIAGE_FILE && ok "P1 filed as T-0001" || bad "P1 filed"
-  grep -q '^## T-0002 · calendar colours' $TRIAGE_FILE && grep -q '^TRIAGED P2 ' $TRIAGE_FILE && ok "P2 filed as T-0002" || bad "P2 filed"
-  grep -q '^Next ID: T-0003' $TRIAGE_FILE && ok "Next ID raised to T-0003" || bad "Next ID"
-  sed -n '/^# Inbox/,/^# Open/p' $TRIAGE_FILE | grep -q '^P[123] -' && bad "Inbox cleared" || ok "Inbox cleared"
-  sed -n '/^# Inbox/,/^# Open/p' $TRIAGE_FILE | grep -q '^- *$' && ok "empty - line kept" || bad "empty - line kept"
-  [[ $(grep -c ' T-0001$' $TRIAGE_STATE/starts) == 1 ]] && ok "P1 started one agent" || bad "P1 agent start"
-  grep -q 'T-0002' $TRIAGE_STATE/starts && bad "P2 started no agent" || ok "P2 started no agent"
-  TRIAGE_ONLINE=1 zsh $SELF run
-  [[ $(grep -c '^## T-' $TRIAGE_FILE) == 2 ]] && ok "second save files nothing twice" || bad "double save"
-  sed -i '' 's/^- $/P1 - offline bug/' $TRIAGE_FILE
-  TRIAGE_ONLINE=0 zsh $SELF run
-  grep -q '^T-0003$' $TRIAGE_STATE/queue && ! grep -q 'T-0003' $TRIAGE_STATE/starts && ok "offline: T-0003 filed and queued" || bad "offline queue"
-  TRIAGE_ONLINE=1 zsh $SELF run
-  grep -q 'T-0003' $TRIAGE_STATE/starts && ok "back online: queue drained" || bad "queue drain"
-  for n in 4 5; do sed -i '' "s/^- \$/P1 - cap bug $n/" $TRIAGE_FILE; TRIAGE_ONLINE=1 zsh $SELF run; done
-  [[ $(grep -c "^$(date +%F) " $TRIAGE_STATE/starts) == 3 ]] && grep -q '^T-0005$' $TRIAGE_STATE/queue && ok "daily cap 3: T-0005 waits" || bad "daily cap"
-  sed -i '' 's/^BUILD LOCK: free/BUILD LOCK: someone since 10:00/' $d/.handoff/MERGE-QUEUE.md
-  : > $TRIAGE_STATE/starts
-  TRIAGE_ONLINE=1 zsh $SELF run
-  grep -q 'T-0005' $TRIAGE_STATE/starts && bad "BUILD LOCK respected" || ok "BUILD LOCK respected"
-  # Regression guard: one agent at a time while a real (background) agent runs.
-  : > $TRIAGE_STATE/starts; : > $TRIAGE_STATE/queue
-  sed -i '' 's/^BUILD LOCK: .*/BUILD LOCK: free/' $d/.handoff/MERGE-QUEUE.md
-  print '#!/bin/zsh\nsleep 3' > $d/fake-claude; chmod +x $d/fake-claude
-  ( unset TRIAGE_DRY; export TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1 TRIAGE_ONLINE=1
-    sed -i '' 's/^- $/P1 - slow agent A/' $TRIAGE_FILE; zsh $SELF run
-    sleep 1
-    sed -i '' 's/^- $/P1 - slow agent B/' $TRIAGE_FILE; zsh $SELF run )
-  local a=$(grep -c . $TRIAGE_STATE/starts)
-  [[ $a == 1 ]] && grep -q '^T-0007$' $TRIAGE_STATE/queue && ok "two saves 1 s apart: one agent, second queued" || bad "one agent at a time (starts=$a)"
-  sleep 3
-  ( unset TRIAGE_DRY; export TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1 TRIAGE_ONLINE=1; zsh $SELF run )
-  grep -q 'T-0007' $TRIAGE_STATE/starts && ok "drains after the first agent exits" || bad "drain after exit"
-  sleep 4
+  }
+  inbox() { sed -i '' "s|^- *\$|$1|" $TRIAGE_FILE; }
+  reset() { rm -rf $TRIAGE_STATE; mkdir -p $TRIAGE_STATE; newfile; }
+
+  reset; scout_says $'WHERE: editor/src/ink.js\nAREA: Draftpad\nREPRO: hold squeeze, lift pencil'
+  inbox '! no floating window over youtube.com in Safari'; zsh $SELF run; sleep 1
+  grep -q '^## T-0001 · no floating window over youtube.com in Safari' $TRIAGE_FILE && grep -q '^TRIAGED P1 · Draftpad' $TRIAGE_FILE && ok "! line filed as T-0001 TRIAGED P1" || bad "! filed"
+  grep -q '^Where: editor/src/ink.js' $TRIAGE_FILE && grep -q '^Repro: .*(guess)' $TRIAGE_FILE && ok "scout wrote Where + Repro (guess)" || bad "scout lines"
+  grep -q ' scout T-0001 cost=0.02' $TRIAGE_STATE/usage.log && grep -q ' fixer T-0001 cost=0.50' $TRIAGE_STATE/usage.log && ok "scout → fixer, both logged" || bad "scout → fixer"
+  grep -q 'FIXING · triage-watch' $TRIAGE_FILE && ok "entry marked FIXING" || bad "FIXING line"
+  sed -n '/^# Inbox/,/^# Open/p' $TRIAGE_FILE | grep -q '^- *$' && ok "Inbox keeps one empty line" || bad "Inbox empty line"
+
+  reset; inbox 'calendar colours too bright at night'; zsh $SELF run
+  grep -q '^NEW · Other' $TRIAGE_FILE && [[ ! -s $TRIAGE_STATE/usage.log ]] && ok "plain line filed NEW, nothing spent" || bad "plain line"
+  zsh $SELF run; [[ $(grep -c '^## T-' $TRIAGE_FILE) == 1 ]] && ok "second save files nothing twice" || bad "double save"
+
+  reset; inbox 'P1 - old format still works'; zsh $SELF run; sleep 1
+  grep -q '^TRIAGED P1 ' $TRIAGE_FILE && grep -q ' fixer T-0001' $TRIAGE_STATE/usage.log && ok "P1 - is a synonym for !" || bad "P1 synonym"
+
+  reset; scout_says $'WHERE: NONE\nAREA: Other\nREPRO: unknown'
+  inbox '! something odd somewhere'; zsh $SELF run
+  grep -q 'scout found no files: tell me where you saw it' $TRIAGE_FILE && ! grep -q ' fixer ' $TRIAGE_STATE/usage.log && [[ ! -s $TRIAGE_STATE/queue ]] && ok "scout finds nothing → filed + note, no fixer" || bad "scout none"
+
+  reset; scout_says $'WHERE: strip/app.swift\nAREA: UI\nREPRO: guess'
+  print -r -- '- lane x · working on strip/app.swift · 2026-11-12' > $d/.handoff/LANES.md
+  inbox '! strip flickers'; zsh $SELF run
+  grep -q 'skipped: same files already being fixed' $TRIAGE_FILE && ! grep -q ' fixer ' $TRIAGE_STATE/usage.log && ok "duplicate of a lane → skipped" || bad "dedupe"
+  : > $d/.handoff/LANES.md
+
+  reset; scout_says $'WHERE: editor/src/ink.js\nAREA: Draftpad\nREPRO: guess'
+  TRIAGE_ONLINE=0 zsh $SELF run   # nothing yet
+  inbox '! first draftpad bug'; TRIAGE_ONLINE=0 zsh $SELF run
+  inbox '! second draftpad bug'; TRIAGE_ONLINE=0 zsh $SELF run
+  grep -c . $TRIAGE_STATE/queue | grep -q '^2$' && ok "offline: both queued" || bad "offline queue"
+  zsh $SELF run; sleep 1
+  [[ $(grep -c . $TRIAGE_STATE/starts) == 1 ]] && grep -q 'T-0001,T-0002' $TRIAGE_STATE/starts && ok "same Area within 10 min → one run" || bad "batch"
+
+  reset; scout_says $'WHERE: a.js\nAREA: UI\nREPRO: guess'
+  print "$(date '+%F %H:%M') fixer T-0099 cost=3.00 turns=40" > $TRIAGE_STATE/usage.log
+  inbox '! over budget bug'; zsh $SELF run
+  grep -q '^T-0001 ' $TRIAGE_STATE/queue && [[ ! -s $TRIAGE_STATE/starts ]] && ok "budget reached → queued" || bad "budget"
+
+  reset; scout_says $'WHERE: a.js\nAREA: UI\nREPRO: guess'; print 3 > $d/fix-sleep
+  inbox '! slow agent A'; zsh $SELF run
+  scout_says $'WHERE: b.js\nAREA: Sync\nREPRO: guess'
+  sleep 1; inbox '! slow agent B'; zsh $SELF run
+  [[ $(grep -c . $TRIAGE_STATE/starts) == 1 ]] && grep -q '^T-0002 ' $TRIAGE_STATE/queue && ok "one fixer at a time, second queued" || bad "one at a time"
+  sleep 3; zsh $SELF run; sleep 4
+  grep -q 'T-0002' $TRIAGE_STATE/starts && ok "drains after the first fixer exits" || bad "drain after exit"
+
   rm -rf $d
   (( fail )) && { print "selftest FAILED"; exit 1; } || print "selftest ok"
 }
 
 case ${1:-run} in
   run) run ;;
+  weekly) weekly ;;
   selftest) selftest ;;
-  *) print "usage: triage-watch.zsh [run|selftest]"; exit 2 ;;
+  *) print "usage: triage-watch.zsh [run|weekly|selftest]"; exit 2 ;;
 esac

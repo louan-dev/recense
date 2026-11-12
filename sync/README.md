@@ -119,15 +119,24 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
 
 ## Triage watch (save triage.md → bug gets worked on)
-- **What:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` whenever `docs/specs/triage.md` is saved (and hourly).
-- **You write** under `# Inbox`: `P1 - description` (or `P2 -`, `P3 -`), then save.
-- **Filing:** local and instant, no network. Each line becomes `T-#### · TRIAGED Pn` under `# Open`.
-- **P1:** queued, then `claude -p "/bug T-####"` starts in its own worktree `.claude/worktrees/t-####`.
-  - One agent at a time; at most 3 auto-starts a day; waits while the BUILD LOCK is taken.
-  - Normal permission rules (never bypass); a blocked agent writes why to `~/.local/state/triage-watch/blocked`.
-  - Stops at a commit on its branch + a MERGE-QUEUE line; the coordinator merges.
-- **Offline:** the network (Anthropic) is needed only to start the agent; offline, a P1 waits in the queue and starts on the next save or hourly run.
-- State and log: `~/.local/state/triage-watch/` (`queue`, `starts`, `log`, `T-####.out`); launchd log `~/Library/Logs/triage-watch.log`.
+- **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
+  - `!` first (or the old `P1 -`) = urgent: an agent starts. Any other line is only filed.
+- **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
+  Local, instant, no network: each line becomes `T-####` (urgent → `TRIAGED P1`, else `NEW`).
+- **Scout** (urgent only): `claude -p --model haiku --effort low --max-budget-usd 0.10`, read/grep tools only.
+  Writes `Where:` (files) and `Repro:` (marked guess) under the entry, then stops.
+  No files found → the entry gets "tell me where you saw it" and a notification; nothing more is spent.
+- **Fixer:** `claude -p --model sonnet --effort medium --max-budget-usd 1.50` running `/bug` in `.claude/worktrees/t-####`.
+  - Narrow brief: the entry and its `Where:` files only.
+  - One at a time; skips an entry whose files are already FIXING or held by a LANES lane.
+  - Urgent entries in the same Area filed within 10 min share one run.
+  - Stops at a commit on its branch + a MERGE-QUEUE line; never merges, pushes or installs. Normal permissions, never bypass.
+  - Needs Opus or blocked → writes why to `~/.local/state/triage-watch/queue.blocked`; the owner or coordinator restarts it.
+- **Caps:** `$3.00` a day (scout + fixer, `TRIAGE_DAILY_BUDGET_USD`), backstop 3 fixer runs a day (`TRIAGE_DAILY_CAP`).
+  Over the cap, entries wait in the queue with a notification.
+- **Offline:** filing never needs the network. Scout and fixer (Anthropic) run as catch-up on the next save or hourly run.
+- **Usage:** every run's cost and turns go to `~/.local/state/triage-watch/usage.log`; weekly line: `zsh bin/triage-watch.zsh weekly`.
+- Log: `~/.local/state/triage-watch/log`, launchd log `~/Library/Logs/triage-watch.log`.
 - Test: `zsh bin/triage-watch.zsh selftest` (part of `npm test`).
 - Turn on:
 
