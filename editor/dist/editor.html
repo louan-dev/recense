@@ -33917,6 +33917,9 @@ ${clean(nextLineText)}`;
       mount = null,
       onToolChange = null
     } = options;
+    function currentLineHeight() {
+      return view && typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0 ? view.defaultLineHeight : lineHeight;
+    }
     let inkDoc = initialInk && typeof initialInk === "object" ? {
       version: 1,
       strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
@@ -34382,7 +34385,7 @@ ${clean(nextLineText)}`;
     function relayout() {
       const docText = getDocText();
       for (const stroke of inkDoc.strokes) {
-        const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+        const res = resolveStrokeAnchor(stroke, docText, currentLineHeight());
         stroke.points = res.points;
         stroke.orphaned = res.orphaned;
         if (stroke.anchor) {
@@ -34432,7 +34435,7 @@ ${clean(nextLineText)}`;
         stroke.width = getToolDefaultWidth(stroke.tool);
       }
       if (!stroke.anchor) {
-        anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+        anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       }
       inkDoc.strokes.push(stroke);
       render();
@@ -34443,7 +34446,7 @@ ${clean(nextLineText)}`;
       const docText = getDocText();
       let res;
       if (effectiveMode === "partial" || effectiveMode === "eraser-partial") {
-        res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-partial"], docText, lineHeight, getCurrentPageIndex());
+        res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-partial"], docText, currentLineHeight(), getCurrentPageIndex());
       } else {
         res = eraseWholeStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-whole"]);
       }
@@ -34499,7 +34502,6 @@ ${clean(nextLineText)}`;
       return currentTool;
     }
     function inks(e) {
-      if (e.pointerType === "touch") return false;
       if (!allowMouse && e.pointerType === "mouse") return false;
       if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === "pen") {
         currentTool = "pen";
@@ -34532,7 +34534,6 @@ ${clean(nextLineText)}`;
     function onPointerMove(e) {
       moveRing(e);
       if (!isDrawing) return;
-      if (e.pointerType === "touch") return;
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
       const scrollLeft = scrollDOM?.scrollLeft || 0;
       const scrollTop = scrollDOM?.scrollTop || 0;
@@ -34558,7 +34559,6 @@ ${clean(nextLineText)}`;
     function onPointerUp(e) {
       if (!isDrawing) return;
       isDrawing = false;
-      if (e.pointerType === "touch") return;
       if (currentTool.startsWith("eraser")) {
         activePoints = [];
         if (activeGroup) activeGroup.innerHTML = "";
@@ -34569,7 +34569,7 @@ ${clean(nextLineText)}`;
       let finalPoints = activePoints;
       let finalShape = null;
       if (currentTool === "underline") {
-        finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+        finalPoints = snapUnderlineStroke(activePoints, currentLineHeight());
         finalShape = null;
       } else if (currentTool === "circle") {
         const res = detectAndSnapShape(activePoints, { forceCircle: true });
@@ -34590,7 +34590,7 @@ ${clean(nextLineText)}`;
         device: e.pointerType || "pen",
         at: Date.now()
       };
-      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       inkDoc.strokes.push(stroke);
       if (stroke.tool === "pen") scheduleRecognition();
       activePoints = [];
@@ -34611,7 +34611,7 @@ ${clean(nextLineText)}`;
       const post = globalObj?.webkit?.messageHandlers?.ui?.postMessage;
       if (typeof post !== "function" || !docNode || typeof docNode.createElement !== "function") return 0;
       const pending = new Set([...ocrSent.values()].flat());
-      const groups = groupHandwriting(inkDoc.strokes.filter((st) => !pending.has(st)), lineHeight);
+      const groups = groupHandwriting(inkDoc.strokes.filter((st) => !pending.has(st)), currentLineHeight());
       let sent = 0;
       for (const g of groups) {
         const png = renderGroupPNG(g);
@@ -34656,7 +34656,7 @@ ${clean(nextLineText)}`;
       const keep = [];
       let changed = false;
       for (const st of inkDoc.strokes) {
-        const r = resolveStrokeAnchor(st, docBefore, lineHeight);
+        const r = resolveStrokeAnchor(st, docBefore, currentLineHeight());
         const pi = r.pageIndex ?? 0;
         if (drop.has(pi)) {
           inkDoc.removed.push(st.id);
@@ -34692,7 +34692,7 @@ ${clean(nextLineText)}`;
     }
     function findInk(query) {
       return findInkText(inkDoc.strokes, query).map((m) => {
-        const r = resolveStrokeAnchor(m.stroke, getDocText(), lineHeight);
+        const r = resolveStrokeAnchor(m.stroke, getDocText(), currentLineHeight());
         const ys = (r.points || []).map((p) => p[1]);
         return { id: m.id, text: m.text, pageIndex: r.pageIndex ?? 0, y: ys.length ? Math.min(...ys) : 0 };
       });

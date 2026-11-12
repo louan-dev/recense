@@ -36,6 +36,8 @@ Row: ID · title · status · From · code pointer
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
 - BUG-02 · Vertical scroll turns into a page swipe; pages jump · `[~]` · T-0025 T-0026 T-0027 · `bugs/BUG-02-scroll-locks-sideways.md`
+- BUG-04 · Draftpad ink ignores touch (iPhone has no Pencil, so annotation never worked there) · `[~]` (fixed, device check owed) · T-0023 · `bugs/BUG-04-mobile-ink-touch-blocked.md`
+- BUG-05 · Ink anchors to the wrong line (hard-coded 28px vs. the real line height) · `[~]` (fixed, device check owed) · T-0014 · `bugs/BUG-05-ink-anchor-line-height.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations
