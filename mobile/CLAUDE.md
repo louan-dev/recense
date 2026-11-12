@@ -23,6 +23,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   name the shots in the Checked: line. A simulator screenshot is not evidence.
   "could not create image": the app running the session (Terminal; a session agent-resume started runs under launchd and
   has none) lacks System Settings › Privacy & Security › Screen & System Audio Recording; say so and ask the owner to check.
+- Caption seek (`shared/CaptionSeek.swift`), after any change to it or to `shared/fingerprint.swift`:
+  `swiftc -O shared/fingerprint.swift shared/CaptionSeek.swift mobile/ios/Tests/captionseek/main.swift -o "$TMPDIR/captionseek" && "$TMPDIR/captionseek"` (ALL OK).
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
 - The broadcast's clock (`HostApp/iOS/SoundClock.swift`: t0 from the sound's stamps, pauses kept), after any change to it or to `SampleHandler.processSampleBuffer`:

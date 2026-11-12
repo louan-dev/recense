@@ -55,6 +55,17 @@
     }
   }
 
+  // The active caption cue text from a <track kind="captions"> or <track kind="subtitles"> element, or null.
+  // Sent with every /pos report so the app can show it without transcribing when the site provides captions.
+  function activeCue(m) {
+    for (const t of (m.textTracks || [])) {
+      if (t.kind !== 'captions' && t.kind !== 'subtitles') continue;
+      if (t.mode === 'disabled') continue;
+      for (const c of (t.activeCues || [])) { if (c && c.text) return c.text; }
+    }
+    return null;
+  }
+
   async function report() {
     if (!enabled || !media || !media.currentSrc) return;
     const src = srcOf(media);
@@ -64,7 +75,8 @@
       url: src, t: media.currentTime, rate: media.playbackRate, dur: media.duration,
       paused: media.paused || media.seeking || media.readyState < 3, sent: Date.now(), seq, loop: isAd(media) ? loop.track && !loop.ab : media.loop,
       page: pageOf(media), vol: media.muted ? 0 : media.volume, ad: adNow(media),   // an ad: shown as one, never transcribed
-      fxv: fx.v, fxNo, fxKey: !keyFailed     // the sound the window last sent, as this page has it (SPEC 54)
+      fxv: fx.v, fxNo, fxKey: !keyFailed,    // the sound the window last sent, as this page has it (SPEC 54)
+      cue: activeCue(media)                   // T-0005 way 3: active <track> caption cue, or null
     });
     sending = false;
     if (again) { again = false; report(); }
