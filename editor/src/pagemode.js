@@ -488,7 +488,9 @@ export function attachSwipePaging(
   let wheelAxisX = 0;
   let wheelAxisY = 0;
 
-  const targetEl = () => (view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null);
+  // Derived from Spec: BUG-02 (A6): move the whole scroller (text, selection, cursor, ink) as one, never the text alone.
+  const targetEl = () => (view ? view.scrollDOM : null);
+  if (view && view.dom && view.dom.style) view.dom.style.overflowX = 'hidden';
   const widthOf = () => (view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400);
 
   function renderDrag(dx) {
@@ -503,15 +505,29 @@ export function attachSwipePaging(
   function settleDrag(dx) {
     const el = targetEl();
     const limit = Math.min(threshold, widthOf() * 0.2);
-    if (dx >= limit) {
-      swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
-    } else if (dx <= -limit) {
-      swipeRightToLeft(view, { onSnap, onBounce });
-    }
-    if (el && el.style) {
+    const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce })
+      : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
+    if (!el || !el.style) { if (turn) turn(); return; }
+    if (!turn) {
       el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
-      el.style.transform = 'translateX(0px)';
+      el.style.transform = '';
+      return;
     }
+    // BUG-02 A7 glide: the old page leaves the way the fingers went (140 ms), the new page enters from the other side (220 ms).
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { el.style.transition = 'none'; el.style.transform = ''; turn(); return; }
+    const w = widthOf();
+    const dir = dx > 0 ? 1 : -1;
+    el.style.transition = 'transform 140ms cubic-bezier(0.4, 0, 1, 1)';
+    el.style.transform = `translateX(${dir * w}px)`;
+    setTimeout(() => {
+      turn();
+      el.style.transition = 'none';
+      el.style.transform = `translateX(${-dir * w * 0.35}px)`;
+      void el.offsetWidth;
+      el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      el.style.transform = '';
+    }, 140);
   }
 
   view.scrollDOM.addEventListener('wheel', e => {
@@ -530,6 +546,11 @@ export function attachSwipePaging(
       wheelAxisX += e.deltaX; wheelAxisY += e.deltaY;
       axis = decideAxis(wheelAxisX, wheelAxisY);
       if (axis === null) return;
+      // BUG-02 A5: the slop counts toward the swipe, so the page moves from the first pixel once it is sideways.
+      if (axis === 'h') {
+        const before = wheelAxisX - e.deltaX;
+        wheelAcc = e.isDirectionInvertedFromDevice === false ? before : -before;
+      }
     }
     if (axis === 'v') return;
 

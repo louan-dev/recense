@@ -42,7 +42,7 @@ test('P8: mouse drag from the margin selects text, never adds a page', () => {
 test('P8: Option + mouse drag still pages', () => {
   const { view, drag } = harness();
   drag('mouse', { altKey: true });
-  assert.notEqual(view.contentDOM.style.transform, undefined, 'the drag reached the pager');
+  assert.notEqual(view.scrollDOM.style.transform, undefined, 'the drag reached the pager');
 });
 
 import { ERASER_RADIUS, eraseWholeStrokes } from '../src/ink.js';

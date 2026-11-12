@@ -15,6 +15,9 @@ From: T-0025, T-0026, T-0027 · Status: `[~]` · Code: `editor/src/pagemode.js` 
 - **A2 · Ratio:** the axis is sideways only if `|dx| > 1.4·|dy|`; otherwise vertical.
 - **A3 · Lock:** once vertical, the whole gesture stays vertical: no page drag, no page change, scrolling not blocked.
 - **A4 · Commit:** a page changes only at `|dx| ≥ min(60, 0.2·width)` on a sideways gesture (unchanged).
+- **A5 · No lost pixels:** once a trackpad gesture is sideways, the slop already moved counts toward the drag (the page moves from the first pixel; owner 11-12: "doesnt budge").
+- **A6 · One piece:** the drag moves the whole scroller (text, selection, cursor, ink), never the text layer alone (owner: "weird boxes", "slide and page do not sync").
+- **A7 · Glide:** past the commit distance the old page leaves the way the fingers went (140 ms), the new page enters from the other side (220 ms); Reduce Motion turns pages without motion.
 - One function, `decideAxis(dx, dy)`, holds A1–A2 for touch, Pencil, mouse and trackpad.
 
 ## Red test first
