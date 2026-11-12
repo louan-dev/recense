@@ -122,6 +122,13 @@ ask_claude() {
   out=$STATE/$role-${ids//,/_}.json
   "$CLAUDE" -p --output-format json "$@" > "$out" 2>> "$LOG"
   local rc=$? cost turns
+  # Usage limit: not counted against the budget or the run cap; the caller re-queues (exit 75).
+  if (( rc != 0 )) && grep -qi 'limit' "$out" 2>/dev/null; then
+    LIMIT_RESET=$(grep -oiE 'resets? [^"\\]*' "$out" | head -1)
+    print -r -- "${LIMIT_RESET:-in about an hour}" > "$STATE/limit"
+    say "$role $ids hit the usage limit (${LIMIT_RESET:-no reset time})"
+    return 75
+  fi
   cost=$(plutil -extract total_cost_usd raw -o - "$out" 2>/dev/null || print 0)
   turns=$(plutil -extract num_turns raw -o - "$out" 2>/dev/null || print 0)
   print "$(date '+%F %H:%M') $role $ids cost=$cost turns=$turns" >> "$USAGE"
@@ -129,11 +136,26 @@ ask_claude() {
   return $rc
 }
 
+# Status line under an entry: SCOUTING → FIXING → READY → MERGED (or WAITING / STOPPED), with a time.
+status() { local id=$1 word=$2; shift 2; add_lines "$id" "- $(date '+%F %H:%M') · $word · triage-watch${1:+ · $*}"; }
+
+# Put IDs back at the head of the queue after a usage limit; undo their run-cap count.
+requeue_limit() {
+  local ids=$1 reset; reset=$(<"$STATE/limit" 2>/dev/null)
+  local id tmp=$QUEUE.tmp.$$
+  { for id in ${(s:,:)ids}; do print "$id $(date +%s)"; status "$id" WAITING "usage limit; resumes after ${reset:-the reset}"; done; cat "$QUEUE"; } > "$tmp" && mv "$tmp" "$QUEUE"
+  grep -v " $ids\$" "$STARTS" > "$STARTS.tmp" ; mv "$STARTS.tmp" "$STARTS"
+  date -v+1H +%s > "$STATE/limit.until"
+  notify "Usage limit: $ids resumes after ${reset:-the reset}"
+}
+
 # ---------- scout ----------
 # Returns 0 when it found files (Where: written), 1 when not.
 scout() {
   local id=$1 res where area repro
   [[ -n $(entry_where "$id") ]] && return 0
+  status "$id" SCOUTING
+  local rc
   res=$(cd "$REPO" && ask_claude scout "$id" --model haiku --effort low --max-budget-usd "$SCOUT_BUDGET" \
     --tools "Read,Grep,Glob" --permission-mode default \
 "You are a scout for bug $id in this repo. Do not fix anything, do not edit files.
@@ -142,7 +164,8 @@ Find the 1-5 source files most likely involved (grep for names, UI strings, feat
 Answer with exactly these lines and nothing else:
 WHERE: <comma-separated repo paths, or NONE>
 AREA: <one of: $(sed -n 's/^Area: //p' "$TRIAGE" | head -1)>
-REPRO: <one-line guess at how to reproduce>")
+REPRO: <one-line guess at how to reproduce>"); rc=$?
+  (( rc == 75 )) && return 2
   where=$(print -r -- "$res" | sed -n 's/^WHERE: *//p' | head -1)
   area=$(print -r -- "$res" | sed -n 's/^AREA: *//p' | head -1)
   repro=$(print -r -- "$res" | sed -n 's/^REPRO: *//p' | head -1)
@@ -185,11 +208,12 @@ start_fixer() {
   print "$(date +%F) $ids" >> "$STARTS"
   if [[ -n ${TRIAGE_DRY:-} ]]; then say "DRY fixer $ids"; return 0; fi
   if [[ -n ${TRIAGE_NO_WORKTREE:-} ]]; then wt=$REPO
-  else git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $ids"; return 1; }; fi
+  elif [[ ! -d $wt ]]; then   # a run resumed after a usage limit reuses its worktree
+    git -C "$REPO" worktree add "$wt" -b "work/$slug" >> "$LOG" 2>&1 || { say "worktree failed for $ids"; return 1; }; fi
   brief=""
   for id in ${(s:,:)ids}; do
     brief+="$(entry "$id")"$'\n\n'
-    add_lines "$id" "- $(date +%F) · FIXING · triage-watch · worktree work/$slug"
+    status "$id" FIXING "branch work/$slug"
   done
   notify "Fixing $ids"
   # Regression guard: the running marker is owned by the background fixer, so a second save never starts a second one.
@@ -209,9 +233,34 @@ If this needs a stronger model, write '$ids needs opus: <why>' to $QUEUE.blocked
 If a permission prompt or anything else blocks you, write '$ids blocked: <why>' to $QUEUE.blocked and stop." >> "$STATE/$first.out"
     rc=$?
     say "fixer $ids exit $rc"
+    if (( rc == 75 )); then requeue_limit "$ids"; exit 0; fi
+    for id in ${(s:,:)ids}; do
+      if (( rc == 0 )); then status "$id" READY "branch work/$slug"; else status "$id" STOPPED "exit $rc; see $STATE/$first.out"; fi
+    done
     notify "Done with $ids (exit $rc); see the merge queue"
   ) &!
   print "$! $ids" > "$RUNNING"
+}
+
+requeue_limit_scout() {  # the ID is still in the queue; just mark it and pause
+  local reset; reset=$(<"$STATE/limit" 2>/dev/null)
+  status "$1" WAITING "usage limit; resumes after ${reset:-the reset}"
+  date -v+1H +%s > "$STATE/limit.until"
+}
+
+# ---------- cleanup ----------
+# A fixer's branch that is in main and has a clean worktree: trash the worktree, prune, delete the branch, mark MERGED.
+cleanup() {
+  local wt slug br ids id
+  for wt in $REPO/.claude/worktrees/t-[0-9][0-9][0-9][0-9]; do
+    slug=${wt:t}; br=work/$slug
+    git -C "$REPO" merge-base --is-ancestor "$br" main 2>/dev/null || continue
+    [[ -z $(git -C "$wt" status --porcelain 2>/dev/null) ]] || { say "$slug merged but not clean; kept"; continue; }
+    ids=$(awk -v f="${slug:u}" '{ n=split($2,a,","); if (a[1]==f) print $2 }' "$STARTS" | tail -1); ids=${ids:-${slug:u}}
+    ${=TRIAGE_TRASH:-trash} "$wt" && git -C "$REPO" worktree prune && git -C "$REPO" branch -d "$br" >> "$LOG" 2>&1 || { say "cleanup of $slug failed"; continue; }
+    for id in ${(s:,:)ids}; do status "$id" MERGED "branch $br removed"; done
+    say "cleaned $slug"
+  done
 }
 
 # ---------- drain ----------
@@ -222,6 +271,8 @@ drain() {
     head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
     id=${head%% *}; t=${head##* }
     agent_running && { say "$id queued: a fixer is still running"; return 0; }
+    if [[ -f $STATE/limit.until ]] && (( $(date +%s) < $(<$STATE/limit.until) )); then say "$id waits: usage limit"; return 0; fi
+    rm -f "$STATE/limit.until"
     if over_budget; then notify "$id waits: today's budget \$$DAILY_BUDGET is used"; return 0; fi
     if (( $(starts_today) >= DAILY_CAP )); then notify "$id waits: $DAILY_CAP runs used today"; return 0; fi
     online || { say "$id queued: offline"; return 0; }
@@ -230,7 +281,10 @@ drain() {
     local line qid
     for line in ${(f)"$(<$QUEUE)"}; do
       qid=${line%% *}
-      if ! scout "$qid"; then sed -i '' "/^$qid /d" "$QUEUE"; fi
+      scout "$qid"; case $? in
+        1) sed -i '' "/^$qid /d" "$QUEUE" ;;
+        2) requeue_limit_scout "$qid"; return 0 ;;
+      esac
     done
     head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
     id=${head%% *}; t=${head##* }
@@ -254,6 +308,7 @@ run() {
     [[ -n ${TRIAGE_NO_DEBOUNCE:-} ]] || debounce || exit 0
     local filed; filed=$(file_inbox)
     for line in ${(f)filed}; do print "$line" >> "$QUEUE"; say "filed ${line%% *} (urgent), queued"; done
+    cleanup
     drain
   } always { rmdir "$STATE/file.lock" 2>/dev/null }
 }
@@ -274,6 +329,9 @@ selftest() {
   # fake claude: scout answers from $d/scout-answer; fixer sleeps $d/fix-sleep seconds
   cat > $d/fake-claude <<EOF
 #!/bin/zsh
+if [[ -f $d/limit-\${\${*}[(w)5]} || -f $d/limit-all ]]; then
+  print -r -- '{"is_error":true,"result":"Claude usage limit reached; resets 5pm (America/Los_Angeles)"}'; exit 1
+fi
 if [[ "\$*" == *haiku* ]]; then
   r=\$(cat $d/scout-answer); r=\${r//\$'\n'/\\\\n}
   print -r -- "{\"result\":\"\$r\",\"total_cost_usd\":0.02,\"num_turns\":3}"
@@ -346,6 +404,37 @@ EOF
   [[ $(grep -c . $TRIAGE_STATE/starts) == 1 ]] && grep -q '^T-0002 ' $TRIAGE_STATE/queue && ok "one fixer at a time, second queued" || bad "one at a time"
   sleep 3; zsh $SELF run; sleep 4
   grep -q 'T-0002' $TRIAGE_STATE/starts && ok "drains after the first fixer exits" || bad "drain after exit"
+
+  # B1: status lines with a time
+  reset; scout_says $'WHERE: a.js\nAREA: UI\nREPRO: guess'; print 0 > $d/fix-sleep
+  inbox '! status bug'; zsh $SELF run; sleep 1
+  for w in SCOUTING FIXING READY; do
+    grep -qE "^- [0-9-]{10} [0-9]{2}:[0-9]{2} · $w · triage-watch" $TRIAGE_FILE && ok "status line $w with time" || bad "status $w"
+  done
+
+  # B4: usage limit on the fixer → back at the head, not counted, resumes later
+  reset; scout_says $'WHERE: a.js\nAREA: UI\nREPRO: guess'; : > $d/limit-sonnet
+  inbox '! limit bug'; zsh $SELF run; sleep 1
+  head -1 $TRIAGE_STATE/queue | grep -q '^T-0001 ' && ok "limit: T-0001 back at the head of the queue" || bad "limit requeue"
+  [[ ! -s $TRIAGE_STATE/starts ]] && ! grep -q ' fixer ' $TRIAGE_STATE/usage.log && ok "limit: not counted in runs or budget" || bad "limit counted"
+  grep -q 'WAITING · triage-watch · usage limit; resumes after resets 5pm' $TRIAGE_FILE && ok "limit: WAITING line with reset time" || bad "limit WAITING"
+  rm -f $d/limit-sonnet; zsh $SELF run; sleep 1
+  ! grep -q ' fixer ' $TRIAGE_STATE/usage.log && ok "limit: waits until the pause ends" || bad "limit pause"
+  rm -f $TRIAGE_STATE/limit.until; zsh $SELF run; sleep 1
+  grep -q ' fixer T-0001' $TRIAGE_STATE/usage.log && ok "limit: resumes after the pause" || bad "limit resume"
+
+  # B3: cleanup of a merged, clean fixer worktree
+  reset; unset TRIAGE_NO_WORKTREE
+  ( cd $d && git init -q -b main && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init &&
+    git worktree add -q .claude/worktrees/t-0042 -b work/t-0042 &&
+    git -C .claude/worktrees/t-0042 -c user.email=t@t -c user.name=t commit -q --allow-empty -m fix &&
+    git -c user.email=t@t -c user.name=t merge -q --no-edit work/t-0042 ) >/dev/null 2>&1
+  print '\n## T-0042 · merged bug\nTRIAGED P1 · UI · 2026-11-12 · owner\n> merged bug' >> $TRIAGE_FILE
+  print "$(date +%F) T-0042" >> $TRIAGE_STATE/starts
+  TRIAGE_TRASH="rm -rf" zsh $SELF run
+  [[ ! -d $d/.claude/worktrees/t-0042 ]] && ! git -C $d rev-parse -q --verify work/t-0042 >/dev/null && ok "cleanup: worktree and branch removed" || bad "cleanup"
+  grep -q '· MERGED · triage-watch · branch work/t-0042 removed' $TRIAGE_FILE && ok "cleanup: MERGED line" || bad "cleanup MERGED"
+  export TRIAGE_NO_WORKTREE=1
 
   rm -rf $d
   (( fail )) && { print "selftest FAILED"; exit 1; } || print "selftest ok"
