@@ -3,7 +3,7 @@
   "private": true,
   "description": "Sync backend: read-only iCloud ledger, canary and the plan (PROGRESS.md).",
   "scripts": {
-    "test": "node src/ledger.mjs selftest && node src/canary.mjs selftest",
+    "test": "node src/ledger.mjs selftest && node src/canary.mjs selftest && zsh bin/triage-watch.zsh selftest",
     "ledger": "node src/ledger.mjs",
     "canary": "node src/canary.mjs"
   }

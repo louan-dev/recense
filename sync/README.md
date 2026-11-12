@@ -117,3 +117,23 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 
     sed "s#__HOME__#$HOME#g" launchd/com.chauphan.ledger.obsidian.plist.example \
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
+
+## Triage watch (save triage.md → bug gets worked on)
+- **What:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` whenever `docs/specs/triage.md` is saved (and hourly).
+- **You write** under `# Inbox`: `P1 - description` (or `P2 -`, `P3 -`), then save.
+- **Filing:** local and instant, no network. Each line becomes `T-#### · TRIAGED Pn` under `# Open`.
+- **P1:** queued, then `claude -p "/bug T-####"` starts in its own worktree `.claude/worktrees/t-####`.
+  - One agent at a time; at most 3 auto-starts a day; waits while the BUILD LOCK is taken.
+  - Normal permission rules (never bypass); a blocked agent writes why to `~/.local/state/triage-watch/blocked`.
+  - Stops at a commit on its branch + a MERGE-QUEUE line; the coordinator merges.
+- **Offline:** the network (Anthropic) is needed only to start the agent; offline, a P1 waits in the queue and starts on the next save or hourly run.
+- State and log: `~/.local/state/triage-watch/` (`queue`, `starts`, `log`, `T-####.out`); launchd log `~/Library/Logs/triage-watch.log`.
+- Test: `zsh bin/triage-watch.zsh selftest` (part of `npm test`).
+- Turn on:
+
+      cp launchd/com.chauphan.triage-watch.plist ~/Library/LaunchAgents/ &&
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.triage-watch.plist
+
+- Turn off (exit path):
+
+      launchctl bootout gui/$(id -u)/com.chauphan.triage-watch
