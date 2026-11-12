@@ -11,6 +11,7 @@ struct ShowPage: View {
     final class PageState: ObservableObject {
         @Published var season: String?          // nil = every season
         @Published var episodes: [Episode] = []
+        @Published var all = false               // "See All" pressed: every episode, not the first ten
     }
 
     var body: some View {
@@ -28,8 +29,9 @@ struct ShowPage: View {
                         .pickerStyle(.menu)
                         .font(.title3)
                     }
+                    Text("Episodes").font(.title2.bold()).listRowSeparator(.hidden)
                     if page.episodes.isEmpty { Text("No episodes.").foregroundStyle(.secondary) }
-                    ForEach(page.episodes) { e in
+                    ForEach(page.all ? page.episodes : Array(page.episodes.prefix(ShowFacts.firstRows))) { e in
                         EpisodeRow(model: model, episode: e)
                             // slide left → right deletes (owner 2026-11-15, FEAT-07 P0); Played and Save on the other side
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -39,6 +41,10 @@ struct ShowPage: View {
                             }
                             .swipeActions(edge: .trailing) { saveButton(e); if model.canChange(e) { playedButton(e) } }
                             .contextMenu { EpisodeActions(model: model, episode: e) }
+                    }
+                    if !page.all && page.episodes.count > ShowFacts.firstRows {
+                        Button("See All (\(page.episodes.count))") { page.all = true }
+                            .font(.title3).foregroundStyle(Theme.accent)
                     }
                 }
                 .listStyle(.plain)
@@ -57,17 +63,21 @@ struct ShowPage: View {
     }
 
     private var header: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Artwork(title: show.title, corner: 16).frame(maxWidth: 240)
-            Text(show.title).font(.title.bold()).multilineTextAlignment(.center)
-            Text(ShowTile.count(show)).font(.subheadline).foregroundStyle(.secondary)
+            Text(show.title).font(.title2.bold()).multilineTextAlignment(.center)
+            if let src = ShowFacts.source(show) { Text(src).font(.title3).foregroundStyle(.secondary) }
             if let first = page.episodes.first {
                 Button { model.play(first) } label: {
-                    Label(show.serial ? "Play from the start" : "Play latest", systemImage: "play.fill")
-                        .font(.headline).padding(.horizontal, 18).padding(.vertical, 6)
+                    Label(show.serial ? "First Episode" : "Latest Episode", systemImage: "play.fill")
+                        .font(.headline).padding(.horizontal, 22).padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
+                .tint(.primary)
+            }
+            if let facts = ShowFacts.line(page.episodes) {
+                Text(facts).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)

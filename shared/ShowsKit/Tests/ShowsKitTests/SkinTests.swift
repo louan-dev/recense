@@ -224,4 +224,19 @@ final class SkinTests: XCTestCase {
         XCTAssertEqual(entry("a/page.webloc").action.verb, "Open")
         XCTAssertNil(entry("a/brief.pdf").action.detail)                     // no size known: no "0 bytes"
     }
+
+    /// The show page's lines under the title (Podcasts' author line and facts line), from the folder alone.
+    func testShowPageSaysWhereTheFolderLivesAndWhatItHolds() {
+        let show = Show(id: "d1", space: .library, folder: "library/Study/MPEP", title: "MPEP", seasons: [], episodeCount: 2,
+                        locked: false, licensed: false, serial: false, lang: nil)
+        XCTAssertEqual(ShowFacts.source(show), "Study")
+        var top = show; top.folder = "library/MPEP"
+        XCTAssertNil(ShowFacts.source(top))
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func ep(_ path: String, _ t: Int64) -> Episode { Episode(item: PoolItem(id: path, path: path, mtime: t), show: "d1", title: path) }
+        let mixed = ShowFacts.line([ep("a.m4a", 900_000), ep("b.pdf", 990_000)], now: now)!
+        XCTAssertTrue(mixed.hasPrefix("2 items · audio, PDF · Updated"), mixed)
+        XCTAssertEqual(ShowFacts.line([ep("a.m4a", 0)]), "1 item")           // one kind: no kinds; no time: no "Updated"
+        XCTAssertNil(ShowFacts.line([]))
+    }
 }
