@@ -1,0 +1,11 @@
+{
+  "outputStyle": "Compass",
+  "permissions": {
+    "deny": [
+      "Read(./docs/specs/**/_raw/**)",
+      "Read(./docs/specs/**/_traces/**)",
+      "Read(./docs/specs/_raw/**)",
+      "Read(./docs/specs/_traces/**)"
+    ]
+  }
+}
