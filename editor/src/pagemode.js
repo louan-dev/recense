@@ -408,6 +408,15 @@ export function stepPage(
  * `dragX > 0`: fingers moving left-to-right.
  * `dragX < 0`: fingers moving right-to-left.
  */
+// Derived from Spec: BUG-02 (A1 slop, A2 ratio). One rule for touch, Pencil, mouse and trackpad.
+export const AXIS_SLOP_PX = 12;
+export const AXIS_RATIO = 1.4;
+export function decideAxis(dx, dy) {
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  if (Math.max(ax, ay) < AXIS_SLOP_PX) return null;
+  return ax > ay * AXIS_RATIO ? 'h' : 'v';
+}
+
 export function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
   const w = Math.max(120, Number(viewportWidth) || 400);
   const pages = inspectDraftpadPages(state.doc.toString());
@@ -476,6 +485,8 @@ export function attachSwipePaging(
   let wheelSpent = false;
   let wheelTimer = null;
   let axis = null;
+  let wheelAxisX = 0;
+  let wheelAxisY = 0;
 
   const targetEl = () => (view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null);
   const widthOf = () => (view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400);
@@ -510,12 +521,15 @@ export function attachSwipePaging(
       wheelAcc = 0;
       wheelSpent = false;
       axis = null;
+      wheelAxisX = 0;
+      wheelAxisY = 0;
       renderDrag(0);
     }, quietMs);
 
     if (axis === null) {
-      if (e.deltaX === 0 && e.deltaY === 0) return;
-      axis = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? 'h' : 'v';
+      wheelAxisX += e.deltaX; wheelAxisY += e.deltaY;
+      axis = decideAxis(wheelAxisX, wheelAxisY);
+      if (axis === null) return;
     }
     if (axis === 'v') return;
 
@@ -560,8 +574,8 @@ export function attachSwipePaging(
     const t = e.touches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
-    if (touchAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      touchAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+    if (touchAxis === null) {
+      touchAxis = decideAxis(dx, dy);
     }
     if (touchAxis === 'h') {
       renderDrag(dx);
@@ -573,7 +587,7 @@ export function attachSwipePaging(
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
-    const wasHorizontal = touchAxis === 'h' || (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2);
+    const wasHorizontal = touchAxis === 'h' || (touchAxis === null && Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * AXIS_RATIO);
     touchStartX = null;
     touchStartY = null;
     touchAxis = null;
@@ -617,8 +631,8 @@ export function attachSwipePaging(
     if (ptrId === null || e.pointerId !== ptrId) return;
     const dx = (Number(e.clientX) || 0) - ptrStartX;
     const dy = (Number(e.clientY) || 0) - ptrStartY;
-    if (ptrAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      ptrAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+    if (ptrAxis === null) {
+      ptrAxis = decideAxis(dx, dy);
     }
     if (ptrAxis === 'h') {
       renderDrag(dx);
@@ -630,7 +644,7 @@ export function attachSwipePaging(
     const dx = e ? (Number(e.clientX) || 0) - ptrStartX : 0;
     const dy = e ? (Number(e.clientY) || 0) - ptrStartY : 0;
     const wasHorizontal =
-      e && e.type !== 'pointercancel' && (ptrAxis === 'h' || (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2));
+      e && e.type !== 'pointercancel' && (ptrAxis === 'h' || (ptrAxis === null && Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * AXIS_RATIO));
     ptrId = null;
     ptrStartX = null;
     ptrStartY = null;
