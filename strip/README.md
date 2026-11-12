@@ -401,9 +401,11 @@ M2 slice 2: Retell (plain line + the other language, given the sentences' own tr
 (question + answer) and Reapply (rule + new facts that turn on its elements, never the outcome) are asked for only when
 the page opens that lens. Statutes, articles and case names quoted from the notes, and the glossary's terms
 (`RecenseText.glossary`, set from `Glossary` on the Mac), keep their own language inside a line.
-`shared/transcript.swift` now holds `Word`, `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
+`shared/transcript.swift` now holds `Line`, `Chapter`, `LensLine` and the language rules (`scriptOf`,
 `phraseLanguage`, `dominantLanguage`, `needsTranslation`, `languageName`), moved out of `recense.swift` so iOS builds
-the same copy.
+the same copy. The timed word (`Word`, `Pin`, `Syl`) is ShowsKit's (`shared/ShowsKit/Sources/ShowsKit/Word.swift`,
+FEAT-04): one type for the Mac, iOS Listen and the transcript view, timed in seconds into the recording. The Mac's
+handoff to the phone (`handoff.swift`) now sends each sentence's words and where its player is (`clock`, `rate`).
 
 ## Downloads (`recense download`)
 Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + ffmpeg; direct links fetched as they are), with `manifest.json` (source, mode, size, codecs, SHA-256, subtitles).
