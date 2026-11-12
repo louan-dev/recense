@@ -5,7 +5,7 @@
   <key>Label</key><string>com.chauphan.triage-watch</string>
   <key>ProgramArguments</key>
   <array><string>/Users/chauphan/Developer/recense/sync/bin/triage-watch.zsh</string><string>run</string></array>
-  <!-- runs when triage.md is saved; files P-lines at once, starts an agent for each P1 (max 3 a day) -->
+  <!-- runs when triage.md is saved; files P-lines at once, starts an agent for each ! entry (no daily cap; plan limits are the ceiling) -->
   <key>WatchPaths</key>
   <array><string>/Users/chauphan/Developer/recense/docs/specs/triage.md</string></array>
   <!-- hourly: a P1 queued while offline or capped starts once it can -->
