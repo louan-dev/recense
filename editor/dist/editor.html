@@ -2331,7 +2331,7 @@ html.rc-wings-page body {
     return { engine: "model", why, lines, dropped };
   }
 
-  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2405,7 +2405,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
+  // node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -5817,7 +5817,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../editor/node_modules/style-mod/src/style-mod.js
+  // node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -5953,7 +5953,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../editor/node_modules/w3c-keyname/index.js
+  // node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6059,7 +6059,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../editor/node_modules/crelt/index.js
+  // node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6088,7 +6088,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
+  // node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -15588,7 +15588,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../editor/node_modules/@lezer/common/dist/index.js
+  // node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -17649,7 +17649,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
+  // node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18373,7 +18373,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
+  // node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -19859,7 +19859,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
+  // node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -20953,7 +20953,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -21418,7 +21418,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
+  // node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -23506,7 +23506,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
+  // node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25284,7 +25284,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // ../../../../editor/node_modules/@lezer/html/dist/index.js
+  // node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -25628,7 +25628,7 @@ html.rc-wings-page body {
     });
   }
 
-  // ../../../../editor/node_modules/@lezer/css/dist/index.js
+  // node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -25808,7 +25808,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
+  // node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -26669,7 +26669,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
+  // node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -26881,7 +26881,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27193,7 +27193,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
+  // node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -27933,7 +27933,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -28773,7 +28773,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
+  // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -33922,6 +33922,9 @@ ${clean(nextLineText)}`;
       mount = null,
       onToolChange = null
     } = options;
+    function currentLineHeight() {
+      return view && typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0 ? view.defaultLineHeight : lineHeight;
+    }
     let inkDoc = initialInk && typeof initialInk === "object" ? {
       version: 1,
       strokes: Array.isArray(initialInk.strokes) ? [...initialInk.strokes] : [],
@@ -34387,7 +34390,7 @@ ${clean(nextLineText)}`;
     function relayout() {
       const docText = getDocText();
       for (const stroke of inkDoc.strokes) {
-        const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+        const res = resolveStrokeAnchor(stroke, docText, currentLineHeight());
         stroke.points = res.points;
         stroke.orphaned = res.orphaned;
         if (stroke.anchor) {
@@ -34437,7 +34440,7 @@ ${clean(nextLineText)}`;
         stroke.width = getToolDefaultWidth(stroke.tool);
       }
       if (!stroke.anchor) {
-        anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+        anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       }
       inkDoc.strokes.push(stroke);
       render();
@@ -34448,7 +34451,7 @@ ${clean(nextLineText)}`;
       const docText = getDocText();
       let res;
       if (effectiveMode === "partial" || effectiveMode === "eraser-partial") {
-        res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-partial"], docText, lineHeight, getCurrentPageIndex());
+        res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-partial"], docText, currentLineHeight(), getCurrentPageIndex());
       } else {
         res = eraseWholeStrokes(inkDoc.strokes, points, ERASER_RADIUS["eraser-whole"]);
       }
@@ -34504,7 +34507,6 @@ ${clean(nextLineText)}`;
       return currentTool;
     }
     function inks(e) {
-      if (e.pointerType === "touch") return false;
       if (!allowMouse && e.pointerType === "mouse") return false;
       if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === "pen") {
         currentTool = "pen";
@@ -34537,7 +34539,6 @@ ${clean(nextLineText)}`;
     function onPointerMove(e) {
       moveRing(e);
       if (!isDrawing) return;
-      if (e.pointerType === "touch") return;
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
       const scrollLeft = scrollDOM?.scrollLeft || 0;
       const scrollTop = scrollDOM?.scrollTop || 0;
@@ -34563,7 +34564,6 @@ ${clean(nextLineText)}`;
     function onPointerUp(e) {
       if (!isDrawing) return;
       isDrawing = false;
-      if (e.pointerType === "touch") return;
       if (currentTool.startsWith("eraser")) {
         activePoints = [];
         if (activeGroup) activeGroup.innerHTML = "";
@@ -34584,7 +34584,7 @@ ${clean(nextLineText)}`;
       let finalPoints = activePoints;
       let finalShape = null;
       if (currentTool === "underline") {
-        finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+        finalPoints = snapUnderlineStroke(activePoints, currentLineHeight());
         finalShape = null;
       } else if (currentTool === "circle") {
         const res = detectAndSnapShape(activePoints, { forceCircle: true });
@@ -34605,7 +34605,7 @@ ${clean(nextLineText)}`;
         device: e.pointerType || "pen",
         at: Date.now()
       };
-      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       inkDoc.strokes.push(stroke);
       if (stroke.tool === "pen") scheduleRecognition();
       activePoints = [];
@@ -34626,7 +34626,7 @@ ${clean(nextLineText)}`;
       const post = globalObj?.webkit?.messageHandlers?.ui?.postMessage;
       if (typeof post !== "function" || !docNode || typeof docNode.createElement !== "function") return 0;
       const pending = new Set([...ocrSent.values()].flat());
-      const groups = groupHandwriting(inkDoc.strokes.filter((st) => !pending.has(st)), lineHeight);
+      const groups = groupHandwriting(inkDoc.strokes.filter((st) => !pending.has(st)), currentLineHeight());
       let sent = 0;
       for (const g of groups) {
         const png = renderGroupPNG(g);
@@ -34671,7 +34671,7 @@ ${clean(nextLineText)}`;
       const keep = [];
       let changed = false;
       for (const st of inkDoc.strokes) {
-        const r = resolveStrokeAnchor(st, docBefore, lineHeight);
+        const r = resolveStrokeAnchor(st, docBefore, currentLineHeight());
         const pi = r.pageIndex ?? 0;
         if (drop.has(pi)) {
           inkDoc.removed.push(st.id);
@@ -34707,7 +34707,7 @@ ${clean(nextLineText)}`;
     }
     function findInk(query) {
       return findInkText(inkDoc.strokes, query).map((m) => {
-        const r = resolveStrokeAnchor(m.stroke, getDocText(), lineHeight);
+        const r = resolveStrokeAnchor(m.stroke, getDocText(), currentLineHeight());
         const ys = (r.points || []).map((p) => p[1]);
         return { id: m.id, text: m.text, pageIndex: r.pageIndex ?? 0, y: ys.length ? Math.min(...ys) : 0 };
       });

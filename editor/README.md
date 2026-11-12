@@ -164,3 +164,19 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - **A Pencil tap before any tool is chosen places the cursor, never draws** (BUG-03): on a fresh page, the first
   pen touch under 3 px of movement is a tap, not a mark (`onPointerUp`, `src/ink.js`). Once a tool is explicitly
   picked, every pen touch draws normally. Test: `test/bug03-pencil-tap-draws.test.mjs`.
+
+## Ink: touch draws too, and anchors to the real line (2026-11-12)
+- **BUG-06 — a finger draws once a tool is picked** (`inks`, `onPointerMove`, `onPointerUp` in `src/ink.js`): touch
+  used to be blocked from drawing or erasing at every stage, so Draftpad's annotation tool never worked on iPhone
+  (no Apple Pencil exists there) and only worked on iPad with the Pencil in hand. Picking a tool from the palette
+  (or Pencil's own first-touch auto-pick) now lets a finger draw or erase exactly like a mouse does; an untouched
+  palette still lets a finger scroll or select, unchanged. Test: `test/bug06-touch-draws.test.mjs`.
+- **BUG-07 — ink anchors to the live line height, not a 28px guess** (`currentLineHeight`, `src/ink.js`): every
+  anchoring call used to assume a fixed 28px line height, never the editor's real one (`--rc-font-size: 18px` by
+  default, user-adjustable). A stroke drawn partway down a page could anchor several lines off from where it was
+  actually written — worse the further down the page — matching "ink doesn't stay anchored... random specs of
+  dots" on scroll. `createInkLayer` now reads `view.defaultLineHeight` fresh each time, falling back to the
+  `lineHeight` option only when no live CodeMirror view is given (tests). Known follow-up, not fixed here: a pure
+  font-size change with no text edit still leaves already-drawn strokes' pixel points un-moved; see
+  `docs/specs/bugs/BUG-07-ink-anchor-line-height.md`. Test: `test/bug07-lineheight.test.mjs`.
+- Device check (real iPhone, iPad, Mac) still owed for both — not run from this session.
