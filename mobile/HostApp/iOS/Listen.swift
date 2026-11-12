@@ -961,14 +961,14 @@ final class Listener: NSObject, ObservableObject {
             floatNote("focus: \(front ? "Recense" : "another app") (active=\(active) key=\(key))")
             wasFront = front
         }
-        pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(playing: playing, paused: paused)
+        pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(paused: paused)
         if playing { quietFrom = nil } else if quietFrom == nil { quietFrom = Date() }
         if !playing || front { tried = false }
         if front { hidBehind = false }
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
-        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, refused: reshow == .refused, quiet: quiet, paused: paused, canStart: canStart)
+        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, reopens: reshow == .works, quiet: quiet, paused: paused, canStart: canStart)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
             floatNote(rest ? "rest: thin strip (iOS won't reopen it behind)" : "wake: full captions")

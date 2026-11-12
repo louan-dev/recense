@@ -24,14 +24,17 @@ check("play behind, left quiet a while ago", Floating.decide(now(playing: true, 
 check("play behind, open", Floating.decide(now(playing: true, open: true)), .none)
 // behind, paused sound: hides within the owner's 0.5 s (0.3 s of quiet), not on a blip; never when it couldn't come back
 check("quiet 0.1 s", Floating.decide(now(open: true, quiet: 0.1)), .none)
-check("quiet 0.3 s", Floating.decide(now(open: true, quiet: 0.3)), .hide)
+check("quiet 0.3 s, not proven to reopen: rests", Floating.decide(now(open: true, quiet: 0.3)), .none)
+check("quiet 0.3 s, works", Floating.decide(now(open: true, quiet: 0.3, reshow: .works)), .hide)
+// T-0002: open at rest on leave, so a long quiet behind finally closes it (battery)
+check("quiet 10 min behind closes", Floating.decide(now(open: true, quiet: Floating.stayAwake)), .hide)
 check("quiet 3 s, works", Floating.decide(now(open: true, quiet: 5, reshow: .works)), .hide)
 check("quiet, refused keeps it", Floating.decide(now(open: true, quiet: 60, reshow: .refused)), .none)
 check("quiet, closed", Floating.decide(now(quiet: 9)), .none)
 // leaving Recense opens it only while something plays
-if Floating.autoOpen(playing: false, paused: false) { bad += 1; print("FAIL autoOpen silent") }
-if Floating.autoOpen(playing: true, paused: true) { bad += 1; print("FAIL autoOpen paused") }
-if !Floating.autoOpen(playing: true, paused: false) { bad += 1; print("FAIL autoOpen playing") }
+// T-0002: iOS opens it only as Recense is left, and YouTube starts after that: open on every leave
+if !Floating.autoOpen(paused: false) { bad += 1; print("FAIL autoOpen on leave, nothing playing yet") }
+if Floating.autoOpen(paused: true) { bad += 1; print("FAIL autoOpen paused") }
 
 // regression 11-10 (iPhone log): a hide detached the content and nothing gave it back, so leaving Recense never opened it
 if !Floating.reattach(open: false, attached: false, closing: false) { bad += 1; print("FAIL reattach after a hide") }
@@ -48,10 +51,10 @@ if !Floating.awake(front: false, open: false, hearing: false, quiet: 30) { bad +
 if Floating.awake(front: false, open: false, hearing: false, quiet: 601) { bad += 1; print("FAIL asleep after 10 min quiet") }
 if !Floating.awake(front: false, open: true, hearing: false, quiet: 9999) { bad += 1; print("FAIL awake while open") }
 // iOS refuses to reopen it behind (-1001): a pause there rests it (thin strip), a sound wakes it
-if !Floating.rest(front: false, open: true, refused: true, quiet: 0.3, paused: false) { bad += 1; print("FAIL rest on pause behind") }
-if Floating.rest(front: false, open: true, refused: true, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
-if Floating.rest(front: true, open: true, refused: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest in front") }
-if Floating.rest(front: false, open: true, refused: false, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
+if !Floating.rest(front: false, open: true, reopens: false, quiet: 0.3, paused: false) { bad += 1; print("FAIL rest on pause behind") }
+if Floating.rest(front: false, open: true, reopens: false, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
+if Floating.rest(front: true, open: true, reopens: false, quiet: 9, paused: false) { bad += 1; print("FAIL rest in front") }
+if Floating.rest(front: false, open: true, reopens: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }
@@ -64,5 +67,5 @@ ipad.left = 0.4
 check("iPad unfocused, just switched", Floating.decide(ipad), .none)
 var ipadQuiet = now(open: true, quiet: 0.5, reshow: .refused); ipadQuiet.canStart = true
 check("iPad unfocused, paused: hides", Floating.decide(ipadQuiet), .hide)
-if Floating.rest(front: false, open: true, refused: true, quiet: 9, paused: false, canStart: true) { bad += 1; print("FAIL iPad rests instead of hiding") }
+if Floating.rest(front: false, open: true, reopens: false, quiet: 9, paused: false, canStart: true) { bad += 1; print("FAIL iPad rests instead of hiding") }
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

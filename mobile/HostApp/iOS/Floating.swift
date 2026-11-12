@@ -1,4 +1,5 @@
-// When the floating window shows (owner 11-10: "autoshows on play outside app and autohides on pause"; no Dock).
+// When the floating window shows: opens as Recense is left, rests as a thin strip while quiet, full on play (T-0002,
+// 11-12; iOS opens it only at the leave, so the 11-10 "autoshows on play outside app" waits for the sound at rest). No Dock.
 // Pure rules, no UIKit, so Tests/floating checks every case: swiftc Floating.swift Tests/floating/main.swift.
 import Foundation
 
@@ -45,8 +46,10 @@ enum Floating {
         front || open || hearing || quiet < stayAwake
     }
 
-    /// Whether iOS should open the window as Recense is left: only while something plays.
-    static func autoOpen(playing: Bool, paused: Bool) -> Bool { playing && !paused }
+    /// Whether iOS should open the window as Recense is left: every time, unless Listen is paused. iOS opens it only
+    /// at that moment, and YouTube or a podcast usually starts after it (T-0002, owner 11-12: "does not float outside
+    /// app"), so it opens at rest and wakes on the first sound.
+    static func autoOpen(paused: Bool) -> Bool { !paused }
 
     /// Give the window its content back: a hide detaches it, and iOS can't open a window with none as Recense is left
     /// (iPhone log 11-10 17:44–17:47: hidden in front, then "behind playing closed" on every leave).
@@ -66,16 +69,19 @@ enum Floating {
     /// iOS won't open the window from behind (iPhone 11-10 19:19:42: AVKitErrorDomain -1001 with Recense awake and the
     /// window possible), so once it's up behind it stays up, and a pause there rests it instead of closing it: a thin
     /// dark strip, back to full captions on the next sound.
-    static func rest(front: Bool, open: Bool, refused: Bool, quiet: Double, paused: Bool, canStart: Bool = false) -> Bool {
-        !front && open && refused && !canStart && !paused && quiet >= hideAfter
+    /// `reopens`: iOS was seen reopening it from behind (Reshow.works); until then it rests instead of closing.
+    static func rest(front: Bool, open: Bool, reopens: Bool, quiet: Double, paused: Bool, canStart: Bool = false) -> Bool {
+        !front && open && !reopens && !canStart && !paused && quiet >= hideAfter && quiet < stayAwake
     }
 
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
         let reopens = n.canStart || n.reshow != .refused   // "refused" was measured behind; an active iPad app may start it
+        // closing behind is safe only where it was seen to reopen; otherwise it rests, until a long quiet (battery)
+        let closes = n.canStart || n.reshow == .works
         if n.playing { return !n.open && !n.tried && reopens && (n.hid || n.left >= settle) ? .show : .none }
         // the sound paused behind: hide, unless iOS can't bring it back on play, so captions are never lost
-        if n.open, n.quiet >= hideAfter, reopens { return .hide }
+        if n.open, n.quiet >= hideAfter, closes || n.quiet >= stayAwake { return .hide }
         return .none
     }
 }

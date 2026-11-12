@@ -112,8 +112,10 @@ updates in place.
   device and kept (`listen.reshowFromBehind2`: works, or refused only on iOS's own error; 11-10's "refused" came from a
   silent wait and is set aside); behind other apps Recense stays awake while the window is open and for 10 minutes of
   quiet (`Floating.awake`), so a play there shows it, 1 s after leaving at the earliest (`Floating.settle`);
-  iOS won't open it from behind (11-10 19:19:42, AVKitErrorDomain -1001, Recense awake): once refused, a pause behind
-  rests it as a thin dark strip and the next sound brings back full captions (`Floating.rest`); if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
+  iOS opens it only as Recense is left, never from behind (11-10 19:19:42, AVKitErrorDomain -1001), so it opens on every
+  leave unless Listen is paused, even before any sound plays (`Floating.autoOpen`; T-0002: YouTube starts after you leave):
+  quiet, it rests as a thin dark strip; the next sound brings back full captions (`Floating.rest`). It closes behind only
+  where iOS was seen to reopen it, or after 10 minutes of quiet (battery). Behind other apps iOS ignores a plain
   stop, so hiding detaches the window's content; the next tick gives it back once it's closed (`Floating.reattach`),
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
