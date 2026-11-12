@@ -32534,7 +32534,7 @@ ${PAGE_MARKER}
       }, 140);
     }
     view.scrollDOM.addEventListener("wheel", (e) => {
-      if (!isPageMode(view.state)) return;
+      if (!isPageMode(view.state) || view.__nativeWheel) return;
       clearTimeout(wheelTimer);
       wheelTimer = setTimeout(() => {
         wheelAcc = 0;
@@ -32664,6 +32664,13 @@ ${PAGE_MARKER}
     };
     view.scrollDOM.addEventListener("pointerup", finishPointer);
     view.scrollDOM.addEventListener("pointercancel", finishPointer);
+    view.__hostSwipe = (dx, ended) => {
+      if (!isPageMode(view.state)) return "off";
+      const d = Number(dx) || 0;
+      if (ended) settleDrag(d);
+      else renderDrag(d);
+      return "ok";
+    };
     view.scrollDOM.addEventListener("scroll", () => {
       syncPageFromScroll(view, { onSnap });
     }, { passive: true });
@@ -33639,6 +33646,7 @@ ${clean(nextLineText)}`;
   }
   var SNAP_HOLD_MS = 500;
   var SNAP_MIN_SIZE = 40;
+  var AUTO_PEN_TAP_PX = 3;
   function endHoldMs(points, upTime, radius = 6) {
     if (!Array.isArray(points) || points.length === 0) return 0;
     const last2 = points[points.length - 1];
@@ -34565,6 +34573,16 @@ ${clean(nextLineText)}`;
         return;
       }
       if (activePoints.length === 0) return;
+      if (!toolChosen && e.pointerType === "pen") {
+        const [x0, y0] = activePoints[0];
+        const moved = activePoints.some((p) => Math.hypot(p[0] - x0, p[1] - y0) >= AUTO_PEN_TAP_PX);
+        if (!moved) {
+          activePoints = [];
+          if (activeGroup) activeGroup.innerHTML = "";
+          render();
+          return;
+        }
+      }
       const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
       let finalPoints = activePoints;
       let finalShape = null;
@@ -39679,6 +39697,11 @@ ${String(text ?? "")}`;
         currentPage: () => currentPage(view.state),
         pageCount: () => pageCount(view.state),
         setPageMode: (on) => setPages(on),
+        // Mac host: native trackpad swipe (strip/editorhost.swift EditorWebView.scrollWheel); turns off the web wheel pager.
+        nativeSwipe: (dx, ended) => {
+          view.__nativeWheel = true;
+          return view.__hostSwipe ? view.__hostSwipe(dx, ended) : "off";
+        },
         isPageMode: () => isPageMode(view.state),
         setCursor,
         insertBlock,
