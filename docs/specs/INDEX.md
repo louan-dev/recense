@@ -26,6 +26,12 @@ Row: ID · title · status · From · code pointer
 - UI-02 · Podcasts (iOS) · `[~]` · owner 2026-11-08 · `shared/ShowsKit/`
 - UI-03 · Shared playlist (Spotify, iOS) · `[ ]` · owner 2026-11-08 · —
 - UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `mobile/HostApp/iOS/Draftpad.swift`
+- UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
+
+### Features
+- FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
+- FEAT-02 · P2P transport (Bluetooth + Wi-Fi, MultipeerConnectivity) · `[ ]` · T-0035 · `shared/p2ptransport.swift` (planned)
+- FEAT-03 · Share: consolidated cross-device destination · `[ ]` · T-0035 · `shared/mediadownload.swift` (reused pattern), `mobile/HostApp/macOS/Window.swift`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —

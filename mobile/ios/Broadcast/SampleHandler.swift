@@ -72,10 +72,24 @@ class SampleHandler: RPBroadcastSampleHandler {
         Captions.put(s)
     }
 
+    // T-0041: when real sound last arrived (peak above -50 dBFS), shared with the app at most 4 times a second, so the
+    // floating window rests on a pause instead of trusting iOS's "other audio playing", which stays on ~40 s.
+    private var soundSaid = Date.distantPast
+    private func noteSound(_ pcm: AVAudioPCMBuffer) {
+        let n = Int(pcm.frameLength)
+        var peak: Float = 0
+        if let f = pcm.floatChannelData?[0] { for i in 0..<n { peak = max(peak, abs(f[i])) } }
+        else if let s = pcm.int16ChannelData?[0] { for i in 0..<n { peak = max(peak, abs(Float(s[i]) / 32768)) } }
+        guard peak > 0.003, Date().timeIntervalSince(soundSaid) > 0.25 else { return }
+        soundSaid = Date()
+        var s = Captions.state(); s.sound = soundSaid; Captions.put(s)
+    }
+
     override func processSampleBuffer(_ sb: CMSampleBuffer, with type: RPSampleBufferType) {
         guard type == .audioApp, !holding else { return }
         if #available(iOS 26, *), let l = live as? SpeechAuto {
             guard let pcm = SpeechCore.pcm(sb) else { return }
+            noteSound(pcm)
             // the sound's own stamp (host clock), read with now on both clocks before the queue adds its delay
             let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds
             let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds, wall = Date().timeIntervalSince1970

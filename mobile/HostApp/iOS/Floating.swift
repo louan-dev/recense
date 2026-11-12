@@ -74,6 +74,15 @@ enum Floating {
         !front && open && !reopens && !canStart && !paused && quiet >= hideAfter && quiet < stayAwake
     }
 
+    /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12
+    /// 12:50:52-12:51:36, T-0041: the window never rested), so while the broadcast hears, its last real sound decides.
+    static let soundGone = 0.4
+    static func playing(flag: Bool, hearing: Bool, soundAgo: Double?) -> Bool {
+        guard flag else { return false }
+        guard hearing, let ago = soundAgo else { return true }
+        return ago < soundGone
+    }
+
     static func decide(_ n: Now) -> Act {
         if n.paused || n.front { return n.open ? .hide : .none }   // in Recense, Home shows the transcript instead
         let reopens = n.canStart || n.reshow != .refused   // "refused" was measured behind; an active iPad app may start it

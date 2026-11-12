@@ -951,7 +951,8 @@ final class Listener: NSObject, ObservableObject {
             floatNote("content attached again")
         }
         let s = AVAudioSession.sharedInstance()
-        let playing = s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint
+        let playing = Floating.playing(flag: s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint, hearing: hearing,
+                                       soundAgo: Captions.state().sound.map { Date().timeIntervalSince($0) })   // T-0041
         // iPad windows: another app's window can cover Recense while it stays active (11-10 iPad log: "front playing" for
         // 2 min under a full-screen Firefox), so in front also needs the focus; active without it may start the window
         let active = UIApplication.shared.applicationState == .active

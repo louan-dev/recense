@@ -68,4 +68,10 @@ check("iPad unfocused, just switched", Floating.decide(ipad), .none)
 var ipadQuiet = now(open: true, quiet: 0.5, reshow: .refused); ipadQuiet.canStart = true
 check("iPad unfocused, paused: hides", Floating.decide(ipadQuiet), .hide)
 if Floating.rest(front: false, open: true, reopens: false, quiet: 9, paused: false, canStart: true) { bad += 1; print("FAIL iPad rests instead of hiding") }
+// Regression guard: T-0041 (iOS keeps "other audio playing" on ~40 s after a pause; iPhone log 11-12 12:50:52-12:51:36)
+if Floating.playing(flag: true, hearing: true, soundAgo: 2) { bad += 1; print("FAIL paused behind still counts as playing") }
+if !Floating.playing(flag: true, hearing: true, soundAgo: 0.1) { bad += 1; print("FAIL sound now is not playing") }
+if !Floating.playing(flag: true, hearing: false, soundAgo: nil) { bad += 1; print("FAIL no broadcast: iOS flag decides") }
+if Floating.playing(flag: false, hearing: true, soundAgo: 0.1) { bad += 1; print("FAIL flag off yet playing") }
+
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

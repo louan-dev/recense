@@ -107,7 +107,7 @@ updates in place.
   stamp, not when it reached the extension, and a pause in the other app stays a pause (up to 2 s fed as silence, the
   rest added to later words). Before (11-10) every pause pulled the words after it early by its length.
   The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
-  Recense (Home shows the transcript) and 0.3 s after that app pauses, decided 10 times a second (`HostApp/iOS/Floating.swift`, tested in
+  Recense (Home shows the transcript) and 0.3 s after that app pauses, decided 10 times a second; "pauses" means the broadcast heard no real sound for 0.4 s (`Floating.playing`), since iOS keeps its own "other audio playing" flag on for ~40 s after a pause (T-0041) (`HostApp/iOS/Floating.swift`, tested in
   `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
   device and kept (`listen.reshowFromBehind2`: works, or refused only on iOS's own error; 11-10's "refused" came from a
   silent wait and is set aside); behind other apps Recense stays awake while the window is open and for 10 minutes of
