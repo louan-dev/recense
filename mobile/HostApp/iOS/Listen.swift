@@ -116,6 +116,7 @@ final class Listener: NSObject, ObservableObject {
     // how far the words arrive behind the voice: the transcript lights each word this long after it was said, at the
     // voice's own pace (live captions can't be ahead of what they heard)
     @Published var lag = 1.5
+    private var savedNoteAt = Date.distantPast   // T-0043: flash "Note saved" on the floating strip after a Draftpad save
     private var skip: [Int: Int] = [:]           // sentences of a request that belong to the episode before
     private var map: [String: String] = [:]      // "request.sentence" → the episode sentence it is (or matched)
     private var added: Set<String> = []          // episode sentences this listening added (not matched to older ones)
@@ -1023,6 +1024,9 @@ final class Listener: NSObject, ObservableObject {
         log.append("\(Date().formatted(date: .omitted, time: .standard)) \(line)")
         UserDefaults.standard.set(Array(log.suffix(30)), forKey: "listen.floatLog")
     }
+
+    /// Flash "Note saved" on the floating strip for 2.5 s after a Draftpad save during a broadcast (T-0043).
+    func noteSaved() { savedNoteAt = Date(); draw() }
     func learn(_ r: Floating.Reshow) {
         reshowing = false
         guard r != reshow else { return }
@@ -1174,7 +1178,8 @@ final class Listener: NSObject, ObservableObject {
         var rows: [FloatingCaption.Row] = []
         if p > 0 { rows.append(FloatingCaption.Row(line: line(sentences[p - 1], said: false), on: false, t: nil)) }
         rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now))
-        return (rows, nil)
+        let savedNote = wall.timeIntervalSince(savedNoteAt) < 2.5 ? "Note saved" : nil
+        return (rows, savedNote)
     }
 
     /// The resting window: a thin dark strip (PiP sizes the window to the picture's shape).
