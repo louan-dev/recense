@@ -119,6 +119,9 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
 
 ## Triage watch (save triage.md → bug gets worked on)
+- No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
+- The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
+- The scout reads "mobile" as iPhone and iPad.
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
   - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
