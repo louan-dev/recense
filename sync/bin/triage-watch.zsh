@@ -2,7 +2,7 @@
 # triage-watch: runs when docs/specs/triage.md is saved (launchd WatchPaths) and hourly.
 # The owner writes one plain line under # Inbox, any language. "!" first (or "P1 -") = urgent.
 # 1. Filing: every Inbox line becomes a T-#### entry. Local, instant, no network.
-#    Urgent → TRIAGED P1 and queued; "P2 -"/"P3 -" → TRIAGED P2/P3; anything else → NEW. Only urgent auto-starts.
+#    Urgent ("!" or old "P1 -") → "! NEW" and queued; anything else → "NEW" (later). Only urgent auto-starts.
 # 2. Scout (Haiku, low effort, $0.10, read-only tools): writes Where:/Area:/Repro: (guess) under the entry, stops.
 #    No files found → entry stays filed with a note + a notification; nothing more is spent.
 # 3. Fixer (Sonnet, medium effort, per-run $ cap): /bug in its own worktree, narrow brief, one at a time.
@@ -72,7 +72,7 @@ file_inbox() {
         $t =~ s/^-\s*//;
         my $p = 0;
         if    ($t =~ s/^!+\s*//)                 { $p = 1 }
-        elsif ($t =~ s/^P([123])\s*-\s*//)       { $p = $1 }
+        elsif ($t =~ s/^P([123])\s*-\s*//)       { $p = ($1 == 1) ? 1 : 0 }   # old format: P1 = !, P2/P3 = later
         push @new, [$p, $t] if length $t; next;
       }
       push @keep, $_;
@@ -85,7 +85,7 @@ file_inbox() {
     for my $n (@new) {
       my ($p, $txt) = @$n; my $id = sprintf "T-%04d", $next++;
       my @w = split /\s+/, $txt; my $title = join " ", @w[0 .. ($#w < 7 ? $#w : 7)];
-      my $status = $p ? "TRIAGED P$p" : "NEW";
+      my $status = $p ? "! NEW" : "NEW";
       $out .= "\n## $id · $title\n$status · Other · $ENV{TODAY} · owner\n> $txt\n";
       push @urgent, $id if $p == 1;
     }
@@ -227,7 +227,8 @@ Entries (from $TRIAGE, git-ignored, absolute path; write status lines there):
 $brief
 Work only in the files named on the Where: lines. Do not explore beyond them unless a failing test shows the cause is elsewhere.
 The Repro: lines are a scout's guess; confirm with a test.
-You are in worktree $wt on branch work/$slug. Stop at a commit here plus one line in $REPO/.handoff/MERGE-QUEUE.md. Never merge, push or install.
+You are in worktree $wt on branch work/$slug. Record the regression test: run it before the fix and write 'red <exit code>', run it after and write 'green <exit code>', one per line, to $STATE/<ID>.tests for each ID.
+Stop at a commit here plus one line in $REPO/.handoff/MERGE-QUEUE.md starting 'work/$slug' and ending '· ready'. Never merge, push or install.
 Take the BUILD LOCK in that file before any build and free it after.
 If this needs a stronger model, write '$ids needs opus: <why>' to $QUEUE.blocked and stop.
 If a permission prompt or anything else blocks you, write '$ids blocked: <why>' to $QUEUE.blocked and stop." >> "$STATE/$first.out"
@@ -238,6 +239,7 @@ If a permission prompt or anything else blocks you, write '$ids blocked: <why>' 
       if (( rc == 0 )); then status "$id" READY "branch work/$slug"; else status "$id" STOPPED "exit $rc; see $STATE/$first.out"; fi
     done
     notify "Done with $ids (exit $rc); see the merge queue"
+    (( rc == 0 )) && [[ -z ${TRIAGE_NO_MERGE:-} ]] && zsh "${SELF:h}/triage-merge.zsh" run
   ) &!
   print "$! $ids" > "$RUNNING"
 }
@@ -323,7 +325,7 @@ selftest() {
   local d fail=0; d=$(mktemp -d "${TMPDIR:-/tmp}/tw.XXXX") || exit 1
   ok()  { print "ok   $1"; }
   bad() { print "FAIL $1"; fail=1; }
-  export TRIAGE_FILE=$d/triage.md TRIAGE_STATE=$d/state TRIAGE_NO_DEBOUNCE=1 TRIAGE_NO_NOTIFY=1 TRIAGE_REPO=$d \
+  export TRIAGE_FILE=$d/triage.md TRIAGE_STATE=$d/state TRIAGE_NO_DEBOUNCE=1 TRIAGE_NO_NOTIFY=1 TRIAGE_REPO=$d TRIAGE_NO_MERGE=1 \
          TRIAGE_ONLINE=1 TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1
   mkdir -p $d/.handoff; print "BUILD LOCK: free" > $d/.handoff/MERGE-QUEUE.md; : > $d/.handoff/LANES.md
   # fake claude: scout answers from $d/scout-answer; fixer sleeps $d/fix-sleep seconds
@@ -361,18 +363,20 @@ EOF
 
   reset; scout_says $'WHERE: editor/src/ink.js\nAREA: Draftpad\nREPRO: hold squeeze, lift pencil'
   inbox '! no floating window over youtube.com in Safari'; zsh $SELF run; sleep 1
-  grep -q '^## T-0001 · no floating window over youtube.com in Safari' $TRIAGE_FILE && grep -q '^TRIAGED P1 · Draftpad' $TRIAGE_FILE && ok "! line filed as T-0001 TRIAGED P1" || bad "! filed"
+  grep -q '^## T-0001 · no floating window over youtube.com in Safari' $TRIAGE_FILE && grep -q '^! NEW · Draftpad' $TRIAGE_FILE && ok "! line filed as T-0001 ! NEW" || bad "! filed"
   grep -q '^Where: editor/src/ink.js' $TRIAGE_FILE && grep -q '^Repro: .*(guess)' $TRIAGE_FILE && ok "scout wrote Where + Repro (guess)" || bad "scout lines"
   grep -q ' scout T-0001 cost=0.02' $TRIAGE_STATE/usage.log && grep -q ' fixer T-0001 cost=0.50' $TRIAGE_STATE/usage.log && ok "scout → fixer, both logged" || bad "scout → fixer"
   grep -q 'FIXING · triage-watch' $TRIAGE_FILE && ok "entry marked FIXING" || bad "FIXING line"
   sed -n '/^# Inbox/,/^# Open/p' $TRIAGE_FILE | grep -q '^- *$' && ok "Inbox keeps one empty line" || bad "Inbox empty line"
 
+  reset; inbox 'P2 - old later format'; zsh $SELF run
+  ! grep -qE 'TRIAGED| P[123] ' $TRIAGE_FILE && grep -q '^NEW · Other' $TRIAGE_FILE && ok "no TRIAGED or P1/P2/P3 on new entries; P2 - = later" || bad "no P-levels"
   reset; inbox 'calendar colours too bright at night'; zsh $SELF run
   grep -q '^NEW · Other' $TRIAGE_FILE && [[ ! -s $TRIAGE_STATE/usage.log ]] && ok "plain line filed NEW, nothing spent" || bad "plain line"
   zsh $SELF run; [[ $(grep -c '^## T-' $TRIAGE_FILE) == 1 ]] && ok "second save files nothing twice" || bad "double save"
 
   reset; inbox 'P1 - old format still works'; zsh $SELF run; sleep 1
-  grep -q '^TRIAGED P1 ' $TRIAGE_FILE && grep -q ' fixer T-0001' $TRIAGE_STATE/usage.log && ok "P1 - is a synonym for !" || bad "P1 synonym"
+  grep -q '^! NEW ' $TRIAGE_FILE && grep -q ' fixer T-0001' $TRIAGE_STATE/usage.log && ok "P1 - is a synonym for !" || bad "P1 synonym"
 
   reset; scout_says $'WHERE: NONE\nAREA: Other\nREPRO: unknown'
   inbox '! something odd somewhere'; zsh $SELF run
@@ -429,7 +433,7 @@ EOF
     git worktree add -q .claude/worktrees/t-0042 -b work/t-0042 &&
     git -C .claude/worktrees/t-0042 -c user.email=t@t -c user.name=t commit -q --allow-empty -m fix &&
     git -c user.email=t@t -c user.name=t merge -q --no-edit work/t-0042 ) >/dev/null 2>&1
-  print '\n## T-0042 · merged bug\nTRIAGED P1 · UI · 2026-11-12 · owner\n> merged bug' >> $TRIAGE_FILE
+  print '\n## T-0042 · merged bug\n! NEW · UI · 2026-11-12 · owner\n> merged bug' >> $TRIAGE_FILE
   print "$(date +%F) T-0042" >> $TRIAGE_STATE/starts
   TRIAGE_TRASH="rm -rf" zsh $SELF run
   [[ ! -d $d/.claude/worktrees/t-0042 ]] && ! git -C $d rev-parse -q --verify work/t-0042 >/dev/null && ok "cleanup: worktree and branch removed" || bad "cleanup"
@@ -443,6 +447,9 @@ EOF
 case ${1:-run} in
   run) run ;;
   weekly) weekly ;;
+  status) shift; status "$@" ;;
+  where) entry_where "$2" ;;
+  cleanup) cleanup ;;
   selftest) selftest ;;
-  *) print "usage: triage-watch.zsh [run|weekly|selftest]"; exit 2 ;;
+  *) print "usage: triage-watch.zsh [run|weekly|status|where|cleanup|selftest]"; exit 2 ;;
 esac

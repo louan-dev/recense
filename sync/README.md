@@ -122,7 +122,7 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
   - `!` first (or the old `P1 -`) = urgent: an agent starts. Any other line is only filed.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
-  Local, instant, no network: each line becomes `T-####` (urgent → `TRIAGED P1`, else `NEW`).
+  Local, instant, no network: each line becomes `T-####` (urgent → `! NEW`, else `NEW`). Two priorities only: `!` = now, blank = later..
 - **Scout** (urgent only): `claude -p --model haiku --effort low --max-budget-usd 0.10`, read/grep tools only.
   Writes `Where:` (files) and `Repro:` (marked guess) under the entry, then stops.
   No files found → the entry gets "tell me where you saw it" and a notification; nothing more is spent.
@@ -130,7 +130,8 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
   - Narrow brief: the entry and its `Where:` files only.
   - One at a time; skips an entry whose files are already FIXING or held by a LANES lane.
   - Urgent entries in the same Area filed within 10 min share one run.
-  - Stops at a commit on its branch + a MERGE-QUEUE line; never merges, pushes or installs. Normal permissions, never bypass.
+  - Stops at a commit on its branch, a `· ready` MERGE-QUEUE line and a red→green test record; never merges, pushes or installs. Normal permissions, never bypass.
+  - Then `bin/triage-merge.zsh` (below) merges it with no AI.
   - Needs Opus or blocked → writes why to `~/.local/state/triage-watch/queue.blocked`; the owner or coordinator restarts it.
 - **Status lines** under each entry, with a time: `SCOUTING` → `FIXING` → `READY` (branch) → `MERGED`; also `WAITING` (usage limit) or `STOPPED`.
 - **Usage limit mid-run:** the ID goes back to the head of the queue with "resumes after <reset>", is not counted in the budget or run cap, and the queue pauses an hour.
@@ -149,3 +150,23 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - Turn off (exit path):
 
       launchctl bootout gui/$(id -u)/com.chauphan.triage-watch
+
+## Triage merge (no AI, no coordinator)
+- `bin/triage-merge.zsh`: after each fixer and hourly (`launchd/com.chauphan.triage-merge.plist`), one `work/t-####` branch per run, under the BUILD LOCK.
+- It merges only if every gate passes:
+  1. MERGE-QUEUE line says `ready`, and `~/.local/state/triage-watch/<ID>.tests` shows the regression test `red` before and `green 0` after.
+  2. The diff touches only the scout's `Where:` files, their tests and README.md files; never `.claude/**` or settings.
+  3. None of those files are uncommitted in main.
+  4. Merged first in a temporary worktree, where the touched folders' Checks pass
+     (strip: release build, no install; ShowsKit: `swift test`; library/sync/calendar/editor: `npm test`; mobile: generic iOS compile).
+- Then main fast-forwards to that commit, is pushed (never forced), the Mac app is installed if `strip/` changed
+  (`build.sh` + `recense selftest`), iPhone/iPad builds are left to you (the notification says so),
+  the entry gets `MERGED`, and the worktree is cleaned up. MERGE-QUEUE gets `MERGED <sha> by triage-merge`.
+- Any failure: no merge, the entry gets `held: <gate>`, and the notification gives one command to merge anyway or to trash the branch.
+- Test: `zsh bin/triage-merge.zsh selftest` (part of `npm test`).
+- Turn on:
+
+      cp launchd/com.chauphan.triage-merge.plist ~/Library/LaunchAgents/ &&
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.triage-merge.plist
+
+- Turn off: `launchctl bootout gui/$(id -u)/com.chauphan.triage-merge`
