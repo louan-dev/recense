@@ -1170,12 +1170,9 @@ final class Listener: NSObject, ObservableObject {
                 return FloatingCaption.Row(line: line(s, said: false), on: on, t: on ? now : nil, alpha: a, said: s.said.isEmpty ? nil : s.said, turned: turned)
             }, nil)
         }
-        // Derived from Spec: BUG-03 — fade the current line in on change, matching learn's timing
-        let ft = wall.timeIntervalSince(slots[p % 2].since)
-        let curAlpha = ft < 0.15 ? 0.0 : min(1.0, (ft - 0.15) / 0.4)
         var rows: [FloatingCaption.Row] = []
         if p > 0 { rows.append(FloatingCaption.Row(line: line(sentences[p - 1], said: false), on: false, t: nil)) }
-        rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now, alpha: curAlpha))
+        rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now))
         return (rows, nil)
     }
 
