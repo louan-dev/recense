@@ -267,7 +267,8 @@ fixer_job() {
   brief=$(<"$STATE/$first.brief")
   trap 'rm -f "$RUNNING"' EXIT INT TERM HUP
   # The prompt goes on stdin: --add-dir takes several folders and would swallow a trailing prompt (bug 11-12).
-  local prompt="/bug ${ids//,/ }
+  # Steps written out, not "/bug": a slash skill may be missing on main (it was, 11-12: "/bug isn't available").
+  local prompt="Fix bug ${ids//,/ } the red-green way: write a regression test that fails now, make the smallest fix, run it again until it passes.
 Entries (from $TRIAGE, git-ignored, absolute path; write status lines there):
 $brief
 Work only in the files named on the Where: lines. Do not explore beyond them unless a failing test shows the cause is elsewhere.
@@ -282,6 +283,20 @@ If a permission prompt or anything else blocks you, write '$ids blocked: <why>' 
   rc=$?
   say "fixer $ids exit $rc"
   if (( rc == 75 )); then requeue_limit "$ids"; return 0; fi
+  # A run that cost $0 in 0 turns never reached the model (our bug, not spending): it doesn't count toward
+  # DAILY_CAP. Three in a row: the fixer is broken, stop auto-starting until the owner looks.
+  local last; last=$(tail -1 "$USAGE")
+  if [[ $last == *" fixer $ids cost=0 turns=0" ]]; then
+    awk -v d="$(date +%F)" -v i="$ids" -v r="$rc" '!done && $1==d && $2==i { print > (FILENAME ".void.add"); done=1; next } { print }' "$STARTS" > "$STARTS.tmp" && mv "$STARTS.tmp" "$STARTS"
+    [[ -f $STARTS.void.add ]] && { sed "s/\$/ · void: exit $rc/" "$STARTS.void.add" >> "$STATE/starts.void"; rm -f "$STARTS.void.add"; }
+    say "void: $rc ($ids)"
+    print "$ids" >> "$STATE/void.streak"
+    if (( $(wc -l < "$STATE/void.streak") >= 3 )); then
+      touch "$STATE/fixer.broken"; notify "fixer broken: see log"
+    fi
+  else
+    rm -f "$STATE/void.streak"
+  fi
   local own=0
   [[ -n ${TRIAGE_NO_WORKTREE:-} ]] && own=1
   [[ $(git -C "$wt" rev-parse HEAD 2>/dev/null) != $(<"$STATE/$slug.base" 2>/dev/null) ]] && own=1
@@ -327,6 +342,7 @@ drain() {
     agent_running && { say "$id queued: a fixer is still running"; return 0; }
     if [[ -f $STATE/limit.until ]] && (( $(date +%s) < $(<$STATE/limit.until) )); then say "$id waits: usage limit"; return 0; fi
     rm -f "$STATE/limit.until"
+    if [[ -f $STATE/fixer.broken ]]; then say "$id waits: fixer broken (3 void runs); trash $STATE/fixer.broken after a fix"; return 0; fi
     if over_budget; then notify "$id waits: today's budget \$$DAILY_BUDGET is used"; return 0; fi
     if (( $(starts_today) >= DAILY_CAP )); then notify "$id waits: $DAILY_CAP runs used today"; return 0; fi
     online || { say "$id queued: offline"; return 0; }
@@ -390,7 +406,8 @@ if [[ "\$*" == *haiku* ]]; then
   r=\$(cat $d/scout-answer); r=\${r//\$'\n'/\\\\n}
   print -r -- "{\"result\":\"\$r\",\"total_cost_usd\":0.02,\"num_turns\":3}"
 else
-  [[ "\$(cat)" == /bug* ]] || { print -u2 "Error: Input must be provided either through stdin or as a prompt argument"; exit 1; }
+  [[ "\$(cat)" == "Fix bug "* ]] || { print -u2 "Error: Input must be provided either through stdin or as a prompt argument"; exit 1; }
+  [[ -f $d/void ]] && { print -r -- '{"result":"x","total_cost_usd":0,"num_turns":0}'; exit 0; }
   sleep \$(cat $d/fix-sleep 2>/dev/null || print 0)
   print -r -- '{"result":"fixed","total_cost_usd":0.50,"num_turns":12}'
 fi
@@ -517,6 +534,14 @@ EOF
   TRIAGE_TRASH="rm -rf" zsh $SELF run
   [[ -d $d/.claude/worktrees/t-0043 ]] && ! grep -q 'MERGED' $TRIAGE_FILE && ok "branch with no own commits: kept, not MERGED" || bad "false MERGED"
   export TRIAGE_NO_WORKTREE=1
+
+  # void runs ($0, 0 turns) don't count toward the cap; three in a row stop auto-starts
+  reset; touch $d/void; export TRIAGE_DAILY_CAP=1
+  for n in 1 2 3; do inbox "! void bug $n"; zsh $SELF run; sleep 1; done
+  [[ $(grep -c . $TRIAGE_STATE/starts) == 0 ]] && [[ $(grep -c 'void: exit 0' $TRIAGE_STATE/starts.void) == 3 ]] && ok "void runs don't count (cap 1, 3 ran)" || bad "void runs counted"
+  [[ -f $TRIAGE_STATE/fixer.broken ]] && grep -q 'fixer broken' $TRIAGE_STATE/log && ok "3 void runs → fixer broken, notified" || bad "fixer broken"
+  inbox "! after broken"; zsh $SELF run; grep -q 'waits: fixer broken' $TRIAGE_STATE/log && ok "broken fixer: no auto-start" || bad "broken still starts"
+  rm -f $d/void; unset TRIAGE_DAILY_CAP
 
   # perl gone: awk still files, and the log says so
   printf '# Recense triage\nNext ID: T-0050\n\n# Inbox\n- ! no perl crash here\n- later one\n\n# Open\n' > $TRIAGE_FILE
