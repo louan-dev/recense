@@ -20,3 +20,9 @@ docs/requests/*
 docs/decisions/20261022 ARQ-CHECKLIST.md
 # wrangler's account cache, in any Worker folder (X4)
 .wrangler/
+# docs/specs local-only (repo is public, owner 2026-11-11): study screenshots, triage, dumps
+docs/specs/**/*.png
+docs/specs/**/*.PNG
+docs/specs/triage*.md
+docs/specs/**/_raw/
+docs/specs/**/_traces/
