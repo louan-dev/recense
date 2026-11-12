@@ -9,7 +9,7 @@
 //   otherwise steps one window right toward older topics.
 // - Per-window cursor and vertical scroll memory, plus live finger-follow drag with 0.25x rubber-banding and
 //   220ms ease-out snap.
-import { StateField, StateEffect, Prec } from '@codemirror/state';
+import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty } from './pages.js';
 import { postHaptic } from './bridge.js';
@@ -421,10 +421,40 @@ export function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
   return Math.max(-w, Math.min(w, v));
 }
 
+/** The page select-all should cover: the shown page in page mode, else the page holding the cursor. */
+export function selectAllRange(state) {
+  const pages = inspectDraftpadPages(state.doc.toString());
+  if (pages.length <= 1) return { from: 0, to: state.doc.length };
+  const i = isPageMode(state) ? currentPage(state) : pageAt(pages, state.selection.main.head);
+  const p = pages[Math.min(i, pages.length - 1)];
+  return { from: p.from, to: p.to };
+}
+
+/** Cmd+A: select all text on this page, not the whole file. */
+export function selectPage(view) {
+  const { from, to } = selectAllRange(view.state);
+  view.dispatch({ selection: EditorSelection.single(from, to), userEvent: 'select', scrollIntoView: false });
+  return true;
+}
+
+// Edit > Select All in the native menu runs WebKit's own select-all, which reaches CodeMirror as a selection of the
+// whole file; in page mode, narrow it to the shown page.
+const narrowWholeSelection = EditorState.transactionFilter.of(tr => {
+  if (tr.docChanged || !tr.selection || !isPageMode(tr.startState)) return tr;
+  const m = tr.selection.main;
+  const len = tr.startState.doc.length;
+  if (tr.selection.ranges.length !== 1 || Math.min(m.from, m.to) !== 0 || Math.max(m.from, m.to) !== len) return tr;
+  const r = selectAllRange(tr.startState);
+  if (r.from === 0 && r.to === len) return tr;
+  return [tr, { selection: EditorSelection.single(r.from, r.to), sequential: true }];
+});
+
 export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
   return [
     pageModeField,
+    narrowWholeSelection,
     Prec.highest(keymap.of([
+      { key: 'Mod-a', run: selectPage },
       { key: 'Mod-]', run: v => { swipeRightToLeft(v, { onSnap, onBounce }); return true; } },
       { key: 'Mod-[', run: v => { swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce }); return true; } }
     ]))
