@@ -26,10 +26,15 @@ Row: ID · title · status · From · code pointer
 - UI-02 · Podcasts (iOS) · `[~]` · owner 2026-11-08 · `shared/ShowsKit/`
 - UI-03 · Shared playlist (Spotify, iOS) · `[ ]` · owner 2026-11-08 · —
 - UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `mobile/HostApp/iOS/Draftpad.swift`
+- UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
+
+### Features
+- FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
 - BUG-02 · Vertical scroll turns into a page swipe; pages jump · `[~]` · T-0025 T-0026 T-0027 · `bugs/BUG-02-scroll-locks-sideways.md`
+- BUG-03 · Follow mode floating window: no line-change animation · `[~]` · T-0031 · `bugs/BUG-03-follow-float-no-animation.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations
