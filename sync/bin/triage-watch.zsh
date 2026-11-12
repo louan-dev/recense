@@ -59,6 +59,9 @@ debounce() {
 # Prints "T-#### <epoch>" for each urgent entry.
 file_inbox() {
   [[ -f $TRIAGE ]] || return 0
+  if ! (( $+commands[${TRIAGE_PERL:-perl}] )); then
+    say "layout skipped: perl missing"; file_inbox_awk; return
+  fi
   TODAY=$(date +%F) NOW=$(date +%s) perl -CSD -e 'use utf8;
     my $f = shift; open my $in, "<:encoding(UTF-8)", $f or die; my @l = <$in>; close $in;
     my ($next) = map { /^Next ID: T-(\d+)/ ? $1 : () } @l; defined $next or exit 0;
@@ -94,6 +97,39 @@ file_inbox() {
     rename "$f.tmp.$$", $f or die;
     print "$_ $ENV{NOW}\n" for @urgent;
   ' "$TRIAGE"
+}
+
+# Fallback when perl is gone (Apple deprecated scripting runtimes): plain awk, same entries, no layout.
+file_inbox_awk() {
+  awk -v today="$(date +%F)" -v now="$(date +%s)" -v tmp="$TRIAGE.tmp.$$" '
+    { l[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) if (l[i] ~ /^Next ID: T-[0-9]+/) { nx = substr(l[i], 13) + 0; nxi = i }
+      if (!nxi) exit
+      for (i = 1; i <= n; i++) {
+        if (l[i] ~ /^# Inbox/) { inb = 1; keep[++k] = l[i]; continue }
+        if (l[i] ~ /^# /) inb = 0
+        if (inb) {
+          t = l[i]; gsub(/^[ \t]+|[ \t]+$/, "", t)
+          if (t == "" || t == "-" || t ~ /^(Write what went wrong|Start with !|Write here)/) { keep[++k] = l[i]; continue }
+          sub(/^-[ \t]*/, "", t); p = sub(/^!+[ \t]*/, "", t)
+          if (t != "") { nt[++m] = t; np[m] = p }
+          continue
+        }
+        keep[++k] = l[i]
+      }
+      if (!m) exit
+      for (j = 1; j <= m; j++) {
+        id = sprintf("T-%04d", nx++); w = split(nt[j], a, /[ \t]+/); ti = a[1]
+        for (q = 2; q <= w && q <= 8; q++) ti = ti " " a[q]
+        out = out "\n## " id " · " ti "\n" (np[j] ? "! NEW" : "NEW") " · Other · " today " · owner\n> " nt[j] "\n"
+        if (np[j]) urg = urg id " " now "\n"
+      }
+      for (i = 1; i <= k; i++) { if (keep[i] ~ /^Next ID:/) keep[i] = sprintf("Next ID: T-%04d", nx); print keep[i] > tmp }
+      printf "%s", out > tmp; close(tmp)
+      printf "%s", urg
+    }' "$TRIAGE" > "$STATE/awk.urgent" && [[ -f $TRIAGE.tmp.$$ ]] && mv "$TRIAGE.tmp.$$" "$TRIAGE"
+  cat "$STATE/awk.urgent"
 }
 
 # ---------- entry helpers ----------
@@ -157,6 +193,7 @@ scout() {
   res=$(cd "$REPO" && ask_claude scout "$id" --model haiku --effort low --max-budget-usd "$SCOUT_BUDGET" \
     --tools "Read,Grep,Glob" --permission-mode default \
 "You are a scout for bug $id in this repo. Do not fix anything, do not edit files.
+"mobile" means iOS and iPadOS: iPhone and iPad (Split View, Slide Over, Stage Manager windows) both count.
 The owner's words: $(entry "$id" | sed -n 's/^> //p')
 Find the 1-5 source files most likely involved (grep for names, UI strings, features). Keep it short.
 Answer with exactly these lines and nothing else:
@@ -229,9 +266,8 @@ fixer_job() {
   local ids=$1 wt=$2 slug=$3 first=${1%%,*} brief rc id
   brief=$(<"$STATE/$first.brief")
   trap 'rm -f "$RUNNING"' EXIT INT TERM HUP
-  cd "$wt" && ask_claude fixer "$ids" --model sonnet --effort medium --max-budget-usd "$FIX_BUDGET" \
-    --permission-mode default --add-dir "$REPO/docs/specs" \
-"/bug ${ids//,/ }
+  # The prompt goes on stdin: --add-dir takes several folders and would swallow a trailing prompt (bug 11-12).
+  local prompt="/bug ${ids//,/ }
 Entries (from $TRIAGE, git-ignored, absolute path; write status lines there):
 $brief
 Work only in the files named on the Where: lines. Do not explore beyond them unless a failing test shows the cause is elsewhere.
@@ -240,7 +276,9 @@ You are in worktree $wt on branch work/$slug. Record the regression test: run it
 Stop at a commit here plus one line in $REPO/.handoff/MERGE-QUEUE.md starting 'work/$slug' and ending '· ready'. Never merge, push or install.
 Take the BUILD LOCK in that file before any build and free it after.
 If this needs a stronger model, write '$ids needs opus: <why>' to $QUEUE.blocked and stop.
-If a permission prompt or anything else blocks you, write '$ids blocked: <why>' to $QUEUE.blocked and stop." >> "$STATE/$first.out"
+If a permission prompt or anything else blocks you, write '$ids blocked: <why>' to $QUEUE.blocked and stop."
+  cd "$wt" && print -r -- "$prompt" | ask_claude fixer "$ids" --model sonnet --effort medium --max-budget-usd "$FIX_BUDGET" \
+    --permission-mode default --add-dir "$REPO/docs/specs" >> "$STATE/$first.out"
   rc=$?
   say "fixer $ids exit $rc"
   if (( rc == 75 )); then requeue_limit "$ids"; return 0; fi
@@ -352,6 +390,7 @@ if [[ "\$*" == *haiku* ]]; then
   r=\$(cat $d/scout-answer); r=\${r//\$'\n'/\\\\n}
   print -r -- "{\"result\":\"\$r\",\"total_cost_usd\":0.02,\"num_turns\":3}"
 else
+  [[ "\$(cat)" == /bug* ]] || { print -u2 "Error: Input must be provided either through stdin or as a prompt argument"; exit 1; }
   sleep \$(cat $d/fix-sleep 2>/dev/null || print 0)
   print -r -- '{"result":"fixed","total_cost_usd":0.50,"num_turns":12}'
 fi
@@ -479,7 +518,13 @@ EOF
   [[ -d $d/.claude/worktrees/t-0043 ]] && ! grep -q 'MERGED' $TRIAGE_FILE && ok "branch with no own commits: kept, not MERGED" || bad "false MERGED"
   export TRIAGE_NO_WORKTREE=1
 
-  rm -rf $d
+  # perl gone: awk still files, and the log says so
+  printf '# Recense triage\nNext ID: T-0050\n\n# Inbox\n- ! no perl crash here\n- later one\n\n# Open\n' > $TRIAGE_FILE
+  out=$(TRIAGE=$TRIAGE_FILE STATE=$TRIAGE_STATE LOG=$TRIAGE_STATE/log TRIAGE_PERL=no-such-perl file_inbox)
+  grep -q '^## T-0050 · no perl crash here' $TRIAGE_FILE && grep -q '^! NEW · Other' $TRIAGE_FILE && grep -q '^## T-0051 · later one' $TRIAGE_FILE \
+    && grep -q '^Next ID: T-0052' $TRIAGE_FILE && [[ $out == "T-0050 "* ]] && grep -q 'layout skipped: perl missing' $TRIAGE_STATE/log \
+    && ok "no perl: awk files lines, logs layout skipped" || bad "no-perl fallback"
+  [[ -n ${TRIAGE_KEEP:-} ]] && print $d || rm -rf $d
   (( fail )) && { print "selftest FAILED"; exit 1; } || print "selftest ok"
 }
 
