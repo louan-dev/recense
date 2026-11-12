@@ -122,6 +122,8 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
 - The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
 - The scout reads "mobile" as iPhone and iPad.
+- The fixer prompt spells out the red → green steps (no `/bug` skill needed: it wasn't on main, 11-12).
+- A fixer run that cost $0 in 0 turns is "void": it doesn't count toward the 3-a-day cap (moved to `starts.void`). Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
   - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
