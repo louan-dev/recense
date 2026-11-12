@@ -132,6 +132,9 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
   - Urgent entries in the same Area filed within 10 min share one run.
   - Stops at a commit on its branch + a MERGE-QUEUE line; never merges, pushes or installs. Normal permissions, never bypass.
   - Needs Opus or blocked → writes why to `~/.local/state/triage-watch/queue.blocked`; the owner or coordinator restarts it.
+- **Status lines** under each entry, with a time: `SCOUTING` → `FIXING` → `READY` (branch) → `MERGED`; also `WAITING` (usage limit) or `STOPPED`.
+- **Usage limit mid-run:** the ID goes back to the head of the queue with "resumes after <reset>", is not counted in the budget or run cap, and the queue pauses an hour.
+- **Cleanup:** once a fixer branch is in main and its worktree is clean, the worktree is trashed, pruned and the branch deleted.
 - **Caps:** `$3.00` a day (scout + fixer, `TRIAGE_DAILY_BUDGET_USD`), backstop 3 fixer runs a day (`TRIAGE_DAILY_CAP`).
   Over the cap, entries wait in the queue with a notification.
 - **Offline:** filing never needs the network. Scout and fixer (Anthropic) run as catch-up on the next save or hourly run.
