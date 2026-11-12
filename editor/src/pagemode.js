@@ -531,7 +531,7 @@ export function attachSwipePaging(
   }
 
   view.scrollDOM.addEventListener('wheel', e => {
-    if (!isPageMode(view.state)) return;
+    if (!isPageMode(view.state) || view.__nativeWheel) return;
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
       wheelAcc = 0;
@@ -679,6 +679,15 @@ export function attachSwipePaging(
 
   view.scrollDOM.addEventListener('pointerup', finishPointer);
   view.scrollDOM.addEventListener('pointercancel', finishPointer);
+
+  // Derived from Spec: BUG-02 A8. The Mac host reads the trackpad natively (finger down, lift, momentum ignored)
+  // and drives the same drag and glide: total dx since the fingers touched (+ = fingers moved right), ended = lifted.
+  view.__hostSwipe = (dx, ended) => {
+    if (!isPageMode(view.state)) return 'off';
+    const d = Number(dx) || 0;
+    if (ended) settleDrag(d); else renderDrag(d);
+    return 'ok';
+  };
 
   view.scrollDOM.addEventListener('scroll', () => {
     syncPageFromScroll(view, { onSnap });

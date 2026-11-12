@@ -863,6 +863,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       currentPage: () => currentPage(view.state),
       pageCount: () => pageCount(view.state),
       setPageMode: on => setPages(on),
+      // Mac host: native trackpad swipe (strip/editorhost.swift EditorWebView.scrollWheel); turns off the web wheel pager.
+      nativeSwipe: (dx, ended) => { view.__nativeWheel = true; return view.__hostSwipe ? view.__hostSwipe(dx, ended) : 'off'; },
       isPageMode: () => isPageMode(view.state),
       setCursor,
       insertBlock,
