@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chauphan.triage-watch</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/chauphan/Developer/recense/sync/bin/triage-watch.zsh</string><string>run</string></array>
+  <!-- runs when triage.md is saved; files P-lines at once, starts an agent for each P1 (max 3 a day) -->
+  <key>WatchPaths</key>
+  <array><string>/Users/chauphan/Developer/recense/docs/specs/triage.md</string></array>
+  <!-- hourly: a P1 queued while offline or capped starts once it can -->
+  <key>StartInterval</key><integer>3600</integer>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/Users/chauphan/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/triage-watch.log</string>
+  <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/triage-watch.log</string>
+</dict>
+</plist>
