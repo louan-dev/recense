@@ -90,7 +90,10 @@ updates in place.
   second); in the app, the shared
   transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
-  under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
+  under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. When the Mac is
+  transcribing live and Gallery has uploaded timestamped sentences within the last 2 minutes, the iOS transcript also
+  animates — the wall clock drives the active line and word highlight instead of the iOS broadcast index — so both
+  devices show the same lit sentence and translation trail without a local broadcast running (11-12, `ListenView.transcript()`). What's heard is
   kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
   `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
   first launch, the older of two copies going to `Recense/trash/`).

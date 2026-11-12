@@ -1398,14 +1398,26 @@ extension ListenView {
     /// sentence being heard bold, its words lit at the voice's pace (SpeechAnalyzer's times, `lag` behind), the
     /// translation under each line. Another app's audio can't be moved from here, so a line has no Play.
     static func transcript(_ l: Listener, _ ss: [Sentence], place: Int?, title: String, live: Bool, two: Bool? = nil) -> some View {
-        let two = two ?? (l.config != nil)
-        let lines = ss.map { s in
-            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: s.words ?? [],
-                           translation: two && !s.said.isEmpty ? s.said : nil)
+        // Show translation if iOS is configured for it, or if the Mac already wrote translations into the sentences.
+        let two = two ?? (l.config != nil || ss.contains { !$0.said.isEmpty })
+        let lines = ss.enumerated().map { (i, s) in
+            // Give each line a real duration so the proportional-fallback highlight works between turns.
+            let end = i + 1 < ss.count ? ss[i + 1].time : s.time + 15
+            return TranscriptLine(id: s.id, start: s.time, end: end, text: s.heard, words: s.words ?? [],
+                                  translation: two && !s.said.isEmpty ? s.said : nil)
         }
+        // Provide epoch time only when the content is live: iOS broadcast active, or the Mac is currently transcribing
+        // (most-recent sentence t is within 2 minutes of now, so wall clock ≈ playback position).
+        // Old archived content has no playback clock; don't animate it — show it static at its last place.
+        let lastT = ss.compactMap { $0.t }.max() ?? 0
+        let fresh = Date().timeIntervalSince1970 - lastT < 120
+        let timed = live && (l.hearing || (fresh && lastT > 0))
+        // iOS broadcast → place index is exact; live Gallery → time drives it; archived → place (stale but stable).
+        let activeOverride = l.hearing ? place.flatMap { lines.indices.contains($0) ? $0 : nil }
+                           : (timed ? nil : place.flatMap { lines.indices.contains($0) ? $0 : nil })
         return TranscriptView(lines: lines, title: title, seed: title,
-                              time: { live && l.hearing ? Date().timeIntervalSince1970 - l.lag : nil }, ticking: live && l.hearing,
-                              active: place.flatMap { lines.indices.contains($0) ? $0 : nil }, seek: nil,
+                              time: { timed ? Date().timeIntervalSince1970 - l.lag : nil }, ticking: timed,
+                              active: activeOverride, seek: nil,
                               empty: live ? "What's heard shows up here." : "Nothing was heard.")
     }
 }
