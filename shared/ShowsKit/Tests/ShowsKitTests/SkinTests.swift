@@ -203,4 +203,25 @@ final class SkinTests: XCTestCase {
             XCTAssertNotNil(r.cgImage, "\(name) draws")
         }
     }
+
+    /// Owner 11-10: a mixed folder lists audio, video, PDF, image, note and web page, each with its own action and its
+    /// length or size; a PDF's button never says Play.
+    func testEachKindOfItemHasItsOwnActionAndLengthOrSize() {
+        func entry(_ path: String, size: Int64 = 0, duration: Double? = nil) -> FeedEntry {
+            FeedEntry(episode: Episode(item: PoolItem(id: path, path: path, size: size), show: "s", title: path,
+                                       duration: duration), showTitle: "", position: nil)
+        }
+        XCTAssertEqual(entry("a/talk.m4a", duration: 5220).action.verb, "Play")
+        XCTAssertEqual(entry("a/talk.m4a", duration: 5220).action.detail, FeedEntry.length(5220))
+        XCTAssertEqual(entry("a/clip.mov").action.verb, "Play")
+        XCTAssertNil(entry("a/clip.mov").action.detail)                      // length not known yet: just Play
+        let pdf = entry("a/brief.pdf", size: 2_400_000).action
+        XCTAssertEqual(pdf.verb, "Read"); XCTAssertNotNil(pdf.detail); XCTAssertNotEqual(pdf.symbol, "play.fill")
+        XCTAssertEqual(entry("a/scan.heic", size: 900_000).action.verb, "View")
+        XCTAssertEqual(entry("a/notes.md", size: 12_000).action.verb, "Read")
+        XCTAssertEqual(Kind(path: "a/page.webloc"), .web)
+        XCTAssertEqual(Kind(path: "a/page.html"), .web)
+        XCTAssertEqual(entry("a/page.webloc").action.verb, "Open")
+        XCTAssertNil(entry("a/brief.pdf").action.detail)                     // no size known: no "0 bytes"
+    }
 }

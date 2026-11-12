@@ -30,6 +30,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Downloaded, Latest Episodes, then the app's places; Recently Updated), `Views/Search.swift` (field + filter bars),
     `Views/ShowPage.swift`, `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`; the quote button shows the
     transcript in place of the player, with back 15 / play / forward 30 under it), `Views/Cards.swift`.
+    Each row's capsule names its own action (`FeedEntry.action`): "▶ 43m" for audio and video, "Read · 2.4 MB" for a
+    PDF or note, "View" for an image, "Open" for a web page (`Kind.web`: .html, .webloc, .url, .webarchive).
   - `Views/Transcript.swift`: `TranscriptView`, the transcript as iOS Podcasts shows it (owner's screenshots in
     `~/.claude/context/recense/research/podcasts-ios/`): serif lines on the show's dark colour, the line being heard bold
     with its spoken words bright and the rest dim, the view following the playhead (a "Now" button after scrolling

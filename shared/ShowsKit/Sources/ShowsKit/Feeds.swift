@@ -26,6 +26,26 @@ public struct FeedEntry: Identifiable, Hashable, Sendable {
         guard let d = episode.duration, d > 0, let p = position?.seconds else { return nil }
         return min(1, p / d)
     }
+    /// What the row's button does, as Podcasts' play capsule does for media: "▶ 43m" (or what's left) for audio and
+    /// video; for the rest of a folder, its verb and its size ("Read · 2.4 MB", "View", "Open"), so a PDF never says Play.
+    public var action: (symbol: String, verb: String, detail: String?) {
+        let item = episode.item
+        let size = item.size > 0 ? ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file) : nil
+        switch item.kind {
+        case .audio, .video:
+            guard let r = remaining else { return ("play.fill", "Play", nil) }
+            return ("play.fill", "Play", progress == nil ? FeedEntry.length(r) : FeedEntry.length(r) + " left")
+        case .pdf: return ("doc.richtext", "Read", size)
+        case .text: return ("doc.plaintext", "Read", size)
+        case .image: return ("photo", "View", size)
+        case .web: return ("safari", "Open", nil)
+        case .other: return ("doc", "Open", size)
+        }
+    }
+    /// "43m", "1h 5m".
+    public static func length(_ s: Double) -> String {
+        Duration.seconds(max(60, s)).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
+    }
 }
 
 public extension CatalogReading {
