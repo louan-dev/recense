@@ -15,6 +15,7 @@ is [the preface](docs/recense-preface.md).
 | `sync`     | the Mac's jobs, ledger, canary and launch-agent copies ([README](sync/README.md)) | launch agents in `sync/launchd/` |
 | `calendar` | your calendar server (CalDAV Worker)                           | `cd calendar && npx wrangler deploy`               |
 | `docs`     | plans, specs, runbooks, decisions, Recense's design docs       | start at `docs/PROGRESS.md`                        |
+| `docs/specs` | specs, app teardowns and triage; screenshots and triage are local only (not in git): back them up, never `git clean -X` there | start at `docs/specs/INDEX.md` |
 | `notes`    | task tables: Recense's here, Gallery's in `notes/gallery/`, Sync's in `notes/sync/` | —                   |
 
 Recense's own sources also live at the root: `datasets/` (hello-pronunciation), `reference/` (read-only sources) and

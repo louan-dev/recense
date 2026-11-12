@@ -20,6 +20,14 @@
 
 Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 
+## Specs (owner, 2026-11-11)
+- **Read `docs/specs/INDEX.md` before planning or coding**; specs are law, code is derived (`.claude/rules/spec-and-index-law.md`).
+- Skills: `/spec` (idea → spec), `/derive` (spec → tests → code), `/bug` (red → green → guard).
+- Triage lives in `docs/specs/triage.md`; a TRIAGED entry gets a spec before code (global rule, Triage).
+- App studies: `docs/specs/ui-teardowns/UI-xx-*/NOTES.md`; open a screenshot only when a note cites it.
+- Screenshots, `triage*.md`, `_raw/`, `_traces/` are git-ignored (public repo): no git copy, keep them in the backup.
+- Replies end with the Compass block (`.claude/output-styles/compass.md`); the owner's global rules win on conflict.
+
 ## Direction
 - Offline-first everywhere; the network, including Cloudflare, is the fallback.
 - Cloudflare/R2 is storage and caching only. Keep a one-command migration path to the M4 mini
