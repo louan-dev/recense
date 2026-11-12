@@ -161,3 +161,6 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - **Scroll vs page swipe** (BUG-02): a drag picks its axis only after 12 px and turns sideways only if
   `|dx| > 1.4·|dy|` (`decideAxis`, `src/pagemode.js`); once vertical it stays vertical. Same rule for touch, Pencil,
   mouse and trackpad. Test: `test/bug02-axis.test.mjs`.
+- **A Pencil tap before any tool is chosen places the cursor, never draws** (BUG-03): on a fresh page, the first
+  pen touch under 3 px of movement is a tap, not a mark (`onPointerUp`, `src/ink.js`). Once a tool is explicitly
+  picked, every pen touch draws normally. Test: `test/bug03-pencil-tap-draws.test.mjs`.

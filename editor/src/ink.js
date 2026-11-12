@@ -462,6 +462,9 @@ export function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
 export const SNAP_HOLD_MS = 500;
 // Strokes smaller than this (in px, on 28-px lines) are letters and never become shapes.
 export const SNAP_MIN_SIZE = 40;
+// Derived from Spec: BUG-03. A fresh mount's first Pencil touch under this much movement is a
+// cursor-placement tap, not a mark — well under SNAP_MIN_SIZE, which is about shape detection, not this.
+export const AUTO_PEN_TAP_PX = 3;
 
 /**
  * How long the pen stayed still (within radius px, allowing for Pencil jitter, of where it lifted) before lifting.
@@ -1566,6 +1569,21 @@ export function createInkLayer(view, options = {}) {
     }
 
     if (activePoints.length === 0) return;
+
+    // Derived from Spec: BUG-03. toolChosen false here means currentTool only got to 'pen' via the
+    // auto-detect in inks(), never an explicit pick (setTool is the only other place it's set, and it
+    // always sets toolChosen true first) — that touch can't be told apart from a cursor-placement tap
+    // until it either moves or doesn't: discard it here if it didn't.
+    if (!toolChosen && e.pointerType === 'pen') {
+      const [x0, y0] = activePoints[0];
+      const moved = activePoints.some(p => Math.hypot(p[0] - x0, p[1] - y0) >= AUTO_PEN_TAP_PX);
+      if (!moved) {
+        activePoints = [];
+        if (activeGroup) activeGroup.innerHTML = '';
+        render();
+        return;
+      }
+    }
 
     // Only the stillness at the end counts, not the whole stroke's length.
     const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
