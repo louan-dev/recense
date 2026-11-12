@@ -122,8 +122,9 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
 - The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
 - The scout reads "mobile" as iPhone and iPad.
+- A fixer that is blocked ends its reply with `BLOCKED: <why>`; the watcher writes HELD "needs you: <why>" (the agent can't write outside its worktree). Two failed runs on one entry → HELD too, with no third run.
 - The fixer prompt spells out the red → green steps (no `/bug` skill needed: it wasn't on main, 11-12).
-- A fixer run that cost $0 in 0 turns is "void": it doesn't count toward the 3-a-day cap (moved to `starts.void`). Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
+- A fixer run with 0 usage in 0 turns is "void" (moved to `starts.void`), logged "void: exit N". Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
   - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
@@ -141,11 +142,11 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - **Status lines** under each entry, with a time: `SCOUTING` → `FIXING` → `READY` (branch) → `MERGED`; also `WAITING` (usage limit) or `STOPPED`.
 - **Usage limit mid-run:** the ID goes back to the head of the queue with "resumes after <reset>", is not counted in the budget or run cap, and the queue pauses an hour.
 - **Cleanup:** once a fixer branch is in main and its worktree is clean, the worktree is trashed, pruned and the branch deleted.
-- **Caps:** `$3.00` a day (scout + fixer, `TRIAGE_DAILY_BUDGET_USD`), backstop 3 fixer runs a day (`TRIAGE_DAILY_CAP`).
+- **No daily caps** (owner, 11-12): your plan's 5-hour and weekly limits are the ceiling; hitting one pauses and resumes after the reset. Guards against waste only: a per-run budget, one agent at a time, 3 void runs → stop, 2 failed runs on one entry → HELD "needs you".
   Over the cap, entries wait in the queue with a notification.
 - **Offline:** filing never needs the network. Scout and fixer (Anthropic) run as catch-up on the next save or hourly run.
 - **Phone edits:** md-mirror (two-way bisync, every 5 min) carries an Obsidian edit to the source, which fires the watcher. Risk: an edit on the phone in the same 5 min as the watcher rewrites the file → the newer wins, the other is kept as `triage.md.conflictN`.
-- **Usage:** every run's cost and turns go to `~/.local/state/triage-watch/usage.log`; weekly line: `zsh bin/triage-watch.zsh weekly`.
+- **Usage:** every run's usage (plan usage in API-dollar terms; nothing is billed) and turns go to `~/.local/state/triage-watch/usage.log`; weekly line: `zsh bin/triage-watch.zsh weekly`.
 - Log: `~/.local/state/triage-watch/log`, launchd log `~/Library/Logs/triage-watch.log`.
 - Test: `zsh bin/triage-watch.zsh selftest` (part of `npm test`).
 - Turn on:
