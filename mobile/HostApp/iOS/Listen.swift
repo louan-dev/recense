@@ -22,9 +22,21 @@ struct Sentence: Identifiable, Codable, Equatable, Hashable {
     var said: String
     var at: Double  // about where in the episode, in seconds of listening (iOS can't see the other app's clock)
     var t: Double? = nil  // the episode's own time, when the Mac wrote it (Recense, handoff.swift)
-    var words: [TranscriptWord]? = nil  // each word as SpeechAnalyzer timed it, in seconds since 1970 (the transcript lights them)
+    var words: [Word]? = nil  // each word as it was said, in seconds into the episode, the clock `time` is on (FEAT-04)
     var replays: Int? = nil  // how many times it was heard again (a rewind or a replay), never added twice (Align.swift)
     var time: Double { t ?? at }
+}
+
+extension Sentence {
+    // FEAT-04 P1: files written before 11-12 timed words on the wall clock; they read onto the episode's own clock,
+    // the first word at the sentence's time (ContentClock.content leaves content-timed words alone).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id); heard = try c.decode(String.self, forKey: .heard)
+        said = try c.decode(String.self, forKey: .said); at = try c.decode(Double.self, forKey: .at)
+        t = try c.decodeIfPresent(Double.self, forKey: .t); replays = try c.decodeIfPresent(Int.self, forKey: .replays)
+        words = try c.decodeIfPresent([Word].self, forKey: .words).map { ContentClock.content($0, at: t ?? at) }
+    }
 }
 
 // One episode's whole transcript, kept on the device (Documents/Recense/library/Listen/<key>.json) and in Gallery
@@ -39,6 +51,8 @@ struct Episode: Identifiable, Codable, Hashable {
     var updated: Double = 0  // ms since 1970, the newer copy wins
     var by: String? = nil    // "iphone", "ipad" or "mac": who played it last (the Mac resumes where another left off)
     var ear: String? = nil   // what heard it: "broadcast" (another app's sound itself); "mic" (the room) before 11-11
+    var clock: Double? = nil // where the Mac's player was at `updated`, in seconds into the episode (FEAT-04)
+    var rate: Double? = nil  // how fast it was playing then (0 paused)
     var sentences: [Sentence] = []
     var id: String { key }
 
@@ -112,7 +126,24 @@ final class Listener: NSObject, ObservableObject {
     let layer = AVSampleBufferDisplayLayer()
     private var pip: AVPictureInPictureController?
     private var lines: [Int: String] = [:]       // what the extension heard, one entry per recognition request
-    private var lineWords: [Int: [TranscriptWord]] = [:]  // its words, timed (SpeechAnalyzer), in seconds since 1970
+    private var lineWords: [Int: [Word]] = [:]  // its words, timed (SpeechAnalyzer), in seconds since 1970
+    // FEAT-04: where the live words cross onto the episode's clock (the newest sentence heard: its first word, its time)
+    private var anchor: ContentClock.Anchor?
+    /// Live words (wall clock) stored on the episode's clock, the first at the sentence's time; the anchor follows.
+    private func onClock(_ ws: [Word], at t: Double) -> [Word] {
+        guard let f = ws.first, ContentClock.isWall(ws) else { return ws }
+        anchor = ContentClock.Anchor(wall: f.start, content: t)
+        return ContentClock.content(ws, at: t)
+    }
+    /// Where the content is now, on its own clock: what the broadcast hears (`lag` behind), else where the Mac said its
+    /// player was (for 2 minutes after it said so); nil when nothing tells, and nothing is lit by time.
+    func contentNow(_ wall: Double = Date().timeIntervalSince1970) -> Double? {
+        if hearing, let a = anchor { return a.content(atWall: wall - lag) }
+        if let e = episode, e.by == "mac", let c = e.clock, wall - e.updated / 1000 < 120 {
+            return ContentClock.Anchor(wall: e.updated / 1000, content: c, rate: e.rate ?? 1).content(atWall: wall)
+        }
+        return nil
+    }
     // how far the words arrive behind the voice: the transcript lights each word this long after it was said, at the
     // voice's own pace (live captions can't be ahead of what they heard)
     @Published var lag = 1.5
@@ -312,7 +343,7 @@ final class Listener: NSObject, ObservableObject {
     }
 
     private func beginListening() {
-        lines = [:]; lineWords = [:]; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []; clearRun()
+        lines = [:]; lineWords = [:]; anchor = nil; skip = [:]; map = [:]; added = []; lastMatch = nil; replayedNow = []; clearRun()
     }
 
     // MARK: the ears (S3b, ListenEars.swift)
@@ -470,7 +501,11 @@ final class Listener: NSObject, ObservableObject {
         episodes.insert(e, at: 0)
         unsent.insert(e.key)
     }
-    private var unsent: Set<String> = []
+    // episodes Gallery hasn't taken yet: kept across launches, so what was heard offline catches up whenever the
+    // network comes back, even after the app was closed (FEAT-04 P2; it was in memory only and lost on relaunch)
+    private var unsent: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "listen.unsent") ?? []) {
+        didSet { UserDefaults.standard.set(unsent.sorted(), forKey: "listen.unsent") }
+    }
 
     // what's playing now: the episode before is kept as it is (where it was, all it heard) and leaves Read along;
     // this one comes in with all it heard before, open where it was left. Gallery's copy is taken if newer.
@@ -508,6 +543,7 @@ final class Listener: NSObject, ObservableObject {
     func delete(_ e: Episode) {
         try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent(e.key + ".json"))
         episodes.removeAll { $0.key == e.key }
+        unsent.remove(e.key)
         if episode?.key == e.key { episode = nil }
     }
 
@@ -606,13 +642,13 @@ final class Listener: NSObject, ObservableObject {
     }
 
     /// The timed words of a line, shared out among its sentences (split()), each word to the sentence it sits in.
-    static func timed(_ text: String, _ words: [TranscriptWord]) -> [[TranscriptWord]] {
+    static func timed(_ text: String, _ words: [Word]) -> [[Word]] {
         let sents = split(text)
         var spans: [Range<String.Index>] = [], cur = text.startIndex
         for s in sents {
             if let r = text.range(of: s, range: cur..<text.endIndex) { spans.append(r); cur = r.upperBound } else { spans.append(cur..<cur) }
         }
-        var out = Array(repeating: [TranscriptWord](), count: sents.count)
+        var out = Array(repeating: [Word](), count: sents.count)
         cur = text.startIndex
         for w in words {
             guard let r = text.range(of: w.text, range: cur..<text.endIndex) else { continue }
@@ -658,11 +694,11 @@ final class Listener: NSObject, ObservableObject {
     private var replayedNow: Set<String> = []  // sentences counted as replayed in this listening
 
     /// A sentence heard before, cut short then (the content was left mid-sentence), is kept whole now.
-    private func complete(_ i: Int, _ text: String, _ ws: [TranscriptWord]?) {
+    private func complete(_ i: Int, _ text: String, _ ws: [Word]?) {
         let old = episode!.sentences[i].heard
         guard let end = old.trimmingCharacters(in: .whitespaces).last, !Self.stops.contains(end), Align.completes(text, old) else { return }
         episode!.sentences[i].heard = text
-        if let ws { episode!.sentences[i].words = ws }
+        if let ws { episode!.sentences[i].words = onClock(ws, at: episode!.sentences[i].time) }
         episode!.sentences[i].said = config == nil ? text : said[text] ?? ""
         translate(text)
         touch()
@@ -728,7 +764,7 @@ final class Listener: NSObject, ObservableObject {
                         if let j, case .hold(let c) = f { hold(sid, like: episode!.sentences[j].id, continues: c, end: i > 0 ? episode!.sentences[i - 1].id : nil) }
                         else if done { clearRun() }
                         episode!.sentences[i].heard = text
-                        if let ws { episode!.sentences[i].words = ws }
+                        if let ws { episode!.sentences[i].words = onClock(ws, at: episode!.sentences[i].time) }
                         episode!.sentences[i].said = config == nil ? text : said[text] ?? episode!.sentences[i].said
                         translate(text)
                     }
@@ -753,8 +789,12 @@ final class Listener: NSObject, ObservableObject {
                     let end = episode!.sentences.isEmpty ? nil : episode!.sentences[min(episode!.place, episode!.sentences.count - 1)].id
                     let at = episode!.sentences.isEmpty ? 0 : episode!.place + 1
                     let prev = at > 0 ? episode!.sentences[at - 1].at : 0
+                    // on the episode's clock: as far after the last sentence heard as its first word was said (gaps
+                    // over 30 s count as 30), or, without words, as long as the listening went on
+                    let gap = ws?.first.flatMap { f in anchor.map { f.start - $0.wall } }
+                    let t = gap.map { max(prev, anchor!.content + min(30, max(0, $0))) } ?? prev + min(30, Date().timeIntervalSince(lastHeard))
                     let s = Sentence(id: UUID().uuidString.prefix(12).lowercased(), heard: text, said: config == nil ? text : said[text] ?? "",
-                                     at: prev + min(30, Date().timeIntervalSince(lastHeard)), words: ws)
+                                     at: t, words: ws.map { onClock($0, at: t) })
                     episode!.sentences.insert(s, at: min(at, episode!.sentences.count))
                     episode!.place = min(at, episode!.sentences.count - 1)
                     map[lid] = s.id; added.insert(s.id); lastMatch = s.id
@@ -810,7 +850,7 @@ final class Listener: NSObject, ObservableObject {
         }
         lines[l.n] = l.text
         if let ws = l.words, let t0 = l.t0 {
-            lineWords[l.n] = ws.map { TranscriptWord(text: $0.text, start: t0 + $0.start, end: t0 + $0.end) }
+            lineWords[l.n] = ws.map { Word(text: $0.text, start: t0 + $0.start, end: t0 + $0.end) }
             if let w = ws.last { lag = 0.7 * lag + 0.3 * min(4, max(0.3, Date().timeIntervalSince1970 - (t0 + w.end))) }
         }
         rebuild()
@@ -1161,7 +1201,8 @@ final class Listener: NSObject, ObservableObject {
         }
         let two = config != nil, now = wall.timeIntervalSince1970 - lag
         func line(_ s: Sentence, said: Bool) -> TranscriptLine {
-            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: s.words ?? [],
+            // the window is drawn on the wall clock (its frames are scheduled by word onsets): words go back to it
+            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: anchor.map { $0.wall(s.words ?? []) } ?? s.words ?? [],
                            translation: said && two && !s.said.isEmpty ? s.said : nil)
         }
         if look == "learn" {
@@ -1411,17 +1452,14 @@ extension ListenView {
             return TranscriptLine(id: s.id, start: s.time, end: end, text: s.heard, words: s.words ?? [],
                                   translation: two && !s.said.isEmpty ? s.said : nil)
         }
-        // Provide epoch time only when the content is live: iOS broadcast active, or the Mac is currently transcribing
-        // (most-recent sentence t is within 2 minutes of now, so wall clock ≈ playback position).
-        // Old archived content has no playback clock; don't animate it — show it static at its last place.
-        let lastT = ss.compactMap { $0.t }.max() ?? 0
-        let fresh = Date().timeIntervalSince1970 - lastT < 120
-        let timed = live && (l.hearing || (fresh && lastT > 0))
+        // Lit by time only when something tells where the content is (FEAT-04): the broadcast's words, or the Mac's
+        // player (Listener.contentNow). Old archived content has no clock: shown still, at its last place.
+        let timed = live && l.contentNow() != nil
         // iOS broadcast → place index is exact; live Gallery → time drives it; archived → place (stale but stable).
         let activeOverride = l.hearing ? place.flatMap { lines.indices.contains($0) ? $0 : nil }
                            : (timed ? nil : place.flatMap { lines.indices.contains($0) ? $0 : nil })
         return TranscriptView(lines: lines, title: title, seed: title,
-                              time: { timed ? Date().timeIntervalSince1970 - l.lag : nil }, ticking: timed,
+                              time: { timed ? l.contentNow() : nil }, ticking: timed,
                               active: activeOverride, seek: nil,
                               empty: live ? "What's heard shows up here." : "Nothing was heard.")
     }

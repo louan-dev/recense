@@ -9,23 +9,16 @@
 // Reduce Motion: the view jumps to the line instead of scrolling to it.
 import SwiftUI
 
-public struct TranscriptWord: Codable, Hashable, Sendable {
-    public var text: String
-    public var start: Double
-    public var end: Double
-    public init(text: String, start: Double, end: Double) { self.text = text; self.start = start; self.end = end }
-}
-
 public struct TranscriptLine: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var start: Double
     public var end: Double
     public var text: String
-    public var words: [TranscriptWord]
+    public var words: [Word]
     public var translation: String?
     /// A chapter that begins with this line (its heading is drawn above it).
     public var chapter: String?
-    public init(id: String, start: Double, end: Double, text: String, words: [TranscriptWord] = [], translation: String? = nil, chapter: String? = nil) {
+    public init(id: String, start: Double, end: Double, text: String, words: [Word] = [], translation: String? = nil, chapter: String? = nil) {
         self.id = id; self.start = start; self.end = end; self.text = text; self.words = words; self.translation = translation; self.chapter = chapter
     }
 }

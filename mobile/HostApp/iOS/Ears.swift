@@ -46,7 +46,7 @@ import ShowsKit
     static func lines(_ ps: [SpeechCore.Phrase]) -> [TranscriptLine] {
         ps.enumerated().map { i, p in
             TranscriptLine(id: "\(Int(p.start * 1000))-\(i)", start: p.start, end: p.end, text: p.text,
-                           words: p.words.map { TranscriptWord(text: $0.text, start: $0.start, end: $0.end) })
+                           words: p.words.map { Word(text: $0.text, start: $0.start, end: $0.end) })
         }
     }
 }

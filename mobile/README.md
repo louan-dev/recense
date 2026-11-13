@@ -92,11 +92,14 @@ updates in place.
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
   under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. When the Mac is
   transcribing live and Gallery has uploaded timestamped sentences within the last 2 minutes, the iOS transcript also
-  animates — the wall clock drives the active line and word highlight instead of the iOS broadcast index — so both
-  devices show the same lit sentence and translation trail without a local broadcast running (11-12, `ListenView.transcript()`). What's heard is
-  kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
+  animates — the Mac's own player clock (`clock`, `rate` in what it sends, FEAT-04) drives the active line and word
+  highlight instead of the iOS broadcast index — so both devices show the same lit sentence and translation trail without
+  a local broadcast running (`ListenView.transcript()`, `Listener.contentNow`). What's heard is
+  kept per episode in the same transcript store as the Mac (each sentence's timed words too, in seconds into the episode:
+  one clock everywhere, ShowsKit `ContentClock`; files from before 11-12 timed on the wall clock read onto it), on the device in
   `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
-  first launch, the older of two copies going to `Recense/trash/`).
+  first launch, the older of two copies going to `Recense/trash/`). Episodes Gallery hasn't taken yet are remembered across
+  launches (`listen.unsent`), so what was heard offline uploads once the network is back.
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new
