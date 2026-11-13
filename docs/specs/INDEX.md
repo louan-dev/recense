@@ -38,6 +38,7 @@ Row: ID · title · status · From · code pointer
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
 - BUG-02 · Vertical scroll turns into a page swipe; pages jump · `[~]` · T-0025 T-0026 T-0027 · `bugs/BUG-02-scroll-locks-sideways.md`
 - BUG-03 · A Pencil tap meant to place the cursor draws a stroke instead · `[~]` (tests pass; iPad+Pencil check pending) · T-0030 · `bugs/BUG-03-pencil-tap-draws.md`
+- BUG-04 · setText put the caret back at a stale offset after a native round-trip (Enter looked reversed) · `[~]` (tests pass; owner's real-device check pending) · T-0001 · `bugs/BUG-04-settext-caret-drift.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations
