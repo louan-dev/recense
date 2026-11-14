@@ -417,6 +417,13 @@ Files usable **with no connection** on Mac, iPhone and iPad, in each device's na
 9. **One event-log format for Sync's two logs (2026-10-29, built).** `docs/specs/event-log.md`. The ledger (observer: folders Sync doesn't own) and the catalog (authority: R2 roots Sync owns) stay two writers but share the event vocabulary (create/modify/move/delete; v1 put/tombstone still read), the chain rule (same GENESIS and test vector in both suites), the id rule, one delete guard (`massDelete`: >100, or >10 and >10%) and one verifier (`ledger.mjs verify` reads both). Consumers apply only the four tree ops.
 
 ## CHANGELOG
+### 2026-11-14 04:42 PST · docs-law (owner's 11-05 three-states note) · DONE
+- Change: new `docs/law/` (README, purpose, structure, offline, interaction) is the governing layer; `docs/research/haptics.md`
+  holds the evidence. `export/` archived to `docs/archive/export/`; its north star, architecture, design philosophy and
+  decisions removed (history `3b462d0`). `.claude/CLAUDE.md` Direction/Who-it's-for → one pointer; Nook headings renamed;
+  `docs/architecture.md` garbled Names section → pointer; `organism.md` marked superseded in part.
+- Validation: every repo path the law cites exists (scripted check); no live reference to the removed files.
+- Next: owner reviews the law; open questions are in `~/.claude/context/recense/notes/WISHES.md` (2026-11-14 lines).
 
 ### 2026-11-06 21:50 PST · B0.5 ShowsKit contract (starry-squishing-knuth) · DONE
 - Change: `shared/ShowsKit/`, a Swift package: `Model.swift` (ContentKey, HLC, PoolItem, ItemState, ListenPosition,

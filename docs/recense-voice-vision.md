@@ -2,8 +2,8 @@
 
 Read this first in any session about prosody, the prosogram, pronunciation, or the learner respellings.
 The live session state is `.handoff/HANDOFF.md`; this file is the durable picture and changes only when a decision does.
-For where code lives and how it is reused, read `docs/architecture.md`; for what counts as an app, `.claude/CLAUDE.md`
-§ "One app, three faces".
+For where code lives and how it is reused, read `docs/architecture.md`; for what counts as an app,
+`docs/law/structure.md` § Names.
 
 > **Pending change, 2026-10-28:** the owner is replacing Groq/Whisper with on-device speech so transcription runs
 > offline. That removes the rate limit that currently caps corpus work — but **word timings are load-bearing here**:
@@ -34,7 +34,7 @@ Personal use inside Recense first; later its own app so the others can use it.
 - **`recense/recense/recense.swift` (7,378 lines) is Recense.** It is the largest and newest source in the repo, Recense owns the
   window, and `Features.measure` lives there (~3875 in the old numbering). `recense/main.swift` (6,557 lines) is a **dead
   older copy** of the app Recense used to be: not installed, not running, never the source of truth. Do not edit it, do
-  not build it, do not cite it. See `.claude/CLAUDE.md` § "One app, three faces".
+  not build it, do not cite it. See `docs/law/structure.md` § Names.
 - `Features`: per 10 ms db, onset, pitch (YIN 70–1000 Hz, 32 ms window, MIDI × 100), clarity, voiced, measured on the
   Demucs vocal stem. Cached per item at `keep/<key>/features.json` (the same scheme Gallery uses), so anything that
   changes its shape re-measures the library.

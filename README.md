@@ -6,6 +6,9 @@ other. Offline first: the network is an optimization, not a dependency.
 The longer essay, on improvisation, the measure of a gift, a score for speech and a shared tuning for the world's ideas,
 is [the preface](docs/recense-preface.md).
 
+**The rules every code decision follows are [the law](docs/law/README.md):** what Recense is (one matter, many
+states), how the repo is arranged, what may need a network, and how every screen, gesture and haptic behaves.
+
 | Folder     | What it is                                                     | Build or run                                       |
 |------------|----------------------------------------------------------------|----------------------------------------------------|
 | `strip`    | Recense.app for the Mac: the strip, listening surface, sound engine, menu-bar hider, Draftpad ([README](strip/README.md)) | `zsh strip/build.sh` |
@@ -14,12 +17,12 @@ is [the preface](docs/recense-preface.md).
 | `library`  | Gallery: the Worker, web app and share links ([README](library/README.md)) | deploys on push to `library/**` |
 | `sync`     | the Mac's jobs, ledger, canary and launch-agent copies ([README](sync/README.md)) | launch agents in `sync/launchd/` |
 | `calendar` | your calendar server (CalDAV Worker)                           | `cd calendar && npx wrangler deploy`               |
-| `docs`     | plans, specs, runbooks, decisions, Recense's design docs       | start at `docs/PROGRESS.md`                        |
+| `docs`     | the law, plans, specs, research, runbooks, design docs         | start at `docs/law/README.md`, then `docs/PROGRESS.md` |
 | `docs/specs` | specs, app teardowns, triage and the parity map (PARITY.md: where each feature lives on every device); screenshots and triage are local only (not in git): back them up, never `git clean -X` there | start at `docs/specs/INDEX.md` |
 | `notes`    | task tables: Recense's here, Gallery's in `notes/gallery/`, Sync's in `notes/sync/` | —                   |
 
-Recense's own sources also live at the root: `datasets/` (hello-pronunciation), `reference/` (read-only sources) and
-`export/` (project description, north star, decisions).
+Recense's own sources also live at the root: `datasets/` (hello-pronunciation) and `reference/` (read-only sources).
+The old Claude Project pack is archived in `docs/archive/export/`; upload `docs/law/` instead.
 
 The player Gallery and Recense share (home bar, key labels, rooms, prosody) has one home, `library/src/client/`;
 `strip/build.sh` copies it into the app and stops if a file is missing.

@@ -36,26 +36,11 @@ Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the sec
 - Screenshots, `triage*.md`, `_raw/`, `_traces/` are git-ignored (public repo): no git copy, keep them in the backup.
 - Replies end with the Compass block (`.claude/output-styles/compass.md`); the owner's global rules win on conflict.
 
-## Direction
-- Offline-first everywhere; the network, including Cloudflare, is the fallback.
-- Cloudflare/R2 is storage and caching only. Keep a one-command migration path to the M4 mini
-  (files, cache, jobs), and question any new Cloudflare dependency.
-- Prefer local and peer-to-peer transfer; the cloud is the backup path.
-- Nothing may stop working because a signature, subscription or vendor expires.
-- Recense must run on what we built: any paid or third-party service may only power a nice-to-have that Recense can lose.
-
-## Who it's for
-- A law student working across borders: documents mix English and other languages; every
-  feature must handle both, offline.
-- Writing happens in pieces: many places, postures, devices and input modes (typing, voice,
-  listening) in one day. Any device picks up exactly where another stopped; handoff is instant.
-- No network, no power, no problem: capture, transcription, read-aloud and translation work fully
-  offline. A moment is never lost because a connection or a battery dropped.
-- Continuity never pauses for the network: sync catches up later and never blocks writing.
-- Easy on the eyes: large text, narrow columns, minimal lateral movement, calm visuals.
-- Anything visual can become audio from anywhere: select it, hear it, multilingual.
-- No action depends on a shortcut alone: every action is also reachable by menu, voice or touch.
-- Supports ADHD and sensory regulation: low clutter, one focus at a time, predictable behavior.
+## The law (owner, 2026-11-14)
+- **Read `docs/law/` before planning work in any part.** It says what Recense is (one system in three states),
+  the names and folders, what may need a network, and how screens, gestures, haptics and languages behave.
+- Order of authority: owner's words > `~/.claude/CLAUDE.md` > `docs/law/` > specs > design notes > code.
+- Purpose, direction and who it's for live there and in `~/.claude/CLAUDE.md`; this file only says how to work here.
 
 ## Checks (this repo's half of the validation loop in `~/.claude/CLAUDE.md`)
 | Touched | After each edit | Once, before reporting |
@@ -130,7 +115,7 @@ is the strip and entry point (the old `sill.swift`). There is no second process.
 - App: `strip/app.swift` (about 7.6k lines), `strip/recense.swift` (7.4k, Recense), `strip/soundengine.swift` (the process tap and EQ/Key/Space chain), `strip/build.sh`, `strip/Package.swift`, `strip/Sources/`, `strip/README.md`, `strip/scripts/`.
 - `backups/` holds 19 manual `app.swift.pre-*` snapshots. Git replaces them: keep `backups/` out of git. Never overwrite them.
 - Build: `cd ~/Developer/recense/strip && zsh build.sh`. Check how build.sh compiles (single file or Sources/) before adding files, and wire new files in.
-- `.gitignore` before the first commit: `.build/`, `build/`, `*.bak`, `backups/`, `.env`, `.DS_Store`. Local git only, no remote, no push until the owner names a repo.
+- `.gitignore` keeps out `.build/`, `build/`, `*.bak`, `backups/`, `.env`, `.DS_Store`. Remote: `louan-dev/recense` (public).
 - Recense's own rule: consequential actions go draft, confirm, execute.
 
 ## Your items (from BACKLOG §SL and PROGRESS §5)
@@ -140,7 +125,7 @@ is the strip and entry point (the old `sill.swift`). There is no second process.
 - **B1** Notes in Recense (Obsidian, Notability read-only, filesystem). **A7** Recense status chip from `views/health.json`.
 - Do one item per session, update §7 in `docs/PROGRESS.md`, then stop.
 
-## Owner decisions: the menu-bar hider (once the Nook app) folds into Recense (supersedes BACKLOG SL6 wording)
+## Owner decisions: the menu-bar hider folds into Recense (done: `strip/hider.swift`; supersedes BACKLOG SL6 wording)
 Source: `nook/main.swift` in this repo (379 lines, `BarController`, `Rule`/`RuleAction`, `Prefs`); Nook is not built or run as its own app (owner, 2026-10-31). The old `~/Developer/nook` folder is already gone.
 
 1. **Import the menu-bar hider into Recense** as its own file, controlled by a **Recense setting that can be turned off**. When on, running Recense automatically installs the two divider status items and collapses so the hidden icons are out of sight. When off: no status items, no global mouse monitors, no timers.
@@ -152,7 +137,7 @@ Source: `nook/main.swift` in this repo (379 lines, `BarController`, `Rule`/`Rule
 7. Idle cost must stay near zero (SL1): the global `mouseMoved` monitor exists only while the feature is on and the pointer work is cheap.
 8. **Delete the old `~/Developer/nook` folder entirely, after the import:** build Recense, confirm hover and always-hidden work, confirm nothing else depends on Nook, make a recoverable snapshot zip outside the folder, then show the owner the exact path and delete only on explicit confirmation of that exact target. Never uninstall shared CLIs.
 
-## The widget panel inside Recense (once called "New Nook"; separate session, after the import)
+## The widget panel inside Recense (separate session, after the import)
 Not a standalone app. A notification-center-style panel that slides out from the **right screen edge**, summoned by a **three-finger right-to-left swipe**, hosting widgets. First widget: **Find My**, embedding the Find My app view. Name undecided; candidates Exedra, Eyvan.
 - Recense already reads three-finger swipes via private MultitouchSupport (experimental) for layers (up/down) and panel paging. Read the gesture code, find a gesture that does not conflict (for example a right-edge-only trigger or a different finger count), and propose it before building.
 - **Spike Find My first.** macOS has no public Find My API. Report plainly whether embedding the app view is possible; if not, list the fallbacks (Shortcuts, local cache needing Full Disk Access) with their risks. Never fake data.

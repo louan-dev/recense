@@ -1,33 +1,11 @@
 # Recense · architecture and reuse
 
-Read this with `.claude/CLAUDE.md` § "One app, three faces". That section settles *what is an app*; this file settles *how code
-is arranged so it can be reused and recombined*. Written 2026-10-28 from the owner's words; changes only when a
-decision does.
+This file settles *how code is arranged so it can be reused and recombined*. What Recense is, its names and where a
+feature goes are law: `docs/law/` (where they differ, the law wins). Written 2026-10-28 from the owner's words; changes
+only when a decision does.
 
-## Names (settled, don't reopen)
-- **The app is RECENSE.** `CFBundleName` and `CFBundleDisplayName` are already `Recense`, bundle id `local.recense`, executable
-  `recense`. Nothing else ships.
-- **Recense is still called Recense** — it is a *surface inside Recense*, not an app. The strip's `recenseOpen` button
-  (`app.swift:4304`, tooltip at 4386) summons an in-process `NSPanel` titled "Recense" (`recense.swift:1599`), and Recense
-  shows Recense's menu in its own menu bar (`recense.swift:6202`). **This is already how it works.** Hitting Return on
-  Recense summons Recense's features integrated in Recense, in Recense's process, with no second app.
-- **There is no Recense.app and there must never be one again.** See "Why Recense.app kept coming back".
-
-## Why Recense.app kept coming back
-Three separate causes, all now understood. Record them so nobody reintroduces one:
-1. **`recense/build.sh` rebuilds it.** It writes `Recense.app` into its own folder and prints
-   `Built Recense.app — launch with: open $PWD/$APP`. Any session following older docs that said
-   "`recense/main.swift` is the real Recense" would run it, and an app would appear and open. **Deleting `recense/recense/`
-   is the permanent fix.** As long as that build script exists, the app can return.
-2. **The bundle was trashed, not deleted.** `~/.Trash/Recense.app` (26 MB) stayed registered with Launch Services as
-   `local.recense`, path pointing *into the Trash*. macOS launches apps from the Trash, so any bundle-id open, file
-   association or Apple Event could resurrect it — and it then took port 47123 from Recense.
-3. **A stale login item.** Enabled, UUID `6D3AF30C-E16B-42F8-A335-EA53ADF3C11E`, identifier `2.Recense`, pointing at a
-   Claude Code scratchpad path that no longer exists. Harmless but it kept the name alive in System Settings.
-
-Removal order: `lsregister -u` the trashed bundle → delete the bundle → remove the login item in System Settings →
-delete `recense/recense/` by the snapshot-then-confirm procedure in `.claude/CLAUDE.md` (hider decisions, item 8) (snapshot zip outside the folder first; the only live work
-inside it is `recense/homebar/prosogram/`, which must be moved out before deletion).
+The "Names" and "Why the second app kept coming back" sections (written when the app was called Sill, then garbled by
+the rename) were replaced on 2026-11-14 by `docs/law/structure.md` § Names; the originals are in git history.
 
 ## The reuse problem, in the owner's words
 > "the homebar i designed i didn't realize it was gonna be on recense, recense, and gallery … it'd be cool to separate the

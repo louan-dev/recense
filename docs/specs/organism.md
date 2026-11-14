@@ -6,6 +6,9 @@ Sync, or another combination"). Becomes SETTLED when the owner says yes. Recorde
 Where this file and an older spec disagree about **which project owns what**, this file wins once settled; it does not
 change any decision about *how* a thing works.
 
+**Superseded in part (2026-11-14):** the owner folded the three into one repo (A15, 2026-11-05), so §0's "don't fold"
+and §3's H6 no longer hold. §4's placement rules are restated as law in `docs/law/structure.md`.
+
 ## 0 · The answer
 1. **Don't fold.** Keep three projects. Each has one job none of the others can do, and folding mixes code that changes
    every hour with code that must never lose a byte.

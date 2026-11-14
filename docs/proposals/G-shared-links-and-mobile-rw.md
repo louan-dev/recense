@@ -1,7 +1,7 @@
 # Shared-links row and mobile read/write · PROPOSED · 2026-10-24
 
 Two owner questions, answered from the code and the Mac as they are today. Nothing here is built
-except where marked. Design rules applied: `recense/export/03_DESIGN_PHILOSOPHY.md` (§1 quiet by default,
+except where marked. Design rules applied: `export/03_DESIGN_PHILOSOPHY.md`, now `docs/law/interaction.md` (§1 quiet by default,
 §2 fewer steps not fewer features, §5 context over dashboards, §7 backend before polish, §8 don't
 overbuild) and `gallery/src/page/ui/README.md`.
 
