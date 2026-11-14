@@ -23,6 +23,16 @@ Today's tools treat it as four files in four apps. Recense treats it as one matt
 The owner's analogy: pencil (Notability), keyboard (Obsidian), touchscreen (LibreOffice), voice (Office)
 as solid, liquid, gas and plasma.
 
+A phase change conserves what it transforms: the same atoms carry through solid, liquid, gas and plasma,
+rearranged, never reduced, and the change runs just as cleanly in reverse. That is the actual bar a thought
+must clear moving between a page, a keyboard and a spoken sentence, not just the four-state image on its own.
+The choice of instrument, a quill on vellum, a mechanical key, a glass touchscreen, a spoken word returned to
+text, has stayed essentially the same choice since long before computers; Isidore of Seville was already
+writing of the quill in the sixth century CE. Writing split across three devices and three postures today, each
+landing in its own file, breaks the conservation the water analogy promises: the matter fragments instead of
+changing phase and returning whole. That fragmentation, not the devices themselves, is the actual anomaly rule 2
+below exists to close.
+
 ### Rules that follow
 1. **One page, many inputs.** A continuation from any device or input mode lands on the same page, in order.
 2. **Nothing splits.** No feature may force a new document because the device or the input changed.
@@ -60,3 +70,6 @@ They should never have to choose one app and stay in it for their ideas to land 
 
 ## Amendments
 - 2026-11-14 · created; replaces `export/00_NORTH_STAR.md` (which described the Mac strip only).
+- 2026-11-14 · owner, dictated in conversation: expanded the matter/states principle with the
+  conservation-of-phase-change point and the quill-to-keyboard continuity, tying rule 2 to why fragmenting a
+  thought across devices is the actual anomaly, not the devices themselves.

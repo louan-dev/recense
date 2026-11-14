@@ -9,6 +9,10 @@ backups/
 .handoff/
 *-handoff.zip
 __pycache__/
+# agent instructions and coordination: kept on this Mac, never tracked (owner, 11-14)
+.claude/
+GEMINI.md
+docs/archive/export/
 # generated on this Mac by build.sh or tools (X4, 11-05): kept locally, never tracked
 strip/.build-log.txt
 /strip/recense

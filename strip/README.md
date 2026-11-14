@@ -377,6 +377,9 @@ from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/strip/sc
 Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
 (Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.
 
+The root README's open questions touch this list directly: the timers above, the private gesture framework, and
+what isn't sized yet for the always-on peer. [See them there](../README.md).
+
 ## Draftpad page library (2026-11-08)
 `shared/draftpadlibrary.swift` (linked into `Sources/recense/`, also built into iOS) answers the editor page:
 `draftpad.playlists.json` and `draftpad.pages.json` beside the note, expired pages appended to
