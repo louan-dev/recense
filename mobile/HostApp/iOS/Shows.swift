@@ -29,8 +29,12 @@ struct RecenseRoot: View {
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
         .onAppear {
             Playback.model = model
-            NativePlayer.shared.saved = { [model] path in if model.playing?.item.path == path { PlaybackEars.shared.saved(model) } }
+            NativePlayer.shared.saved = { [model] path in
+                Playback.rescan()
+                if model.playing?.item.path == path { PlaybackEars.shared.saved(model) }
+            }
         }
+        .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Playback.rescan() } }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab
             switch ProcessInfo.processInfo.environment["RECENSE_TAB"] {
             case "new": model.tab = .new
@@ -51,7 +55,11 @@ struct RecenseRoot: View {
             model.showsTranscript = true
         }
         // the playing episode heard on this device for its transcript (Ears.swift)
-        .onChange(of: model.playing?.id) { _, _ in if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == nil { PlaybackEars.shared.follow(model) } }
+        .onChange(of: model.playing?.id) { _, _ in
+            guard ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == nil else { return }
+            Playback.follow()   // an episode from Home, New or Library plays in our player too
+            PlaybackEars.shared.follow(model)
+        }
         .fullScreenCover(item: $launchPlace) { p in
             NavigationStack { p.screen() }.tint(Theme.accent)   // simulator checks: SIMCTL_CHILD_RECENSE_PLACE=<id>
         }

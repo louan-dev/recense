@@ -50,6 +50,9 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `Transport` (in `ShowsModel.swift`): play/pause/skip, and `time` / `duration` / `seek(to:)` for the transcript and
     scrubber (defaults: 0, nil, nothing), given by B3's player; until then play opens Now Playing. `ShowsModel.transcript`
     is the playing episode's transcript, filled by the app's ears; `transcriptSource` says where it came from.
+  - `PoolScan.swift` (player P1 S3, B1's first slice, 11-13): this device's pool (`library/`, `downloads/`, `inbox/`;
+    never dot files, `keep/`, `trash/`) as PoolItems with content keys; `MemoryCatalog.replaceLocal` takes a scan and
+    keeps marks, positions and the outbox. `Rules.place`: `downloads/` is New, as `inbox/`. Tests: `PoolScanTests`.
   - `TranscriptSource.swift` (player P1, 11-13): a played file's transcript from this device's copy
     (`TranscriptCache`, one JSON per path), else the Mac's (the Worker's `/main/api/transcript?path=`, saved at once),
     else none (the app hears it). Tests: `TranscriptSourceTests` (decode, offline second open, order).

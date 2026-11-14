@@ -32,7 +32,7 @@ import ShowsKit
         model.transcript = []
         model.transcriptSource = nil
         model.transcriptNote = "Opening the transcript…"
-        let path = e.item.path
+        let path = Offline.origin(e.item.path)
         Task {
             let r = await TranscriptSource.load(path: path, cache: Self.cache) { await siteData($0) }
             guard key == e.id else { return }
@@ -56,7 +56,7 @@ import ShowsKit
             return
         }
         let lang = Listener.shared.lang
-        let path = e.item.path
+        let path = Offline.origin(e.item.path)
         let a = SpeechAhead(url: url, lang: lang, duration: e.duration ?? Self.length(url))
         a.playhead = { [weak model] in model?.transport?.time ?? 0 }
         a.changed = { [weak model, weak a] ps in

@@ -89,6 +89,11 @@ enum Offline {
     static func url(_ path: String) -> URL? {
         [root.appendingPathComponent(path), saveURL(path)].first { FileManager.default.fileExists(atPath: $0.path) }
     }
+    /// The path the file has where it came from (a played file's copy sits at downloads/<that path>): the Mac's
+    /// transcript and this device's saved transcript go by it.
+    static func origin(_ path: String) -> String {
+        path.hasPrefix(Rules.downloads + "/archive/") ? String(path.dropFirst(Rules.downloads.count + 1)) : path
+    }
     /// The Worker's stream of an archive file, with this device's Access token; nil when the device isn't signed in.
     static func remote(_ path: String) -> (url: URL, headers: [String: String])? {
         guard let d = Token.read(), let t = try? JSONDecoder().decode([String: String].self, from: d),
@@ -137,6 +142,21 @@ private struct VideoLayer: UIViewRepresentable {
     static weak var model: ShowsModel?
 
     static func canPlay(_ path: String) -> Bool { Kind(path: path).isMedia }
+
+    /// An episode the catalog's views started (model.play): our player plays it, when it isn't already.
+    static func follow() {
+        guard let model, let e = model.playing, canPlay(e.item.path) else { return }
+        if NativePlayer.shared.path != e.item.path { NativePlayer.shared.open(e.item.path) }
+        model.transport = NativePlayer.shared
+        model.showsTranscript = true
+    }
+
+    /// Reads this device's pool again (PoolScan) into the catalog, off the main thread.
+    static func rescan() {
+        guard let store = model?.store as? MemoryCatalog else { return }
+        let root = Offline.root
+        Task.detached(priority: .utility) { await store.replaceLocal(PoolScan.items(root: root)) }
+    }
 
     static func open(_ path: String, size: Int64 = 0, mtime: Int64 = 0) {
         guard let model else { return }

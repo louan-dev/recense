@@ -29,7 +29,9 @@ updates in place.
 - **The root (11-07): the Podcasts-style shell** (`HostApp/iOS/Shows.swift`, from `../shared/ShowsKit/`): Home (Up Next,
   Recently Played), New (what landed in `Recense/inbox/`), Library (Shows, Study, Folio, Matters with Face ID, Saved,
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
-  Home holds only what is real: until the pool store (player S3) it says "Nothing here yet" with Open Archive; the
+  Home holds only what is on this device (player S3, 11-13): `PoolScan` reads `Documents/Recense/{library,downloads,inbox}/`
+  at launch and after each saved file; `downloads/` is New, so a file played from the Archive shows in New and Up Next,
+  and any episode tapped there plays in our player. With nothing there it says "Nothing here yet" with Open Archive; the
   invented sample shows load only under `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` (player P1, 11-13). Our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
   skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place,
