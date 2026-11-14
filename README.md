@@ -230,6 +230,77 @@ should stand on its own footing rather than depend on the grid staying up or one
 I hold that bar as a thoroughly reasonable one to set. And so it should count as ordinary, the same way a
 building keeps a stairwell around even on the days the elevator works fine.
 
+## Every crossing the page owes, and the four nature skips
+Matter gives four states and eight named crossings, and the naming runs out exactly where matter stops going
+directly. Solid becomes liquid by melting and comes back by freezing, liquid becomes gas by vaporizing and comes
+back by condensing, solid reaches gas by subliming and returns by deposition, gas reaches plasma by ionizing and
+returns by recombining. Those eight cover every crossing nature performs on its own, and so they arrive with
+names already attached.
+
+Writing gets twelve. Ink, type, mark and voice each address each other directly, which means a page performs four
+crossings that matter leaves unnamed, and that missing vocabulary feels like the most honest signal available
+about how little of this ground anyone has walked yet. The four states, in the order the analogy assigns them:
+
+- **Ink, the solid.** Stroke geometry, pencil, a mark fixed to a position on a surface.
+- **Type, the liquid.** The markdown body, flowing, editable, indifferent to where on the page it sits.
+- **Mark, the gas.** Highlight, selection, margin note, a layer diffuse across a surface and anchored to ranges.
+- **Voice, the plasma.** Speech, audio, prosody, timing, the highest-energy state and the one anchored to a
+  moment rather than to a place.
+
+And the twelve crossings, each paired with its inverse, since a crossing that runs one direction only amounts to
+a conversion rather than a phase change:
+
+- **Melting, ink to type.** Handwriting becomes editable text. This one runs today, through Apple's on-device
+  Vision recogniser in `shared/inkocr.swift`, in English, French and Vietnamese. It behaves as a search index
+  though, the recognised text filed beside the strokes so that ⌘F reaches them, which leaves the body of the
+  page untouched and the crossing one-way.
+- **Freezing, type to ink.** A typed passage becomes a surface a pencil marks in place, strokes anchored to the
+  words underneath. Unbuilt, and the anchoring arithmetic for exactly this is where BUG-07 lives.
+- **Vaporizing, type to mark.** Typed text becomes range-addressable, highlightable, commentable. Partly
+  standing, in the editor's highlight machinery.
+- **Condensing, mark to type.** A highlight collapses into a quoted block, a margin note settles into the
+  sentence it was about. Unbuilt.
+- **Subliming, ink to mark.** A circled region becomes a region-anchored comment directly, skipping recognition
+  entirely, which matters most for the handwriting a recogniser declines to read. Unbuilt.
+- **Deposition, mark to ink.** A comment sets down as a stroke placed by hand on the page. Unbuilt.
+- **Ionizing, mark to voice.** A marked passage reads aloud, or a spoken aside attaches itself to a range.
+  Partly standing.
+- **Recombining, voice to mark.** A spoken aside lands as a timestamped margin note rather than as body text.
+  Unbuilt, and this is the one Apple's live transcript surface looks closest to having already solved.
+- **Type to voice, unnamed.** Text read aloud. Running today in `shared/draftpadlibrary.swift`, where
+  `willSpeakRange` keeps the spoken word and the written word pointing at each other.
+- **Voice to type, unnamed.** Speech becomes editable text. Running today in `shared/speechcore.swift`, Apple's
+  SpeechAnalyzer for the languages the system carries and the open ears for everything else.
+- **Ink to voice, unnamed.** Handwriting read aloud with the typed intermediate skipped. Unbuilt.
+- **Voice to ink, unnamed.** A spoken phrase pinned to a place on the page rather than to a moment in a
+  timeline. Unbuilt, and the hardest of the twelve to even picture, which tends to mean it rewards the
+  picturing most.
+
+Four states also permit crossings that change the matter while leaving the state alone, the way heating water
+leaves it water. Translation, summary and rephrasing all sit there, and they run today across the transcription
+surface, each one adding a form linked back to the original under this repo's rule that the owner's words get
+transformed rather than replaced.
+
+Two conditions sit above any single crossing, and they describe the actual target better than the crossings do.
+Water holds a triple point, 0.01 °C at 611.657 pascals, where ice, liquid and vapour coexist in equilibrium, all
+three genuinely present at once. A page at its triple point carries ink, type, mark and voice simultaneously,
+each reachable from any other, and the question of which one counts as the real document dissolves for lack of a
+reason to ask it. Water also holds a critical point, 373.95 °C at 22.064 megapascals, above which liquid and gas
+stop being distinguishable at all and become one supercritical fluid. A page above its critical point stops
+distinguishing what someone said from what they typed, so that one search, one cursor and one edit reach both,
+and that strikes me as the more radical of the two targets and the one worth aiming at.
+
+Underneath all of it sits the arithmetic that decides whether any of this stays maintainable. Twelve crossings
+built as twelve converters grows as the square of the states, twelve today, twenty at five states, and every
+state added multiplies the surface that has to keep working. One canonical core cuts the count to twice the
+states, eight today and ten at five, with each state converting to and from a single neutral form, and markdown
+already holds that job here by rule. The catch arrives immediately, since markdown carries a body and declines
+to carry stroke geometry, range anchors, audio offsets or prosody, which means the canonical core holds the words
+while each state keeps a sidecar for whatever markdown drops. That sidecar turns out to be the whole mechanism of
+reversibility, and so the question of whether a page comes back from a crossing intact resolves into a storage
+decision rather than a conversion one, which feels like the kind of boring, compounding answer that tends to
+survive a decade.
+
 ## The impossible, treated as merely unbuilt
 Here's an exercise I keep coming back to, and I mean it less as daydreaming than as a kind of moral anchor:
 assume, on purpose, that fully offline-first, outage-proof, disaster-resilient, multilingual and multimodal

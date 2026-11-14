@@ -42,6 +42,52 @@ below exists to close.
    to the original. The owner's words are never rewritten (playbook §2.2, §2.9).
 5. **Markdown is the source of truth** for written pages: plain, portable, readable without Recense.
 
+### The twelve crossings
+Four states: **ink** (solid, stroke geometry fixed to a position), **type** (liquid, the markdown body),
+**mark** (gas, highlight/selection/margin note, anchored to ranges), **voice** (plasma, speech and audio,
+anchored to a moment).
+
+Matter names only eight crossings, because matter only goes directly between adjacent states (plus solid↔gas).
+Writing gets twelve: every sense addresses every other sense directly, so the four involving ink↔voice and
+type↔voice have no name in physics. The unnamed four are design territory, not an error in the analogy.
+
+| # | Crossing | Physics name | What it means on a page | State |
+|---|---|---|---|---|
+| 1 | ink → type | melting | handwriting becomes editable text | runs, one-way (`shared/inkocr.swift`, Vision, en/fr/vi; indexes for ⌘F, does not enter the body) |
+| 2 | type → ink | freezing | a typed passage becomes a pencil-markable surface, strokes anchored to words | unbuilt (anchoring math = BUG-07) |
+| 3 | type → mark | vaporizing | typed text becomes range-addressable, highlightable | partial (editor highlight machinery) |
+| 4 | mark → type | condensing | a highlight collapses to a quoted block, a margin note settles inline | unbuilt |
+| 5 | ink → mark | subliming | a circled region becomes a region-anchored comment, recognition skipped | unbuilt |
+| 6 | mark → ink | deposition | a comment sets down as a hand-placed stroke | unbuilt |
+| 7 | mark → voice | ionizing | a marked passage reads aloud; a spoken aside attaches to a range | partial |
+| 8 | voice → mark | recombining | a spoken aside lands as a timestamped margin note, not body text | unbuilt |
+| 9 | type → voice | — | text read aloud | runs (`shared/draftpadlibrary.swift`, `ReadAloud`, `willSpeakRange`) |
+| 10 | voice → type | — | speech becomes editable text | runs (`shared/speechcore.swift`, SpeechAnalyzer + `strip/openears.swift` → `strip/ears/omni.py`) |
+| 11 | ink → voice | — | handwriting read aloud, typed intermediate skipped | unbuilt |
+| 12 | voice → ink | — | a spoken phrase pinned to a place on the page, not a moment in a timeline | unbuilt |
+
+**Isothermal transforms** change the matter and leave the state alone (heating water leaves it water):
+translation, summary, rephrasing. These run today (`strip/recense.swift`, `shared/recensetext.swift`)
+and are governed by rule 4: each adds a linked form, the owner's words are never rewritten.
+
+**Triple point** (water: 0.01 °C, 611.657 Pa — ice, liquid and vapour coexisting): the target state of a page.
+All four states present at once, each reachable from any other, with no one of them privileged as "the real
+document." This is what rule 1 means in physical terms.
+
+**Critical point** (water: 373.95 °C, 22.064 MPa — liquid and gas become one supercritical fluid): the stronger
+target. Type and voice stop being distinguishable to the system, so one search, one cursor and one edit reach
+both. Further off than the triple point, and the more valuable of the two.
+
+**The conservation law.** A crossing is a phase change only if its inverse exists and a round trip returns the
+same matter. One-way crossings (today: #1) are conversions, and rule 2 is not satisfied by them.
+
+**The arithmetic (why this stays maintainable).** Twelve crossings as twelve converters is O(n²): 12 at four
+states, 20 at five. A canonical core is O(2n): 8 at four states, 10 at five, each state converting to and from
+one neutral form. Markdown already holds that job (rule 5). But markdown carries a body and drops stroke
+geometry, range anchors, audio offsets and prosody, so the canonical core holds the words and **each state keeps
+a sidecar for what markdown cannot represent.** The sidecar is the mechanism of reversibility: whether a page
+survives a crossing is a storage decision, not a conversion decision.
+
 ## Who it serves
 The owner's "Purpose" list in `~/.claude/CLAUDE.md` is binding and is not repeated here.
 In short: a law student working across borders and languages, who writes in pieces,
@@ -73,3 +119,8 @@ They should never have to choose one app and stay in it for their ideas to land 
 - 2026-11-14 · owner, dictated in conversation: expanded the matter/states principle with the
   conservation-of-phase-change point and the quill-to-keyboard continuity, tying rule 2 to why fragmenting a
   thought across devices is the actual anomaly, not the devices themselves.
+- 2026-11-14 · claude, at the owner's request ("devise what all possible phase transformations this document
+  should include"): added **The twelve crossings** under rule 5. Derived from the owner's four-state mapping,
+  with each crossing's status checked against the code on that date. The conservation law and the
+  canonical-core-plus-sidecar arithmetic are engineering consequences, offered for the owner's confirmation
+  before they bind as numbered rules.
