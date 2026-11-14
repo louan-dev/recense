@@ -151,6 +151,13 @@ private struct VideoLayer: UIViewRepresentable {
         model.showsTranscript = true
     }
 
+    /// A played file's copy landed: the playing episode takes its content key (its marks work from now on).
+    static func landed(_ path: String) {
+        guard let model, model.playing?.item.path == path, model.playing?.item.key == nil, let copy = Offline.url(path) else { return }
+        model.playing?.item.key = ContentKey.ofFile(copy)
+        model.playing?.item.local = true
+    }
+
     /// Reads this device's pool again (PoolScan) into the catalog, off the main thread.
     static func rescan() {
         guard let store = model?.store as? MemoryCatalog else { return }
@@ -161,7 +168,10 @@ private struct VideoLayer: UIViewRepresentable {
     static func open(_ path: String, size: Int64 = 0, mtime: Int64 = 0) {
         guard let model else { return }
         let name = (path as NSString).lastPathComponent
-        let item = PoolItem(id: "archive:" + path, path: path, size: size, mtime: mtime, local: Offline.url(path) != nil)
+        // its content key from this device's copy, so Save, Played and Clicked / Not yet work on it (P1d audit, 11-13);
+        // a file still streaming gets its key when the copy lands (Playback.landed)
+        let copy = Offline.url(path)
+        let item = PoolItem(id: "archive:" + path, path: path, key: copy.flatMap(ContentKey.ofFile), size: size, mtime: mtime, local: copy != nil)
         let folder = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
         NativePlayer.shared.open(path)
         model.transport = NativePlayer.shared

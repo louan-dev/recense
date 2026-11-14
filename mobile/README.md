@@ -43,6 +43,8 @@ updates in place.
   needs no network. The transcript (`Ears.swift`): the copy saved on this device, else the Mac's
   (`/main/api/transcript?path=`, saved here at once), else heard on this device once the file is saved here (saved too
   when finished); Now Playing names the source under the title.
+  A played file takes its content key from this device's copy (at once, or when the copy lands), so Save, Played and
+  Clicked / Not yet work on it.
 - **Now Playing's transcript** (11-08): the quote button in Now Playing's toolbar shows the episode's transcript in
   place of the player (which keeps playing under it): ShowsKit's `TranscriptView`, our scrubber under it and back 15 /
   play / forward 30 under that. `Ears.swift` hears the playing episode's file on this device with the shared engine

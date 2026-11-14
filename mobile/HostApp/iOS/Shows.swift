@@ -31,6 +31,7 @@ struct RecenseRoot: View {
             Playback.model = model
             NativePlayer.shared.saved = { [model] path in
                 Playback.rescan()
+                Playback.landed(path)
                 if model.playing?.item.path == path { PlaybackEars.shared.saved(model) }
             }
         }
