@@ -99,9 +99,10 @@ decisions, changelog), with detail in `../docs/BACKLOG.md` and `../docs/SPEC.md`
 
 Run from `sync/` (`cd ~/Developer/recense/sync`).
 
-    npm test                          # both selftests
+    npm test                          # all selftests (ledger, wishrank, canary, triage-watch, triage-merge)
     node src/ledger.mjs <command>     # run|watch|fold|verify|restore|health|audit|backup-status|quota|selftest
     node src/canary.mjs start|check
+    node src/wishrank.mjs             # the wish queue in law order (docs/law/order.md), with evidence; order IDS | selftest
     zsh bin/archive-mount.zsh         # the always-on archive mount (launchd: com.chauphan.archive-mount)
     zsh bin/disks-mount.zsh           # the offsite disks (launchd: com.chauphan.disks-mount)
     zsh bin/docs-sync.zsh             # one Docs pass now; --dry-run, --resync, --only "Obsidian", --verbose
@@ -128,7 +129,9 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 - The fixer prompt spells out the red → green steps (no `/bug` skill needed: it wasn't on main, 11-12).
 - A fixer run with 0 usage in 0 turns is "void" (moved to `starts.void`), logged "void: exit N". Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
 - **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
-  - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
+  - `!` (or the old `P1 - `) first = urgent: an agent starts. Any other line is only filed, as later.
+  - Urgent entries run in **law order** (`docs/law/order.md`): stars first, then emphasis (days in your own words),
+    never filing order. Before each run the queue asks `src/wishrank.mjs order`; if that fails, the log says so and the order stays.
 - **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
   Local, instant, no network: each line becomes `T-####` (urgent → `! NEW`, else `NEW`). Two priorities only: `!` = now, blank = later..
 - **Scout** (urgent only): `claude -p --model haiku --effort low --max-budget-usd 0.10`, read/grep tools only.

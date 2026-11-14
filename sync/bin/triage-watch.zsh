@@ -2,7 +2,8 @@
 # triage-watch: runs when docs/specs/triage.md is saved (launchd WatchPaths) and hourly.
 # The owner writes one plain line under # Inbox, any language. "!" first = urgent.
 # 1. Filing: every Inbox line becomes a T-#### entry. Local, instant, no network.
-#    "!" first → "! NEW" and queued; anything else (even "P1 - …") → "NEW" (later). Only "!" auto-starts.
+#    "!" (or the old "P1 - ") first → "! NEW" and queued; anything else → "NEW" (later). Only these auto-start.
+#    The queue runs in law order (docs/law/order.md, src/wishrank.mjs), never filing order.
 # 2. Scout (Haiku, low effort, $0.10, read-only tools): writes Where:/Area:/Repro: (guess) under the entry, stops.
 #    No files found → entry stays filed with a note + a notification; nothing more is spent.
 # 3. Fixer (Sonnet, medium effort, per-run $ cap): /bug in its own worktree, narrow brief, one at a time.
@@ -29,6 +30,9 @@ STARTS=$STATE/starts          # "YYYY-MM-DD T-####[,T-####]" per fixer start
 USAGE=$STATE/usage.log        # "YYYY-MM-DD HH:MM role ids usage=<n> turns=<n>" (plan usage, API-dollar equivalent; nothing is billed)
 LOG=$STATE/log
 RUNNING=$STATE/running        # "<pid> T-####" while a fixer runs
+WISHRANK=${TRIAGE_WISHRANK:-${SELF:h:h}/src/wishrank.mjs}
+nodes=($HOME/.nvm/versions/node/*/bin/node(Nn))   # launchd PATH has no nvm
+NODE=${TRIAGE_NODE:-${commands[node]:-${nodes[-1]:-node}}}
 
 mkdir -p "$STATE"
 touch "$QUEUE" "$STARTS" "$USAGE"
@@ -73,6 +77,7 @@ file_inbox() {
         $t =~ s/^-\s*//;
         my $p = 0;
         if    ($t =~ s/^!+\s*//)                 { $p = 1 }
+        elsif ($t =~ s/^P1\s*-\s*//i)           { $p = 1 }  # owner 2026-11-12: the old "P1 - " means "!"
         push @new, [$p, $t] if length $t; next;
       }
       push @keep, $_;
@@ -110,7 +115,7 @@ file_inbox_awk() {
         if (inb) {
           t = l[i]; gsub(/^[ \t]+|[ \t]+$/, "", t)
           if (t == "" || t == "-" || t ~ /^(Write what went wrong|Start with !|Write here)/) { keep[++k] = l[i]; continue }
-          sub(/^-[ \t]*/, "", t); p = sub(/^!+[ \t]*/, "", t)
+          sub(/^-[ \t]*/, "", t); p = sub(/^!+[ \t]*/, "", t); if (!p) p = sub(/^[Pp]1[ \t]*-[ \t]*/, "", t)
           if (t != "") { nt[++m] = t; np[m] = p }
           continue
         }
@@ -350,11 +355,25 @@ cleanup() {
   done
 }
 
+# ---------- law order ----------
+# docs/law/order.md: stars set the group, emphasis the order inside it; filing order never decides.
+# If wishrank fails, the queue keeps its order and the log says so (nothing is dropped).
+law_order() {
+  [[ -s $QUEUE ]] || return 0
+  local ids order id out=""
+  ids=(${(f)"$(cut -d" " -f1 "$QUEUE")"})
+  order=$(WISHRANK_TRIAGE=$TRIAGE "$NODE" "$WISHRANK" order $ids 2>>"$LOG") || { say "wishrank failed; queue keeps its order"; return 0; }
+  for id in ${(f)order}; do out+="$(grep -m1 "^$id " "$QUEUE")"$'\n'; done
+  [[ $(print -rn -- "$out" | grep -c .) == $(grep -c . "$QUEUE") ]] || { say "wishrank order incomplete; queue keeps its order"; return 0; }
+  print -rn -- "$out" > "$QUEUE.tmp" && mv "$QUEUE.tmp" "$QUEUE"
+}
+
 # ---------- drain ----------
 drain() {
   mkdir "$STATE/agent.lock" 2>/dev/null || { say "drain busy"; return 0; }
   {
     local head id t area ids batch_end
+    law_order
     head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
     id=${head%% *}; t=${head##* }
     agent_running && { say "$id queued: a fixer is still running"; return 0; }
@@ -375,6 +394,7 @@ drain() {
         2) requeue_limit_scout "$qid"; return 0 ;;
       esac
     done
+    law_order
     head=$(head -1 "$QUEUE"); [[ -z $head ]] && return 0
     id=${head%% *}; t=${head##* }
     if is_duplicate "$id"; then
@@ -413,7 +433,7 @@ selftest() {
   ok()  { print "ok   $1"; }
   bad() { print "FAIL $1"; fail=1; }
   export TRIAGE_FILE=$d/triage.md TRIAGE_STATE=$d/state TRIAGE_NO_DEBOUNCE=1 TRIAGE_NO_NOTIFY=1 TRIAGE_REPO=$d TRIAGE_NO_MERGE=1 \
-         TRIAGE_ONLINE=1 TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1
+         TRIAGE_ONLINE=1 TRIAGE_CLAUDE=$d/fake-claude TRIAGE_NO_WORKTREE=1 WISHRANK_TRANSCRIPTS= WISHRANK_CACHE=
   mkdir -p $d/.handoff; print "BUILD LOCK: free" > $d/.handoff/MERGE-QUEUE.md; : > $d/.handoff/LANES.md
   # fake claude: scout answers from $d/scout-answer; fixer sleeps $d/fix-sleep seconds
   cat > $d/fake-claude <<EOF
@@ -470,8 +490,14 @@ EOF
   grep -q '^NEW · Other' $TRIAGE_FILE && [[ ! -s $TRIAGE_STATE/usage.log ]] && ok "plain line filed NEW, nothing spent" || bad "plain line"
   zsh $SELF run; [[ $(grep -c '^## T-' $TRIAGE_FILE) == 1 ]] && ok "second save files nothing twice" || bad "double save"
 
-  reset; inbox 'P1 - x'; zsh $SELF run
-  grep -q '^NEW · Other' $TRIAGE_FILE && grep -q '^> P1 - x$' $TRIAGE_FILE && [[ ! -s $TRIAGE_STATE/queue && ! -s $TRIAGE_STATE/usage.log ]] && ok "P1 - x is a later line: NEW, text kept, no agent" || bad "P1 is not urgent"
+  # Regression guard: owner 2026-11-12 ("the old P1 - means the same" as !); the watcher had filed it as later.
+  reset; scout_says $'WHERE: NONE\nAREA: Other\nREPRO: unknown'; inbox 'P1 - x'; zsh $SELF run
+  grep -q '^! NEW · Other' $TRIAGE_FILE && grep -q '^> x$' $TRIAGE_FILE && grep -q ' scout T-0001 ' $TRIAGE_STATE/usage.log && ok "P1 - x = ! x: urgent, scouted" || bad "P1 - is the old !"
+
+  # docs/law/order.md: a later-filed ***** fix runs before an earlier ** fix (filing order never decides)
+  reset; scout_says $'WHERE: strip/app.swift\nAREA: UI\nREPRO: guess'
+  perl -0pi -e 's/^- *$/! ** small fix\n! ***** big fix/m' $TRIAGE_FILE; zsh $SELF run; waitfix
+  grep -q ' T-0002,T-0001$' $TRIAGE_STATE/starts && ok "law order: ***** (filed 2nd) leads the run" || bad "law order: $(cat $TRIAGE_STATE/starts)"
 
   reset; scout_says $'WHERE: NONE\nAREA: Other\nREPRO: unknown'
   inbox '! something odd somewhere'; zsh $SELF run
