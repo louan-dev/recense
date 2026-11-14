@@ -75,18 +75,16 @@ what it's for. Each project meets a different kind of friction, so each carries 
   files), calendar and a right-edge widget panel inside Recense, so the tools come to the work instead of the reverse.
 
 ## Menu-bar hider
-`recense/hider.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
-⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). Three ways show │ and the hidden icons:
-- the chevron (‹‹) in the strip, right of the batteries: click it, or rest the pointer on it for 0.5 s;
-- Recense's app menu ▸ Menu-Bar Hider ▸ Show Hidden Icons;
-- `./recense show-icons`.
+`strip/hider.swift`. Recense adds two dividers to the menu bar: `[ always-hidden icons ] ┆ [ hidden icons ] │ [ visible icons ] [ system icons ]`.
+⌘-drag icons left of `│` (`┃`) to hide them, or left of `┆` to always hide them (macOS has no API to move other apps' icons).
+- **Peek (hidden tier only, in the free space right of the strip):** click the chevron (`‹‹`) in the strip or rest the pointer on it for 0.5 s; rest the pointer on the divider's spot in the menu bar for 0.5 s (`Peek on Hover (0.5 s)`); choose Recense's app menu ▸ Menu-Bar Hider ▸ Show Hidden Icons; or run `./recense show-icons`.
+- **Always-hidden tier:** ⌥-click the strip's chevron (`‹‹`), choose Recense's app menu ▸ Menu-Bar Hider ▸ Reveal Always-Hidden Icons, or run `./recense show-all-icons`.
+- **No strip overlap (A2):** when collapsed, the divider's width is refined by bracket + binary search to within 2 pt of macOS's left menu-bar cutoff (and re-fitted on app switch), leaving less than one icon's width so hidden icons are pushed completely off-screen and never drift into the center under the strip's controls. During peek, `┆` stays collapsed so shown icons appear only in the free space right of the strip (`strip.maxX .. screen.maxX`).
 
 No key or modifier reveals them: ⌘-Tab, ⌘C and ⌘-drag leave the menu bar as it is (D23; until 2026-11-06 a held ⌘
-did, and the icons took the strip's place). Hovering the divider's spot also shows the hidden icons. They tuck away
+did, and the icons took the strip's place). They tuck away
 3 s after the pointer leaves the menu bar, or 8 s after Show Hidden Icons if the pointer never comes up. Recense's
-app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers. The earlier two-tier
-version (an always-hidden tier, per-app Rules) is in the history: commit 93e5cb3, and tag `archive/nook-fix-1f871c` for
-its macOS 27.2 placement fix.
+app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers.
 
 ## Features
 The app icon is Gallery's petal cloud (the iOS app's icon, `mobile/ios/Assets.xcassets/AppIcon.appiconset`),

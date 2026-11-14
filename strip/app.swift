@@ -5110,6 +5110,7 @@ final class RestStrip: NSObject {
     let spaceNext = GlassPauseButton()
     let chevron = GlassPauseButton()           // the hidden menu-bar icons (hider.swift): click, or hover 0.5 s (D23)
     var onShowIcons: (() -> Void)?
+    var onShowAllIcons: (() -> Void)?
     private var chevronHold: DispatchWorkItem?
     private var batteryText = ""
     private var batteryAt = Date.distantPast
@@ -5227,7 +5228,10 @@ final class RestStrip: NSObject {
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
 
 
-    @objc func showIcons() { chevron.bounce(); chevronHold?.cancel(); onShowIcons?() }
+    @objc func showIcons() {
+        chevron.bounce(); chevronHold?.cancel()
+        if NSApp.currentEvent?.modifierFlags.contains(.option) == true { onShowAllIcons?() } else { onShowIcons?() }
+    }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -6981,6 +6985,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // Recense opens as its own strip hanging from the top of the screen; Recense's card steps aside.
         rest.onRecord = { [weak self] in self?.toggleRecorder() }
         rest.onShowIcons = { [weak self] in self?.menuBar.hider.showIcons() }
+        rest.onShowAllIcons = { [weak self] in self?.menuBar.hider.showAllIcons() }
         timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
         timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
@@ -7313,6 +7318,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "editor-new": setEditor(.new)
         case "editor-classic": setEditor(.classic)
         case "show-icons": menuBar.hider.showIcons()
+        case "show-all-icons": menuBar.hider.showAllIcons()
         case "draftpad-flip": flipDraftpad(go: false)
         case "draftpad-flip-go": flipDraftpad(go: true)
         case "wing-left":  wingPanels.show(.left)
@@ -7339,6 +7345,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
                     .write(to: URL(fileURLWithPath: "/tmp/recense-menubar.png"))
+            }
+            let fullR = CGRect(x: scr.frame.minX, y: 0, width: scr.frame.width, height: 60)
+            if let cg = CGWindowListCreateImage(fullR, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+                try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: "/tmp/recense-menubar-full.png"))
             }
             rest.pause.showsPlay.toggle()
             rest.pause.displayIfNeeded(); rest.window.displayIfNeeded()
@@ -8060,7 +8071,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 // MARK: - Entry point
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
-                "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go",
+                "editor-new", "editor-classic", "show-icons", "show-all-icons", "draftpad-flip", "draftpad-flip-go",
                 "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off"]
 
 func stripSelftest() -> Bool {
