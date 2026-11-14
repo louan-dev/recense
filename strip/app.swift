@@ -6802,6 +6802,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
+        try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
 
         buildMenu()
@@ -8078,7 +8079,35 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p ? 0 : 1)
+    let q = homesSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q ? 0 : 1)
+}
+
+// Derived from Spec: FEAT-06
+// `recense carry verify` (what this device holds: ~/Recense/.carry/manifest.jsonl, one line per file, every home)
+// and `recense carry move --to <folder>` (copy every home there, verify every SHA-256, write a receipt, leave the
+// source in place). The exit exists before anything relies on it (owner, 2026-11-11). Local only, no network.
+if CommandLine.arguments.dropFirst().first == "carry" {
+    let a = Array(CommandLine.arguments.dropFirst(2))
+    let usage = "usage: recense carry verify | carry move --to <folder>"
+    do {
+        switch a.first {
+        case "verify":
+            try Homes.ensure()
+            let lines = try Carry.verify()
+            print("\(lines.count) files in \(Set(lines.map(\.home)).count) homes → \(Carry.manifestURL.path)")
+        case "move":
+            guard let i = a.firstIndex(of: "--to"), a.index(after: i) < a.count else { fputs(usage + "\n", stderr); exit(1) }
+            try Homes.ensure()
+            let dest = URL(fileURLWithPath: (a[a.index(after: i)] as NSString).expandingTildeInPath, isDirectory: true)
+            let r = try Carry.move(to: dest)
+            print("\(r.files) files, \(r.bytes) bytes verified → \(dest.path) (the source stays; receipt beside it)")
+        default: fputs(usage + "\n", stderr); exit(1)
+        }
+    } catch {
+        fputs("carry: \(error)\n", stderr); exit(1)
+    }
+    exit(0)
 }
 
 // `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`, `--queue` (run what other

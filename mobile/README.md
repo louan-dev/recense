@@ -100,6 +100,12 @@ updates in place.
   `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
   first launch, the older of two copies going to `Recense/trash/`). Episodes Gallery hasn't taken yet are remembered across
   launches (`listen.unsent`), so what was heard offline uploads once the network is back.
+- **The homes** (`../shared/homes.swift`, spec `../docs/specs/FEAT-06-homes-folder-contract.md`): `Documents/Recense/`
+  holds the same layout as the Mac's `~/Recense/` — `library/Music/`, `library/Study/`, `library/Legal/`,
+  `library/Audiobooks/`, `library/Listen/`, `downloads/`, `trash/` — created at launch and visible in the Files app.
+  Each keeps `.recense-index.json` (path, size, SHA-256, added, device, tags). A file taken in is moved, never
+  overwritten, and hashed as it lands; Remove puts it in `trash/` with where it came from, and only Trash can delete
+  forever. No network at any point. Moving bytes between devices by themselves (carry C1/C2) is not built yet.
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new

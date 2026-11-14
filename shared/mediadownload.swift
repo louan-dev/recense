@@ -59,15 +59,11 @@ enum Downloads {
     static let mediaExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "mp4", "m4v", "mov", "webm", "mkv"]
     static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "mkv"]
 
-    /// Recense/downloads/. RECENSE_DOWNLOADS points it elsewhere (tests never touch the real folder).
+    /// Recense/downloads/, the Downloads home (homes.swift, FEAT-06): one folder, one definition.
+    /// RECENSE_DOWNLOADS points it elsewhere (tests never touch the real folder).
     static var root: URL {
         if let p = ProcessInfo.processInfo.environment["RECENSE_DOWNLOADS"] { return URL(fileURLWithPath: p, isDirectory: true) }
-        #if os(macOS)
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Recense/downloads", isDirectory: true)
-        #else
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Recense/downloads", isDirectory: true)
-        #endif
+        return Homes.url(.downloads)
     }
     static var manifestURL: URL { root.appendingPathComponent("manifest.json") }
     static var queueDir: URL { root.appendingPathComponent(".queue", isDirectory: true) }

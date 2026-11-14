@@ -421,5 +421,16 @@ Keeps media in `~/Recense/downloads/` as audio, audio+video or video (yt-dlp + f
 - The queue runs by itself whenever the Mac gains a connection (and at launch).
 - Other devices ask through `downloads/.queue/` (one JSON file per request). Code: `shared/mediadownload.swift`.
 
+## Homes and carry (`recense carry`)
+One layout on every device (the folder contract; code `shared/homes.swift`, spec `docs/specs/FEAT-06-homes-folder-contract.md`).
+Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files app.
+- The homes: `library/Music/`, `library/Study/`, `library/Legal/`, `library/Audiobooks/`, `library/Listen/`, `downloads/`, `trash/`. Recense creates them at launch.
+- Each home keeps `.recense-index.json`: one entry per file with path, size, SHA-256, when it landed, which device recorded it, tags. Plain files beside it, nothing in a database.
+- Taking a file in moves it (never copies), never overwrites (`song 2.m4a`, as Finder does), and hashes it as it lands. Audio goes to Music, an `.m4b` to Audiobooks, a PDF or document to Study, anything else to Downloads.
+- **Nothing is deleted unless you say so:** Remove moves the file to `trash/` and records where it came from, so it can be put back; Delete forever works only inside `trash/`.
+- `recense carry verify` writes `~/Recense/.carry/manifest.jsonl`: one line per file across every home (home, path, size, mtime, SHA-256, device) — what this Mac holds, readable by any tool.
+- `recense carry move --to <folder>` copies every home there, verifies every SHA-256 after the copy, writes `carry-receipt-<when>.json`, and **leaves the source in place**. That is the exit: any folder works (a USB stick, iCloud Drive, the WebDAV mount), no Recense needed to read it.
+- Local only: filesystem and CryptoKit, no network at any point. Moving bytes between devices by themselves (carry C1/C2) is not built yet.
+
 ## SSH (Topic › Connect To)
 The terminal connects to any host in `~/Recense/ssh/hosts.json` (made from `~/.ssh/config` the first time; Topic › Connect To › Edit Hosts…). Each host lists routes tried in order: `lan` (same network, no internet), `tailscale`, `tunnel` (Cloudflare Tunnel through cloudflared, only when installed); the first that answers in 3 s is used. When ssh ends, the terminal goes back to its own session. Code: `shared/sshhosts.swift`.
