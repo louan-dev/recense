@@ -34,6 +34,8 @@ Row: ID · title · status · From · code pointer
 - FEAT-03 · Share: consolidated cross-device destination · `[ ]` · T-0035 · `shared/mediadownload.swift` (reused pattern), `mobile/HostApp/macOS/Window.swift`
 - FEAT-04 · Exact time sync for stored transcripts (fingerprint → content clock) · `[~]` P1+P2 built, P3 parked (aligner), P4 after FEAT-02 · owner 2026-11-12 · `shared/ShowsKit/Sources/ShowsKit/{Word,ContentClock}.swift`, `mobile/HostApp/iOS/Listen.swift`, `strip/handoff.swift`
 - FEAT-06 · Homes: the folder contract on every device (+ carry C0 exit) · `[~]` P1–P3 built, device check owed · owner 2026-11-08 + 11-11 · `shared/homes.swift`, `strip/app.swift` (`recense carry`)
+- FEAT-07 · Transcript search pill + haptic zoning of the time ruler and EQ · `[ ]` · T-0045 · `FEAT-07-search-pill-haptic-ruler.md`; `shared/ShowsKit/Sources/ShowsKit/Views/{Scrubber,Search}.swift`
+- FEAT-08 · Draftpad as one matter (the 12-move test) · `[ ]` · owner 2026-11-14 (T-0046, T-0050) · `FEAT-08-draftpad-one-matter.md`; `editor/`, `shared/notesync.swift`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
