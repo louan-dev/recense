@@ -65,6 +65,15 @@ final class SoundEngine {
     private func set(_ s: State) { guard s != state else { return }; state = s; onState?(s) }
 }
 
+/// The audio objects of an app and its helpers (SoundTap's rule), for the app ear (appear.swift) too.
+@available(macOS 14.2, *)
+enum AppAudio {
+    static func objects(for app: pid_t) -> [AudioObjectID] { SoundTap.audioObjects(for: app) }
+    /// Safari's sound: WebKit's GPU process plays a page's media (macOS 14+), not its WebContent process, which Core
+    /// Audio doesn't even list; taking only WebContent left the tap with nothing (P7: Safari got no transcript, no EQ).
+    static func webKitPlays(_ bundle: String) -> Bool { bundle.hasPrefix("com.apple.WebKit.GPU") || bundle.hasPrefix("com.apple.WebKit.WebContent") }
+}
+
 /// One frame-ring between the tap's IO thread and the engine's render thread (interleaved floats).
 private final class Ring {
     private var buf: [Float]
@@ -311,7 +320,7 @@ private final class SoundTap {
     }
 
     /// The audio objects of an app and of its helpers: a browser plays from its content processes, not its own.
-    /// Helpers are the app's children (Firefox, Chromium) or, for Safari, WebKit's WebContent (shared by every WebKit app).
+    /// Helpers are the app's children (Firefox, Chromium) or, for Safari, WebKit's processes (shared by every WebKit app).
     static func audioObjects(for app: pid_t) -> [AudioObjectID] {
         func get<T>(_ o: AudioObjectID, _ sel: AudioObjectPropertySelector, _ v: inout T) -> Bool {
             var a = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
@@ -331,7 +340,7 @@ private final class SoundTap {
             if p == app || parent(of: p) == app { return true }
             guard safari else { return false }
             var b: CFString = "" as CFString
-            return get(o, kAudioProcessPropertyBundleID, &b) && (b as String).hasPrefix("com.apple.WebKit.WebContent")
+            return get(o, kAudioProcessPropertyBundleID, &b) && AppAudio.webKitPlays(b as String)
         }
     }
     private static func parent(of p: pid_t) -> pid_t {

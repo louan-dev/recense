@@ -75,6 +75,30 @@ final class EditorWebView: WKWebView {
     /// A wing panel's page acts on the first click, though its panel isn't key (wingpanels.swift).
     var clickThrough = false
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { clickThrough || super.acceptsFirstMouse(for: event) }
+
+    // Derived from Spec: BUG-02 A8. Draftpad page swipe read natively, like the old PadTextView (app.swift):
+    // the axis resets when the fingers touch, momentum after the lift is ignored, the lift settles the page.
+    // Same slop (12 px) and ratio (1.4) as the editor's decideAxis. nil = plain web scrolling (wing panels).
+    var onSwipe: ((CGFloat, Bool) -> Void)?
+    private var swipeAxis: Character?
+    private var swipeX: CGFloat = 0, swipeY: CGFloat = 0
+    override func scrollWheel(with event: NSEvent) {
+        guard let onSwipe = onSwipe, event.hasPreciseScrollingDeltas else { super.scrollWheel(with: event); return }
+        if event.phase == .began || event.phase == .mayBegin { swipeAxis = nil; swipeX = 0; swipeY = 0 }
+        if !event.momentumPhase.isEmpty {
+            if swipeAxis != "h" { super.scrollWheel(with: event) }
+            return
+        }
+        swipeX += event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX
+        swipeY += event.scrollingDeltaY
+        let ended = event.phase == .ended || event.phase == .cancelled
+        if swipeAxis == nil {
+            if max(abs(swipeX), abs(swipeY)) < 12 { super.scrollWheel(with: event); return }
+            swipeAxis = abs(swipeX) > abs(swipeY) * 1.4 ? "h" : "v"
+        }
+        if swipeAxis == "v" { super.scrollWheel(with: event); return }
+        onSwipe(swipeX, ended)
+    }
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         menu.addItem(.separator())
@@ -138,6 +162,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         cfg.setURLSchemeHandler(files, forURLScheme: "recense-file")
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
+        web.onSwipe = { [weak self] dx, ended in self?.sendSwipe(dx, ended) }
         for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
             cfg.userContentController.add(WeakHandler(self), name: name)
         }
@@ -217,6 +242,19 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     func refreshCalendarAdded() {
         reloadSyncedEventIds()
         send("setCalendarAdded(\(jsString(syncedEventIdsJSON)))")
+    }
+
+    // One swipe call in flight at a time; the newest drag waits, older ones are dropped, the lift always goes.
+    private var swipeBusy = false
+    private var swipeNext: (CGFloat, Bool)?
+    private func sendSwipe(_ dx: CGFloat, _ ended: Bool) {
+        if swipeBusy { swipeNext = (dx, ended || (swipeNext?.1 ?? false)); return }
+        swipeBusy = true
+        web.evaluateJavaScript("window.recenseEditor && window.recenseEditor.nativeSwipe(\(Double(dx)), \(ended))") { [weak self] _, _ in
+            guard let self = self else { return }
+            self.swipeBusy = false
+            if let n = self.swipeNext { self.swipeNext = nil; self.sendSwipe(n.0, n.1) }
+        }
     }
 
     private func call(_ js: String) {
@@ -438,6 +476,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         loaded = true
         call("setTheme('dark')")
         call("setFontSize(18)")
+        call("nativeSwipe(0, false)")   // the Mac reads the trackpad natively (EditorWebView.scrollWheel); web wheel pager off
         call("setText(\(jsString(text)))")
         if nativeWings && wingSide == nil { call("setNativeWings(true)") }
         if wingSide == nil, let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {

@@ -818,6 +818,10 @@ export function legalNumberingExtension() {
       {
         key: 'Enter',
         run(view) {
+          const sel = view.state.selection.main;
+          if (!sel.empty) {
+            view.dispatch({ changes: { from: sel.from, to: sel.to }, selection: { anchor: sel.from } });
+          }
           const pos = view.state.selection.main.head;
           const res = continueLegalOnEnter(view.state.doc.toString(), pos);
           return applyPureEdit(view, res);

@@ -354,6 +354,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         saveTimer?.invalidate(); saveTimer = nil
         guard let mine = lastPosted else { return }
         if let shown = file.save(mine) { call("setText(\(jsLiteral(shown)))") }
+        if Listener.shared.on { Listener.shared.noteSaved() }   // T-0043
     }
 
     /// The page's text right now (skipping its 300 ms debounce), then a save; used before leaving and on a poll.

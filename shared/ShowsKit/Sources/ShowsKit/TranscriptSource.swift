@@ -30,14 +30,14 @@ public enum TranscriptSource {
     /// The Worker's answer (library/src/corrections.js `present`): { lines: [{ id, s, e, text, en, words: [{ t, s, e }] }] },
     /// or { pending: true } when there is none yet. nil when it isn't that shape or holds no lines.
     public static func decode(_ data: Data) -> [TranscriptLine]? {
-        struct W: Decodable { let t: String; let s: Double; let e: Double }
+        struct W: Decodable { let t: String; let s: Double; let e: Double; let lang: String? }
         struct L: Decodable {
             let id: Flexible; let s: Double; let e: Double; let text: String?; let en: String?; let words: [W]?
         }
         struct Body: Decodable { let lines: [L]?; let pending: Bool? }
         guard let b = try? JSONDecoder().decode(Body.self, from: data), let ls = b.lines, !ls.isEmpty else { return nil }
         return ls.map { l in
-            let words = (l.words ?? []).map { TranscriptWord(text: $0.t, start: $0.s, end: $0.e) }
+            let words = (l.words ?? []).map { Word(text: $0.t, start: $0.s, end: $0.e, lang: $0.lang) }
             let text = l.text?.isEmpty == false ? l.text! : words.map(\.text).joined(separator: " ")
             return TranscriptLine(id: l.id.text, start: l.s, end: l.e, text: text, words: words,
                                   translation: l.en?.isEmpty == false ? l.en : nil)

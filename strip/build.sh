@@ -103,7 +103,7 @@ rm -f recense
 # macOS asks permissions for. When it is running, the executable just hands the command over and exits.
 print -r -- '#!/bin/zsh
 app=/Applications/Recense.app
-if ! pgrep -qx recense && [[ "${1:-time}" != (status|hide|quit|selftest) ]]; then
+if ! pgrep -qx recense && [[ "${1:-time}" != (status|hide|quit|selftest|hear-app) ]]; then
   exec open -a "$app" --args "${1:-time}"
 fi
 exec "$app/Contents/MacOS/recense" "$@"' > recense

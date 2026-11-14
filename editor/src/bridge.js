@@ -1,4 +1,5 @@
 import { Annotation, Transaction } from '@codemirror/state';
+import { computeMinimalTextChange } from './legal.js';
 
 export const DEBOUNCE_MS = 300;
 
@@ -94,6 +95,7 @@ export function createEditorBridge({
     return state ? state.doc.toString() : '';
   }
 
+  // Derived from Spec: BUG-04
   function setText(nextText) {
     const s = typeof nextText === 'string' ? nextText : String(nextText ?? '');
     flushPendingPost();
@@ -102,14 +104,19 @@ export function createEditorBridge({
     const current = state.doc.toString();
     if (s === current) return;
 
-    const sel = state.selection.main;
-    const anchor = Math.min(sel.anchor, s.length);
-    const head = Math.min(sel.head, s.length);
     const scroll = typeof getScroll === 'function' ? getScroll() : null;
 
+    // BUG-04 (T-0001): this used to replace the whole document (`from: 0, to: current.length`)
+    // and then force the selection back to its OLD raw offset, only clamped to the new text's
+    // length. Any round-trip that changed content before the caret (a merge, a save-path
+    // normalization) left the caret pointing at stale content — one line earlier than before.
+    // Dispatching only the minimal changed region, with no explicit `selection`, lets CodeMirror
+    // map the existing selection through that change automatically, keeping the caret anchored
+    // to the same unchanged content on either side of the edit.
+    const change = computeMinimalTextChange(current, s);
+
     dispatch({
-      changes: { from: 0, to: current.length, insert: s },
-      selection: { anchor, head },
+      changes: change,
       annotations: [
         externalSetTextAnnotation.of(true),
         Transaction.addToHistory.of(false)

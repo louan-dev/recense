@@ -20,6 +20,22 @@
 
 Shared plan: `docs/PROGRESS.md` (read §2 Rules every session, plus only the section for the task named). Detail: `docs/BACKLOG.md`, open only the section you are on. Don't re-read unchanged files or re-plan. Nothing has been run on the owner's Mac unless §7 says so. Treat every claim as a lead to verify.
 
+## Parity across embodiments (owner, 2026-11-12)
+- **One feature, one source.** Logic lives where every embodiment compiles it: `shared/` (Swift, Mac + iPhone + iPad),
+  `editor/` (Draftpad JS, every host), `library/src/client/` (web + apps). `strip/`, `mobile/`, `library/src/` hold glue only.
+- **Before a change, list its embodiments** from `docs/specs/PARITY.md` (Mac, iPhone, iPad, web). Change all of them in
+  the same slice, or file each gap as a triage line and add it to PARITY.md's Gaps column.
+- **A second copy of logic is a bug:** move it into the shared folder, then patch once.
+- **Done = the Checks of every embodiment touched** (and the device check on each: "mobile" = iPhone + iPad).
+
+## Specs (owner, 2026-11-11)
+- **Read `docs/specs/INDEX.md` before planning or coding**; specs are law, code is derived (`.claude/rules/spec-and-index-law.md`).
+- Skills: `/spec` (idea → spec), `/derive` (spec → tests → code), `/bug` (red → green → guard).
+- Triage lives in `docs/specs/triage.md`; a TRIAGED entry gets a spec before code (global rule, Triage).
+- App studies: `docs/specs/ui-teardowns/UI-xx-*/NOTES.md`; open a screenshot only when a note cites it.
+- Screenshots, `triage*.md`, `_raw/`, `_traces/` are git-ignored (public repo): no git copy, keep them in the backup.
+- Replies end with the Compass block (`.claude/output-styles/compass.md`); the owner's global rules win on conflict.
+
 ## Direction
 - Offline-first everywhere; the network, including Cloudflare, is the fallback.
 - Cloudflare/R2 is storage and caching only. Keep a one-command migration path to the M4 mini

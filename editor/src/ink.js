@@ -462,6 +462,9 @@ export function snapUnderlineStroke(points, lineHeight = DEFAULT_LINE_HEIGHT) {
 export const SNAP_HOLD_MS = 500;
 // Strokes smaller than this (in px, on 28-px lines) are letters and never become shapes.
 export const SNAP_MIN_SIZE = 40;
+// Derived from Spec: BUG-03. A fresh mount's first Pencil touch under this much movement is a
+// cursor-placement tap, not a mark — well under SNAP_MIN_SIZE, which is about shape detection, not this.
+export const AUTO_PEN_TAP_PX = 3;
 
 /**
  * How long the pen stayed still (within radius px, allowing for Pencil jitter, of where it lifted) before lifting.
@@ -817,6 +820,14 @@ export function createInkLayer(view, options = {}) {
     mount = null,
     onToolChange = null
   } = options;
+
+  // Regression guard: BUG-07 — prefer the view's own live, measured line height over the
+  // 28px guess, read fresh each time (not cached), so it tracks a setFontSize change too.
+  function currentLineHeight() {
+    return view && typeof view.defaultLineHeight === 'number' && view.defaultLineHeight > 0
+      ? view.defaultLineHeight
+      : lineHeight;
+  }
 
   let inkDoc = initialInk && typeof initialInk === 'object'
     ? {
@@ -1346,7 +1357,7 @@ export function createInkLayer(view, options = {}) {
   function relayout() {
     const docText = getDocText();
     for (const stroke of inkDoc.strokes) {
-      const res = resolveStrokeAnchor(stroke, docText, lineHeight);
+      const res = resolveStrokeAnchor(stroke, docText, currentLineHeight());
       stroke.points = res.points;
       stroke.orphaned = res.orphaned;
       if (stroke.anchor) {
@@ -1401,7 +1412,7 @@ export function createInkLayer(view, options = {}) {
       stroke.width = getToolDefaultWidth(stroke.tool);
     }
     if (!stroke.anchor) {
-      anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+      anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
     }
     inkDoc.strokes.push(stroke);
     render();
@@ -1413,7 +1424,7 @@ export function createInkLayer(view, options = {}) {
     const docText = getDocText();
     let res;
     if (effectiveMode === 'partial' || effectiveMode === 'eraser-partial') {
-      res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS['eraser-partial'], docText, lineHeight, getCurrentPageIndex());
+      res = erasePartialStrokes(inkDoc.strokes, points, ERASER_RADIUS['eraser-partial'], docText, currentLineHeight(), getCurrentPageIndex());
     } else {
       res = eraseWholeStrokes(inkDoc.strokes, points, ERASER_RADIUS['eraser-whole']);
     }
@@ -1481,8 +1492,8 @@ export function createInkLayer(view, options = {}) {
 
   // Whether this press draws. Select never draws; the first Pencil touch on an untouched
   // palette picks the pen, so the iPad writes at once while the Mac's mouse selects text.
+  // Regression guard: BUG-06 — once a tool is chosen, a finger draws too (iPhone has no Pencil).
   function inks(e) {
-    if (e.pointerType === 'touch') return false;
     if (!allowMouse && e.pointerType === 'mouse') return false;
     if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === 'pen') {
       currentTool = 'pen';
@@ -1522,7 +1533,6 @@ export function createInkLayer(view, options = {}) {
   function onPointerMove(e) {
     moveRing(e);   // also while hovering (mouse, or a Pencil above the glass)
     if (!isDrawing) return;
-    if (e.pointerType === 'touch') return;
 
     const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
     const scrollLeft = scrollDOM?.scrollLeft || 0;
@@ -1557,7 +1567,6 @@ export function createInkLayer(view, options = {}) {
   function onPointerUp(e) {
     if (!isDrawing) return;
     isDrawing = false;
-    if (e.pointerType === 'touch') return;
 
     if (currentTool.startsWith('eraser')) {
       activePoints = [];
@@ -1567,13 +1576,28 @@ export function createInkLayer(view, options = {}) {
 
     if (activePoints.length === 0) return;
 
+    // Derived from Spec: BUG-03. toolChosen false here means currentTool only got to 'pen' via the
+    // auto-detect in inks(), never an explicit pick (setTool is the only other place it's set, and it
+    // always sets toolChosen true first) — that touch can't be told apart from a cursor-placement tap
+    // until it either moves or doesn't: discard it here if it didn't.
+    if (!toolChosen && e.pointerType === 'pen') {
+      const [x0, y0] = activePoints[0];
+      const moved = activePoints.some(p => Math.hypot(p[0] - x0, p[1] - y0) >= AUTO_PEN_TAP_PX);
+      if (!moved) {
+        activePoints = [];
+        if (activeGroup) activeGroup.innerHTML = '';
+        render();
+        return;
+      }
+    }
+
     // Only the stillness at the end counts, not the whole stroke's length.
     const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
     let finalPoints = activePoints;
     let finalShape = null;
 
     if (currentTool === 'underline') {
-      finalPoints = snapUnderlineStroke(activePoints, lineHeight);
+      finalPoints = snapUnderlineStroke(activePoints, currentLineHeight());
       finalShape = null;
     } else if (currentTool === 'circle') {
       const res = detectAndSnapShape(activePoints, { forceCircle: true });
@@ -1596,7 +1620,7 @@ export function createInkLayer(view, options = {}) {
       at: Date.now()
     };
 
-    anchorStrokeToDoc(stroke, getDocText(), lineHeight, getCurrentPageIndex());
+    anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
     inkDoc.strokes.push(stroke);
     if (stroke.tool === 'pen') scheduleRecognition();
 
@@ -1620,7 +1644,7 @@ export function createInkLayer(view, options = {}) {
     const post = globalObj?.webkit?.messageHandlers?.ui?.postMessage;
     if (typeof post !== 'function' || !docNode || typeof docNode.createElement !== 'function') return 0;
     const pending = new Set([...ocrSent.values()].flat());
-    const groups = groupHandwriting(inkDoc.strokes.filter(st => !pending.has(st)), lineHeight);
+    const groups = groupHandwriting(inkDoc.strokes.filter(st => !pending.has(st)), currentLineHeight());
     let sent = 0;
     for (const g of groups) {
       const png = renderGroupPNG(g);
@@ -1669,7 +1693,7 @@ export function createInkLayer(view, options = {}) {
     const keep = [];
     let changed = false;
     for (const st of inkDoc.strokes) {
-      const r = resolveStrokeAnchor(st, docBefore, lineHeight);
+      const r = resolveStrokeAnchor(st, docBefore, currentLineHeight());
       const pi = r.pageIndex ?? 0;
       if (drop.has(pi)) { inkDoc.removed.push(st.id); changed = true; continue; }
       const shift = sorted.filter(i => i < pi).length;
@@ -1696,7 +1720,7 @@ export function createInkLayer(view, options = {}) {
   }
   function findInk(query) {
     return findInkText(inkDoc.strokes, query).map(m => {
-      const r = resolveStrokeAnchor(m.stroke, getDocText(), lineHeight);
+      const r = resolveStrokeAnchor(m.stroke, getDocText(), currentLineHeight());
       const ys = (r.points || []).map(p => p[1]);
       return { id: m.id, text: m.text, pageIndex: r.pageIndex ?? 0, y: ys.length ? Math.min(...ys) : 0 };
     });

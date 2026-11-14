@@ -34,7 +34,7 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(said(vi, 1.7), "Tòa án đã phán quyết rằng hợp đồng")
         // a word decomposed (NFD) still finds its place in a composed (NFC) line
         var nfd = vi
-        nfd.words = vi.words.map { TranscriptWord(text: $0.text.decomposedStringWithCanonicalMapping, start: $0.start, end: $0.end) }
+        nfd.words = vi.words.map { Word(text: $0.text.decomposedStringWithCanonicalMapping, start: $0.start, end: $0.end) }
         XCTAssertEqual(said(nfd, 0.9), "Tòa án đã phán quyết")
         XCTAssertTrue(TranscriptLight.ranges(nfd).allSatisfy { $0 != nil })
     }
@@ -126,7 +126,7 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(TranscriptLight.following(lines, at: 5.7, jump: true), 0)   // Reduce Motion jumps on time
         XCTAssertEqual(TranscriptLight.following(lines, at: 5.2), 0)
         // a long pause before the next line: the full lead and the full scroll
-        let paused = [TranscriptLine(id: "a", start: 0, end: 2, text: "Hi", words: [TranscriptWord(text: "Hi", start: 0, end: 1)]),
+        let paused = [TranscriptLine(id: "a", start: 0, end: 2, text: "Hi", words: [Word(text: "Hi", start: 0, end: 1)]),
                       TranscriptLine(id: "b", start: 5, end: 6, text: "Yes")]
         XCTAssertEqual(TranscriptLight.turn(paused, to: 1).at, 5 - TranscriptLight.lead, accuracy: 1e-9)
         XCTAssertEqual(TranscriptLight.turn(paused, to: 1).scroll, TranscriptLight.scroll)

@@ -10,6 +10,10 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `PoolItem`, `ItemState`, `ListenPosition`: the device pool, the listener's marks, where each device stopped.
   - `Space`, `Show`, `Season`, `Episode`, `ShowManifest` (`.show.json`).
   - `CatalogEvent`, `ChangesPage`: the Worker's changes feed (`library/src/fp.js`).
+- `Sources/ShowsKit/Word.swift`: `Word` (with `Pin`, `Syl`), the one timed word every app uses (FEAT-04), timed in
+  seconds into the recording.
+- `Sources/ShowsKit/ContentClock.swift`: the one clock (FEAT-04): live words cross from the wall clock onto the content's
+  clock when stored (`content`), and an `Anchor` says where the content is at a wall-clock moment.
   - `OutboxOp`: a change waiting to be sent, with an `opId` that applies once.
 - `Sources/ShowsKit/Rules.swift`: folder → space/show/season, locks, New's expiry, filter bars, episode order.
 - `Sources/ShowsKit/Store.swift`: the `CatalogStore` protocols, and `MemoryCatalog`, the in-memory reference store.
@@ -31,7 +35,7 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     with its spoken words bright and the rest dim, the view following the playhead (a "Now" button after scrolling
     away), tap a line to play from it, hold it for Play / Share from <time> / Copy / Select Text (the system's text
     view: Look Up, Translate), the translation under each line, chapter headings inline; every action also in its menu.
-    Reduce Motion: it jumps instead of scrolling. `TranscriptLine` / `TranscriptWord` are its data; `TranscriptLight`
+    Reduce Motion: it jumps instead of scrolling. `TranscriptLine` / `Word` are its data; `TranscriptLight`
     its rules (which line, how much of it is said: by word times, else by time at a whole word, in any language).
     Used by iOS Listen and Now Playing.
     The light redraws every screen frame, at most 60 a second (`TranscriptLight.frame`), as the Mac's display link

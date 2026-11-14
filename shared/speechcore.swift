@@ -32,6 +32,42 @@ enum SpeechCore {
     struct Phrase: Codable, Equatable, Sendable {
         var start: Double; var end: Double; var text: String; var alts: [String] = []; var words: [W]
     }
+    /// The fast transcriber's words past the sure one's finals, as one guess (SpeechLive `fast`): its own finals are
+    /// kept as guesses until the sure finals reach them, then its latest volatile result follows them.
+    /// Where the sure finals end in the fast words is found by content, not by either clock: the two transcribers time
+    /// the same word apart (±0.3 s and more), and a time cut showed a short word twice or hid the next one. The cut is
+    /// after the fast word that is the last final word (same text, within `near` s); with no such word, by time.
+    final class Ahead: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done: [Phrase] = [], now: Phrase?, sure = 0.0, last: W?
+        static let near = 1.5
+        /// A fast result in; the guess to show (nil: nothing past the finals).
+        func guess(_ p: Phrase, final: Bool) -> Phrase? {
+            lock.withLock { if final { done.append(p); now = nil } else { now = p }; return merged() }
+        }
+        /// A sure final in; the guess still to show past it.
+        func final(_ p: Phrase) -> Phrase? {
+            lock.withLock {
+                if p.end >= sure, let w = p.words.last { sure = p.end; last = w }
+                let out = merged()
+                done.removeAll { $0.end < sure - Self.near }   // far behind the finals on any clock
+                return out
+            }
+        }
+        static func key(_ t: String) -> String { t.lowercased().filter { $0.isLetter || $0.isNumber } }
+        private func merged() -> Phrase? {
+            let all = (done + (now.map { [$0] } ?? [])).flatMap(\.words)
+            var from = 0
+            if let last {
+                let k = Self.key(last.text)
+                if let i = all.lastIndex(where: { Self.key($0.text) == k && abs($0.end - last.end) <= Self.near }) { from = i + 1 }
+                else { from = all.firstIndex { $0.start >= sure - 0.05 } ?? all.count }
+            }
+            let ws = Array(all[from...])
+            guard let a = ws.first, let b = ws.last else { return nil }
+            return Phrase(start: a.start, end: b.end, text: ws.map(\.text).joined(separator: " "), words: ws)
+        }
+    }
     enum Module: String, Sendable { case speech = "apple.speechtranscriber", dictation = "apple.dictationtranscriber" }
 
     /// Where the engine's notes go (the Mac points it at Recense's log).
@@ -292,12 +328,12 @@ final class SpeechBox: @unchecked Sendable {
 
     /// The module for one hearing, and the task that hands on each result (`final` false: a live guess that a later
     /// result replaces). `live`: volatile results, for a stream heard as it comes.
-    static func make(_ m: SpeechCore.Module, _ l: Locale, _ lang: String, live: Bool, custom: SFSpeechLanguageModel.Configuration?,
+    static func make(_ m: SpeechCore.Module, _ l: Locale, _ lang: String, live: Bool, fast: Bool = false, custom: SFSpeechLanguageModel.Configuration?,
                      each: @escaping @Sendable (SpeechCore.Phrase, Bool) -> Void) -> (any SpeechModule, Task<Void, Error>) {
         let attrs: Set<SpeechTranscriber.ResultAttributeOption> = [.audioTimeRange, .transcriptionConfidence]
         switch m {
         case .speech:
-            let t = SpeechTranscriber(locale: l, transcriptionOptions: [], reportingOptions: live ? [.volatileResults] : [.alternativeTranscriptions],
+            let t = SpeechTranscriber(locale: l, transcriptionOptions: [], reportingOptions: fast ? [.volatileResults, .fastResults] : live ? [.volatileResults] : [.alternativeTranscriptions],
                                       attributeOptions: attrs)
             return (t, Task { for try await r in t.results { each(phrase(r.range, r.text, r.alternatives, lang), r.isFinal) } })
         case .dictation:
@@ -430,34 +466,75 @@ final class SpeechLive: @unchecked Sendable {
     }
 
     /// nil: this device has no SpeechAnalyzer model for the language (or, with `download: false`, it isn't installed).
-    @MainActor static func start(lang: String, download: Bool, each: @escaping @Sendable (SpeechCore.Phrase, Bool) -> Void) async throws -> SpeechLive? {
+    /// `fast`: a second transcriber on the same sound, tuned to answer at once (.fastResults), gives the guesses, and the
+    /// first keeps the finals: alone, .fastResults guessed in under 1 s but its finals lost words and timing (P7, 11-11:
+    /// 46 words matched vs 81, median |Δt| 2 s); without it every guess waited ~11.5 s with the finals.
+    @MainActor static func start(lang: String, download: Bool, fast: Bool = false, each: @escaping @Sendable (SpeechCore.Phrase, Bool) -> Void) async throws -> SpeechLive? {
         guard let (m, l) = await SpeechEngine.module(lang), await SpeechEngine.prepare(m, l, download: download) else { return nil }
-        let (module, collect) = SpeechEngine.make(m, l, lang, live: true, custom: nil) { p, fin in
-            each(SpeechEngine.unlead([p])[0], fin)
+        let two = fast && m == .speech
+        let ahead = SpeechCore.Ahead()
+        let (module, sure) = SpeechEngine.make(m, l, lang, live: true, custom: nil) { p, fin in
+            let p = SpeechEngine.unlead([p])[0]
+            guard two else { each(p, fin); return }
+            guard fin else { return }                       // the guesses come from the fast one
+            each(p, true)
+            if let g = ahead.final(p) { each(g, false) }     // what the fast one heard past these finals stays shown
         }
-        guard let fmt = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [module]) else { collect.cancel(); return nil }
+        var modules: [any SpeechModule] = [module], collect = sure
+        var side: Side?
+        if two {
+            let (quick, guesses) = SpeechEngine.make(m, l, lang, live: true, fast: true, custom: nil) { p, fin in
+                if let g = ahead.guess(SpeechEngine.unlead([p])[0], final: fin) { each(g, false) }
+            }
+            if Self.split, let qf = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [quick]) {
+                // measuring (hear-app --split): the fast module on its own analyzer, fed the same sound
+                let (qs, qi) = AsyncStream.makeStream(of: AnalyzerInput.self)
+                let qa = SpeechAnalyzer(modules: [quick], options: .init(priority: .userInitiated, modelRetention: .whileInUse))
+                try await qa.start(inputSequence: qs)
+                if let quiet = AVAudioPCMBuffer(pcmFormat: qf, frameCapacity: AVAudioFrameCount(qf.sampleRate * SpeechEngine.lead)) {
+                    quiet.frameLength = quiet.frameCapacity; qi.yield(AnalyzerInput(buffer: quiet))
+                }
+                side = Side(input: qi, conv: SpeechConverter(to: qf), analyzer: qa)
+            } else { modules.append(quick) }
+            collect = Task { try await withTaskCancellationHandler { _ = try await sure.value; _ = try await guesses.value }
+                             onCancel: { sure.cancel(); guesses.cancel() } }
+        }
+        guard let fmt = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) else { collect.cancel(); return nil }
         let (stream, input) = AsyncStream.makeStream(of: AnalyzerInput.self)
-        let analyzer = SpeechAnalyzer(modules: [module], options: .init(priority: .userInitiated, modelRetention: .whileInUse))
+        let analyzer = SpeechAnalyzer(modules: modules, options: .init(priority: .userInitiated, modelRetention: .whileInUse))
         try await analyzer.start(inputSequence: stream)
         // the same lead of silence as a file (SpeechEngine.lead), its time taken off every result
         if let quiet = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(fmt.sampleRate * SpeechEngine.lead)) {
             quiet.frameLength = quiet.frameCapacity; input.yield(AnalyzerInput(buffer: quiet))
         }
-        return SpeechLive(lang: lang, module: m, input: input, conv: SpeechConverter(to: fmt), analyzer: analyzer, collect: collect)
+        let s = SpeechLive(lang: lang, module: m, input: input, conv: SpeechConverter(to: fmt), analyzer: analyzer, collect: collect)
+        s.side = side
+        return s
     }
+
+    /// Measuring only (hear-app --split): the fast transcriber on a second analyzer instead of sharing the first.
+    nonisolated(unsafe) static var split = false
+    struct Side { let input: AsyncStream<AnalyzerInput>.Continuation; let conv: SpeechConverter; let analyzer: SpeechAnalyzer }
+    private var side: Side?
 
     func append(_ buf: AVAudioPCMBuffer) {
         lock.lock(); defer { lock.unlock() }
         if let c = conv.convert(buf) { input.yield(AnalyzerInput(buffer: c)) }
+        if let side, let c = side.conv.convert(buf) { side.input.yield(AnalyzerInput(buffer: c)) }
     }
 
     /// The last words finalized, then the stream let go.
     func finish() async {
-        input.finish()
+        input.finish(); side?.input.finish()
         try? await analyzer.finalizeAndFinishThroughEndOfInput()
+        if let side { try? await side.analyzer.finalizeAndFinishThroughEndOfInput() }
         _ = try? await collect.value
     }
-    func cancel() { input.finish(); collect.cancel(); Task { await analyzer.cancelAndFinishNow() } }
+    func cancel() {
+        input.finish(); side?.input.finish(); collect.cancel()
+        let a = analyzer, b = side?.analyzer
+        Task { await a.cancelAndFinishNow(); await b?.cancelAndFinishNow() }
+    }
 }
 
 /// A live stream heard in the language being spoken (S6, owner 11-09: the wrong language's model writes 91-100 % wrong
@@ -482,6 +559,7 @@ final class SpeechAuto: @unchecked Sendable {
     private var fed = 0.0                   // seconds of audio given so far
     private var doubt = SpeechCore.Doubt()
     private var checking = false
+    private var fast = false
     private let conv = SpeechConverter(to: AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!)
     static let keep = 8.0, window = 4.0
 
@@ -491,8 +569,10 @@ final class SpeechAuto: @unchecked Sendable {
     var current: String { lock.lock(); defer { lock.unlock() }; return lang }
 
     /// nil: no SpeechAnalyzer model for `lang` on this device (the caller falls back).
-    @MainActor static func start(lang: String, among: [String], each: @escaping Each) async -> SpeechAuto? {
+    /// `fast`: guesses from a second, quicker transcriber (SpeechLive `fast`); the Mac's app ear uses it.
+    @MainActor static func start(lang: String, among: [String], fast: Bool = false, each: @escaping Each) async -> SpeechAuto? {
         let a = SpeechAuto(lang: lang, among: among.contains(lang) || among.isEmpty ? among : among + [lang], each: each)
+        a.fast = fast
         a.bases[0] = 0
         guard let l = await a.engine(lang, gen: 0) else { return nil }
         a.live = l
@@ -500,7 +580,7 @@ final class SpeechAuto: @unchecked Sendable {
     }
 
     @MainActor private func engine(_ lang: String, gen g: Int) async -> SpeechLive? {
-        try? await SpeechLive.start(lang: lang, download: false) { [weak self] p, fin in self?.heard(p, fin, gen: g, lang: lang) }
+        try? await SpeechLive.start(lang: lang, download: false, fast: fast) { [weak self] p, fin in self?.heard(p, fin, gen: g, lang: lang) }
     }
 
     private func heard(_ p: SpeechCore.Phrase, _ final: Bool, gen g: Int, lang l: String) {

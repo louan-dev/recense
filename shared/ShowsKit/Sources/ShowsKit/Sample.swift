@@ -55,7 +55,7 @@ public extension TranscriptLine {
     static func timed(_ id: String, _ start: Double, _ end: Double, _ text: String, translation: String? = nil, chapter: String? = nil) -> TranscriptLine {
         let ws = text.split(separator: " ").map(String.init)
         let step = (end - start) / Double(max(1, ws.count))
-        let words = ws.enumerated().map { i, w in TranscriptWord(text: w, start: start + Double(i) * step, end: start + Double(i + 1) * step) }
+        let words = ws.enumerated().map { i, w in Word(text: w, start: start + Double(i) * step, end: start + Double(i + 1) * step) }
         return TranscriptLine(id: id, start: start, end: end, text: text, words: words, translation: translation, chapter: chapter)
     }
 

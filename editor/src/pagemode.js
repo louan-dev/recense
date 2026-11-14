@@ -9,7 +9,7 @@
 //   otherwise steps one window right toward older topics.
 // - Per-window cursor and vertical scroll memory, plus live finger-follow drag with 0.25x rubber-banding and
 //   220ms ease-out snap.
-import { StateField, StateEffect, Prec } from '@codemirror/state';
+import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty } from './pages.js';
 import { postHaptic } from './bridge.js';
@@ -408,6 +408,15 @@ export function stepPage(
  * `dragX > 0`: fingers moving left-to-right.
  * `dragX < 0`: fingers moving right-to-left.
  */
+// Derived from Spec: BUG-02 (A1 slop, A2 ratio). One rule for touch, Pencil, mouse and trackpad.
+export const AXIS_SLOP_PX = 12;
+export const AXIS_RATIO = 1.4;
+export function decideAxis(dx, dy) {
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  if (Math.max(ax, ay) < AXIS_SLOP_PX) return null;
+  return ax > ay * AXIS_RATIO ? 'h' : 'v';
+}
+
 export function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
   const w = Math.max(120, Number(viewportWidth) || 400);
   const pages = inspectDraftpadPages(state.doc.toString());
@@ -421,10 +430,40 @@ export function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
   return Math.max(-w, Math.min(w, v));
 }
 
+/** The page select-all should cover: the shown page in page mode, else the page holding the cursor. */
+export function selectAllRange(state) {
+  const pages = inspectDraftpadPages(state.doc.toString());
+  if (pages.length <= 1) return { from: 0, to: state.doc.length };
+  const i = isPageMode(state) ? currentPage(state) : pageAt(pages, state.selection.main.head);
+  const p = pages[Math.min(i, pages.length - 1)];
+  return { from: p.from, to: p.to };
+}
+
+/** Cmd+A: select all text on this page, not the whole file. */
+export function selectPage(view) {
+  const { from, to } = selectAllRange(view.state);
+  view.dispatch({ selection: EditorSelection.single(from, to), userEvent: 'select', scrollIntoView: false });
+  return true;
+}
+
+// Edit > Select All in the native menu runs WebKit's own select-all, which reaches CodeMirror as a selection of the
+// whole file; in page mode, narrow it to the shown page.
+const narrowWholeSelection = EditorState.transactionFilter.of(tr => {
+  if (tr.docChanged || !tr.selection || !isPageMode(tr.startState)) return tr;
+  const m = tr.selection.main;
+  const len = tr.startState.doc.length;
+  if (tr.selection.ranges.length !== 1 || Math.min(m.from, m.to) !== 0 || Math.max(m.from, m.to) !== len) return tr;
+  const r = selectAllRange(tr.startState);
+  if (r.from === 0 && r.to === len) return tr;
+  return [tr, { selection: EditorSelection.single(r.from, r.to), sequential: true }];
+});
+
 export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
   return [
     pageModeField,
+    narrowWholeSelection,
     Prec.highest(keymap.of([
+      { key: 'Mod-a', run: selectPage },
       { key: 'Mod-]', run: v => { swipeRightToLeft(v, { onSnap, onBounce }); return true; } },
       { key: 'Mod-[', run: v => { swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce }); return true; } }
     ]))
@@ -446,8 +485,12 @@ export function attachSwipePaging(
   let wheelSpent = false;
   let wheelTimer = null;
   let axis = null;
+  let wheelAxisX = 0;
+  let wheelAxisY = 0;
 
-  const targetEl = () => (view && view.contentDOM ? view.contentDOM : view ? view.scrollDOM : null);
+  // Derived from Spec: BUG-02 (A6): move the whole scroller (text, selection, cursor, ink) as one, never the text alone.
+  const targetEl = () => (view ? view.scrollDOM : null);
+  if (view && view.dom && view.dom.style) view.dom.style.overflowX = 'hidden';
   const widthOf = () => (view && view.scrollDOM && view.scrollDOM.clientWidth ? view.scrollDOM.clientWidth : 400);
 
   function renderDrag(dx) {
@@ -462,30 +505,52 @@ export function attachSwipePaging(
   function settleDrag(dx) {
     const el = targetEl();
     const limit = Math.min(threshold, widthOf() * 0.2);
-    if (dx >= limit) {
-      swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce });
-    } else if (dx <= -limit) {
-      swipeRightToLeft(view, { onSnap, onBounce });
-    }
-    if (el && el.style) {
+    const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce })
+      : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
+    if (!el || !el.style) { if (turn) turn(); return; }
+    if (!turn) {
       el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
-      el.style.transform = 'translateX(0px)';
+      el.style.transform = '';
+      return;
     }
+    // BUG-02 A7 glide: the old page leaves the way the fingers went (140 ms), the new page enters from the other side (220 ms).
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { el.style.transition = 'none'; el.style.transform = ''; turn(); return; }
+    const w = widthOf();
+    const dir = dx > 0 ? 1 : -1;
+    el.style.transition = 'transform 140ms cubic-bezier(0.4, 0, 1, 1)';
+    el.style.transform = `translateX(${dir * w}px)`;
+    setTimeout(() => {
+      turn();
+      el.style.transition = 'none';
+      el.style.transform = `translateX(${-dir * w * 0.35}px)`;
+      void el.offsetWidth;
+      el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      el.style.transform = '';
+    }, 140);
   }
 
   view.scrollDOM.addEventListener('wheel', e => {
-    if (!isPageMode(view.state)) return;
+    if (!isPageMode(view.state) || view.__nativeWheel) return;
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
       wheelAcc = 0;
       wheelSpent = false;
       axis = null;
+      wheelAxisX = 0;
+      wheelAxisY = 0;
       renderDrag(0);
     }, quietMs);
 
     if (axis === null) {
-      if (e.deltaX === 0 && e.deltaY === 0) return;
-      axis = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? 'h' : 'v';
+      wheelAxisX += e.deltaX; wheelAxisY += e.deltaY;
+      axis = decideAxis(wheelAxisX, wheelAxisY);
+      if (axis === null) return;
+      // BUG-02 A5: the slop counts toward the swipe, so the page moves from the first pixel once it is sideways.
+      if (axis === 'h') {
+        const before = wheelAxisX - e.deltaX;
+        wheelAcc = e.isDirectionInvertedFromDevice === false ? before : -before;
+      }
     }
     if (axis === 'v') return;
 
@@ -530,8 +595,8 @@ export function attachSwipePaging(
     const t = e.touches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
-    if (touchAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      touchAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+    if (touchAxis === null) {
+      touchAxis = decideAxis(dx, dy);
     }
     if (touchAxis === 'h') {
       renderDrag(dx);
@@ -543,7 +608,7 @@ export function attachSwipePaging(
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
-    const wasHorizontal = touchAxis === 'h' || (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2);
+    const wasHorizontal = touchAxis === 'h' || (touchAxis === null && Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * AXIS_RATIO);
     touchStartX = null;
     touchStartY = null;
     touchAxis = null;
@@ -587,8 +652,8 @@ export function attachSwipePaging(
     if (ptrId === null || e.pointerId !== ptrId) return;
     const dx = (Number(e.clientX) || 0) - ptrStartX;
     const dy = (Number(e.clientY) || 0) - ptrStartY;
-    if (ptrAxis === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      ptrAxis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+    if (ptrAxis === null) {
+      ptrAxis = decideAxis(dx, dy);
     }
     if (ptrAxis === 'h') {
       renderDrag(dx);
@@ -600,7 +665,7 @@ export function attachSwipePaging(
     const dx = e ? (Number(e.clientX) || 0) - ptrStartX : 0;
     const dy = e ? (Number(e.clientY) || 0) - ptrStartY : 0;
     const wasHorizontal =
-      e && e.type !== 'pointercancel' && (ptrAxis === 'h' || (Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2));
+      e && e.type !== 'pointercancel' && (ptrAxis === 'h' || (ptrAxis === null && Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * AXIS_RATIO));
     ptrId = null;
     ptrStartX = null;
     ptrStartY = null;
@@ -614,6 +679,15 @@ export function attachSwipePaging(
 
   view.scrollDOM.addEventListener('pointerup', finishPointer);
   view.scrollDOM.addEventListener('pointercancel', finishPointer);
+
+  // Derived from Spec: BUG-02 A8. The Mac host reads the trackpad natively (finger down, lift, momentum ignored)
+  // and drives the same drag and glide: total dx since the fingers touched (+ = fingers moved right), ended = lifted.
+  view.__hostSwipe = (dx, ended) => {
+    if (!isPageMode(view.state)) return 'off';
+    const d = Number(dx) || 0;
+    if (ended) settleDrag(d); else renderDrag(d);
+    return 'ok';
+  };
 
   view.scrollDOM.addEventListener('scroll', () => {
     syncPageFromScroll(view, { onSnap });

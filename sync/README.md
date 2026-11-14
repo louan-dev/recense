@@ -117,3 +117,65 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
 
     sed "s#__HOME__#$HOME#g" launchd/com.chauphan.ledger.obsidian.plist.example \
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
+
+## Triage watch (save triage.md → bug gets worked on)
+- No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
+- The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
+- The scout reads "mobile" as iPhone and iPad.
+- Every entry is a goal: its kind only picks the model, never whether work happens. A platform limit is a boundary: the fixer names it, builds the nearest sanctioned route, and asks you (HELD) only for a device check or a choice.
+- When a fixer starts, a Terminal window titled with the ID follows its output (`tail -f`); close it yourself. Off: `TRIAGE_WATCH_WINDOW=0`.
+- A fixer that is blocked ends its reply with `BLOCKED: <why>`; the watcher writes HELD "needs you: <why>" (the agent can't write outside its worktree). Two failed runs on one entry → HELD too, with no third run.
+- The fixer prompt spells out the red → green steps (no `/bug` skill needed: it wasn't on main, 11-12).
+- A fixer run with 0 usage in 0 turns is "void" (moved to `starts.void`), logged "void: exit N". Three void runs in a row create `fixer.broken`, notify "fixer broken: see log" and stop auto-starts until you trash that file.
+- **You write** one plain line under `# Inbox` in `docs/specs/triage.md`, any language, typed or dictated. Save.
+  - `!` first = urgent: an agent starts. Any other line (even `P1 - …`) is only filed, as later.
+- **Filing:** `bin/triage-watch.zsh`, run by `launchd/com.chauphan.triage-watch.plist` on save (5 s debounce) and hourly.
+  Local, instant, no network: each line becomes `T-####` (urgent → `! NEW`, else `NEW`). Two priorities only: `!` = now, blank = later..
+- **Scout** (urgent only): `claude -p --model haiku --effort low --max-budget-usd 0.10`, read/grep tools only.
+  Writes `Where:` (files) and `Repro:` (marked guess) under the entry, then stops.
+  No files found → the entry gets "tell me where you saw it" and a notification; nothing more is spent.
+- **Fixer:** `claude -p --model sonnet --effort medium --max-budget-usd 1.50` running `/bug` in `.claude/worktrees/t-####`.
+  - Narrow brief: the entry and its `Where:` files only.
+  - One at a time; skips an entry whose files are already FIXING or held by a LANES lane.
+  - Urgent entries in the same Area filed within 10 min share one run.
+  - Stops at a commit on its branch, a `· ready` MERGE-QUEUE line and a red→green test record; never merges, pushes or installs. Normal permissions, never bypass.
+  - Then `bin/triage-merge.zsh` (below) merges it with no AI.
+  - Needs Opus or blocked → writes why to `~/.local/state/triage-watch/queue.blocked`; the owner or coordinator restarts it.
+- **Status lines** under each entry, with a time: `SCOUTING` → `FIXING` → `READY` (branch) → `MERGED`; also `WAITING` (usage limit) or `STOPPED`.
+- **Usage limit mid-run:** the ID goes back to the head of the queue with "resumes after <reset>", is not counted in the budget or run cap, and the queue pauses an hour.
+- **Cleanup:** once a fixer branch is in main and its worktree is clean, the worktree is trashed, pruned and the branch deleted.
+- **No daily caps** (owner, 11-12): your plan's 5-hour and weekly limits are the ceiling; hitting one pauses and resumes after the reset. Guards against waste only: a per-run budget, one agent at a time, 3 void runs → stop, 2 failed runs on one entry → HELD "needs you".
+  Over the cap, entries wait in the queue with a notification.
+- **Offline:** filing never needs the network. Scout and fixer (Anthropic) run as catch-up on the next save or hourly run.
+- **Phone edits:** md-mirror (two-way bisync, every 5 min) carries an Obsidian edit to the source, which fires the watcher. Risk: an edit on the phone in the same 5 min as the watcher rewrites the file → the newer wins, the other is kept as `triage.md.conflictN`.
+- **Usage:** every run's usage (plan usage in API-dollar terms; nothing is billed) and turns go to `~/.local/state/triage-watch/usage.log`; weekly line: `zsh bin/triage-watch.zsh weekly`.
+- Log: `~/.local/state/triage-watch/log`, launchd log `~/Library/Logs/triage-watch.log`.
+- Test: `zsh bin/triage-watch.zsh selftest` (part of `npm test`).
+- Turn on:
+
+      cp launchd/com.chauphan.triage-watch.plist ~/Library/LaunchAgents/ &&
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.triage-watch.plist
+
+- Turn off (exit path):
+
+      launchctl bootout gui/$(id -u)/com.chauphan.triage-watch
+
+## Triage merge (no AI, no coordinator)
+- `bin/triage-merge.zsh`: after each fixer and hourly (`launchd/com.chauphan.triage-merge.plist`), one `work/t-####` branch per run, under the BUILD LOCK.
+- It merges only if every gate passes:
+  1. MERGE-QUEUE line says `ready`, and `~/.local/state/triage-watch/<ID>.tests` shows the regression test `red` before and `green 0` after.
+  2. The diff touches only the scout's `Where:` files, their tests and README.md files; never `.claude/**` or settings.
+  3. None of those files are uncommitted in main.
+  4. Merged first in a temporary worktree, where the touched folders' Checks pass
+     (strip: release build, no install; ShowsKit: `swift test`; library/sync/calendar/editor: `npm test`; mobile: generic iOS compile).
+- Then main fast-forwards to that commit, is pushed (never forced), the Mac app is installed if `strip/` changed
+  (`build.sh` + `recense selftest`), iPhone/iPad builds are left to you (the notification says so),
+  the entry gets `MERGED`, and the worktree is cleaned up. MERGE-QUEUE gets `MERGED <sha> by triage-merge`.
+- Any failure: no merge, the entry gets `held: <gate>`, and the notification gives one command to merge anyway or to trash the branch.
+- Test: `zsh bin/triage-merge.zsh selftest` (part of `npm test`).
+- Turn on:
+
+      cp launchd/com.chauphan.triage-merge.plist ~/Library/LaunchAgents/ &&
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.triage-merge.plist
+
+- Turn off: `launchctl bootout gui/$(id -u)/com.chauphan.triage-merge`

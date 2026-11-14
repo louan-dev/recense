@@ -1,45 +1,18 @@
 import Foundation
 import NaturalLanguage
 import QuartzCore
-#if canImport(ShowsKit)
 import ShowsKit
-#endif
+
+// The timed word is ShowsKit's (ShowsKit/Word.swift, the one copy); these names make it seen by every file of the Mac app.
+typealias Word = ShowsKit.Word
+typealias Pin = ShowsKit.Pin
+typealias Syl = ShowsKit.Syl
 
 // The transcript, one copy for the Mac and iOS (moved here from strip/recense.swift, 2026-11-08): what Recense plays
 // (a Line of timed Words, its translation as EnWords that point back at the words they come from) and the rules that
 // read which language a phrase is in. Draftpad's Recense layer makes the same Lines from typed text
 // (shared/recensetext.swift), so Follow, Learn, the light, the wing card and export work on written words unchanged.
 
-struct Word: Codable {
-    var text: String; let start: Double; let end: Double
-    var lang: String? = nil   // the language Whisper heard it in (ISO 639-1), when the word is written in that language's script
-    var c: Double? = nil      // how sure the recognizer was of it (0–1; on-device ears)
-    var heard: String? = nil  // what the recognizer wrote, where a correction it was taught wrote this instead (Lexicon)
-    var syl: [Syl]? = nil     // a sung word's syllables on the voice's own (Cadence.align, cadence.swift)
-    var un: Bool? = nil       // written but not sung: Cadence found no voice for it, so it's never lit
-    var tm: Pin? = nil        // timed by the listener's ear (corrections field "time"): wins over Cadence (Cadence.pin)
-    /// The same word, timed again (what it was heard as goes with it; its syllables don't: they were the old times').
-    func timed(_ s: Double, _ e: Double) -> Word { Word(text: text, start: s, end: e, lang: lang, c: c, heard: heard, tm: tm) }
-}
-/// A word as the listener timed it (notes 20261029 row 35; Gallery's corrections.js `pinsOf`): lit from s to e, its light
-/// shaped by k (−1 lingers at the start and hurries at the end, 1 the reverse, 0 even).
-struct Pin: Codable, Equatable {
-    let s: Double; let e: Double; let k: Double
-    /// The light traced by a finger as the word was sung (rows 40, 44): how much is lit at evenly spaced moments from
-    /// s to e (0 … 1, never going back); it outranks k (Gallery's corrections.js `traceOf`).
-    var c: [Double]? = nil
-    static func trace(_ v: Any?) -> [Double]? {
-        guard let a = v as? [Any], (2...32).contains(a.count) else { return nil }
-        var m = 0.0, out: [Double] = []
-        for x in a {
-            guard let d = (x as? NSNumber)?.doubleValue, d.isFinite else { return nil }
-            m = max(m, min(1, max(0, d))); out.append((m * 100).rounded() / 100)
-        }
-        return out
-    }
-}
-/// A syllable of a sung word: where it ends in the word's letters (code points), and when its note is sung.
-struct Syl: Codable { let c: Int; let s: Double; let e: Double }
 struct EnWord: Codable { let w: String; let s: [Int] }
 struct Line: Codable {
     let id: Int
@@ -183,7 +156,7 @@ extension Line {
     /// The same line for ShowsKit's TranscriptView (the one mapping), so a recensed page plays as an episode does.
     func transcriptLine(key: String? = nil, chapter: String? = nil) -> TranscriptLine {
         TranscriptLine(id: key ?? String(id), start: start, end: end, text: words.map(\.text).joined(separator: " "),
-                       words: words.map { TranscriptWord(text: $0.text, start: $0.start, end: $0.end) },
+                       words: words.map { Word(text: $0.text, start: $0.start, end: $0.end) },
                        translation: english.flatMap { $0.isEmpty ? nil : $0.map(\.w).joined(separator: " ") }, chapter: chapter)
     }
 }

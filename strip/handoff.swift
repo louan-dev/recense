@@ -13,10 +13,11 @@
 import Foundation
 import CryptoKit
 
-struct HandSentence: Codable { var id: String; var heard: String; var said: String; var at: Double; var t: Double? }
+struct HandSentence: Codable { var id: String; var heard: String; var said: String; var at: Double; var t: Double?; var words: [Word]? = nil }
 struct HandEpisode: Codable {
     var key: String?; var title: String; var heard: String; var into: String
     var place: Int; var updated: Double; var by: String?; var sentences: [HandSentence]
+    var clock: Double? = nil; var rate: Double? = nil  // FEAT-04: the player at `updated` (seconds into it; 0 = paused)
 }
 struct HandIndex: Codable {
     struct Entry: Codable { var title: String; var heard: String?; var into: String?; var count: Int?; var updated: Double? }
@@ -116,12 +117,14 @@ struct HandIndex: Codable {
         let t = app.mediaTime
         let ss = lines.map { l in
             HandSentence(id: "m\(l.id)", heard: l.words.map(\.text).joined(separator: " "),
-                         said: (l.english ?? []).map(\.w).joined(separator: " "), at: l.start, t: l.start)
+                         said: (l.english ?? []).map(\.w).joined(separator: " "), at: l.start, t: l.start,
+                         words: l.words.map { Word(text: $0.text, start: $0.start, end: $0.end) })  // the episode's clock
         }
         let place = max(0, (lines.lastIndex { $0.start <= t } ?? 0))
         let heard = lines.first?.words.first?.lang ?? m.theirs?.heard ?? ""
         let e = HandEpisode(key: m.key, title: m.title, heard: heard, into: NativeLang.current, place: place,
-                            updated: Date().timeIntervalSince1970 * 1000, by: "mac", sentences: ss)
+                            updated: Date().timeIntervalSince1970 * 1000, by: "mac", sentences: ss,
+                            clock: t, rate: app.pos.paused ? 0 : app.pos.rate)
         guard let body = try? JSONEncoder().encode(e) else { return }
         let sent = current == nil ? await Keep.put(name, body, ifAbsent: true) : await Keep.put(name, body, ifMatch: current?.1)
         guard sent != nil else { log("handoff: \(name) changed meanwhile; next minute"); return }

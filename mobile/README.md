@@ -100,10 +100,16 @@ updates in place.
   second); in the app, the shared
   transcript view (ShowsKit's `TranscriptView`, the one Now Playing has): the sentence being heard bold, its words lit
   at the voice's own pace from SpeechAnalyzer's word times (a moment behind, as live captions must be), the translation
-  under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. What's heard is
-  kept per episode in the same transcript store as the Mac (each sentence's timed words too), on the device in
+  under each line, hold a line for Share / Copy / Select Text; Clear and full screen in the ··· menu. When the Mac is
+  transcribing live and Gallery has uploaded timestamped sentences within the last 2 minutes, the iOS transcript also
+  animates — the Mac's own player clock (`clock`, `rate` in what it sends, FEAT-04) drives the active line and word
+  highlight instead of the iOS broadcast index — so both devices show the same lit sentence and translation trail without
+  a local broadcast running (`ListenView.transcript()`, `Listener.contentNow`). What's heard is
+  kept per episode in the same transcript store as the Mac (each sentence's timed words too, in seconds into the episode:
+  one clock everywhere, ShowsKit `ContentClock`; files from before 11-12 timed on the wall clock read onto it), on the device in
   `Documents/Recense/library/Listen/` (the places contract; episodes from the old `Documents/Listen/episodes/` move there on
-  first launch, the older of two copies going to `Recense/trash/`).
+  first launch, the older of two copies going to `Recense/trash/`). Episodes Gallery hasn't taken yet are remembered across
+  launches (`listen.unsent`), so what was heard offline uploads once the network is back.
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new
@@ -117,13 +123,15 @@ updates in place.
   stamp, not when it reached the extension, and a pause in the other app stays a pause (up to 2 s fed as silence, the
   rest added to later words). Before (11-10) every pause pulled the words after it early by its length.
   The floating window has no Dock: it shows by itself when Recense is left while another app plays, hides in
-  Recense (Home shows the transcript) and 0.3 s after that app pauses, decided 10 times a second (`HostApp/iOS/Floating.swift`, tested in
+  Recense (Home shows the transcript) and 0.3 s after that app pauses, decided 10 times a second; "pauses" means the broadcast heard no real sound for 0.4 s (`Floating.playing`), since iOS keeps its own "other audio playing" flag on for ~40 s after a pause (T-0041) (`HostApp/iOS/Floating.swift`, tested in
   `ios/Tests/floating`). Whether iOS lets it reopen from behind when the sound plays again is measured on the
   device and kept (`listen.reshowFromBehind2`: works, or refused only on iOS's own error; 11-10's "refused" came from a
   silent wait and is set aside); behind other apps Recense stays awake while the window is open and for 10 minutes of
   quiet (`Floating.awake`), so a play there shows it, 1 s after leaving at the earliest (`Floating.settle`);
-  iOS won't open it from behind (11-10 19:19:42, AVKitErrorDomain -1001, Recense awake): once refused, a pause behind
-  rests it as a thin dark strip and the next sound brings back full captions (`Floating.rest`); if refused, it stays open on pause so no line is missed (11-10 iPhone: refused). Behind other apps iOS ignores a plain
+  iOS opens it only as Recense is left, never from behind (11-10 19:19:42, AVKitErrorDomain -1001), so it opens on every
+  leave unless Listen is paused, even before any sound plays (`Floating.autoOpen`; T-0002: YouTube starts after you leave):
+  quiet, it rests as a thin dark strip; the next sound brings back full captions (`Floating.rest`). It closes behind only
+  where iOS was seen to reopen it, or after 10 minutes of quiet (battery). Behind other apps iOS ignores a plain
   stop, so hiding detaches the window's content; the next tick gives it back once it's closed (`Floating.reattach`),
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
