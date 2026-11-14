@@ -893,7 +893,7 @@ final class DayStrip: NSView {
         let x = convert(event.locationInWindow, from: nil).x
         let day = Int(((x - bounds.midX) / cellWidth + pos).rounded())
         guard day != landed else { return }
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         glide(toOffset: day)
     }
 
@@ -901,7 +901,7 @@ final class DayStrip: NSView {
     private func land(_ day: Int) {
         guard day != landed else { return }
         landed = day
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         onSelect?(selected)
     }
 
@@ -3234,7 +3234,7 @@ final class VaultWheel: NSView {
         let target = Int(pos.rounded())
         if target != landed, items.indices.contains(target) {
             landed = target
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            Haptics.perform(.tick)
         }
         layoutRows()
         if event.phase == .ended || event.phase == .cancelled { settle() }
@@ -3254,7 +3254,7 @@ final class VaultWheel: NSView {
     func focus(_ i: Int) {
         guard items.indices.contains(i), i != landed else { return }
         landed = i
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         settle()
     }
 
@@ -4004,7 +4004,7 @@ final class HorizonView: NSView {
                 let w = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
                     self.pinned = true
-                    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                    Haptics.perform(.thud)
                     self.needsDisplay = true
                 }
                 holdWork = w
@@ -4052,7 +4052,7 @@ final class HorizonView: NSView {
         // A click under the fingers each time the reach passes a whole unit (hour, day, week, month).
         let unit: TimeInterval = r < 86400 ? 3600 : r < 7 * 86400 ? 86400 : r < 30 * 86400 ? 7 * 86400 : 30.44 * 86400
         let step = Int(r / unit) + (unit == 3600 ? 0 : unit == 86400 ? 1000 : unit == 7 * 86400 ? 2000 : 3000)
-        if step != lastUnitStep { lastUnitStep = step; if r > 0 { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) } }
+        if step != lastUnitStep { lastUnitStep = step; if r > 0 { Haptics.perform(.tick) } }
         guard anim == nil else { return }
         anim = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
@@ -7389,6 +7389,15 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let appMenu = NSMenu(); appItem.submenu = appMenu
         let hider = NSMenuItem(title: "Menu-Bar Hider", action: nil, keyEquivalent: "")
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
+        let hapticsItem = NSMenuItem(title: "Haptics", action: nil, keyEquivalent: "")
+        hapticsItem.submenu = Haptics.menu(); appMenu.addItem(hapticsItem)
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: ",")
+        let settingsMenu = NSMenu(title: "Settings")
+        let settingsHaptics = NSMenuItem(title: "Haptics", action: nil, keyEquivalent: "")
+        settingsHaptics.submenu = Haptics.menu()
+        settingsMenu.addItem(settingsHaptics)
+        settingsItem.submenu = settingsMenu
+        appMenu.addItem(settingsItem)
         appMenu.delegate = self                                   // rebuilds the hider's entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }
@@ -7621,12 +7630,21 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "wing-close": wingPanels.hideAll()
         case "words-sooner-on":  EarMode.set(sooner: true)
         case "words-sooner-off": EarMode.set(sooner: false)
+        case "haptics-off":      Haptics.mode = .off; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-calm":     Haptics.mode = .calm; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-full":     Haptics.mode = .full; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-settings": HapticsMenuTarget.shared.showSettingsPanel()
         default:       present(.time)
         }
     }
 
     /// Writes what the card currently shows to /tmp/recense-snapshot.png (for checking layouts without a screenshot).
     func snapshot() {
+        if let hp = HapticsMenuTarget.shared.settingsWindow, hp.isVisible,
+           let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(hp.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+            try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: "/tmp/recense-haptics-settings.png"))
+        }
         // Also the top of the screen around the strip, exactly as it looks (menu bar included).
         if let scr = NSScreen.main {
             let wasOpen = rest.expanded
@@ -8367,7 +8385,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
                 "editor-new", "editor-classic", "show-icons", "show-all-icons", "draftpad-flip", "draftpad-flip-go",
-                "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off"]
+                "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off",
+                "haptics-off", "haptics-calm", "haptics-full", "haptics-settings"]
 
 func stripSelftest() -> Bool {
     let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
@@ -8415,8 +8434,8 @@ func stripSelftest() -> Bool {
 if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
-    let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p ? 0 : 1)
+    let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest(), q = hapticsSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q ? 0 : 1)
 }
 
 // `recense download <link> [audio|av|video] [--max 720] [--section 1:00-2:30] [--no-subs]`, `--queue` (run what other
@@ -8519,6 +8538,10 @@ app.run()
 extension App: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
+        menu.items.first { $0.title == "Haptics" }?.submenu = Haptics.menu()
+        if let settings = menu.items.first(where: { $0.title == "Settings" })?.submenu {
+            settings.items.first { $0.title == "Haptics" }?.submenu = Haptics.menu()
+        }
         menu.items.first { $0.title == "Connect To" }?.submenu = sshMenu()
         // The wing entries say Show or Hide as the wings are now.
         if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {

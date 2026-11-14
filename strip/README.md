@@ -90,6 +90,15 @@ app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item
 The app icon is Gallery's petal cloud (the iOS app's icon, `mobile/ios/Assets.xcassets/AppIcon.appiconset`),
 drawn in macOS's rounded-square shape into `AppIcon.icns`, so Recense looks the same on the Mac, iPhone and iPad.
 
+### Haptics (`strip/haptics.swift`)
+One cue vocabulary of at most 4 named cues across Recense (B1):
+- `tick`: step, detent, layer step, page step, or word onset (`.alignment` / actuator ID `15`).
+- `thud`: home value, first/last boundary, or pin (`.levelChange` / actuator ID `5`).
+- `edge`: zone boundary or edge crossing (`.levelChange` / actuator ID `3`).
+- `open`: rest-hold console or surface open (`.generic` / actuator ID `16`).
+- **Settings › Haptics (`Off · Calm · Full`):** reachable in `Recense ▸ Settings ▸ Haptics`, `Recense ▸ Haptics`, or `./recense haptics-off | haptics-calm | haptics-full | haptics-settings`. `Calm` fires only zone and edge cues (`thud`, `edge`, `open`) and silences step `tick`s for sensory load.
+- **Direct trackpad actuator spike (`MTActuatorActuate`):** opt-in (`Direct Trackpad Actuator (Experimental)`), with public `NSHapticFeedbackManager` as default and automatic fallback. Proven: `MTDeviceGetMTActuator` + `MTActuatorOpen` + `MTActuatorActuate` resolve in `MultitouchSupport.framework` on macOS 27.2 and return `0` (`kIOReturnSuccess`) on the Force Touch trackpad for actuation IDs `[1, 3, 5, 15, 16]`; subjective tactile difference vs. `NSHapticFeedbackManager` is untested pending owner trackpad feel.
+
 ### Layers
 Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
 the panel from any layer. Moving the pointer off the panel never closes it: once down, it waits for the swipe.
