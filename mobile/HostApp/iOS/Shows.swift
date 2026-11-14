@@ -22,18 +22,15 @@ struct RecenseRoot: View {
         ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(VStack(alignment: .leading, spacing: 30) {
             ListeningCard()
             if model.upNext.isEmpty && model.recentlyPlayed.isEmpty && extras.recent.isEmpty {
-                HomeEmpty { launchPlace = RecensePlaces.all.first { $0.id == "archive" } }
+                HomeEmpty()
             }
-        }), extras: extras) { _ in
-            VStack(spacing: 12) {
-                Image(systemName: "play.rectangle").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
-                Text("Our player plays here from B3, offline, from this device.").font(.title3)
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
-            }
-            .padding(24)
-        }
+        }), extras: extras) { e in NativePlayerView(episode: e) }
         // owner 11-10: the newest listening is Now Playing; a newer one bumps it down to Recently Played
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
+        .onAppear {
+            Playback.model = model
+            NativePlayer.shared.saved = { [model] path in if model.playing?.item.path == path { PlaybackEars.shared.saved(model) } }
+        }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab
             switch ProcessInfo.processInfo.environment["RECENSE_TAB"] {
             case "new": model.tab = .new
@@ -79,14 +76,13 @@ extension RecenseRoot {
 /// Home with nothing in it yet (player P1, 11-11): it says so and offers the way in, a visible button.
 /// (Add Files joins when the pool store reads Recense/downloads/, S3: until then an added file wouldn't show here.)
 struct HomeEmpty: View {
-    let openArchive: () -> Void
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Nothing here yet").font(.title2.weight(.semibold))
             Text("Your files are in the Archive.").font(.title3).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(action: openArchive) { Label("Open Archive", systemImage: "icloud") }
+            // a view link on Home's own stack: a file played from there opens Now Playing over it
+            NavigationLink { FolderView(path: Gallery.rootPath) } label: { Label("Open Archive", systemImage: "icloud") }
                 .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
         }
         .padding(.horizontal, Theme.gutter)

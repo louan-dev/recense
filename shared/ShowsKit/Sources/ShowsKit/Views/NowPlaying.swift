@@ -67,6 +67,9 @@ struct NowPlaying<Player: View>: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(e.title).font(.title3.weight(.semibold)).lineLimit(2)
                             if let s = model.playingShow { Text(s).font(.subheadline).foregroundStyle(.secondary) }
+                            if model.showsTranscript, !model.transcript.isEmpty, let src = model.transcriptSource {
+                                Text(src).font(.footnote).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                     }

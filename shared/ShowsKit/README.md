@@ -49,7 +49,10 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     store has (no store code needed).
   - `Transport` (in `ShowsModel.swift`): play/pause/skip, and `time` / `duration` / `seek(to:)` for the transcript and
     scrubber (defaults: 0, nil, nothing), given by B3's player; until then play opens Now Playing. `ShowsModel.transcript`
-    is the playing episode's transcript, filled by the app's ears.
+    is the playing episode's transcript, filled by the app's ears; `transcriptSource` says where it came from.
+  - `TranscriptSource.swift` (player P1, 11-13): a played file's transcript from this device's copy
+    (`TranscriptCache`, one JSON per path), else the Mac's (the Worker's `/main/api/transcript?path=`, saved at once),
+    else none (the app hears it). Tests: `TranscriptSourceTests` (decode, offline second open, order).
   - `Views/Theme.swift`: the look every screen shares, in ShowsKit and in each app's own places: `Theme` (accent,
     gutter, corners, readable width, `hues`), `Artwork`, `SectionHeader`, `LibraryRow`, `Place` (a screen the app adds
     to Library) and `.recenseScreen(title)`.
