@@ -94,8 +94,12 @@ drawn in macOS's rounded-square shape into `AppIcon.icns`, so Recense looks the 
 Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
 the panel from any layer. Moving the pointer off the panel never closes it: once down, it waits for the swipe.
 - **Essentials:** time and date (it doesn't take keyboard focus), batteries (a bolt while charging), and four icons
-  between them; recorder, Recense and others, glowing on hover. Two fingers page through essentials → DEVONthink hub →
-  notebook (Obsidian).
+  between them; recorder, Recense and others, glowing on hover. The upcoming event name in both the resting strip
+  (`RestStrip.eventLine`) and the Essentials agenda (`CalendarView.nextTitle`) shares one marquee view
+  (`MarqueeTextView`, A3): when a title doesn't fit, it pauses 1.5 s at the start and loops seamlessly at 30 pt/s with
+  softly faded edges and no `"…"`, without restarting on the 1 s refresh; short names stay still. With Reduce Motion on,
+  it stays still and exposes the full title in its tooltip, VoiceOver, and on hover or click (popover). Two fingers page
+  through essentials → DEVONthink hub → notebook (Obsidian).
 - **Drafting:** the layer where Draftpad runs; one endless `draftpad.md` in the Obsidian vault, paged by topic, with
   cursor memory. An edit from the iPhone or iPad that lands while you type here is merged in, never overwritten:
   each save merges the last version, yours and the file's by line; if both changed the same lines, yours stays in

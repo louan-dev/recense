@@ -984,6 +984,298 @@ final class DayStrip: NSView {
 
 }
 
+/// Shared seamless-loop marquee for `RestStrip.eventLine` and `CalendarView.nextTitle` (A3).
+/// Scrolls at ~30 pt/s after a 1.5 s pause at the start with faded edges and no "…" when the title doesn't fit.
+/// Short names stay still. Re-setting the same `stringValue` on the 1 s refresh never restarts the loop.
+/// With Reduce Motion on, stays still and exposes the full title in `toolTip`, VoiceOver, and on hover/click.
+final class MarqueeTextView: NSView {
+    static let speed: CGFloat = 30.0
+    static let startPause: TimeInterval = 1.5
+    static let loopGap: CGFloat = 36.0
+    static let fadeWidth: CGFloat = 12.0
+
+    var font: NSFont = .systemFont(ofSize: 12, weight: .semibold) { didSet { invalidateMetrics() } }
+    var textColor: NSColor = .white { didSet { needsDisplay = true } }
+    var alignment: NSTextAlignment = .left { didSet { needsDisplay = true } }
+    var lineBreakMode: NSLineBreakMode = .byClipping
+    var reduceMotionOverride: Bool? { didSet { syncTimer(); needsDisplay = true } }
+
+    private(set) var cycleStart = Date()
+    private(set) var cachedTextWidth: CGFloat = 0
+    private(set) var cachedTextHeight: CGFloat = 15
+    private var timer: Timer?
+    private var hostActive = true
+    private var tracking: NSTrackingArea?
+    private var hoverWork: DispatchWorkItem?
+    private var fullTitlePopover: NSPopover?
+    private var a11yObserver: NSObjectProtocol?
+
+    var stringValue: String = "" {
+        didSet {
+            guard stringValue != oldValue else {
+                syncTimer()
+                return
+            }
+            cycleStart = Date()
+            toolTip = stringValue.isEmpty ? nil : stringValue
+            setAccessibilityElement(!stringValue.isEmpty)
+            setAccessibilityRole(.staticText)
+            setAccessibilityLabel(stringValue)
+            setAccessibilityValue(stringValue)
+            fullTitlePopover?.performClose(nil)
+            invalidateMetrics()
+        }
+    }
+
+    var shouldReduceMotion: Bool {
+        if let o = reduceMotionOverride { return o }
+        if let pref = UserDefaults.standard.object(forKey: "recense.reduceMotion") as? Bool { return pref }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return true }
+        CFPreferencesAppSynchronize("com.apple.universalaccess" as CFString)
+        if let num = CFPreferencesCopyAppValue("reduceMotion" as CFString, "com.apple.universalaccess" as CFString) as? NSNumber {
+            return num.boolValue
+        }
+        return false
+    }
+
+    var needsScroll: Bool {
+        !stringValue.isEmpty && bounds.width > 4 && cachedTextWidth > bounds.width
+    }
+
+    var isTimerRunning: Bool { timer != nil }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(false)
+        setAccessibilityRole(.staticText)
+        a11yObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.syncTimer()
+            self?.needsDisplay = true
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit {
+        timer?.invalidate()
+        hoverWork?.cancel()
+        if let o = a11yObserver { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+    }
+
+    static func scrollOffset(elapsed: TimeInterval, textWidth: CGFloat, viewWidth: CGFloat, reduceMotion: Bool = false) -> CGFloat {
+        guard !reduceMotion, viewWidth > 0, textWidth > viewWidth else { return 0 }
+        let span = textWidth + loopGap
+        let scrollDuration = TimeInterval(span / speed)
+        let cycleDuration = startPause + scrollDuration
+        guard cycleDuration > 0 else { return 0 }
+        let t = max(0, elapsed).truncatingRemainder(dividingBy: cycleDuration)
+        guard t > startPause else { return 0 }
+        return CGFloat(t - startPause) * speed
+    }
+
+    func currentOffset(at now: Date = Date()) -> CGFloat {
+        Self.scrollOffset(
+            elapsed: now.timeIntervalSince(cycleStart),
+            textWidth: cachedTextWidth,
+            viewWidth: bounds.width,
+            reduceMotion: shouldReduceMotion
+        )
+    }
+
+    func setHostActive(_ active: Bool) {
+        guard hostActive != active else {
+            if active { needsDisplay = true }
+            return
+        }
+        hostActive = active
+        if !active {
+            hoverWork?.cancel(); hoverWork = nil
+            fullTitlePopover?.performClose(nil)
+        }
+        syncTimer()
+        if active { needsDisplay = true }
+    }
+
+    private func invalidateMetrics() {
+        if stringValue.isEmpty {
+            cachedTextWidth = 0
+            cachedTextHeight = ceil(font.ascender - font.descender)
+        } else {
+            let sz = NSAttributedString(string: stringValue, attributes: [.font: font]).size()
+            cachedTextWidth = ceil(sz.width)
+            cachedTextHeight = ceil(sz.height)
+        }
+        syncTimer()
+        needsDisplay = true
+    }
+
+    private func shouldTickTimer() -> Bool {
+        guard hostActive, needsScroll, !shouldReduceMotion else { return false }
+        guard let w = window, w.isVisible, !isHiddenOrHasHiddenAncestor, alphaValue > 0 else { return false }
+        return true
+    }
+
+    func syncTimer() {
+        if shouldTickTimer() {
+            guard timer == nil else { return }
+            let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                if !self.shouldTickTimer() {
+                    self.timer?.invalidate()
+                    self.timer = nil
+                    return
+                }
+                self.needsDisplay = true
+            }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncTimer()
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncTimer()
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        syncTimer()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        syncTimer()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hoverWork?.cancel()
+        guard needsScroll else { return }
+        let w = DispatchWorkItem { [weak self] in _ = self?.revealFullTitleNow() }
+        hoverWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: w)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverWork?.cancel(); hoverWork = nil
+        fullTitlePopover?.performClose(nil)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        hoverWork?.cancel(); hoverWork = nil
+        if let pop = fullTitlePopover, pop.isShown {
+            pop.performClose(nil)
+        } else {
+            _ = revealFullTitleNow()
+        }
+    }
+
+    @discardableResult
+    func revealFullTitleNow() -> String {
+        guard !stringValue.isEmpty else { return "" }
+        guard let w = window, w.isVisible, bounds.width > 0 else { return stringValue }
+        if let existing = fullTitlePopover, existing.isShown { return stringValue }
+        let label = NSTextField(wrappingLabelWithString: stringValue)
+        label.font = roundedFont(12.5, .semibold)
+        label.textColor = .white
+        label.maximumNumberOfLines = 4
+        label.preferredMaxLayoutWidth = 280
+        let pad: CGFloat = 10
+        let sz = label.fittingSize
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: min(300, ceil(sz.width) + pad * 2), height: ceil(sz.height) + pad * 2))
+        label.frame = NSRect(x: pad, y: pad, width: box.bounds.width - pad * 2, height: ceil(sz.height))
+        box.addSubview(label)
+        let vc = NSViewController()
+        vc.view = box
+        let pop = NSPopover()
+        pop.contentViewController = vc
+        pop.behavior = .transient
+        pop.appearance = NSAppearance(named: .darkAqua)
+        pop.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        fullTitlePopover = pop
+        return stringValue
+    }
+
+    override func isAccessibilityElement() -> Bool { !stringValue.isEmpty }
+    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
+    override func accessibilityLabel() -> String? { stringValue }
+    override func accessibilityValue() -> Any? { stringValue }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !stringValue.isEmpty, bounds.width > 1, bounds.height > 1,
+              let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let attrStr = NSAttributedString(string: stringValue, attributes: attrs)
+        let y = floor((bounds.height - cachedTextHeight) / 2)
+
+        ctx.saveGState()
+        ctx.clip(to: bounds)
+
+        if cachedTextWidth <= bounds.width {
+            let x: CGFloat
+            switch alignment {
+            case .right:  x = bounds.width - cachedTextWidth
+            case .center: x = floor((bounds.width - cachedTextWidth) / 2)
+            default:      x = 0
+            }
+            attrStr.draw(at: NSPoint(x: x, y: y))
+            ctx.restoreGState()
+            return
+        }
+
+        let reduce = shouldReduceMotion
+        let offset = currentOffset()
+        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        attrStr.draw(at: NSPoint(x: -offset, y: y))
+        if !reduce && offset > 0 {
+            attrStr.draw(at: NSPoint(x: -offset + cachedTextWidth + Self.loopGap, y: y))
+        }
+
+        let fw = min(Self.fadeWidth, bounds.width * 0.25)
+        if fw > 1, let space = CGColorSpace(name: CGColorSpace.sRGB) {
+            let leftFadeAlpha: CGFloat = (!reduce && offset > 0.5) ? 0.0 : 1.0
+            let comps: [CGFloat] = [
+                1, 1, 1, leftFadeAlpha,
+                1, 1, 1, 1.0,
+                1, 1, 1, 1.0,
+                1, 1, 1, 0.0
+            ]
+            let locs: [CGFloat] = [
+                0.0,
+                min(0.45, fw / bounds.width),
+                max(0.55, (bounds.width - fw) / bounds.width),
+                1.0
+            ]
+            if let grad = CGGradient(colorSpace: space, colorComponents: comps, locations: locs, count: 4) {
+                ctx.saveGState()
+                ctx.setBlendMode(.destinationIn)
+                ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: bounds.width, y: 0), options: [])
+                ctx.restoreGState()
+            }
+        }
+        ctx.endTransparencyLayer()
+        ctx.restoreGState()
+    }
+}
+
 final class CalendarView: NSView {
     let store: EKEventStore
     let month = NSTextField(labelWithString: "")
@@ -1007,7 +1299,7 @@ final class CalendarView: NSView {
     // The NEXT line: the most pressing event, how far it is from NOW. Pinned; the lanes scroll under it.
     let nextBox = NSView()
     let nextTag = NSTextField(labelWithString: "NEXT")
-    let nextTitle = NSTextField(labelWithString: "")
+    let nextTitle = MarqueeTextView()
     let nextWhen = NSTextField(labelWithString: "")
     let moreCue = NSTextField(labelWithString: "↓")
     private var shownSignature = ""
@@ -1062,7 +1354,8 @@ final class CalendarView: NSView {
         nextBox.layer?.borderColor = bioCyan.withAlphaComponent(0.25).cgColor
         nextBox.layer?.borderWidth = 1
         nextTag.attributedStringValue = NSAttributedString(string: "NEXT", attributes: [.font: roundedFont(10, .heavy), .foregroundColor: bioCyan, .kern: 1.4])
-        for l in [nextTitle, nextWhen] { l.font = roundedFont(12.5, .semibold); l.textColor = .white; l.lineBreakMode = .byTruncatingTail }
+        nextTitle.font = roundedFont(12.5, .semibold); nextTitle.textColor = .white
+        nextWhen.font = roundedFont(12.5, .semibold); nextWhen.textColor = .white; nextWhen.lineBreakMode = .byTruncatingTail
         nextWhen.alignment = .right
         [nextTag, nextTitle, nextWhen].forEach(nextBox.addSubview)
         moreCue.font = roundedFont(12, .bold); moreCue.textColor = bioCyan; moreCue.alignment = .right
@@ -5094,7 +5387,7 @@ final class RestStrip: NSObject {
     let band = ContouredBand(frame: .zero)    // the hover extension: a shade darker than the menu bar, its exact height
     let content = NSView()                    // what the band reveals (blurred while it grows, sharp once it lands)
     let weather = NSTextField(labelWithString: "")
-    let eventLine = NSTextField(labelWithString: "")
+    let eventLine = MarqueeTextView()
     let icon = NSImageView(image: NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)!)
     let countdown = NSTextField(labelWithString: "")
     let time = NSTextField(labelWithString: "")
@@ -5141,9 +5434,10 @@ final class RestStrip: NSObject {
         band.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         content.wantsLayer = true
         content.layerUsesCoreImageFilters = true
-        for l in [weather, eventLine, countdown] {
+        for l in [weather, countdown] {
             l.font = .systemFont(ofSize: 12, weight: .semibold); l.textColor = .white; l.lineBreakMode = .byTruncatingTail
         }
+        eventLine.font = .systemFont(ofSize: 12, weight: .semibold); eventLine.textColor = .white
         eventLine.alignment = .left
         countdown.alignment = .right
         countdown.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
@@ -5298,6 +5592,7 @@ final class RestStrip: NSObject {
     /// always the menu bar's). What it carries starts blurred and comes into focus as the band lands.
     func setBand(open: Bool, animated: Bool) {
         guard let b = window.contentView?.bounds else { return }
+        eventLine.setHostActive(open)
         let w = open ? b.width - 2 * bandInset : 0     // the calendar mark and countdown stay just outside its ends
         let target = NSRect(x: ((b.width - w) / 2).rounded(), y: 0, width: w, height: b.height)
         if !animated {
@@ -8079,9 +8374,41 @@ func stripSelftest() -> Bool {
     let p0 = b.glyphSymbol == "pause.circle"
     b.showsPlay = true
     let p1 = b.glyphSymbol == "play.circle"
-    let ok = p0 && p1
-    print("\(ok ? "ok  " : "FAIL") strip, play/pause button draws pause.circle and play.circle")
-    return ok
+    let okPause = p0 && p1
+    print("\(okPause ? "ok  " : "FAIL") strip, play/pause button draws pause.circle and play.circle")
+
+    // A3: Shared MarqueeTextView behaviour (short still, ~30 pt/s after 1.5 s pause, 1 s refresh idempotent, Reduce Motion + VoiceOver/tooltip/click).
+    let m = MarqueeTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 15))
+    m.reduceMotionOverride = false
+    m.stringValue = "Short"
+    let shortStill = !m.needsScroll
+        && MarqueeTextView.scrollOffset(elapsed: 0, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+        && MarqueeTextView.scrollOffset(elapsed: 3.5, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+    print("\(shortStill ? "ok  " : "FAIL") strip, marquee keeps short event names still")
+
+    let longTitle = "[REMINDER] LAST DAY TO PAY LOAN — International Constitutional Law Seminar"
+    m.stringValue = longTitle
+    let t0 = m.cycleStart
+    m.stringValue = longTitle   // 1 s refresh with same title must not reset cycleStart
+    let refreshIdempotent = m.cycleStart == t0 && m.needsScroll && !m.stringValue.contains("…")
+    let pauseHold = MarqueeTextView.scrollOffset(elapsed: 0.0, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+        && MarqueeTextView.scrollOffset(elapsed: 1.49, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+    let step1 = MarqueeTextView.scrollOffset(elapsed: 2.5, textWidth: m.cachedTextWidth, viewWidth: 100)
+    let step2 = MarqueeTextView.scrollOffset(elapsed: 4.5, textWidth: m.cachedTextWidth, viewWidth: 100)
+    let rateOk = abs(step1 - 30.0) < 0.05 && abs((step2 - step1) - 60.0) < 0.05
+    let loopOk = refreshIdempotent && pauseHold && rateOk
+    print("\(loopOk ? "ok  " : "FAIL") strip, marquee pauses 1.5 s, scrolls at 30 pt/s, and does not restart on 1 s refresh")
+
+    m.reduceMotionOverride = true
+    let reduceStill = MarqueeTextView.scrollOffset(elapsed: 3.5, textWidth: m.cachedTextWidth, viewWidth: 100, reduceMotion: true) == 0
+        && m.currentOffset(at: Date().addingTimeInterval(4.0)) == 0
+        && !m.isTimerRunning
+        && m.toolTip == longTitle
+        && m.accessibilityLabel() == longTitle
+        && m.revealFullTitleNow() == longTitle
+    print("\(reduceStill ? "ok  " : "FAIL") strip, marquee stays still under Reduce Motion with full title in tooltip, VoiceOver, and hover/click")
+
+    return okPause && shortStill && loopOk && reduceStill
 }
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
