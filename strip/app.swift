@@ -8084,6 +8084,36 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
 }
 
 // Derived from Spec: FEAT-06
+// `recense homes` (the homes and what each holds) and `recense homes adopt` (record every file dropped into them,
+// so Finder, the Files app and AirDrop are first-class ways in). Local only, no network.
+if CommandLine.arguments.dropFirst().first == "homes" {
+    let a = Array(CommandLine.arguments.dropFirst(2))
+    do {
+        try Homes.ensure()
+        if a.first == "adopt" {
+            var total = 0
+            for h in Home.allCases {
+                let added = try Homes.adopt(h)
+                total += added.count
+                for e in added { print("\(h.label)\t\(e.path)\t\(e.size) bytes") }
+            }
+            print(total == 0 ? "nothing new to record" : "\(total) recorded")
+        } else if a.isEmpty {
+            for h in Home.allCases {
+                let known = Homes.index(h)
+                print("\(h.label.padding(toLength: 11, withPad: " ", startingAt: 0))\(h.folder)\t\(known.count) recorded")
+            }
+            print("\(Homes.root.path) — `recense homes adopt` records what was dropped in; `recense carry verify` hashes it all")
+        } else {
+            fputs("usage: recense homes | homes adopt\n", stderr); exit(1)
+        }
+    } catch {
+        fputs("homes: \(error)\n", stderr); exit(1)
+    }
+    exit(0)
+}
+
+// Derived from Spec: FEAT-06
 // `recense carry verify` (what this device holds: ~/Recense/.carry/manifest.jsonl, one line per file, every home)
 // and `recense carry move --to <folder>` (copy every home there, verify every SHA-256, write a receipt, leave the
 // source in place). The exit exists before anything relies on it (owner, 2026-11-11). Local only, no network.

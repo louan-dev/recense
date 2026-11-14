@@ -428,7 +428,8 @@ Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files a
 - Each home keeps `.recense-index.json`: one entry per file with path, size, SHA-256, when it landed, which device recorded it, tags. Plain files beside it, nothing in a database.
 - Taking a file in moves it (never copies), never overwrites (`song 2.m4a`, as Finder does), and hashes it as it lands. Audio goes to Music, an `.m4b` to Audiobooks, a PDF or document to Study, anything else to Downloads.
 - **Nothing is deleted unless you say so:** Remove moves the file to `trash/` and records where it came from, so it can be put back; Delete forever works only inside `trash/`.
-- The terminal commands run in place (`status`, `hide`, `quit`, `selftest`, `hear-app`, `carry`, `download`); every other verb opens the app.
+- `recense homes` lists the homes and how many files each has recorded; `recense homes adopt` records everything dropped into them by Finder, the Files app or AirDrop.
+- The terminal commands run in place (`status`, `hide`, `quit`, `selftest`, `hear-app`, `carry`, `download`, `homes`); every other verb opens the app.
 - `recense carry verify` writes `~/Recense/.carry/manifest.jsonl`: one line per file across every home (home, path, size, mtime, SHA-256, device) — what this Mac holds, readable by any tool.
 - `recense carry move --to <folder>` copies every home there, verifies every SHA-256 after the copy, writes `carry-receipt-<when>.json`, and **leaves the source in place**. That is the exit: any folder works (a USB stick, iCloud Drive, the WebDAV mount), no Recense needed to read it.
 - Local only: filesystem and CryptoKit, no network at any point. Moving bytes between devices by themselves (carry C1/C2) is not built yet.
