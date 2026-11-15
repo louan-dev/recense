@@ -6803,6 +6803,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
+        Downloads.watchFolder()              // BUG-16: whatever lands in downloads/ is adopted; audio settles into Music
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
