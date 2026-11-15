@@ -179,4 +179,12 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   `lineHeight` option only when no live CodeMirror view is given (tests). Known follow-up, not fixed here: a pure
   font-size change with no text edit still leaves already-drawn strokes' pixel points un-moved; see
   `docs/specs/bugs/BUG-07-ink-anchor-line-height.md`. Test: `test/bug07-lineheight.test.mjs`.
+- **BUG-08 — the document never moves while a selection is being dragged** (`isSelecting`/`applyDeferredText` in
+  `src/bridge.js`, `dragSelecting` in `src/index.js`): the host calls `setText(s)` after every autosave or merge,
+  including while the pointer is still down. CodeMirror maps the stored selection through a change (BUG-04), but a
+  drag in progress keeps extending from the anchor it started with, so a line inserted above left the owner with a
+  highlight that was not what they dragged over (172 chars → 119 in the WebKit measurement) and Delete removed that
+  wrong range. The host's newest text now waits for `pointerup`, `pointercancel` or window `blur` and lands once;
+  `nativeSwipe` does nothing during a drag. Spec: `docs/specs/bugs/BUG-08-drag-selection-moved.md`.
+  Test: `test/bug08-drag-selection.test.mjs`.
 - Device check (real iPhone, iPad, Mac) still owed for both — not run from this session.

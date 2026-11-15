@@ -42,6 +42,7 @@ Row: ID · title · status · From · code pointer
 - BUG-04 · setText put the caret back at a stale offset after a native round-trip (Enter looked reversed) · `[~]` (tests pass; owner's real-device check pending) · T-0001 · `bugs/BUG-04-settext-caret-drift.md`
 - BUG-06 · Draftpad ink ignores touch (iPhone has no Pencil, so annotation never worked there) · `[~]` (fixed, device check owed) · T-0023 · `bugs/BUG-06-mobile-ink-touch-blocked.md`
 - BUG-07 · Ink anchors to the wrong line (hard-coded 28px vs. the real line height) · `[~]` (fixed, device check owed) · T-0014 · `bugs/BUG-07-ink-anchor-line-height.md`
+- BUG-08 · The document moved while the owner was dragging a selection (highlight not what was dragged; caret wrong after Delete) · `[~]` (fixed, device check owed) · T-0028 · `bugs/BUG-08-drag-selection-moved.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

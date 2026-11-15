@@ -832,6 +832,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   const voiceCommand = phrase => executeVoiceMove(phrase, voiceHandlers);
 
+  // Derived from Spec: BUG-08. True while the owner holds the pointer down over the text: a drag-selection in
+  // progress. The host's setText (autosave, a merge from another device) waits for it to end, so the document never
+  // moves under their hand mid-highlight.
+  let dragSelecting = false;
+
   bridge = createEditorBridge({
     getState: () => (view ? view.state : null),
     dispatch: spec => {
@@ -853,6 +858,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setTheme,
     setFontSize,
     getRemoved: () => (view ? getRemoved(view.state) : []),
+    isSelecting: () => dragSelecting,
     extra: {
       step: delta => (stepPage(view, Number(delta) || 0, { allowCreate: true }) ? 'ok' : 'bounce'),
       swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
@@ -864,7 +870,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
       pageCount: () => pageCount(view.state),
       setPageMode: on => setPages(on),
       // Mac host: native trackpad swipe (strip/editorhost.swift EditorWebView.scrollWheel); turns off the web wheel pager.
-      nativeSwipe: (dx, ended) => { view.__nativeWheel = true; return view.__hostSwipe ? view.__hostSwipe(dx, ended) : 'off'; },
+      // Derived from Spec: BUG-08 — a trackpad swipe while the owner is dragging a selection moved the page under
+      // the pointer, so the drag ended on a different character than they were pointing at.
+      nativeSwipe: (dx, ended) => {
+        if (dragSelecting) return 'selecting';
+        view.__nativeWheel = true;
+        return view.__hostSwipe ? view.__hostSwipe(dx, ended) : 'off';
+      },
       isPageMode: () => isPageMode(view.state),
       setCursor,
       insertBlock,
@@ -1120,6 +1132,25 @@ export function mountEditor(root = document.body, initialDoc = '') {
     },
     globalObj: typeof window !== 'undefined' ? window : null
   });
+
+  // Derived from Spec: BUG-08. A drag-selection is in progress from pointerdown in the text until the pointer comes
+  // up (anywhere — the owner often releases outside the text). Whatever the host sent meanwhile lands then, once.
+  if (view && view.contentDOM && typeof view.contentDOM.addEventListener === 'function') {
+    view.contentDOM.addEventListener('pointerdown', e => {
+      if (e && e.button !== undefined && e.button !== 0) return;      // only a plain press selects
+      dragSelecting = true;
+    }, true);
+  }
+  const endDragSelection = () => {
+    if (!dragSelecting) return;
+    dragSelecting = false;
+    if (bridge && typeof bridge.applyDeferredText === 'function') bridge.applyDeferredText();
+  };
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pointerup', endDragSelection, true);
+    window.addEventListener('pointercancel', endDragSelection, true);
+    window.addEventListener('blur', endDragSelection, true);          // the pointer can be lost with the window
+  }
 
   setTheme(currentTheme);
   setFontSize(currentFontSize);
