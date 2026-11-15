@@ -157,6 +157,8 @@ The player Gallery and Recense share (home bar, key labels, rooms, prosody) has 
 `strip/build.sh` copies it into the app and stops if a file is missing.
 
 ## Status
+iOS download engine spike (FEAT-11, 2026-11-14): yt-dlp runs in embedded CPython on the iPhone, and AVFoundation joins the separate audio and video files into one MP4 with no ffmpeg. Rebuild it with `zsh spike/ios-ytdlp/setup.zsh <scratch dir> <device UDID>`.
+
 One repo since A15 (2026-11-05): Gallery (`louan-dev/gallery`) and Sync (`louan-dev/sync`) joined with their full
 history, so `git log library/src/main.js` reaches Gallery's first commit. Each app still builds, tests and
 deploys on its own, and so Recense keeps its independence from the Worker at every point. The plan is
