@@ -29,7 +29,7 @@ enum DownloadMode: String, Codable, CaseIterable, Sendable {
 }
 
 struct DownloadEntry: Codable, Equatable, Sendable {
-    var name: String        // the file's name in downloads/
+    var name: String        // the file's name where it lives: downloads/, or library/Music/ once settled (FEAT-12)
     var source: String      // the page or link it came from ("" when adopted with no known source)
     var mode: DownloadMode
     var bytes: Int64
@@ -141,8 +141,34 @@ enum Downloads {
 
     static let pulltubeFolder = "Pulltube"
 
-    /// The file an entry names (entries in Pulltube/ keep that subfolder in their name).
-    static func file(_ e: DownloadEntry) -> URL { root.appendingPathComponent(e.name) }
+    /// The file an entry names (entries in Pulltube/ keep that subfolder in their name). An audio entry settles
+    /// into the Music home (FEAT-12); until that move happens its bytes are still in downloads/, so this checks
+    /// Music first and falls back to downloads/ — correct whichever side of `settle()` the entry is on.
+    static func file(_ e: DownloadEntry) -> URL {
+        guard e.mode == .audio else { return root.appendingPathComponent(e.name) }
+        let musicPath = Homes.url(.music).appendingPathComponent(e.name)
+        return FileManager.default.fileExists(atPath: musicPath.path) ? musicPath : root.appendingPathComponent(e.name)
+    }
+
+    /// Audio downloads don't stay in downloads/ (FEAT-12): once recorded, they move straight into the Music home,
+    /// taking any subtitle sidecars with them. av/video stays in downloads/ for the owner to review, as today.
+    @discardableResult
+    static func settle(_ e: DownloadEntry) throws -> DownloadEntry {
+        guard e.mode == .audio else { return e }
+        let from = root.appendingPathComponent(e.name)
+        guard FileManager.default.fileExists(atPath: from.path) else { return e }   // already settled
+        let moved = try Homes.add(from, to: .music)
+        let musicDir = Homes.url(.music)
+        for sub in e.subtitles ?? [] {
+            let subFrom = root.appendingPathComponent(sub)
+            guard FileManager.default.fileExists(atPath: subFrom.path) else { continue }
+            try? FileManager.default.moveItem(at: subFrom, to: musicDir.appendingPathComponent(subFrom.lastPathComponent))
+        }
+        var out = e
+        out.name = moved.path
+        try write(manifest().filter { $0.name != e.name } + [out])
+        return out
+    }
 
     /// Offline first: the same link in the same mode already here, with its bytes intact, is used without the network.
     static func existing(_ link: String, mode: DownloadMode) -> DownloadEntry? {
@@ -223,7 +249,7 @@ extension Downloads {
             if options.subtitles, url.scheme?.hasPrefix("http") == true, !isDirectMedia(url) {
                 e.subtitles = await subtitles(link, beside: file(e))
             }
-            try record(e); return e
+            try record(e); e = try settle(e); return e
         } catch where queueWhenOffline && isOffline(error) {
             _ = try ask(link, mode: mode, from: Host.current().localizedName ?? "Mac")
             throw Failure.queued
@@ -321,9 +347,11 @@ extension Downloads {
     static func adoptAndCheck() async throws -> [DownloadEntry] {
         var out: [DownloadEntry] = []
         for e in try adopt() {
-            let c = try await makePlayable(e)
+            var c = try await makePlayable(e)
             if c.name != e.name { try write(manifest().filter { $0.name != e.name }) }
-            try record(c); out.append(c)
+            try record(c)
+            c = try settle(c)
+            out.append(c)
         }
         return out
     }
@@ -391,7 +419,14 @@ func downloadsSelftest() -> Bool {
     func check(_ pass: Bool, _ what: String, _ got: Any = "") { print("\(pass ? "ok  " : "FAIL") downloads, \(what)\(pass ? "" : " — got \(got)")"); ok = ok && pass }
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("recense-downloads-\(UUID().uuidString)")
     setenv("RECENSE_DOWNLOADS", dir.path, 1)
-    defer { unsetenv("RECENSE_DOWNLOADS"); try? FileManager.default.removeItem(at: dir) }
+    // FEAT-12: settle() moves audio into the Music home, so Homes.root needs its own temp folder too — otherwise
+    // this test would move real files into the owner's actual ~/Recense/library/Music.
+    let homeDir = FileManager.default.temporaryDirectory.appendingPathComponent("recense-home-\(UUID().uuidString)")
+    setenv("RECENSE_HOME", homeDir.appendingPathComponent("Recense").path, 1)
+    defer {
+        unsetenv("RECENSE_DOWNLOADS"); try? FileManager.default.removeItem(at: dir)
+        unsetenv("RECENSE_HOME"); try? FileManager.default.removeItem(at: homeDir)
+    }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
     check(DownloadMode.audio.ytdlpArgs.contains("m4a") && DownloadMode.audio.ytdlpArgs.contains("-x"), "audio stays the m4a extraction Recense uses")
@@ -426,9 +461,15 @@ func downloadsSelftest() -> Bool {
     let sem = DispatchSemaphore(value: 0); var got: DownloadEntry?
     Task.detached { got = try? await Downloads.fetch(src.absoluteString, mode: .audio); sem.signal() }
     sem.wait()
-    check(got?.via == "direct" && FileManager.default.fileExists(atPath: dir.appendingPathComponent(got?.name ?? "-").path),
+    check(got?.via == "direct" && FileManager.default.fileExists(atPath: Downloads.file(got!).path),
           "a direct link lands in downloads/", got as Any)
     check(Downloads.manifest().count == 2, "and is in the manifest", Downloads.manifest().map(\.name))
+
+    // FEAT-12: an audio download settles into Music, not downloads/ — it moved, it isn't duplicated
+    check(got?.mode == .audio && !FileManager.default.fileExists(atPath: dir.appendingPathComponent(got?.name ?? "-").path),
+          "an audio download leaves downloads/ once settled")
+    check(FileManager.default.fileExists(atPath: Homes.url(.music).appendingPathComponent(got?.name ?? "-").path),
+          "and lands in the Music home")
 
     // offline first: the same link and mode again is served from the device, no second file
     let sem2 = DispatchSemaphore(value: 0); var again: DownloadEntry?
@@ -449,6 +490,18 @@ func downloadsSelftest() -> Bool {
     let ptAdded = (try? Downloads.adopt()) ?? []
     check(ptAdded.map(\.name) == ["Pulltube/talk.m4a"] && ptAdded.first?.mode == .audio, "a Pulltube download is adopted", ptAdded.map(\.name))
     check(FileManager.default.fileExists(atPath: Downloads.file(ptAdded.first ?? got!).path), "and its entry finds the file")
+
+    // FEAT-12: adoptAndCheck() settles a Pulltube audio drop into Music too, not just a direct fetch
+    try? Data("pt2".utf8).write(to: pt.appendingPathComponent("another.m4a"))
+    let sem3 = DispatchSemaphore(value: 0); var adoptedSettled: DownloadEntry?
+    Task.detached {
+        adoptedSettled = (try? await Downloads.adoptAndCheck())?.first { $0.via == "adopted" && $0.name.hasSuffix("another.m4a") }
+        sem3.signal()
+    }
+    sem3.wait()
+    check(adoptedSettled?.mode == .audio && FileManager.default.fileExists(atPath: Downloads.file(adoptedSettled ?? got!).path)
+          && !FileManager.default.fileExists(atPath: pt.appendingPathComponent("another.m4a").path),
+          "adoptAndCheck settles a Pulltube audio drop into Music too", adoptedSettled as Any)
 
     // quality: the height cap reaches yt-dlp's format choice
     check(DownloadMode.av.ytdlpArgs(maxHeight: 720).joined().contains("height<=720") &&

@@ -157,6 +157,8 @@ The player Gallery and Recense share (home bar, key labels, rooms, prosody) has 
 `strip/build.sh` copies it into the app and stops if a file is missing.
 
 ## Status
+Audio downloads land in Music (FEAT-12, 2026-11-15): a finished `.audio` download — fetched with `recense download <link> audio` or dropped into `downloads/Pulltube/` — moves straight into the Music home (`library/Music`) and its manifest entry points there; `av` and `video` stay in `downloads/` for review. Offline dedup still skips a re-download of the same link.
+
 iOS download engine spike (FEAT-11, 2026-11-14): yt-dlp runs in embedded CPython on the iPhone, and AVFoundation joins the separate audio and video files into one MP4 with no ffmpeg. Rebuild it with `zsh spike/ios-ytdlp/setup.zsh <scratch dir> <device UDID>`.
 
 One repo since A15 (2026-11-05): Gallery (`louan-dev/gallery`) and Sync (`louan-dev/sync`) joined with their full
