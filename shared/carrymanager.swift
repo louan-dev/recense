@@ -206,3 +206,42 @@ private enum CarryKeychain {
         return Data(base64Encoded: s).flatMap { String(data: $0, encoding: .utf8) }
     }
 }
+
+// `recense carry pair` (Mac CLI): the terminal equivalent of tapping "Pair a Device…" (FEAT-09 P1). Opens this
+// device to the next stranger within P2PTransport's 10 s invite window, prints the six-digit code here, and
+// waits for Enter in place of a tap on "They Match". The eye-compare step itself still needs the owner looking
+// at both screens — that is the whole point of the code (FEAT-09 P1's defense against a device in the middle)
+// and is not automatable here.
+//
+// The GUI's "Pair a device" only makes this device discoverable; the actual invite is sent when the owner taps
+// a specific name in the "Looking for a device to pair" list (Devices.swift). A terminal has no such list to
+// tap, so this invites the first not-yet-paired device it sees — fine for a CLI, since there is normally only
+// one stranger nearby when you run this.
+@MainActor
+func runCarryPairCLI() async -> Never {
+    setbuf(stdout, nil)   // flush every line immediately: the code and the Enter prompt must appear right away
+    let cm = CarryManager.shared
+    print("Looking for a device to pair — start \"Pair a Device…\" on the other device now (10s window).")
+    cm.beginPairing()
+    var invited: MCPeerID?
+    while cm.pairingCode == nil {
+        if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
+        if invited == nil, let peer = cm.nearby.first(where: { p in !cm.peers.contains { $0.name == p.displayName } }) {
+            invited = peer
+            print("Found \(peer.displayName) — inviting…")
+            cm.invite(peer)
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+    }
+    let code = cm.pairingCode!, who = cm.pairingWith!
+    print("Code with \(who): \(code)")
+    print("Check the same code is on the other screen, then press Enter to confirm (Ctrl-C to cancel):")
+    _ = readLine()
+    cm.confirmMatch(for: who)
+    while cm.pairingWith != nil {
+        if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+    }
+    print("Paired with \(who).")
+    exit(0)
+}

@@ -42,5 +42,12 @@
     <string>Recense asks Finder which files are selected, to run your Quick Actions on them.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>Recense shows your next events and colors its time bar by how soon the next one starts.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Recense finds your other paired devices over Bluetooth and Wi-Fi, with no internet, to carry files between them.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_recense-p2p._tcp</string>
+        <string>_recense-p2p._udp</string>
+    </array>
 </dict>
 </plist>

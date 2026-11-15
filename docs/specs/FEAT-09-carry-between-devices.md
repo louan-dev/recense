@@ -92,6 +92,9 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 ### P5 · Where you see it
 - "Devices" (Settings, menu, voice "devices"): paired devices, last carry time, what is waiting; "Pair a device";
   "Carry now". One control per function.
+- `recense carry pair` (Mac Terminal, reachable from the iPhone/iPad over SSH, Library › Terminal): the same
+  pairing exchange as the menu, for when the owner is at a keyboard, not the mouse — prints the six-digit code,
+  waits for Enter in place of tapping "They Match". The owner still looks at both screens; the code is not skipped.
 
 ## Out of scope here
 - Draftpad's vault (`draftpad.md`) keeps its current sync until a later slice brings it under carry.

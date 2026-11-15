@@ -191,7 +191,11 @@ router, no internet, and carries both the pairing exchange and the carry log. Pa
 radios; the link itself is proven on real devices, airplane mode on. Check: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`.
 The glue is wired (`shared/carrymanager.swift`, a "Devices" screen on the Mac and on iOS): pairing works end to
 end, and "Carry Now" pushes a new or changed file straight to a paired, connected device — the full move/trash/
-restore replay across devices is the part still open.
+restore replay across devices is the part still open. Pairing also works from a keyboard
+alone: `recense carry pair` in the Mac's Terminal (reachable from the iPhone or iPad over SSH, Library › Terminal)
+prints the same six-digit code and waits for Enter where the GUI waits for a tap on "They Match". iOS and iPadOS have no terminal
+of their own, so pairing there also runs by voice or Shortcuts (`mobile/HostApp/iOS/PairIntent.swift`): "Pair a
+device" reads the code back, "Confirm pairing" is the spoken "They Match".
 
 Cloudflare serves purely as storage and caching, deliberately swappable: the plan is a one-command move onto a
 Mac mini, on the theory that a signature, a subscription or a vendor's roadmap expiring should leave every bit of

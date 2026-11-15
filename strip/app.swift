@@ -8167,9 +8167,13 @@ if CommandLine.arguments.dropFirst().first == "homes" {
 // `recense carry verify` (what this device holds: ~/Recense/.carry/manifest.jsonl, one line per file, every home)
 // and `recense carry move --to <folder>` (copy every home there, verify every SHA-256, write a receipt, leave the
 // source in place). The exit exists before anything relies on it (owner, 2026-11-11). Local only, no network.
+if CommandLine.arguments.dropFirst().first == "carry", CommandLine.arguments.dropFirst(2).first == "pair" {
+    Task { @MainActor in await runCarryPairCLI() }
+    RunLoop.main.run()
+}
 if CommandLine.arguments.dropFirst().first == "carry" {
     let a = Array(CommandLine.arguments.dropFirst(2))
-    let usage = "usage: recense carry verify | carry move --to <folder>"
+    let usage = "usage: recense carry verify | carry move --to <folder> | carry pair"
     do {
         switch a.first {
         case "verify":
