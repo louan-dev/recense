@@ -46,6 +46,7 @@ Row: ID · title · status · From · code pointer
 - BUG-08 · The document moved while the owner was dragging a selection (highlight not what was dragged; caret wrong after Delete) · `[~]` (fixed, device check owed) · T-0028 · `bugs/BUG-08-drag-selection-moved.md`
 - BUG-09 · No Lock Screen scrubber for Recense's own player on iOS (no Now Playing info, no remote commands) · `[~]` (fixed, device check owed) · T-0067 · `bugs/BUG-09-no-lock-screen-scrubber.md`
 - BUG-10 · The floating window is black while Recense's own player plays (own sound read as quiet; window drew only the broadcast) · `[~]` (fixed, device check owed) · T-0069 · `bugs/BUG-10-floating-black-own-player.md`
+- BUG-11 · A file played in Recense is heard in the last broadcast's language (English by default), not its own · `[~]` (fixed, device check owed) · T-0070 · `bugs/BUG-11-file-heard-wrong-language.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

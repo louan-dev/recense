@@ -43,6 +43,10 @@ updates in place.
   own sound didn't count as playing and the window rested as a black strip. While the player holds a file and no
   broadcast hears, the audio session is the player's (Lock Screen controls stay); otherwise it mixes under other apps
   (`NativePlayer.session`).
+- **A played file is heard in its own language** (BUG-11, 11-14): on Automatic, each two-minute stretch is first heard
+  for 10 s by the English, French and Vietnamese models and the surest wins (`SpeechAhead.choose`, the live check's
+  rule); before, every file was heard in the last broadcast's language, English by default. Now Playing says which
+  ("Heard on this device in French (automatic)"). Models not on the device are skipped, never downloaded then.
 - **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
   each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
   ··· menu; Apple's on-device Translation does the work, once a language pair is installed.

@@ -2,7 +2,8 @@
 // (shared/speechcore.swift, SpeechAhead: two-minute stretches, the playhead's first) and its phrases become Now
 // Playing's transcript (ShowsKit's TranscriptView). Offline: SpeechAnalyzer's model for the language is on the device
 // (Listen downloads it once when the language is chosen); without SpeechAnalyzer, SFSpeechRecognizer on the device.
-// The language is Listen's "Hear in". The file: the pool's copy on this device (B1 sets where the pool lives; until
+// The language is Listen's "Hear in"; on Automatic, the file's own (BUG-11).
+// The file: the pool's copy on this device (B1 sets where the pool lives; until
 // then Documents/Recense/<path>, or RECENSE_TRANSCRIPT_FILE for a simulator check).
 import Foundation
 import AVFoundation
@@ -56,19 +57,21 @@ import ShowsKit
             model.transcriptNote = "No transcript yet. It will be heard on this device once the file is saved here."
             return
         }
-        let lang = Listener.shared.lang
+        // BUG-11: on Automatic the file's own sound picks its language (SpeechAhead's check), not the last broadcast's;
+        // Listen's language is only the fallback until a candidate is heard surely
+        let lang = Listener.shared.lang, auto = Listener.shared.heard == Captions.automatic
         let path = Offline.origin(e.item.path)
-        let a = SpeechAhead(url: url, lang: lang, duration: e.duration ?? Self.length(url))
+        let a = SpeechAhead(url: url, lang: lang, among: auto ? SpeechCore.auto : nil, duration: e.duration ?? Self.length(url))
         a.playhead = { [weak model] in model?.transport?.time ?? 0 }
         a.changed = { [weak model, weak a] ps in
-            let lines = Self.lines(ps)
+            let lines = Self.lines(ps), heardIn = a?.heardIn ?? lang
             model?.transcript = lines
-            model?.transcriptSource = "Heard on this device."
+            model?.transcriptSource = "Heard on this device in \(Listener.short(heardIn))\(auto ? " (automatic)" : "")."
             model?.transcriptNote = a.map { $0.finished ? nil : "Hearing ahead of the playhead…" } ?? nil
-            if let model { PlaybackTranslator.shared.run(model, lang: lang) }
+            if let model { PlaybackTranslator.shared.run(model, lang: heardIn) }
             if a?.finished == true { Self.cache.write(path, lines) }   // the next open needs no hearing
         }
-        model.transcriptNote = "Hearing \(Listener.short(lang)) on this device…"
+        model.transcriptNote = auto ? "Hearing on this device, finding its language…" : "Hearing \(Listener.short(lang)) on this device…"
         ahead = a
         a.start()
     }

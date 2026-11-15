@@ -29,6 +29,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
   `swiftc -O shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
+- A played file's language (`shared/speechcore.swift` SpeechAhead, BUG-11), after any change to SpeechAhead or to
+  `SpeechCore.sureness`/`pick`: `zsh mobile/ios/Tests/aheadlang/run.zsh` (outside the sandbox; French, Vietnamese and
+  English recordings each print ALL OK, heard in their own language).
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
 - The broadcast's clock (`HostApp/iOS/SoundClock.swift`: t0 from the sound's stamps, pauses kept), after any change to it or to `SampleHandler.processSampleBuffer`:
