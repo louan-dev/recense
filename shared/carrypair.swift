@@ -191,6 +191,18 @@ struct CarryPairFlow {
     }
 }
 
+// Derived from Spec: BUG-17 (either device may start first)
+/// A picked device that turned the invitation down (it was not looking yet) or let it lapse is invited again, so
+/// the owner can start on either device first: no window to race. Pure: which picked names are due now.
+enum CarryInvites {
+    static let every: TimeInterval = 11   // past P2PTransport.invite's 10 s timeout, so two never overlap
+
+    static func due(picked: [String: Date], nearby: Set<String>, connected: Set<String>, now: Date) -> [String] {
+        picked.filter { nearby.contains($0.key) && !connected.contains($0.key) && now.timeIntervalSince($0.value) >= every }
+            .keys.sorted()
+    }
+}
+
 /// `Recense/.carry/peers.json`: who is paired. Public keys and names only; no secrets.
 struct CarryPeer: Codable, Equatable, Sendable {
     var name: String

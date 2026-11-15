@@ -161,5 +161,16 @@ do {
     check((try? JSONDecoder().decode(PairMessage.self, from: Data(old.utf8))) == .hello(key: Data([1]), name: "iPad"), "an old hello decodes")
 }
 
+// Regression guard: BUG-17 · either device may start first: a picked device that has not answered is invited again.
+do {
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let picked = ["iPhone": t0, "iPad": t0]
+    check(CarryInvites.due(picked: picked, nearby: ["iPhone", "iPad"], connected: [], now: t0 + 5).isEmpty, "not before the last invite's timeout")
+    check(CarryInvites.due(picked: picked, nearby: ["iPhone", "iPad"], connected: [], now: t0 + 11) == ["iPad", "iPhone"], "both again after it")
+    check(CarryInvites.due(picked: picked, nearby: ["iPhone"], connected: [], now: t0 + 30) == ["iPhone"], "only one still nearby")
+    check(CarryInvites.due(picked: picked, nearby: ["iPhone", "iPad"], connected: ["iPhone"], now: t0 + 30) == ["iPad"], "never one already connected")
+    check(CarryInvites.every > 10, "the interval outlasts the 10 s invite timeout")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

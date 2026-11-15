@@ -62,6 +62,8 @@ private enum CarryKeychain {
     private var identity: Curve25519.KeyAgreement.PrivateKey
     private var group: Data?
     private var flows: [MCPeerID: CarryPairFlow] = [:]   // one pairing in progress per connected peer (BUG-17)
+    private var picked: [String: Date] = [:]             // devices the owner picked → last invite sent (BUG-17)
+    private var reinviting = false
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
     private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
@@ -116,7 +118,7 @@ private enum CarryKeychain {
     func start() { t.advertise(); t.browse(); if !isLookingToPair { status = "Looking for devices" } }
     func stop() { t.stop(); stopPairing(); status = "Off" }
 
-    // MARK: Pairing — tap "Pair a device" on both screens within P2PTransport's own 10 s invite timeout
+    // MARK: Pairing — tap "Pair a device" on both screens, in either order (a picked device is invited again, BUG-17)
 
     /// Nearby devices the owner may pick while pairing: every one but this device itself (the Terminal's
     /// `recense carry pair` sees the running app under the same name). A listed peer stays pickable, so a pairing
@@ -131,14 +133,31 @@ private enum CarryKeychain {
 
     /// "Stop Pairing": ends the pairing only; the link stays on for carrying.
     func stopPairing() {
-        isLookingToPair = false; flows = [:]; pairingCode = nil; pairingWith = nil
+        isLookingToPair = false; flows = [:]; picked = [:]; pairingCode = nil; pairingWith = nil
         if status == "Pairing" { status = "Looking for devices" }
     }
 
     /// The owner picked a nearby device by name.
     func invite(_ peer: MCPeerID) {
         isLookingToPair = true
-        if t.session.connectedPeers.contains(peer) { startFlow(peer) } else { t.invite(peer) }
+        if t.session.connectedPeers.contains(peer) { startFlow(peer); return }
+        picked[peer.displayName] = Date()
+        t.invite(peer)
+        guard !reinviting else { return }
+        reinviting = true
+        Task { @MainActor [weak self] in   // until paired or stopped: invite again whoever has not answered yet
+            while let self, self.isLookingToPair {
+                let connected = Set(self.t.session.connectedPeers.map(\.displayName))
+                for name in CarryInvites.due(picked: self.picked, nearby: Set(self.nearby.map(\.displayName)),
+                                             connected: connected, now: Date()) {
+                    guard let p = self.nearby.first(where: { $0.displayName == name }) else { continue }
+                    self.picked[name] = Date()
+                    self.t.invite(p)
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            self?.reinviting = false
+        }
     }
 
     private func connected(_ peer: MCPeerID, _ state: MCSessionState) {
@@ -200,7 +219,7 @@ private enum CarryKeychain {
         do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
         catch { lastError = "saving peers.json failed: \(error)" }
         flows[peer] = nil
-        pairingCode = nil; pairingWith = nil; isLookingToPair = false
+        pairingCode = nil; pairingWith = nil; isLookingToPair = false; picked = [:]
         status = "Paired with \(peer.displayName)"
     }
 
@@ -321,7 +340,7 @@ private enum CarryKeychain {
 }
 
 // `recense carry pair` (Mac CLI): the terminal equivalent of tapping "Pair a Device…" (FEAT-09 P1). Opens this
-// device to the next stranger within P2PTransport's 10 s invite window, prints the six-digit code here, and
+// device to the next stranger (re-inviting until it answers, BUG-17), prints the six-digit code here, and
 // waits for Enter in place of a tap on "They Match". The eye-compare step itself still needs the owner looking
 // at both screens — that is the whole point of the code (FEAT-09 P1's defense against a device in the middle)
 // and is not automatable here.
@@ -334,11 +353,17 @@ private enum CarryKeychain {
 func runCarryPairCLI() async -> Never {
     setbuf(stdout, nil)   // flush every line immediately: the code and the Enter prompt must appear right away
     let cm = CarryManager.shared
-    print("Looking for a device to pair — start \"Pair a Device…\" on the other device now (10s window).")
+    print("Looking for a device to pair. On the other device, open Recense › Library › Devices › Pair a Device…")
+    print("(either side may start first; this keeps trying until a code appears — Ctrl-C to cancel)")
     cm.beginPairing()
     var invited: MCPeerID?
+    var waited = 0
     while cm.pairingCode == nil {
         if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
+        waited += 1
+        if invited == nil, waited % 50 == 0 {   // every 15 s with nothing seen
+            print("No device seen yet. On the iPhone or iPad: unlocked, Recense open on Library › Devices, Wi-Fi or Bluetooth on.")
+        }
         if invited == nil, let peer = cm.pairCandidates.first {
             invited = peer
             print("Found \(peer.displayName) — inviting…")

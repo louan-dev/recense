@@ -25,6 +25,9 @@ Status: `[~]` (fixed, tests green; device check owed)
   - Each `start()` made a new advertiser and browser. The new browser had not seen the peers on screen.
   - `recense carry pair` could invite the running Recense.app on the same Mac (same name).
   - "Confirm Pairing" (voice) said "Paired" after 10 s even when the other side had not confirmed.
+- Cause 4, one invite only (owner's run, 11-15 11:58: `recense carry pair` printed its first line, then nothing).
+  The Mac invited a device once. If that device was not looking yet, it turned the invite down, and no one asked
+  again. The owner had to start both within 10 s, on two devices, in the right order.
 
 ## Green (the fix)
 - `CarryPairFlow` (`shared/carrypair.swift`): one side's whole pairing, taps included. Pure.
@@ -41,6 +44,9 @@ Status: `[~]` (fixed, tests green; device check owed)
 - `pairCandidates`: every nearby device but this one. Used by the iOS list, the Mac menu, Siri and the CLI.
 - `P2PTransport.advertise()` / `browse()` keep the running ones.
 - "Confirm Pairing" says "Waiting for <name> to confirm too" until the other side confirms.
+- `CarryInvites.due`: a picked device that has not connected is invited again every 11 s, past the 10 s invite
+  timeout, until it pairs or "Stop Pairing". Either device may start first.
+- `recense carry pair` says where to go on the phone, keeps trying, and says every 15 s when it has seen no device.
 
 ## Invariants (tested: `mobile/ios/Tests/carrypair/main.swift`; condensed in `recense selftest`)
 - For each of {Mac has a group, neither has one, iPhone has one} × {Mac taps first, iPhone first, both first}:
@@ -53,6 +59,7 @@ Status: `[~]` (fixed, tests green; device check owed)
 - Two taps while waiting are harmless; the group still lands after them.
 - Two devices that each hold a different group are refused (`otherGroup`).
 - An older peer's `hello` without `grouped` still decodes.
+- Re-invite: nothing before 11 s; each picked device still nearby after that; never one already connected.
 - Mutation check: holding the group replaced by the old `throw` → the suite fails.
 
 ## Recovering devices paired one-sidedly

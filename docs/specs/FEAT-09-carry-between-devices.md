@@ -65,6 +65,7 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   either order. A group that arrives before this device's own tap is held, and the tap opens it. The `hello` says
   whether its sender already holds a group, so exactly one side sends one. While "Pair a device" is on, a peer
   already in `peers.json` pairs again, and the new entry replaces the old one (a one-sided pairing can be redone).
+  Either device may start first: a picked device that has not answered is invited again every 11 s.
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
 - **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
   under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).
