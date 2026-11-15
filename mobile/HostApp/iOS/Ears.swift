@@ -38,7 +38,8 @@ import ShowsKit
             let r = await TranscriptSource.load(path: path, cache: Self.cache) { await siteData($0) }
             guard key == e.id else { return }
             if !r.lines.isEmpty {
-                model.transcript = r.lines; model.transcriptSource = r.note; model.transcriptNote = nil
+                // a transcript this device heard before BUG-13 comes back by sentence; any other as it is
+                model.transcript = Phrasing.regrouped(r.lines); model.transcriptSource = r.note; model.transcriptNote = nil
                 PlaybackTranslator.shared.run(model, lang: Listener.shared.lang)
             } else {
                 hear(model, e)
@@ -80,11 +81,13 @@ import ShowsKit
         (try? AVAudioFile(forReading: url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
     }
 
+    /// One line per sentence, as the Mac (BUG-13; a line per phrase cut sentences after "the"): every phrase's words in
+    /// time order, a phrase with no timed words as one word.
     static func lines(_ ps: [SpeechCore.Phrase]) -> [TranscriptLine] {
-        ps.enumerated().map { i, p in
-            TranscriptLine(id: "\(Int(p.start * 1000))-\(i)", start: p.start, end: p.end, text: p.text,
-                           words: p.words.map { Word(text: $0.text, start: $0.start, end: $0.end) })
-        }
+        Phrasing.lines(ps.flatMap { p in
+            p.words.isEmpty ? [Word(text: p.text, start: p.start, end: p.end)]
+                            : p.words.map { Word(text: $0.text, start: $0.start, end: $0.end) }
+        })
     }
 }
 

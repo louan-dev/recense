@@ -50,6 +50,9 @@ updates in place.
 - **Words light as they are heard, headphones too** (BUG-12, 11-14): our player's transcript and the floating window
   read the position less the audio route's latency (`RouteLatency.current`, the web player's rule; Bluetooth ~0.2 s),
   read once per route and logged in the floating window's log. The Lock Screen and skip keep the raw position.
+- **Lines are whole sentences** (BUG-13, 11-14): a heard file's lines follow sentence ends, as the Mac's (ShowsKit
+  `Phrasing`, ≤ 18 words a line); before, one line per breath ("This is the" / "resent player"). Transcripts this
+  device saved the old way are regrouped on open.
 - **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
   each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
   ··· menu; Apple's on-device Translation does the work, once a language pair is installed.

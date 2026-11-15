@@ -48,6 +48,9 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.
     `TranscriptLight.heard` (BUG-12): the player's position less the audio route's latency while it plays, so a word
     lights as it reaches the ear through Bluetooth. Tests: `HeardTimeTests`.
+  - `Phrasing.swift` (BUG-13): timed words to lines by sentence (an end mark, or a pause over 1.2 s), a long one split
+    at ≤ 18 words; ids by start. The Mac's `sentences` / `splitWords` call it (one copy). `regrouped` turns this
+    device's old one-line-per-breath transcripts into sentences and leaves any other as it is. Tests: `PhrasingTests`.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

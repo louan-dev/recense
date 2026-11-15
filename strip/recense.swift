@@ -2734,19 +2734,7 @@ func decodeChunk(_ file: URL, from a: Double, to b: Double) throws -> [Float] {
 }
 
 /// Splits long Whisper segments so a line fits the overlay, preferring breaks after punctuation.
-func splitWords(_ w: [Word], max: Int = 14) -> [[Word]] {
-    guard w.count > max else { return [w] }
-    let parts = (w.count + max - 1) / max, target = w.count / parts
-    var out: [[Word]] = [], cur: [Word] = []
-    for (i, x) in w.enumerated() {
-        cur.append(x)
-        let left = w.count - i - 1
-        let punct = x.text.last.map { ",.;:?!".contains($0) } ?? false
-        if left > 2, out.count < parts - 1, (cur.count >= target && punct) || cur.count >= max { out.append(cur); cur = [] }
-    }
-    if !cur.isEmpty { out.append(cur) }
-    return out
-}
+func splitWords(_ w: [Word], max: Int = 14) -> [[Word]] { Phrasing.split(w, max: max) }   // shared/ShowsKit (BUG-13)
 
 /// A sung phrase too long for one line, split where the singer breathes: at its longest pause (≥ 0.2 s), again
 /// and again, so each line is a line of the song rather than a count of words — unpunctuated lyrics (Persian, as
@@ -4917,18 +4905,8 @@ private func lyricsSelftestRun() async -> Bool {
     }
 
     /// Whole sentences translate far better than Whisper's arbitrary segments, so lines follow sentence ends.
-    func sentences(_ w: [Word], pause: Double = 1.2) -> [[Word]] {
-        var out: [[Word]] = [], cur: [Word] = []
-        for (i, x) in w.enumerated() {
-            cur.append(x)
-            let core = x.text.trimmingCharacters(in: CharacterSet(charactersIn: "»\"”’)"))
-            let ends = core.last.map { ".?!…".contains($0) } ?? false
-            let gap = i + 1 < w.count && w[i + 1].start - x.end > pause
-            if ends || gap { out.append(cur); cur = [] }
-        }
-        if !cur.isEmpty { out.append(cur) }
-        return out
-    }
+    /// The rule is ShowsKit's `Phrasing.sentences`, one copy for the Mac, the iPhone and the iPad (BUG-13).
+    func sentences(_ w: [Word], pause: Double = 1.2) -> [[Word]] { Phrasing.sentences(w, pause: pause) }
 
     /// The languages a line is in, main one first: by sound and spelling (phraseLanguage), plus any other the spelling
     /// finds in a run of it (a switch mid-line); a language the spelling can't name is the one Whisper heard.
