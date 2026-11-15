@@ -67,6 +67,12 @@ struct EpisodeActions: View {
         }
         if model.canChange(episode) {
             Button { model.renaming = episode } label: { Label("Rename…", systemImage: "pencil") }
+            let to = model.destinations(for: episode)   // FEAT-13: into another show's folder
+            if !to.isEmpty {
+                Menu {
+                    ForEach(to) { s in Button(s.title) { model.move(episode, to: s) } }
+                } label: { Label("Move to…", systemImage: "folder") }
+            }
             Button(role: .destructive) { model.delete(episode) } label: { Label("Delete", systemImage: "trash") }
         }
     }

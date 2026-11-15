@@ -12,6 +12,7 @@ struct ShowPage: View {
         @Published var season: String?          // nil = every season
         @Published var episodes: [Episode] = []
         @Published var all = false               // "See All" pressed: every episode, not the first ten
+        @Published var adding = false            // FEAT-13: "+" opened the file picker
     }
 
     var body: some View {
@@ -53,6 +54,19 @@ struct ShowPage: View {
             }
         }
         .navigationTitle(show.title)
+        .toolbar {
+            if model.canAdd(to: show) {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { page.adding = true } label: { Label("Add Files", systemImage: "plus") }
+                }
+            }
+        }
+        .fileImporter(isPresented: $page.adding, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): model.add(urls, to: show)
+            case .failure(let e): model.problem = "Couldn't open the files: \(e.localizedDescription)"
+            }
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -87,7 +101,7 @@ struct ShowPage: View {
     private func saveButton(_ e: Episode) -> some View {
         let on = e.state?.isStarred ?? false
         return Button { Task { await model.setStarred(!on, for: e) } } label: {
-            Label(on ? "Remove" : "Save", systemImage: on ? "bookmark.slash" : "bookmark")
+            Label(on ? "Unsave" : "Save", systemImage: on ? "bookmark.slash" : "bookmark")
         }
         .tint(Theme.accent)
     }
@@ -105,7 +119,24 @@ struct EpisodeRow: View {
     let model: ShowsModel
     let episode: Episode
 
+    // FEAT-13: a video's frame, a PDF's page, the image; none for audio. @StateObject: the Mac's tools lack @State's macro
+    @StateObject private var art = Thumb()
+    final class Thumb: ObservableObject { @Published var image: CGImage? }
+
     var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let thumb = art.image {
+                Image(decorative: thumb, scale: 1).resizable().scaledToFill()
+                    .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            details
+        }
+        .task(id: episode.item.path) {
+            art.image = await model.thumbnail(for: episode, side: 64)
+        }
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(Fmt.ago(max(episode.item.added, episode.item.mtime))).font(.subheadline).foregroundStyle(.secondary)
             Text(episode.title).font(.title3.weight(.semibold)).lineLimit(3)
@@ -128,3 +159,4 @@ struct EpisodeRow: View {
         .contentShape(Rectangle())
     }
 }
+
