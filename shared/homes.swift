@@ -53,6 +53,8 @@ enum Homes {
         case noOrigin(String)
         case missing(String)
         case mismatch(String)
+        case badName(String)
+        case taken(String)
 
         var description: String {
             switch self {
@@ -60,6 +62,8 @@ enum Homes {
             case .noOrigin(let p): "\(p) has no recorded origin to restore to"
             case .missing(let p): "\(p) is not on this device"
             case .mismatch(let p): "\(p) does not match the bytes that were recorded"
+            case .badName(let n): "“\(n)” can’t be used as a name"
+            case .taken(let n): "Something called “\(n)” is already here"
             }
         }
     }
@@ -235,6 +239,40 @@ enum Homes {
         try record(trashed, in: .trash)
         try forget(entry.path, in: home)
         return trashed
+    }
+
+    // Derived from Spec: FEAT-07 P0
+    /// Renames a file in place (its subfolder and extension kept), so Carry sees a move: same bytes, new path.
+    /// Refuses an empty name, a "/", a leading ".", or a name already there; nothing moves then.
+    @discardableResult
+    static func rename(_ entry: HomeEntry, to raw: String, in home: Home) throws -> HomeEntry {
+        let ext = (entry.path as NSString).pathExtension
+        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ext.isEmpty, (base as NSString).pathExtension.lowercased() == ext.lowercased() { base = (base as NSString).deletingPathExtension }
+        guard !base.isEmpty, !base.contains("/"), !base.hasPrefix(".") else { throw Failure.badName(raw) }
+        let dir = (entry.path as NSString).deletingLastPathComponent
+        let name = ext.isEmpty ? base : base + "." + ext
+        let path = dir.isEmpty ? name : dir + "/" + name
+        guard path != entry.path else { return entry }
+        let fm = FileManager.default
+        let source = file(entry, in: home), target = url(home).appendingPathComponent(path)
+        guard fm.fileExists(atPath: source.path) else { throw Failure.missing(entry.path) }
+        // a case-only change on a case-insensitive disk is the same file: allowed
+        if fm.fileExists(atPath: target.path), path.lowercased() != entry.path.lowercased() { throw Failure.taken(name) }
+        try fm.moveItem(at: source, to: target)
+        var renamed = entry
+        renamed.path = path
+        try forget(entry.path, in: home)
+        try record(renamed, in: home)
+        return renamed
+    }
+
+    /// The manifest's entry for a file in a home, recording it first if it was dropped in unrecorded.
+    static func entry(at path: String, in home: Home) throws -> HomeEntry {
+        if let e = index(home).first(where: { $0.path == path }) { return e }
+        let e = try entry(for: url(home).appendingPathComponent(path), in: home)
+        try record(e, in: home)
+        return e
     }
 
     /// Puts a trashed file back where it came from.
@@ -433,6 +471,23 @@ func homesSelftest() -> Bool {
         check(!fm.fileExists(atPath: Homes.file(again, in: .trash).path) && !Homes.index(.trash).contains { $0.path == again.path },
               "Delete forever, inside Trash, removes the named file")
     } catch { check(false, "remove / restore / delete forever", error) }
+
+    // rename: in place, same bytes, the manifest follows; a clash or a bad name moves nothing (FEAT-07 P0)
+    do {
+        try Data("aria bytes".utf8).write(to: Homes.url(.music).appendingPathComponent("aria.m4a"))
+        try Data("other".utf8).write(to: Homes.url(.music).appendingPathComponent("taken.m4a"))
+        let e = try Homes.entry(at: "aria.m4a", in: .music)
+        let r = try Homes.rename(e, to: "  Aria (live)  ", in: .music)
+        check(r.path == "Aria (live).m4a" && fm.fileExists(atPath: Homes.file(r, in: .music).path), "rename keeps the extension and trims", r.path)
+        check(!fm.fileExists(atPath: Homes.url(.music).appendingPathComponent("aria.m4a").path), "the old name is gone")
+        check(r.sha256 == e.sha256 && Homes.index(.music).contains(r) && !Homes.index(.music).contains { $0.path == "aria.m4a" },
+              "same SHA-256, the manifest follows")
+        check(try Homes.rename(r, to: "Aria (live).m4a", in: .music).path == r.path, "typing the extension adds no second one")
+        for bad in ["", " ", "a/b", ".hidden", "taken"] {
+            do { try Homes.rename(r, to: bad, in: .music); check(false, "refuses “\(bad)”", "it moved") }
+            catch { check(fm.fileExists(atPath: Homes.file(r, in: .music).path), "refuses “\(bad)”, nothing moved") }
+        }
+    } catch { check(false, "rename", error) }
 
     // carry C0: the manifest is every file in every home, and a move is verified, receipted and leaves the source
     do {

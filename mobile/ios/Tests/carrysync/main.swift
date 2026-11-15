@@ -10,6 +10,17 @@ let utc = TimeZone(identifier: "UTC")!
 let M = "library/Music", S = "library/Study", T = "trash"
 func f(_ h: String, _ p: String, _ sha: String) -> CarryFile { CarryFile(home: h, path: p, size: 1, sha256: sha) }
 
+// FEAT-07 P0 · a rename in the Music list (Homes.rename) is one move, so every paired device replays the new name
+do {
+    let ops = CarrySync.ops(last: [f(M, "Faili.m4a", "F")], now: [f(M, "Faili (live).m4a", "F")], trashOrigins: [:],
+                            device: "iphone", nextSeq: 1, at: 1)
+    check(ops.count == 1 && ops[0].op == .move && ops[0].path == "Faili.m4a" && ops[0].to == "Faili (live).m4a",
+          "a rename is one move: \(ops.map { "\($0.op) \($0.path) → \($0.to ?? "")" })")
+    let k = CarrySync.key(M, "Faili.m4a"), nk = CarrySync.key(M, "Faili (live).m4a")
+    check(CarrySync.decide(ops[0], local: [k: "F"], base: [:], deviceName: "Mac", zone: utc) == .move(from: k, to: nk),
+          "the other device renames it too")
+}
+
 // P2 · scan diff → ops
 do {
     let last = [f(M, "a.m4a", "A"), f(M, "b.m4a", "B"), f(S, "c.pdf", "C"), f(S, "d.md", "D1"), f(M, "gone.m4a", "G"),

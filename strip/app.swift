@@ -7085,6 +7085,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         watchPanelSwipes()
     }
 
+    @MainActor @objc func openLibrary() {
+        if #available(macOS 15, *) { MusicShelf.shared.show() }
+    }
+
     @MainActor func buildMenu() {
         let main = NSMenu()
 
@@ -7094,6 +7098,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
         let devices = NSMenuItem(title: "Devices", action: nil, keyEquivalent: "")
         devices.submenu = devicesMenu(); appMenu.addItem(devices)
+        // FEAT-07 P0: the Library (Music tile → tracks: play, pause, loop, rename, slide to delete), as on iPhone and iPad
+        let library = NSMenuItem(title: "Library…", action: #selector(openLibrary), keyEquivalent: "")
+        library.target = self; appMenu.addItem(library)
         appMenu.delegate = self                                   // rebuilds the hider's and devices' entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }

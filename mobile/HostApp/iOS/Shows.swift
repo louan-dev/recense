@@ -29,6 +29,7 @@ struct RecenseRoot: View {
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
         .onAppear {
             Playback.model = model
+            model.files = HomeFiles { Playback.rescan() }   // FEAT-07 P0: Rename and Delete on the rows
             NativePlayer.shared.saved = { [model] path in
                 Playback.rescan()
                 Playback.landed(path)

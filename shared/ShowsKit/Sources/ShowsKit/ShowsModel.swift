@@ -22,6 +22,15 @@ public extension Transport {
     func seek(to seconds: Double) {}
 }
 
+// Derived from Spec: FEAT-07 P0
+/// The file behind an episode, renamed or put in Trash: the host does it (shared/homes.swift on both apps), so a
+/// rename is a Carry move and a delete a Carry trash on every paired device. Nil: the rows offer neither.
+@MainActor public protocol EpisodeFiles: AnyObject {
+    func canChange(_ e: Episode) -> Bool
+    func rename(_ e: Episode, to name: String) throws
+    func delete(_ e: Episode) throws
+}
+
 public struct UpdatedShow: Identifiable, Hashable, Sendable {
     public var show: Show
     public var updated: Int64      // whole seconds
@@ -47,6 +56,14 @@ public final class ShowsModel {
     public var nowPlayingOpen = false
     public var problem: String?
     public weak var transport: Transport?
+    /// Rename and Delete for the rows (FEAT-07 P0); the host sets it.
+    public var files: EpisodeFiles?
+    /// Loop: the playing track starts again at its end (one track, never a list). The host's player reads it.
+    public var loopOne = false { didSet { if oldValue != loopOne { loopChanged?() } } }
+    /// Set by a host whose player loops by itself (the Mac's QuickTime); iOS reads `loopOne` at the track's end.
+    public var loopChanged: (() -> Void)?
+    /// The track whose Rename… alert is open.
+    public var renaming: Episode?
     /// The playing episode's transcript, as far as it has been heard (the app's ears fill it: shared/speechcore.swift),
     /// and a word on how that's going ("Hearing 2:00 to 4:00…", "This device can't hear Vietnamese offline.").
     public var transcript: [TranscriptLine] = []
@@ -133,6 +150,35 @@ public final class ShowsModel {
     public func togglePlay() {
         if let transport { transport.toggle() } else { nowPlayingOpen = true }
     }
+
+    /// Is this episode the one playing, and is it playing now (the row's capsule shows Pause then).
+    public func isPlaying(_ e: Episode) -> Bool { playing?.id == e.id && (transport?.isPlaying ?? false) }
+
+    /// The row's capsule: the playing track pauses or resumes; another track starts.
+    public func playOrPause(_ e: Episode) {
+        if playing?.id == e.id, let transport { transport.toggle() } else { play(e) }
+    }
+
+    public func canChange(_ e: Episode) -> Bool { files?.canChange(e) ?? false }
+
+    public func rename(_ e: Episode, to name: String) {
+        do {
+            try files?.rename(e, to: name)
+            if playing?.id == e.id { playing?.title = (name as NSString).deletingPathExtension }
+            changed()
+        } catch { problem = "\(error)" }
+    }
+
+    public func delete(_ e: Episode) {
+        do {
+            if playing?.id == e.id, transport?.isPlaying == true { transport?.toggle() }
+            try files?.delete(e)
+            changed()
+        } catch { problem = "\(error)" }
+    }
+
+    /// A file changed under the catalog: views reload (the host rescans the pool too).
+    public func changed() { revision += 1 }
 
     // MARK: the listener's marks (stamped, field by field)
 

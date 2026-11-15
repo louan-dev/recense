@@ -216,6 +216,13 @@ Recense is built for learning by ear, eye and rhythm together; each feature belo
 - **💡 Side Quest (the lightbulb left of the mic, Recense's own `lightbulb` symbol):** say a side quest, check it, and it
   goes into Calendar. While it listens, the bulb becomes a waveform.
 
+### Library › Music (FEAT-07 P0, 2026-11-15)
+Recense menu › **Library…** opens the same Library as the iPhone; tap **Music**. You get every track in `Recense/library/Music`.
+- **Play / Pause:** the capsule on each row (it plays in QuickTime; Recense's window follows it with the transcript). It shows a pause sign while that track plays.
+- **Loop:** in the row's ··· menu once the track plays. The capsule shows ⟲1 while it's on.
+- **Rename…:** in the ··· menu. The file is renamed and its extension kept, and the next Carry sync renames it on every paired device.
+- **Delete:** slide the row **left → right**, or ··· › Delete. The track goes to `Recense/trash/` and can be restored.
+
 ## Layout
 
 Recense lives in `strip/` of the one repo, `~/Developer/recense` (the folders beside it are on [the front page](../README.md)).

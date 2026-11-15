@@ -187,6 +187,13 @@ updates in place.
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).
 
+### Library › Music (FEAT-07 P0, 2026-11-15)
+Tap **Music** under Library › Recently Updated. You get every track in `Recense/library/Music`.
+- **Play / Pause:** the capsule on each row. It shows a pause sign while that track plays.
+- **Loop:** in the row's ··· menu once the track plays. The capsule shows ⟲1 while it's on.
+- **Rename…:** in the ··· menu. The file is renamed and its extension kept, and the next Carry sync renames it on every paired device.
+- **Delete:** slide the row **left → right**, or ··· › Delete. The track goes to `Recense/trash/` and can be restored.
+
 ## Gallery for the Mac (`macos/`, `HostApp/macOS/`; retiring: Recense Mac takes over)
 - The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and
   Select, Download to Downloads and native AirDrop.

@@ -5,12 +5,15 @@ import SwiftUI
 /// "▶ 43m", or "▶ ━━ 2m" with the part already heard.
 struct PlayCapsule: View {
     let entry: FeedEntry
+    var playing = false     // this track plays now: the capsule pauses it (FEAT-07 P0)
+    var looping = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "play.fill")
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                if looping { Image(systemName: "repeat.1").accessibilityLabel("Loop on") }
                 if let p = entry.progress {
                     ProgressView(value: p).frame(width: 44).tint(Theme.accent)
                 }
@@ -22,7 +25,7 @@ struct PlayCapsule: View {
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
-        .accessibilityLabel("Play \(entry.episode.title)")
+        .accessibilityLabel("\(playing ? "Pause" : "Play") \(entry.episode.title)")
     }
 }
 
@@ -40,7 +43,7 @@ struct EpisodeMenu: View {
     }
 }
 
-/// Play, Star, Played: the same list in the ··· menu, the context menu and the swipe actions.
+/// Play/Pause, Loop, Star, Played, Rename, Delete: the same list in the ··· menu, the context menu and the swipe actions.
 struct EpisodeActions: View {
     let model: ShowsModel
     let episode: Episode
@@ -48,12 +51,22 @@ struct EpisodeActions: View {
     var body: some View {
         let starred = episode.state?.isStarred ?? false
         let played = episode.state?.finishedAt != nil
-        Button { model.play(episode) } label: { Label("Play", systemImage: "play") }
+        let mine = model.playing?.id == episode.id
+        Button { model.playOrPause(episode) } label: {
+            model.isPlaying(episode) ? Label("Pause", systemImage: "pause") : Label("Play", systemImage: "play")
+        }
+        if mine {
+            Toggle(isOn: Binding(get: { model.loopOne }, set: { model.loopOne = $0 })) { Label("Loop", systemImage: "repeat.1") }
+        }
         Button { Task { await model.setStarred(!starred, for: episode) } } label: {
             Label(starred ? "Remove from Saved" : "Save", systemImage: starred ? "bookmark.slash" : "bookmark")
         }
         Button { Task { await model.setFinished(!played, for: episode) } } label: {
             Label(played ? "Mark as Unplayed" : "Mark as Played", systemImage: played ? "circle" : "checkmark.circle")
+        }
+        if model.canChange(episode) {
+            Button { model.renaming = episode } label: { Label("Rename…", systemImage: "pencil") }
+            Button(role: .destructive) { model.delete(episode) } label: { Label("Delete", systemImage: "trash") }
         }
     }
 }
