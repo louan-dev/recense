@@ -228,7 +228,7 @@ strip/
   recense.swift      Recense: players, transcripts, light, editor, export
   keephome.swift     where transcripts live (~/Recense/keep), the move out of the cache (recense selftest)
   soundengine.swift  process tap and EQ/Key/Space chain
-  appear.swift       the app ear: any app's sound, transcribed live on this Mac (recense hear-app, recense selftest)
+  appear.swift       the app ear: any app's sound, transcribed live on this Mac (recense hear-app, recense selftest); also an iPhone's AirPlay cast, heard as "AirPlay" (macOS AirPlay Receiver on)
   cadence.swift      the karaoke light's timing
   prosody.swift      prosody notation
   speech.swift       on-device transcription (SpeechAnalyzer): the Mac's choices (open ears, canon, lexicon)
