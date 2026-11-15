@@ -1,7 +1,7 @@
 # FEAT-09 · Carry between devices: pair once, then the same homes everywhere
 
 From: owner 2026-11-11 (carry, `.handoff/places/INBOX.md` L29–47) · owner 2026-11-14 (stable core for music and
-self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P2/P3 rules built)
+self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing core, P2/P3 rules built; link and glue next)
 
 ## Why
 Your music, study files and downloads must be the same on the Mac, iPhone and iPad, with no internet and no
@@ -24,13 +24,20 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 
 ### P1 · Pair once (numeric comparison, as Bluetooth does)
 - Each device holds one long-term key pair (CryptoKit Curve25519), in the Keychain, this device only.
-- "Pair a device" (button, menu item, voice) on both: they exchange public keys over the link and each computes
-  `code = SHA-256("recense.pair.v1" ‖ both public keys, sorted ‖ shared secret)` → first 4 bytes mod 1,000,000,
-  shown as 6 digits. You tap "They match" on both screens. Nothing is typed, nothing to guess offline.
-- Then the group secret (32 random bytes, made once by the first device ever paired) is sent sealed with a key
-  derived from the shared secret (HKDF-SHA256, info `recense.group.v1`), and kept in each Keychain.
+- "Pair a device" (button, menu item, voice) on both: they exchange public keys over the link. The side with the
+  greater key commits first: `SHA-256("recense.pair.commit.v1" ‖ its key ‖ other key ‖ its nonce)`; the other
+  reveals its nonce only after the commitment arrives; then the committer reveals and is checked. Each computes
+  `code = SHA-256("recense.pair.v1" ‖ revealer key ‖ its nonce ‖ committer key ‖ its nonce ‖ shared secret)` →
+  first 4 bytes mod 1,000,000, shown as 6 digits. You tap "They match" on both screens. Nothing is typed.
+  Why the commitment: without it a device in the middle could try keys until both codes match (a million tries
+  takes seconds); with it, it gets one guess in a million (Bluetooth Secure Simple Pairing does the same).
+- Then the group secret (32 random bytes) is sent sealed (ChaChaPoly) with a key derived from the shared secret
+  (HKDF-SHA256, salt = the pairing transcript, info `recense.group.v1`), and kept in each Keychain. The device
+  that has a group sends it; if neither has one, the committer makes it. Two devices already in different groups
+  are refused (compared by an HMAC fingerprint; neither secret crosses the link).
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
-- **Invariant:** a device not in `peers.json` gets no session (its invitation carries a signed nonce; checked).
+- **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
+  under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).
 
 ### P2 · What changed: one append-only log per device
 - `Recense/.carry/ops/<device>.jsonl`; each line: `seq, device, at, op, home, path, toHome?, to?, sha256, size`
@@ -75,12 +82,15 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 
 ## Code layout
 - `shared/carrysync.swift`: P2 + P3, pure Swift, no radios (ops, scan diff, settling, conflict names).
+- `shared/carrypair.swift`: P1's messages, code, group sealing and invitation proof; pure (CryptoKit), no radios.
 - `shared/p2ptransport.swift`: FEAT-02 link + P1 pairing.
 - Glue only in `strip/` and `mobile/HostApp/iOS/` (the Devices screen).
 
 ## Done checks
 - `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`
-  (ALL OK), then `strip/recense selftest` once the glue lands: the P2/P3 rules (scan diff → ops; every settling case above; no delete op exists;
+  (ALL OK); `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"`
+  (ALL OK: same code on both, a device in the middle never matches in 300 runs, forged nonce and stranger refused);
+  then `strip/recense selftest` once the glue lands: the P2/P3 rules (scan diff → ops; every settling case above; no delete op exists;
   replay twice = no change; conflict names; markdown merge keeps both sides' lines).
 - `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest).
 - Real devices, airplane mode on with Wi-Fi and Bluetooth on: a song added on the iPad plays on the iPhone and the
