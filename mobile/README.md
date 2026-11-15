@@ -38,6 +38,11 @@ updates in place.
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
 - **Lock Screen and Control Center** (BUG-09, 11-14, `NowPlayingInfo.swift`): our player shows its title, folder and a
   time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
+- **The floating window follows our player** (BUG-10, 11-14): leave Recense while a file plays and the window shows
+  that file's transcript, each word lit at its time in the file, its translation under it (FEAT-10); before, Recense's
+  own sound didn't count as playing and the window rested as a black strip. While the player holds a file and no
+  broadcast hears, the audio session is the player's (Lock Screen controls stay); otherwise it mixes under other apps
+  (`NativePlayer.session`).
 - **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
   each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
   ··· menu; Apple's on-device Translation does the work, once a language pair is installed.

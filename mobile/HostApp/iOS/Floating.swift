@@ -77,7 +77,10 @@ enum Floating {
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12
     /// 12:50:52-12:51:36, T-0041: the window never rested), so while the broadcast hears, its last real sound decides.
     static let soundGone = 0.4
-    static func playing(flag: Bool, hearing: Bool, soundAgo: Double?) -> Bool {
+    /// `own`: Recense's own player is playing (BUG-10): iOS never reports an app's own sound as "other", so without
+    /// it the window read Recense's player as quiet and rested black (iPhone log 11-14 17:02:34-17:12:34).
+    static func playing(flag: Bool, hearing: Bool, soundAgo: Double?, own: Bool = false) -> Bool {
+        if own { return true }
         guard flag else { return false }
         guard hearing, let ago = soundAgo else { return true }
         return ago < soundGone

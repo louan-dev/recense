@@ -74,4 +74,11 @@ if !Floating.playing(flag: true, hearing: true, soundAgo: 0.1) { bad += 1; print
 if !Floating.playing(flag: true, hearing: false, soundAgo: nil) { bad += 1; print("FAIL no broadcast: iOS flag decides") }
 if Floating.playing(flag: false, hearing: true, soundAgo: 0.1) { bad += 1; print("FAIL flag off yet playing") }
 
+// Regression guard: BUG-10 (iPhone 11-14: Recense's own player read as quiet, so the window rested black for 10 min)
+if !Floating.playing(flag: false, hearing: false, soundAgo: nil, own: true) { bad += 1; print("FAIL own player playing is not playing") }
+if !Floating.playing(flag: true, hearing: true, soundAgo: 9, own: true) { bad += 1; print("FAIL own player loses to an old broadcast sound") }
+if Floating.playing(flag: false, hearing: false, soundAgo: nil, own: false) { bad += 1; print("FAIL own player paused still playing") }
+check("own player behind, open", Floating.decide(now(playing: Floating.playing(flag: false, hearing: false, soundAgo: nil, own: true), open: true)), .none)
+if Floating.rest(front: false, open: true, reopens: false, quiet: 0, paused: false) { bad += 1; print("FAIL own player playing rests") }
+
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")

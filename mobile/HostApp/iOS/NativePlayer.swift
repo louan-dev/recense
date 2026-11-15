@@ -44,9 +44,18 @@ final class NativePlayer: Transport {
     }
 
     private func play() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        Self.session(hearing: Listener.shared.hearing)
         try? AVAudioSession.sharedInstance().setActive(true)
         player.play()
+    }
+    /// One rule for the app's audio session (BUG-10), set by the player, the floating window and Listen: while our
+    /// player holds a file and no broadcast hears, the player's (it takes the sound, as any player does, and iOS keeps
+    /// its Lock Screen controls, BUG-09, even paused); otherwise mixed under other apps, so the window's silent
+    /// keep-awake sound never stops another app. Before, each set its own and the last one won.
+    static func session(hearing: Bool) {
+        let s = AVAudioSession.sharedInstance()
+        if shared.path != nil && !hearing { try? s.setCategory(.playback, mode: .spokenAudio) }
+        else { try? s.setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers) }
     }
     private func refresh() {
         let on = player.timeControlStatus != .paused

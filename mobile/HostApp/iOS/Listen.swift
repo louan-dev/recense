@@ -71,7 +71,7 @@ final class Listener: NSObject, ObservableObject {
     @Published var error: String?
     // S3b (ListenEars.swift): which ear hears now, where the sound goes, the one Pause (kept across launches), and the
     // once-per-stop "Tap once to keep hearing"
-    @Published var ear: Ears.Ear = .none { didSet { if ear != oldValue { draw() } } }  // the empty frame says which: listening, paused, off
+    @Published var ear: Ears.Ear = .none { didSet { if ear != oldValue { NativePlayer.session(hearing: hearing); draw() } } }  // the empty frame says which: listening, paused, off
     @Published var route: Ears.Route = .speaker
     @Published var paused = UserDefaults.standard.bool(forKey: "listen.paused") { didSet { if paused != oldValue { draw() } } }
     @Published var prompting = false
@@ -936,7 +936,7 @@ final class Listener: NSObject, ObservableObject {
     // made once the layer is in a window, so it is ready (possible) before the user leaves the app
     func makePiP() {
         guard pip == nil, AVPictureInPictureController.isPictureInPictureSupported() else { return }
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers)
+        NativePlayer.session(hearing: hearing)   // BUG-10: one rule with the player, not the last one set
         try? AVAudioSession.sharedInstance().setActive(true)
         if layer.controlTimebase == nil {
             var tb: CMTimebase?
@@ -993,7 +993,10 @@ final class Listener: NSObject, ObservableObject {
         }
         let s = AVAudioSession.sharedInstance()
         let playing = Floating.playing(flag: s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint, hearing: hearing,
-                                       soundAgo: Captions.state().sound.map { Date().timeIntervalSince($0) })   // T-0041
+                                       soundAgo: Captions.state().sound.map { Date().timeIntervalSince($0) },   // T-0041
+                                       own: NativePlayer.shared.isPlaying)   // BUG-10
+        // Learn's two places follow the player's line as they follow the broadcast's
+        if own, let p = shown().place, p != ownPlace { ownPlace = p; changed() }
         // iPad windows: another app's window can cover Recense while it stays active (11-10 iPad log: "front playing" for
         // 2 min under a full-screen Firefox), so in front also needs the focus; active without it may start the window
         let active = UIApplication.shared.applicationState == .active
@@ -1093,9 +1096,10 @@ final class Listener: NSObject, ObservableObject {
     private var animating = false
 
     private func changed() {
-        let p = episode?.place ?? 0
-        for j in [p - 1, p] where j >= 0 && j < sentences.count {
-            let s = sentences[j], k = j % 2
+        let (all, place) = shown()
+        let p = place ?? 0
+        for j in [p - 1, p] where j >= 0 && j < all.count {
+            let s = all[j], k = j % 2
             if slots[k].now?.id != s.id { slots[k] = Slot(now: s, was: slots[k].now, since: Date()); animate() }
             else { slots[k].now = s }
             if j < p, slots[k].heard == nil { slots[k].heard = Date(); animate() }
@@ -1142,13 +1146,13 @@ final class Listener: NSObject, ObservableObject {
             layer.enqueue(sb); drawnKey = "rest"; drawnAt = Date()
             return
         }
-        let wall = Date(), nowL = wall.timeIntervalSince1970 - lag
-        let (rows, note) = frame(at: wall)
+        let wall = Date(), lagNow = clockLag(), nowL = wall.timeIntervalSince1970 - lagNow
+        let (rows, note) = frame(at: wall, lag: lagNow)
         let key = Self.key(rows, note), shape = Self.key(rows.map(\.unlit), note)
         // a picture stamped ahead that's on screen by now already shows this
         if let shown = queued.last(where: { $0.at <= nowL }) { drawnKey = shown.key; drawnAt = wall }
         queued.removeAll { $0.at <= nowL }
-        let stale = shape != queuedShape || abs(lag - queuedLag) > 0.008
+        let stale = shape != queuedShape || abs(lagNow - queuedLag) > 0.008
         let since = wall.timeIntervalSince(drawnAt)
         if key != drawnKey || since >= 1 || stale {
             if since < 0.1 {
@@ -1159,7 +1163,7 @@ final class Listener: NSObject, ObservableObject {
             }
             guard let sb = picture(rows, note, at: nil) else { return }
             if layer.status == .failed || !queued.isEmpty || stale { layer.flush() }   // keeps the picture on screen
-            queued = []; queuedShape = shape; queuedLag = lag
+            queued = []; queuedShape = shape; queuedLag = lagNow
             drawnKey = key; drawnAt = wall
             layer.enqueue(sb)
         }
@@ -1167,7 +1171,7 @@ final class Listener: NSObject, ObservableObject {
         let starts = rows.filter(\.on).flatMap { $0.line.words.map(\.start) }
         let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
         for at in Floating.onsets(starts, after: queued.last?.at ?? nowL) where at - nowL > 0.004 {
-            let (r, n) = frame(at: Date(timeIntervalSince1970: at + lag + 0.0005))
+            let (r, n) = frame(at: Date(timeIntervalSince1970: at + lagNow + 0.0005), lag: lagNow)
             guard let sb = picture(r, n, at: host + (at - nowL)) else { break }
             layer.enqueue(sb)
             queued.append((at, Self.key(r, n)))
@@ -1195,14 +1199,19 @@ final class Listener: NSObject, ObservableObject {
 
     /// What the window shows now: Follow, the sentence before (quiet) and the one being heard (lit as it's said, its
     /// translation under it); Learn, two places taking turns, each sentence dissolving into its translation once heard.
-    private func frame(at wall: Date = Date()) -> ([FloatingCaption.Row], String?) {
-        guard let p = episode?.place, p < sentences.count else {
+    private func frame(at wall: Date = Date(), lag clock: Double? = nil) -> ([FloatingCaption.Row], String?) {
+        let (sentences, place) = shown()
+        guard let p = place, p < sentences.count else {
+            if own { return ([], Playback.model?.transcriptNote ?? "No transcript yet") }   // "Hearing Français on this device…"
             return ([], hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off")
         }
-        let two = config != nil, now = wall.timeIntervalSince1970 - lag
+        // our player's lines carry their translation already (FEAT-10); the broadcast's need Listen's translator
+        let mine = own, two = mine || config != nil, now = wall.timeIntervalSince1970 - (clock ?? clockLag())
         func line(_ s: Sentence, said: Bool) -> TranscriptLine {
-            // the window is drawn on the wall clock (its frames are scheduled by word onsets): words go back to it
-            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard, words: anchor.map { $0.wall(s.words ?? []) } ?? s.words ?? [],
+            // the broadcast's window is drawn on the wall clock (its frames are scheduled by word onsets): words go back
+            // to it; our player's words stay on the file's clock, which clockLag() maps the window onto
+            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard,
+                           words: mine ? s.words ?? [] : anchor.map { $0.wall(s.words ?? []) } ?? s.words ?? [],
                            translation: said && two && !s.said.isEmpty ? s.said : nil)
         }
         if look == "learn" {
@@ -1222,6 +1231,32 @@ final class Listener: NSObject, ObservableObject {
         let savedNote = wall.timeIntervalSince(savedNoteAt) < 2.5 ? "Note saved" : nil
         return (rows, savedNote)
     }
+
+    // MARK: what the window shows (BUG-10)
+    // Derived from Spec: BUG-10
+
+    /// Recense's own player while it plays, or while it holds a heard file and no broadcast hears; else the broadcast.
+    private var own: Bool {
+        let p = NativePlayer.shared
+        return p.isPlaying || (!hearing && p.path != nil && !(Playback.model?.transcript.isEmpty ?? true))
+    }
+    private var ownPlace: Int?
+    private var ownCache: (key: String, all: [Sentence]) = ("", [])
+    /// The sentences the window draws from and the one being heard: our player's transcript lines at its time (each
+    /// as a Sentence, its translation as `said`), else Listen's episode.
+    private func shown() -> (all: [Sentence], place: Int?) {
+        guard own else { return (sentences, episode?.place) }
+        guard let lines = Playback.model?.transcript, let a = lines.first, let b = lines.last else { return ([], nil) }   // still being heard
+        let key = "\(lines.count)|\(a.id)|\(b.id)|\(lines.reduce(0) { $0 + ($1.translation?.count ?? 0) })"
+        if key != ownCache.key {
+            ownCache = (key, lines.map { Sentence(id: $0.id, heard: $0.text, said: $0.translation ?? "", at: $0.start, t: $0.start, words: $0.words) })
+        }
+        let t = NativePlayer.shared.time
+        return (ownCache.all, lines.lastIndex { $0.start <= t } ?? 0)
+    }
+    /// The window's clock offset: the broadcast's lag behind the voice; for our player, wall − player time, so each
+    /// word lights at its own time in the file, and a seek or a pause redraws (the offset moves, so pictures go stale).
+    private func clockLag() -> Double { own ? Date().timeIntervalSince1970 - NativePlayer.shared.time : lag }
 
     /// The resting window: a thin dark strip (PiP sizes the window to the picture's shape).
     private static func restPicture() -> CMSampleBuffer? {
