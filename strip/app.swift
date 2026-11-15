@@ -6773,6 +6773,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         return w
     }()
     lazy var menuBar = MenuBarUsage()
+    /// Derived from Spec: FEAT-15 — the Bose bridge (strip/bosebridge.swift): one pair of headphones, many sources.
+    lazy var bose = BoseBridge()
     lazy var spatial = SpatialController(strip: rest)
     weak var cardRoot: NSView?
     /// The card wears the menu bar's own color (sampled from the bar just beside the strip, under Recense's windows),
@@ -6805,6 +6807,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
+        bose.start()                         // the headphone route follows what is plugged in (bosebridge.swift, FEAT-15)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
 
         buildMenu()
@@ -6905,6 +6908,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
 
     func applicationWillTerminate(_ n: Notification) {
+        bose.stop()                          // speakers it muted are unmuted before we go (FEAT-15)
         gestures?.end()
         saveNow()
         try? FileManager.default.removeItem(atPath: statePath)
@@ -7094,6 +7098,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
         let devices = NSMenuItem(title: "Devices", action: nil, keyEquivalent: "")
         devices.submenu = devicesMenu(); appMenu.addItem(devices)
+        let bridge = NSMenuItem(title: "Bose Bridge", action: nil, keyEquivalent: "")   // FEAT-15
+        bridge.submenu = bose.menu(); appMenu.addItem(bridge)
         appMenu.delegate = self                                   // rebuilds the hider's and devices' entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }
@@ -8129,8 +8135,15 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
-    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s ? 0 : 1)
+    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), t = boseBridgeSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t ? 0 : 1)
+}
+
+// Derived from Spec: FEAT-15
+// `recense symphonies <file> [more files…]`: two or more pieces at once through the one output the headphones can
+// receive, the first in the left ear, the second in the right. Local files only, no network.
+if CommandLine.arguments.dropFirst().first == "symphonies" {
+    MainActor.assumeIsolated { runSymphoniesCLI(Array(CommandLine.arguments.dropFirst(2))) }
 }
 
 // Derived from Spec: FEAT-06
@@ -8295,6 +8308,7 @@ extension App: NSMenuDelegate {
     @MainActor func menuNeedsUpdate(_ menu: NSMenu) {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
         menu.items.first { $0.title == "Devices" }?.submenu = devicesMenu()
+        menu.items.first { $0.title == "Bose Bridge" }?.submenu = { bose.symphonies.tick(); return bose.menu() }()
         menu.items.first { $0.title == "Connect To" }?.submenu = sshMenu()
         // The wing entries say Show or Hide as the wings are now.
         if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {

@@ -37,6 +37,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-09 · Carry between devices: pair once, then the same homes everywhere · `[~]` pairing + "Carry Now" push built and wired (Mac + iOS Devices screens, Mac Terminal `recense carry pair`, iOS voice/Shortcuts); full P2/P3 settling replay not yet wired · owner 2026-11-11 + 11-14, T-0035, T-0047 · `shared/carrysync.swift`, `shared/carrypair.swift`, `shared/carrymanager.swift`, `mobile/HostApp/iOS/PairIntent.swift`
 - FEAT-10 · Translate the transcript as it plays (English, Tiếng Việt, Français), on the device · `[~]` iOS built, device check owed · T-0068 · `shared/translateplan.swift`, `mobile/HostApp/iOS/Translate.swift`
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
+- FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 
 ### Bugs
