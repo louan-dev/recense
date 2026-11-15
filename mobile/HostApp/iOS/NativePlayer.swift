@@ -4,6 +4,7 @@
 // saved here, so the next play needs no network and the ears can hear it.
 import SwiftUI
 import AVFoundation
+import MediaPlayer
 import ShowsKit
 
 @MainActor @Observable
@@ -17,12 +18,14 @@ final class NativePlayer: Transport {
     @ObservationIgnored private var saving: URLSessionDownloadTask?
     /// Called when a file's copy lands on this device (the ears can hear it now).
     @ObservationIgnored var saved: ((String) -> Void)?
+    @ObservationIgnored private var publishedDuration: Double?
 
     private init() {
         // a quarter-second refresh of the play state for the buttons; the transcript reads `time` itself, every frame
         tick = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 4), queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
+        remote()
     }
 
     // MARK: Transport
@@ -35,7 +38,9 @@ final class NativePlayer: Transport {
     func toggle() { isPlaying ? player.pause() : play(); refresh() }
     func skip(_ seconds: Double) { seek(to: max(0, time + seconds)) }
     func seek(to seconds: Double) {
-        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor in self?.publish() }
+        }
     }
 
     private func play() {
@@ -43,7 +48,44 @@ final class NativePlayer: Transport {
         try? AVAudioSession.sharedInstance().setActive(true)
         player.play()
     }
-    private func refresh() { let on = player.timeControlStatus != .paused; if on != isPlaying { isPlaying = on } }
+    private func refresh() {
+        let on = player.timeControlStatus != .paused
+        if on != isPlaying { isPlaying = on; publish() }
+        if duration != publishedDuration { publish() }   // the duration arrives a moment after open
+    }
+
+    // MARK: Lock Screen, Control Center, headphones (BUG-09)
+
+    /// Tells iOS what plays and where, so the Lock Screen draws the title and the scrubber.
+    private func publish() {
+        publishedDuration = duration
+        guard let path else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = NowPlayingInfo.info(path: path, time: time, duration: duration, playing: isPlaying)
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+    }
+
+    /// The system's buttons drive this player: play, pause, ⏯, ±15/30 s, and dragging the scrubber.
+    private func remote() {
+        let c = MPRemoteCommandCenter.shared()
+        // handlers may arrive off the main thread: hop to it, never assume it
+        func on(_ cmd: MPRemoteCommand, _ act: @escaping @MainActor (NativePlayer, MPRemoteCommandEvent) -> Void) {
+            cmd.addTarget { [weak self] e in
+                guard let self else { return .commandFailed }
+                Task { @MainActor in act(self, e) }
+                return .success
+            }
+        }
+        on(c.playCommand) { p, _ in if !p.isPlaying { p.toggle() } }
+        on(c.pauseCommand) { p, _ in if p.isPlaying { p.toggle() } }
+        on(c.togglePlayPauseCommand) { p, _ in p.toggle() }
+        c.skipBackwardCommand.preferredIntervals = [NSNumber(value: NowPlayingInfo.skipBack)]
+        on(c.skipBackwardCommand) { p, _ in p.skip(-NowPlayingInfo.skipBack) }
+        c.skipForwardCommand.preferredIntervals = [NSNumber(value: NowPlayingInfo.skipForward)]
+        on(c.skipForwardCommand) { p, _ in p.skip(NowPlayingInfo.skipForward) }
+        on(c.changePlaybackPositionCommand) { p, e in
+            if let e = e as? MPChangePlaybackPositionCommandEvent { p.seek(to: e.positionTime) }
+        }
+    }
 
     // MARK: Opening a file
 
@@ -62,6 +104,7 @@ final class NativePlayer: Transport {
         }
         play()
         refresh()
+        publish()
     }
 
     /// Saves the file to Recense/downloads/<path> while it streams (a file over 2 GB stays streamed only).

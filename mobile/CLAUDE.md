@@ -25,6 +25,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   has none) lacks System Settings › Privacy & Security › Screen & System Audio Recording; say so and ask the owner to check.
 - Caption seek (`shared/CaptionSeek.swift`), after any change to it or to `shared/fingerprint.swift`:
   `swiftc -O shared/fingerprint.swift shared/CaptionSeek.swift mobile/ios/Tests/captionseek/main.swift -o "$TMPDIR/captionseek" && "$TMPDIR/captionseek"` (ALL OK).
+- The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
+  `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
 - The broadcast's clock (`HostApp/iOS/SoundClock.swift`: t0 from the sound's stamps, pauses kept), after any change to it or to `SampleHandler.processSampleBuffer`:

@@ -36,6 +36,8 @@ updates in place.
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
   skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place,
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
+- **Lock Screen and Control Center** (BUG-09, 11-14, `NowPlayingInfo.swift`): our player shows its title, folder and a
+  time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
 - **Our player** (player P1 S2, 11-13, `NativePlayer.swift`): an audio or video file tapped in the Archive plays
   here, in Now Playing, opened on its transcript; other files keep the page viewer. Bytes come from this device first
   (`Recense/<path>`, else `Recense/downloads/<path>`); else the Worker streams them (`/main/api/fp/archive/content`,

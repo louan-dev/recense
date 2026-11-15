@@ -43,6 +43,7 @@ Row: ID · title · status · From · code pointer
 - BUG-06 · Draftpad ink ignores touch (iPhone has no Pencil, so annotation never worked there) · `[~]` (fixed, device check owed) · T-0023 · `bugs/BUG-06-mobile-ink-touch-blocked.md`
 - BUG-07 · Ink anchors to the wrong line (hard-coded 28px vs. the real line height) · `[~]` (fixed, device check owed) · T-0014 · `bugs/BUG-07-ink-anchor-line-height.md`
 - BUG-08 · The document moved while the owner was dragging a selection (highlight not what was dragged; caret wrong after Delete) · `[~]` (fixed, device check owed) · T-0028 · `bugs/BUG-08-drag-selection-moved.md`
+- BUG-09 · No Lock Screen scrubber for Recense's own player on iOS (no Now Playing info, no remote commands) · `[~]` (fixed, device check owed) · T-0067 · `bugs/BUG-09-no-lock-screen-scrubber.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations
