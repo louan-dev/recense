@@ -23,7 +23,7 @@ public struct ShowsRoot<Player: View>: View {
     public var body: some View {
         tabs
             .modifier(MiniPlayerHost(model: model))
-            .sheet(isPresented: $model.nowPlayingOpen) { NowPlaying(model: model, player: player) }
+            .sheet(isPresented: $model.nowPlayingOpen) { NowPlaying(model: model, player: player).modifier(Minimizable()) }
             .task { await model.run() }
             .alert("Couldn't do that", isPresented: Binding(get: { model.problem != nil }, set: { if !$0 { model.problem = nil } })) {
                 Button("OK") { model.problem = nil }
@@ -175,5 +175,19 @@ public struct LibraryShelf: View {
             } message: { Text(model.problem ?? "") }
             .task { await model.run() }
             .tint(Theme.accent)
+    }
+}
+
+// Derived from Spec: FEAT-07 (the pill full screen and minimized)
+/// Now Playing at full height or at half (the transcript keeps following and the pill keeps working at either);
+/// drag the grabber, or tap it, to change.
+struct Minimizable: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        #else
+        content
+        #endif
     }
 }

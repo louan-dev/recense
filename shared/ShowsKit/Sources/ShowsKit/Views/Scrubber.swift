@@ -8,6 +8,11 @@
 // Added for the bar (owner, 11-08): a tap jumps to that place. Elapsed on the left, remaining on the right.
 // VoiceOver: an adjustable value, 15 s a step. Reduce Motion: the bar doesn't grow while held.
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 /// The rules, apart from the view, so they can be tested.
 public enum ScrubMath {
@@ -34,6 +39,21 @@ final class ScrubState: ObservableObject {
     @Published var landed: Double?        // the time landed on, shown for a moment
     var t0 = 0.0, x0 = 0.0, level = 0, lastSeek = Date.distantPast, pending: DispatchWorkItem?, hide: DispatchWorkItem?
     var moved = false
+    var lastDetent = Date.distantPast
+}
+
+/// The detent on this device: the iPhone's Taptic Engine, the Mac's trackpad; at most one each 40 ms (rule 5).
+/// Follows the system's haptics switch by itself (rule 6). A haptic never carries meaning alone (the marks show it).
+enum Haptic {
+    @MainActor static func play(_ d: TranscriptFind.Detent, state: ScrubState) {
+        guard Date().timeIntervalSince(state.lastDetent) >= 0.04 else { return }
+        state.lastDetent = Date()
+        #if os(iOS)
+        UIImpactFeedbackGenerator(style: d == .strong ? .heavy : d == .medium ? .medium : .light).impactOccurred()
+        #elseif os(macOS)
+        NSHapticFeedbackManager.defaultPerformer.perform(d == .light ? .generic : d == .medium ? .alignment : .levelChange, performanceTime: .now)
+        #endif
+    }
 }
 
 struct Scrubber: View {
@@ -42,10 +62,15 @@ struct Scrubber: View {
     let duration: Double
     let seek: (Double) -> Void
     @ObservedObject var state: ScrubState
+    /// FEAT-07: search hits as places on the track (rule 1), and the detent felt sliding across a place (rules 2, 5).
+    var marks: [Double] = []
+    var detent: ((Double, Double) -> TranscriptFind.Detent?)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(now: Double, time: @escaping () -> Double?, duration: Double, seek: @escaping (Double) -> Void, state: ScrubState) {
+    init(now: Double, time: @escaping () -> Double?, duration: Double, seek: @escaping (Double) -> Void, state: ScrubState,
+         marks: [Double] = [], detent: ((Double, Double) -> TranscriptFind.Detent?)? = nil) {
         self.now = now; self.time = time; self.duration = duration; self.seek = seek; self.state = state
+        self.marks = marks; self.detent = detent
     }
 
     public var body: some View {
@@ -57,6 +82,10 @@ struct Scrubber: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.25))
                     Capsule().fill(.white.opacity(0.85)).frame(width: max(h, g.size.width * f))
+                    ForEach(Array(marks.enumerated()), id: \.offset) { _, m in
+                        Capsule().fill(Theme.accent).frame(width: 3, height: h + 8)
+                            .offset(x: duration > 0 ? g.size.width * min(1, max(0, m / duration)) - 1.5 : 0)
+                    }
                 }
                 .frame(height: h)
                 .frame(maxHeight: .infinity)
@@ -96,6 +125,7 @@ struct Scrubber: View {
                 let lvl = ScrubMath.level(up: max(0, -v.translation.height), unit: 44, duration: duration)
                 if lvl != state.level { state.t0 = state.held ?? state.t0; state.x0 = v.location.x; state.level = lvl }  // rezoom where you are
                 let t = ScrubMath.time(t0: state.t0, dx: v.location.x - state.x0, width: width, duration: duration, level: state.level)
+                if let d = detent?(state.held ?? t, t) { Haptic.play(d, state: state) }
                 state.held = t
                 apply(t)
             }

@@ -84,3 +84,18 @@ From: owner 2026-11-15 (screenshot: Library › Recently Updated › **Music**, 
 2. `carrysync` test: a rename between two scans is one `move` op.
 3. The device: the Music tile on iPhone and iPad (iPhone Mirroring) and on the Mac. Delete, rename, loop and play/pause work,
    and the rename shows on the other device after Carry Now.
+
+## P1–P2 as built (2026-11-15): the pill
+- Changed from "tap → search, hold → scrub" (above). The scrubber keeps its own touch, so a tap or slide still seeks
+  (rule 7 and Scrubber's tap-to-jump). Find opens from the pill's **magnifier** (or ··· › Find in Transcript…). In Find,
+  a 0.35 s hold or the **waveform** button goes back to scrubbing.
+- Find: case and accents ignored (đ = d), over the words and the translation, recomputed as lines arrive
+  (`TranscriptFind`). The count reads "2 of 5". ⌃/⌄ go to the previous/next match: it plays from there and the view keeps
+  following the voice. With no player (Listen), it scrolls there instead.
+- Hits are accent marks on the scrubber's track. Sliding across one plays the strong detent, a chapter the medium, a line the light.
+  At most one each 40 ms. iPhone: Taptic Engine. Mac: trackpad.
+- Now Playing opens at full height or half ("minimized"); the transcript and the pill work at both.
+- Translation follows the voice (FEAT-10): `TranslationCadence`. Word j of m takes the time of source word ⌊j·n/m⌋,
+  so the voice's pauses carry into the translation. With no word times, the words are spread evenly over the line.
+- P1–P2 done checks: ShowsKit `TranscriptFindTests` and `TranslationCadenceTests` pass. On the iPhone, Find works while
+  the transcript arrives and autoscrolls, at both heights.

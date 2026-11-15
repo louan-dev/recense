@@ -194,6 +194,14 @@ Tap **Music** under Library › Recently Updated. You get every track in `Recens
 - **Rename…:** in the ··· menu. The file is renamed and its extension kept, and the next Carry sync renames it on every paired device.
 - **Delete:** slide the row **left → right**, or ··· › Delete. The track goes to `Recense/trash/` and can be restored.
 
+### The search pill and the translation that follows the voice (FEAT-07 P1–P2, FEAT-10; 2026-11-15)
+- **Find:** in Now Playing's transcript, tap the 🔍 at the left of the pill (or the transcript menu › Find in Transcript…).
+  Type two letters or more. Accents and case don't matter ("viet" finds "Việt"). ⌃ ⌄ go to the previous or next match and
+  play from there, and the view keeps following the voice. To scrub again, tap the waveform or hold the pill for 0.35 s.
+- **Marks and detents:** matches show as marks on the scrubber, and sliding across one gives a firm tap (lines a light one).
+- **Two sizes:** drag Now Playing down to half height (minimized); the transcript and the pill keep working.
+- **Translation:** the translated line lights word by word at the pace of the original voice, pauses included.
+
 ## Gallery for the Mac (`macos/`, `HostApp/macOS/`; retiring: Recense Mac takes over)
 - The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and
   Select, Download to Downloads and native AirDrop.
