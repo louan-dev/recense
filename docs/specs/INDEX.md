@@ -53,6 +53,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-07 · 21 · 22 · 23 open questions (seven choices for the owner) and the build order · owner to answer · 2026-11-16 · `FEAT-21-23-open-questions.md`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 - FEAT-18 · Offline Recense hub: `https://recense.local` served by our own Mac (own root, Bonjour, Draftpad + note sync; H2 library, H3 standby) · `[~]` H1 building · owner 2026-11-16 · `FEAT-18-offline-hub.md`; `hub/`, `editor/src/hubsync.js`
+- FEAT-13 · Show page file actions ("+" adds, ··· Move to… / Remove, row thumbnails; via app FileActions over Homes) · `[ ]` · owner 2026-11-10 loop, UI-02 · `shared/ShowsKit/Sources/ShowsKit/Views/ShowPage.swift`, `Cards.swift`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
