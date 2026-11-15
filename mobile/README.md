@@ -38,6 +38,9 @@ updates in place.
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
 - **Lock Screen and Control Center** (BUG-09, 11-14, `NowPlayingInfo.swift`): our player shows its title, folder and a
   time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
+- **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
+  each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
+  ··· menu; Apple's on-device Translation does the work, once a language pair is installed.
 - **Our player** (player P1 S2, 11-13, `NativePlayer.swift`): an audio or video file tapped in the Archive plays
   here, in Now Playing, opened on its transcript; other files keep the page viewer. Bytes come from this device first
   (`Recense/<path>`, else `Recense/downloads/<path>`); else the Worker streams them (`/main/api/fp/archive/content`,

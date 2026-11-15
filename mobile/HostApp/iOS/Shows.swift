@@ -34,6 +34,8 @@ struct RecenseRoot: View {
                 Playback.landed(path)
                 if model.playing?.item.path == path { PlaybackEars.shared.saved(model) }
             }
+            // FEAT-10: the owner changed Translate Into; replan with what's already heard
+            model.translateIntoChanged = { [model] in PlaybackTranslator.shared.run(model, lang: Listener.shared.lang) }
         }
         .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Playback.rescan() } }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab

@@ -113,7 +113,23 @@ extension NowPlaying {
         return TranscriptView(lines: model.transcript, title: e.title, seed: model.playingShow ?? e.title,
                               time: { t?.time }, ticking: t?.isPlaying ?? false,
                               seek: t.map { tr in { tr.seek(to: $0) } }, duration: t?.duration ?? e.duration,
-                              empty: model.transcriptNote ?? "No transcript yet.")
+                              empty: model.transcriptNote ?? "No transcript yet.") {
+            translateIntoMenu
+        }
+    }
+
+    /// FEAT-10: one control, five choices. Names here must agree with TranslatePlan.name (the engine, built per
+    /// platform — iOS today) since that's where the choice is actually used; this file only shows and stores it.
+    private var translateIntoMenu: some View {
+        Menu {
+            ForEach([("auto", "Automatic"), ("en", "English"), ("vi", "Tiếng Việt"), ("fr", "Français"), ("off", "Off")], id: \.0) { id, name in
+                Button { model.translateInto = id } label: {
+                    if model.translateInto == id { Label(name, systemImage: "checkmark") } else { Text(name) }
+                }
+            }
+        } label: {
+            Label("Translate Into", systemImage: "character.bubble")
+        }
     }
 }
 

@@ -38,6 +38,7 @@ import ShowsKit
             guard key == e.id else { return }
             if !r.lines.isEmpty {
                 model.transcript = r.lines; model.transcriptSource = r.note; model.transcriptNote = nil
+                PlaybackTranslator.shared.run(model, lang: Listener.shared.lang)
             } else {
                 hear(model, e)
             }
@@ -64,6 +65,7 @@ import ShowsKit
             model?.transcript = lines
             model?.transcriptSource = "Heard on this device."
             model?.transcriptNote = a.map { $0.finished ? nil : "Hearing ahead of the playhead…" } ?? nil
+            if let model { PlaybackTranslator.shared.run(model, lang: lang) }
             if a?.finished == true { Self.cache.write(path, lines) }   // the next open needs no hearing
         }
         model.transcriptNote = "Hearing \(Listener.short(lang)) on this device…"
