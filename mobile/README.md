@@ -44,6 +44,11 @@ updates in place.
   time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
   A video's sound plays on when the phone locks or you leave the app (FEAT-19 P2, `BackgroundVideo.swift`): the
   picture lets go of the player in the background and picks it up again when you return.
+- **The floating window shows behind Safari** (BUG-14, 11-14): YouTube playing in Safari with the broadcast on now
+  shows full captions. Before, the window rested as a thin strip. Two causes: the broadcast's fallback engine
+  (SFSpeechRecognizer) never reported sound, and a sound date left by an earlier broadcast read as quiet for good.
+  Every engine now reports sound, and a sound older than the running broadcast lets iOS's own flag decide. The float
+  log's focus line names the engine (`engine=`).
 - **The floating window follows our player** (BUG-10, 11-14): leave Recense while a file plays and the window shows
   that file's transcript, each word lit at its time in the file, its translation under it (FEAT-10); before, Recense's
   own sound didn't count as playing and the window rested as a black strip. While the player holds a file and no

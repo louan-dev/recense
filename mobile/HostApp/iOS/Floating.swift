@@ -81,10 +81,14 @@ enum Floating {
     static let soundGone = 0.4
     /// `own`: Recense's own player is playing (BUG-10): iOS never reports an app's own sound as "other", so without
     /// it the window read Recense's player as quiet and rested black (iPhone log 11-14 17:02:34-17:12:34).
-    static func playing(flag: Bool, hearing: Bool, soundAgo: Double?, own: Bool = false) -> Bool {
+    /// `broadcastAgo`: seconds since the running broadcast began (State.b). A sound older than it came from an earlier
+    /// broadcast, so this one has said nothing yet and iOS's flag decides (Derived from Spec: BUG-14; iPhone 11-14
+    /// 18:40: YouTube in Safari read as quiet and the window rested).
+    static func playing(flag: Bool, hearing: Bool, soundAgo: Double?, broadcastAgo: Double? = nil, own: Bool = false) -> Bool {
         if own { return true }
         guard flag else { return false }
         guard hearing, let ago = soundAgo else { return true }
+        if let since = broadcastAgo, ago > since { return true }
         return ago < soundGone
     }
 

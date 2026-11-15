@@ -83,6 +83,7 @@ Row: ID · title · status · From · code pointer
 - BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 - BUG-13 · Transcript lines cut off mid-sentence (one line per breath-phrase on iOS; the Mac's sentence rule moved to ShowsKit) · `[~]` · T-0073 · `bugs/BUG-13-lines-cut-mid-sentence.md`
 - BUG-15 · Floating window goes dead and won't close (frozen on an old caption, or a black box that never closes) · `[~]` (fixed leads; device check owed) · T-0077 · `bugs/BUG-15-floating-window-goes-dead.md`
+- BUG-14 · Floating window rests while Safari plays (old broadcast sound read as quiet; fallback engine never notes sound) · `[~]` · T-0074 · `bugs/BUG-14-floating-quiet-behind-safari.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

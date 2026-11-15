@@ -102,6 +102,9 @@ class SampleHandler: RPBroadcastSampleHandler {
             }
             return
         }
+        // Derived from Spec: BUG-14: the fallback notes real sound too (without it the window read Safari as quiet and
+        // rested); its buffer is converted only when a note is due, at most 4 times a second
+        if Date().timeIntervalSince(soundSaid) > 0.25, let pcm = SpeechCore.pcm(sb) { noteSound(pcm) }
         q.async {
             // a recognition request stops itself after about a minute: start the next one between utterances
             if Date().timeIntervalSince(self.started) > 50 { self.request?.endAudio(); self.begin() }

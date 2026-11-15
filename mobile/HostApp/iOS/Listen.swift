@@ -996,9 +996,10 @@ final class Listener: NSObject, ObservableObject {
             pip.contentSource = .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
             floatNote("content attached again")
         }
-        let s = AVAudioSession.sharedInstance()
+        let s = AVAudioSession.sharedInstance(), st = Captions.state()
         let playing = Floating.playing(flag: s.isOtherAudioPlaying || s.secondaryAudioShouldBeSilencedHint, hearing: hearing,
-                                       soundAgo: Captions.state().sound.map { Date().timeIntervalSince($0) },   // T-0041
+                                       soundAgo: st.sound.map { Date().timeIntervalSince($0) },   // T-0041
+                                       broadcastAgo: st.b.map { Date().timeIntervalSince1970 - $0 },   // BUG-14
                                        own: NativePlayer.shared.isPlaying)   // BUG-10
         // Learn's two places follow the player's line as they follow the broadcast's
         if own, let p = shown().place, p != ownPlace { ownPlace = p; changed() }
@@ -1011,7 +1012,7 @@ final class Listener: NSObject, ObservableObject {
         let canStart = active && !front
         if wasFront != front {
             if !front { leftAt = Date(); if quietFrom != nil { quietFrom = Date() } }
-            floatNote("focus: \(front ? "Recense" : "another app") (active=\(active) key=\(key))")
+            floatNote("focus: \(front ? "Recense" : "another app") (active=\(active) key=\(key)) engine=\(st.engine ?? "none")")   // BUG-14
             wasFront = front
         }
         pip.canStartPictureInPictureAutomaticallyFromInline = Floating.autoOpen(paused: paused)

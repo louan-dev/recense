@@ -87,4 +87,12 @@ if Floating.playing(flag: false, hearing: false, soundAgo: nil, own: false) { ba
 check("own player behind, open", Floating.decide(now(playing: Floating.playing(flag: false, hearing: false, soundAgo: nil, own: true), open: true)), .none)
 if Floating.rest(open: true, quiet: 0, paused: false) { bad += 1; print("FAIL own player playing rests") }
 
+// Regression guard: BUG-14 (iPhone 11-14 18:40: YouTube in Safari read as quiet, the window rested; the broadcast's
+// last sound was older than the broadcast itself, as the fallback engine never notes sound)
+if !Floating.playing(flag: true, hearing: true, soundAgo: 600, broadcastAgo: 20) { bad += 1; print("FAIL an earlier broadcast's sound reads as quiet") }
+if Floating.playing(flag: true, hearing: true, soundAgo: 2, broadcastAgo: 20) { bad += 1; print("FAIL this broadcast's pause still counts as playing") }
+if !Floating.playing(flag: true, hearing: true, soundAgo: 0.1, broadcastAgo: 20) { bad += 1; print("FAIL this broadcast's sound is not playing") }
+if Floating.playing(flag: true, hearing: true, soundAgo: 2, broadcastAgo: nil) { bad += 1; print("FAIL no broadcast start: the sound no longer decides") }
+if Floating.playing(flag: false, hearing: true, soundAgo: 600, broadcastAgo: 20) { bad += 1; print("FAIL flag off yet playing (old sound)") }
+
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")
