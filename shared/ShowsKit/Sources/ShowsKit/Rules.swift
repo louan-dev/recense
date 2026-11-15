@@ -31,10 +31,14 @@ public enum Rules {
     ///   library/Study|Folio/<show>/…           → that space, the same below it
     ///   library/Matters|Raven/<client>/…       → Matters; the client is the show
     /// Real folder names never change; only titles do.
+    /// The pool's downloads folder (Recense/downloads/): its files are New.
+    public static let downloads = "downloads"
+
     public static func place(_ path: String) -> Placement? {
         let parts = path.split(separator: "/").map(String.init)
         guard let top = parts.first, parts.count >= 2, let name = parts.last, !name.hasPrefix(".") else { return nil }
-        if top == Zone.inbox.folder { return Placement(space: .library, showFolder: Zone.inbox.folder, seasonFolder: nil) }
+        // downloads/ (the places folder contract, 11-08: where shares and played files land) is New, as inbox/ was
+        if top == Zone.inbox.folder || top == Self.downloads { return Placement(space: .library, showFolder: Zone.inbox.folder, seasonFolder: nil) }
         guard top == Zone.library.folder else { return nil }
         var rest = Array(parts.dropFirst())                   // under library/
         var space = SpaceID.library, base = [top]

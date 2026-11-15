@@ -51,6 +51,8 @@ public final class ShowsModel {
     /// and a word on how that's going ("Hearing 2:00 to 4:00…", "This device can't hear Vietnamese offline.").
     public var transcript: [TranscriptLine] = []
     public var transcriptNote: String?
+    /// Where the shown transcript came from ("Saved on this device.", "From the Mac's transcript.", "Heard on this device.").
+    public var transcriptSource: String?
     /// Now Playing shows the transcript (Podcasts' quote button) rather than the player.
     public var showsTranscript = false
     private var clock: HLCClock

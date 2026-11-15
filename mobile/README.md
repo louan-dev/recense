@@ -29,10 +29,22 @@ updates in place.
 - **The root (11-07): the Podcasts-style shell** (`HostApp/iOS/Shows.swift`, from `../shared/ShowsKit/`): Home (Up Next,
   Recently Played), New (what landed in `Recense/inbox/`), Library (Shows, Study, Folio, Matters with Face ID, Saved,
   Downloaded, Latest Episodes, then the places below; Recently Updated), Search; the mini-player above the tab bar.
-  Sample shows until B1's pool store; our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
+  Home holds only what is on this device (player S3, 11-13): `PoolScan` reads `Documents/Recense/{library,downloads,inbox}/`
+  at launch and after each saved file; `downloads/` is New, so a file played from the Archive shows in New and Up Next,
+  and any episode tapped there plays in our player. With nothing there it says "Nothing here yet" with Open Archive; the
+  invented sample shows load only under `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` (player P1, 11-13). Our player fills Now Playing in B3. The old sidebar (`Browser.swift`) is kept,
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
   skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place,
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
+- **Our player** (player P1 S2, 11-13, `NativePlayer.swift`): an audio or video file tapped in the Archive plays
+  here, in Now Playing, opened on its transcript; other files keep the page viewer. Bytes come from this device first
+  (`Recense/<path>`, else `Recense/downloads/<path>`); else the Worker streams them (`/main/api/fp/archive/content`,
+  this device's Access token) while a copy is saved to `Recense/downloads/<path>` (files up to 2 GB), so the next play
+  needs no network. The transcript (`Ears.swift`): the copy saved on this device, else the Mac's
+  (`/main/api/transcript?path=`, saved here at once), else heard on this device once the file is saved here (saved too
+  when finished); Now Playing names the source under the title.
+  A played file takes its content key from this device's copy (at once, or when the copy lands), so Save, Played and
+  Clicked / Not yet work on it.
 - **Now Playing's transcript** (11-08): the quote button in Now Playing's toolbar shows the episode's transcript in
   place of the player (which keeps playing under it): ShowsKit's `TranscriptView`, our scrubber under it and back 15 /
   play / forward 30 under that. `Ears.swift` hears the playing episode's file on this device with the shared engine

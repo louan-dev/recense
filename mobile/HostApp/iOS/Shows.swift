@@ -9,19 +9,33 @@ struct RecenseRoot: View {
     @State private var sampleClock: SampleTransport?   // held here: the model's transport is weak
     @State private var extras = HomeExtras()   // Listen's earlier episodes, in Home's Recently Played
     @ObservedObject private var listen = Listener.shared
-    @State private var model = ShowsModel(store: MemoryCatalog.sample(device: UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"))
+    // player P1 (11-11): the invented sample pool only for simulator checks; on the owner's devices Home holds what is
+    // real (an empty catalog until the pool store, S3), so no row looks playable that isn't
+    @State private var model = ShowsModel(store: RecenseRoot.store())
+
+    static func store() -> MemoryCatalog {
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        return ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == "sample" ? .sample(device: device) : MemoryCatalog(device: device)
+    }
 
     var body: some View {
-        ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(ListeningCard()), extras: extras) { _ in
-            VStack(spacing: 12) {
-                Image(systemName: "play.rectangle").font(.system(size: 44, weight: .light)).foregroundStyle(.secondary)
-                Text("Our player plays here from B3, offline, from this device.").font(.title3)
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420)
+        ShowsRoot(model: model, places: RecensePlaces.all, home: AnyView(VStack(alignment: .leading, spacing: 30) {
+            ListeningCard()
+            if model.upNext.isEmpty && model.recentlyPlayed.isEmpty && extras.recent.isEmpty {
+                HomeEmpty()
             }
-            .padding(24)
-        }
+        }), extras: extras) { e in NativePlayerView(episode: e) }
         // owner 11-10: the newest listening is Now Playing; a newer one bumps it down to Recently Played
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
+        .onAppear {
+            Playback.model = model
+            NativePlayer.shared.saved = { [model] path in
+                Playback.rescan()
+                Playback.landed(path)
+                if model.playing?.item.path == path { PlaybackEars.shared.saved(model) }
+            }
+        }
+        .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Playback.rescan() } }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab
             switch ProcessInfo.processInfo.environment["RECENSE_TAB"] {
             case "new": model.tab = .new
@@ -42,7 +56,11 @@ struct RecenseRoot: View {
             model.showsTranscript = true
         }
         // the playing episode heard on this device for its transcript (Ears.swift)
-        .onChange(of: model.playing?.id) { _, _ in if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == nil { PlaybackEars.shared.follow(model) } }
+        .onChange(of: model.playing?.id) { _, _ in
+            guard ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == nil else { return }
+            Playback.follow()   // an episode from Home, New or Library plays in our player too
+            PlaybackEars.shared.follow(model)
+        }
         .fullScreenCover(item: $launchPlace) { p in
             NavigationStack { p.screen() }.tint(Theme.accent)   // simulator checks: SIMCTL_CHILD_RECENSE_PLACE=<id>
         }
@@ -61,5 +79,22 @@ extension RecenseRoot {
         extras.recent = listen.episodes.filter { $0.key != listen.episode?.key && !$0.sentences.isEmpty }.map {
             RecentItem(id: "listen:" + $0.key, at: Int64($0.updated), row: AnyView(ListenEpisodeRow(e: $0)))
         }
+    }
+}
+
+/// Home with nothing in it yet (player P1, 11-11): it says so and offers the way in, a visible button.
+/// (Add Files joins when the pool store reads Recense/downloads/, S3: until then an added file wouldn't show here.)
+struct HomeEmpty: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Nothing here yet").font(.title2.weight(.semibold))
+            Text("Your files are in the Archive.").font(.title3).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // a view link on Home's own stack: a file played from there opens Now Playing over it
+            NavigationLink { FolderView(path: Gallery.rootPath) } label: { Label("Open Archive", systemImage: "icloud") }
+                .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
+        }
+        .padding(.horizontal, Theme.gutter)
+        .frame(maxWidth: Theme.readable, alignment: .leading)
     }
 }
