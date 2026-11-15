@@ -46,8 +46,9 @@ Row: ID · title · status · From · code pointer
 - BUG-07 · Ink anchors to the wrong line (hard-coded 28px vs. the real line height) · `[~]` (fixed, device check owed) · T-0014 · `bugs/BUG-07-ink-anchor-line-height.md`
 - BUG-08 · The document moved while the owner was dragging a selection (highlight not what was dragged; caret wrong after Delete) · `[~]` (fixed, device check owed) · T-0028 · `bugs/BUG-08-drag-selection-moved.md`
 - BUG-09 · No Lock Screen scrubber for Recense's own player on iOS (no Now Playing info, no remote commands) · `[~]` (fixed, device check owed) · T-0067 · `bugs/BUG-09-no-lock-screen-scrubber.md`
-- BUG-10 · The floating window is black while Recense's own player plays (own sound read as quiet; window drew only the broadcast) · `[~]` (fixed, device check owed) · T-0069 · `bugs/BUG-10-floating-black-own-player.md`
-- BUG-11 · A file played in Recense is heard in the last broadcast's language (English by default), not its own · `[~]` (fixed, device check owed) · T-0070 · `bugs/BUG-11-file-heard-wrong-language.md`
+- BUG-10 · The floating window is black while Recense's own player plays (own sound read as quiet; window drew only the broadcast) · `[x]` (owner confirmed on iPhone 11-14) · T-0069 · `bugs/BUG-10-floating-black-own-player.md`
+- BUG-11 · A file played in Recense is heard in the last broadcast's language (English by default), not its own · `[x]` (owner confirmed on iPhone 11-14) · T-0070 · `bugs/BUG-11-file-heard-wrong-language.md`
+- BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

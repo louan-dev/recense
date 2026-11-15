@@ -46,6 +46,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
     before its first word lights, so the eye lands on a resting line. It waits for the outgoing line's last word first
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.
+    `TranscriptLight.heard` (BUG-12): the player's position less the audio route's latency while it plays, so a word
+    lights as it reaches the ear through Bluetooth. Tests: `HeardTimeTests`.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

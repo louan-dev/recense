@@ -30,13 +30,18 @@ final class NativePlayer: Transport {
 
     // MARK: Transport
 
-    var time: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
+    /// Where the player is in the file: what it has sent to the speakers. The Lock Screen's time and skip read it.
+    var position: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
+    /// Where the listener is (BUG-12): the position less the route's latency while it plays, so a word lights as it is
+    /// heard through Bluetooth headphones, not as it leaves the phone. ShowsKit's transcript and the floating window
+    /// read it; a seek to a line's start lights that line once its sound arrives.
+    var time: Double { TranscriptLight.heard(position, latency: RouteLatency.current, playing: player.rate != 0) }
     var duration: Double? {
         guard let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 else { return nil }
         return d
     }
     func toggle() { isPlaying ? player.pause() : play(); refresh() }
-    func skip(_ seconds: Double) { seek(to: max(0, time + seconds)) }
+    func skip(_ seconds: Double) { seek(to: max(0, position + seconds)) }
     func seek(to seconds: Double) {
         player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor in self?.publish() }
@@ -46,6 +51,7 @@ final class NativePlayer: Transport {
     private func play() {
         Self.session(hearing: Listener.shared.hearing)
         try? AVAudioSession.sharedInstance().setActive(true)
+        RouteLatency.refresh()
         player.play()
     }
     /// One rule for the app's audio session (BUG-10), set by the player, the floating window and Listen: while our
@@ -69,7 +75,7 @@ final class NativePlayer: Transport {
     private func publish() {
         publishedDuration = duration
         guard let path else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = NowPlayingInfo.info(path: path, time: time, duration: duration, playing: isPlaying)
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = NowPlayingInfo.info(path: path, time: position, duration: duration, playing: isPlaying)
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 

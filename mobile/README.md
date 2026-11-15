@@ -47,6 +47,9 @@ updates in place.
   for 10 s by the English, French and Vietnamese models and the surest wins (`SpeechAhead.choose`, the live check's
   rule); before, every file was heard in the last broadcast's language, English by default. Now Playing says which
   ("Heard on this device in French (automatic)"). Models not on the device are skipped, never downloaded then.
+- **Words light as they are heard, headphones too** (BUG-12, 11-14): our player's transcript and the floating window
+  read the position less the audio route's latency (`RouteLatency.current`, the web player's rule; Bluetooth ~0.2 s),
+  read once per route and logged in the floating window's log. The Lock Screen and skip keep the raw position.
 - **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
   each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
   ··· menu; Apple's on-device Translation does the work, once a language pair is installed.
