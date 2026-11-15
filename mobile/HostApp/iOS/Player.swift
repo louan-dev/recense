@@ -115,14 +115,29 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
         let s = AVAudioSession.sharedInstance()
         return max(0, min(1, s.outputLatency + s.ioBufferDuration))
     }
+    /// The latency our own player's transcript subtracts (BUG-12), read once per route: the transcript reads the
+    /// player's time 60 times a second. Read again on play and on every route change; each new value goes to the
+    /// floating window's log (listen.floatLog), so a device run shows what was measured.
+    static var current: Double { cached ?? refresh() }
+    private static var cached: Double?
+    @discardableResult static func refresh() -> Double {
+        let v = value
+        if v != cached {
+            let port = AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? "none"
+            Listener.shared.floatNote(String(format: "route latency %.3f s (%@)", v, port))
+        }
+        cached = v
+        observe()
+        return v
+    }
     static func script() -> String { "globalThis.galleryOutputLatency=\(value);" }
     private static var observer: NSObjectProtocol?
     private static let webs = NSHashTable<WKWebView>.weakObjects()
-    static func watch(_ web: WKWebView) {
-        webs.add(web)
+    static func watch(_ web: WKWebView) { webs.add(web); observe() }
+    private static func observe() {
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { for w in webs.allObjects { w.evaluateJavaScript(script()) } }
+            MainActor.assumeIsolated { refresh(); for w in webs.allObjects { w.evaluateJavaScript(script()) } }
         }
     }
 }

@@ -29,6 +29,13 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `shared/notesync.swift`: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"` (ALL OK).
 - Carry's pairing (`shared/carrypair.swift`: the six-digit code, group sealing, invitation proof), after any change to it:
   `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"` (ALL OK).
+- The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
+  `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
+- Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
+  `swiftc -O shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
+- A played file's language (`shared/speechcore.swift` SpeechAhead, BUG-11), after any change to SpeechAhead or to
+  `SpeechCore.sureness`/`pick`: `zsh mobile/ios/Tests/aheadlang/run.zsh` (outside the sandbox; French, Vietnamese and
+  English recordings each print ALL OK, heard in their own language).
 - Listen's caption ring (`HostApp/iOS/CaptionRing.swift`), after any change to it or to `Captions.swift`:
   `swiftc -O mobile/HostApp/iOS/CaptionRing.swift mobile/ios/Tests/captionring/main.swift -o "$TMPDIR/captionring" && "$TMPDIR/captionring"` (ALL OK).
 - The broadcast's clock (`HostApp/iOS/SoundClock.swift`: t0 from the sound's stamps, pauses kept), after any change to it or to `SampleHandler.processSampleBuffer`:

@@ -51,14 +51,28 @@ public final class ShowsModel {
     /// and a word on how that's going ("Hearing 2:00 to 4:00…", "This device can't hear Vietnamese offline.").
     public var transcript: [TranscriptLine] = []
     public var transcriptNote: String?
+    /// Where the shown transcript came from ("Saved on this device.", "From the Mac's transcript.", "Heard on this device.").
+    public var transcriptSource: String?
     /// Now Playing shows the transcript (Podcasts' quote button) rather than the player.
     public var showsTranscript = false
+    /// FEAT-10: "auto" (English↔Tiếng Việt by the line, else English), "en", "vi", "fr", or "off". Kept on this
+    /// device; the host (PlaybackTranslator on iOS today, Phase 3 on the Mac) replans the transcript on change.
+    public var translateInto: String {
+        didSet {
+            guard oldValue != translateInto else { return }
+            UserDefaults.standard.set(translateInto, forKey: "recense.translateInto")
+            translateIntoChanged?()
+        }
+    }
+    /// Set by the host once, at startup, to re-run its translator when `translateInto` changes.
+    public var translateIntoChanged: (() -> Void)?
     private var clock: HLCClock
 
     public init(store: any CatalogStore, gate: Gate? = nil) {
         self.store = store
         self.gate = gate ?? Gate()
         self.clock = HLCClock(node: store.device)
+        self.translateInto = UserDefaults.standard.string(forKey: "recense.translateInto") ?? "auto"
     }
 
     /// Loads, then reloads on every change, until the view goes away.

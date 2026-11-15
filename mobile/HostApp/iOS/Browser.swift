@@ -496,6 +496,10 @@ struct FolderView: View {
             // a view link, never NavigationLink(value:) + navigationDestination(for:): Library pushes Archive with a view
             // link, and a value pushed onto that stack showed Archive's top level again instead of the folder
             else if r.dir { NavigationLink { FolderView(path: r.path) } label: { label() }.buttonStyle(.plain) }
+            // audio and video play in our player, with the transcript (player P1 S2); other files keep the page viewer
+            else if Playback.canPlay(r.path) {
+                Button { Playback.open(r.path, size: r.size ?? 0, mtime: Int64(r.mtime ?? 0)) } label: { label() }.buttonStyle(.plain)
+            }
             else { Button { playing = r } label: { label() }.buttonStyle(.plain) }
         }
         .contextMenu {

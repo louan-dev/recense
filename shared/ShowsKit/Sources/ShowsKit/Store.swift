@@ -171,6 +171,14 @@ public actor MemoryCatalog: CatalogStore {
     private func drop(_ id: UUID) { watchers[id] = nil }
     private func changed() { for c in watchers.values { c.yield() } }
 
+    /// This device's own files, as a scan of its pool found them (PoolScan): they replace the local files known
+    /// before; files from the feed (not local) and every state, position and outbox entry stay.
+    public func replaceLocal(_ scanned: [PoolItem]) {
+        for (id, i) in items where i.local && !i.dir { items[id] = nil }
+        for i in scanned { items[i.id] = i }
+        changed()
+    }
+
     // MARK: writing
 
     public func cursor(root: String) -> Int? { cursors[root] }

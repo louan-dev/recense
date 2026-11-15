@@ -61,6 +61,8 @@ enum AppEar {
             guard up > 1 else { break }
             p = up
         }
+        // macOS's AirPlay Receiver plays an iPhone's cast from ControlCenter (a background agent): heard as "AirPlay"
+        if bundle == "com.apple.controlcenter" { return Player(pid: pid, name: "AirPlay", bundle: bundle) }
         // no app above it: a command-line player is heard as itself; a background agent with a bundle isn't media
         guard bundle.isEmpty else { return nil }
         var name = [CChar](repeating: 0, count: 256)

@@ -712,11 +712,20 @@ enum SpeechLegacy {
 /// A media file heard in two-minute stretches, the stretch under the playhead first, then the ones after it, then any
 /// before (the way the Mac's transcribeLoop stays ahead of what plays). SpeechAnalyzer where there is one; else
 /// SFSpeechRecognizer hears the whole file once. `changed` gets every phrase heard so far, in time order.
+/// Derived from Spec: BUG-11 (the language): with more than one candidate in `among` (Automatic: en, fr, vi), each
+/// stretch is heard in the language its own sound is in, not the one the last broadcast heard.
 @MainActor final class SpeechAhead {
     let url: URL
+    /// The fallback language: what's heard until a candidate is heard surely (Listen's language).
     let lang: String
+    /// The languages to choose from: Automatic's en, fr, vi; a chosen language alone.
+    let among: [String]
     let duration: Double
     nonisolated static let stretch = 120.0
+    /// Seconds of a stretch each candidate hears to choose its language.
+    nonisolated static let probe = 10.0
+    /// The language the file is being heard in; nil while it's still being chosen.
+    private(set) var heardIn: String?
     private(set) var phrases: [SpeechCore.Phrase] = []
     private(set) var done: Set<Int> = []
     private(set) var problem: String?
@@ -724,7 +733,10 @@ enum SpeechLegacy {
     var changed: ([SpeechCore.Phrase]) -> Void = { _ in }
     private var task: Task<Void, Never>?
 
-    init(url: URL, lang: String, duration: Double) { self.url = url; self.lang = lang; self.duration = duration }
+    init(url: URL, lang: String, among: [String]? = nil, duration: Double) {
+        self.url = url; self.lang = lang; self.among = among ?? [lang]; self.duration = duration
+        if self.among.count <= 1 { heardIn = lang }
+    }
 
     var count: Int { max(1, Int((duration / Self.stretch).rounded(.up))) }
     var finished: Bool { done.count >= count }
@@ -738,13 +750,42 @@ enum SpeechLegacy {
         return (here..<count).first { !done.contains($0) } ?? (0..<here).first { !done.contains($0) }
     }
 
+    /// The language to hear in, from each candidate's sureness on the same probe (`SpeechCore.sureness`, the live
+    /// check's and the Mac's rule): the first choice is the surest outright (ties: the earlier candidate); after it,
+    /// only a clear margin changes it (`SpeechCore.pick`). nil: keep what there is.
+    nonisolated static func choose(_ scores: [String: Double], among: [String], current: String?) -> String? {
+        guard let current else {
+            var best: String?, top = 0.0
+            for l in among { if let s = scores[l], s > top { best = l; top = s } }
+            return best
+        }
+        return SpeechCore.pick(scores, current: current)
+    }
+
+    /// Where in the stretch [a, b) the candidates hear their probe: at the playhead in the playhead's stretch (what
+    /// plays next), else at the stretch's start; never past its end, pulled back to give at least 3 s when it has them.
+    nonisolated static func window(_ a: Double, _ b: Double, playhead: Double, probe: Double = probe) -> (Double, Double) {
+        var from = playhead >= a && playhead < b ? playhead : a
+        if b - from < min(3, b - a) { from = max(a, b - min(probe, b - a)) }
+        return (from, min(b, from + probe))
+    }
+
     private func loop() async {
         #if compiler(>=6.2)
         if #available(macOS 26, iOS 26, *), let (m, l) = await SpeechEngine.module(lang), await SpeechEngine.prepare(m, l) {
             while !Task.isCancelled, let k = Self.next(playhead: playhead(), count: count, done: done) {
                 let a = Double(k) * Self.stretch, b = min(duration, a + Self.stretch)
+                if among.count > 1 { await check(a, b) }
+                let use = heardIn ?? lang
+                var (mu, lu) = (m, l)
+                if use != lang {   // a candidate the check heard, so its model is on this device
+                    guard let x = await SpeechEngine.module(use), await SpeechEngine.prepare(x.0, x.1, download: false) else {
+                        problem = "This device can't hear \(use) offline yet."; return
+                    }
+                    (mu, lu) = x
+                }
                 do {
-                    let heard = try await SpeechEngine.hear(url: url, from: a, to: b, lang, module: m, l)
+                    let heard = try await SpeechEngine.hear(url: url, from: a, to: b, use, module: mu, lu)
                     phrases.removeAll { $0.start >= a && $0.start < b }
                     phrases = (phrases + heard).sorted { $0.start < $1.start }
                     done.insert(k)
@@ -754,9 +795,28 @@ enum SpeechLegacy {
             return
         }
         #endif
+        heardIn = lang   // SFSpeechRecognizer hears one language: the fallback
         guard SpeechLegacy.hears(lang) else { problem = "This device can't hear \(lang) offline."; return }
         do { phrases = try await SpeechLegacy.hear(url: url, lang); done = Set(0..<count); changed(phrases) }
         catch { problem = error.localizedDescription }
     }
+
+    #if compiler(>=6.2)
+    /// Which language the stretch [a, b) is in: each candidate whose model is on this device hears the same probe, and
+    /// `choose` picks. Never downloads: a model that isn't here yet is no candidate (offline at the moment of use).
+    @available(macOS 26, iOS 26, *)
+    private func check(_ a: Double, _ b: Double) async {
+        let (from, to) = Self.window(a, b, playhead: playhead())
+        var scores: [String: Double] = [:]
+        for c in among {
+            guard let (m, l) = await SpeechEngine.module(c), await SpeechEngine.prepare(m, l, download: false),
+                  let ps = try? await SpeechEngine.hear(url: url, from: from, to: to, c, module: m, l) else { continue }
+            scores[c] = SpeechCore.sureness(ps.flatMap(\.words), c, among: among)
+        }
+        if let to = Self.choose(scores, among: among, current: heardIn) { heardIn = to }
+        SpeechCore.note(String(format: "file language at %.0f s: ", from)
+            + among.map { String(format: "%@=%.1f", $0, scores[$0] ?? -1) }.joined(separator: " ") + " -> \(heardIn ?? "none yet")")
+    }
+    #endif
 }
 #endif

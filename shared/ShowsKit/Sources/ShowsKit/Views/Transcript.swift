@@ -28,6 +28,12 @@ public enum TranscriptLight {
     /// How often the lit word is redrawn: the screen's rate, capped at 60 a second (the Mac's light runs on its display
     /// link). At 12 a second a word could light up to 83 ms late, over the 50 ms the owner allows against the Mac.
     public static let frame: Double = 1.0 / 60
+    /// Where the listener is in the file (Derived from Spec: BUG-12): the player's position less the audio route's latency
+    /// while it plays (Bluetooth headphones play a position ~0.2 s after it leaves the phone); paused, nothing is in
+    /// flight. The latency is held to 0–1 s, as the web player's (mobile Player.swift, RouteLatency).
+    public static func heard(_ position: Double, latency: Double, playing: Bool) -> Double {
+        playing ? max(0, position - min(1, max(0, latency))) : position
+    }
     /// How long the view takes to scroll to the next line, when the pause before it leaves room.
     public static let scroll: Double = 0.45
     /// How far ahead the view turns to the next line, at most: its scroll, plus a moment for the line to be still, bold

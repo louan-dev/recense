@@ -46,6 +46,11 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
     before its first word lights, so the eye lands on a resting line. It waits for the outgoing line's last word first
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.
+    `TranscriptLight.heard` (BUG-12): the player's position less the audio route's latency while it plays, so a word
+    lights as it reaches the ear through Bluetooth. Tests: `HeardTimeTests`.
+  - `Phrasing.swift` (BUG-13): timed words to lines by sentence (an end mark, or a pause over 1.2 s), a long one split
+    at ≤ 18 words; ids by start. The Mac's `sentences` / `splitWords` call it (one copy). `regrouped` turns this
+    device's old one-line-per-breath transcripts into sentences and leaves any other as it is. Tests: `PhrasingTests`.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.
@@ -53,7 +58,13 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     store has (no store code needed).
   - `Transport` (in `ShowsModel.swift`): play/pause/skip, and `time` / `duration` / `seek(to:)` for the transcript and
     scrubber (defaults: 0, nil, nothing), given by B3's player; until then play opens Now Playing. `ShowsModel.transcript`
-    is the playing episode's transcript, filled by the app's ears.
+    is the playing episode's transcript, filled by the app's ears; `transcriptSource` says where it came from.
+  - `PoolScan.swift` (player P1 S3, B1's first slice, 11-13): this device's pool (`library/`, `downloads/`, `inbox/`;
+    never dot files, `keep/`, `trash/`) as PoolItems with content keys; `MemoryCatalog.replaceLocal` takes a scan and
+    keeps marks, positions and the outbox. `Rules.place`: `downloads/` is New, as `inbox/`. Tests: `PoolScanTests`.
+  - `TranscriptSource.swift` (player P1, 11-13): a played file's transcript from this device's copy
+    (`TranscriptCache`, one JSON per path), else the Mac's (the Worker's `/main/api/transcript?path=`, saved at once),
+    else none (the app hears it). Tests: `TranscriptSourceTests` (decode, offline second open, order).
   - `Views/Theme.swift`: the look every screen shares, in ShowsKit and in each app's own places: `Theme` (accent,
     gutter, corners, readable width, `hues`), `Artwork`, `SectionHeader`, `LibraryRow`, `Place` (a screen the app adds
     to Library) and `.recenseScreen(title)`.

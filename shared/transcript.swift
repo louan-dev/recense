@@ -7,6 +7,7 @@ import ShowsKit
 typealias Word = ShowsKit.Word
 typealias Pin = ShowsKit.Pin
 typealias Syl = ShowsKit.Syl
+typealias Phrasing = ShowsKit.Phrasing   // sentence lines (BUG-13)
 
 // The transcript, one copy for the Mac and iOS (moved here from strip/recense.swift, 2026-11-08): what Recense plays
 // (a Line of timed Words, its translation as EnWords that point back at the words they come from) and the rules that

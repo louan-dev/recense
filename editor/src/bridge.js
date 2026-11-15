@@ -40,6 +40,8 @@ export function createEditorBridge({
   setTheme,
   setFontSize,
   getRemoved = () => [],
+  // Derived from Spec: BUG-08 — true while the owner is dragging a selection (pointer down in the text).
+  isSelecting = () => false,
   extra = {},
   globalObj = typeof window !== 'undefined' ? window : {},
   debounceMs = DEBOUNCE_MS
@@ -95,9 +97,32 @@ export function createEditorBridge({
     return state ? state.doc.toString() : '';
   }
 
+  // Derived from Spec: BUG-08. The host's round-trips (autosave, a merge from another device) arrive whenever they
+  // are ready, including while the owner is holding the pointer down over text. CodeMirror maps the stored selection
+  // through a change, but a drag in progress keeps extending from the anchor the gesture started with, so the
+  // document moving mid-drag leaves a highlight that is not what was dragged over, and a caret on another line after
+  // Delete. Nothing may move under the owner's hand (PLAYBOOK §2.5): the newest text waits here and is applied once,
+  // by applyDeferredText(), as soon as the pointer comes up. Nothing is dropped — only delayed.
+  let deferredText = null;
+
+  function applyDeferredText() {
+    if (deferredText === null) return false;
+    const text = deferredText;
+    deferredText = null;
+    return applyText(text);
+  }
+
   // Derived from Spec: BUG-04
   function setText(nextText) {
     const s = typeof nextText === 'string' ? nextText : String(nextText ?? '');
+    if (typeof isSelecting === 'function' && isSelecting()) {
+      deferredText = s;          // the newest round-trip wins; it lands when the drag ends
+      return;
+    }
+    return applyText(s);
+  }
+
+  function applyText(s) {
     flushPendingPost();
     const state = getState();
     if (!state) return;
@@ -157,6 +182,8 @@ export function createEditorBridge({
   return {
     api,
     notifyDocChanged,
-    clearPendingPost
+    clearPendingPost,
+    // Derived from Spec: BUG-08 — the host called while the owner was dragging; this lands it once, after.
+    applyDeferredText
   };
 }
