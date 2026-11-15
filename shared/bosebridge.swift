@@ -75,13 +75,14 @@ enum Phones: String, Codable, CaseIterable, Identifiable, Sendable {
     var chargeHint: String {
         switch self {
         case .qcsc:
-            return "Plug the 3.5 mm → 2.5 mm cable into the Mac's headphone jack. It plays with the headphones switched off, even at 0%."
+            // Device-neutral on purpose: the same sentence is read on the Mac, the iPhone and the iPad.
+            return "Plug the 3.5 mm → 2.5 mm cable into the headphone jack of whatever is playing. It plays with the headphones switched off, even at 0%."
         case .qc45:
-            return "Plug the Bose audio cable into the Mac's headphone jack. It plays with the headphones switched off."
+            return "Plug the Bose audio cable into the headphone jack of whatever is playing. It plays with the headphones switched off."
         case .ultra1:
-            return "Plug the Bose audio cable into the Mac's headphone jack and keep the headphones powered on: they are silent on the cable when off."
+            return "Plug the Bose audio cable into the headphone jack of whatever is playing and keep the headphones powered on: they are silent on the cable when off."
         case .ultra2:
-            return "Plug its USB-C cable into the Mac: sound and charge on the one cable. The audio cable also works."
+            return "Plug its USB-C cable into the player: sound and charge on the one cable. The audio cable also works."
         case .other:
             return "Plug in an audio cable, or wait for the Bluetooth link to come back."
         }
