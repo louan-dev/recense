@@ -61,6 +61,10 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   (HKDF-SHA256, salt = the pairing transcript, info `recense.group.v1`), and kept in each Keychain. The device
   that has a group sends it; if neither has one, the committer makes it. Two devices already in different groups
   are refused (compared by an HMAC fingerprint; neither secret crosses the link).
+- **Invariant (BUG-17):** pairing finishes on BOTH devices, or on neither. The tap and the sealed group can come in
+  either order. A group that arrives before this device's own tap is held, and the tap opens it. The `hello` says
+  whether its sender already holds a group, so exactly one side sends one. While "Pair a device" is on, a peer
+  already in `peers.json` pairs again, and the new entry replaces the old one (a one-sided pairing can be redone).
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
 - **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
   under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).

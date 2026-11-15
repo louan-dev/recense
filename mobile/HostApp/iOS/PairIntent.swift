@@ -29,7 +29,7 @@ struct PairADeviceIntent: AppIntent {
         // a specific name in the "Looking for a device to pair" list. Siri has no such list, so invite the first
         // not-yet-paired device seen — there is normally only one stranger nearby when this runs.
         while cm.pairingCode == nil && cm.lastError == nil && waited < 10 {
-            if invited == nil, let peer = cm.nearby.first(where: { p in !cm.peers.contains { $0.name == p.displayName } }) {
+            if invited == nil, let peer = cm.pairCandidates.first {
                 invited = peer
                 cm.invite(peer)
             }
@@ -63,6 +63,7 @@ struct ConfirmPairingIntent: AppIntent {
             waited += 0.3
         }
         if let err = cm.lastError { return .result(dialog: "Pairing failed: \(err)") }
+        guard cm.pairingWith == nil else { return .result(dialog: "Confirmed here. Waiting for \(who) to confirm too.") }
         return .result(dialog: "Paired with \(who).")
     }
 }

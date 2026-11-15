@@ -7173,7 +7173,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             match.target = self
         } else if cm.isLookingToPair {
             m.addItem(withTitle: "Looking for a device to pair…", action: nil, keyEquivalent: "").isEnabled = false
-            for peer in cm.nearby where !cm.peers.contains(where: { $0.name == peer.displayName }) {
+            for peer in cm.pairCandidates {
                 let item = m.addItem(withTitle: "Pair “\(peer.displayName)”", action: #selector(pairNearbyDevice(_:)), keyEquivalent: "")
                 item.target = self; item.representedObject = peer
             }
@@ -7191,7 +7191,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         return m
     }
     @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
-    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stop() }
+    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stopPairing() }
     @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
         guard let peer = sender.representedObject as? MCPeerID else { return }
         CarryManager.shared.invite(peer)

@@ -8,7 +8,8 @@ import CryptoKit
 // link (FEAT-02) carries them, the Keychain keeps the keys. No network, no account.
 
 enum PairMessage: Codable, Equatable, Sendable {
-    case hello(key: Data, name: String)    // long-term X25519 public key
+    case hello(key: Data, name: String, grouped: Bool? = nil)   // long-term X25519 public key; grouped = already holds a
+                                                                // group secret (BUG-17: decides which one side sends it)
     case commit(Data)                      // the committer's SHA-256 over its nonce, before seeing the other's
     case nonce(Data)
     case group(Data)                       // the group secret, sealed (ChaChaPoly) after both people tapped "They match"
@@ -16,7 +17,7 @@ enum PairMessage: Codable, Equatable, Sendable {
 }
 
 enum PairFailure: Error, Equatable, Sendable {
-    case outOfOrder, badCommit, badKey, otherGroup, unsealed
+    case outOfOrder, badCommit, badKey, otherGroup, unsealed, refused
 }
 
 struct CarryPairSession {
@@ -24,6 +25,7 @@ struct CarryPairSession {
     let name: String
     private(set) var theirKey: Data?
     private(set) var theirName: String?
+    private(set) var theirGrouped = false
     private var myNonce = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
     private var theirNonce: Data?
     private var theirCommit: Data?
@@ -37,7 +39,7 @@ struct CarryPairSession {
     /// The side with the greater public key commits; the other reveals first. Both work it out alone.
     var commits: Bool { theirKey.map { myKey.lexicographicallyPrecedes($0) == false } ?? false }
 
-    func hello() -> PairMessage { .hello(key: myKey, name: name) }
+    func hello(grouped: Bool = false) -> PairMessage { .hello(key: myKey, name: name, grouped: grouped) }
 
     static func commitment(_ committer: Data, _ other: Data, _ nonce: Data) -> Data {
         Data(SHA256.hash(data: Data("recense.pair.commit.v1".utf8) + committer + other + nonce))
@@ -46,10 +48,10 @@ struct CarryPairSession {
     /// Feed one message from the other device; get back what to send (or nothing yet).
     mutating func receive(_ m: PairMessage) throws -> PairMessage? {
         switch m {
-        case .hello(let key, let n):
+        case .hello(let key, let n, let grouped):
             guard theirKey == nil else { throw PairFailure.outOfOrder }
             guard (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: key)) != nil, key != myKey else { throw PairFailure.badKey }
-            theirKey = key; theirName = n
+            theirKey = key; theirName = n; theirGrouped = grouped ?? false
             return commits ? .commit(Self.commitment(myKey, key, myNonce)) : nil
         case .commit(let c):
             guard theirKey != nil, !commits, theirCommit == nil else { throw PairFailure.outOfOrder }
@@ -126,6 +128,69 @@ struct CarryPairSession {
     }
 }
 
+// Derived from Spec: BUG-17 (FEAT-09 P1, both sides finish)
+/// One side's whole pairing, the owner's tap included. Pure: the glue (carrymanager.swift) sends `send`, shows
+/// `code`, and saves `paired`. Two rules BUG-17 found missing:
+/// - their sealed group may arrive before this side's own "They match": hold it, open it on the tap — never drop it,
+///   never accept it without the tap;
+/// - `hello` says who already holds a group, so exactly one side sends one (the holder, else the committer).
+struct CarryPairFlow {
+    struct Paired: Equatable { let key: Data; let name: String; let group: Data }
+    struct Step: Equatable {
+        var send: [PairMessage] = []
+        var code: String?
+        var paired: Paired?
+    }
+
+    private(set) var session: CarryPairSession
+    let mine: Data?                         // this device's group secret, if it already has one
+    private(set) var confirmed = false
+    private(set) var done = false
+    private var held: PairMessage?          // their sealed group, waiting for this side's own tap
+    private var codeShown = false
+
+    init(me: Curve25519.KeyAgreement.PrivateKey, name: String, group: Data?, nonce: Data? = nil) {
+        session = CarryPairSession(me: me, name: name, nonce: nonce); mine = group
+    }
+
+    func start() -> Step { Step(send: [session.hello(grouped: mine != nil)]) }
+
+    mutating func receive(_ m: PairMessage) throws -> Step {
+        guard !done else { throw PairFailure.outOfOrder }
+        switch m {
+        case .refuse: throw PairFailure.refused
+        case .group:
+            guard session.code() != nil, held == nil else { throw PairFailure.outOfOrder }
+            if confirmed { return try open(m) }
+            held = m
+            return Step()
+        default:
+            var step = Step()
+            if let r = try session.receive(m) { step.send.append(r) }
+            if !codeShown, let c = session.code() { codeShown = true; step.code = c }
+            return step
+        }
+    }
+
+    /// The owner tapped "They match" on this screen.
+    mutating func confirm() throws -> Step {
+        guard !done, session.code() != nil else { throw PairFailure.outOfOrder }
+        if confirmed { return Step() }             // a second tap while waiting for theirs changes nothing
+        confirmed = true
+        if let h = held { return try open(h) }
+        guard let offer = try session.offerGroup(mine: mine, theirsExists: session.theirGrouped) else { return Step() }
+        done = true
+        return Step(send: [offer.message], paired: Paired(key: session.theirKey!, name: session.theirName ?? "", group: offer.secret))
+    }
+
+    private mutating func open(_ m: PairMessage) throws -> Step {
+        guard mine == nil else { throw PairFailure.otherGroup }   // two groups never merge (FEAT-09 P1)
+        let g = try session.openGroup(m)
+        done = true
+        return Step(paired: Paired(key: session.theirKey!, name: session.theirName ?? "", group: g))
+    }
+}
+
 /// `Recense/.carry/peers.json`: who is paired. Public keys and names only; no secrets.
 struct CarryPeer: Codable, Equatable, Sendable {
     var name: String
@@ -154,6 +219,19 @@ func carrypairSelftest() -> Bool {
         let p1 = try CarryPairSession.invitationProof(me: a.me, peer: b.myKey, nonce: nonce)
         let p2 = try CarryPairSession.invitationProof(me: b.me, peer: a.myKey, nonce: nonce)
         check(p1 == p2, "an invitation's proof is the same computed from either side")
+        // Regression guard: BUG-17 — the side that waits for the group must finish too, after its own tap.
+        var fa = CarryPairFlow(me: Curve25519.KeyAgreement.PrivateKey(), name: "Mac", group: g)
+        var fb = CarryPairFlow(me: Curve25519.KeyAgreement.PrivateKey(), name: "iPhone", group: nil)
+        var qb = fa.start().send, qa = fb.start().send
+        while !qa.isEmpty || !qb.isEmpty {
+            if !qb.isEmpty { qa += try fb.receive(qb.removeFirst()).send }
+            if !qa.isEmpty { qb += try fa.receive(qa.removeFirst()).send }
+        }
+        let sent = try fa.confirm()
+        var got: CarryPairFlow.Paired?
+        for m in sent.send { got = try fb.receive(m).paired ?? got }
+        let tapped = try fb.confirm()
+        check(sent.paired != nil && got == nil && tapped.paired?.group == g, "the waiting side holds the group until its own tap, then pairs")
     } catch { check(false, "the pairing exchange ran without error (\(error))") }
     return ok
 }

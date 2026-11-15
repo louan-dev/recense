@@ -61,7 +61,7 @@ private enum CarryKeychain {
     private let t = P2PTransport.shared
     private var identity: Curve25519.KeyAgreement.PrivateKey
     private var group: Data?
-    private var pairSessions: [MCPeerID: CarryPairSession] = [:]
+    private var flows: [MCPeerID: CarryPairFlow] = [:]   // one pairing in progress per connected peer (BUG-17)
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
     private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
@@ -113,63 +113,95 @@ private enum CarryKeychain {
         t.onReceive = { [weak self] url, peer in self?.landed(url, from: peer) }
     }
 
-    func start() { t.advertise(); t.browse(); status = "Looking for devices" }
-    func stop() { t.stop(); isLookingToPair = false; status = "Off" }
+    func start() { t.advertise(); t.browse(); if !isLookingToPair { status = "Looking for devices" } }
+    func stop() { t.stop(); stopPairing(); status = "Off" }
 
     // MARK: Pairing — tap "Pair a device" on both screens within P2PTransport's own 10 s invite timeout
 
-    /// "Pair a device": opens this device to the next stranger that connects (or that it finds and invites).
-    func beginPairing() { isLookingToPair = true; start() }
+    /// Nearby devices the owner may pick while pairing: every one but this device itself (the Terminal's
+    /// `recense carry pair` sees the running app under the same name). A listed peer stays pickable, so a pairing
+    /// that finished on one side only can be redone (BUG-17).
+    var pairCandidates: [MCPeerID] { nearby.filter { $0.displayName != P2PTransport.deviceName() } }
 
-    /// The owner picked a nearby, not-yet-paired device by name.
-    func invite(_ peer: MCPeerID) { isLookingToPair = true; t.invite(peer) }
+    /// "Pair a device": opens this device to the next stranger that connects (or that it finds and invites).
+    func beginPairing() {
+        isLookingToPair = true; lastError = nil; start(); status = "Pairing"
+        for peer in t.session.connectedPeers { startFlow(peer) }   // already connected: no `.connected` will come
+    }
+
+    /// "Stop Pairing": ends the pairing only; the link stays on for carrying.
+    func stopPairing() {
+        isLookingToPair = false; flows = [:]; pairingCode = nil; pairingWith = nil
+        if status == "Pairing" { status = "Looking for devices" }
+    }
+
+    /// The owner picked a nearby device by name.
+    func invite(_ peer: MCPeerID) {
+        isLookingToPair = true
+        if t.session.connectedPeers.contains(peer) { startFlow(peer) } else { t.invite(peer) }
+    }
 
     private func connected(_ peer: MCPeerID, _ state: MCSessionState) {
         guard state == .connected else {
-            if state == .notConnected { pairSessions[peer] = nil }
+            if state == .notConnected { flows[peer] = nil }
             return
         }
-        guard !peers.contains(where: { $0.name == peer.displayName }) else { return }   // already paired: nothing to do
-        guard isLookingToPair, pairSessions[peer] == nil else { return }
-        let s = CarryPairSession(me: identity, name: P2PTransport.deviceName())
-        pairSessions[peer] = s
-        try? t.send(s.hello(), type: "pair", to: peer)
+        startFlow(peer)
+    }
+
+    /// Runs the exchange only while "Pair a device" is on — for a listed peer too, which re-pairs it (BUG-17).
+    private func startFlow(_ peer: MCPeerID) {
+        guard isLookingToPair, flows[peer] == nil else { return }
+        let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group)
+        flows[peer] = f
+        apply(f.start(), peer)
     }
 
     private func receivePair(_ data: Data, from peer: MCPeerID) {
-        guard var s = pairSessions[peer], let m = try? JSONDecoder().decode(PairMessage.self, from: data) else { return }
+        guard let m = try? JSONDecoder().decode(PairMessage.self, from: data) else { return }
+        if flows[peer] == nil { startFlow(peer) }   // their hello can beat our own `.connected` callback
+        guard var f = flows[peer] else { return }
         do {
-            let reply = try s.receive(m)
-            pairSessions[peer] = s
-            if let reply { try t.send(reply, type: "pair", to: peer) }
-            if let code = s.code(), pairingCode == nil { pairingCode = code; pairingWith = peer.displayName }
-            if case .group = m { try finishPairing(peer, opening: m) }
-        } catch { lastError = "pairing with \(peer.displayName) failed: \(error)" }
+            let step = try f.receive(m)
+            flows[peer] = f
+            apply(step, peer)
+        } catch { fail(peer, error) }
     }
 
     /// The owner tapped "They match" on this screen.
     func confirmMatch(for peerName: String) {
-        guard let peer = pairSessions.keys.first(where: { $0.displayName == peerName }), let s = pairSessions[peer] else { return }
+        guard let peer = flows.keys.first(where: { $0.displayName == peerName }), var f = flows[peer] else { return }
         do {
-            guard let offer = try s.offerGroup(mine: group, theirsExists: false) else { return }   // waiting for theirs
-            try t.send(offer.message, type: "pair", to: peer)
-            try finish(peer, key: s.theirKey!, group: offer.secret)
-        } catch { lastError = "could not finish pairing with \(peerName): \(error)" }
+            let step = try f.confirm()
+            flows[peer] = f
+            apply(step, peer)
+            if step.paired == nil { status = "Waiting for \(peerName) to tap They Match" }
+        } catch { fail(peer, error) }
     }
 
-    private func finishPairing(_ peer: MCPeerID, opening m: PairMessage) throws {
-        guard let s = pairSessions[peer] else { return }
-        if group != nil { lastError = "\(peer.displayName) already belongs to a different pairing; not merged"; return }
-        try finish(peer, key: s.theirKey!, group: try s.openGroup(m))
+    private func apply(_ step: CarryPairFlow.Step, _ peer: MCPeerID) {
+        do { for m in step.send { try t.send(m, type: "pair", to: peer) } } catch { fail(peer, error); return }
+        if let c = step.code { pairingCode = c; pairingWith = peer.displayName }
+        if let p = step.paired { finish(peer, p) }
     }
 
-    private func finish(_ peer: MCPeerID, key: Data, group g: Data) throws {
-        group = g
-        CarryKeychain.save(g, "group")
-        peers.append(CarryPeer(name: peer.displayName, key: key, paired: Homes.now()))
-        try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic)
-        pairSessions[peer] = nil
+    private func fail(_ peer: MCPeerID, _ error: Error) {
+        flows[peer] = nil; pairingCode = nil; pairingWith = nil
+        lastError = error as? PairFailure == .otherGroup
+            ? "\(peer.displayName) already belongs to a different pairing; not merged"
+            : "pairing with \(peer.displayName) failed: \(error)"
+    }
+
+    private func finish(_ peer: MCPeerID, _ p: CarryPairFlow.Paired) {
+        group = p.group
+        CarryKeychain.save(p.group, "group")
+        peers.removeAll { $0.name == peer.displayName || $0.key == p.key }   // a re-pair replaces, never duplicates
+        peers.append(CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now()))
+        do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
+        catch { lastError = "saving peers.json failed: \(error)" }
+        flows[peer] = nil
         pairingCode = nil; pairingWith = nil; isLookingToPair = false
+        status = "Paired with \(peer.displayName)"
     }
 
     // MARK: Carry now — scan into this device's own ops log, then settle with every paired, connected device
@@ -307,7 +339,7 @@ func runCarryPairCLI() async -> Never {
     var invited: MCPeerID?
     while cm.pairingCode == nil {
         if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
-        if invited == nil, let peer = cm.nearby.first(where: { p in !cm.peers.contains { $0.name == p.displayName } }) {
+        if invited == nil, let peer = cm.pairCandidates.first {
             invited = peer
             print("Found \(peer.displayName) — inviting…")
             cm.invite(peer)

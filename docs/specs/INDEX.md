@@ -52,6 +52,7 @@ Row: ID · title · status · From · code pointer
 - BUG-11 · A file played in Recense is heard in the last broadcast's language (English by default), not its own · `[x]` (owner confirmed on iPhone 11-14) · T-0070 · `bugs/BUG-11-file-heard-wrong-language.md`
 - BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 - BUG-13 · Transcript lines cut off mid-sentence (one line per breath-phrase on iOS; the Mac's sentence rule moved to ShowsKit) · `[~]` · T-0073 · `bugs/BUG-13-lines-cut-mid-sentence.md`
+- BUG-17 · Pairing finished on the Mac only: the side waiting for the group secret threw it away, and a listed peer could not re-pair · `[~]` fixed, device check owed · T-0081 · `bugs/BUG-17-pairing-one-sided.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

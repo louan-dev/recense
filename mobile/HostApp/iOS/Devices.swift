@@ -34,10 +34,10 @@ struct DevicesPlace: View {
                 }
             } else if carry.isLookingToPair {
                 Section("Looking for a device to pair") {
-                    ForEach(carry.nearby.filter { p in !carry.peers.contains { $0.name == p.displayName } }, id: \.displayName) { peer in
+                    ForEach(carry.pairCandidates, id: \.displayName) { peer in
                         Button(peer.displayName) { carry.invite(peer) }
                     }
-                    Button("Stop Pairing", role: .cancel) { carry.stop() }
+                    Button("Stop Pairing", role: .cancel) { carry.stopPairing() }
                 }
             } else {
                 Section {
