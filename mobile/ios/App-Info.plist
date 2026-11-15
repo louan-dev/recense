@@ -6,6 +6,13 @@
 	<string>Recense adds an event to your calendar only when you press Add to Calendar on a dated line in Draftpad.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Recense opens Matters and Raven only with Face ID.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Recense finds your other paired devices over Bluetooth and Wi-Fi, with no internet, to carry files between them.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_recense-p2p._tcp</string>
+		<string>_recense-p2p._udp</string>
+	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recense turns what's playing into captions on this device.</string>
 	<key>UIBackgroundModes</key>

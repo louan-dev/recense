@@ -155,3 +155,32 @@ enum CarrySync {
         return text.split(separator: "\n").compactMap { try? d.decode(CarryOp.self, from: Data($0.utf8)) }
     }
 }
+
+// Regression guard: FEAT-09 P2/P3 (the full suite lives in mobile/ios/Tests/carrysync/main.swift; this is the
+// condensed version `recense selftest` can run with no radios, no files).
+func carrysyncSelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String) { print("\(pass ? "ok  " : "FAIL") carrysync, \(what)"); ok = ok && pass }
+    let utc = TimeZone(identifier: "UTC")!
+    let M = "library/Music"
+    func f(_ p: String, _ sha: String) -> CarryFile { CarryFile(home: M, path: p, size: 1, sha256: sha) }
+
+    let ops = CarrySync.ops(last: [f("a.m4a", "A")], now: [f("sub/a.m4a", "A")], trashOrigins: [:], device: "ipad", nextSeq: 1, at: 1)
+    check(ops.count == 1 && ops[0].op == .move, "a renamed file becomes one move op")
+    check(CarryOpKind.allCases.map(\.rawValue) == ["put", "move", "trash", "restore"], "there is no delete op")
+
+    let put = CarryOp(seq: 1, device: "ipad", at: 1, op: .put, home: M, path: "a.m4a", sha256: "NEW", size: 1)
+    let k = "library/Music/a.m4a"
+    switch CarrySync.decide(put, local: [:], base: [:], deviceName: "iPad", zone: utc) {
+    case .fetch(let key, let sha): check(key == k && sha == "NEW", "a file this device lacks is fetched")
+    default: check(false, "a file this device lacks is fetched")
+    }
+    switch CarrySync.decide(put, local: [k: "MINE"], base: [k: "OLD"], deviceName: "iPad", zone: utc) {
+    case .keepBoth: check(true, "both sides changed a non-text file → both are kept")
+    default: check(false, "both sides changed a non-text file → both are kept")
+    }
+
+    let ops2 = CarrySync.encode([put])
+    check(CarrySync.decode(ops2) == [put], "the op log round-trips through JSON Lines")
+    return ok
+}

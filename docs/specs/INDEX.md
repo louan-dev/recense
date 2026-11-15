@@ -30,7 +30,7 @@ Row: ID · title · status · From · code pointer
 
 ### Features
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
-- FEAT-02 · P2P transport (Bluetooth + Wi-Fi, MultipeerConnectivity) · `[ ]` · T-0035 · `shared/p2ptransport.swift` (planned)
+- FEAT-02 · P2P transport (Bluetooth + Wi-Fi, MultipeerConnectivity) · `[~]` P1–P3 built, device check owed · T-0035 · `shared/p2ptransport.swift`
 - FEAT-03 · Share: consolidated cross-device destination · `[ ]` · T-0035 · `shared/mediadownload.swift` (reused pattern), `mobile/HostApp/macOS/Window.swift`
 - FEAT-04 · Exact time sync for stored transcripts (fingerprint → content clock) · `[~]` P1+P2 built, P3 parked (aligner), P4 after FEAT-02 · owner 2026-11-12 · `shared/ShowsKit/Sources/ShowsKit/{Word,ContentClock}.swift`, `mobile/HostApp/iOS/Listen.swift`, `strip/handoff.swift`
 - FEAT-06 · Homes: the folder contract on every device (+ carry C0 exit) · `[~]` P1–P3 built, device check owed · owner 2026-11-08 + 11-11 · `shared/homes.swift`, `strip/app.swift` (`recense carry`)

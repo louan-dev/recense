@@ -19,7 +19,7 @@ enum PairFailure: Error, Equatable, Sendable {
     case outOfOrder, badCommit, badKey, otherGroup, unsealed
 }
 
-struct PairSession {
+struct CarryPairSession {
     let me: Curve25519.KeyAgreement.PrivateKey
     let name: String
     private(set) var theirKey: Data?
@@ -131,4 +131,29 @@ struct CarryPeer: Codable, Equatable, Sendable {
     var name: String
     var key: Data
     var paired: String
+}
+
+// Regression guard: FEAT-09 P1 (the full suite lives in mobile/ios/Tests/carrypair/main.swift; this is the
+// condensed version `recense selftest` can run with no radios).
+func carrypairSelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String) { print("\(pass ? "ok  " : "FAIL") carrypair, \(what)"); ok = ok && pass }
+    var a = CarryPairSession(me: Curve25519.KeyAgreement.PrivateKey(), name: "Mac")
+    var b = CarryPairSession(me: Curve25519.KeyAgreement.PrivateKey(), name: "iPad")
+    do {
+        var toB: [PairMessage] = [a.hello()], toA: [PairMessage] = [b.hello()]
+        while !toA.isEmpty || !toB.isEmpty {
+            if !toB.isEmpty, let r = try b.receive(toB.removeFirst()) { toA.append(r) }
+            if !toA.isEmpty, let r = try a.receive(toA.removeFirst()) { toB.append(r) }
+        }
+        check(a.code() != nil && a.code() == b.code() && a.code()?.count == 6, "both sides show the same six-digit code")
+        let g = Data(repeating: 7, count: 32)
+        let (msg, _) = try a.offerGroup(mine: g, theirsExists: false)!
+        check(try b.openGroup(msg) == g, "the group secret arrives sealed and opens on the other side")
+        let nonce = Data("n".utf8)
+        let p1 = try CarryPairSession.invitationProof(me: a.me, peer: b.myKey, nonce: nonce)
+        let p2 = try CarryPairSession.invitationProof(me: b.me, peer: a.myKey, nonce: nonce)
+        check(p1 == p2, "an invitation's proof is the same computed from either side")
+    } catch { check(false, "the pairing exchange ran without error (\(error))") }
+    return ok
 }
