@@ -32,7 +32,7 @@ enum Home: String, Codable, CaseIterable, Sendable {
     var label: String {
         switch self {
         case .music: "Music"; case .study: "Study"; case .legal: "Legal"; case .audiobooks: "Audiobooks"
-        case .listen: "Listen"; case .downloads: "Downloads"; case .trash: "Trash"
+        case .listen: "Listen"; case .downloads: "Inbox"; case .trash: "Trash"   // downloads/ keeps its folder name (FEAT-06)
         }
     }
 }
@@ -422,7 +422,7 @@ func homesSelftest() -> Bool {
     check(Homes.home(for: "nocturne.m4a") == .music, "audio goes to Music", Homes.home(for: "nocturne.m4a"))
     check(Homes.home(for: "book.m4b") == .audiobooks, "an audiobook goes to Audiobooks", Homes.home(for: "book.m4b"))
     check(Homes.home(for: "ch2100.pdf") == .study && Homes.home(for: "notes.md") == .study, "documents go to Study")
-    check(Homes.home(for: "clip.mp4") == .downloads, "anything else goes to Downloads", Homes.home(for: "clip.mp4"))
+    check(Homes.home(for: "clip.mp4") == .downloads, "anything else goes to the Inbox (downloads/)", Homes.home(for: "clip.mp4"))
 
     // taking a file in: moved, hashed as it landed, one entry, and a second of the same name never overwrites
     var first: HomeEntry?

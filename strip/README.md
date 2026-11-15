@@ -433,7 +433,7 @@ One layout on every device (the folder contract; code `shared/homes.swift`, spec
 Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files app.
 - The homes: `library/Music/`, `library/Study/`, `library/Legal/`, `library/Audiobooks/`, `library/Listen/`, `downloads/`, `trash/`. Recense creates them at launch.
 - Each home keeps `.recense-index.json`: one entry per file with path, size, SHA-256, when it landed, which device recorded it, tags. Plain files beside it, nothing in a database.
-- Taking a file in moves it (never copies), never overwrites (`song 2.m4a`, as Finder does), and hashes it as it lands. Audio goes to Music, an `.m4b` to Audiobooks, a PDF or document to Study, anything else to Downloads.
+- Taking a file in moves it (never copies), never overwrites (`song 2.m4a`, as Finder does), and hashes it as it lands. Audio goes to Music, an `.m4b` to Audiobooks, a PDF or document to Study, anything else to `downloads/`, which the app labels **Inbox** (owner 2026-11-15; the folder keeps its name).
 - **Nothing is deleted unless you say so:** Remove moves the file to `trash/` and records where it came from, so it can be put back; Delete forever works only inside `trash/`.
 - `recense homes` lists the homes and how many files each has recorded; `recense homes adopt` records everything dropped into them by Finder, the Files app or AirDrop.
 - The terminal commands run in place (`status`, `hide`, `quit`, `selftest`, `hear-app`, `carry`, `download`, `homes`); every other verb opens the app.
