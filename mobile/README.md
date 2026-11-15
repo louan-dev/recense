@@ -105,7 +105,9 @@ updates in place.
   `library/Audiobooks/`, `library/Listen/`, `downloads/`, `trash/` — created at launch and visible in the Files app.
   Each keeps `.recense-index.json` (path, size, SHA-256, added, device, tags). A file taken in is moved, never
   overwritten, and hashed as it lands; Remove puts it in `trash/` with where it came from, and only Trash can delete
-  forever. No network at any point. Moving bytes between devices by themselves (carry C1/C2) is not built yet.
+  forever. No network at any point. Moving bytes between devices by themselves (FEAT-09): pairing and a one-way
+  "Carry Now" push are wired (Library › Devices, `HostApp/iOS/Devices.swift`); the full move/trash/restore replay
+  across devices is not built yet.
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new

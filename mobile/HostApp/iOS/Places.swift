@@ -11,6 +11,7 @@ enum RecensePlaces {
             Place(id: "archive", title: "Archive", symbol: "icloud") { FolderView(path: Gallery.rootPath) },
             Place(id: "main", title: "Main", symbol: "square.grid.2x2") { MainView() },
             Place(id: "terminal", title: "Terminal", symbol: "terminal") { TerminalPlace() },  // SSH to the Macs (Terminal.swift)
+            Place(id: "devices", title: "Devices", symbol: "point.3.connected.trianglepath.dotted") { DevicesPlace() },  // FEAT-09 carry (Devices.swift)
             Place(id: "ask", title: "Ask", symbol: "lightbulb") {
                 PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).webPlace("Ask")
             },

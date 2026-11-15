@@ -185,6 +185,9 @@ pairs two devices once by comparing six digits on both screens, as Bluetooth doe
 radio link itself (FEAT-02, MultipeerConnectivity): finds the other device over Bluetooth or peer-to-peer Wi-Fi, no
 router, no internet, and carries both the pairing exchange and the carry log. Pairing and settling are tested without
 radios; the link itself is proven on real devices, airplane mode on. Check: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`.
+The glue is wired (`shared/carrymanager.swift`, a "Devices" screen on the Mac and on iOS): pairing works end to
+end, and "Carry Now" pushes a new or changed file straight to a paired, connected device — the full move/trash/
+restore replay across devices is the part still open.
 
 Cloudflare serves purely as storage and caching, deliberately swappable: the plan is a one-command move onto a
 Mac mini, on the theory that a signature, a subscription or a vendor's roadmap expiring should leave every bit of

@@ -30,6 +30,8 @@ import UIKit
     var onMessage: ((String, Data, MCPeerID) -> Void)?
     /// A file finished arriving, saved at this URL (move it before returning, the system reclaims it after).
     var onReceive: ((URL, MCPeerID) -> Void)?
+    /// A connected peer's session state changed (FEAT-09's glue starts the pairing exchange on `.connected`).
+    var onStateChange: ((MCPeerID, MCSessionState) -> Void)?
 
     override private init() { super.init() }
 
@@ -65,6 +67,12 @@ import UIKit
         browser?.stopBrowsingForPeers(); browser = nil
     }
 
+    /// Invite a peer found while browsing (FEAT-09's "Pair a device": the owner picked it by name, not yet paired,
+    /// so `isPaired` won't trigger the automatic invite in `browser(foundPeer:)`).
+    func invite(_ peer: MCPeerID, timeout: TimeInterval = 10) {
+        browser?.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
+    }
+
     enum Failure: Error { case notConnected }
 
     /// One wire format for every caller: FEAT-09's PairMessage, carry ops, Share's handshake, all ride this.
@@ -88,7 +96,9 @@ import UIKit
 }
 
 extension P2PTransport: MCSessionDelegate {
-    nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {}
+    nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        Task { @MainActor in P2PTransport.shared.onStateChange?(peerID, state) }
+    }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         guard let frame = try? JSONDecoder().decode(Frame.self, from: data) else { return }

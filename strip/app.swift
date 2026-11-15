@@ -43,6 +43,7 @@ import CoreAudio
 import AudioToolbox
 import WebKit
 import Speech
+import MultipeerConnectivity
 
 // MARK: - Settings (edit these)
 
@@ -6803,6 +6804,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     func applicationDidFinishLaunching(_ n: Notification) {
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
+        CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
 
         buildMenu()
@@ -7083,14 +7085,16 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         watchPanelSwipes()
     }
 
-    func buildMenu() {
+    @MainActor func buildMenu() {
         let main = NSMenu()
 
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         let hider = NSMenuItem(title: "Menu-Bar Hider", action: nil, keyEquivalent: "")
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
-        appMenu.delegate = self                                   // rebuilds the hider's entries each time it opens
+        let devices = NSMenuItem(title: "Devices", action: nil, keyEquivalent: "")
+        devices.submenu = devicesMenu(); appMenu.addItem(devices)
+        appMenu.delegate = self                                   // rebuilds the hider's and devices' entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }
         appMenu.addItem(.separator())
@@ -7151,6 +7155,52 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
     @objc func toggleLeftWing() { wingPanels.toggle(.left) }
     @objc func toggleRightWing() { wingPanels.toggle(.right) }
+
+    // MARK: Devices (carrymanager.swift, FEAT-09): pair once, then "Carry Now" pushes new files to every paired,
+    // connected device. One control per function, rebuilt each time the menu opens (menuNeedsUpdate).
+    @MainActor func devicesMenu() -> NSMenu {
+        let m = NSMenu()
+        let cm = CarryManager.shared
+        if cm.peers.isEmpty {
+            m.addItem(withTitle: "No paired devices yet", action: nil, keyEquivalent: "").isEnabled = false
+        } else {
+            for p in cm.peers { m.addItem(withTitle: "\(p.name) — paired \(p.paired)", action: nil, keyEquivalent: "").isEnabled = false }
+        }
+        m.addItem(.separator())
+        if let code = cm.pairingCode, let who = cm.pairingWith {
+            m.addItem(withTitle: "Code with \(who): \(code)", action: nil, keyEquivalent: "").isEnabled = false
+            let match = m.addItem(withTitle: "They Match", action: #selector(confirmPairMatch), keyEquivalent: "")
+            match.target = self
+        } else if cm.isLookingToPair {
+            m.addItem(withTitle: "Looking for a device to pair…", action: nil, keyEquivalent: "").isEnabled = false
+            for peer in cm.nearby where !cm.peers.contains(where: { $0.name == peer.displayName }) {
+                let item = m.addItem(withTitle: "Pair “\(peer.displayName)”", action: #selector(pairNearbyDevice(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = peer
+            }
+            let stop = m.addItem(withTitle: "Stop Pairing", action: #selector(stopPairingDevice), keyEquivalent: "")
+            stop.target = self
+        } else {
+            let pair = m.addItem(withTitle: "Pair a Device…", action: #selector(beginPairingDevice), keyEquivalent: "")
+            pair.target = self
+        }
+        m.addItem(.separator())
+        let carry = m.addItem(withTitle: "Carry Now", action: #selector(carryNowAction), keyEquivalent: "")
+        carry.target = self; carry.isEnabled = !cm.peers.isEmpty
+        m.addItem(withTitle: cm.status, action: nil, keyEquivalent: "").isEnabled = false
+        if let err = cm.lastError { m.addItem(withTitle: "⚠︎ \(err)", action: nil, keyEquivalent: "").isEnabled = false }
+        return m
+    }
+    @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
+    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stop() }
+    @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
+        guard let peer = sender.representedObject as? MCPeerID else { return }
+        CarryManager.shared.invite(peer)
+    }
+    @MainActor @objc func confirmPairMatch() {
+        guard let who = CarryManager.shared.pairingWith else { return }
+        CarryManager.shared.confirmMatch(for: who)
+    }
+    @MainActor @objc func carryNowAction() { CarryManager.shared.carryNow() }
     @objc func useNewEditor() { setEditor(.new) }
     @objc func useClassicEditor() { setEditor(.classic) }
 
@@ -8238,8 +8288,9 @@ NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotif
 app.run()
 
 extension App: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    @MainActor func menuNeedsUpdate(_ menu: NSMenu) {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
+        menu.items.first { $0.title == "Devices" }?.submenu = devicesMenu()
         menu.items.first { $0.title == "Connect To" }?.submenu = sshMenu()
         // The wing entries say Show or Hide as the wings are now.
         if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {

@@ -1,7 +1,24 @@
 # FEAT-09 · Carry between devices: pair once, then the same homes everywhere
 
 From: owner 2026-11-11 (carry, `.handoff/places/INBOX.md` L29–47) · owner 2026-11-14 (stable core for music and
-self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing core, P2/P3 rules built; link and glue next)
+self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing core, P2/P3 rules, the glue and the Devices
+screen built; P2/P3's full settling — move/trash/restore replay, conflict merge — not yet wired into the glue)
+
+## Glue, built 2026-11-14 (`shared/carrymanager.swift`)
+- Pairing (P1) is wired end to end: "Pair a Device…" on the Mac menu (Devices) and the iOS Devices screen opens
+  this device to the next stranger that connects within P2PTransport's 10 s invite timeout; the six-digit code
+  is shown on both screens; "They Match" seals and stores the group secret in the Keychain, alongside the
+  identity key, and records the peer in `peers.json`.
+- "Carry Now" pushes every file that is new or changed since the last carry to every paired, connected device,
+  landing through `Homes.add` on arrival — the exact gap the owner hit (a file in `~/Recense/downloads/` not
+  reaching the iPhone).
+- **Not yet wired**, said plainly rather than half-built: carrysync.swift's P2/P3 settling (the append-only ops
+  log, move/trash/restore replay across devices, text merge, keep-both siblings). "Carry Now" only pushes; it
+  does not yet replay a remove or a rename from one device onto another. That is the rest of P4.
+- Files move over `P2PTransport.send(fileAt:)` directly, not through `shared/pieces`'s resumable chunks — fine
+  for Homes' sizes today; swapping it in later changes nothing public in `carrymanager.swift`.
+- If two devices are each already in a *different* group, pairing refuses rather than merging them (no wire
+  message yet compares group fingerprints before the secret is sent). Cannot happen on a first pairing.
 
 ## Why
 Your music, study files and downloads must be the same on the Mac, iPhone and iPad, with no internet and no
@@ -84,18 +101,19 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 - `shared/carrysync.swift`: P2 + P3, pure Swift, no radios (ops, scan diff, settling, conflict names).
 - `shared/carrypair.swift`: P1's messages, code, group sealing and invitation proof; pure (CryptoKit), no radios.
 - `shared/p2ptransport.swift`: FEAT-02 link + P1 pairing.
-- Glue only in `strip/` and `mobile/HostApp/iOS/` (the Devices screen).
+- `shared/carrymanager.swift`: the glue — starts the link, runs pairing, orchestrates "Carry Now". One copy,
+  used by the Mac's Devices menu (`strip/app.swift`) and the iOS Devices screen (`mobile/HostApp/iOS/Devices.swift`).
 
 ## Done checks
 - `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`
   (ALL OK); `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"`
-  (ALL OK: same code on both, a device in the middle never matches in 300 runs, forged nonce and stranger refused);
-  then `strip/recense selftest` once the glue lands: the P2/P3 rules (scan diff → ops; every settling case above; no delete op exists;
-  replay twice = no change; conflict names; markdown merge keeps both sides' lines).
-- `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest).
-- Real devices, airplane mode on with Wi-Fi and Bluetooth on: a song added on the iPad plays on the iPhone and the
-  Mac; `recense carry verify` on the Mac and the same list on iPhone and iPad show identical sha256 per path;
-  a file removed on the iPhone is in `trash/` on all three, and Restore brings it back on all three.
+  (ALL OK: same code on both, a device in the middle never matches in 300 runs, forged nonce and stranger refused) — 2026-11-14 ✓.
+- `strip/recense selftest`, 198 ok, exit 0 (includes homesSelftest, carrysyncSelftest, carrypairSelftest) — 2026-11-14 ✓.
+- `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest), both BUILD SUCCEEDED — 2026-11-14 ✓.
+- **Not yet checked (owner, real devices):** Pair a Mac and an iPhone; airplane mode on with Wi-Fi and Bluetooth
+  on; a file added to a home on one reaches the other via "Carry Now" within the session. The full P4 settling
+  check (a song added on the iPad plays on the iPhone and the Mac; a file removed on one is in `trash/` on all
+  three; Restore brings it back on all three) waits on the ops-log/settling wiring noted above, not built yet.
 
 ## Offline gate
 - Outside services: **none.** Radios on the devices only; no account, no internet, no company.
