@@ -8129,8 +8129,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
-    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s ? 0 : 1)
+    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), u = carrymanagerSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && u ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-06

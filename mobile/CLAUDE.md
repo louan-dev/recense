@@ -29,6 +29,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `shared/notesync.swift`: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"` (ALL OK).
 - Carry's pairing (`shared/carrypair.swift`: the six-digit code, group sealing, invitation proof), after any change to it:
   `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"` (ALL OK).
+- Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place
+  that writes to disk for a settled change), after any change to it or to `shared/homes.swift`: it needs ShowsKit
+  linked, so it runs inside `strip/recense selftest` (`carrymanagerSelftest`, ALL OK there), not a standalone swiftc test.
 - The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:

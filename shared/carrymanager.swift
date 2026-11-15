@@ -3,18 +3,22 @@
 // nearby devices, pair one, press "Carry now". One copy, used by the Mac menu (strip/app.swift) and the iOS
 // Devices screen (mobile/HostApp/iOS/Devices.swift) — no second orchestrator.
 //
-// Scope of this slice, said plainly: "Carry now" pushes every file that is new or changed since the last carry,
-// to every paired device currently connected. It does NOT yet replay a move, a trash or a restore from one
-// device onto another, and it does not yet run carrysync.swift's P2/P3 settling (append-only ops log, conflict
-// merge, keep-both siblings) — that is the rest of FEAT-09 P4, still open, and this file does not pretend
-// otherwise. What it does do — a file dropped into a home reaches every paired, reachable device — is exactly
-// the gap FEAT-06 P4 named and the owner hit.
+// "Carry now" now runs the real FEAT-09 P4 settling: each device keeps its own append-only ops log
+// (`Recense/.carry/ops/<device>.jsonl`, carrysync.swift's CarrySync.ops/decide), and two paired, connected
+// devices exchange "how much of yours have I applied" (`seen`), then the ops the other lacks (`ops`), then the
+// bytes those ops need — so a move, a trash or a restore replays correctly on the other side, not just a plain
+// file push. Conflict merge for text (3-way, against a remembered base) is still open: this slice always settles
+// a real conflict the safe way (keep both, named siblings) rather than merging, because no base is tracked yet.
+// That is the one thing still named honestly as not done, not the whole of P4.
 //
 // Known simplification: files move over the link's own resource transfer (`P2PTransport.send(fileAt:)`), not
 // through `shared/pieces`'s resumable chunks. A dropped link restarts that file's send from the top rather than
 // resuming — fine for the sizes Homes carries today.
 // Known gap: if two devices are each already in a *different* group, pairing refuses rather than merging them
 // (no wire message yet compares group fingerprints before the secret is sent). Cannot happen on a first pairing.
+// Known gap: ops and the bytes they need can arrive in either order (two different MultipeerConnectivity
+// channels) — handled by staging every incoming file under `.carry/incoming/` by its destination key and
+// placing it only once the matching op has been decided, from whichever side arrives second.
 import Foundation
 import CryptoKit
 import MultipeerConnectivity
@@ -59,10 +63,16 @@ private enum CarryKeychain {
     private var group: Data?
     private var pairSessions: [MCPeerID: CarryPairSession] = [:]
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
+    private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
+    private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
     private var lastSentURL: URL { dir.appendingPathComponent("last-sent.json") }
+    private var appliedURL: URL { dir.appendingPathComponent("applied.json") }
+    private var opsDir: URL { dir.appendingPathComponent("ops", isDirectory: true) }
+    private var stagingDir: URL { dir.appendingPathComponent("incoming", isDirectory: true) }
+    private func opsLogURL(_ device: String) -> URL { opsDir.appendingPathComponent("\(device).jsonl") }
 
     override init() {
         if let d = CarryKeychain.load("identity"), let k = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: d) {
@@ -75,8 +85,11 @@ private enum CarryKeychain {
         group = CarryKeychain.load("group")
         super.init()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: opsDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
         peers = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
+        appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         wire()
     }
 
@@ -89,7 +102,14 @@ private enum CarryKeychain {
         }
         t.onPeerLost = { [weak self] peer in self?.nearby.removeAll { $0 == peer } }
         t.onStateChange = { [weak self] peer, state in self?.connected(peer, state) }
-        t.onMessage = { [weak self] type, data, peer in if type == "pair" { self?.receivePair(data, from: peer) } }
+        t.onMessage = { [weak self] type, data, peer in
+            switch type {
+            case "pair": self?.receivePair(data, from: peer)
+            case "seen": self?.receiveSeen(data, from: peer)
+            case "ops": self?.receiveOps(data, from: peer)
+            default: break
+            }
+        }
         t.onReceive = { [weak self] url, peer in self?.landed(url, from: peer) }
     }
 
@@ -152,7 +172,27 @@ private enum CarryKeychain {
         pairingCode = nil; pairingWith = nil; isLookingToPair = false
     }
 
-    // MARK: Carry now — push every new or changed file to every paired, connected device
+    // MARK: Carry now — scan into this device's own ops log, then settle with every paired, connected device
+
+    /// A fresh scan against the last one, turned into ops and appended to this device's own log (FEAT-09 P2).
+    /// Where a file in `trash/` came from, for `CarrySync.ops`'s trash/restore detection.
+    private func trashOrigins() -> [String: String] {
+        Dictionary(uniqueKeysWithValues: Homes.index(.trash).compactMap { e -> (String, String)? in
+            guard let tag = e.tags.first(where: { $0.hasPrefix("from:") }) else { return nil }
+            return (e.path, String(tag.dropFirst("from:".count)))
+        })
+    }
+
+    private func myOps() -> [CarryOp] {
+        CarrySync.decode((try? String(contentsOf: opsLogURL(Homes.device), encoding: .utf8)) ?? "")
+    }
+
+    private func appendOps(_ ops: [CarryOp]) throws {
+        guard !ops.isEmpty else { return }
+        let h = FileHandle(forWritingAtPath: opsLogURL(Homes.device).path)
+        if let h { defer { try? h.close() }; h.seekToEndOfFile(); h.write(Data(CarrySync.encode(ops).utf8)) }
+        else { try CarrySync.encode(ops).write(to: opsLogURL(Homes.device), atomically: true, encoding: .utf8) }
+    }
 
     func carryNow() {
         guard !peers.isEmpty else { lastError = "no paired device yet"; return }
@@ -160,39 +200,80 @@ private enum CarryKeychain {
         guard !targets.isEmpty else { lastError = "no paired device is connected right now"; return }
         do {
             let now = (try Carry.verify()).map { CarryFile(home: $0.home, path: $0.path, size: $0.size, sha256: $0.sha256) }
-            let before = Dictionary(uniqueKeysWithValues: lastSent.map { ($0.key, $0.sha256) })
-            let news = now.filter { before[$0.key] != $0.sha256 }
-            for f in news {
-                let url = Homes.root.appendingPathComponent(f.home).appendingPathComponent(f.path)
-                let name = Self.encode(f.key)
-                for peer in targets {
-                    t.send(fileAt: url, named: name, to: peer) { [weak self] error in
-                        if let error { self?.lastError = "sending \(f.path) to \(peer.displayName) failed: \(error)" }
-                    }
-                }
-            }
+            let mine = myOps()
+            let ops = CarrySync.ops(last: lastSent, now: now, trashOrigins: trashOrigins(), device: Homes.device,
+                                    nextSeq: (mine.map(\.seq).max() ?? 0) + 1, at: Int64(Date().timeIntervalSince1970))
+            try appendOps(ops)
             lastSent = now
             try JSONEncoder().encode(now).write(to: lastSentURL, options: .atomic)
+            for peer in targets { try t.send(appliedSeq[peer.displayName] ?? 0, type: "seen", to: peer) }
             lastCarryAt = Date(); lastError = nil
-            status = news.isEmpty ? "Up to date" : "Sent \(news.count) file\(news.count == 1 ? "" : "s")"
+            status = ops.isEmpty ? "Up to date" : "Settling \(ops.count) change\(ops.count == 1 ? "" : "s")"
         } catch { lastError = "carry failed: \(error)" }
     }
 
-    private func landed(_ url: URL, from peer: MCPeerID) {
-        guard let key = Self.decode(url.lastPathComponent),
-              let split = CarrySync.split(key, homes: Home.allCases.map(\.folder)),
-              let home = Home.allCases.first(where: { $0.folder == split.home })
-        else { try? FileManager.default.removeItem(at: url); return }
-        let leaf = (split.path as NSString).lastPathComponent
-        let renamed = url.deletingLastPathComponent().appendingPathComponent(leaf)
-        do {
-            if renamed != url {
-                try? FileManager.default.removeItem(at: renamed)
-                try FileManager.default.moveItem(at: url, to: renamed)
+    /// The resulting place an op settles at — where its bytes (if any) belong, on either side of the link.
+    private func resultKey(_ op: CarryOp) -> String { op.toKey ?? CarrySync.key(op.home, op.path) }
+
+    private func receiveSeen(_ data: Data, from peer: MCPeerID) {
+        guard let since = try? JSONDecoder().decode(Int.self, from: data) else { return }
+        let mine = myOps().filter { $0.seq > since }
+        guard !mine.isEmpty else { return }
+        try? t.send(mine, type: "ops", to: peer)
+        for op in mine where op.op != .trash {   // trash never fetches (CarrySync.decide); nothing to send
+            let url = Homes.root.appendingPathComponent(resultKey(op))
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            t.send(fileAt: url, named: Self.encode(resultKey(op)), to: peer) { [weak self] error in
+                if let error { self?.lastError = "sending to \(peer.displayName) failed: \(error)" }
             }
-            try Homes.add(renamed, to: home, move: true, subfolder: (split.path as NSString).deletingLastPathComponent)
-            status = "Received \(leaf) from \(peer.displayName)"
-        } catch { lastError = "landing \(leaf) from \(peer.displayName) failed: \(error)" }
+        }
+    }
+
+    private func receiveOps(_ data: Data, from peer: MCPeerID) {
+        guard let ops = try? JSONDecoder().decode([CarryOp].self, from: data) else { return }
+        guard let local = try? Carry.verify() else { lastError = "carry verify failed while settling"; return }
+        let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
+        for op in ops.sorted(by: { $0.seq < $1.seq }) {
+            let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
+            let key = resultKey(op)
+            switch action {
+            case .nothing: discardStaged(key)
+            case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
+                        discardStaged(key)
+            case .fetch, .replace, .keepBoth: pendingActions[key] = action; tryPlace(key)
+            case .merge: break   // unreachable with an empty base; text conflicts still settle as keepBoth
+            }
+        }
+        appliedSeq[peer.displayName] = max(appliedSeq[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
+        try? JSONEncoder().encode(appliedSeq).write(to: appliedURL, options: .atomic)
+        status = "Settled \(ops.count) change\(ops.count == 1 ? "" : "s") from \(peer.displayName)"
+    }
+
+    private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(Self.encode(key)) }
+    private func discardStaged(_ key: String) { try? FileManager.default.removeItem(at: stagedURL(key)) }
+
+    /// Places a staged file's bytes once its action is known — whichever of (op, bytes) arrived second.
+    /// The actual file-system work is `CarryApply.apply` (shared/carryapply.swift): one implementation, tested
+    /// without radios there, called here and (for `.move`, no bytes needed) from `receiveOps` directly.
+    private func tryPlace(_ key: String) {
+        guard let action = pendingActions[key] else { return }
+        let staged = stagedURL(key)
+        guard FileManager.default.fileExists(atPath: staged.path) else { return }
+        do {
+            let placed = try CarryApply.apply(action, bytesAt: staged)
+            pendingActions[key] = nil
+            if let placed { status = "Settled \((placed as NSString).lastPathComponent)" }
+        } catch { lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil }
+    }
+
+    private func landed(_ url: URL, from peer: MCPeerID) {
+        guard let key = Self.decode(url.lastPathComponent) else { try? FileManager.default.removeItem(at: url); return }
+        let staged = stagedURL(key)
+        do {
+            try? FileManager.default.removeItem(at: staged)
+            try FileManager.default.moveItem(at: url, to: staged)
+        } catch { lastError = "staging from \(peer.displayName) failed: \(error)"; return }
+        tryPlace(key)   // the matching op may already have arrived; if not, this waits for receiveOps to call it
     }
 
     /// `MCSession`'s resource name is a filename, so a carry key ("library/Music/song.m4a") rides base64url —

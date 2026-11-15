@@ -1,24 +1,33 @@
 # FEAT-09 · Carry between devices: pair once, then the same homes everywhere
 
 From: owner 2026-11-11 (carry, `.handoff/places/INBOX.md` L29–47) · owner 2026-11-14 (stable core for music and
-self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing core, P2/P3 rules, the glue and the Devices
-screen built; P2/P3's full settling — move/trash/restore replay, conflict merge — not yet wired into the glue)
+self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing + P2/P3/P4 settling built and wired end to
+end, real-device check owed; conflict text-merge against a tracked base is the one piece of P3 still open)
 
-## Glue, built 2026-11-14 (`shared/carrymanager.swift`)
-- Pairing (P1) is wired end to end: "Pair a Device…" on the Mac menu (Devices) and the iOS Devices screen opens
-  this device to the next stranger that connects within P2PTransport's 10 s invite timeout; the six-digit code
-  is shown on both screens; "They Match" seals and stores the group secret in the Keychain, alongside the
-  identity key, and records the peer in `peers.json`.
-- "Carry Now" pushes every file that is new or changed since the last carry to every paired, connected device,
-  landing through `Homes.add` on arrival — the exact gap the owner hit (a file in `~/Recense/downloads/` not
-  reaching the iPhone).
-- **Not yet wired**, said plainly rather than half-built: carrysync.swift's P2/P3 settling (the append-only ops
-  log, move/trash/restore replay across devices, text merge, keep-both siblings). "Carry Now" only pushes; it
-  does not yet replay a remove or a rename from one device onto another. That is the rest of P4.
+## Glue, built 2026-11-14/15 (`shared/carrymanager.swift`, `shared/carryapply.swift`)
+- Pairing (P1) is wired end to end: "Pair a Device…" (Mac menu, iOS Devices screen, `recense carry pair` in
+  Terminal, or the "Pair a device"/"Confirm pairing" voice commands) opens this device to the next stranger
+  that connects within P2PTransport's 10 s invite timeout; the six-digit code is shown (or read back) on both
+  sides; "They Match" seals and stores the group secret in the Keychain, alongside the identity key, and
+  records the peer in `peers.json`.
+- "Carry Now" (P2–P4) scans into this device's own append-only ops log and settles the real way: it exchanges
+  "how much of yours have I applied" with every paired, connected device, sends the ops the other lacks plus
+  the bytes those ops need, and the receiving side decides each one with `CarrySync.decide` and carries it out
+  with `CarryApply.apply` — fetch, replace (old to `trash/`, origin recorded), keep both as a named sibling, or
+  a plain local move for a replayed move/trash/restore. Never overwrites. `CarryApply.apply` is the one place
+  that touches the file system for a settled action, tested without any radio (`carrymanagerSelftest`).
+- **Still open, said plainly rather than hidden:** a real conflict (both sides changed since the last common
+  point) always keeps both, because no base is tracked yet for the 3-way text merge `shared/notesync.swift`
+  already knows how to do — a merge would be strictly better for Draftpad's own pages, but keep-both never
+  loses a line either way. Starting automatically when two paired devices meet (rather than only on "Carry
+  Now") is also still open, the same deliberate choice the first glue slice already made.
 - Files move over `P2PTransport.send(fileAt:)` directly, not through `shared/pieces`'s resumable chunks — fine
   for Homes' sizes today; swapping it in later changes nothing public in `carrymanager.swift`.
 - If two devices are each already in a *different* group, pairing refuses rather than merging them (no wire
   message yet compares group fingerprints before the secret is sent). Cannot happen on a first pairing.
+- Ops and the bytes they need can arrive in either order (two separate MultipeerConnectivity channels): every
+  incoming file is staged under `.carry/incoming/` by its destination key first, and placed only once the
+  matching op has been decided, from whichever side — the op or the bytes — arrives second.
 
 ## Why
 Your music, study files and downloads must be the same on the Mac, iPhone and iPad, with no internet and no
@@ -80,13 +89,26 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   - `move` / `trash` / `restore` → replayed only if the local file still has the op's sha; else nothing moves and
     the difference shows as a conflict sibling.
 - The base is the last version both sides agreed on: `Recense/.carry/base/<sha256>` for text files only.
+- **Built (P4, 2026-11-15) stands on the rules above but doesn't yet track a base:** `CarryManager`/`CarryApply`
+  call `CarrySync.decide(..., base: [:], ...)`, so "unchanged since the base" and the text 3-way merge never
+  fire yet — every real conflict settles as keep-both today, always safe, sometimes a sibling where tracking a
+  base would later let a clean edit land without one. Base-tracking is the next slice, not a rewrite: `decide`
+  already does the right thing the moment a real `base` dictionary is passed in.
 - Replaying the same ops twice changes nothing (idempotent): ops at or below the seen vector's seq are skipped, and
   each decision is "nothing" once its result is in place. The vector is the guard: without it, a put replayed after
   its own move and trash would bring the file back (tested).
 
-### P4 · When it runs
-- When two paired devices see each other: starts within 2 s, one file at a time, progress shown per file.
-- A dropped link resumes from the pieces already held.
+### P4 · When it runs — built
+- "Carry now" scans into this device's own append-only ops log (`Recense/.carry/ops/<device>.jsonl`,
+  `CarrySync.ops`), then settles with every paired, connected device: "how much of yours have I applied"
+  (`seen`) → the ops the other lacks (`ops`) → the bytes those ops need, over FEAT-02's link. A move, a trash or
+  a restore replays correctly on the other side — not just a plain file push (`shared/carrymanager.swift`,
+  `shared/carryapply.swift`). A real conflict (both sides changed, no tracked base yet) always settles the safe
+  way, keeping both as named siblings, rather than merging — the one piece of P3 still open, named honestly.
+- Starting automatically within 2 s of two paired devices seeing each other (rather than only on "Carry now")
+  is still open — a deliberate, smaller first slice, same choice the Devices-screen glue already made.
+- A dropped link resumes from the pieces already held (`shared/pieces`) — not yet wired into this path; today a
+  dropped link's file resends from the top, acceptable for the sizes Homes carries so far.
 - iOS: while Recense is open, plus the background processing window. Never blocks playing, reading or writing.
 
 ### P5 · Where you see it
@@ -104,19 +126,26 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 - `shared/carrysync.swift`: P2 + P3, pure Swift, no radios (ops, scan diff, settling, conflict names).
 - `shared/carrypair.swift`: P1's messages, code, group sealing and invitation proof; pure (CryptoKit), no radios.
 - `shared/p2ptransport.swift`: FEAT-02 link + P1 pairing.
-- `shared/carrymanager.swift`: the glue — starts the link, runs pairing, orchestrates "Carry Now". One copy,
-  used by the Mac's Devices menu (`strip/app.swift`) and the iOS Devices screen (`mobile/HostApp/iOS/Devices.swift`).
+- `shared/carrymanager.swift`: the glue — starts the link, runs pairing, orchestrates "Carry Now" (the ops-log
+  scan and the `seen`/`ops` exchange). One copy, used by the Mac's Devices menu + `recense carry pair`
+  (`strip/app.swift`) and the iOS Devices screen + voice intents (`mobile/HostApp/iOS/Devices.swift`,
+  `mobile/HostApp/iOS/PairIntent.swift`).
+- `shared/carryapply.swift`: carries out one already-`decide`d action against this device's homes (fetch,
+  replace, keep-both, or a plain move) — the only place that touches the file system for a settled change,
+  tested without any radio (`carrymanagerSelftest`).
 
 ## Done checks
 - `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`
   (ALL OK); `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"`
   (ALL OK: same code on both, a device in the middle never matches in 300 runs, forged nonce and stranger refused) — 2026-11-14 ✓.
-- `strip/recense selftest`, 198 ok, exit 0 (includes homesSelftest, carrysyncSelftest, carrypairSelftest) — 2026-11-14 ✓.
-- `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest), both BUILD SUCCEEDED — 2026-11-14 ✓.
-- **Not yet checked (owner, real devices):** Pair a Mac and an iPhone; airplane mode on with Wi-Fi and Bluetooth
-  on; a file added to a home on one reaches the other via "Carry Now" within the session. The full P4 settling
-  check (a song added on the iPad plays on the iPhone and the Mac; a file removed on one is in `trash/` on all
-  three; Restore brings it back on all three) waits on the ops-log/settling wiring noted above, not built yet.
+- `strip/recense selftest`, exit 0 (includes homesSelftest, carrysyncSelftest, carrypairSelftest, and
+  `carrymanagerSelftest` — fetch, replace with the old version landing in `trash/`, keep-both, and a move that
+  carries its index across homes, all exercised with no radio) — 2026-11-15 ✓.
+- `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest), both BUILD SUCCEEDED — 2026-11-15 ✓.
+- **Not yet checked (owner, real devices), the one gap left:** pair a Mac and an iPhone or iPad for real;
+  airplane mode on with Wi-Fi and Bluetooth on; add, move, trash and restore a file on one device and watch
+  "Carry Now" settle it correctly on the other within the session, with the three `recense carry verify`
+  manifests matching afterward.
 
 ## Offline gate
 - Outside services: **none.** Radios on the devices only; no account, no internet, no company.
