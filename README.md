@@ -178,6 +178,11 @@ since Apple's own roadmap points elsewhere. Both dependencies stand on their own
 two engines is still supposed to vanish regardless. Whether it actually does, and what it would take for Apple's
 own reach to eventually make the second engine unnecessary, is one of the boundaries mapped out below.
 
+Carrying files between the Mac, iPhone and iPad needs no internet either (FEAT-09). Its rules are built:
+`shared/carrysync.swift` turns each scan of the homes into an append-only log of put, move, trash and restore
+(there is no delete), and settles two devices' logs without ever overwriting a file. Pairing and the radio link
+come next. Check: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`.
+
 Cloudflare serves purely as storage and caching, deliberately swappable: the plan is a one-command move onto a
 Mac mini, on the theory that a signature, a subscription or a vendor's roadmap expiring should leave every bit of
 this still working.

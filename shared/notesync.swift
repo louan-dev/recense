@@ -100,11 +100,15 @@ func planNoteSave(base: String, mine: String, theirs: String?) -> NoteSave {
 }
 
 /// The one sibling for a real conflict: "draftpad (other device 2026-11-05 2051).md", next to the note.
-func conflictSiblingPath(_ path: String, _ d: Date = Date()) -> String {
+/// Carry (FEAT-09) names the device and keeps the file's own extension: "lecture (iPad 2026-11-14 1605).m4a".
+func conflictSiblingPath(_ path: String, _ d: Date = Date(), device: String = "other device",
+                         zone: TimeZone = .current) -> String {
     let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HHmm"
+    f.timeZone = zone
     let dir = (path as NSString).deletingLastPathComponent
-    let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-    return (dir as NSString).appendingPathComponent("\(name) (other device \(f.string(from: d))).md")
+    let last = (path as NSString).lastPathComponent as NSString
+    let ext = last.pathExtension.isEmpty ? "md" : last.pathExtension
+    return (dir as NSString).appendingPathComponent("\(last.deletingPathExtension) (\(device) \(f.string(from: d))).\(ext)")
 }
 
 func notesyncSelftest() -> Bool {
