@@ -495,8 +495,9 @@ final class Listener: NSObject, ObservableObject {
 
     private func save() {
         guard dirty, let e = episode else { return }
+        // T-0102: clean only once the file is written; a failed write stays dirty, so the 10 s timer tries again
+        guard (try? JSONEncoder().encode(e).write(to: Self.folder.appendingPathComponent(e.key + ".json"), options: .atomic)) != nil else { return }
         dirty = false
-        try? JSONEncoder().encode(e).write(to: Self.folder.appendingPathComponent(e.key + ".json"), options: .atomic)
         episodes.removeAll { $0.key == e.key }
         episodes.insert(e, at: 0)
         unsent.insert(e.key)

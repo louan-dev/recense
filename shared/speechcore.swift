@@ -786,6 +786,7 @@ enum SpeechLegacy {
                 }
                 do {
                     let heard = try await SpeechEngine.hear(url: url, from: a, to: b, use, module: mu, lu)
+                    guard !Task.isCancelled else { return }   // T-0097: stopped while this stretch was heard: tell no one
                     phrases.removeAll { $0.start >= a && $0.start < b }
                     phrases = (phrases + heard).sorted { $0.start < $1.start }
                     done.insert(k)

@@ -60,6 +60,12 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - Places opened from Library navigate with view links only. After any change to `HostApp/iOS/Listen.swift` or `Browser.swift`:
   `grep -nE '^[^/]*(NavigationLink\(value:|navigationDestination\(for:)' mobile/HostApp/iOS/Listen.swift mobile/HostApp/iOS/Browser.swift`
   prints nothing (a value push opened a second Listen, and Archive's top level instead of the folder, 11-09).
+- Heard text is never lost or crossed (T-0102, T-0097, T-0100), after any change to `Listener.save()`, `PlaybackEars.hear`,
+  `SpeechAhead.loop` or `PlaybackTranslator.run`: each line prints what it says.
+  `grep -n 'dirty = false' mobile/HostApp/iOS/Listen.swift` shows it after the `.write(` guard in `save()` (a failed write stays dirty).
+  `grep -c 'T-0097' shared/speechcore.swift` prints 1 (the guard after `SpeechEngine.hear(url:`) and
+  `grep -c 'guard self?.key == e.id' mobile/HostApp/iOS/Ears.swift` prints 1 (a stopped hearing writes nothing into the next episode).
+  `grep -n 'let gen = inFlight + 1' mobile/HostApp/iOS/Translate.swift` shows it above `apply(p.fills` (every run is a new generation).
 - Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
   or `Listener.name`: each line prints what it says.
   `grep -c 'guard Host.owner === self' mobile/HostApp/iOS/Listen.swift` prints 1 (Home and Listen took the one layer from

@@ -65,7 +65,8 @@ import ShowsKit
         let path = Offline.origin(e.item.path)
         let a = SpeechAhead(url: url, lang: lang, among: auto ? SpeechCore.auto : nil, duration: e.duration ?? Self.length(url))
         a.playhead = { [weak model] in model?.transport?.time ?? 0 }
-        a.changed = { [weak model, weak a] ps in
+        a.changed = { [weak self, weak model, weak a] ps in
+            guard self?.key == e.id else { return }   // T-0097: a hearing for an episode no longer playing writes nothing
             let lines = Self.lines(ps), heardIn = a?.heardIn ?? lang
             model?.transcript = lines
             model?.transcriptSource = "Heard on this device in \(Listener.short(heardIn))\(auto ? " (automatic)" : "")."

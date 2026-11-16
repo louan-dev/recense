@@ -13,12 +13,14 @@ import ShowsKit
     /// very short lines TranslatePlan.detect can't place on its own.
     func run(_ model: ShowsModel, lang: String) {
         task?.cancel()
+        // T-0100: every run is a new generation, even one with no jobs, so a job still running from an older plan
+        // (RecenseText.translate ignores cancel) can't write its translations after this plan cleared them
+        let gen = inFlight + 1; inFlight = gen
         let choice = model.translateInto
         let lines = model.transcript.map { (id: $0.id, text: $0.text) }
         let p = TranslatePlan.plan(lines, choice: choice, kept: kept) { TranslatePlan.detect($0, fallback: lang) }
         apply(p.fills, to: model)
         guard !p.jobs.isEmpty else { return }
-        let gen = inFlight + 1; inFlight = gen
         task = Task { [weak model] in
             for job in p.jobs {
                 guard let out = await RecenseText.translate(job.texts, from: job.source, to: job.target) else {
