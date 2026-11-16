@@ -478,7 +478,8 @@ test('P3: createInkLayer manages 240Hz coalesced events, embed capture, per-wind
   const colorButtons = layer.palette.children.filter(c => c.attributes['data-color']);
   const toolButtons = layer.palette.children.filter(c => c.attributes['data-tool']);
   assert.equal(colorButtons.length, 8, '8 color dots');
-  assert.equal(toolButtons.length, 4, 'Select, pen, highlighter, one eraser (no Underline, Circle or partial eraser)');
+  // UI-04 P9 (2026-11-16) adds the Lasso between the Highlighter and the Eraser.
+  assert.equal(toolButtons.length, 5, 'Select, pen, highlighter, lasso, one eraser (no Underline, Circle or partial eraser)');
   assert.equal(toolButtons[0].attributes['data-tool'], 'select', 'Select comes first');
   // The pill and palette float in their own dock, never inside the text scroller (that squeezed the text).
   assert.ok(layer.dock && layer.pill, 'dock and pill exist');

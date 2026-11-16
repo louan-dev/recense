@@ -2152,6 +2152,142 @@ html.rc-wings-page body {
   text-align: center;
 }
 
+/* ---- UI-04 ink (draftpad-ink lane): radial menu, shape handles, lasso, selection, style panel ---- */
+/* P2: the held squeeze's radial menu, centred on the Pencil's hover point. */
+.rc-radial {
+  position: fixed;
+  width: 0;
+  height: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.rc-radial::before {
+  content: '';
+  position: absolute;
+  left: -140px;
+  top: -140px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 27px, color-mix(in srgb, var(--rc-panel) 82%, transparent) 28px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  animation: rc-radial-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rc-radial.rc-radial-inner-only::before { left: -96px; top: -96px; width: 192px; height: 192px; }
+.rc-radial[hidden] { display: none; }
+.rc-radial.rc-still::before { animation: none; }
+.rc-radial-item {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--rc-text);
+  background: color-mix(in srgb, var(--rc-panel) 70%, var(--rc-text) 30%);
+  font-size: 11px;
+}
+.rc-radial-item.rc-radial-outer {
+  width: auto;
+  max-width: 120px;
+  height: 28px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 14px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rc-radial-item.rc-hot { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
+.rc-radial-item svg { width: 20px; height: 20px; }
+@keyframes rc-radial-in { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rc-radial::before { animation: none; } }
+/* P7: corner handles (blue dots) on a just-snapped shape; P10: the selection box and its handles. */
+.rc-ink-handle { fill: #2f81f7; stroke: #fff; stroke-width: 1.5; }
+.rc-ink-handle-corner { r: 5; }
+.rc-ink-selbox, .rc-ink-selstem, .rc-ink-lasso { stroke: #2f81f7; }
+/* P9: Freeform | Boxed under the palette while the Lasso is picked. */
+.rc-ink-lassomodes {
+  pointer-events: auto;
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px;
+  border: 1px solid var(--rc-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+}
+.rc-ink-lassomodes[hidden] { display: none; }
+.rc-ink-lassomodes button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--rc-text);
+  background: transparent;
+}
+.rc-ink-lassomodes button.rc-active { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
+/* P11: the selection menu; P12: the Stroke | Fill style panel. Fixed to the viewport, above the page. */
+.rc-ink-selmenu, .rc-ink-stylepanel {
+  position: fixed;
+  z-index: 55;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--rc-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--rc-panel) 92%, var(--rc-text) 8%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  font-size: 13px;
+}
+.rc-ink-stylepanel {
+  transform: translate(-50%, 0);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  width: 260px;
+}
+.rc-ink-selmenu-btn {
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+  font: inherit;
+  color: var(--rc-text);
+  background: transparent;
+  white-space: nowrap;
+}
+.rc-ink-selmenu-btn:hover, .rc-ink-selmenu-btn.rc-active { background: color-mix(in srgb, var(--rc-text) 14%, transparent); }
+.rc-ink-selmenu-btn.rc-disabled { opacity: 0.4; }
+.rc-ink-tabs, .rc-ink-styles { display: flex; gap: 4px; }
+.rc-ink-tabs > *, .rc-ink-styles > * { flex: 1; }
+.rc-ink-styles .rc-ink-selmenu-btn { font-size: 11px; padding: 6px 2px; }
+.rc-ink-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-ink-swatch { width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; border: 1px solid var(--rc-border); }
+.rc-ink-note { font-size: 11px; opacity: 0.7; }
+.rc-ink-width { width: 100%; }
+/* P13: the loupe, a 2x ring above the finger or nib while a handle or selection is dragged. */
+.rc-ink-loupe {
+  position: fixed;
+  z-index: 58;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  border: 2px solid var(--rc-border);
+  background: var(--rc-bg, #0d1117);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.rc-ink-loupe[hidden] { display: none; }
 /* FEAT-08 · the Matter menu: one plain list of crossings on a passage */
 .rc-matter-pill {
   position: absolute;

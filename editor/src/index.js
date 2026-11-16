@@ -99,6 +99,7 @@ import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
 import * as matterCore from './matter.js';
 import { createMatterMenu } from './mattermenu.js';
+import { passageOfStrokes } from './inkselection.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -684,6 +685,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   let inkLayer = null;
   let matterMenu = null;   // FEAT-08
+  let selectionMatterItems = () => [];   // UI-04 P11: FEAT-08 matter actions for lasso-selected strokes
+  let radialOuterItems = () => [];   // UI-04 P2 outer ring: FEAT-08 matter actions for the text selection
   let pencilSqueeze = null;   // UI-04 P1: built on the first squeeze phase
   let library = null;
   let recense = null;
@@ -836,6 +839,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
     getPageIndex: () => (view ? currentPage(view.state) : 0),
     globalObj: typeof window !== 'undefined' ? window : null,
     mount: editorHost,
+    radialOuter: () => radialOuterItems(),
+    selectionExtras: ids => selectionMatterItems(ids),
     onToolChange: tool => {
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
@@ -857,13 +862,24 @@ export function mountEditor(root = document.body, initialDoc = '') {
     matterInput = e.pointerType === 'pen' ? 'pencil' : e.pointerType === 'touch' ? 'touch' : 'keys';
   }, true);
   view.dom.addEventListener('keydown', () => { matterInput = 'keys'; }, true);
-  matterMenu = createMatterMenu({
-    mount: editorHost,
-    view,
-    getMenu: (from, to) => matterCore.menuForSelection(
-      matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }), from, to),
-    onRun: action => applyMatter(m => action.run(m, { seed: matterSeed() }))
-  });
+  const matterMenuFor = (from, to) => matterCore.menuForSelection(
+    matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }), from, to);
+  const runMatter = action => applyMatter(m => action.run(m, { seed: matterSeed() }));
+  matterMenu = createMatterMenu({ mount: editorHost, view, getMenu: matterMenuFor, onRun: runMatter });
+  // UI-04 P2 · the radial menu's outer ring places the same matter actions for the text selection (one list).
+  radialOuterItems = () => {
+    const r = view.state.selection.main;
+    if (r.empty) return [];
+    const menu = matterMenuFor(r.from, r.to);
+    return (menu && menu.actions ? menu.actions : []).map(a => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
+  };
+  // UI-04 P11 (coordinator 2026-11-16) · lasso-selected strokes attached to exactly one passage: that passage's actions.
+  selectionMatterItems = ids => {
+    const pid = passageOfStrokes(matterSide.passages, ids);
+    if (!pid) return [];
+    const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+    return matterCore.matterActions(m, pid).map(a => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
+  };
 
   speaker = createSpeaker(typeof window !== 'undefined' ? window : null);
   library = createLibraryUI({
@@ -1276,13 +1292,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return card;
       },
       // Derived from Spec: UI-04 P1 — the host sends every squeeze phase with the hover point:
-      // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2; until then, toggles on release).
+      // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2) at the hover point.
       onPencilSqueeze: (phase, x, y) => {
         if (!inkLayer) return 'idle';
         if (!pencilSqueeze) {
           pencilSqueeze = squeezeHost({
             toggle: () => { postHaptic('squeeze'); return inkLayer.toggleMenu(); },
-            radial: () => null
+            radial: () => (typeof inkLayer.radialMenu === 'function' ? inkLayer.radialMenu() : null)
           });
         }
         return pencilSqueeze(String(phase), Number(x), Number(y));

@@ -164,6 +164,8 @@ final class DraftpadFile: ObservableObject {
 final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: WKWebView
     let file: DraftpadFile
+    // UI-04 P3: held so the Pencil haptic isn't dropped with a generator freed mid-play.
+    private var canvasHaptic: AnyObject?
     private var files: EmbedFiles?
     private var loaded = false
     private var saveTimer: Timer?
@@ -272,7 +274,16 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 switch kind {
                 case "snap": UISelectionFeedbackGenerator().selectionChanged()
-                case "shapeSnap": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                // UI-04 P3: the Pencil Pro's own haptic where the nib lifted (iOS 17.5+); else the old tap.
+                // Coded, not compiled here (no Swift toolchain in the lane); device check owed.
+                case "shapeSnap":
+                    if #available(iOS 17.5, *), let x = (d["x"] as? NSNumber)?.doubleValue, let y = (d["y"] as? NSNumber)?.doubleValue {
+                        let g = (canvasHaptic as? UICanvasFeedbackGenerator) ?? UICanvasFeedbackGenerator(view: web)
+                        canvasHaptic = g
+                        g.pathCompleted(at: CGPoint(x: x, y: y))
+                    } else {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
                 case "edge": UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 case "open", "squeeze": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 case "erase": UIImpactFeedbackGenerator(style: .light).impactOccurred()
