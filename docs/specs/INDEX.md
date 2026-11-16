@@ -41,7 +41,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-10 · Translate the transcript as it plays (English, Tiếng Việt, Français), on the device · `[~]` iOS built, device check owed · T-0068 · `shared/translateplan.swift`, `mobile/HostApp/iOS/Translate.swift`
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
 - FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
-- FEAT-16 · Transcript complete before audio plays (spinner, then synced autoscroll) · `[ ]` · T-0095 · `FEAT-16-transcript-before-play.md`; `strip/recense.swift`, `shared/ShowsKit`
+- FEAT-16 · Transcript complete before audio plays (spinner, synced autoscroll) + the search-scrubber pill on every transcript surface · `[ ]` · T-0095 · `FEAT-16-transcript-before-play.md`; builds on FEAT-07
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 
 ### Bugs
