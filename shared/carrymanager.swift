@@ -413,9 +413,23 @@ private enum CarryKeychain {
         }
     }
 
+    /// Ops from a peer, settled in the order they arrive. The scan that decides them (it hashes every file) runs off the
+    /// main thread, as `carry()`'s does (T-0107): on a big library it froze the screen and risked iOS's watchdog. One batch
+    /// after another, so a later batch never settles before an earlier one.
+    private var settling: Task<Void, Never>?
     private func receiveOps(_ data: Data, from peer: MCPeerID) {
         guard let ops = try? JSONDecoder().decode([CarryOp].self, from: data) else { return }
-        guard let local = try? Carry.verify() else { lastError = "carry verify failed while settling"; return }
+        let before = settling
+        settling = Task { [weak self] in
+            await before?.value
+            guard let lines = try? await Task.detached(priority: .utility, operation: { try Carry.verify(reuse: true) }).value else {
+                self?.lastError = "carry verify failed while settling"; return
+            }
+            self?.settle(ops, local: lines, from: peer)
+        }
+    }
+
+    private func settle(_ ops: [CarryOp], local: [CarryLine], from peer: MCPeerID) {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
         for op in ops.sorted(by: { $0.seq < $1.seq }) {
             let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)

@@ -40,6 +40,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   A fetched file never deletes what is already at its key (T-0109): the "fetch over a file that appeared meanwhile" case in
   that selftest prints three ok lines, and `grep -n 'removeItem(at: dest)' shared/carryapply.swift` prints nothing.
   (`ink ocr` fails in that selftest on the installed app too: T-0071/T-0079, not this.)
+  Carry never hashes the homes on the main thread (T-0107): `grep -n 'Carry.verify()' shared/carrymanager.swift` prints nothing
+  (every scan is `Carry.verify(reuse: true)` inside `Task.detached`); no test reaches `receiveOps`, so check the iPhone's
+  responsiveness (no freeze, no 0x8BADF00D) while a large library settles.
 - The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
