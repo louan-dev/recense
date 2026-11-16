@@ -2,6 +2,8 @@
 // text, so this stands in for it: the editor posts its text and ink to `webkit.messageHandlers.{editor,ink}`
 // exactly as it does for the apps; here those posts land in IndexedDB on this device. Nothing leaves the device.
 // Does nothing inside the apps (a real handler already exists).
+import { installHubSync } from './hubsync.js';
+
 const DB = 'recense-draftpad';
 const STORE = 'kv';
 
@@ -29,7 +31,9 @@ export function installWebStore(win, idb = win.indexedDB) {
 
   win.webkit = win.webkit || {};
   win.webkit.messageHandlers = win.webkit.messageHandlers || {};
-  win.webkit.messageHandlers.editor = { postMessage: text => put('text', String(text)) };
+  // At https://recense.local the hub keeps the note in step between devices (FEAT-18); anywhere else this is null.
+  const hub = installHubSync(win, { put, get });
+  win.webkit.messageHandlers.editor = { postMessage: text => put('text', String(text)).then(() => hub?.changed()) };
   win.webkit.messageHandlers.ink = { postMessage: json => put('ink', typeof json === 'string' ? json : JSON.stringify(json)) };
 
   // Ask the browser not to evict this device's copy (Safari may after ~7 days unused unless added to the Home Screen).
@@ -43,6 +47,7 @@ export function installWebStore(win, idb = win.indexedDB) {
     const [text, ink] = [await get('text'), await get('ink')];
     if (typeof text === 'string') api.setText(text);
     if (typeof ink === 'string') api.setInk(ink);
+    hub?.wake();
   };
   win.addEventListener('load', restore);
   return { put, get };

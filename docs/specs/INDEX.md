@@ -48,6 +48,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-19 · Playback survives the Lock Screen and leaving the app, with a Lock Screen scrubber, on every surface · `[~]` P2 (iOS video on lock) built, device check owed; web already SPEC 69; editor browser player proposed · T-0132 · `FEAT-19-play-on-lock.md`; builds on SPEC 69, BUG-09
 - FEAT-20 · The Mac's song pipeline and syllable light on iPhone and iPad, 1:1 (route A: the Mac separates and measures, iOS fits with cadence.js) · `[~]` P1 coded, not compiled, device check owed · owner 2026-11-16 · `FEAT-20-prosody-on-ios.md`; `shared/ShowsKit/Sources/ShowsKit/SongLight.swift`, `mobile/HostApp/iOS/SongVoice.swift`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
+- FEAT-18 · Offline Recense hub: `https://recense.local` served by our own Mac (own root, Bonjour, Draftpad + note sync; H2 library, H3 standby) · `[~]` H1 building · owner 2026-11-16 · `FEAT-18-offline-hub.md`; `hub/`, `editor/src/hubsync.js`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —

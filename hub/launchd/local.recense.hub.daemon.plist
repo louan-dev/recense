@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Derived from Spec: FEAT-18. For the Mac mini: a LaunchDaemon starts at boot with nobody logged in.
+     Install: sudo cp this file /Library/LaunchDaemons/local.recense.hub.plist, then
+     sudo chown root:wheel /Library/LaunchDaemons/local.recense.hub.plist && sudo launchctl bootstrap system /Library/LaunchDaemons/local.recense.hub.plist
+     (edit the paths and the name first; UserName keeps the certificate and token files in that user's ~/.config). -->
+<plist version="1.0"><dict>
+ <key>Label</key><string>local.recense.hub</string>
+ <key>UserName</key><string>chauphan</string>
+ <key>ProgramArguments</key><array>
+  <string>/Users/chauphan/.local/bin/recense-hub</string><string>serve</string>
+  <string>--shell</string><string>/Users/chauphan/Developer/recense/editor/dist/pwa</string>
+  <string>--name</string><string>mini</string>
+ </array>
+ <key>RunAtLoad</key><true/>
+ <key>KeepAlive</key><true/>
+ <key>ThrottleInterval</key><integer>10</integer>
+ <key>StandardOutPath</key><string>/Users/chauphan/Library/Logs/recense-hub.log</string>
+ <key>StandardErrorPath</key><string>/Users/chauphan/Library/Logs/recense-hub.log</string>
+</dict></plist>

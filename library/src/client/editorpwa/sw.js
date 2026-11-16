@@ -1,6 +1,6 @@
 // Derived from Spec: UI-12 (S1). Cache the editor page once; open it from the cache from then on, with no network.
 // Opens at once from the cache, then quietly refreshes it when online. A sign-in redirect (Access) or an error is never cached.
-const CACHE = 'recense-editor-8ec272827c';
+const CACHE = 'recense-editor-c7dae31375';
 const SHELL = ['./', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', e => {
@@ -15,8 +15,8 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== location.origin || !url.pathname.startsWith(new URL('./', location.href).pathname)) return;
-  e.respondWith((async () => {
+  if (url.pathname.startsWith('/api/')) return; // the hub's data is never cached
+  if (url.origin !== location.origin || !url.pathname.startsWith(new URL('./', location.href).pathname)) return;  e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, { ignoreSearch: true });
     const fresh = fetch(req).then(res => {

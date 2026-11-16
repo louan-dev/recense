@@ -2345,6 +2345,132 @@ html.rc-wings-page body {
 <meta name="theme-color" content="#1b1b1f">
 <script>
 (() => {
+  // src/hubsync.js
+  var SYNC_DELAY_MS = 1500;
+  var POLL_MS = 2e4;
+  function isHubHost(hostname) {
+    return typeof hostname === "string" && (hostname === "recense.local" || hostname.endsWith(".recense.local"));
+  }
+  function tokenFromHash(hash) {
+    const m = /(?:^#|&)pair=([A-Za-z0-9_-]{16,128})/.exec(hash || "");
+    return m ? m[1] : null;
+  }
+  function createHubSync({ store, fetchFn, getApi, setTimer, clearTimer, now = Date.now, visible = () => true }) {
+    let timer = null, poll = null, busy = false, again = false, dirty = false;
+    async function run() {
+      if (busy) {
+        again = true;
+        return;
+      }
+      const token = await store.get("hubToken");
+      if (typeof token !== "string" || !token) return;
+      busy = true;
+      try {
+        const raw = await store.get("text");
+        const mine = typeof raw === "string" ? raw : "";
+        const known = await store.get("hubBase");
+        const base = typeof known === "string" && known !== "" && mine !== "" ? known : null;
+        let res;
+        try {
+          res = await fetchFn("/api/note", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+            body: JSON.stringify({ base, mine })
+          });
+        } catch {
+          dirty = true;
+          return;
+        }
+        if (res.status === 401) {
+          await store.put("hubToken", "");
+          return;
+        }
+        if (res.status !== 200) {
+          dirty = true;
+          return;
+        }
+        const reply = await res.json();
+        dirty = false;
+        if (typeof reply.base === "string") await store.put("hubBase", reply.base);
+        if (typeof reply.text === "string" && reply.text !== mine) {
+          const typedSince = await store.get("text");
+          if (typedSince === raw) {
+            await store.put("text", reply.text);
+            const api = getApi();
+            if (api && typeof api.setText === "function") api.setText(reply.text);
+          } else dirty = true;
+        }
+      } finally {
+        busy = false;
+        if (again) {
+          again = false;
+          schedule(0);
+        }
+      }
+    }
+    function schedule(ms = SYNC_DELAY_MS) {
+      if (timer !== null) clearTimer(timer);
+      timer = setTimer(() => {
+        timer = null;
+        run();
+      }, ms);
+    }
+    return {
+      /** The editor saved new text. */
+      changed() {
+        dirty = true;
+        schedule();
+      },
+      /** Back online or the tab came back: catch up now. */
+      wake() {
+        if (visible()) schedule(0);
+      },
+      /** Look for changes made elsewhere every POLL_MS while the tab is visible. */
+      startPolling() {
+        if (poll !== null) return;
+        const tick = () => {
+          if (visible()) run();
+          poll = setTimer(tick, POLL_MS);
+        };
+        poll = setTimer(tick, POLL_MS);
+      },
+      isDirty: () => dirty,
+      run
+    };
+  }
+  function installHubSync(win, store) {
+    try {
+      if (!win || !store || !isHubHost(win.location?.hostname)) return null;
+      const sync = createHubSync({
+        store,
+        fetchFn: (url, init) => win.fetch(url, init),
+        getApi: () => win.recenseEditor,
+        setTimer: (fn, ms) => win.setTimeout(fn, ms),
+        clearTimer: (id) => win.clearTimeout(id),
+        visible: () => win.document?.visibilityState !== "hidden"
+      });
+      const token = tokenFromHash(win.location.hash);
+      if (token) {
+        store.put("hubToken", token).then(() => {
+          try {
+            win.history.replaceState(null, "", win.location.pathname + win.location.search);
+          } catch {
+          }
+          sync.wake();
+        });
+      }
+      win.addEventListener("online", () => sync.wake());
+      win.document?.addEventListener("visibilitychange", () => sync.wake());
+      win.addEventListener("load", () => {
+        sync.startPolling();
+        sync.wake();
+      });
+      return sync;
+    } catch {
+      return null;
+    }
+  }
+
   // src/webstore.js
   var DB = "recense-draftpad";
   var STORE = "kv";
@@ -2371,7 +2497,8 @@ html.rc-wings-page body {
     const get = (key) => dbp.then((db) => db && tx(db, "readonly", (s) => s.get(key))).catch(() => void 0);
     win.webkit = win.webkit || {};
     win.webkit.messageHandlers = win.webkit.messageHandlers || {};
-    win.webkit.messageHandlers.editor = { postMessage: (text) => put("text", String(text)) };
+    const hub = installHubSync(win, { put, get });
+    win.webkit.messageHandlers.editor = { postMessage: (text) => put("text", String(text)).then(() => hub?.changed()) };
     win.webkit.messageHandlers.ink = { postMessage: (json) => put("ink", typeof json === "string" ? json : JSON.stringify(json)) };
     try {
       win.navigator?.storage?.persist?.();
@@ -2387,6 +2514,7 @@ html.rc-wings-page body {
       const [text, ink] = [await get("text"), await get("ink")];
       if (typeof text === "string") api.setText(text);
       if (typeof ink === "string") api.setInk(ink);
+      hub?.wake();
     };
     win.addEventListener("load", restore);
     return { put, get };
@@ -2694,7 +2822,7 @@ html.rc-wings-page body {
     return { engine: "model", why, lines, dropped };
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2768,7 +2896,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/state/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -6180,7 +6308,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/style-mod/src/style-mod.js
+  // ../../../../editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -6316,7 +6444,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../../../../home/user/recense/editor/node_modules/w3c-keyname/index.js
+  // ../../../../editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6422,7 +6550,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/crelt/index.js
+  // ../../../../editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6451,7 +6579,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/view/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -16181,7 +16309,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/common/dist/index.js
+  // ../../../../editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -18242,7 +18370,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/highlight/dist/index.js
+  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18966,7 +19094,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/language/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -20452,7 +20580,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/commands/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -21546,7 +21674,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -22011,7 +22139,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/markdown/dist/index.js
+  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -24099,7 +24227,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/lr/dist/index.js
+  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25877,7 +26005,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/html/dist/index.js
+  // ../../../../editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -26221,7 +26349,7 @@ html.rc-wings-page body {
     });
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/css/dist/index.js
+  // ../../../../editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -26401,7 +26529,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/lang-css/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -27262,7 +27390,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@lezer/javascript/dist/index.js
+  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -27474,7 +27602,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27786,7 +27914,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/lang-html/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -28526,7 +28654,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -29433,7 +29561,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../../../../../../home/user/recense/editor/node_modules/@codemirror/search/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
