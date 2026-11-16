@@ -8,7 +8,7 @@ preview_urls = false
 # the pages' own CSS and browser scripts are bundled as text
 [[rules]]
 type = "Text"
-globs = ["**/client/*.css", "**/client/*.js"]
+globs = ["**/client/*.css", "**/client/*.js", "**/client/editorpwa/*"]
 fallthrough = false
 
 [[r2_buckets]]
