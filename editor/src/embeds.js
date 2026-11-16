@@ -1,19 +1,29 @@
-// Inline embeds: a line that holds only `![caption](target)` shows the PDF or image under it. The text stays plain
+// Inline embeds: a line that holds only `![caption](target)` shows the PDF, image or recording under it. The text stays plain
 // Markdown (Obsidian reads the same line). Inside Recense, targets go through the host's `recense-file:` scheme,
 // which serves a vault file or a cached copy of a web file, so an embed opened once opens again offline.
 import { StateField } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+// FEAT-19 P4: a recording plays in the note with the player's Lock Screen rules (the player's one home)
+import { nowPlaying } from '../../library/src/client/nowplaying.js';
 
 // `![caption](path)`, or `![caption](<path with spaces>)` as CommonMark and Obsidian write it.
 const EMBED_RE = /^\s*!\[([^\]]*)\]\((?:<([^>]+)>|([^)\s]+))\)\s*$/;
 const PDF_RE = /\.pdf(?:[?#].*)?$/i;
 const IMAGE_RE = /\.(?:png|jpe?g|gif|webp|heic|svg)(?:[?#].*)?$/i;
+const AUDIO_RE = /\.(?:m4a|mp3|wav|aac|aiff?|caf|flac|ogg|oga|opus)(?:[?#].*)?$/i;
+const VIDEO_RE = /\.(?:mp4|m4v|mov|webm)(?:[?#].*)?$/i;
+
+/** pdf, image, audio or video by the target's extension; null for anything else (a plain link stays a link). */
+export function embedKind(target) {
+  return PDF_RE.test(target) ? 'pdf' : IMAGE_RE.test(target) ? 'image'
+    : AUDIO_RE.test(target) ? 'audio' : VIDEO_RE.test(target) ? 'video' : null;
+}
 
 export function parseEmbedLine(line) {
   const m = EMBED_RE.exec(line);
   if (!m) return null;
   const target = m[2] ?? m[3];
-  const kind = PDF_RE.test(target) ? 'pdf' : IMAGE_RE.test(target) ? 'image' : null;
+  const kind = embedKind(target);
   return kind ? { kind, target, caption: m[1] } : null;
 }
 
@@ -39,7 +49,7 @@ class EmbedWidget extends WidgetType {
     this.rawTarget = rawTarget;
   }
   eq(other) { return other.kind === this.kind && other.src === this.src && other.rawTarget === this.rawTarget; }
-  get estimatedHeight() { return this.kind === 'pdf' ? 520 : 320; }
+  get estimatedHeight() { return this.kind === 'pdf' ? 520 : this.kind === 'audio' ? 72 : 320; }
   toDOM() {
     const wrap = document.createElement('div');
     wrap.className = `cm-embed cm-embed-${this.kind}`;
@@ -50,6 +60,16 @@ class EmbedWidget extends WidgetType {
       frame.title = this.caption || 'PDF';
       frame.loading = 'lazy';
       wrap.appendChild(frame);
+    } else if (this.kind === 'audio' || this.kind === 'video') {
+      // A recording: plays here, goes on with the screen locked or the app left, and the Lock Screen shows its
+      // name and a scrubber that seeks (FEAT-19 P4). Its name is the caption, else the file's name.
+      if (this.kind === 'audio' && this.caption) {
+        const label = document.createElement('div');
+        label.className = 'cm-embed-caption';
+        label.textContent = this.caption;
+        wrap.appendChild(label);
+      }
+      wrap.appendChild(recording(this.kind, this.src, this.caption || nameOf(this.rawTarget)));
     } else {
       const img = document.createElement('img');
       img.src = this.src;
@@ -60,12 +80,61 @@ class EmbedWidget extends WidgetType {
     return wrap;
   }
   ignoreEvent() { return true; }
+  destroy(dom) {
+    const m = dom.querySelector('audio,video');
+    if (m) keepOrStop(m);
+  }
+}
+
+// A recording's element outlives its widget: CodeMirror removes a widget scrolled far out of view, and a removed
+// element stops. So a playing one moves to a hidden holder in the page (it plays on, the Lock Screen keeps it) and
+// comes back when its line is drawn again; one not playing stops and gives the Lock Screen back.
+const live = new Map(); // src → { m, np }
+let holder = null;
+
+function nameOf(target) {
+  let base = String(target || '').split(/[\\/]/).pop().replace(/[?#].*$/, '');
+  try { base = decodeURIComponent(base); } catch { /* as written */ }
+  return base.replace(/\.[^.]+$/, '');
+}
+
+function recording(kind, src, title) {
+  const had = live.get(src);
+  if (had && (!had.m.isConnected || had.m.parentNode === holder)) return had.m;
+  const m = document.createElement(kind);
+  m.controls = true;
+  m.preload = 'metadata';
+  if (kind === 'video') m.setAttribute('playsinline', '');
+  m.src = src;
+  const np = nowPlaying(m, { title });
+  if (!had) live.set(src, { m, np });
+  m.recense = { src, np };
+  return m;
+}
+
+function keepOrStop(m) {
+  if (!m.paused && typeof document !== 'undefined') {
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.hidden = true;
+      holder.className = 'cm-embed-holder';
+      document.body.appendChild(holder);
+    }
+    holder.appendChild(m); // in the same task as the removal, so it never pauses
+    return;
+  }
+  m.pause();
+  const r = m.recense;
+  if (r) {
+    r.np.drop();
+    if (live.get(r.src)?.m === m) live.delete(r.src);
+  }
 }
 
 export function formatDroppedEmbed(nameOrPath, explicitCaption = null) {
   const raw = String(nameOrPath ?? '').trim();
   if (!raw) return null;
-  if (!PDF_RE.test(raw) && !IMAGE_RE.test(raw)) return null;
+  if (!embedKind(raw)) return null;
   const base = raw.split(/[\\/]/).pop().replace(/[?#].*$/, '');
   const caption = explicitCaption !== null
     ? String(explicitCaption)

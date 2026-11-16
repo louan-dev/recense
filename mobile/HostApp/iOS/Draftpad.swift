@@ -162,6 +162,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         self.file = file
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
+        cfg.allowsInlineMediaPlayback = true   // FEAT-19 P4: an embedded video plays in the note, not full screen
         if let v = file.vault {
             let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("embeds")
             let f = EmbedFiles(vault: v, cache: cache)

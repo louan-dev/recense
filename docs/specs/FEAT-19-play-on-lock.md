@@ -21,7 +21,7 @@ Every place Recense plays a file. "Locked" = goes on with the screen locked or t
 | Gallery web player (every browser; Cloudflare `/main`, offline hub) | audio: yes, `audioSession.type="playback"`, Web Audio kept alive (**assumed** iOS); video: Safari pauses it, PiP is the path; **new**: `enterpictureinpicture` action + `autopictureinpicture` so browsers with automatic PiP float it on | title, cover, loop line | `setPositionState` + `seekto`; ⏮/⏭; no ±10 s | **proven** Chromium (ui.test.mjs "item 11", "FEAT-19: the lock screen scrubber…", "FEAT-19: a playing video registers…") | `library/src/client/gallery.js:1808-1887`, `:1031-1059` |
 | Shared links `/s/<id>` (visitors) | as Gallery: the same player (`public.js` serves Gallery) | as Gallery | as Gallery | **proven** via Gallery's tests | `library/src/client/gallery.js` |
 | Shared section viewer `/main/shared` (owner; also Library › Shared in the iOS app) | audio: plain `<audio>`; video: Safari limit as above | **new**: title, cover (`f.thumb`) | **new**: `setPositionState` + `seekto`; ⏮/⏭ through the share's files (the next one plays); dropped on Done | **proven** Chromium (ui.test.mjs "FEAT-19: a file played in the Shared viewer…", red without the fix) | `library/src/client/sharedview.js:470-530` |
-| Editor (Draftpad, offline hub, `/main/editor/`) | n/a: plays no media. Seek/bookmark post to `webkit.messageHandlers.audio`; both hosts register it but act only on `speakSummary` (native speech) and hand the rest to `onAudioAction`, which nothing sets; in a browser, read-aloud is `speechSynthesis` (no Lock Screen API) | n/a | n/a | P4 closed (see Decisions) | `editor/src/audio.js:111, 422, 927, 1323`; `strip/editorhost.swift:326`; `mobile/HostApp/iOS/Draftpad.swift:271` |
+| Editor (Draftpad: Mac, iPhone, iPad, offline hub, `/main/editor/`) | **new (P4)**: a recording embedded in a note (`![caption](file.m4a)`) plays in the note; a playing one survives its line scrolling out of view (a hidden holder) | **new**: caption, else the file name | **new**: `setPositionState` + `seekto`; no ±10 s, no ⏮/⏭ (no queue yet) | **proven** Chromium (editor/test/feat19-embed-player.test.mjs, red without the holder); apps: coded, not compiled (Range serving, inline video) | `editor/src/embeds.js`, `library/src/client/nowplaying.js`, `shared/embedfiles.swift` (`ByteRange`), `mobile/HostApp/iOS/Draftpad.swift:165` |
 | iPhone/iPad: our player (stored shows, Archive, music) | yes: `UIBackgroundModes audio`, `.playback` | title, album, duration, elapsed, rate | `changePlaybackPositionCommand`; ±15/30; play/pause/toggle | **proven** (Tests/nowplaying, swiftc on the Mac) · device check owed (BUG-09) | `mobile/HostApp/iOS/NativePlayer.swift:91-120`, `NowPlayingInfo.swift` |
 | iPhone/iPad: our player's video | sound plays on (P2: the layer lets go in background) | as above | as above | **proven** rule (Tests/backgroundvideo) · device check owed | `mobile/HostApp/iOS/BackgroundVideo.swift`, `NativePlayer.swift` |
 | iPhone/iPad: our player while Listen hears (Gap B) | yes | **new**: ours while it plays (session no longer mixes then) | as our player | coded, **not compiled here** (no Swift toolchain), rule in Tests/nowplaying · device check owed | `NowPlayingInfo.swift:23`, `NativePlayer.swift:70-86` |
@@ -53,12 +53,24 @@ Already built (SPEC 69, notes 27). Kept as is:
   `setPositionState`, ⏮/⏭ through the share's files (only where there is one), `audioSession.type = "playback"`;
   cleared on Done. **proven** in Chromium (ui.test.mjs).
 
-### S-editor · Recense in a browser (offline: the hub at https://recense.local; online: `/main/editor/`)
-- **Fact:** the editor page plays no media in a browser. Seek and play go to the native host
-  (`webkit.messageHandlers.audio`, `editor/src/audio.js:420, 926`); only pages are implemented in the library
-  (`editor/src/library.js:19`). There is nothing for a Lock Screen to show.
-- **P4 (closed 2026-11-16, see Decisions):** when the editor gets a browser player, it embeds Gallery's player
-  (the player's one home, `library/src/client/`), so S-web's rules come with it. No second player.
+### S-editor · recordings in a note (P4, built 2026-11-16 on the owner's "yes it should")
+- **Before:** the editor played no media. Its transcript pane sent seek and bookmark to the host, which hands them to
+  `onAudioAction`, which nothing sets; only section summaries were spoken.
+- **Now:** a line holding only `![caption](target)` whose target is a recording (m4a, mp3, wav, aac, aif, caf, flac,
+  ogg, opus) or a video (mp4, m4v, mov, webm) shows a player under it, as PDFs and images already did. The text stays
+  plain Markdown (Obsidian reads the same line). Dropping such a file inserts the line.
+- **Lock Screen:** `library/src/client/nowplaying.js`, the Lock Screen half of the player, kept in the player's one
+  home and bundled into the editor. It follows Gallery's rules (SPEC 69): a playback session, title, play, pause,
+  seekto, `setPositionState`; one element at a time (starting one pauses the other).
+- **Scrolling:** CodeMirror removes a widget scrolled far out of view, and a removed element stops. A playing
+  recording moves to a hidden holder and comes back when its line is drawn again; a paused one stops and gives the
+  Lock Screen back.
+- **In the apps:** targets go through `recense-file:` (`shared/embedfiles.swift`). It now answers `Range` requests
+  (206), which WebKit needs to play media. iPhone/iPad Draftpad plays video inline. Web files over 100 MB are not
+  cached (the existing limit), so such a recording plays only from the vault.
+- **Not yet:** ⏮/⏭ between a note's recordings; the transcript pane following and seeking the embedded recording;
+  Gallery's EQ, Key and Speed (Gallery's player is one script tied to its page; the editor uses the browser's
+  controls).
 
 ### S-ios · Recense on iPhone and iPad (`mobile/`)
 Already built (BUG-09):
@@ -105,7 +117,9 @@ New in this feature:
   session and Recense becomes the Now Playing app (scrubber shown); paused while hearing, it mixes again.
   `NowPlayingInfo.ownsSession`, `NativePlayer.session(hearing:playing:)`, re-applied on pause in `refresh()`.
   **Coded, not compiled** (no Swift toolchain in this session); device check owed.
-- Editor: plays no media anywhere. The hosts' `audio` handler only speaks section summaries; seek and bookmark reach `onAudioAction`, which nothing sets. Nothing to build (P4 closed).
+- Editor (P4, after the owner's "yes it should"): embedded recordings and videos play in the note, with the Lock
+  Screen's title and scrubber, and play on when scrolled away. Apps: `recense-file:` serves byte ranges; iPhone/iPad
+  Draftpad plays video inline. Apps' part **coded, not compiled**.
 - Mac strip: plays nothing of its own (the browser page does; the backdrop video is muted): nothing to build.
 
 **Tests**
@@ -114,7 +128,9 @@ New in this feature:
   ("FEAT-19: a file played in the Shared viewer…", "FEAT-19: a playing video registers…", the latter with the
   738-byte fixture `test/fixtures/tiny.webm`), each red on main's code, green with the fix.
   Run with `CHROMIUM=/opt/pw-browsers/chromium` in this container.
-- `editor/` `npm test`: 257 tests, 256 pass, 0 fail, 1 skipped (unchanged code).
+- `editor/` `npm test`: 259 tests, 258 pass, 0 fail, 1 skipped (the WebKit PWA test: no WebKit here). New:
+  `test/feat19-embed-player.test.mjs` (2 tests; the browser one fails with a plain pause on scroll-away).
+- `mobile/ios/Tests/byterange`: 10 checks for `ByteRange`, **not run here**; see the command in its header.
 - `mobile/ios/Tests/nowplaying`: 5 new checks for `ownsSession`. **Not run here** (no swiftc); run on the Mac:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` → ALL OK.
   Then the unsigned compile (`CODE_SIGNING_ALLOWED=NO`) for Recense and RecenseGuest.
@@ -134,6 +150,10 @@ New in this feature:
   4. Recense › Archive: a song, lock → BUG-09 scrubber; a video, lock → sound goes on (P2); unlock → picture in step.
   5. Recense with Listen on and hearing YouTube: pause YouTube, play a song in Recense, lock → Recense's title and scrubber (Gap B); pause from the Lock Screen, play YouTube → YouTube plays, Listen still hears.
   6. Recense › Library (Gallery's page in the app): play a song, lock → is there a scrubber? (WKWebView, untested)
+  7. Draftpad: type `![Test](<a recording in the vault.m4a>)` on its own line → a player shows; play, lock → title
+     "Test", scrubber, drag works; unlock, scroll far down while it plays → it plays on; a `.mov` plays inline.
+- Mac: Recense › Draftpad, the same as check 7 (media keys and Control Center's Now Playing). Then `zsh strip/build.sh`
+  and `recense selftest` (shared/embedfiles.swift changed).
 - Mac: Safari and Chrome › Gallery and `/main/shared`: play, lock the Mac (⌃⌘Q), unlock → still playing; Control Center's Now Playing shows title and scrubber; media keys pause/play; the Recense window still lights words.
 
 **Decisions** (owner, 2026-11-16: "do whatever you think is best"; taken by the lane, each reversible)
@@ -142,4 +162,5 @@ New in this feature:
 2. Locked video in Safari: PiP stays the path (WebKit pauses a hidden video, no page can stop that). Browsers with
    automatic PiP now get it (enterpictureinpicture + autopictureinpicture). No sound-only fallback: a second element on
    the same file would be a second player and break the Web Audio graph (EQ, Key, Speed).
-3. P4 closed: the editor plays no media, so it needs no player. If it ever does, it embeds Gallery's (one player).
+3. P4 reopened by the owner ("yes it should"): built as recordings embedded in a note (S-editor). The Lock Screen
+   half is the shared module in `library/src/client/`, not a second copy of Gallery's player.

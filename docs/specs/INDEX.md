@@ -43,7 +43,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
 - FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
 - FEAT-16 · Transcript complete before audio plays (spinner, synced autoscroll) + the search-scrubber pill on every transcript surface · `[ ]` · T-0095 · `FEAT-16-transcript-before-play.md`; builds on FEAT-07
-- FEAT-19 · Playback survives the Lock Screen and leaving the app, with a Lock Screen scrubber, on every surface · `[~]` surface table done; Shared viewer scrubber + video auto-PiP built (tested); iOS Gap B coded, not compiled; P2 device check owed; web SPEC 69; editor player not needed (P4 closed) · T-0132 · `FEAT-19-play-on-lock.md`; builds on SPEC 69, BUG-09
+- FEAT-19 · Playback survives the Lock Screen and leaving the app, with a Lock Screen scrubber, on every surface · `[~]` surface table done; Shared viewer scrubber + video auto-PiP built (tested); iOS Gap B coded, not compiled; P2 device check owed; web SPEC 69; editor: recordings embedded in a note play with the Lock Screen scrubber (P4, browser-tested; apps coded, not compiled) · T-0132 · `FEAT-19-play-on-lock.md`; builds on SPEC 69, BUG-09
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 
 ### Bugs

@@ -907,6 +907,29 @@ body {
   margin: 0 auto;
 }
 
+/* FEAT-19 P4: a recording plays in the note */
+.cm-embed-audio {
+  padding: 8px 10px;
+}
+
+.cm-embed-audio audio {
+  display: block;
+  width: 100%;
+}
+
+.cm-embed-caption {
+  margin: 0 0 6px;
+  font-size: 0.85em;
+  color: var(--rc-muted);
+}
+
+.cm-embed-video video {
+  display: block;
+  width: 100%;
+  max-height: 480px;
+  background: #000;
+}
+
 /* Ambient haptic edge cues with calm progressive disclosure */
 .rc-zone-active-left,
 .rc-zone-active-right,

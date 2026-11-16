@@ -47,6 +47,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - A video's sound on the Lock Screen (`HostApp/iOS/BackgroundVideo.swift`, FEAT-19 P2), after any change to it or to `VideoLayer`:
   `swiftc -O mobile/HostApp/iOS/BackgroundVideo.swift mobile/ios/Tests/backgroundvideo/main.swift -o "$TMPDIR/bgvideo" && "$TMPDIR/bgvideo"` (ALL OK).
+- The editor's embedded recordings are served in byte ranges (`shared/embedfiles.swift` ByteRange, FEAT-19 P4), after any change to it:
+  `{ echo 'import Foundation'; sed -n '/^enum ByteRange/,$p' shared/embedfiles.swift; } > "$TMPDIR/byterange.swift" && swiftc -O "$TMPDIR/byterange.swift" mobile/ios/Tests/byterange/main.swift -o "$TMPDIR/byterange" && "$TMPDIR/byterange"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
   `swiftc -O shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
 - A played file's language (`shared/speechcore.swift` SpeechAhead, BUG-11), after any change to SpeechAhead or to
