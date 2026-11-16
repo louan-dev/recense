@@ -3,7 +3,7 @@
 
 import { Miniflare } from "miniflare";
 import { chromium } from "playwright";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtempSync, truncateSync, writeFileSync } from "node:fs";
@@ -356,6 +356,78 @@ await test("T-0130: a guest can drag and drop a file onto a plain upload link (i
   await pg.dispatchEvent("body", "drop", { dataTransfer: dt });
   await pg.waitForSelector('.tile[aria-label="dropped.JPG"]:not(.pending)', { timeout: 10000 });
   assert.ok(await PUBLIC.head("links/" + up.id + "/001"));
+});
+
+// Regression guard: BUG-23 — the owner, signed in, opens their own share link on a phone and adds a screen
+// recording of a few hundred MB. It must land in the link in multipart parts (no request body over ~90 MB, which
+// Cloudflare refuses with a 413 before the Worker), keeping its name with spaces and the upper-case .MP4.
+const BUG23_NAME = "ScreenRecording_11-16-2026 05-44-25_1.MP4";
+// a real HEVC clip at the head of a sparse file of the recording's size, under the recording's own name
+const bug23Video = (bytes) => {
+  const dir = mkdtempSync(join(tmpdir(), "bug23-"));
+  const path = join(dir, BUG23_NAME);
+  writeFileSync(path, readFileSync(new URL("./fixtures/bug23/hevc.MP4", import.meta.url)));
+  truncateSync(path, bytes);
+  return path;
+};
+await test("BUG-23: the owner adds a big .MP4 to their own share link (multipart, into the link)", true, async (pg) => {
+  const r = await mf.dispatchFetch(base + "/main/api/link?action=start&days=7", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
+    body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg",
+  });
+  const up = await r.json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", {
+    httpMetadata: { contentType: "image/jpeg" },
+    customMetadata: { name: "dune.jpg", expires: String(up.exp) },
+  });
+  let biggest = 0;
+  pg.on("request", (q) => {
+    const n = Number(q.headers()["content-length"] || (q.postDataBuffer() || []).length || 0);
+    if (n > biggest) biggest = n;
+  });
+  if (process.env.DEBUG) pg.on("response", (q) => /api\/(upload|file)/.test(q.url()) && console.log("     " + q.request().method() + " " + q.url().replace(base, "") + " -> " + q.status()));
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(800); // whoami has answered: the page knows the owner
+  assert.ok(await pg.isVisible("#up"), "the owner sees Add on their own upload link");
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Owner Tester"));
+  const size = 110 * 1000 * 1000;
+  await pg.setInputFiles("#upin", bug23Video(size));
+  let head = null;
+  for (let t = 0; t < 120 && !head; t++) {
+    head = await PUBLIC.head("links/" + up.id + "/001");
+    if (!head) await pg.waitForTimeout(250);
+  }
+  const note = await pg.evaluate(() => { const n = document.getElementById("note"); return n && !n.hidden ? n.textContent : ""; });
+  assert.ok(head, "the video reached the link (links/<id>/001); page said: " + JSON.stringify(note) + "; Main has it: " + !!(await MAIN.head("files/" + BUG23_NAME)));
+  assert.equal(head.size, size);
+  assert.equal(decodeURIComponent(head.customMetadata.name), BUG23_NAME);
+  assert.match(head.httpMetadata.contentType, /^video\/mp4/);
+  assert.ok(biggest <= 90 * 1024 * 1024, "no single request over 90 MiB (biggest " + biggest + ")");
+  assert.ok(!(await MAIN.head("files/" + BUG23_NAME)), "nothing lands in Main");
+});
+
+await test("BUG-23: a guest adds a 40 MB .MP4 with spaces in its name to a share link (3 parts)", false, async (pg) => {
+  const r = await mf.dispatchFetch(base + "/main/api/link?action=start&days=7", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
+    body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg",
+  });
+  const up = await r.json();
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000));
+  let head = null;
+  for (let t = 0; t < 80 && !head; t++) {
+    head = await PUBLIC.head("links/" + up.id + "/001");
+    if (!head) await pg.waitForTimeout(250);
+  }
+  assert.ok(head, "the guest's video reached the link");
+  assert.equal(decodeURIComponent(head.customMetadata.name), BUG23_NAME);
+  assert.match(head.httpMetadata.contentType, /^video\/mp4/);
 });
 
 await test("the landing page offers a visitor the sign-in", false, async (pg) => {
