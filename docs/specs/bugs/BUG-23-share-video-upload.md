@@ -127,8 +127,8 @@ poster/artwork. `/main/share` and the Finder script already send anything over 9
 - The owner never gave the error text. The cause above explains "fails with an error" for the owner adding on their
   own link. If they were signed out (a guest), the guest path was already multipart; the only weak point there was
   the missing retry, now fixed.
-- Not done: resuming after a page reload or a locked phone mid-upload. A reload loses the upload, and the reserved
-  item is marked as failed by the existing link cleanup.
+- Not done: resuming after a page reload or a locked phone mid-upload. A reload loses the upload. The reserved
+  item stays as a pending tile, which `galleryApi` shows as stalled (not checked further).
 
 **Owner's check after deploy** (share a link, then on each device).
 1. **Mac (Safari or Chrome)**, signed in to `/main`:
