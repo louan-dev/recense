@@ -1120,7 +1120,10 @@ async function multipart(req, env, q, action, t = target(q, q.get("type"))) {
     }
 
     try {
-      const part = await mp.uploadPart(n, req.body);
+      // R2 takes a stream only when its length is known; a part sent without Content-Length (chunked) is buffered
+      // instead of failing (BUG-23 hardening; a part is 16-32 MB, and Cloudflare caps a body at 100 MB anyway)
+      const known = /^\d+$/.test(req.headers.get("content-length") || "");
+      const part = await mp.uploadPart(n, known ? req.body : await req.arrayBuffer());
       await setProgress(env, t, n, total);
       return new Response(part.etag);
     } catch (e) {
@@ -1642,7 +1645,11 @@ async function guestVid(req) {
   return { secret, fresh, vid: await sha24(secret) };
 }
 
-export async function guestUploadApi(req, env, url) {
+// Derived from Spec: BUG-23 — the owner adding to their own upload link takes this same path (reserve, then
+// multipart parts, into links/<id>/NNN), through /main/api/linkadd behind Access: owner=true. Before, the owner's
+// page fell through to Main's one-request /main/api/file, which a big video can never pass (413 over ~90 MB).
+const OWNER_VID = "owner";
+export async function guestUploadApi(req, env, url, owner = false) {
   const origin = req.headers.get("origin");
   if (origin ? origin !== url.origin : req.headers.get("x-gallery") !== "1") return new Response("Forbidden", { status: 403 });
   const q = url.searchParams;
@@ -1650,10 +1657,10 @@ export async function guestUploadApi(req, env, url) {
   const id = q.get("id") || "";
   if (!ID_RE.test(id)) return new Response("Bad request", { status: 400 });
 
-  const g = await guestVid(req);
+  const g = owner ? { vid: OWNER_VID, fresh: false } : await guestVid(req);
   const manifest = await readManifest(env, id);
   if (!manifest || !(manifest.exp > Date.now())) return new Response("Link expired", { status: 410 });
-  if (!linkPerms(manifest).upload) return new Response("Adding files is off for this link", { status: 403 });
+  if (!owner && !linkPerms(manifest).upload) return new Response("Adding files is off for this link", { status: 403 });
 
   if (action === "reserve") {
     let b;
@@ -1662,8 +1669,8 @@ export async function guestUploadApi(req, env, url) {
     } catch (e) {
       return new Response("Bad request", { status: 400 });
     }
-    const who = guestName(b.who);
-    if (!who) return new Response("Choose a name first", { status: 400 });
+    const who = owner ? "" : guestName(b.who);
+    if (!who && !owner) return new Response("Choose a name first", { status: 400 });
     const size = Number(b.size) || 0;
     if (!(size > 0 && size <= GUEST_MAX)) return new Response("Files up to 5 GB", { status: 413 });
 
@@ -1682,7 +1689,7 @@ export async function guestUploadApi(req, env, url) {
         taken: Number(b.taken) || Date.now(),
         type: String(b.type || "").slice(0, 200) || "application/octet-stream",
         name: Array.from(String(b.name || "file")).slice(0, 120).join(""),
-        by: who,
+        ...(who ? { by: who } : {}),
         vid: g.vid,
       });
       m.items = items;
@@ -1714,7 +1721,7 @@ export async function guestUploadApi(req, env, url) {
     metadata: { name: encodeURIComponent(it.name), expires: String(manifest.exp), taken: String(it.taken || Date.now()), hasArt: "0" },
   };
   const r = await multipart(req, env, q, action, t);
-  if (action === "complete" && r.ok) {
+  if (action === "complete" && r.ok && !owner) {
     await logActivity(env, { type: "upload", by: it.by, vid: it.vid, kind: "link", ref: id, key: n, name: it.name }).catch(() => {});
   }
   if (action === "abort") {

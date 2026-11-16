@@ -1893,6 +1893,98 @@ await test("guests post to a share link when allowed; archive shares are view-an
   assert.equal(sh.items.find((f) => f.ref === "001").by, "Mia");
 });
 
+// BUG-23: the owner's real file name (spaces, upper-case .MP4), real H.264 and HEVC clips, sent in 16 MiB parts
+// as the page sends them; by a guest (/api/upload) and by the owner on their own link (/main/api/linkadd).
+const BUG23_NAME = "ScreenRecording_11-16-2026 05-44-25_1.MP4";
+const BUG23_PART = 16 * 1024 * 1024;
+const bug23Clip = (codec) => readFileSync(new URL("./fixtures/bug23/" + codec + ".MP4", import.meta.url));
+async function bug23Send(path, id, body, headers, extra = {}) {
+  const go = (q, init = {}) =>
+    mf.dispatchFetch(ORIGIN + path + "?" + new URLSearchParams({ id, ...q }), { method: "POST", ...init, headers: { origin: ORIGIN, ...headers, ...(init.headers || {}) } });
+  let r = await go({ action: "reserve" }, { body: JSON.stringify({ name: BUG23_NAME, size: body.length, type: "video/mp4", taken: 1794800000000, ...extra }) });
+  assert.equal(r.status, 200, "reserve: " + (await r.clone().text()));
+  const cookie = /gv=([0-9a-f]{32})/.exec(r.headers.get("set-cookie") || "");
+  if (cookie) headers = { ...headers, cookie: "gv=" + cookie[1] };
+  const { i, n } = await r.json();
+  const total = Math.max(1, Math.ceil(body.length / BUG23_PART));
+  r = await go({ action: "start", i, total });
+  assert.equal(r.status, 200, "start: " + (await r.clone().text()));
+  const uploadId = await r.text();
+  const parts = [];
+  for (let k = 0; k < total; k++) {
+    r = await go({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: body.subarray(k * BUG23_PART, (k + 1) * BUG23_PART) });
+    assert.equal(r.status, 200, "part " + (k + 1) + ": " + (await r.clone().text()));
+    parts.push({ partNumber: k + 1, etag: await r.text() });
+  }
+  r = await go({ action: "complete", i, uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
+  assert.equal(r.status, 200, "complete: " + (await r.clone().text()));
+  return { n, total, headers };
+}
+const bug23Link = async () => {
+  const up = await (await call("/main/api/link?action=start&days=7", { as: "owner", method: "POST", body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg" })).json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { name: "dune.jpg", expires: String(up.exp) } });
+  return up;
+};
+const bug23Check = async (up, n, body) => {
+  const o = await PUBLIC.get("links/" + up.id + "/" + n);
+  assert.ok(o, "landed in the link");
+  const got = new Uint8Array(await o.arrayBuffer());
+  assert.equal(got.length, body.length);
+  assert.ok(Buffer.from(got).equals(body), "bytes intact across parts");
+  assert.equal(decodeURIComponent(o.customMetadata.name), BUG23_NAME);
+  assert.equal(o.httpMetadata.contentType, "video/mp4");
+  assert.equal(Number(o.customMetadata.expires), up.exp);
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/" + n + ".progress")), "progress record gone");
+  const d = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  const f = d.items.find((f) => f.n === n);
+  assert.ok(f && !f.pending && f.type === "video/mp4" && f.name === BUG23_NAME, JSON.stringify(f));
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/f/" + up.id + "/" + n, { headers: { range: "bytes=0-7" } })).status, 206, "plays (range request)");
+};
+
+await test("BUG-23: a guest adds an iPhone screen recording (.MP4, spaces; H.264 and HEVC) in 3 parts", async () => {
+  for (const codec of ["h264", "hevc"]) {
+    const up = await bug23Link();
+    const clip = bug23Clip(codec);
+    const body = Buffer.concat([clip, Buffer.alloc(2 * BUG23_PART + 12345 - clip.length, 7)]);
+    const { n, total } = await bug23Send("/api/upload", up.id, body, {}, { who: "Mia" });
+    assert.equal(total, 3);
+    await bug23Check(up, n, body);
+  }
+});
+
+await test("BUG-23: the owner adds to their own upload link through /main/api/linkadd, guests and strangers can't", async () => {
+  const up = await bug23Link();
+  const clip = bug23Clip("hevc");
+  const body = Buffer.concat([clip, Buffer.alloc(BUG23_PART + 999 - clip.length, 3)]);
+  const { n, headers } = await bug23Send("/main/api/linkadd", up.id, body, { "cf-access-jwt-assertion": ownerJwt });
+  await bug23Check(up, n, body);
+  const d = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  assert.ok(!d.items.find((f) => f.n === n).by, "the owner's own file carries no guest name");
+  // the owner adds even when guests may not
+  await call("/main/api/shares/link/" + up.id, { as: "owner", method: "PATCH", headers: { "x-gallery": "1" }, body: JSON.stringify({ upload: false }) });
+  const r = await call("/main/api/linkadd?" + new URLSearchParams({ id: up.id, action: "reserve" }), { as: "owner", method: "POST", body: JSON.stringify({ name: "b.MP4", size: 3 }) });
+  assert.equal(r.status, 200, await r.clone().text());
+  const { i } = await r.json();
+  // no Access: the same 404 as anything under /main
+  assert.equal((await mf.dispatchFetch(ORIGIN + "/main/api/linkadd?" + new URLSearchParams({ id: up.id, action: "reserve" }), { method: "POST", headers: { origin: ORIGIN }, body: "{}" })).status, 404);
+  assert.equal((await call("/main/api/linkadd?" + new URLSearchParams({ id: up.id, action: "reserve" }), { as: "stranger", method: "POST", body: "{}" })).status, 404);
+  // a guest can't send the owner's reserved file
+  const g = await mf.dispatchFetch(ORIGIN + "/api/upload?" + new URLSearchParams({ id: up.id, action: "start", i, total: 1 }), { method: "POST", headers: { origin: ORIGIN, cookie: "gv=" + "a".repeat(32) } });
+  assert.equal(g.status, 403);
+  assert.ok(headers && !headers.cookie, "no guest cookie for the owner");
+  // cancel mid-way: abort leaves no file, no progress ring and no "uploading" tile behind
+  const lk = (q, init = {}) => call("/main/api/linkadd?" + new URLSearchParams({ id: up.id, ...q }), { as: "owner", method: "POST", ...init });
+  const res = await (await lk({ action: "reserve" }, { body: JSON.stringify({ name: BUG23_NAME, size: 2 * BUG23_PART, type: "video/mp4" }) })).json();
+  const uid = await (await lk({ action: "start", i: res.i, total: 2 })).text();
+  assert.equal((await lk({ action: "part", i: res.i, uploadId: uid, part: 1, total: 2 }, { method: "PUT", body: Buffer.alloc(BUG23_PART, 1) })).status, 200);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/" + res.n + ".progress"), "a ring while it goes up");
+  assert.equal((await lk({ action: "abort", i: res.i, uploadId: uid })).status, 200);
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/" + res.n)));
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/" + res.n + ".progress")));
+  const after = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  assert.ok(!after.items.some((f) => f.n === res.n), "no pending tile left");
+});
+
 await test("archive shares start view-and-comment only (item 16)", async () => {
   await ARCHIVE_B.put("archive/Old/a.jpg", "J", { httpMetadata: { contentType: "image/jpeg" } });
   const l = await (await call("/main/api/link?action=fromMain&days=7&from=archive", { as: "owner", method: "POST", body: JSON.stringify({ paths: ["Old/a.jpg"] }) })).json();

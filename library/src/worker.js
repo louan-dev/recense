@@ -147,6 +147,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     if (path === "/main/api/link" && method === "POST") return linkApi(req, env, url);
     if (path === "/main/api/link" && method === "DELETE") return deleteFromLink(env, url);
     if (path === "/main/api/upload" && (method === "PUT" || method === "POST")) return upload(req, env, url);
+    if (path === "/main/api/linkadd" && (method === "PUT" || method === "POST")) return guestUploadApi(req, env, url, true);
 
     return new Response("Not found", { status: 404 });
   }

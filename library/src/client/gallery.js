@@ -6409,11 +6409,16 @@
   // When the owner lets them, whoever has the link adds files like posting to an iCloud Shared Album: each is
   // reserved (so everyone sees it coming), then sent in 16 MB parts. They expire with the link.
   const guestPost = () => guest() && !!(G.perms && G.perms.upload);
+  // Derived from Spec: BUG-23 — the owner on their own upload link adds the same way (reserve, 16 MB parts, into
+  // the link), never through Main's one-request /main/api/file: a screen recording of a few hundred MB got a 413.
+  // The Add pill shows before /main/api/whoami answers, so the owner clicks the very pill a guest would.
+  const linkPost = () => !!(G.perms && G.perms.upload) && (guest() || ownsLink());
   const PART = 16 * 1024 * 1024;
   const guestAdd = async (files) => {
-    const who = guestName() || askName();
+    const mine = ownsLink();
+    const who = mine ? G.owner || "Owner" : guestName() || askName();
     if (!who) return;
-    const q = (o) => "/api/upload?" + new URLSearchParams({ id: G.id, ...o });
+    const q = (o) => (mine ? MAIN_API + "/linkadd?" : "/api/upload?") + new URLSearchParams({ id: G.id, ...o });
     const call = async (o, init) => {
       const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
       if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
@@ -6434,7 +6439,17 @@
         uploadId = await (await call({ action: "start", i, total })).text();
         const parts = [];
         for (let k = 0; k < total; k++) {
-          const etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
+          // a phone drops a request now and then: one lost part of ~20 must not fail the whole video (BUG-23);
+          // four tries with a growing pause, as the owner's /main/share page does (upload.js)
+          let etag = "";
+          for (let tries = 1; !etag; tries++) {
+            try {
+              etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
+            } catch (e) {
+              if (tries >= 4) throw e;
+              await new Promise((ok) => setTimeout(ok, 1500 * tries));
+            }
+          }
           parts.push({ partNumber: k + 1, etag });
           say("Adding " + f.name + "… " + Math.round(((k + 1) / total) * 100) + "%");
         }
@@ -6500,7 +6515,7 @@
   // link; no message when it's done, and a failed one keeps its red ring.
   const addFiles = async (files) => {
     if (!files.length) return;
-    if (guestPost()) return guestAdd(files);
+    if (linkPost()) return guestAdd(files);
 
     const big = files.filter((f) => f.size > G.uploadMax);
 
