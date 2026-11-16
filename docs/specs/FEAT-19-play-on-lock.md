@@ -50,8 +50,12 @@ New in this feature:
   app goes to the background (**documented**, Apple: "Playing audio from a video asset in the background").
   So the video view lets go of the player when the app leaves the foreground and takes it back when it returns.
   The picture resumes where the sound is. Rule (pure, tested): `BackgroundVideo.attached(active:)` = `active`.
-- **Gap B (assumed, not built):** while Listen hears a broadcast the session mixes with others, and a mixable session
-  is not made the Now Playing app; our scrubber may be absent then. Device check decides whether to act.
+- **P2b · Who owns the sound (Gap B).** A mixable session is not made the Now Playing app (**documented**, Apple), so:
+  while Recense plays its own file, the session is `.playback` without `.mixWithOthers` and owns Now Playing; it mixes
+  only while Listen hears another app's sound (stopping that app would defeat Listen) or when nothing of ours is
+  loaded. Rule (pure, tested): `NowPlayingInfo.ownsSession(holdsFile:hearingOutside:)` = `holdsFile && !hearingOutside`.
+  The code already behaved so (BUG-10); the rule is now named, tested and the one place `NativePlayer.session` reads.
+  Consequence, accepted: while Listen hears another app, that app's Lock Screen controls show, not ours.
 
 ## Checks
 - `swiftc -O mobile/HostApp/iOS/BackgroundVideo.swift mobile/ios/Tests/backgroundvideo/main.swift -o "$TMPDIR/bgvideo" && "$TMPDIR/bgvideo"` → ALL OK.
