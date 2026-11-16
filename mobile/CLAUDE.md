@@ -73,6 +73,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   or to `readNote`/`planBlindSave` in `shared/notesync.swift`: run it outside the sandbox (NSFileCoordinator needs it):
   `swiftc -O shared/notesync.swift mobile/ios/Tests/notesave/main.swift -o "$TMPDIR/notesave" && "$TMPDIR/notesave"` (ALL OK), and
   `grep -c 'guard coordinatedWrite\|!coordinatedWrite' mobile/HostApp/iOS/Draftpad.swift` prints 3 (a failed write never moves the base),
+  `grep -c 'draftpad-unsaved.md' mobile/HostApp/iOS/Draftpad.swift shared/notesync.swift` prints 0 for both (typed text is kept one file
+  per launch, `Unsaved.file`, never one fixed file) and `grep -c 'conflictSiblingPath' mobile/HostApp/iOS/Draftpad.swift` prints 0
+  (a conflict copy uses `freeSiblingPath`, so it never replaces one made in the same minute),
   `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadInk` (the note's own load never reads blank;
   the ink sidecar still does: filed as its own triage entry).
   The Mac's own copy of this rule (`strip/app.swift` saveNow/load) is a gap until wired: `docs/specs/PARITY.md`.

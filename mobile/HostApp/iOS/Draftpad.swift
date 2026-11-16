@@ -54,8 +54,8 @@ final class DraftpadFile: ObservableObject {
     func load() -> String {
         guard let p = note?.path else { return "" }
         switch readNote(p) {
-        case .text(let s): base = s; readable = true; return s
-        case .missing: base = ""; readable = true; return ""
+        case .text(let s): base = s; readable = true; return joinKept(note: s, path: p)
+        case .missing: base = ""; readable = true; return joinKept(note: "", path: p)
         case .unreadable:
             base = ""; readable = false
             log("the note can't be read now (iCloud offline?); nothing is saved over it until it can be")
@@ -63,12 +63,22 @@ final class DraftpadFile: ObservableObject {
         }
     }
 
-    /// What was typed while the note could not be read or written: kept on this device, so nothing is lost (T-0114).
-    private func keepSafe(_ text: String) {
-        guard !text.isEmpty else { return }
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Recense", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? text.write(to: dir.appendingPathComponent("draftpad-unsaved.md"), atomically: true, encoding: .utf8)
+    // What was typed while the note could not be read or written is kept on this device, one file per launch, so a second
+    // launch never replaces the first's (T-0114 review F1). It is joined after the note once the note reads, and each file
+    // moves to recovered/ only after the write that holds its text succeeded.
+    private let launch = Date()
+    private var unsavedDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Recense", isDirectory: true)
+    }
+    private var launchFile: URL { Unsaved.file(in: unsavedDir, launch: launch) }
+    private func keepSafe(_ text: String) { if !text.isEmpty { Unsaved.keep(text, as: launchFile) } }
+    private func settleLaunch() { Unsaved.settle(launchFile, in: unsavedDir) }   // its text reached the note
+    /// The note with the text kept by earlier failed saves added after it, written to the note; else the note as it is.
+    private func joinKept(note s: String, path p: String) -> String {
+        guard let joined = Unsaved.recover(note: s, in: unsavedDir, write: { coordinatedWrite($0, to: p) }) else { return s }
+        base = joined
+        log("text typed while the note could not be saved was added after it")
+        return joined
     }
 
     /// Reads the line-anchored ink sidecar JSON from the vault folder.
@@ -99,9 +109,11 @@ final class DraftpadFile: ObservableObject {
                 return nil
             case .recovered(let seen, let joined):
                 if joined != seen, !coordinatedWrite(joined, to: p) { keepSafe(mine); pending = true; return nil }
+                settleLaunch()   // this launch's typed text is in the note now
                 base = joined; readable = true; pending = false
                 log("the note can be read again; what was typed meanwhile was added after it")
-                return joined == mine ? nil : joined
+                let shown = joinKept(note: joined, path: p)   // and any earlier launch's
+                return shown == mine ? nil : shown
             }
         }
         let theirs: String?
@@ -115,15 +127,15 @@ final class DraftpadFile: ObservableObject {
             // the base moves only once the file really holds the text; a failed write left base as it was, so the
             // next poll does not read the old file as "theirs" and put it over the edit (T-0114)
             if t != (theirs ?? base), !coordinatedWrite(t, to: p) { keepSafe(mine); pending = true; return nil }
-            base = t; pending = false
+            base = t; pending = false; settleLaunch()
             return t == mine ? nil : t
         case .adopt(let t):
             base = t; pending = false
             return t
         case .conflict(let m, let other):
             // theirs goes beside the note first: only once it is safe is the note replaced
-            guard coordinatedWrite(other, to: conflictSiblingPath(p)), coordinatedWrite(m, to: p) else { keepSafe(mine); pending = true; return nil }
-            base = m; pending = false
+            guard coordinatedWrite(other, to: freeSiblingPath(p)), coordinatedWrite(m, to: p) else { keepSafe(mine); pending = true; return nil }
+            base = m; pending = false; settleLaunch()
             log("the same lines changed here and on another device; theirs kept beside the note")
             return nil
         }

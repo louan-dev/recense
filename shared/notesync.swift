@@ -58,6 +58,59 @@ func planBlindSave(mine: String, now: NoteRead) -> BlindSave {
     }
 }
 
+/// Typed text that could not reach the note (T-0114, review F1): kept one file per launch in a folder on this device, so a
+/// second launch never replaces the first's, and joined after the note, oldest first, once the note can be read. A file
+/// moves to `recovered/` only after the write that holds its text succeeded; nothing is deleted.
+enum Unsaved {
+    static func file(in dir: URL, launch: Date, zone: TimeZone = .current) -> URL {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HHmmss"; f.timeZone = zone
+        return dir.appendingPathComponent("draftpad-unsaved \(f.string(from: launch)).md")
+    }
+
+    static func keep(_ text: String, as file: URL) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? text.write(to: file, atomically: true, encoding: .utf8)
+    }
+
+    static func files(in dir: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix("draftpad-unsaved ") && $0.pathExtension == "md" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    static func settle(_ file: URL, in dir: URL) {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: file.path) else { return }
+        let to = dir.appendingPathComponent("recovered", isDirectory: true)
+        try? fm.createDirectory(at: to, withIntermediateDirectories: true)
+        var dest = to.appendingPathComponent(file.lastPathComponent)
+        if fm.fileExists(atPath: dest.path) { dest = to.appendingPathComponent(UUID().uuidString + " " + file.lastPathComponent) }
+        try? fm.moveItem(at: file, to: dest)
+    }
+
+    /// The note, then each text after it. A text of 12 characters or more that the note already holds word for word is not
+    /// added again; a shorter one always is (it would "be found" in almost any note and be lost).
+    static func join(note: String, texts: [String]) -> String {
+        var out = note
+        for t in texts where !t.isEmpty && !(t.count >= 12 && out.contains(t)) {
+            out = out.isEmpty ? t : out + (out.hasSuffix("\n") ? "" : "\n") + t
+        }
+        return out
+    }
+
+    /// The note with every kept file's text after it, handed to `write`; when that succeeds the files move aside and the
+    /// joined text is returned. nil: nothing kept, nothing new to write, or the write failed (the files stay).
+    static func recover(note: String, in dir: URL, write: (String) -> Bool) -> String? {
+        let fs = files(in: dir)
+        guard !fs.isEmpty else { return nil }
+        let joined = join(note: note, texts: fs.compactMap { try? String(contentsOf: $0, encoding: .utf8) })
+        if joined == note { fs.forEach { settle($0, in: dir) }; return nil }
+        guard write(joined) else { return nil }
+        fs.forEach { settle($0, in: dir) }
+        return joined
+    }
+}
+
 /// One changed region of base: lines base[s..<e] become `lines`.
 private struct Hunk: Equatable { let s: Int, e: Int, lines: [Substring] }
 
@@ -140,6 +193,16 @@ func conflictSiblingPath(_ path: String, _ d: Date = Date(), device: String = "o
     let last = (path as NSString).lastPathComponent as NSString
     let ext = last.pathExtension.isEmpty ? "md" : last.pathExtension
     return (dir as NSString).appendingPathComponent("\(last.deletingPathExtension) (\(device) \(f.string(from: d))).\(ext)")
+}
+
+/// `conflictSiblingPath`, but never the name of a file already there (T-0114, review F2): a second conflict in the same
+/// minute gets " 2", " 3"… before the extension instead of replacing the first copy.
+func freeSiblingPath(_ path: String, _ d: Date = Date(), zone: TimeZone = .current) -> String {
+    let first = conflictSiblingPath(path, d, zone: zone)
+    let stem = (first as NSString).deletingPathExtension, ext = (first as NSString).pathExtension
+    var out = first, n = 2
+    while FileManager.default.fileExists(atPath: out) { out = "\(stem) \(n).\(ext)"; n += 1 }
+    return out
 }
 
 func notesyncSelftest() -> Bool {

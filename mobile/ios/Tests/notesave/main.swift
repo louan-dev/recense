@@ -34,5 +34,43 @@ check(planBlindSave(mine: "typed", now: .text("the note\n")) == .recovered(seen:
 check(planBlindSave(mine: "same", now: .text("same")) == .recovered(seen: "same", joined: "same"), "typed the same as the note: written once")
 check(planBlindSave(mine: "typed", now: .text("")) == .recovered(seen: "", joined: "typed"), "an empty note takes what was typed")
 
+// Regression guard: T-0114 review F1. Typed text that could not reach the note is kept one file per launch (a second
+// launch never replaces the first's), and joined after the note, in order, once the note reads; the files are moved aside
+// only after that write succeeds.
+let ud = URL(fileURLWithPath: p("support"))
+let utc = TimeZone(identifier: "UTC")!
+let l1 = Date(timeIntervalSince1970: 1_700_000_000), l2 = Date(timeIntervalSince1970: 1_700_000_100)
+let u1 = Unsaved.file(in: ud, launch: l1, zone: utc), u2 = Unsaved.file(in: ud, launch: l2, zone: utc)
+check(u1.lastPathComponent == "draftpad-unsaved 2023-11-14 221320.md", "the file is named by its launch")
+Unsaved.keep("A", as: u1); Unsaved.keep("A2", as: u1)
+check(Unsaved.files(in: ud).count == 1, "one launch keeps one file, the latest text replacing its own earlier one")
+Unsaved.keep("B", as: u2)
+check(Unsaved.files(in: ud).count == 2, "a second launch leaves a second file; the first is not replaced")
+check(Unsaved.files(in: ud).compactMap { try? String(contentsOf: $0, encoding: .utf8) } == ["A2", "B"], "oldest launch first")
+var wrote = ""
+let rec = Unsaved.recover(note: "the note", in: ud) { wrote = $0; return true }
+check(rec == "the note\nA2\nB" && wrote == rec, "the note, then each launch's text in order, is what gets written")
+check(Unsaved.files(in: ud).isEmpty, "the files are moved aside once that write succeeded")
+check(FileManager.default.fileExists(atPath: ud.appendingPathComponent("recovered").appendingPathComponent(u1.lastPathComponent).path),
+      "moved to recovered/, not deleted")
+let cText = "text typed while offline"
+Unsaved.keep(cText, as: u1)
+check(Unsaved.recover(note: "n", in: ud, write: { _ in false }) == nil && Unsaved.files(in: ud).count == 1, "a failed write leaves the files where they are")
+check(Unsaved.join(note: "x\n\(cText)\ny", texts: [cText]) == "x\n\(cText)\ny", "text the note already holds is not added again")
+check(Unsaved.recover(note: "x\n\(cText)\ny", in: ud, write: { _ in false }) == nil && Unsaved.files(in: ud).isEmpty,
+      "files whose text the note already holds are moved aside with nothing to write")
+check(Unsaved.join(note: "a banana and a cat", texts: ["a"]) == "a banana and a cat\na", "a short text is always added, never 'found' inside the note and lost")
+Unsaved.keep("D", as: u2); Unsaved.settle(u2, in: ud)
+check(Unsaved.files(in: ud).isEmpty, "a launch's file is settled once its text reached the note normally")
+check(Unsaved.join(note: "", texts: ["only"]) == "only" && Unsaved.join(note: "n\n", texts: ["t"]) == "n\nt", "join: empty note, trailing newline")
+
+// F2: a conflict copy never takes the name of one already there
+let nn = p("n.md")
+let s1 = freeSiblingPath(nn, l1, zone: utc)
+check(s1.hasSuffix("n (other device 2023-11-14 2213).md"), "the conflict copy is named as before")
+FileManager.default.createFile(atPath: s1, contents: Data("first".utf8))
+let s2 = freeSiblingPath(nn, l1, zone: utc)
+check(s2 != s1 && s2.hasSuffix(") 2.md"), "a second conflict in the same minute gets \" 2\", the first is not replaced")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
