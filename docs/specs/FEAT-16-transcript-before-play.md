@@ -51,8 +51,8 @@ Follow reset = Apple's "reset live tracking": a hand scroll lets go of the voice
 | iPhone, stored shows (Now Playing) | `shared/ShowsKit/Sources/ShowsKit/Views/NowPlaying.swift:113` → `Views/Transcript.swift:269-280` → `Views/SearchPill.swift` | present (FEAT-07 P2) | "Now" `Transcript.swift:257-265`; ··· Follow the Playhead `:337`; hand scroll detaches `:366-372` | present, no change; device screenshot owed |
 | iPad, stored shows | same ShowsKit code as iPhone | present | present | present, no change; iPad screenshot owed |
 | Listen episodes (iOS) | `mobile/HostApp/iOS/Listen.swift:1497` (`seek: nil`, no `duration`) | Find face only; no scrubber (another app's audio cannot be moved) | present (same view) | present, no change; Open question below |
-| Mac strip window | `strip/recense.swift:997-1209` `RecenseHomeBar` (WKWebView over `strip/homebar/index.html`, which runs Gallery's `library/src/client/homebar.js`) | scrubber only (homebar Time Seeking); no Find | not needed: one line on screen; a scroll turns the drum and plays from the line picked (`recense.swift:1962-1987`), so view and voice never part | to build: Find in `homebar.js` (shared with web) + the lines sent from `recense.swift` |
-| Web player (Gallery) | `library/src/client/gallery.js:1751` `Homebar.horizontal`; transcript `showTranscript` `:5017`, whole transcript `openAll` `:5293` | scrubber only (homebar Time Seeking); no Find | none: the whole-transcript sheet re-follows every line turn (`:6107-6117`) | to build: Find in `homebar.js`, hit marks on its ruler, Now in the sheet |
+| Mac strip window | `strip/recense.swift:997-1209` `RecenseHomeBar` (WKWebView over `strip/homebar/index.html`, which runs Gallery's `library/src/client/homebar.js`) | scrubber only (homebar Time Seeking); no Find | not needed: one line on screen; a scroll turns the drum and plays from the line picked (`recense.swift:1962-1987`), so view and voice never part | **coded, not compiled, device check owed.** Find comes with `homebar.js`; `strip/homebar/index.html` (Find host, `Recense.lines`, pointer rects, `find` message); `strip/recense.swift` `pushFindLines()` + the `find` message (web view takes the keys). Host page checked in Chromium with a stub handler. |
+| Web player (Gallery) | `library/src/client/gallery.js:1751` `Homebar.horizontal`; transcript `showTranscript` `:5017`, whole transcript `openAll` `:5293` | scrubber only (homebar Time Seeking); no Find | none: the whole-transcript sheet re-follows every line turn (`:6107-6117`) | **built and tested** (`library/test/ui.test.mjs` "FEAT-16 P5", `test/find.test.mjs`); screenshot `docs/feat16-p5-web-pill.png` |
 
 Not a transcript surface: the Mac's ShowsKit Library window (`LibraryShelf`, `Root.swift:162`) has no transcript view of its own.
 
@@ -66,3 +66,62 @@ Untested: whether iOS lets Recense pause another app (assumed no).
 ## Risk and open choice for the owner
 An hour of audio with no stored transcript may take minutes before it plays. The rule as written has no skip.
 Recommended: show progress (percent), keep the rule strict, and let a transcript already stored play at once.
+
+## Handoff (FEAT-16 P5, lane feat16-p5, 2026-11-16)
+
+### Built, per surface
+- **Web player (Gallery):** the pill's Find lives in `library/src/client/homebar.js` (`find()`, plus pure `findHits`,
+  `findStep`, `findCount`, `fold`, rule for rule with ShowsKit's `TranscriptFind` / `SearchPill`). The magnifier sits at the
+  stroke's start (only when the item has a transcript). Find takes the stroke's place: waveform (Back to Scrubbing),
+  the field, "2 of 5", ⌃ ⌄. Enter = next, ⇧Enter = previous, Escape or a 0.35 s hold on the face = back. A hit seeks
+  and plays (FEAT-07 rule 1). The hits of what's typed are marks on the time ruler (`.p-skhit`; no haptic on the web, rule 8).
+  `gallery.js` passes the item's lines and the go. Escape folds Find before it closes the viewer.
+  Follow reset: in the whole-transcript sheet (`openAll`), a hand scroll (wheel, finger, scroll keys) lets go of the voice
+  and shows **Now**. Now (or playing a line) follows again. Before P5 the sheet snapped back at every line turn.
+- **Mac strip window:** no new UI code. The strip's bar is the same `homebar.js`, so Find comes with it.
+  `strip/homebar/index.html` gives Find the lines, seeks and plays a hit, posts the pointer rects of the magnifier and face,
+  and tells main.swift when Find opens. `strip/recense.swift`: `pushFindLines()` (once a second, on change; times mapped
+  as `onPick` maps a line) and the `find` message (makes the panel key and the web view first responder, as the line
+  editor does). Follow reset: not needed (one line on screen; a scroll picks a line and plays it).
+- **iPhone, iPad (stored shows) and Listen episodes:** no change. The pill and "Now" were already there (FEAT-07 P2, ShowsKit).
+
+### Tests run
+- `node --test test/find.test.mjs`: 4 pass, 0 fail (same fixture and answers as `TranscriptFindTests.swift`).
+- `ui.test.mjs` "FEAT-16 P5…": passes (Find, count, Enter/⌃/⌄, seek+play, translation search, "No matches", đ→d, Escape keeps
+  the viewer and the text, one ruler mark, waveform back, Now after a wheel scroll).
+- Full `npm test` (Chromium via `CHROMIUM=/opt/pw-browsers/chromium`): keylabel, ai, calendar, routes (both), feed (both),
+  dav-rclone, transcript, learn, pieces, cadence and find pass. `ui.test`: 39 pass, 2 fail. Both also fail on `main` in a full
+  run (main: 38 pass, the same 2 fail): "Home bar: Delete Cover…" (passes alone, fails only in a full run) and
+  "SPEC P3 12: Download bakes in EQ…". `viewer.test`: 114 pass, 6 fail, the same on `main` (G3 touch drag, all six devices).
+  `editorpwa` skips its browser steps (it doesn't read `CHROMIUM`).
+- The strip host page (`strip/homebar/index.html` with the bundled client files) driven in Chromium with a stub
+  `webkit.messageHandlers.recense`: magnifier only with lines; Find posts `find` on/off, `seek` (player time) then `playPause`;
+  the face's rect is posted. This was a one-off check in the session's scratchpad; nothing was committed for it.
+
+### Unverified
+- Swift: `strip/recense.swift` is **coded, not compiled**. No Swift toolchain in this container.
+- Whether the strip's panel really gives the keys to the web view's field (`makeKey` + `makeFirstResponder(homeBar)`), and
+  that Space, ←, → typed into the field don't reach the player.
+- Swift is unchanged on iOS. The iPad and Listen screenshots the P5 gate asks for are still owed.
+
+### What the owner must check, and on which device
+1. **Mac:** build Recense (`strip/build.sh`). Follow a Gallery or browser player with a transcript. The magnifier shows left of the
+   stroke. Click it, type a word: the count, ⌄ jumps and plays, Escape returns, the ruler (hold the stroke) shows a mark per hit.
+   Screenshot the open pill.
+2. **Web (Safari on iPhone and iPad, a Mac browser):** open a song with a transcript in Gallery. Same steps, then open the
+   whole transcript, scroll by hand: Now shows and brings it back. Check that the iPhone keyboard doesn't hide the field.
+3. **iPhone and iPad (iPhone Mirroring):** Now Playing on a stored show: the pill and Now as before. Screenshot each for the gate.
+   Listen › a past episode: the magnifier only (see question 1).
+
+### Questions for the owner
+1. **Listen episodes:** the pill there is Find only. Its audio is another app's, so there is no scrubber (`seek: nil`). Should the
+   scrubber there move the *reading place* (scroll the transcript) instead of the audio? Left as it is until you say.
+2. **Hit marks in the Swift pill:** `Transcript.swift:213` computes hits only while Find is open, and Find hides the scrubber
+   (`SearchPill.swift:20`), so the marks on the iPhone's track never show. The web keeps the typed text's marks after Back to
+   Scrubbing (FEAT-07 rule 1: "search hits are places on the ruler"). Should the Swift pill do the same? That is the FEAT-07 lane's code; not touched here.
+3. **No transcript:** the web hides the magnifier (law, interaction.md: shown only when relevant); Swift shows it disabled.
+   Which should both do?
+4. **Screenshot placement:** `.gitignore` keeps `docs/specs/**/*.png` local-only (owner 2026-11-11), and `docs/law/structure.md`
+   says no screenshots in the repo. The web screenshot is a synthetic fixture render, committed as `docs/feat16-p5-web-pill.png`
+   beside the other renders in `docs/`. Keep it there, move it, or drop it?
+
