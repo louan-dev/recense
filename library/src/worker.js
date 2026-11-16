@@ -17,6 +17,7 @@
 import { page, notice, jsonResponse, esc, OWNER, cleanPath } from "./common.js";
 import { isOwner, sameSite, signedInAs } from "./access.js";
 import { editorPwa } from "./editorpwa.js";
+import { postbox } from "./postbox.js";
 import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
@@ -57,6 +58,9 @@ export default {
     if (path === "/dav/notability" || path.startsWith("/dav/notability/")) {
       return (await notabilityAuth(req, env)) || dav(req, env, url, NOTABILITY_DAV);
     }
+
+    // the Postbox: the owner's Claude sessions talk here, outside Access, each account with its own token (postbox.js)
+    if (path === "/postbox" || path.startsWith("/postbox/")) return postbox(req, env, url, path);
 
     if (path === "/api/caption" && method === "PUT") return guestCommentApi(req, env, url);
     if (path === "/api/upload" && (method === "POST" || method === "PUT")) return guestUploadApi(req, env, url);
