@@ -6393,7 +6393,17 @@
         uploadId = await (await call({ action: "start", i, total })).text();
         const parts = [];
         for (let k = 0; k < total; k++) {
-          const etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
+          // a phone drops a request now and then: one lost part of ~20 must not fail the whole video (BUG-23);
+          // four tries with a growing pause, as the owner's /main/share page does (upload.js)
+          let etag = "";
+          for (let tries = 1; !etag; tries++) {
+            try {
+              etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
+            } catch (e) {
+              if (tries >= 4) throw e;
+              await new Promise((ok) => setTimeout(ok, 1500 * tries));
+            }
+          }
           parts.push({ partNumber: k + 1, etag });
           say("Adding " + f.name + "… " + Math.round(((k + 1) / total) * 100) + "%");
         }
