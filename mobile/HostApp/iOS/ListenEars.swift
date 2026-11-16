@@ -6,6 +6,13 @@
 import Foundation
 
 enum Ears {
+    /// FEAT-16 P3 (T-0095): a stored piece plays only once its transcript is whole. hold = pause (again, if the listener
+    /// presses play); release = play, once whole or once it can't be made; none = leave the player alone.
+    enum Gate { case hold, release, none }
+    static func gate(playing: Bool, complete: Bool, giveUp: Bool, held: Bool) -> Gate {
+        if !complete && !giveUp { return playing ? .hold : .none }
+        return held ? .release : .none
+    }
     enum Ear: String, Codable { case broadcast, none }
 
     /// Where the sound goes: the device's own speaker (or earpiece), headphones of any kind, or somewhere else

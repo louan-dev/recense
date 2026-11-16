@@ -81,11 +81,6 @@ import ShowsKit
 
     // FEAT-16 P3 (T-0095): a stored piece with no finished transcript plays only once it is whole, so the words never drift
     // from the sound. hold = pause (again, if the listener presses play); release = play once whole, or once it can't be made.
-    enum Gate { case hold, release, none }
-    nonisolated static func gate(playing: Bool, complete: Bool, giveUp: Bool, held: Bool) -> Gate {
-        if !complete && !giveUp { return playing ? .hold : .none }
-        return held ? .release : .none
-    }
     private var gate: Task<Void, Never>?
     private var held = false
 
@@ -94,7 +89,7 @@ import ShowsKit
         gate = Task { @MainActor [weak self, weak model, weak a] in
             while !Task.isCancelled {
                 guard let self, let model, let a, self.key == id, let t = model.transport else { return }
-                switch Self.gate(playing: t.isPlaying, complete: a.finished, giveUp: a.problem != nil, held: self.held) {
+                switch Ears.gate(playing: t.isPlaying, complete: a.finished, giveUp: a.problem != nil, held: self.held) {
                 case .hold: self.held = true; t.toggle()
                 case .release: self.held = false; t.toggle(); return
                 case .none: if a.finished { return }

@@ -35,8 +35,8 @@ Model: Apple Podcasts (spinner, then audio and transcript together).
 ## Phases (each gate = its check)
 - P1 gate: pure function `canPlay(transcriptComplete:)`; selftest: false while any chunk is undone, true once `complete`. Mac strip.
 - P2 gate: Mac play path shows the spinner, runs the transcription in whole-file order (no play-first chunking), starts audio only when `complete`; selftest + screenshot of the spinner.
-- P3 gate (coded 11-16, builds, installed iPhone; device check pending): iPhone and iPad (stored shows): same rule and spinner; checked on the device via iPhone Mirroring.
-- P4 gate: autoscroll and word sync start at the first frame of audio; no drift after 10 min.
+- P3 gate (coded 11-16; `Ears.gate` selftest in mobile/ios/Tests/ears passes; installed iPhone + iPad; on-device check pending): iPhone and iPad (stored shows): same rule and spinner; checked on the device via iPhone Mirroring.
+- P4 (view already follows the playhead with a "Now" reset, Transcript.swift; the gate makes the first frame whole; 10-min drift check pending on device): autoscroll and word sync start at the first frame of audio; no drift after 10 min.
 
 - P5 gate: the FEAT-07 pill (search + scrubber, one pill) on every surface that shows a transcript: Mac strip window,
   iPhone and iPad stored shows, Listen episodes, the web player. Surface list in the spec's table is the check: each gets a screenshot.

@@ -96,5 +96,14 @@ check((try? JSONDecoder().decode(Ears.Prompts.self, from: data)) == pr, "the pro
 let before = #"{"stop":2,"dismissed":1,"notified":2}"#.data(using: .utf8)!
 check((try? JSONDecoder().decode(Ears.Prompts.self, from: before))?.ended == nil, "a state saved before 11-11 still loads")
 
+// FEAT-16 P3: the transcript gate
+check(Ears.gate(playing: true, complete: false, giveUp: false, held: false) == .hold, "gate: playing before whole: held")
+check(Ears.gate(playing: true, complete: false, giveUp: false, held: true) == .hold, "gate: play pressed while held: held again")
+check(Ears.gate(playing: false, complete: false, giveUp: false, held: true) == .none, "gate: paused and waiting: nothing sent")
+check(Ears.gate(playing: false, complete: true, giveUp: false, held: true) == .release, "gate: whole: released")
+check(Ears.gate(playing: true, complete: true, giveUp: false, held: false) == .none, "gate: stored transcript plays at once")
+check(Ears.gate(playing: false, complete: false, giveUp: true, held: true) == .release, "gate: hearing failed: released")
+check(Ears.gate(playing: false, complete: false, giveUp: false, held: false) == .none, "gate: listener paused, nothing held: left alone")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
