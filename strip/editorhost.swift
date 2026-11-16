@@ -93,7 +93,7 @@ final class EditorWebView: WKWebView {
         swipeY += event.scrollingDeltaY
         let ended = event.phase == .ended || event.phase == .cancelled
         if swipeAxis == nil {
-            if max(abs(swipeX), abs(swipeY)) < 12 { super.scrollWheel(with: event); return }
+            if max(abs(swipeX), abs(swipeY)) < 6 { super.scrollWheel(with: event); return }
             swipeAxis = abs(swipeX) > abs(swipeY) * 1.4 ? "h" : "v"
         }
         if swipeAxis == "v" { super.scrollWheel(with: event); return }

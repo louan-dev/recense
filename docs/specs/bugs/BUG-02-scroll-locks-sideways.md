@@ -10,16 +10,21 @@ From: T-0025, T-0026, T-0027 · Status: `[~]` · Code: `editor/src/pagemode.js` 
 - **Before c8f1307:** a swipe needed 60 px sideways and `|dx| > 1.4·|dy|` (b3097f2). The owner wants that feel back.
 
 ## Invariants
-- **A1 · Slop:** no axis is chosen until the drag has moved 12 px on either axis (Σ of wheel deltas for a trackpad).
-  12 px is an assumption near UIScrollView's touch slop; change it here first if the device check disagrees.
+- **A1 · Slop:** no axis is chosen until the drag has moved 6 px on either axis (Σ of wheel deltas for a trackpad).
+  Was 12 px (near UIScrollView's touch slop) until 2026-11-16, when the owner settled the open question in the
+  log below: "i think it could move with my finger better and with leess of a stroke". 6 px is half of 12, so the
+  page starts following the finger in half the distance; change it here first if the device check disagrees.
 - **A2 · Ratio:** the axis is sideways only if `|dx| > 1.4·|dy|`; otherwise vertical.
 - **A3 · Lock:** once vertical, the whole gesture stays vertical: no page drag, no page change, scrolling not blocked.
-- **A4 · Commit:** a page changes only at `|dx| ≥ min(60, 0.2·width)` on a sideways gesture (unchanged).
+- **A4 · Commit:** a page changes only at `|dx| ≥ min(36, 0.12·width)` on a sideways gesture. Was
+  `min(60, 0.2·width)` until 2026-11-16: a 40% shorter stroke turns the page, the figure the owner asked for on
+  2026-11-12 ("~40% more responsive") and confirmed on 2026-11-16 ("with leess of a stroke"). The width cap, not
+  the 36, is what binds on a narrow phone column.
 - **A5 · No lost pixels:** once a trackpad gesture is sideways, the slop already moved counts toward the drag (the page moves from the first pixel; owner 11-12: "doesnt budge").
 - **A6 · One piece:** the drag moves the whole scroller (text, selection, cursor, ink), never the text layer alone (owner: "weird boxes", "slide and page do not sync").
 - **A7 · Glide:** past the commit distance the old page leaves the way the fingers went (140 ms), the new page enters from the other side (220 ms); Reduce Motion turns pages without motion.
 - **A8 · Native trackpad read (Mac):** the Mac host reads the trackpad directly (`EditorWebView.scrollWheel`,
-  `strip/editorhost.swift`), not the web `wheel` event — same 12 px slop, same 1.4 ratio as `decideAxis`, axis
+  `strip/editorhost.swift`), not the web `wheel` event — same 6 px slop, same 1.4 ratio as `decideAxis`, axis
   resets when the fingers touch, momentum after lift is ignored, the lift settles the page. Bridges to the web
   via `window.recenseEditor.nativeSwipe(dx, ended)` (`editor/src/index.js`), which sets `view.__nativeWheel = true`
   (turning off the web wheel listener for that window) and drives the same `renderDrag`/`settleDrag` as every
@@ -45,3 +50,8 @@ From: T-0025, T-0026, T-0027 · Status: `[~]` · Code: `editor/src/pagemode.js` 
 - 2026-11-12 · claude (session e1de54) · correction to my own entry above: ink *does* persist on Mac — I grepped `strip/editorhost.swift` from the wrong working directory and got a false negative. Real wiring: `EditorHost.inkPath` = `draftpad.ink.json` beside `draftpad.md`; the `"ink"` WKScriptMessage handler (`editorhost.swift:316`) writes every stroke there via `coordinatedWrite`; on load (`:482-483`) it's read back and pushed into the page with `setInk(inkJSON)`. This fully explains surviving the Cmd+Q restart — it's not a live process-memory artifact, it's a file.
 - 2026-11-12 · claude (session e1de54) · read `draftpad.ink.json` directly: 19 saved strokes, almost all `"tool":"pen"`, `"device":"mouse"`, 1 point each (a single click with zero movement — the exact shape of a stray tap, not a real pencil/mouse drawing). `onPointerUp`'s tiny-tap discard (`ink.js:1577`) only checks `e.pointerType === 'pen'`; these are recorded `device:"mouse"`, so that filter never applies to them — every stray mouse/trackpad click while `currentTool !== SELECT_TOOL` gets saved permanently, unfiltered. Separately, and likely the bigger issue: their Y-coordinates are nonsensical — `-14621`, `11868`, `11031`, `9458`, `8133` — Draftpad's visible window is a few hundred px tall, so whatever `scrollTop` was used to compute `y = e.clientY - rect.top + scrollTop` (`ink.js` `onPointerDown`/`onPointerMove`) is itself wrong by thousands of pixels.
 - 2026-11-12 · claude (session e1de54) · owner, mid-investigation: **"each page scrolls to nov 2 at the top, theres no vertical division."** This lines up with the garbage Y-coordinates above and is likely the same root cause, not a separate bug: `pagemode.js`'s `pageModeField` (the thing that's supposed to hide every page but the current one, via `hiddenRanges`/`Decoration.replace`) resets to `{on: true, index: 0}` on every fresh `EditorState` — there is no restore-last-page memory (`viewMemory` is a plain in-memory `WeakMap`, lost on reload) — so every launch lands on page index 0 (whichever page is first in document order, apparently the owner's "Nov 2" entry), which matches "scrolls to nov 2 ... every time" exactly. "No vertical division" is still unconfirmed which way: either page-isolation is working (so there's nothing to divide — you're seeing one page, correctly) and the owner is describing something else, or page-isolation has failed open (hiding broken, continuous document showing) with no divider line rendering either. Can't tell apart without a screenshot — asked for one three times now, not yet received. This is the actual blocker on the owner's stated #1 priority (restoring page navigation).
+- 2026-11-16 · owner · decision on the question left open on 2026-11-12 (which number to tune for "~40% more
+  responsive"): tune A1's slop and A4's commit distance, NOT A7's 140/220 ms glide timing. Owner's words:
+  "i think it could move with my finger better and with leess of a stroke". A1 12 px → 6 px (moves with the
+  finger sooner), A4 min(60, 0.2w) → min(36, 0.12w) (turns on a shorter stroke). A2's 1.4 ratio is deliberately
+  left alone: lowering it would start stealing vertical scrolling, which is the defect this bug exists for.

@@ -32995,7 +32995,7 @@ ${PAGE_MARKER}
     const p = inspectDraftpadPages(state.doc.toString())[i];
     return { index: i, head: pageHead(p) };
   }
-  var AXIS_SLOP_PX = 12;
+  var AXIS_SLOP_PX = 6;
   var AXIS_RATIO = 1.4;
   function decideAxis(dx, dy) {
     const ax = Math.abs(dx), ay = Math.abs(dy);
@@ -33043,7 +33043,7 @@ ${PAGE_MARKER}
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
+  function attachSwipePaging(view, { threshold = 36, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
     let wheelAcc = 0;
     let wheelSpent = false;
     let wheelTimer = null;
@@ -33063,7 +33063,7 @@ ${PAGE_MARKER}
     }
     function settleDrag(dx) {
       const el5 = targetEl();
-      const limit = Math.min(threshold, widthOf() * 0.2);
+      const limit = Math.min(threshold, widthOf() * 0.12);
       const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce }) : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
       if (!el5 || !el5.style) {
         if (turn) turn();
@@ -33121,7 +33121,7 @@ ${PAGE_MARKER}
       const dx = e.isDirectionInvertedFromDevice === false ? e.deltaX : -e.deltaX;
       wheelAcc += dx;
       renderDrag(wheelAcc);
-      const limit = Math.min(threshold, widthOf() * 0.2);
+      const limit = Math.min(threshold, widthOf() * 0.12);
       if (Math.abs(wheelAcc) >= limit) {
         wheelSpent = true;
         const finalDx = wheelAcc;
