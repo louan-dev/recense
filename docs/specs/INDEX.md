@@ -61,6 +61,7 @@ Row: ID · title · status · From · code pointer
 - BUG-17 · Pairing finished on the Mac only: the side waiting for the group secret threw it away, and a listed peer could not re-pair · `[~]` pairing checked on all three devices 11-15; rename-carry check owed · T-0081 · `bugs/BUG-17-pairing-one-sided.md`
 - BUG-18 · Pages full of ⌧ boxes (control characters) count as text, so swipe never deletes them · `[~]` (fixed in editor; source of 0x04 open) · T-0085 · `bugs/BUG-18-control-chars-block-delete.md`
 - BUG-19 · Carried files counted settled before they arrived (bytes lost in transit, never asked for again) · `[x]` device-checked 11-15 on iPad and iPhone · T-0087 · `bugs/BUG-19-carry-applied-before-bytes.md`
+- BUG-21 · A finger drag scrolls the page instead of inking (touch-action never set) · `[~]` fixed in editor, device check owed · T-0131 · `bugs/BUG-21-finger-ink-pans-page.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

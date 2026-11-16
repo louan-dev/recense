@@ -182,6 +182,9 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   (no Apple Pencil exists there) and only worked on iPad with the Pencil in hand. Picking a tool from the palette
   (or Pencil's own first-touch auto-pick) now lets a finger draw or erase exactly like a mouse does; an untouched
   palette still lets a finger scroll or select, unchanged. Test: `test/bug06-touch-draws.test.mjs`.
+- **BUG-21 — a finger drag inks instead of scrolling** (`updateCursor` in `src/ink.js`): any tool but select sets
+  the scroller's `touch-action: none`, since WebKit pans before script can stop it; select clears it so the finger
+  scrolls again. Test: `test/bug21-finger-ink-no-pan.test.mjs`.
 - **BUG-07 — ink anchors to the live line height, not a 28px guess** (`currentLineHeight`, `src/ink.js`): every
   anchoring call used to assume a fixed 28px line height, never the editor's real one (`--rc-font-size: 18px` by
   default, user-adjustable). A stroke drawn partway down a page could anchor several lines off from where it was

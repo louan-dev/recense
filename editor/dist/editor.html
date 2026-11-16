@@ -35127,6 +35127,7 @@ ${clean(nextLineText)}`;
     function updateCursor() {
       const erasing = currentTool.startsWith("eraser");
       if (scrollDOM?.style) scrollDOM.style.cursor = erasing ? "none" : "";
+      if (scrollDOM?.style) scrollDOM.style.touchAction = currentTool === SELECT_TOOL ? "" : "none";
       if (!erasing) hideRing();
     }
     function hideRing() {
@@ -35161,6 +35162,7 @@ ${clean(nextLineText)}`;
       if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === "pen") {
         currentTool = "pen";
         updatePaletteActive();
+        updateCursor();
         if (typeof onToolChange === "function") onToolChange(currentTool);
       }
       return currentTool !== SELECT_TOOL;

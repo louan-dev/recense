@@ -1471,6 +1471,8 @@ export function createInkLayer(view, options = {}) {
   function updateCursor() {
     const erasing = currentTool.startsWith('eraser');
     if (scrollDOM?.style) scrollDOM.style.cursor = erasing ? 'none' : '';
+    // Derived from Spec: BUG-21 — WebKit pans on a finger drag unless touch-action is set before the touch starts.
+    if (scrollDOM?.style) scrollDOM.style.touchAction = currentTool === SELECT_TOOL ? '' : 'none';
     if (!erasing) hideRing();
   }
 
@@ -1515,6 +1517,7 @@ export function createInkLayer(view, options = {}) {
     if (currentTool === SELECT_TOOL && !toolChosen && e.pointerType === 'pen') {
       currentTool = 'pen';
       updatePaletteActive();
+      updateCursor();
       if (typeof onToolChange === 'function') onToolChange(currentTool);
     }
     return currentTool !== SELECT_TOOL;
