@@ -970,9 +970,13 @@ final class Listener: NSObject, ObservableObject {
         }
     }
     /// Lets go of the floating window's controller (its window closes with it); makePiP makes a new one.
+    /// Also clears what the last `draw()` drew (BUG-15): without this, a window remade after a drop could still
+    /// match stale `drawnKey`/`drawnAt` and skip its first fresh picture, reading as frozen on the old caption.
     private func dropPiP() {
         pipObs = nil; pipActive = nil
         pip = nil
+        layer.flush(); queued = []; queuedShape = ""
+        drawnKey = ""; drawnAt = .distantPast
         pipNote()
     }
     private var pipObs: NSKeyValueObservation?
@@ -1038,7 +1042,9 @@ final class Listener: NSObject, ObservableObject {
             // window is taken apart instead: first its content, then the controller (made again when Recense is in front)
             Task {
                 try? await Task.sleep(for: .milliseconds(150))   // the owner's bar is 0.5 s from pause to gone
-                if pip.isPictureInPictureActive { floatNote("stop ignored; detaching content"); pip.contentSource = nil }
+                // BUG-15: a second stop, after detaching content, in case iOS only honours it once the controller
+                // has nothing left to show (the first stop alone has been seen ignored, 11-10 log).
+                if pip.isPictureInPictureActive { floatNote("stop ignored; detaching content"); pip.contentSource = nil; pip.stopPictureInPicture() }
                 try? await Task.sleep(for: .seconds(1))
                 if pip.isPictureInPictureActive { floatNote("still open; releasing the controller"); dropPiP() }
                 floatNote("hide done: \(self.pip?.isPictureInPictureActive == true ? "still open" : "closed")")
