@@ -147,7 +147,7 @@ happened once I tried building that why into something that runs.
 | `library`  | Gallery: the Worker, web app and share links ([README](library/README.md)) | deploys on push to `library/**` |
 | `sync`     | the Mac's jobs, ledger, canary and launch-agent copies ([README](sync/README.md)) | launch agents in `sync/launchd/` |
 | `calendar` | your calendar server (CalDAV Worker)                           | `cd calendar && npx wrangler deploy`               |
-| `docs`     | standing rules, plans, specs, research, runbooks, design docs | start at `docs/law/README.md`, then `docs/PROGRESS.md` |
+| `docs`     | standing rules, plans, specs, research, runbooks, design docs; which wish goes first: `docs/law/order.md` (`cd sync && node src/wishrank.mjs`) | start at `docs/law/README.md`, then `docs/PROGRESS.md` |
 | `docs/specs` | specs, app teardowns, triage and the parity map (PARITY.md: where each feature lives on every device). Screenshots and triage are local only (outside git): back them up, never `git clean -X` there | start at `docs/specs/INDEX.md` |
 | `notes`    | task tables: Recense's here, Gallery's in `notes/gallery/`, Sync's in `notes/sync/` | n/a                 |
 

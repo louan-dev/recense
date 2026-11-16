@@ -8,6 +8,7 @@ Read this folder before planning work in any part of the repo.
 - `structure.md` — the names, the folders, where a feature goes, how parts stay separate.
 - `offline.md` — what may need a network, and when.
 - `interaction.md` — how every screen, gesture, sound and haptic must behave.
+- `order.md` — which wish is granted first: stars set the group, emphasis the order. Run by `sync/src/wishrank.mjs`.
 
 ## Order of authority (highest first)
 1. The owner's words, dated.
@@ -47,3 +48,4 @@ When files here change, re-upload them so the Project's chats see the same law.
 ## Amendments
 - 2026-11-14 · created from the 2026-11-05 note; replaces `export/00_NORTH_STAR.md`, `02_ARCHITECTURE.md`,
   `03_DESIGN_PHILOSOPHY.md`, `06_DECISIONS.md`, and the "Names" section of `docs/architecture.md`.
+- 2026-11-14 · added `order.md` (the owner's wish-order law).

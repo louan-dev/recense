@@ -124,3 +124,8 @@ They should never have to choose one app and stay in it for their ideas to land 
   with each crossing's status checked against the code on that date. The conservation law and the
   canonical-core-plus-sidecar arithmetic are engineering consequences, offered for the owner's confirmation
   before they bind as numbered rules.
+- 2026-11-14 · owner, at plan approval (verbatim): "incorporate this im trying to model a file document and make it behave like the state of matter, how its matter is preserved and making the doucment undergo every possible phase transition, vulnerability is a great catalyst and a self renewing currency a portal of discovery, available through expression, writing presents as the one most disconnected that has the oportunity to be the closest with nature via intertwining the possible phase transformations that mental thought undergo much like the behavior of matter  through modern writing software and word processors, and from this"
+  Adds two points to the principle: the page must undergo *every* phase transition (the twelve crossings above),
+  and vulnerability is the catalyst: capture must cost near-zero effort and stay private by default.
+  The owner's essay of the same day (the page in several states at once; no format commitment up front)
+  is kept private: `~/.claude/context/recense/research/2026-11-14-wish-order-law.md` §3. Spec: FEAT-08.
