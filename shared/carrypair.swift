@@ -8,13 +8,15 @@ import CryptoKit
 // link (FEAT-02) carries them, the Keychain keeps the keys. No network, no account.
 
 enum PairMessage: Codable, Equatable, Sendable {
-    case hello(key: Data, name: String, grouped: Bool? = nil)   // long-term X25519 public key; grouped = already holds a
+    case hello(key: Data, name: String, grouped: Bool? = nil, picked: Bool? = nil)   // long-term X25519 public key; grouped = already holds a
                                                                 // group secret (BUG-17: decides which one side sends it)
     case commit(Data)                      // the committer's SHA-256 over its nonce, before seeing the other's
     case nonce(Data)
     case group(Data)                       // the group secret, sealed (ChaChaPoly) after both people tapped "They match"
     case refuse(String)
     case sameGroup(Data)                   // both already hold a group: its keyed fingerprint, never the secret (BUG-17)
+    case passkeyCommit(round: Int, commit: Data)   // P1b: one bit of the typed code, committed (CarryPasskey)
+    case passkeyNonce(round: Int, nonce: Data)     // P1b: the nonce that opens it
 }
 
 enum PairFailure: Error, Equatable, Sendable {
@@ -30,6 +32,7 @@ struct CarryPairSession {
     private var myNonce = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
     private var theirNonce: Data?
     private var theirCommit: Data?
+    private var adopted: Data?          // P1b: the passkey rounds' transcript stands in for the nonces
 
     init(me: Curve25519.KeyAgreement.PrivateKey, name: String, nonce: Data? = nil) {
         self.me = me; self.name = name
@@ -40,7 +43,12 @@ struct CarryPairSession {
     /// The side with the greater public key commits; the other reveals first. Both work it out alone.
     var commits: Bool { theirKey.map { myKey.lexicographicallyPrecedes($0) == false } ?? false }
 
-    func hello(grouped: Bool = false) -> PairMessage { .hello(key: myKey, name: name, grouped: grouped) }
+    func hello(grouped: Bool = false, picked: Bool? = nil) -> PairMessage {
+        .hello(key: myKey, name: name, grouped: grouped, picked: picked)
+    }
+
+    /// P1b: after the 20 passkey rounds, their transcript keys the group seal and fingerprint (HKDF salt).
+    mutating func adopt(transcript t: Data) { adopted = t }
 
     static func commitment(_ committer: Data, _ other: Data, _ nonce: Data) -> Data {
         Data(SHA256.hash(data: Data("recense.pair.commit.v1".utf8) + committer + other + nonce))
@@ -49,7 +57,7 @@ struct CarryPairSession {
     /// Feed one message from the other device; get back what to send (or nothing yet).
     mutating func receive(_ m: PairMessage) throws -> PairMessage? {
         switch m {
-        case .hello(let key, let n, let grouped):
+        case .hello(let key, let n, let grouped, _):
             if let k = theirKey { if k == key { return nil }; throw PairFailure.outOfOrder }   // the same hello again: ignored (BUG-17 echo)
             guard (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: key)) != nil, key != myKey else { throw PairFailure.badKey }
             theirKey = key; theirName = n; theirGrouped = grouped ?? false
@@ -64,8 +72,8 @@ struct CarryPairSession {
             guard let c = theirCommit, Self.commitment(k, myKey, n) == c else { throw PairFailure.badCommit }
             theirNonce = n
             return nil
-        case .group, .refuse, .sameGroup:
-            throw PairFailure.outOfOrder                           // handled by openGroup / the glue
+        case .group, .refuse, .sameGroup, .passkeyCommit, .passkeyNonce:
+            throw PairFailure.outOfOrder                           // handled by openGroup / CarryPasskey / the glue
         }
     }
 
@@ -76,6 +84,7 @@ struct CarryPairSession {
 
     /// Ordered as (key of the side that reveals first, its nonce, committer's key, its nonce): the same bytes on both.
     private func transcript() throws -> Data {
+        if let adopted { return adopted }
         guard let k = theirKey, let n = theirNonce else { throw PairFailure.outOfOrder }
         return commits ? k + n + myKey + myNonce : myKey + myNonce + k + n
     }
@@ -139,7 +148,8 @@ struct CarryPairFlow {
     struct Paired: Equatable { let key: Data; let name: String; let group: Data }
     struct Step: Equatable {
         var send: [PairMessage] = []
-        var code: String?
+        var code: String?           // show these six digits
+        var wantsCode = false       // P1b: ask the owner to type the code shown on the other device
         var paired: Paired?
     }
 
@@ -150,19 +160,33 @@ struct CarryPairFlow {
     private var held: PairMessage?          // their sealed group, waiting for this side's own tap
     private var codeShown = false
     private var echoed = false              // our hello sent again on the first of theirs (BUG-17)
+    let picked: Bool?                       // P1b: the owner picked the other's name here; nil = an older build
+    private(set) var passkey: CarryPasskey?   // P1b: set once both hellos carry `picked`
 
-    init(me: Curve25519.KeyAgreement.PrivateKey, name: String, group: Data?, nonce: Data? = nil) {
-        session = CarryPairSession(me: me, name: name, nonce: nonce); mine = group
+    init(me: Curve25519.KeyAgreement.PrivateKey, name: String, group: Data?, nonce: Data? = nil, picked: Bool? = nil) {
+        session = CarryPairSession(me: me, name: name, nonce: nonce); mine = group; self.picked = picked
     }
 
-    func start() -> Step { Step(send: [session.hello(grouped: mine != nil)]) }
+    private var hello: PairMessage { session.hello(grouped: mine != nil, picked: picked) }
+    func start() -> Step { Step(send: [hello]) }
+
+    /// Both sides authenticated: by the six digits both people compared (P1), or by the 20 passkey rounds (P1b).
+    private var ready: Bool { passkey.map(\.finished) ?? (session.code() != nil) }
+
+    /// P1b: the owner typed the code shown on the other device. Typing starts the rounds.
+    mutating func enter(_ code: String) throws -> Step {
+        guard !done, var p = passkey, !p.shows else { throw PairFailure.outOfOrder }
+        let out = try p.enter(code)
+        passkey = p
+        return Step(send: out)
+    }
 
     mutating func receive(_ m: PairMessage) throws -> Step {
         guard !done else { throw PairFailure.outOfOrder }
         switch m {
         case .refuse: throw PairFailure.refused
         case .group, .sameGroup:
-            guard session.code() != nil, held == nil else { throw PairFailure.outOfOrder }
+            guard ready, held == nil else { throw PairFailure.outOfOrder }
             if confirmed { return try open(m) }
             held = m
             return Step()
@@ -171,16 +195,40 @@ struct CarryPairFlow {
             // Already connected when one side started: its first hello reached a device that was not looking yet and
             // was dropped. Answering the first hello with ours again, ahead of anything else, means each side always
             // gets the other's hello first; the copy that did arrive is ignored (owner's iPad, 11-15 17:4x).
-            if case .hello = m, !echoed { echoed = true; step.send.append(session.hello(grouped: mine != nil)) }
-            if let r = try session.receive(m) { step.send.append(r) }
+            if case .hello = m, !echoed { echoed = true; step.send.append(hello) }
+            if case .passkeyCommit = m { return try round(m) }
+            if case .passkeyNonce = m { return try round(m) }
+            let reply = try session.receive(m)
+            if case .hello(_, _, _, let theirs) = m, passkey == nil, let picked, let theirs, let k = session.theirKey {
+                // P1b: the side the owner picked on shows; both or neither → the greater key shows. Both decide alone.
+                let shows = picked != theirs ? picked : !session.myKey.lexicographicallyPrecedes(k)
+                var p = CarryPasskey(shows: shows, myKey: session.myKey, theirKey: k)
+                if shows { step.code = p.codeText; step.send.append(p.open()) } else { step.wantsCode = true }
+                passkey = p
+                return step
+            }
+            if passkey != nil { return step }       // numeric comparison's own messages are not used in P1b
+            if let reply { step.send.append(reply) }
             if !codeShown, let c = session.code() { codeShown = true; step.code = c }
             return step
         }
     }
 
-    /// The owner tapped "They match" on this screen.
+    /// P1b: one passkey message; after round 20 this side confirms by itself (no tap: the typed code was the tap).
+    private mutating func round(_ m: PairMessage) throws -> Step {
+        guard var p = passkey else { throw PairFailure.outOfOrder }
+        let out = try p.receive(m)
+        passkey = p
+        guard p.finished else { return Step(send: out) }
+        session.adopt(transcript: p.transcript)
+        var step = try confirm()
+        step.send = out + step.send          // the last nonce goes before any group
+        return step
+    }
+
+    /// The owner tapped "They match" on this screen (P1), or the passkey rounds finished (P1b).
     mutating func confirm() throws -> Step {
-        guard !done, session.code() != nil else { throw PairFailure.outOfOrder }
+        guard !done, ready else { throw PairFailure.outOfOrder }
         if confirmed { return Step() }             // a second tap while waiting for theirs changes nothing
         confirmed = true
         if let mine, session.theirGrouped {   // both already in a group: the same one pairs, a different one is refused
@@ -205,6 +253,82 @@ struct CarryPairFlow {
         let g = try session.openGroup(m)
         done = true
         return Step(paired: Paired(key: session.theirKey!, name: session.theirName ?? "", group: g))
+    }
+}
+
+// Derived from Spec: FEAT-09 P1b (pair by typing the code, T-0086)
+/// Passkey entry, as Bluetooth LE Secure Connections does it (described, not copied): the shower draws six random
+/// digits r < 10^6 < 2^20; for each bit r_i both sides commit with a fresh nonce, C = HMAC_N("recense.passkey.v1" ‖
+/// PK_shower ‖ PK_typer ‖ r_i), then reveal: shower's commit, typer's commit, shower's nonce (typer checks), typer's
+/// nonce (shower checks). A device in the middle must guess each bit before it is revealed. Pure; no radios.
+struct CarryPasskey {
+    static let rounds = 20
+    static let tag = Data("recense.passkey.v1".utf8)
+    let shows: Bool
+    private let showerKey: Data, typerKey: Data
+    private(set) var code: UInt32?
+    private(set) var round = 0
+    private(set) var finished = false
+    private var myNonce = Data()
+    private var theirCommit: Data?
+    private var committed = false        // this side's commit for `round` is sent
+    private var log = Data()             // every round's nonces, shower's first
+
+    init(shows: Bool, myKey: Data, theirKey: Data) {
+        self.shows = shows
+        showerKey = shows ? myKey : theirKey; typerKey = shows ? theirKey : myKey
+        if shows { code = UInt32.random(in: 0..<1_000_000) }   // fresh every attempt; the system's secure generator
+    }
+
+    var codeText: String? { code.map { String(format: "%06u", $0) } }
+    var transcript: Data { Data(SHA256.hash(data: Data("recense.passkey.transcript.v1".utf8) + showerKey + typerKey + log)) }
+
+    static func commitment(_ nonce: Data, shower: Data, typer: Data, bit: UInt8) -> Data {
+        Data(HMAC<SHA256>.authenticationCode(for: tag + shower + typer + Data([bit]), using: SymmetricKey(data: nonce)))
+    }
+
+    private func bit(_ i: Int) -> UInt8 { UInt8((code! >> UInt32(i)) & 1) }
+
+    private mutating func commit() -> PairMessage {
+        myNonce = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        committed = true
+        return .passkeyCommit(round: round, commit: Self.commitment(myNonce, shower: showerKey, typer: typerKey, bit: bit(round)))
+    }
+
+    /// The shower's first commitment, sent as soon as it knows the typer's key.
+    mutating func open() -> PairMessage { commit() }
+
+    /// The typer's six digits. Anything else is refused before a bit is spent.
+    mutating func enter(_ text: String) throws -> [PairMessage] {
+        guard !shows, code == nil else { throw PairFailure.outOfOrder }
+        let digits = text.filter { !$0.isWhitespace }
+        guard digits.count == 6, digits.allSatisfy({ $0.isASCII && $0.isNumber }), let v = UInt32(digits) else {
+            throw PairFailure.badCommit
+        }
+        code = v
+        return theirCommit != nil && !committed ? [commit()] : []
+    }
+
+    mutating func receive(_ m: PairMessage) throws -> [PairMessage] {
+        guard !finished else { throw PairFailure.outOfOrder }
+        switch m {
+        case .passkeyCommit(let r, let c):
+            guard r == round, theirCommit == nil, shows == committed else { throw PairFailure.outOfOrder }
+            theirCommit = c
+            if shows { return [.passkeyNonce(round: round, nonce: myNonce)] }   // revealed only after theirs is in
+            return code != nil ? [commit()] : []                                  // the typer waits for the typed code
+        case .passkeyNonce(let r, let n):
+            guard r == round, let c = theirCommit, committed, code != nil else { throw PairFailure.outOfOrder }
+            guard Self.commitment(n, shower: showerKey, typer: typerKey, bit: bit(round)) == c else { throw PairFailure.badCommit }
+            var out: [PairMessage] = []
+            log += shows ? myNonce + n : n + myNonce            // shower's nonce first, the same bytes on both
+            if !shows { out.append(.passkeyNonce(round: round, nonce: myNonce)) }
+            round += 1; theirCommit = nil; committed = false
+            if round == Self.rounds { finished = true; return out }
+            if shows { out.append(commit()) }
+            return out
+        default: throw PairFailure.outOfOrder
+        }
     }
 }
 
@@ -276,6 +400,29 @@ func carrypairSelftest() -> Bool {
         for m in sent.send { got = try fb.receive(m).paired ?? got }
         let tapped = try fb.confirm()
         check(sent.paired != nil && got == nil && tapped.paired?.group == g, "the waiting side holds the group until its own tap, then pairs")
+        // P1b: the side that picked shows six digits; typing them on the other pairs both; a wrong code pairs neither
+        for wrong in [false, true] {
+            var ps = CarryPairFlow(me: Curve25519.KeyAgreement.PrivateKey(), name: "Mac", group: g, picked: true)
+            var pt = CarryPairFlow(me: Curve25519.KeyAgreement.PrivateKey(), name: "iPad", group: nil, picked: false)
+            var toT = ps.start().send, toS = pt.start().send
+            var code: String?, asks = false, done: [CarryPairFlow.Paired] = [], refused = false
+            func run() {
+                while !refused && (!toT.isEmpty || !toS.isEmpty) {
+                    do {
+                        if !toT.isEmpty { let st = try pt.receive(toT.removeFirst()); toS += st.send; asks = asks || st.wantsCode; if let p = st.paired { done.append(p) } }
+                        if !toS.isEmpty { let st = try ps.receive(toS.removeFirst()); toT += st.send; code = st.code ?? code; if let p = st.paired { done.append(p) } }
+                    } catch { refused = true }
+                }
+            }
+            run()
+            if let c = code, asks {
+                let typed = wrong ? String(format: "%06d", (Int(c)! + 1) % 1_000_000) : c
+                if let st = try? pt.enter(typed) { toS += st.send } else { refused = true }
+                run()
+            }
+            if wrong { check(done.isEmpty && refused, "typed code: a wrong code is refused, neither pairs") }
+            else { check(code != nil && asks && done.count == 2 && done.allSatisfy { $0.group == g }, "typed code: the right code pairs both, one group") }
+        }
     } catch { check(false, "the pairing exchange ran without error (\(error))") }
     return ok
 }

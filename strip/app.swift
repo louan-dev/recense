@@ -6809,6 +6809,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
         bose.start()                         // the headphone route follows what is plugged in (bosebridge.swift, FEAT-15)
+        PairCodeWindow.shared.follow()       // the pairing code in a visible window (paircode.swift, FEAT-09 P1b)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
 
         buildMenu()
@@ -7182,10 +7183,20 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             for p in cm.peers { m.addItem(withTitle: "\(p.name) — paired \(p.paired)", action: nil, keyEquivalent: "").isEnabled = false }
         }
         m.addItem(.separator())
-        if let code = cm.pairingCode, let who = cm.pairingWith {
-            m.addItem(withTitle: "Code with \(who): \(code)", action: nil, keyEquivalent: "").isEnabled = false
-            let match = m.addItem(withTitle: "They Match", action: #selector(confirmPairMatch), keyEquivalent: "")
-            match.target = self
+        if cm.askingCode, let who = cm.pairingWith {   // P1b: the window (paircode.swift) takes the typed code
+            m.addItem(withTitle: "Type the code shown on \(who) in the Pair a Device window", action: nil, keyEquivalent: "").isEnabled = false
+            let stop = m.addItem(withTitle: "Stop Pairing", action: #selector(stopPairingDevice), keyEquivalent: "")
+            stop.target = self
+        } else if let code = cm.pairingCode, let who = cm.pairingWith {
+            if cm.codeIsCompare {
+                m.addItem(withTitle: "Code with \(who): \(code)", action: nil, keyEquivalent: "").isEnabled = false
+                let match = m.addItem(withTitle: "They Match", action: #selector(confirmPairMatch), keyEquivalent: "")
+                match.target = self
+            } else {
+                m.addItem(withTitle: "Type \(code) on \(who)", action: nil, keyEquivalent: "").isEnabled = false
+            }
+            let stop = m.addItem(withTitle: "Stop Pairing", action: #selector(stopPairingDevice), keyEquivalent: "")
+            stop.target = self
         } else if cm.isLookingToPair {
             m.addItem(withTitle: "Looking for a device to pair…", action: nil, keyEquivalent: "").isEnabled = false
             for peer in cm.pairCandidates {

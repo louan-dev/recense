@@ -12,6 +12,9 @@ import SwiftUI
 struct DevicesPlace: View {
     @ObservedObject private var carry = CarryManager.shared
 
+    @State private var typed = ""
+    @FocusState private var codeFocused: Bool
+
     var body: some View {
         List {
             Section("Paired") {
@@ -26,11 +29,28 @@ struct DevicesPlace: View {
                     }
                 }
             }
-            if let code = carry.pairingCode, let who = carry.pairingWith {
-                Section("Confirm") {
-                    Text("Code with \(who)").foregroundStyle(.secondary)
-                    Text(code).font(.system(.largeTitle, design: .monospaced)).bold()
-                    Button("They Match") { carry.confirmMatch(for: who) }
+            if carry.askingCode, let who = carry.pairingWith {
+                // P1b: type the six digits shown on the other device
+                Section("Type the code shown on \(who)") {
+                    TextField("6-digit code", text: $typed)
+                        .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                        .font(.system(.largeTitle, design: .monospaced))
+                        .focused($codeFocused)
+                        .onChange(of: typed) { _, v in
+                            typed = String(v.filter(\.isNumber).prefix(6))
+                            if typed.count == 6 { carry.enterCode(typed); typed = "" }
+                        }
+                        .onAppear { codeFocused = true }
+                    Button("Pair") { carry.enterCode(typed); typed = "" }.disabled(typed.count != 6)
+                    Button("Stop Pairing", role: .cancel) { carry.stopPairing() }
+                }
+            } else if let code = carry.pairingCode, let who = carry.pairingWith {
+                Section(carry.codeIsCompare ? "Confirm" : "Type this code on \(who)") {
+                    Text(carry.codeIsCompare ? "Code with \(who)" : "Enter it on \(who) to pair").foregroundStyle(.secondary)
+                    Text(code).font(.system(size: 48, weight: .bold, design: .monospaced))
+                        .accessibilityLabel(code.map(String.init).joined(separator: " "))
+                    if carry.codeIsCompare { Button("They Match") { carry.confirmMatch(for: who) } }
+                    Button("Stop Pairing", role: .cancel) { carry.stopPairing() }
                 }
             } else if carry.isLookingToPair {
                 Section("Looking for a device to pair") {
