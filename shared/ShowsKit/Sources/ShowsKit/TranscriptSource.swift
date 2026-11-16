@@ -30,14 +30,22 @@ public enum TranscriptSource {
     /// The Worker's answer (library/src/corrections.js `present`): { lines: [{ id, s, e, text, en, words: [{ t, s, e }] }] },
     /// or { pending: true } when there is none yet. nil when it isn't that shape or holds no lines.
     public static func decode(_ data: Data) -> [TranscriptLine]? {
-        struct W: Decodable { let t: String; let s: Double; let e: Double; let lang: String? }
+        // FEAT-20: a word's syllables, "not sung" and the listener's timing come with it when the Worker sends them
+        struct Y: Decodable { let c: Int; let s: Double; let e: Double }
+        struct T: Decodable { let s: Double; let e: Double; let k: Double?; let c: [Double]? }
+        struct W: Decodable { let t: String; let s: Double; let e: Double; let lang: String?; let syl: [Y]?; let un: Bool?; let tm: T? }
         struct L: Decodable {
             let id: Flexible; let s: Double; let e: Double; let text: String?; let en: String?; let words: [W]?
         }
         struct Body: Decodable { let lines: [L]?; let pending: Bool? }
         guard let b = try? JSONDecoder().decode(Body.self, from: data), let ls = b.lines, !ls.isEmpty else { return nil }
         return ls.map { l in
-            let words = (l.words ?? []).map { Word(text: $0.t, start: $0.s, end: $0.e, lang: $0.lang) }
+            let words = (l.words ?? []).map { w in
+                Word(text: w.t, start: w.s, end: w.e, lang: w.lang,
+                     syl: w.syl.flatMap { $0.isEmpty ? nil : $0.map { Syl(c: $0.c, s: $0.s, e: $0.e) } },
+                     un: w.un == true ? true : nil,
+                     tm: w.tm.map { Pin(s: $0.s, e: $0.e, k: $0.k ?? 0, c: Pin.trace($0.c)) })
+            }
             let text = l.text?.isEmpty == false ? l.text! : words.map(\.text).joined(separator: " ")
             return TranscriptLine(id: l.id.text, start: l.s, end: l.e, text: text, words: words,
                                   translation: l.en?.isEmpty == false ? l.en : nil)

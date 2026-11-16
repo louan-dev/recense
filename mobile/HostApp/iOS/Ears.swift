@@ -39,8 +39,11 @@ import ShowsKit
             let r = await TranscriptSource.load(path: path, cache: Self.cache) { await siteData($0) }
             guard key == e.id else { return }
             if !r.lines.isEmpty {
+                // FEAT-20: a song's words hung on its voice, as the Mac's (the Mac's measure; the lines unchanged without one)
+                let sung = await SongVoice.fit(path: path, r.lines)
+                guard key == e.id else { return }
                 // a transcript this device heard before BUG-13 comes back by sentence; any other as it is
-                model.transcript = Phrasing.regrouped(r.lines); model.transcriptSource = r.note; model.transcriptNote = nil
+                model.transcript = Phrasing.regrouped(sung); model.transcriptSource = r.note; model.transcriptNote = nil
                 PlaybackTranslator.shared.run(model, lang: Listener.shared.lang)
             } else {
                 hear(model, e)
