@@ -444,3 +444,22 @@ Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files a
 
 ## SSH (Topic › Connect To)
 The terminal connects to any host in `~/Recense/ssh/hosts.json` (made from `~/.ssh/config` the first time; Topic › Connect To › Edit Hosts…). Each host lists routes tried in order: `lan` (same network, no internet), `tailscale`, `tunnel` (Cloudflare Tunnel through cloudflared, only when installed); the first that answers in 3 s is used. When ssh ends, the terminal goes back to its own session. Code: `shared/sshhosts.swift`.
+
+## Bose Bridge (Recense › Bose Bridge)
+One pair of headphones, many sources, no Bose app and no network. Spec: `docs/specs/FEAT-15-bose-bridge.md`.
+- **The route follows what you plug in:** whatever just arrived wins (USB-C audio, then Bluetooth, then the
+  headphone cable, then wired earbuds). A choice you already made in Sound settings is left alone until the next
+  plug or unplug.
+- **When the headphones drop** (charging, switched off, out of range), the built-in speakers are muted so nothing
+  plays out loud, and the menu says what to plug in **for your exact pair**. A launch with no headphones mutes nothing.
+- **Battery** is read every 5 minutes, only while the Bose is on Bluetooth, and only when macOS reports it.
+- **Full-quality stereo:** on Bluetooth the default input stays the Mac's own microphone, so the link never drops
+  to call-quality audio.
+- **Two At Once:** two or more pieces play together through the one stream the headphones can receive — each with
+  its own place in its own file, its own volume, and its own ear (left / both / right). Also
+  `recense symphonies <file> <file>`: the first in the left ear, the second in the right.
+- **Where I Left Off:** every paused piece leaves a seat in `library/Listen/seats.jsonl` (append-only, one line per
+  save, newest wins). Carry moves that file between devices, so the iPhone's place in a piece is offered here.
+- What the headphones themselves will not do, whatever we write: hold more than two devices (the QC Ultra 2nd Gen
+  caps at two as well), play two streams at once, or change ANC and headphone EQ without Bose's own protocol.
+  The bridge moves all of that to this side of the link. `strip/bosebridge.swift`, `shared/bosebridge.swift`.

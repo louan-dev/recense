@@ -255,3 +255,13 @@ profile is renewed first when 2 days or less are left). Per-device stamps: `~/Li
 `zsh mobile/ios/mirror-shot.zsh <out.png> --launch` opens Recense on the iPhone through iPhone Mirroring and screenshots that window; builds are checked there, not in the simulator. It
 launches Recense paused for that run (its mic otherwise blocks Mirroring); Mirroring ignores scrolling sent from the Mac, so screens below
 the fold are checked on the phone in hand.
+
+## Headphones (Places › Headphones)
+The iPhone and iPad half of Bose Bridge (`docs/specs/FEAT-15-bose-bridge.md`), sharing every rule with the Mac
+through `shared/bosebridge.swift`:
+- the live route, read from AVAudioSession, and what to plug in when it drops, for your exact pair;
+- what that pair really allows (how many devices it holds, whether the cable plays with it switched off,
+  whether USB-C carries sound) — the battery level is Mac-only, because iOS has no public API for it;
+- **Two at once:** two pieces from Music, Listen or Audiobooks play together, each with its own volume and ear;
+- **Where I left off:** the seats any device wrote (`library/Listen/seats.jsonl`), carried offline by FEAT-09.
+Code: `mobile/HostApp/iOS/Headphones.swift`, one row in `Places.swift`. No network at any point.

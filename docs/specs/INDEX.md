@@ -40,6 +40,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-09 · Carry between devices: pair once, then the same homes everywhere · `[~]` pairing + full ops-log settling (move/trash/restore replay, keep-both) built and wired end to end; pairing checked on Mac/iPhone/iPad 11-15 (BUG-17); P4 automatic carry built and tested, device check owed (T-0084); planned: P1b pair by typing the code (T-0086); text merge against a tracked base still open · owner 2026-11-11 + 11-14, T-0035, T-0047, T-0084, T-0086 · `shared/carrysync.swift`, `shared/carrypair.swift`, `shared/carrymanager.swift`, `shared/carryapply.swift`, `mobile/HostApp/iOS/PairIntent.swift`
 - FEAT-10 · Translate the transcript as it plays (English, Tiếng Việt, Français), on the device · `[~]` iOS built, device check owed · T-0068 · `shared/translateplan.swift`, `mobile/HostApp/iOS/Translate.swift`
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
+- FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 
 ### Bugs

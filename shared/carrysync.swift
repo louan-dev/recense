@@ -44,7 +44,9 @@ enum CarryAction: Equatable, Sendable {
 
 enum CarrySync {
     static let trashHome = "trash"
-    static let textExtensions: Set<String> = ["md", "markdown", "txt"]
+    // `jsonl` is here for FEAT-15's seats (one line per listening position, append-only): line-merging two
+    // devices' lines keeps both, where choosing a winner would drop one device's place in a piece.
+    static let textExtensions: Set<String> = ["md", "markdown", "txt", "jsonl"]
 
     static func key(_ home: String, _ path: String) -> String { home + "/" + path }
 
