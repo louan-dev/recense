@@ -62,6 +62,7 @@ Row: ID · title · status · From · code pointer
 - BUG-18 · Pages full of ⌧ boxes (control characters) count as text, so swipe never deletes them · `[~]` (fixed in editor; source of 0x04 open) · T-0085 · `bugs/BUG-18-control-chars-block-delete.md`
 - BUG-19 · Carried files counted settled before they arrived (bytes lost in transit, never asked for again) · `[x]` device-checked 11-15 on iPad and iPhone · T-0087 · `bugs/BUG-19-carry-applied-before-bytes.md`
 - BUG-21 · A finger drag scrolls the page instead of inking (touch-action never set) · `[~]` fixed in editor, device check owed · T-0131 · `bugs/BUG-21-finger-ink-pans-page.md`
+- BUG-22 · A blue band follows the caret's line in Draftpad (highlightActiveLine) · `[~]` fixed in editor, device check owed · owner 2026-11-16 · `bugs/BUG-22-blue-line-guide.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

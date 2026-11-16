@@ -1,6 +1,6 @@
 import { isMixed } from './lenses.js';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, highlightActiveLine, highlightSpecialChars } from '@codemirror/view';
+import { EditorView, keymap, drawSelection, highlightSpecialChars } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { pageMarkersExtension, controlCharFilter, inspectDraftpadPages, isWindowEmpty } from './pages.js';
@@ -169,7 +169,7 @@ export function createEditorExtensions({
     highlightSpecialChars({ render: renderControlChar }),
     history(),
     drawSelection(),
-    highlightActiveLine(),
+    // BUG-22 · no band behind the caret's line (owner 2026-11-16: "remove the blue line guide").
     EditorView.lineWrapping,
     markdown(),
     searchExtension({ onOpen: onOpenFind }),

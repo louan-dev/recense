@@ -202,3 +202,8 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   `nativeSwipe` does nothing during a drag. Spec: `docs/specs/bugs/BUG-08-drag-selection-moved.md`.
   Test: `test/bug08-drag-selection.test.mjs`.
 - Device check (real iPhone, iPad, Mac) still owed for both — not run from this session.
+
+## No line guide (2026-11-16)
+- **BUG-22 — no blue band behind the caret's line** (`src/index.js`, `src/theme.js`): CodeMirror's
+  `highlightActiveLine()` and its `.cm-activeLine` colour are gone, so the PWA, the Mac and the iPhone/iPad apps
+  show plain text with only the caret. Test: `test/bug22-no-line-guide.test.mjs`.
