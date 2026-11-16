@@ -30,7 +30,7 @@ async function jwt(claims) {
 const serviceJwt = await jwt({ common_name: CLIENT });
 
 const WITH_D1 = !!process.env.GALLERY_D1;
-const textModules = readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js");
+const textModules = readdirSync(BUILD).filter((f) => /\.(css|js|html|svg|webmanifest)$/.test(f) && f !== "worker.js");
 const mf = new Miniflare({
   modules: [{ type: "ESModule", path: BUILD + "worker.js" }, ...textModules.map((f) => ({ type: "Text", path: BUILD + f }))],
   compatibilityDate: "2026-08-01",

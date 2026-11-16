@@ -783,13 +783,13 @@ body {
 
 .cm-line.cm-page-date-line {
   text-align: center;
-  color: var(--rc-blue);
+  color: var(--rc-text);   /* owner 2026-11-16: no blue date line */
   font-weight: 500;
   letter-spacing: 0.01em;
 }
 
 .cm-line.cm-section-heading-line {
-  color: var(--rc-blue);
+  color: var(--rc-text);   /* owner 2026-11-16: no blue heading line */
   font-weight: 600;
 }
 
@@ -33943,6 +33943,42 @@ ${PAGE_MARKER}
     return prev[2] + (pressureForSpeed(v) - prev[2]) * PRESSURE_SMOOTH;
   }
 
+  // src/strokeoutline.js
+  var WIDTH_MIN = 0.25;
+  var WIDTH_MAX = 1.6;
+  function widthAt(base2, p) {
+    const q = typeof p === "number" && p > 0 ? p : 0.5;
+    return base2 * Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, q * 2));
+  }
+  function outlinePath(points, base2) {
+    const pts = [];
+    for (const p of points) {
+      const last2 = pts[pts.length - 1];
+      if (!last2 || Math.hypot(p[0] - last2[0], p[1] - last2[1]) > 0.01) pts.push(p);
+    }
+    if (pts.length < 2) return "";
+    const n = pts.length;
+    const left = [], right = [], r = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let dx = b[0] - a[0], dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      const h = widthAt(base2, pts[i][2]) / 2;
+      r.push(h);
+      left.push([pts[i][0] - dy * h, pts[i][1] + dx * h]);
+      right.push([pts[i][0] + dy * h, pts[i][1] - dx * h]);
+    }
+    const f = (v) => v.toFixed(2);
+    let d = `M ${f(left[0][0])} ${f(left[0][1])}`;
+    for (let i = 1; i < n; i++) d += ` L ${f(left[i][0])} ${f(left[i][1])}`;
+    d += ` A ${f(r[n - 1])} ${f(r[n - 1])} 0 0 0 ${f(right[n - 1][0])} ${f(right[n - 1][1])}`;
+    for (let i = n - 2; i >= 0; i--) d += ` L ${f(right[i][0])} ${f(right[i][1])}`;
+    d += ` A ${f(r[0])} ${f(r[0])} 0 0 0 ${f(left[0][0])} ${f(left[0][1])} Z`;
+    return d;
+  }
+
   // src/ink.js
   var INK_TOOLS = [
     "pen",
@@ -35002,6 +35038,18 @@ ${clean(nextLineText)}`;
         else if (isOrphaned) el5.setAttribute("opacity", "0.38");
         targetGroup.appendChild(el5);
         return;
+      }
+      if (stroke.tool === "pen") {
+        const outline = outlinePath(pts, strokeWidth);
+        if (outline) {
+          const el5 = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
+          el5.setAttribute("d", outline);
+          el5.setAttribute("fill", stroke.color || currentColor);
+          el5.setAttribute("fill-rule", "nonzero");
+          if (isOrphaned) el5.setAttribute("opacity", "0.38");
+          targetGroup.appendChild(el5);
+          return;
+        }
       }
       const path = docNode.createElementNS("http://www.w3.org/2000/svg", "path");
       let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;

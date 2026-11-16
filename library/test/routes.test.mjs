@@ -42,7 +42,7 @@ const serviceJwt = await jwt({ common_name: CLIENT });
 
 // ---------- the Worker ----------
 
-const textModules = readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js");
+const textModules = readdirSync(BUILD).filter((f) => /\.(css|js|html|svg|webmanifest)$/.test(f) && f !== "worker.js");
 
 // GALLERY_D1=1: the same tests with the DB binding (C1), the schema from migrations/ applied first
 const WITH_D1 = !!process.env.GALLERY_D1;

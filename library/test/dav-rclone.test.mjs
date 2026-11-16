@@ -36,7 +36,7 @@ const serviceJwt = data + "." + b64(new Uint8Array(await crypto.subtle.sign("RSA
 const mf = new Miniflare({
   modules: [
     { type: "ESModule", path: BUILD + "worker.js" },
-    ...readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js").map((f) => ({ type: "Text", path: BUILD + f })),
+    ...readdirSync(BUILD).filter((f) => /\.(css|js|html|svg|webmanifest)$/.test(f) && f !== "worker.js").map((f) => ({ type: "Text", path: BUILD + f })),
   ],
   compatibilityDate: "2026-08-01",
   port: 0,
