@@ -38,6 +38,8 @@ updates in place.
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
 - **Lock Screen and Control Center** (BUG-09, 11-14, `NowPlayingInfo.swift`): our player shows its title, folder and a
   time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
+  A video's sound plays on when the phone locks or you leave the app (FEAT-19 P2, `BackgroundVideo.swift`): the
+  picture lets go of the player in the background and picks it up again when you return.
 - **The floating window follows our player** (BUG-10, 11-14): leave Recense while a file plays and the window shows
   that file's transcript, each word lit at its time in the file, its translation under it (FEAT-10); before, Recense's
   own sound didn't count as playing and the window rested as a black strip. While the player holds a file and no

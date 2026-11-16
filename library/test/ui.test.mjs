@@ -773,6 +773,36 @@ await test("item 11: the lock screen has ⏮ / ⏭ (no ±15 s); ⏭ plays the ne
   await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "a");
 });
 
+// Derived from Spec: FEAT-19 · the Lock Screen scrubber: its length and place come from setPositionState, and dragging it seeks
+await test("FEAT-19: the lock screen scrubber has the file's length and place, and dragging it seeks", true, async (pg) => {
+  await MAIN.put("files/Ns/s.wav", wavOf(3), { httpMetadata: { contentType: "audio/wav" } });
+  await pg.addInitScript(() => {
+    const ms = navigator.mediaSession;
+    window.__h = {};
+    window.__pos = [];
+    const set = ms.setActionHandler.bind(ms);
+    ms.setActionHandler = (a, h) => {
+      if (h) window.__h[a] = h;
+      else delete window.__h[a];
+      try { set(a, h); } catch (x) {}
+    };
+    const sp = ms.setPositionState.bind(ms);
+    ms.setPositionState = (s) => {
+      window.__pos.push(s || null);
+      try { sp(s); } catch (x) {}
+    };
+  });
+  await pg.goto(base + "/main?p=Ns");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector("audio", { state: "attached" });
+  await pg.$eval("audio", (a) => a.play());
+  await pg.waitForFunction(() => window.__pos.some((s) => s && Math.abs(s.duration - 3) < 0.1 && s.playbackRate > 0));
+  await pg.$eval("audio", (a) => a.pause());
+  await pg.evaluate(() => window.__h.seekto({ action: "seekto", seekTime: 2 }));
+  assert.ok(Math.abs((await pg.$eval("audio", (a) => a.currentTime)) - 2) < 0.1, "seekto moved the element");
+  await pg.waitForFunction(() => { const s = window.__pos[window.__pos.length - 1]; return s && Math.abs(s.position - 2) < 0.1; });
+});
+
 await test("SPEC 57 audio: Info and Share leave the bottom bar; the editor holds Download · Share · Transpose · Retranscribe, white, blue only on hover", true, async (pg) => {
   await MAIN.put("files/Bb/k.wav", wavOf(1), { httpMetadata: { contentType: "audio/wav" } });
   await pg.goto(base + "/main?p=Bb");

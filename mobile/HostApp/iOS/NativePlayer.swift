@@ -191,14 +191,35 @@ struct NativePlayerView: View {
 
 private struct VideoLayer: UIViewRepresentable {
     let player: AVPlayer
+    /// FEAT-19 P2: lets go of the player in the background (locked or left), so iOS doesn't pause the video's sound.
     final class Host: UIView {
         override static var layerClass: AnyClass { AVPlayerLayer.self }
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        var player: AVPlayer? { didSet { apply() } }
+        private var phase: BackgroundVideo.Phase = UIApplication.shared.applicationState == .background ? .background : .active
+        private var observers: [NSObjectProtocol] = []
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            let pairs: [(Notification.Name, BackgroundVideo.Event)] = [
+                (UIApplication.didEnterBackgroundNotification, .didEnterBackground),
+                (UIApplication.willEnterForegroundNotification, .willEnterForeground)]
+            observers = pairs.map { name, event in
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.phase = BackgroundVideo.phase(after: event); self?.apply() }
+                }
+            }
+        }
+        required init?(coder: NSCoder) { fatalError() }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+        private func apply() {
+            let want = BackgroundVideo.attached(phase) ? player : nil
+            if playerLayer.player !== want { playerLayer.player = want }
+        }
     }
     func makeUIView(context: Context) -> Host {
-        let v = Host(); v.playerLayer.player = player; v.playerLayer.videoGravity = .resizeAspect; return v
+        let v = Host(); v.player = player; v.playerLayer.videoGravity = .resizeAspect; return v
     }
-    func updateUIView(_ v: Host, context: Context) { v.playerLayer.player = player }
+    func updateUIView(_ v: Host, context: Context) { if v.player !== player { v.player = player } }
 }
 
 /// One way in for every file the app plays natively: an episode from a path, on the root's model, Now Playing open on
