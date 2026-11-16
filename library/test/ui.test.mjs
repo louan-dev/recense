@@ -803,6 +803,49 @@ await test("FEAT-19: the lock screen scrubber has the file's length and place, a
   await pg.waitForFunction(() => { const s = window.__pos[window.__pos.length - 1]; return s && Math.abs(s.position - 2) < 0.1; });
 });
 
+// Derived from Spec: FEAT-19 · the Shared section's viewer (/main/shared) gives a played file the Lock Screen's title and scrubber too
+await test("FEAT-19: a file played in the Shared viewer has Now Playing, a scrubber that seeks, and ⏭ plays the next file", true, async (pg) => {
+  await PUBLIC.put("folders/Lk/one.wav", wavOf(3), { httpMetadata: { contentType: "audio/wav" } });
+  await PUBLIC.put("folders/Lk/two.wav", wavOf(2), { httpMetadata: { contentType: "audio/wav" } });
+  const r = await mf.dispatchFetch(base + "/main/api/link?action=folder&name=Lk", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
+  });
+  const id = (await r.json()).id;
+  await pg.addInitScript(() => {
+    const ms = navigator.mediaSession;
+    window.__h = {};
+    window.__pos = [];
+    const set = ms.setActionHandler.bind(ms);
+    ms.setActionHandler = (a, h) => {
+      if (h) window.__h[a] = h;
+      else delete window.__h[a];
+      try { set(a, h); } catch (x) {}
+    };
+    const sp = ms.setPositionState.bind(ms);
+    ms.setPositionState = (s) => {
+      window.__pos.push(s || null);
+      try { sp(s); } catch (x) {}
+    };
+  });
+  await pg.goto(base + "/main/shared");
+  await pg.click('.card[data-id="' + id + '"]');
+  await pg.click(".files .tile >> nth=0");
+  await pg.waitForSelector(".view audio", { state: "attached" });
+  await pg.$eval(".view audio", (a) => a.play());
+  await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "one");
+  await pg.waitForFunction(() => window.__pos.some((s) => s && Math.abs(s.duration - 3) < 0.1 && s.playbackRate > 0));
+  assert.deepEqual(await pg.evaluate(() => Object.keys(window.__h).sort()), ["nexttrack", "pause", "play", "seekto"], "no ±10 s, no ⏮ on the first file");
+  await pg.$eval(".view audio", (a) => a.pause());
+  await pg.evaluate(() => window.__h.seekto({ action: "seekto", seekTime: 2 }));
+  assert.ok(Math.abs((await pg.$eval(".view audio", (a) => a.currentTime)) - 2) < 0.1, "seekto moved the element");
+  await pg.waitForFunction(() => { const s = window.__pos[window.__pos.length - 1]; return s && Math.abs(s.position - 2) < 0.1; });
+  await pg.evaluate(() => window.__h.nexttrack({ action: "nexttrack" }));
+  await pg.waitForFunction(() => navigator.mediaSession.metadata && navigator.mediaSession.metadata.title === "two" && navigator.mediaSession.playbackState === "playing");
+  await pg.click(".view .vt button");
+  await pg.waitForFunction(() => navigator.mediaSession.metadata === null && !window.__h.play);
+});
+
 await test("SPEC 57 audio: Info and Share leave the bottom bar; the editor holds Download · Share · Transpose · Retranscribe, white, blue only on hover", true, async (pg) => {
   await MAIN.put("files/Bb/k.wav", wavOf(1), { httpMetadata: { contentType: "audio/wav" } });
   await pg.goto(base + "/main?p=Bb");

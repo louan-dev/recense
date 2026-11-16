@@ -425,6 +425,7 @@
         m = el("video");
         m.src = f.src;
         m.controls = m.playsInline = true;
+        nowPlaying(m, f);
       } else if (f.type.startsWith("audio/")) {
         m = el("div");
         m.style.display = "grid";
@@ -440,6 +441,7 @@
         a.src = f.src;
         a.controls = true;
         m.appendChild(a);
+        nowPlaying(a, f);
       } else {
         m = el("a", "lnk", "Open " + f.name);
         m.href = f.src;
@@ -454,6 +456,71 @@
         at = n;
         show();
       }
+    };
+
+    // FEAT-19: a file played here goes on with the phone locked or the browser left, and the Lock Screen shows its
+    // title, cover and a scrubber that seeks, as in Gallery's player (SPEC 69): play, pause, seekto, ⏮ / ⏭ through
+    // this share's files (the next one plays). No ±10 s (the scrubber does that).
+    const ms = navigator.mediaSession;
+    let nowEl = null;
+    const nowAct = (a, h) => {
+      try {
+        ms.setActionHandler(a, h);
+      } catch (x) {}
+    };
+    const nowStep = (d) => {
+      go(d);
+      const n = vm.querySelector("audio,video");
+      if (n) n.play().catch(() => {});
+    };
+    function nowPlaying(m, f) {
+      const pos = () => {
+        if (!ms || nowEl !== m) return;
+        try {
+          ms.playbackState = m.paused ? "paused" : "playing";
+          const d = m.duration;
+          if (!isFinite(d) || d <= 0) return;
+          ms.setPositionState({ duration: d, playbackRate: m.playbackRate || 1, position: Math.min(Math.max(m.currentTime || 0, 0), d) });
+        } catch (x) {}
+      };
+      m.addEventListener("play", () => {
+        try {
+          if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+        } catch (x) {}
+        if (!ms) return;
+        nowEl = m;
+        const meta = { title: String(f.name || "").replace(/\.[^/.]+$/, "") || "Recense", artist: "", album: "" };
+        try {
+          if (f.thumb) meta.artwork = [{ src: new URL(f.thumb, location.href).href }];
+        } catch (x) {}
+        try {
+          ms.metadata = new MediaMetadata(meta);
+        } catch (x) {}
+        nowAct("play", () => m.play().catch(() => {}));
+        nowAct("pause", () => m.pause());
+        nowAct("seekto", (e) => {
+          if (typeof e.seekTime !== "number") return;
+          if (e.fastSeek && m.fastSeek) m.fastSeek(e.seekTime);
+          else m.currentTime = e.seekTime;
+          pos();
+        });
+        nowAct("seekbackward", null);
+        nowAct("seekforward", null);
+        nowAct("previoustrack", at > 0 ? () => nowStep(-1) : null);
+        nowAct("nexttrack", at < list.length - 1 ? () => nowStep(1) : null);
+        pos();
+      });
+      ["pause", "ratechange", "durationchange", "seeked", "timeupdate"].forEach((ev) => m.addEventListener(ev, pos));
+    }
+    const nowDrop = () => {
+      if (!ms || !nowEl) return;
+      nowEl = null;
+      try {
+        ms.metadata = null;
+        ms.playbackState = "none";
+        ms.setPositionState();
+      } catch (x) {}
+      ["play", "pause", "seekto", "previoustrack", "nexttrack"].forEach((a) => nowAct(a, null));
     };
     const key = (e) => {
       if (e.key === "Escape") close();
@@ -473,6 +540,7 @@
     const close = () => {
       stop();
       v.remove();
+      nowDrop();
       removeEventListener("keydown", key);
     };
     let x0 = null;
