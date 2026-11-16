@@ -209,8 +209,9 @@ public struct TranscriptView<Extra: View>: View {
     /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed).
     private func now() -> Double? { scrub.held ?? time().map { ticking ? $0 + FrameClock.shared.lead : $0 } }
 
-    /// The lines holding what's typed in the pill (none while it isn't searching).
-    private var hits: [Int] { state.finding ? TranscriptFind.hits(lines, state.query) : [] }
+    /// The lines holding what's typed in the pill. Kept after Back to Scrubbing (the text stays), so the hits stay marks
+    /// on the scrubber's track and strong detents under the finger (FEAT-07 rule 1; FEAT-16 P5, owner's delegation 11-16).
+    private var hits: [Int] { TranscriptFind.hits(lines, state.query) }
 
     private var hasTranslations: Bool { lines.contains { !($0.translation ?? "").isEmpty } }
 

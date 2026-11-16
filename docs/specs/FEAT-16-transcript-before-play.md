@@ -48,11 +48,11 @@ Follow reset = Apple's "reset live tracking": a hand scroll lets go of the voice
 
 | Surface | Where (file:line) | Pill before P5 | Follow reset before P5 | P5 status |
 |---|---|---|---|---|
-| iPhone, stored shows (Now Playing) | `shared/ShowsKit/Sources/ShowsKit/Views/NowPlaying.swift:113` → `Views/Transcript.swift:269-280` → `Views/SearchPill.swift` | present (FEAT-07 P2) | "Now" `Transcript.swift:257-265`; ··· Follow the Playhead `:337`; hand scroll detaches `:366-372` | present, no change; device screenshot owed |
-| iPad, stored shows | same ShowsKit code as iPhone | present | present | present, no change; iPad screenshot owed |
-| Listen episodes (iOS) | `mobile/HostApp/iOS/Listen.swift:1497` (`seek: nil`, no `duration`) | Find face only; no scrubber (another app's audio cannot be moved) | present (same view) | present, no change; Open question below |
+| iPhone, stored shows (Now Playing) | `shared/ShowsKit/Sources/ShowsKit/Views/NowPlaying.swift:113` → `Views/Transcript.swift:269-280` → `Views/SearchPill.swift` | present (FEAT-07 P2) | "Now" `Transcript.swift:257-265`; ··· Follow the Playhead `:337`; hand scroll detaches `:366-372` | **coded, not compiled, device check owed:** hits kept as track marks after Back to Scrubbing; no magnifier without a transcript (`Transcript.swift:212-214`, `SearchPill.swift:28-36`) |
+| iPad, stored shows | same ShowsKit code as iPhone | present | present | same ShowsKit change as iPhone: **coded, not compiled, device check owed** |
+| Listen episodes (iOS) | `mobile/HostApp/iOS/Listen.swift:1497` (`seek: nil`, no `duration`) | Find face only; no scrubber (another app's audio cannot be moved) | present (same view) | Find only, by decision (see Decisions); gets the ShowsKit change (no magnifier without lines): **coded, not compiled** |
 | Mac strip window | `strip/recense.swift:997-1209` `RecenseHomeBar` (WKWebView over `strip/homebar/index.html`, which runs Gallery's `library/src/client/homebar.js`) | scrubber only (homebar Time Seeking); no Find | not needed: one line on screen; a scroll turns the drum and plays from the line picked (`recense.swift:1962-1987`), so view and voice never part | **coded, not compiled, device check owed.** Find comes with `homebar.js`; `strip/homebar/index.html` (Find host, `Recense.lines`, pointer rects, `find` message); `strip/recense.swift` `pushFindLines()` + the `find` message (web view takes the keys). Host page checked in Chromium with a stub handler. |
-| Web player (Gallery) | `library/src/client/gallery.js:1751` `Homebar.horizontal`; transcript `showTranscript` `:5017`, whole transcript `openAll` `:5293` | scrubber only (homebar Time Seeking); no Find | none: the whole-transcript sheet re-follows every line turn (`:6107-6117`) | **built and tested** (`library/test/ui.test.mjs` "FEAT-16 P5", `test/find.test.mjs`); screenshot `docs/feat16-p5-web-pill.png` |
+| Web player (Gallery) | `library/src/client/gallery.js:1751` `Homebar.horizontal`; transcript `showTranscript` `:5017`, whole transcript `openAll` `:5293` | scrubber only (homebar Time Seeking); no Find | none: the whole-transcript sheet re-follows every line turn (`:6107-6117`) | **built and tested** (`library/test/ui.test.mjs` "FEAT-16 P5", `test/find.test.mjs`); screenshot local only (`docs/specs/FEAT-16-p5-web-pill.png`, git-ignored; regenerate: `cd library && FEAT16_SHOT=$PWD/../docs/specs/FEAT-16-p5-web-pill.png ONLY="FEAT-16 P5" node test/ui.test.mjs`) |
 
 Not a transcript surface: the Mac's ShowsKit Library window (`LibraryShelf`, `Root.swift:162`) has no transcript view of its own.
 
@@ -83,7 +83,9 @@ Recommended: show progress (percent), keep the rule strict, and let a transcript
   and tells main.swift when Find opens. `strip/recense.swift`: `pushFindLines()` (once a second, on change; times mapped
   as `onPick` maps a line) and the `find` message (makes the panel key and the web view first responder, as the line
   editor does). Follow reset: not needed (one line on screen; a scroll picks a line and plays it).
-- **iPhone, iPad (stored shows) and Listen episodes:** no change. The pill and "Now" were already there (FEAT-07 P2, ShowsKit).
+- **iPhone, iPad (stored shows) and Listen episodes:** the pill and "Now" were already there (FEAT-07 P2, ShowsKit). After the
+  owner's delegation (Decisions below), two small ShowsKit edits, **coded, not compiled**: the hits of the typed text stay as marks
+  and strong detents after Back to Scrubbing (`Transcript.swift:212-214`), and there's no magnifier without a transcript (`SearchPill.swift:28-36`).
 
 ### Tests run
 - `node --test test/find.test.mjs`: 4 pass, 0 fail (same fixture and answers as `TranscriptFindTests.swift`).
@@ -99,7 +101,7 @@ Recommended: show progress (percent), keep the rule strict, and let a transcript
   the face's rect is posted. This was a one-off check in the session's scratchpad; nothing was committed for it.
 
 ### Unverified
-- Swift: `strip/recense.swift` is **coded, not compiled**. No Swift toolchain in this container.
+- Swift: `strip/recense.swift`, `Views/Transcript.swift` and `Views/SearchPill.swift` are **coded, not compiled**; `TranscriptFindTests` not run. No Swift toolchain in this container.
 - Whether the strip's panel really gives the keys to the web view's field (`makeKey` + `makeFirstResponder(homeBar)`), and
   that Space, ←, → typed into the field don't reach the player.
 - Swift is unchanged on iOS. The iPad and Listen screenshots the P5 gate asks for are still owed.
@@ -113,15 +115,13 @@ Recommended: show progress (percent), keep the rule strict, and let a transcript
 3. **iPhone and iPad (iPhone Mirroring):** Now Playing on a stored show: the pill and Now as before. Screenshot each for the gate.
    Listen › a past episode: the magnifier only (see question 1).
 
-### Questions for the owner
-1. **Listen episodes:** the pill there is Find only. Its audio is another app's, so there is no scrubber (`seek: nil`). Should the
-   scrubber there move the *reading place* (scroll the transcript) instead of the audio? Left as it is until you say.
-2. **Hit marks in the Swift pill:** `Transcript.swift:213` computes hits only while Find is open, and Find hides the scrubber
-   (`SearchPill.swift:20`), so the marks on the iPhone's track never show. The web keeps the typed text's marks after Back to
-   Scrubbing (FEAT-07 rule 1: "search hits are places on the ruler"). Should the Swift pill do the same? That is the FEAT-07 lane's code; not touched here.
-3. **No transcript:** the web hides the magnifier (law, interaction.md: shown only when relevant); Swift shows it disabled.
-   Which should both do?
-4. **Screenshot placement:** `.gitignore` keeps `docs/specs/**/*.png` local-only (owner 2026-11-11), and `docs/law/structure.md`
-   says no screenshots in the repo. The web screenshot is a synthetic fixture render, committed as `docs/feat16-p5-web-pill.png`
-   beside the other renders in `docs/`. Keep it there, move it, or drop it?
-
+### Decisions (the owner delegated them on 2026-11-16: "you decide what's best based on what I'd do")
+1. **Listen episodes stay Find only, with no scrubber.** Their audio is another app's (§ Hard limit). A scrubber that moved only the
+   text would break one control per function and the expectation that scrubbing moves the sound. Scrolling plus Now already
+   moves the reading place.
+2. **Hits stay places on the ruler** (FEAT-07 rule 1; a spec outranks the code). Swift now keeps the typed text's hits as track
+   marks and strong detents after Back to Scrubbing, as the web does. Clearing the field clears them.
+3. **No transcript, no magnifier**, on every surface (law, interaction.md: "shown only when relevant"). The scrubber stays.
+4. **Screenshots stay out of the repo** (law, structure.md; the owner's `.gitignore` for `docs/specs/**/*.png`; the repo is public).
+   The web screenshot is kept local beside the spec, with the command that regenerates it (table above). It was committed
+   once in `bfd734e` and deleted later on this branch. **Merge this branch squashed**, so the image never enters `main`'s history.
