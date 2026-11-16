@@ -2199,6 +2199,74 @@ html.rc-wings-page body {
 .rc-radial-item svg { width: 20px; height: 20px; }
 @keyframes rc-radial-in { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .rc-radial::before { animation: none; } }
+/* P7: corner handles (blue dots) on a just-snapped shape; P10: the selection box and its handles. */
+.rc-ink-handle { fill: #2f81f7; stroke: #fff; stroke-width: 1.5; }
+.rc-ink-handle-corner { r: 5; }
+.rc-ink-selbox, .rc-ink-selstem, .rc-ink-lasso { stroke: #2f81f7; }
+/* P9: Freeform | Boxed under the palette while the Lasso is picked. */
+.rc-ink-lassomodes {
+  pointer-events: auto;
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px;
+  border: 1px solid var(--rc-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rc-panel) 86%, var(--rc-text) 14%);
+}
+.rc-ink-lassomodes[hidden] { display: none; }
+.rc-ink-lassomodes button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--rc-text);
+  background: transparent;
+}
+.rc-ink-lassomodes button.rc-active { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
+/* P11: the selection menu; P12: the Stroke | Fill style panel. Fixed to the viewport, above the page. */
+.rc-ink-selmenu, .rc-ink-stylepanel {
+  position: fixed;
+  z-index: 55;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--rc-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--rc-panel) 92%, var(--rc-text) 8%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  font-size: 13px;
+}
+.rc-ink-stylepanel {
+  transform: translate(-50%, 0);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  width: 232px;
+}
+.rc-ink-selmenu-btn {
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  min-height: 32px;
+  font: inherit;
+  color: var(--rc-text);
+  background: transparent;
+  white-space: nowrap;
+}
+.rc-ink-selmenu-btn:hover, .rc-ink-selmenu-btn.rc-active { background: color-mix(in srgb, var(--rc-text) 14%, transparent); }
+.rc-ink-selmenu-btn.rc-disabled { opacity: 0.4; }
+.rc-ink-tabs, .rc-ink-styles { display: flex; gap: 4px; }
+.rc-ink-tabs > *, .rc-ink-styles > * { flex: 1; }
+.rc-ink-styles .rc-ink-selmenu-btn { font-size: 11px; padding: 6px 2px; }
+.rc-ink-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-ink-swatch { width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; border: 1px solid var(--rc-border); }
+.rc-ink-note { font-size: 11px; opacity: 0.7; }
+.rc-ink-width { width: 100%; }
 
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -34516,8 +34584,203 @@ ${PAGE_MARKER}
     }
     return pts.slice();
   }
+  function shapeHandles(stroke) {
+    if (stroke?.shape?.kind === "polygon") return polygonCorners(stroke).map((p) => [p[0], p[1]]);
+    if (stroke?.shape?.kind === "line") return [[stroke.shape.x1, stroke.shape.y1], [stroke.shape.x2, stroke.shape.y2]];
+    return [];
+  }
+  function moveHandle(stroke, i, x, y) {
+    const s = cloneStroke(stroke);
+    if (s.shape?.kind === "line") {
+      if (i === 0) {
+        s.shape.x1 = x;
+        s.shape.y1 = y;
+        s.points[0] = [x, y, ...s.points[0].slice(2)];
+      } else {
+        s.shape.x2 = x;
+        s.shape.y2 = y;
+        const k = s.points.length - 1;
+        s.points[k] = [x, y, ...s.points[k].slice(2)];
+      }
+      return s;
+    }
+    if (s.shape?.kind === "polygon") {
+      const closed = polygonCorners(stroke).length !== s.points.length;
+      s.points[i] = [x, y, ...s.points[i].slice(2)];
+      if (closed && i === 0) s.points[s.points.length - 1] = [x, y, ...s.points[s.points.length - 1].slice(2)];
+    }
+    return s;
+  }
+  function pointInPolygon(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if (yi > y !== yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function pointInEllipse(x, y, { cx, cy, rx, ry, rot = 0 }) {
+    const c = Math.cos(-rot), s = Math.sin(-rot);
+    const dx = x - cx, dy = y - cy;
+    const u = dx * c - dy * s, v = dx * s + dy * c;
+    return u * u / (rx * rx) + v * v / (ry * ry) <= 1;
+  }
+  function isClosedShape(stroke) {
+    return stroke?.shape?.kind === "ellipse" || stroke?.shape?.kind === "polygon";
+  }
+  function pointInStroke(stroke, x, y) {
+    if (stroke?.shape?.kind === "ellipse") return pointInEllipse(x, y, stroke.shape);
+    if (stroke?.shape?.kind === "polygon") return pointInPolygon(x, y, polygonCorners(stroke));
+    return false;
+  }
+  function closedShapeAt(strokes, x, y, pageIndex = null) {
+    for (let i = (strokes || []).length - 1; i >= 0; i--) {
+      const s = strokes[i];
+      if (pageIndex !== null && s.anchor && typeof s.anchor.pageIndex === "number" && s.anchor.pageIndex !== pageIndex) continue;
+      if (isClosedShape(s) && pointInStroke(s, x, y)) return s;
+    }
+    return null;
+  }
+  function selectInLasso(strokes, lasso, mode = "freeform", pageIndex = null) {
+    if (!Array.isArray(lasso) || lasso.length < 2) return [];
+    let inside;
+    if (mode === "boxed") {
+      const b = boundsOf(lasso);
+      inside = (x, y) => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY;
+    } else {
+      if (lasso.length < 3) return [];
+      inside = (x, y) => pointInPolygon(x, y, lasso);
+    }
+    const ids = [];
+    for (const s of strokes || []) {
+      if (pageIndex !== null && s.anchor && typeof s.anchor.pageIndex === "number" && s.anchor.pageIndex !== pageIndex) continue;
+      const pts = s.points || [];
+      if (!pts.length) continue;
+      const hits = pts.filter((p) => inside(p[0], p[1])).length;
+      if (hits * 2 >= pts.length) ids.push(s.id);
+    }
+    return expandGroups(strokes, ids);
+  }
+  function expandGroups(strokes, ids) {
+    const set = new Set(ids);
+    const groups = new Set((strokes || []).filter((s) => set.has(s.id) && s.group).map((s) => s.group));
+    if (!groups.size) return [...set];
+    for (const s of strokes) if (s.group && groups.has(s.group)) set.add(s.id);
+    return (strokes || []).filter((s) => set.has(s.id)).map((s) => s.id);
+  }
+  function translate(dx, dy) {
+    return [1, 0, 0, 1, dx, dy];
+  }
+  function scaleAbout(s, ox, oy) {
+    return [s, 0, 0, s, ox - s * ox, oy - s * oy];
+  }
+  function rotateAbout(theta, ox, oy) {
+    const c = Math.cos(theta), s = Math.sin(theta);
+    return [c, s, -s, c, ox - c * ox + s * oy, oy - s * ox - c * oy];
+  }
+  function mirrorH(cx) {
+    return [-1, 0, 0, 1, 2 * cx, 0];
+  }
+  function mirrorV(cy) {
+    return [1, 0, 0, -1, 0, 2 * cy];
+  }
+  function applyPoint(m, x, y) {
+    return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  }
+  function cloneStroke(s) {
+    return {
+      ...s,
+      points: (s.points || []).map((p) => [...p]),
+      anchor: s.anchor ? { ...s.anchor } : s.anchor ?? null,
+      shape: s.shape ? { ...s.shape } : s.shape ?? null
+    };
+  }
+  function transformStroke(stroke, m) {
+    const s = cloneStroke(stroke);
+    s.points = s.points.map((p) => {
+      const [x, y] = applyPoint(m, p[0], p[1]);
+      return [x, y, ...p.slice(2)];
+    });
+    const sh = s.shape;
+    if (sh?.kind === "line") {
+      [sh.x1, sh.y1] = applyPoint(m, sh.x1, sh.y1);
+      [sh.x2, sh.y2] = applyPoint(m, sh.x2, sh.y2);
+    } else if (sh?.kind === "ellipse") {
+      [sh.cx, sh.cy] = applyPoint(m, sh.cx, sh.cy);
+      const rot = sh.rot || 0;
+      const ux = Math.cos(rot), uy = Math.sin(rot);
+      const vx = -Math.sin(rot), vy = Math.cos(rot);
+      const au = [m[0] * ux + m[2] * uy, m[1] * ux + m[3] * uy];
+      const av = [m[0] * vx + m[2] * vy, m[1] * vx + m[3] * vy];
+      sh.rx = sh.rx * Math.hypot(...au);
+      sh.ry = sh.ry * Math.hypot(...av);
+      let r = Math.atan2(au[1], au[0]);
+      while (r > Math.PI / 2) r -= Math.PI;
+      while (r <= -Math.PI / 2) r += Math.PI;
+      if (Math.abs(r) < 1e-9) r = 0;
+      if (r) sh.rot = r;
+      else delete sh.rot;
+    }
+    return s;
+  }
+  function strokesBounds(strokes) {
+    const pts = [];
+    for (const s of strokes || []) {
+      if (s.shape?.kind === "ellipse") {
+        const { cx, cy, rx, ry, rot = 0 } = s.shape;
+        const ex = Math.hypot(rx * Math.cos(rot), ry * Math.sin(rot));
+        const ey = Math.hypot(rx * Math.sin(rot), ry * Math.cos(rot));
+        pts.push([cx - ex, cy - ey], [cx + ex, cy + ey]);
+      } else {
+        for (const p of s.points || []) pts.push(p);
+      }
+    }
+    return boundsOf(pts);
+  }
+  var idSeq = 0;
+  function newStrokeId(now2 = Date.now()) {
+    idSeq = (idSeq + 1) % 1e6;
+    return `stroke-${now2}-${idSeq.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+  function duplicateStrokes(strokes, dx = 16, dy = 16, makeId = newStrokeId, now2 = Date.now()) {
+    const groupMap = /* @__PURE__ */ new Map();
+    return (strokes || []).map((s, i) => {
+      const c = transformStroke(s, translate(dx, dy));
+      c.id = makeId(now2);
+      c.at = now2 + i * 1e-3;
+      delete c.edited;
+      if (s.group) {
+        if (!groupMap.has(s.group)) groupMap.set(s.group, `group-${makeId(now2)}`);
+        c.group = groupMap.get(s.group);
+      }
+      return c;
+    });
+  }
+  function toggleGroup(strokes, groupId) {
+    const gs = new Set((strokes || []).map((s) => s.group || null));
+    const ungroup = gs.size === 1 && !gs.has(null);
+    return (strokes || []).map((s) => {
+      const c = cloneStroke(s);
+      if (ungroup) delete c.group;
+      else c.group = groupId;
+      return c;
+    });
+  }
   var STROKE_STYLES = ["solid", "pressure", "dashed", "dotted"];
   var FILL_OPACITY = 0.35;
+  function applyStyle(strokes, change = {}) {
+    return (strokes || []).map((s) => {
+      const c = cloneStroke(s);
+      if (typeof change.width === "number" && change.width > 0) c.width = change.width;
+      if (STROKE_STYLES.includes(change.style)) c.style = change.style;
+      if (typeof change.color === "string") c.color = change.color;
+      if ("fill" in change && isClosedShape(c)) {
+        if (change.fill) c.fill = change.fill;
+        else delete c.fill;
+      }
+      return c;
+    });
+  }
   function strokeStyleOf(stroke) {
     if (STROKE_STYLES.includes(stroke?.style)) return stroke.style;
     return stroke?.tool === "pen" && !stroke?.shape ? "pressure" : "solid";
@@ -34526,6 +34789,423 @@ ${PAGE_MARKER}
     if (style === "dashed") return `${3 * w} ${2 * w}`;
     if (style === "dotted") return `0.01 ${2 * w}`;
     return "";
+  }
+
+  // src/inkselection.js
+  var LASSO_MODES = ["freeform", "boxed"];
+  var SELECTION_PAD = 8;
+  var HANDLE_HIT = 16;
+  var ROTATE_STEM = 28;
+  var LONG_PRESS_MS = 500;
+  var LONG_PRESS_SLOP = 6;
+  var PASTE_OFFSET = 16;
+  var MODE_KEY = "rc-ink-lasso-mode";
+  var SVG = "http://www.w3.org/2000/svg";
+  function selectionHit(box, x, y) {
+    if (!box) return null;
+    const midX = (box.minX + box.maxX) / 2, midY = (box.minY + box.maxY) / 2;
+    if (Math.hypot(x - midX, y - (box.minY - ROTATE_STEM)) <= HANDLE_HIT) return "rotate";
+    if (Math.hypot(x - box.maxX, y - midY) <= HANDLE_HIT) return "scale";
+    if (x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY) return "move";
+    return null;
+  }
+  function dragMatrix(kind, box, x0, y0, x, y) {
+    const midX = (box.minX + box.maxX) / 2, midY = (box.minY + box.maxY) / 2;
+    if (kind === "move") return translate(x - x0, y - y0);
+    if (kind === "scale") {
+      const w0 = Math.max(1, box.maxX - box.minX);
+      const s = Math.max(0.1, (box.maxX - box.minX + (x - x0)) / w0);
+      return scaleAbout(s, box.minX, midY);
+    }
+    if (kind === "rotate") {
+      const a = Math.atan2(y - midY, x - midX) - Math.atan2(y0 - midY, x0 - midX);
+      return rotateAbout(a, midX, midY);
+    }
+    return [1, 0, 0, 1, 0, 0];
+  }
+  function createInkSelection(host) {
+    const { doc: doc2, svg, globalObj } = host;
+    let mode = (() => {
+      try {
+        const m = globalObj?.localStorage?.getItem(MODE_KEY);
+        if (LASSO_MODES.includes(m)) return m;
+      } catch {
+      }
+      return "freeform";
+    })();
+    let ids = [];
+    let lasso = null;
+    let drag = null;
+    let press = null;
+    let clipboard = [];
+    let menu = null, panel = null, group = null;
+    if (svg && doc2 && typeof doc2.createElementNS === "function") {
+      group = doc2.createElementNS(SVG, "g");
+      group.setAttribute("class", "rc-ink-selection");
+      svg.appendChild(group);
+    }
+    const byId = () => new Map(host.strokes().map((s) => [s.id, s]));
+    const selected = () => {
+      const m = byId();
+      return ids.map((id2) => m.get(id2)).filter(Boolean);
+    };
+    function box() {
+      const sel = selected();
+      if (!sel.length) return null;
+      const b = strokesBounds(sel);
+      return { minX: b.minX - SELECTION_PAD, minY: b.minY - SELECTION_PAD, maxX: b.maxX + SELECTION_PAD, maxY: b.maxY + SELECTION_PAD };
+    }
+    function el5(name2, attrs) {
+      const e = doc2.createElementNS(SVG, name2);
+      for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+      return e;
+    }
+    function draw() {
+      if (!group) return;
+      group.innerHTML = "";
+      if (lasso && lasso.length > 1) {
+        let pts = lasso;
+        if (mode === "boxed") {
+          const [a, b2] = [lasso[0], lasso[lasso.length - 1]];
+          pts = [a, [b2[0], a[1]], b2, [a[0], b2[1]], a];
+        }
+        group.appendChild(el5("path", {
+          d: pts.map((p, i) => `${i ? "L" : "M"} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" "),
+          class: "rc-ink-lasso",
+          fill: "none",
+          "stroke-width": 1.5,
+          "stroke-dasharray": "4 4"
+        }));
+        return;
+      }
+      const b = box();
+      if (!b) return;
+      const midX = (b.minX + b.maxX) / 2, midY = (b.minY + b.maxY) / 2;
+      group.appendChild(el5("rect", {
+        x: b.minX,
+        y: b.minY,
+        width: b.maxX - b.minX,
+        height: b.maxY - b.minY,
+        class: "rc-ink-selbox",
+        fill: "none",
+        "stroke-width": 1,
+        "stroke-dasharray": "4 3"
+      }));
+      group.appendChild(el5("line", { x1: midX, y1: b.minY, x2: midX, y2: b.minY - ROTATE_STEM, class: "rc-ink-selstem", "stroke-width": 1 }));
+      group.appendChild(el5("circle", { cx: midX, cy: b.minY - ROTATE_STEM, r: 6, class: "rc-ink-handle rc-ink-handle-rotate" }));
+      group.appendChild(el5("circle", { cx: b.maxX, cy: midY, r: 6, class: "rc-ink-handle rc-ink-handle-scale" }));
+      for (const [x, y] of [[b.minX, b.minY], [b.maxX, b.minY], [b.minX, b.maxY], [b.maxX, b.maxY]]) {
+        group.appendChild(el5("circle", { cx: x, cy: y, r: 3.5, class: "rc-ink-handle rc-ink-handle-corner" }));
+      }
+    }
+    function button2(label, fn, cls = "") {
+      const b = doc2.createElement("button");
+      b.setAttribute("type", "button");
+      b.className = `rc-ink-selmenu-btn ${cls}`.trim();
+      b.textContent = label;
+      b.setAttribute("aria-label", label);
+      b.addEventListener("click", (e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        fn();
+      });
+      return b;
+    }
+    function placeAt(node, x, y) {
+      const [cx, cy] = host.toClient(x, y);
+      const vw = Number(globalObj?.innerWidth) || 1024;
+      node.style.left = `${Math.max(8, Math.min(vw - 8, cx))}px`;
+      node.style.top = `${Math.max(8, cy)}px`;
+    }
+    function hideMenu() {
+      if (menu) {
+        menu.remove?.();
+        menu = null;
+      }
+    }
+    function hidePanel() {
+      if (panel) {
+        panel.remove?.();
+        panel = null;
+      }
+    }
+    function showMenu(at = null) {
+      hideMenu();
+      if (!doc2 || typeof doc2.createElement !== "function") return;
+      const b = box();
+      menu = doc2.createElement("div");
+      menu.className = "rc-ink-selmenu";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", "Selection");
+      if (b && !at) {
+        menu.appendChild(button2("Style", showPanel2));
+        menu.appendChild(button2("Duplicate", duplicate));
+        menu.appendChild(button2("Cut", cut));
+        menu.appendChild(button2("Copy", copy));
+        if (clipboard.length) menu.appendChild(button2("Paste", () => paste()));
+        menu.appendChild(button2("Delete", del));
+        menu.appendChild(button2("\u203A", showMore, "rc-ink-selmenu-more"));
+        placeAt(menu, (b.minX + b.maxX) / 2, b.minY - ROTATE_STEM - 16);
+      } else if (at) {
+        menu.appendChild(button2("Paste", () => paste(at), clipboard.length ? "" : "rc-disabled"));
+        placeAt(menu, at[0], at[1] - 16);
+      }
+      (doc2.body || svg?.parentNode)?.appendChild?.(menu);
+    }
+    function showMore() {
+      if (!menu) return;
+      menu.innerHTML = "";
+      const sel = selected();
+      const grouped = sel.length > 0 && sel.every((s) => s.group && s.group === sel[0].group);
+      menu.appendChild(button2(grouped ? "Ungroup" : "Group", group_));
+      menu.appendChild(button2("Mirror Horizontally", () => mirror("h")));
+      menu.appendChild(button2("Mirror Vertically", () => mirror("v")));
+    }
+    function commit(list) {
+      host.replace(list, true);
+      draw();
+    }
+    function duplicate() {
+      const copies = duplicateStrokes(selected(), PASTE_OFFSET, PASTE_OFFSET);
+      host.add(copies);
+      ids = copies.map((s) => s.id);
+      draw();
+      showMenu();
+    }
+    function copy() {
+      clipboard = selected().map((s) => transformStroke(s, translate(0, 0)));
+      hideMenu();
+      showMenu();
+    }
+    function cut() {
+      copy();
+      del();
+    }
+    function del() {
+      host.remove(ids);
+      ids = [];
+      hideMenu();
+      hidePanel();
+      draw();
+    }
+    function paste(at = null) {
+      if (!clipboard.length) {
+        hideMenu();
+        return;
+      }
+      let dx = PASTE_OFFSET, dy = PASTE_OFFSET;
+      if (at) {
+        const b = strokesBounds(clipboard);
+        dx = at[0] - b.minX;
+        dy = at[1] - b.minY;
+      }
+      const copies = duplicateStrokes(clipboard, dx, dy);
+      host.add(copies);
+      clipboard = copies.map((s) => transformStroke(s, translate(0, 0)));
+      ids = copies.map((s) => s.id);
+      draw();
+      showMenu();
+    }
+    function group_() {
+      commit(toggleGroup(selected(), `group-${newStrokeId()}`));
+      showMenu();
+    }
+    function mirror(axis) {
+      const b = box();
+      if (!b) return;
+      const m = axis === "h" ? mirrorH((b.minX + b.maxX) / 2) : mirrorV((b.minY + b.maxY) / 2);
+      commit(selected().map((s) => transformStroke(s, m)));
+      showMenu();
+    }
+    function showPanel2() {
+      hideMenu();
+      hidePanel();
+      if (!doc2 || typeof doc2.createElement !== "function") return;
+      const sel = selected();
+      if (!sel.length) return;
+      panel = doc2.createElement("div");
+      panel.className = "rc-ink-stylepanel";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "Style");
+      let tab = "stroke";
+      const apply = (change) => {
+        commit(applyStyle(selected(), change));
+      };
+      const fill = () => {
+        panel.innerHTML = "";
+        const tabs = doc2.createElement("div");
+        tabs.className = "rc-ink-tabs";
+        for (const t2 of ["stroke", "fill"]) {
+          const b2 = button2(t2 === "stroke" ? "Stroke" : "Fill", () => {
+            tab = t2;
+            fill();
+          }, tab === t2 ? "rc-active" : "");
+          b2.setAttribute("aria-pressed", String(tab === t2));
+          tabs.appendChild(b2);
+        }
+        panel.appendChild(tabs);
+        if (tab === "stroke") {
+          const w = doc2.createElement("input");
+          w.setAttribute("type", "range");
+          w.setAttribute("min", "0.5");
+          w.setAttribute("max", "12");
+          w.setAttribute("step", "0.5");
+          w.setAttribute("aria-label", "Width");
+          w.value = String(selected()[0]?.width || 2.5);
+          w.className = "rc-ink-width";
+          w.addEventListener("input", () => apply({ width: Number(w.value) }));
+          panel.appendChild(w);
+          const styles = doc2.createElement("div");
+          styles.className = "rc-ink-styles";
+          for (const st of STROKE_STYLES) {
+            styles.appendChild(button2(st[0].toUpperCase() + st.slice(1), () => apply({ style: st }), `rc-ink-style-${st}`));
+          }
+          panel.appendChild(styles);
+        }
+        const sw = doc2.createElement("div");
+        sw.className = "rc-ink-swatches";
+        if (tab === "fill") {
+          const none4 = button2("None", () => apply({ fill: null }), "rc-ink-swatch-none");
+          sw.appendChild(none4);
+        }
+        for (const c of host.colors()) {
+          const b2 = button2("", () => apply(tab === "stroke" ? { color: c } : { fill: c }), "rc-ink-swatch");
+          b2.setAttribute("aria-label", c);
+          b2.style.background = c;
+          sw.appendChild(b2);
+        }
+        panel.appendChild(sw);
+        if (tab === "fill" && !selected().some(isClosedShape)) {
+          const note = doc2.createElement("div");
+          note.className = "rc-ink-note";
+          note.textContent = "Only closed shapes take a fill.";
+          panel.appendChild(note);
+        }
+        panel.appendChild(button2("Done", () => {
+          hidePanel();
+          showMenu();
+        }, "rc-ink-done"));
+      };
+      fill();
+      const b = box();
+      if (b) placeAt(panel, (b.minX + b.maxX) / 2, b.maxY + 12);
+      (doc2.body || svg?.parentNode)?.appendChild?.(panel);
+    }
+    function stopPress() {
+      if (press?.timer != null) (globalObj?.clearTimeout || clearTimeout)(press.timer);
+      press = null;
+    }
+    function down(x, y) {
+      hidePanel();
+      const hit = selectionHit(box(), x, y);
+      if (hit) {
+        hideMenu();
+        drag = { kind: hit, box: box(), x0: x, y0: y, originals: selected() };
+        return;
+      }
+      clear();
+      lasso = [[x, y]];
+      const set = globalObj?.setTimeout || setTimeout;
+      press = { x, y, timer: set(() => {
+        if (!press) return;
+        press = null;
+        lasso = null;
+        draw();
+        host.haptic?.("snap");
+        showMenu([x, y]);
+      }, LONG_PRESS_MS) };
+    }
+    function move(x, y) {
+      if (drag) {
+        const m = dragMatrix(drag.kind, drag.box, drag.x0, drag.y0, x, y);
+        host.replace(drag.originals.map((s) => transformStroke(s, m)), false);
+        draw();
+        return;
+      }
+      if (lasso) {
+        if (press && Math.hypot(x - press.x, y - press.y) > LONG_PRESS_SLOP) stopPress();
+        lasso.push([x, y]);
+        draw();
+      }
+    }
+    function up(x, y) {
+      if (drag) {
+        const m = dragMatrix(drag.kind, drag.box, drag.x0, drag.y0, x, y);
+        const moved = Math.hypot(x - drag.x0, y - drag.y0) > 1;
+        if (moved) host.replace(drag.originals.map((s) => transformStroke(s, m)), true);
+        drag = null;
+        draw();
+        showMenu();
+        return;
+      }
+      if (!lasso) return;
+      stopPress();
+      lasso.push([x, y]);
+      const pts = mode === "boxed" ? [lasso[0], lasso[lasso.length - 1]] : lasso;
+      ids = selectInLasso(host.strokes(), pts, mode);
+      lasso = null;
+      draw();
+      if (ids.length) {
+        host.haptic?.("snap");
+        showMenu();
+      }
+    }
+    function cancel() {
+      if (drag) {
+        host.replace(drag.originals, false);
+        drag = null;
+      }
+      stopPress();
+      lasso = null;
+      draw();
+    }
+    function clear() {
+      ids = [];
+      lasso = null;
+      stopPress();
+      hideMenu();
+      hidePanel();
+      draw();
+    }
+    return {
+      down,
+      move,
+      up,
+      cancel,
+      clear,
+      draw,
+      select(list) {
+        ids = [...list];
+        draw();
+        if (ids.length) showMenu();
+      },
+      selectedIds: () => [...ids],
+      mode: () => mode,
+      setMode(m) {
+        if (!LASSO_MODES.includes(m)) return;
+        mode = m;
+        try {
+          globalObj?.localStorage?.setItem(MODE_KEY, m);
+        } catch {
+        }
+      },
+      isBusy: () => Boolean(drag || lasso),
+      // Menu actions, also for keyboard and tests.
+      duplicate,
+      copy,
+      cut,
+      paste,
+      del,
+      mirror,
+      group: group_,
+      showPanel: showPanel2,
+      menuElement: () => menu,
+      panelElement: () => panel,
+      contains(node) {
+        for (let n = node; n; n = n.parentNode) if (n === menu || n === panel) return true;
+        return false;
+      }
+    };
   }
 
   // src/ink.js
@@ -34538,11 +35218,13 @@ ${PAGE_MARKER}
     "eraser-partial"
   ];
   var SELECT_TOOL = "select";
-  var PALETTE_TOOLS = [SELECT_TOOL, "pen", "highlighter", "eraser-whole"];
+  var LASSO_TOOL = "lasso";
+  var PALETTE_TOOLS = [SELECT_TOOL, "pen", "highlighter", LASSO_TOOL, "eraser-whole"];
   var INK_TOOL_NAMES = {
     select: "Select text",
     pen: "Pen",
     highlighter: "Highlighter",
+    lasso: "Lasso",
     underline: "Underline",
     circle: "Circle",
     "eraser-whole": "Eraser",
@@ -34555,6 +35237,8 @@ ${PAGE_MARKER}
     pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
     // A marker over a wide translucent band, unlike the pen's slim nib.
     highlighter: ICON('<path d="M2 13.5h12" stroke-width="3.5" stroke-opacity="0.45"/><path d="M6.5 10.5l3.5-7.5 3 1.5-3 7.5z"/>'),
+    // A dashed loop with a tail: the lasso.
+    lasso: ICON('<ellipse cx="8.5" cy="6.5" rx="5.5" ry="4" stroke-dasharray="2 1.6"/><path d="M5 10c-1 1.5-1.5 2.5-0.5 3.5"/>'),
     underline: ICON('<path d="M5 3v4a3 3 0 0 0 6 0V3"/><path d="M3 13.5h10"/>'),
     circle: ICON('<ellipse cx="8" cy="8" rx="5.5" ry="4.5"/>'),
     // A solid eraser block: wipes whole strokes.
@@ -35195,6 +35879,12 @@ ${clean(nextLineText)}`;
     let currentColor = null;
     let isDrawing = false;
     let activePoints = [];
+    let handlesFor = null;
+    let handleDrag = null;
+    let handleGroup = null;
+    let fillTimer = null;
+    let fillDone = false;
+    let lassoing = false;
     let drawingId = null;
     let inkLive = true;
     const palm = createPalmGate({
@@ -35268,12 +35958,17 @@ ${clean(nextLineText)}`;
       svg.appendChild(penGroup);
       svg.appendChild(activeGroup);
       svg.appendChild(eraserRing);
+      handleGroup = docNode.createElementNS("http://www.w3.org/2000/svg", "g");
+      handleGroup.setAttribute("class", "rc-ink-handles");
+      svg.appendChild(handleGroup);
       if (typeof scrollDOM.appendChild === "function") {
         scrollDOM.appendChild(svg);
       }
     }
     let dock = null;
     let pill = null;
+    let lassoModes = null;
+    let selection = null;
     if (docNode && typeof docNode.createElement === "function") {
       dock = docNode.createElement("div");
       dock.className = "rc-ink-dock";
@@ -35425,6 +36120,24 @@ ${clean(nextLineText)}`;
       dock.appendChild(pill);
       dock.appendChild(palette);
       dock.appendChild(wheel);
+      lassoModes = docNode.createElement("div");
+      lassoModes.className = "rc-ink-lassomodes";
+      lassoModes.setAttribute("role", "group");
+      lassoModes.setAttribute("aria-label", "Lasso mode");
+      lassoModes.hidden = true;
+      for (const m of LASSO_MODES) {
+        const b = docNode.createElement("button");
+        b.setAttribute("type", "button");
+        b.setAttribute("data-lasso-mode", m);
+        b.textContent = m === "freeform" ? "Freeform" : "Boxed";
+        b.addEventListener("click", (e) => {
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          selection?.setMode(m);
+          updateLassoModes();
+        });
+        lassoModes.appendChild(b);
+      }
+      dock.appendChild(lassoModes);
       const host = mount || scrollDOM?.parentNode || null;
       if (host && typeof host.appendChild === "function") {
         host.appendChild(dock);
@@ -35452,10 +36165,21 @@ ${clean(nextLineText)}`;
     }
     function onKey(e) {
       if (awake && e.key === "Escape") hidePalette();
+      if (e.key === "Escape" && selection && selection.selectedIds().length) selection.clear();
     }
     if (docNode && typeof docNode.addEventListener === "function") {
       docNode.addEventListener("pointerdown", onOutsidePress, true);
       docNode.addEventListener("keydown", onKey, true);
+    }
+    function updateLassoModes() {
+      if (!lassoModes) return;
+      lassoModes.hidden = currentTool !== LASSO_TOOL;
+      const mode = selection ? selection.mode() : "freeform";
+      for (const b of lassoModes.children || []) {
+        const on = b.getAttribute("data-lasso-mode") === mode;
+        b.className = on ? "rc-active" : "";
+        b.setAttribute("aria-pressed", String(on));
+      }
     }
     function updatePaletteActive() {
       for (const dot2 of colorDots) {
@@ -35681,6 +36405,8 @@ ${clean(nextLineText)}`;
           targetGroup.lastChild.setAttribute("class", "rc-ink-found");
         }
       }
+      drawHandles();
+      if (selection) selection.draw();
     }
     function renderActiveStroke() {
       if (!docNode || !activeGroup) return;
@@ -35777,7 +36503,11 @@ ${clean(nextLineText)}`;
       }
       toolChosen = true;
       currentTool = tool;
+      if (selection) selection.clear();
+      handlesFor = null;
+      drawHandles();
       updatePaletteActive();
+      updateLassoModes();
       updateCursor();
       if (typeof onToolChange === "function") onToolChange(tool);
     }
@@ -35864,6 +36594,67 @@ ${clean(nextLineText)}`;
       activePoints = [];
       if (activeGroup) activeGroup.innerHTML = "";
     }
+    function drawHandles() {
+      if (!handleGroup || !docNode) return;
+      handleGroup.innerHTML = "";
+      if (!handlesFor) return;
+      const st = inkDoc.strokes.find((x) => x.id === handlesFor);
+      if (!st) {
+        handlesFor = null;
+        return;
+      }
+      for (const [x, y] of shapeHandles(st)) {
+        const c = docNode.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", String(x));
+        c.setAttribute("cy", String(y));
+        c.setAttribute("r", "5");
+        c.setAttribute("class", "rc-ink-handle rc-ink-handle-corner");
+        handleGroup.appendChild(c);
+      }
+    }
+    function handleAt(x, y) {
+      if (!handlesFor) return -1;
+      const st = inkDoc.strokes.find((q) => q.id === handlesFor);
+      if (!st) return -1;
+      const hs = shapeHandles(st);
+      let best = -1, bestD = HANDLE_HIT;
+      hs.forEach(([hx, hy], i) => {
+        const d = Math.hypot(hx - x, hy - y);
+        if (d <= bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      return best;
+    }
+    function stopFillTimer() {
+      if (fillTimer !== null) {
+        (globalObj?.clearTimeout || clearTimeout)(fillTimer);
+        fillTimer = null;
+      }
+    }
+    function startFillTimer() {
+      stopFillTimer();
+      if (currentTool !== "pen" && currentTool !== "highlighter") return;
+      const set = globalObj?.setTimeout || setTimeout;
+      fillTimer = set(() => {
+        fillTimer = null;
+        if (!isDrawing || !inkLive || activePoints.length === 0) return;
+        const [x0, y0] = activePoints[0];
+        if (activePoints.some((q) => Math.hypot(q[0] - x0, q[1] - y0) > 6)) return;
+        const target = closedShapeAt(inkDoc.strokes, x0, y0, getCurrentPageIndex());
+        if (!target) return;
+        fillDone = true;
+        activePoints = [];
+        if (activeGroup) activeGroup.innerHTML = "";
+        replaceStrokes([{ ...target, fill: currentColor }], true);
+        haptic("shapeSnap");
+      }, SNAP_HOLD_MS);
+    }
+    function contentPoint(e) {
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      return [e.clientX - rect.left + (scrollDOM?.scrollLeft || 0), e.clientY - rect.top + (scrollDOM?.scrollTop || 0)];
+    }
     function onPointerDown(e) {
       if (!inks(e)) return;
       const gate = palm.down(e);
@@ -35873,6 +36664,31 @@ ${clean(nextLineText)}`;
         return;
       }
       if (isDrawing) return;
+      const [px0, py0] = contentPoint(e);
+      if (currentTool === LASSO_TOOL) {
+        isDrawing = true;
+        drawingId = e.pointerId;
+        inkLive = true;
+        lassoing = true;
+        if (selection) selection.down(px0, py0);
+        prevent(e);
+        return;
+      }
+      const hi = handleAt(px0, py0);
+      if (hi >= 0) {
+        const st = inkDoc.strokes.find((q) => q.id === handlesFor);
+        handleDrag = { id: st.id, index: hi, original: st };
+        isDrawing = true;
+        drawingId = e.pointerId;
+        inkLive = true;
+        prevent(e);
+        return;
+      }
+      if (handlesFor) {
+        handlesFor = null;
+        drawHandles();
+      }
+      fillDone = false;
       isDrawing = true;
       drawingId = e.pointerId;
       inkLive = gate.act !== "wait";
@@ -35886,6 +36702,7 @@ ${clean(nextLineText)}`;
       const p = nextPressure(e, x, y, t2, null);
       activePoints = [[x, y, p, t2]];
       if (inkLive) startLive();
+      startFillTimer();
       prevent(e);
     }
     function startLive() {
@@ -35906,6 +36723,18 @@ ${clean(nextLineText)}`;
         return;
       }
       if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+      if (lassoing || handleDrag) {
+        const [mx, my] = contentPoint(e);
+        if (lassoing) {
+          if (selection) selection.move(mx, my);
+        } else replaceStrokes([moveHandle(handleDrag.original, handleDrag.index, mx, my)], false);
+        prevent(e);
+        return;
+      }
+      if (fillDone) {
+        prevent(e);
+        return;
+      }
       if (gate.act === "ignore") {
         if (gate.cancel) dropActive();
         prevent(e);
@@ -35934,6 +36763,25 @@ ${clean(nextLineText)}`;
     function onPointerUp(e) {
       const gate = palm.up(e);
       if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+      stopFillTimer();
+      if (lassoing || handleDrag || fillDone) {
+        const [ux, uy] = contentPoint(e);
+        if (lassoing) {
+          lassoing = false;
+          isDrawing = false;
+          drawingId = null;
+          if (selection) selection.up(ux, uy);
+        } else if (handleDrag) {
+          const hd = handleDrag;
+          handleDrag = null;
+          isDrawing = false;
+          drawingId = null;
+          replaceStrokes([moveHandle(hd.original, hd.index, ux, uy)], true);
+        }
+        fillDone = false;
+        dropActive();
+        return;
+      }
       const live2 = inkLive;
       isDrawing = false;
       drawingId = null;
@@ -35994,6 +36842,9 @@ ${clean(nextLineText)}`;
       anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       inkDoc.strokes.push(stroke);
       if (stroke.tool === "pen") scheduleRecognition();
+      if (finalShape && (finalShape.kind === "polygon" || finalShape.kind === "line") && currentTool !== "underline") {
+        handlesFor = stroke.id;
+      }
       activePoints = [];
       if (activeGroup) activeGroup.innerHTML = "";
       render();
@@ -36106,6 +36957,17 @@ ${clean(nextLineText)}`;
     function onPointerCancel(e) {
       if (e) palm.cancel(e);
       if (e && isDrawing && !sameId(drawingId, e.pointerId)) return;
+      stopFillTimer();
+      fillDone = false;
+      if (lassoing) {
+        lassoing = false;
+        if (selection) selection.cancel();
+      }
+      if (handleDrag) {
+        const hd = handleDrag;
+        handleDrag = null;
+        replaceStrokes([hd.original], false);
+      }
       dropActive();
     }
     function onMouseDownCapture(e) {
@@ -36137,6 +36999,8 @@ ${clean(nextLineText)}`;
       scrollDOM.addEventListener("pointerleave", hideRing);
     }
     function destroy() {
+      stopFillTimer();
+      if (selection) selection.clear();
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
@@ -36166,6 +37030,63 @@ ${clean(nextLineText)}`;
         dock.parentNode.removeChild(dock);
       }
     }
+    function pageStrokes() {
+      const page = getCurrentPageIndex();
+      return inkDoc.strokes.filter((st) => !(st.anchor && typeof st.anchor.pageIndex === "number" && st.anchor.pageIndex !== page));
+    }
+    function reanchor(st) {
+      anchorStrokeToDoc(st, getDocText(), currentLineHeight(), getCurrentPageIndex());
+    }
+    function replaceStrokes(list, commit) {
+      const byId = new Map(list.map((st) => [st.id, st]));
+      const now2 = Date.now();
+      inkDoc.strokes = inkDoc.strokes.map((st) => {
+        const next = byId.get(st.id);
+        if (!next) return st;
+        if (commit) {
+          next.edited = now2;
+          reanchor(next);
+        }
+        return next;
+      });
+      render();
+      if (commit) schedulePost();
+    }
+    function addStrokes(list) {
+      for (const st of list) {
+        reanchor(st);
+        inkDoc.strokes.push(st);
+      }
+      render();
+      schedulePost();
+    }
+    function removeStrokes(ids) {
+      const gone = new Set(ids);
+      if (!gone.size) return;
+      inkDoc.strokes = inkDoc.strokes.filter((st) => !gone.has(st.id));
+      inkDoc.removed = Array.from(/* @__PURE__ */ new Set([...inkDoc.removed, ...gone]));
+      render();
+      schedulePost();
+    }
+    function contentToClient(x, y) {
+      const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+      return [x + rect.left - (scrollDOM?.scrollLeft || 0), y + rect.top - (scrollDOM?.scrollTop || 0)];
+    }
+    if (svg) {
+      selection = createInkSelection({
+        doc: docNode,
+        svg,
+        globalObj,
+        strokes: pageStrokes,
+        replace: replaceStrokes,
+        add: addStrokes,
+        remove: removeStrokes,
+        toClient: contentToClient,
+        colors: () => [...paletteColors],
+        haptic: (kind) => haptic(kind)
+      });
+    }
+    updateLassoModes();
     render();
     return {
       getInk,
@@ -36197,7 +37118,9 @@ ${clean(nextLineText)}`;
       findInk,
       markInk,
       recognizeNow,
-      radialMenu
+      radialMenu,
+      selection: () => selection,
+      handlesFor: () => handlesFor
     };
   }
 

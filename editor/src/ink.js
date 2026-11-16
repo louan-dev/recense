@@ -7,8 +7,10 @@ import { createPalmGate, isTinyStroke, isBrush } from './palm.js';
 import { outlinePath } from './strokeoutline.js';
 import { createRadialMenu } from './radialmenu.js';
 import {
-  fitPolygon, polygonPoints, polygonCorners, strokeStyleOf, dashFor, FILL_OPACITY
+  fitPolygon, polygonPoints, polygonCorners, strokeStyleOf, dashFor, FILL_OPACITY,
+  shapeHandles, moveHandle, closedShapeAt
 } from './inkshapes.js';
+import { createInkSelection, LASSO_MODES, HANDLE_HIT } from './inkselection.js';
 
 export const INK_TOOLS = [
   'pen',
@@ -23,12 +25,15 @@ export const INK_TOOLS = [
 // (owner, 11-08): holding the pen still at a stroke's end already snaps it to a line or an ellipse. They stay in
 // INK_TOOLS so strokes saved with them still draw. One eraser (the partial one went, owner 11-08).
 export const SELECT_TOOL = 'select';
-export const PALETTE_TOOLS = [SELECT_TOOL, 'pen', 'highlighter', 'eraser-whole'];
+// Derived from Spec: UI-04 P9 — Lasso sits between the Highlighter and the Eraser (the wheel stays right after the eraser).
+export const LASSO_TOOL = 'lasso';
+export const PALETTE_TOOLS = [SELECT_TOOL, 'pen', 'highlighter', LASSO_TOOL, 'eraser-whole'];
 
 export const INK_TOOL_NAMES = {
   select: 'Select text',
   pen: 'Pen',
   highlighter: 'Highlighter',
+  lasso: 'Lasso',
   underline: 'Underline',
   circle: 'Circle',
   'eraser-whole': 'Eraser',
@@ -44,6 +49,8 @@ export const INK_TOOL_ICONS = {
   pen: ICON('<path d="M3 13l1-3.5 7-7 2.5 2.5-7 7z"/><path d="M9.5 4l2.5 2.5"/>'),
   // A marker over a wide translucent band, unlike the pen's slim nib.
   highlighter: ICON('<path d="M2 13.5h12" stroke-width="3.5" stroke-opacity="0.45"/><path d="M6.5 10.5l3.5-7.5 3 1.5-3 7.5z"/>'),
+  // A dashed loop with a tail: the lasso.
+  lasso: ICON('<ellipse cx="8.5" cy="6.5" rx="5.5" ry="4" stroke-dasharray="2 1.6"/><path d="M5 10c-1 1.5-1.5 2.5-0.5 3.5"/>'),
   underline: ICON('<path d="M5 3v4a3 3 0 0 0 6 0V3"/><path d="M3 13.5h10"/>'),
   circle: ICON('<ellipse cx="8" cy="8" rx="5.5" ry="4.5"/>'),
   // A solid eraser block: wipes whole strokes.
@@ -869,6 +876,15 @@ export function createInkLayer(view, options = {}) {
   let currentColor = null;
   let isDrawing = false;
   let activePoints = [];
+  // Derived from Spec: UI-04 P7 — the just-snapped shape's corner handles, and a handle being dragged.
+  let handlesFor = null;
+  let handleDrag = null;   // { id, index, original }
+  let handleGroup = null;
+  // Derived from Spec: UI-04 P8 — hold inside a closed shape to fill it.
+  let fillTimer = null;
+  let fillDone = false;
+  // Derived from Spec: UI-04 P9 — the Lasso's pointer.
+  let lassoing = false;
   // Derived from Spec: UI-04 P6 — which pointer draws, and whether a touch is still on probation.
   let drawingId = null;
   let inkLive = true;
@@ -955,6 +971,9 @@ export function createInkLayer(view, options = {}) {
     svg.appendChild(penGroup);
     svg.appendChild(activeGroup);
     svg.appendChild(eraserRing);
+    handleGroup = docNode.createElementNS('http://www.w3.org/2000/svg', 'g');
+    handleGroup.setAttribute('class', 'rc-ink-handles');
+    svg.appendChild(handleGroup);
 
     if (typeof scrollDOM.appendChild === 'function') {
       scrollDOM.appendChild(svg);
@@ -966,6 +985,8 @@ export function createInkLayer(view, options = {}) {
   // moving it. A tap anywhere outside puts it back to sleep.
   let dock = null;
   let pill = null;
+  let lassoModes = null;
+  let selection = null;   // UI-04 P9–P12, made once the SVG exists (below)
   if (docNode && typeof docNode.createElement === 'function') {
     dock = docNode.createElement('div');
     dock.className = 'rc-ink-dock';
@@ -1118,6 +1139,25 @@ export function createInkLayer(view, options = {}) {
     dock.appendChild(pill);
     dock.appendChild(palette);
     dock.appendChild(wheel);
+    // Derived from Spec: UI-04 P9 — Freeform | Boxed, under the palette while the Lasso is picked.
+    lassoModes = docNode.createElement('div');
+    lassoModes.className = 'rc-ink-lassomodes';
+    lassoModes.setAttribute('role', 'group');
+    lassoModes.setAttribute('aria-label', 'Lasso mode');
+    lassoModes.hidden = true;
+    for (const m of LASSO_MODES) {
+      const b = docNode.createElement('button');
+      b.setAttribute('type', 'button');
+      b.setAttribute('data-lasso-mode', m);
+      b.textContent = m === 'freeform' ? 'Freeform' : 'Boxed';
+      b.addEventListener('click', e => {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        selection?.setMode(m);
+        updateLassoModes();
+      });
+      lassoModes.appendChild(b);
+    }
+    dock.appendChild(lassoModes);
     const host = mount || scrollDOM?.parentNode || null;
     if (host && typeof host.appendChild === 'function') {
       host.appendChild(dock);
@@ -1151,10 +1191,22 @@ export function createInkLayer(view, options = {}) {
   }
   function onKey(e) {
     if (awake && e.key === 'Escape') hidePalette();
+    if (e.key === 'Escape' && selection && selection.selectedIds().length) selection.clear();
   }
   if (docNode && typeof docNode.addEventListener === 'function') {
     docNode.addEventListener('pointerdown', onOutsidePress, true);
     docNode.addEventListener('keydown', onKey, true);
+  }
+
+  function updateLassoModes() {
+    if (!lassoModes) return;
+    lassoModes.hidden = currentTool !== LASSO_TOOL;
+    const mode = selection ? selection.mode() : 'freeform';
+    for (const b of lassoModes.children || []) {
+      const on = b.getAttribute('data-lasso-mode') === mode;
+      b.className = on ? 'rc-active' : '';
+      b.setAttribute('aria-pressed', String(on));
+    }
   }
 
   function updatePaletteActive() {
@@ -1418,6 +1470,8 @@ export function createInkLayer(view, options = {}) {
         targetGroup.lastChild.setAttribute('class', 'rc-ink-found');
       }
     }
+    drawHandles();
+    if (selection) selection.draw();
   }
 
   function renderActiveStroke() {
@@ -1525,7 +1579,11 @@ export function createInkLayer(view, options = {}) {
     }
     toolChosen = true;
     currentTool = tool;
+    if (selection) selection.clear();
+    handlesFor = null;
+    drawHandles();
     updatePaletteActive();
+    updateLassoModes();
     updateCursor();
     if (typeof onToolChange === 'function') onToolChange(tool);
   }
@@ -1629,12 +1687,92 @@ export function createInkLayer(view, options = {}) {
     if (activeGroup) activeGroup.innerHTML = '';
   }
 
+  function drawHandles() {
+    if (!handleGroup || !docNode) return;
+    handleGroup.innerHTML = '';
+    if (!handlesFor) return;
+    const st = inkDoc.strokes.find(x => x.id === handlesFor);
+    if (!st) { handlesFor = null; return; }
+    for (const [x, y] of shapeHandles(st)) {
+      const c = docNode.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', String(x));
+      c.setAttribute('cy', String(y));
+      c.setAttribute('r', '5');
+      c.setAttribute('class', 'rc-ink-handle rc-ink-handle-corner');
+      handleGroup.appendChild(c);
+    }
+  }
+
+  function handleAt(x, y) {
+    if (!handlesFor) return -1;
+    const st = inkDoc.strokes.find(q => q.id === handlesFor);
+    if (!st) return -1;
+    const hs = shapeHandles(st);
+    let best = -1, bestD = HANDLE_HIT;
+    hs.forEach(([hx, hy], i) => { const d = Math.hypot(hx - x, hy - y); if (d <= bestD) { bestD = d; best = i; } });
+    return best;
+  }
+
+  function stopFillTimer() {
+    if (fillTimer !== null) { (globalObj?.clearTimeout || clearTimeout)(fillTimer); fillTimer = null; }
+  }
+
+  // Derived from Spec: UI-04 P8 — the pen held still for SNAP_HOLD_MS inside a closed shape fills it.
+  function startFillTimer() {
+    stopFillTimer();
+    if (currentTool !== 'pen' && currentTool !== 'highlighter') return;
+    const set = globalObj?.setTimeout || setTimeout;
+    fillTimer = set(() => {
+      fillTimer = null;
+      if (!isDrawing || !inkLive || activePoints.length === 0) return;
+      const [x0, y0] = activePoints[0];
+      if (activePoints.some(q => Math.hypot(q[0] - x0, q[1] - y0) > 6)) return;
+      const target = closedShapeAt(inkDoc.strokes, x0, y0, getCurrentPageIndex());
+      if (!target) return;
+      fillDone = true;
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = '';
+      replaceStrokes([{ ...target, fill: currentColor }], true);
+      haptic('shapeSnap');
+    }, SNAP_HOLD_MS);
+  }
+
+  function contentPoint(e) {
+    const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+    return [e.clientX - rect.left + (scrollDOM?.scrollLeft || 0), e.clientY - rect.top + (scrollDOM?.scrollTop || 0)];
+  }
+
   function onPointerDown(e) {
     if (!inks(e)) return;
     const gate = palm.down(e);
     if (gate.cancel && isDrawing) dropActive();
     if (gate.act === 'scroll' || gate.act === 'ignore') { prevent(e); return; }
     if (isDrawing) return;
+
+    const [px0, py0] = contentPoint(e);
+    // Derived from Spec: UI-04 P9 — the Lasso draws a selection loop, or drags the selection it already has.
+    if (currentTool === LASSO_TOOL) {
+      isDrawing = true;
+      drawingId = e.pointerId;
+      inkLive = true;
+      lassoing = true;
+      if (selection) selection.down(px0, py0);
+      prevent(e);
+      return;
+    }
+    // Derived from Spec: UI-04 P7 — a press on a just-snapped shape's corner handle drags that corner.
+    const hi = handleAt(px0, py0);
+    if (hi >= 0) {
+      const st = inkDoc.strokes.find(q => q.id === handlesFor);
+      handleDrag = { id: st.id, index: hi, original: st };
+      isDrawing = true;
+      drawingId = e.pointerId;
+      inkLive = true;
+      prevent(e);
+      return;
+    }
+    if (handlesFor) { handlesFor = null; drawHandles(); }
+    fillDone = false;
 
     isDrawing = true;
     drawingId = e.pointerId;
@@ -1652,6 +1790,7 @@ export function createInkLayer(view, options = {}) {
     activePoints = [[x, y, p, t]];
 
     if (inkLive) startLive();
+    startFillTimer();
     prevent(e);
   }
 
@@ -1671,6 +1810,14 @@ export function createInkLayer(view, options = {}) {
     const gate = palm.move(e);
     if (gate.act === 'scroll') { scrollBy(gate.dx, gate.dy); prevent(e); return; }
     if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+    if (lassoing || handleDrag) {
+      const [mx, my] = contentPoint(e);
+      if (lassoing) { if (selection) selection.move(mx, my); }
+      else replaceStrokes([moveHandle(handleDrag.original, handleDrag.index, mx, my)], false);
+      prevent(e);
+      return;
+    }
+    if (fillDone) { prevent(e); return; }
     if (gate.act === 'ignore') { if (gate.cancel) dropActive(); prevent(e); return; }
     const goLive = gate.act === 'start';
 
@@ -1703,6 +1850,21 @@ export function createInkLayer(view, options = {}) {
   function onPointerUp(e) {
     const gate = palm.up(e);
     if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+    stopFillTimer();
+    if (lassoing || handleDrag || fillDone) {
+      const [ux, uy] = contentPoint(e);
+      if (lassoing) { lassoing = false; isDrawing = false; drawingId = null; if (selection) selection.up(ux, uy); }
+      else if (handleDrag) {
+        const hd = handleDrag;
+        handleDrag = null;
+        isDrawing = false;
+        drawingId = null;
+        replaceStrokes([moveHandle(hd.original, hd.index, ux, uy)], true);
+      }
+      fillDone = false;
+      dropActive();
+      return;
+    }
     const live = inkLive;
     isDrawing = false;
     drawingId = null;
@@ -1775,6 +1937,10 @@ export function createInkLayer(view, options = {}) {
     anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
     inkDoc.strokes.push(stroke);
     if (stroke.tool === 'pen') scheduleRecognition();
+    // Derived from Spec: UI-04 P7 — corner handles on the shape that just snapped.
+    if (finalShape && (finalShape.kind === 'polygon' || finalShape.kind === 'line') && currentTool !== 'underline') {
+      handlesFor = stroke.id;
+    }
 
     activePoints = [];
     if (activeGroup) activeGroup.innerHTML = '';
@@ -1887,6 +2053,10 @@ export function createInkLayer(view, options = {}) {
   function onPointerCancel(e) {
     if (e) palm.cancel(e);
     if (e && isDrawing && !sameId(drawingId, e.pointerId)) return;
+    stopFillTimer();
+    fillDone = false;
+    if (lassoing) { lassoing = false; if (selection) selection.cancel(); }
+    if (handleDrag) { const hd = handleDrag; handleDrag = null; replaceStrokes([hd.original], false); }
     dropActive();
   }
 
@@ -1926,6 +2096,8 @@ export function createInkLayer(view, options = {}) {
   }
 
   function destroy() {
+    stopFillTimer();
+    if (selection) selection.clear();
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
@@ -1955,6 +2127,59 @@ export function createInkLayer(view, options = {}) {
       dock.parentNode.removeChild(dock);
     }
   }
+
+  // Derived from Spec: UI-04 P9–P12 — the Lasso's selection, menu and style panel.
+  function pageStrokes() {
+    const page = getCurrentPageIndex();
+    return inkDoc.strokes.filter(st => !(st.anchor && typeof st.anchor.pageIndex === 'number' && st.anchor.pageIndex !== page));
+  }
+  function reanchor(st) {
+    anchorStrokeToDoc(st, getDocText(), currentLineHeight(), getCurrentPageIndex());
+  }
+  function replaceStrokes(list, commit) {
+    const byId = new Map(list.map(st => [st.id, st]));
+    const now = Date.now();
+    inkDoc.strokes = inkDoc.strokes.map(st => {
+      const next = byId.get(st.id);
+      if (!next) return st;
+      if (commit) { next.edited = now; reanchor(next); }
+      return next;
+    });
+    render();
+    if (commit) schedulePost();
+  }
+  function addStrokes(list) {
+    for (const st of list) { reanchor(st); inkDoc.strokes.push(st); }
+    render();
+    schedulePost();
+  }
+  function removeStrokes(ids) {
+    const gone = new Set(ids);
+    if (!gone.size) return;
+    inkDoc.strokes = inkDoc.strokes.filter(st => !gone.has(st.id));
+    inkDoc.removed = Array.from(new Set([...inkDoc.removed, ...gone]));
+    render();
+    schedulePost();
+  }
+  function contentToClient(x, y) {
+    const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
+    return [x + rect.left - (scrollDOM?.scrollLeft || 0), y + rect.top - (scrollDOM?.scrollTop || 0)];
+  }
+  if (svg) {
+    selection = createInkSelection({
+      doc: docNode,
+      svg,
+      globalObj,
+      strokes: pageStrokes,
+      replace: replaceStrokes,
+      add: addStrokes,
+      remove: removeStrokes,
+      toClient: contentToClient,
+      colors: () => [...paletteColors],
+      haptic: kind => haptic(kind)
+    });
+  }
+  updateLassoModes();
 
   // Initial render
   render();
@@ -1989,6 +2214,8 @@ export function createInkLayer(view, options = {}) {
     findInk,
     markInk,
     recognizeNow,
-    radialMenu
+    radialMenu,
+    selection: () => selection,
+    handlesFor: () => handlesFor
   };
 }
