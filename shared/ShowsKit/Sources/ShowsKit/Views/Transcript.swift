@@ -168,11 +168,32 @@ public struct TranscriptLineText: View {
             var a = AttributedString(line.text); a.foregroundColor = .white.opacity(0.45); return a
         }
         guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
+        if SongLight.sung(line) { return sung(line, t) }
         let cut = TranscriptLight.spoken(line, at: t)
         var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
         said.foregroundColor = .white
         rest.foregroundColor = .white.opacity(0.4)
         return said + rest
+    }
+
+    /// FEAT-20: a song's active line as the Mac lights it (Cadence): the word being sung gold up to the letter its
+    /// syllable has reached (SongLight.fill), the words sung white, a word written but not sung never lit, the rest dim.
+    static func sung(_ line: TranscriptLine, _ t: Double) -> AttributedString {
+        var a = AttributedString(line.text)
+        a.foregroundColor = .white.opacity(0.4)
+        for (i, r) in TranscriptLight.ranges(line).enumerated() {
+            let w = line.words[i]
+            guard let r, w.un != true, t >= w.start else { continue }
+            if t >= w.end {
+                if let ar = Range(r, in: a) { a[ar].foregroundColor = .white }
+                continue
+            }
+            let k = SongLight.litCount(w, at: t)
+            guard k > 0, let to = line.text.index(r.lowerBound, offsetBy: k, limitedBy: r.upperBound),
+                  let ar = Range(r.lowerBound..<to, in: a) else { continue }
+            a[ar].foregroundColor = SongLight.gold
+        }
+        return a
     }
 }
 
@@ -434,3 +455,8 @@ struct SelectableText: NSViewRepresentable {
     }
 }
 #endif
+
+extension SongLight {
+    /// The light's head as the Mac and the web player draw it (gallery.js GOLD: 255, 214, 51).
+    static let gold = Color(red: 1, green: 214 / 255, blue: 51 / 255)
+}
