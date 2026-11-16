@@ -6,6 +6,9 @@ import { nextPressure } from './pressure.js';
 import { createPalmGate, isTinyStroke, isBrush } from './palm.js';
 import { outlinePath } from './strokeoutline.js';
 import { createRadialMenu } from './radialmenu.js';
+import {
+  fitPolygon, polygonPoints, polygonCorners, strokeStyleOf, dashFor, FILL_OPACITY
+} from './inkshapes.js';
 
 export const INK_TOOLS = [
   'pen',
@@ -409,8 +412,9 @@ export function mergeInkDocuments(localDoc, remoteDoc) {
       if (!existing) {
         strokesById.set(s.id, s);
       } else {
-        const existingAt = typeof existing.at === 'number' ? existing.at : 0;
-        const remoteAt = typeof s.at === 'number' ? s.at : 0;
+        // Derived from Spec: UI-04 P7–P13 — an edited stroke (moved, styled) keeps the later edit.
+        const existingAt = typeof existing.edited === 'number' ? existing.edited : typeof existing.at === 'number' ? existing.at : 0;
+        const remoteAt = typeof s.edited === 'number' ? s.edited : typeof s.at === 'number' ? s.at : 0;
         if (remoteAt >= existingAt) {
           strokesById.set(s.id, s);
         }
@@ -563,8 +567,23 @@ export function detectAndSnapShape(points, { holdDurationMs = 0, forceCircle = f
     };
   }
 
-  // Held: a closed loop (the two ends brought together) becomes an ellipse.
+  // Held: a closed loop (the two ends brought together) becomes a polygon (UI-04 P7) or an ellipse.
   const size = Math.max(w, h);
+  // Derived from Spec: UI-04 P7 — corners first: a triangle, rectangle, trapezoid or pentagon that fits better
+  // than an ellipse snaps to it. Long thin boxes are allowed here (the ellipse keeps its aspect limits).
+  if (chord <= Math.max(8, 0.15 * size) && perimeter >= 2.2 * size) {
+    const poly = fitPolygon(points);
+    if (poly) {
+      const pAvg = points.reduce((sum, p) => sum + (p[2] ?? 0.5), 0) / points.length;
+      const t0 = points[0]?.[3] ?? 0;
+      const t1 = points[points.length - 1]?.[3] ?? t0;
+      return {
+        snapped: true,
+        shape: { kind: 'polygon', name: poly.name },
+        points: polygonPoints(poly.corners, pAvg, t0, t1)
+      };
+    }
+  }
   const endsJoined =
     chord <= Math.max(8, 0.15 * size) &&
     perimeter >= 2.2 * size &&
@@ -1264,6 +1283,19 @@ export function createInkLayer(view, options = {}) {
     const isHighlighter = stroke.tool === 'highlighter';
     const isOrphaned = Boolean(stroke.orphaned);
     const strokeWidth = stroke.width || getToolDefaultWidth(stroke.tool);
+    // Derived from Spec: UI-04 P12 — solid / pressure / dashed / dotted; no `style` = the tool's default.
+    const lineStyle = strokeStyleOf(stroke);
+    const dash = dashFor(lineStyle, strokeWidth);
+    // Derived from Spec: UI-04 P8 — a filled closed shape (fill under its outline, translucent).
+    const applyFill = el => {
+      if (stroke.fill) {
+        el.setAttribute('fill', stroke.fill);
+        el.setAttribute('fill-opacity', String(FILL_OPACITY));
+      } else {
+        el.setAttribute('fill', 'none');
+      }
+      if (dash) el.setAttribute('stroke-dasharray', dash);
+    };
 
     if (stroke.shape?.kind === 'ellipse') {
       const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
@@ -1271,7 +1303,10 @@ export function createInkLayer(view, options = {}) {
       el.setAttribute('cy', String(stroke.shape.cy));
       el.setAttribute('rx', String(stroke.shape.rx));
       el.setAttribute('ry', String(stroke.shape.ry));
-      el.setAttribute('fill', 'none');
+      if (stroke.shape.rot) {
+        el.setAttribute('transform', `rotate(${(stroke.shape.rot * 180) / Math.PI} ${stroke.shape.cx} ${stroke.shape.cy})`);
+      }
+      applyFill(el);
       el.setAttribute('stroke', stroke.color || currentColor);
       el.setAttribute('stroke-width', String(strokeWidth));
       el.setAttribute('stroke-linecap', 'round');
@@ -1281,12 +1316,31 @@ export function createInkLayer(view, options = {}) {
       return;
     }
 
+    // Derived from Spec: UI-04 P7 — a snapped polygon: its corners, closed.
+    if (stroke.shape?.kind === 'polygon') {
+      const corners = polygonCorners(stroke);
+      if (corners.length >= 2) {
+        const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'path');
+        el.setAttribute('d', corners.map((c, i) => `${i ? 'L' : 'M'} ${c[0].toFixed(2)} ${c[1].toFixed(2)}`).join(' ') + ' Z');
+        applyFill(el);
+        el.setAttribute('stroke', stroke.color || currentColor);
+        el.setAttribute('stroke-width', String(strokeWidth));
+        el.setAttribute('stroke-linecap', 'round');
+        el.setAttribute('stroke-linejoin', 'round');
+        if (isHighlighter) el.setAttribute('opacity', '0.45');
+        else if (isOrphaned) el.setAttribute('opacity', '0.38');
+        targetGroup.appendChild(el);
+        return;
+      }
+    }
+
     if (stroke.shape?.kind === 'line') {
       const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'line');
       el.setAttribute('x1', String(stroke.shape.x1));
       el.setAttribute('y1', String(stroke.shape.y1));
       el.setAttribute('x2', String(stroke.shape.x2));
       el.setAttribute('y2', String(stroke.shape.y2));
+      if (dash) el.setAttribute('stroke-dasharray', dash);
       el.setAttribute('stroke', stroke.color || currentColor);
       el.setAttribute('stroke-width', String(strokeWidth));
       el.setAttribute('stroke-linecap', 'round');
@@ -1309,7 +1363,7 @@ export function createInkLayer(view, options = {}) {
     }
 
     // Derived from Spec: T-0094 — the pen is a filled outline whose width follows pressure.
-    if (stroke.tool === 'pen') {
+    if (stroke.tool === 'pen' && lineStyle === 'pressure') {
       const outline = outlinePath(pts, strokeWidth);
       if (outline) {
         const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -1333,6 +1387,7 @@ export function createInkLayer(view, options = {}) {
     path.setAttribute('stroke-width', String(strokeWidth));
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
+    if (dash) path.setAttribute('stroke-dasharray', dash);
     if (isHighlighter) path.setAttribute('opacity', '0.45');
     else if (isOrphaned) path.setAttribute('opacity', '0.38');
     targetGroup.appendChild(path);
