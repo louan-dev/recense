@@ -25,6 +25,8 @@ final class DraftpadFile: ObservableObject {
     static let key = "draftpadVaultBookmark"
     @Published private(set) var vault: URL?
     private(set) var base = ""          // what this device last read or wrote: the merge's base
+    private(set) var readable = true    // false: the note existed but could not be read at load (T-0114); nothing is saved over it
+    private(set) var pending = false    // a save could not reach the file; the poll tries again (T-0114)
     private(set) var lastInk = ""       // what this device last read or wrote for draftpad.ink.json
     var note: URL? { vault?.appendingPathComponent("draftpad.md") }
     var inkNote: URL? { vault?.appendingPathComponent("draftpad.ink.json") }
@@ -47,11 +49,36 @@ final class DraftpadFile: ObservableObject {
     }
 
     /// The file as it is now (coordinated, so iCloud downloads it first if needed); it becomes the base.
+    /// A note that exists but cannot be read now (iCloud offline, a sync mid-replace) is not a blank note (T-0114): the editor
+    /// starts empty, nothing is saved over the note, and the first save after it can be read joins what was typed to it.
     func load() -> String {
         guard let p = note?.path else { return "" }
-        let s = coordinatedRead(p) ?? ""
-        base = s
-        return s
+        switch readNote(p) {
+        case .text(let s): base = s; readable = true; return joinKept(note: s, path: p)
+        case .missing: base = ""; readable = true; return joinKept(note: "", path: p)
+        case .unreadable:
+            base = ""; readable = false
+            log("the note can't be read now (iCloud offline?); nothing is saved over it until it can be")
+            return ""
+        }
+    }
+
+    // What was typed while the note could not be read or written is kept on this device, one file per launch, so a second
+    // launch never replaces the first's (T-0114 review F1). It is joined after the note once the note reads, and each file
+    // moves to recovered/ only after the write that holds its text succeeded.
+    private let launch = Date()
+    private var unsavedDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Recense", isDirectory: true)
+    }
+    private var launchFile: URL { Unsaved.file(in: unsavedDir, launch: launch) }
+    private func keepSafe(_ text: String) { if !text.isEmpty { Unsaved.keep(text, as: launchFile) } }
+    private func settleLaunch() { Unsaved.settle(launchFile, in: unsavedDir) }   // its text reached the note
+    /// The note with the text kept by earlier failed saves added after it, written to the note; else the note as it is.
+    private func joinKept(note s: String, path p: String) -> String {
+        guard let joined = Unsaved.recover(note: s, in: unsavedDir, write: { coordinatedWrite($0, to: p) }) else { return s }
+        base = joined
+        log("text typed while the note could not be saved was added after it")
+        return joined
     }
 
     /// Reads the line-anchored ink sidecar JSON from the vault folder.
@@ -73,20 +100,42 @@ final class DraftpadFile: ObservableObject {
     /// that differs from `mine` (a merge, or a newer file adopted), else nil.
     func save(_ mine: String) -> String? {
         guard let p = note?.path else { return nil }
-        let now = coordinatedRead(p)
-        let theirs = now == base ? nil : now
+        // T-0114: a note that cannot be read is never written over. Typed text is kept on this device and the save is
+        // tried again (pending) until the note can be read; then what was typed is added after it.
+        if !readable {
+            switch planBlindSave(mine: mine, now: readNote(p)) {
+            case .wait:
+                keepSafe(mine); pending = true
+                return nil
+            case .recovered(let seen, let joined):
+                if joined != seen, !coordinatedWrite(joined, to: p) { keepSafe(mine); pending = true; return nil }
+                settleLaunch()   // this launch's typed text is in the note now
+                base = joined; readable = true; pending = false
+                log("the note can be read again; what was typed meanwhile was added after it")
+                let shown = joinKept(note: joined, path: p)   // and any earlier launch's
+                return shown == mine ? nil : shown
+            }
+        }
+        let theirs: String?
+        switch readNote(p) {
+        case .text(let t): theirs = t == base ? nil : t
+        case .missing: theirs = nil
+        case .unreadable: keepSafe(mine); pending = true; return nil
+        }
         switch planNoteSave(base: base, mine: mine, theirs: theirs) {
         case .write(let t):
-            if t != (theirs ?? base) { coordinatedWrite(t, to: p) }
-            base = t
+            // the base moves only once the file really holds the text; a failed write left base as it was, so the
+            // next poll does not read the old file as "theirs" and put it over the edit (T-0114)
+            if t != (theirs ?? base), !coordinatedWrite(t, to: p) { keepSafe(mine); pending = true; return nil }
+            base = t; pending = false; settleLaunch()
             return t == mine ? nil : t
         case .adopt(let t):
-            base = t
+            base = t; pending = false
             return t
         case .conflict(let m, let other):
-            coordinatedWrite(m, to: p)
-            coordinatedWrite(other, to: conflictSiblingPath(p))
-            base = m
+            // theirs goes beside the note first: only once it is safe is the note replaced
+            guard coordinatedWrite(other, to: freeSiblingPath(p)), coordinatedWrite(m, to: p) else { keepSafe(mine); pending = true; return nil }
+            base = m; pending = false; settleLaunch()
             log("the same lines changed here and on another device; theirs kept beside the note")
             return nil
         }
@@ -367,6 +416,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     }
 
     private func pollExternal() {
+        if saveTimer == nil, file.pending { flushAndSave() }   // T-0114: a save that couldn't reach the file is tried again
         if saveTimer == nil, let p = file.note?.path, let now = coordinatedRead(p), now != file.base {
             flushAndSave()
             if lastPosted == nil { if let shown = file.save(file.base) { call("setText(\(jsLiteral(shown)))") } }

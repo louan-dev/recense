@@ -37,6 +37,12 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place
   that writes to disk for a settled change), after any change to it or to `shared/homes.swift`: it needs ShowsKit
   linked, so it runs inside `strip/recense selftest` (`carrymanagerSelftest`, ALL OK there), not a standalone swiftc test.
+  A fetched file never deletes what is already at its key (T-0109): the "fetch over a file that appeared meanwhile" case in
+  that selftest prints three ok lines, and `grep -n 'removeItem(at: dest)' shared/carryapply.swift` prints nothing.
+  (`ink ocr` fails in that selftest on the installed app too: T-0071/T-0079, not this.)
+  Carry never hashes the homes on the main thread (T-0107): `grep -n 'Carry.verify()' shared/carrymanager.swift` prints nothing
+  (every scan is `Carry.verify(reuse: true)` inside `Task.detached`); no test reaches `receiveOps`, so check the iPhone's
+  responsiveness (no freeze, no 0x8BADF00D) while a large library settles.
 - The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
@@ -69,6 +75,16 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   A hearing that fails is said and retried, and never downloads at the moment of use (T-0098, T-0099):
   `grep -n 'prepare(m, l, download: false)' shared/speechcore.swift` prints the line in `SpeechAhead.loop`,
   `grep -c 'fail(' shared/speechcore.swift` prints 5 or more and `grep -c 'a.failed = ' mobile/HostApp/iOS/Ears.swift` prints 1.
+- Draftpad's note is never overwritten by what it could not read or write (T-0114), after any change to `DraftpadFile.load/save`
+  or to `readNote`/`planBlindSave` in `shared/notesync.swift`: run it outside the sandbox (NSFileCoordinator needs it):
+  `swiftc -O shared/notesync.swift mobile/ios/Tests/notesave/main.swift -o "$TMPDIR/notesave" && "$TMPDIR/notesave"` (ALL OK), and
+  `grep -c 'guard coordinatedWrite\|!coordinatedWrite' mobile/HostApp/iOS/Draftpad.swift` prints 3 (a failed write never moves the base),
+  `grep -c 'draftpad-unsaved.md' mobile/HostApp/iOS/Draftpad.swift shared/notesync.swift` prints 0 for both (typed text is kept one file
+  per launch, `Unsaved.file`, never one fixed file) and `grep -c 'conflictSiblingPath' mobile/HostApp/iOS/Draftpad.swift` prints 0
+  (a conflict copy uses `freeSiblingPath`, so it never replaces one made in the same minute),
+  `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadInk` (the note's own load never reads blank;
+  the ink sidecar still does: filed as its own triage entry).
+  The Mac's own copy of this rule (`strip/app.swift` saveNow/load) is a gap until wired: `docs/specs/PARITY.md`.
 - Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
   or `Listener.name`: each line prints what it says.
   `grep -c 'guard Host.owner === self' mobile/HostApp/iOS/Listen.swift` prints 1 (Home and Listen took the one layer from
