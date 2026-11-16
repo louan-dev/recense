@@ -28,6 +28,11 @@ Status: `[~]` (fixed, tests green; device check owed)
 - Cause 4, one invite only (owner's run, 11-15 11:58: `recense carry pair` printed its first line, then nothing).
   The Mac invited a device once. If that device was not looking yet, it turned the invite down, and no one asked
   again. The owner had to start both within 10 s, on two devices, in the right order.
+- Cause 5, two processes (owner's 17:30 run, found by the Music session).
+  `recense carry pair` ran while Recense.app ran. The phones listed two "Chau's MacBook Pro".
+  The Terminal process paired the iPhone (17:30) and the iPad (17:32) and wrote peers.json.
+  The app kept its launch-time copy: its menu showed the 11-14 dates, and its next save would drop what the
+  Terminal wrote. The group was the same in both (one Keychain item), so the phones hold the right group.
 
 ## Green (the fix)
 - `CarryPairFlow` (`shared/carrypair.swift`): one side's whole pairing, taps included. Pure.
@@ -47,6 +52,10 @@ Status: `[~]` (fixed, tests green; device check owed)
 - `CarryInvites.due`: a picked device that has not connected is invited again every 11 s, past the 10 s invite
   timeout, until it pairs or "Stop Pairing". Either device may start first.
 - `recense carry pair` says where to go on the phone, keeps trying, and says every 15 s when it has seen no device.
+- `recense carry pair` refuses (exit 2) while Recense.app runs, and names the menu to use instead.
+- `CarryManager.reloadFromDisk()`: peers.json and the Keychain group, read fresh before an invitation, a pairing,
+  Carry Now, the Mac's Devices menu and the iOS Devices screen. A save keeps every other entry
+  (`CarryPeer.replacing`).
 
 ## Invariants (tested: `mobile/ios/Tests/carrypair/main.swift`; condensed in `recense selftest`)
 - For each of {Mac has a group, neither has one, iPhone has one} × {Mac taps first, iPhone first, both first}:
@@ -59,6 +68,7 @@ Status: `[~]` (fixed, tests green; device check owed)
 - Two taps while waiting are harmless; the group still lands after them.
 - Two devices that each hold a different group are refused (`otherGroup`).
 - An older peer's `hello` without `grouped` still decodes.
+- A re-pair replaces only its own entry (same name or key); an entry another process wrote is kept.
 - Re-invite: nothing before 11 s; each picked device still nearby after that; never one already connected.
 - Mutation check: holding the group replaced by the old `throw` → the suite fails.
 

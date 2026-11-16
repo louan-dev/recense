@@ -22,6 +22,9 @@
 import Foundation
 import CryptoKit
 import MultipeerConnectivity
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// The Keychain, this device only. The identity key never leaves it; the one group secret every paired device of
 /// this owner's shares is stored only here too, never in a plain file.
@@ -96,7 +99,11 @@ private enum CarryKeychain {
     }
 
     private func wire() {
-        t.isPaired = { [weak self] peer in self?.peers.contains { $0.name == peer.displayName } ?? false }
+        t.isPaired = { [weak self] peer in
+            guard let self else { return false }
+            self.reloadFromDisk()
+            return self.peers.contains { $0.name == peer.displayName }
+        }
         t.confirmUnpaired = { [weak self] _, reply in reply(self?.isLookingToPair ?? false) }
         t.onPeerFound = { [weak self] peer in
             guard let self, !self.nearby.contains(peer) else { return }
@@ -169,8 +176,17 @@ private enum CarryKeychain {
     }
 
     /// Runs the exchange only while "Pair a device" is on — for a listed peer too, which re-pairs it (BUG-17).
+    /// peers.json and the Keychain's group are shared with any other Recense process on this device (the Terminal's
+    /// `recense carry pair`): read them fresh before deciding anything, never trust the copy from launch (BUG-17).
+    func reloadFromDisk() {
+        if let d = try? Data(contentsOf: peersURL), let list = try? JSONDecoder().decode([CarryPeer].self, from: d),
+           list != peers { peers = list }
+        if let g = CarryKeychain.load("group") { group = g }
+    }
+
     private func startFlow(_ peer: MCPeerID) {
         guard isLookingToPair, flows[peer] == nil else { return }
+        reloadFromDisk()
         let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group)
         flows[peer] = f
         apply(f.start(), peer)
@@ -214,8 +230,8 @@ private enum CarryKeychain {
     private func finish(_ peer: MCPeerID, _ p: CarryPairFlow.Paired) {
         group = p.group
         CarryKeychain.save(p.group, "group")
-        peers.removeAll { $0.name == peer.displayName || $0.key == p.key }   // a re-pair replaces, never duplicates
-        peers.append(CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now()))
+        reloadFromDisk()   // keep what another process wrote since; replace only this device's entry
+        peers = CarryPeer.replacing(peers, with: CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now()))
         do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
         catch { lastError = "saving peers.json failed: \(error)" }
         flows[peer] = nil
@@ -246,6 +262,7 @@ private enum CarryKeychain {
     }
 
     func carryNow() {
+        reloadFromDisk()
         guard !peers.isEmpty else { lastError = "no paired device yet"; return }
         let targets = t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
         guard !targets.isEmpty else { lastError = "no paired device is connected right now"; return }
@@ -352,6 +369,15 @@ private enum CarryKeychain {
 @MainActor
 func runCarryPairCLI() async -> Never {
     setbuf(stdout, nil)   // flush every line immediately: the code and the Enter prompt must appear right away
+    #if canImport(AppKit)
+    // Two Recense processes on one Mac show the phone two Macs with the same name, and each keeps its own copy of
+    // the pairing state (BUG-17, the owner's 17:30 run). While the app runs, pairing belongs to its menu.
+    let me = ProcessInfo.processInfo.processIdentifier
+    if NSRunningApplication.runningApplications(withBundleIdentifier: "local.recense").contains(where: { $0.processIdentifier != me }) {
+        fputs("carry pair: Recense is running — pair from its menu instead: Recense › Devices › Pair a Device…\n", stderr)
+        exit(2)
+    }
+    #endif
     let cm = CarryManager.shared
     print("Looking for a device to pair. On the other device, open Recense › Library › Devices › Pair a Device…")
     print("(either side may start first; this keeps trying until a code appears — Ctrl-C to cancel)")

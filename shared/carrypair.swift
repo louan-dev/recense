@@ -208,6 +208,13 @@ struct CarryPeer: Codable, Equatable, Sendable {
     var name: String
     var key: Data
     var paired: String
+
+    // Derived from Spec: BUG-17 (two processes, one file)
+    /// A re-pair replaces the entry with the same name or key; every other entry — including one another process
+    /// (the Terminal's `recense carry pair`) wrote since this one last read the file — is kept.
+    static func replacing(_ list: [CarryPeer], with new: CarryPeer) -> [CarryPeer] {
+        list.filter { $0.name != new.name && $0.key != new.key } + [new]
+    }
 }
 
 // Regression guard: FEAT-09 P1 (the full suite lives in mobile/ios/Tests/carrypair/main.swift; this is the

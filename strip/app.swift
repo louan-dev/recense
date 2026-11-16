@@ -7161,6 +7161,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @MainActor func devicesMenu() -> NSMenu {
         let m = NSMenu()
         let cm = CarryManager.shared
+        cm.reloadFromDisk()   // another Recense process may have paired since (BUG-17)
         if cm.peers.isEmpty {
             m.addItem(withTitle: "No paired devices yet", action: nil, keyEquivalent: "").isEnabled = false
         } else {

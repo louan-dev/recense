@@ -172,5 +172,13 @@ do {
     check(CarryInvites.every > 10, "the interval outlasts the 10 s invite timeout")
 }
 
+// Regression guard: BUG-17 · a re-pair replaces only its own entry; one another process wrote is kept.
+do {
+    let a = CarryPeer(name: "iPhone", key: Data([1]), paired: "old"), b = CarryPeer(name: "iPad", key: Data([2]), paired: "cli")
+    let r = CarryPeer.replacing([a, b], with: CarryPeer(name: "iPhone", key: Data([1]), paired: "new"))
+    check(r.count == 2 && r.contains(b) && r.first { $0.name == "iPhone" }?.paired == "new", "replaces the same device, keeps the rest")
+    check(CarryPeer.replacing([a], with: CarryPeer(name: "iPhone 2", key: Data([1]), paired: "x")).count == 1, "same key, renamed: still one entry")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

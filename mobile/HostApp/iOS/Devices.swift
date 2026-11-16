@@ -51,7 +51,7 @@ struct DevicesPlace: View {
             }
         }
         .recenseScreen("Devices")
-        .onAppear { carry.start() }
+        .onAppear { carry.reloadFromDisk(); carry.start() }
     }
 }
 #endif
