@@ -2399,7 +2399,7 @@ html.rc-wings-page body {
           const typedSince = await store.get("text");
           const api = getApi();
           const live = api && typeof api.getText === "function" ? api.getText() : void 0;
-          if (typedSince === raw && (live === void 0 || live === raw)) {
+          if (typedSince === raw && (live === void 0 || live === mine)) {
             if (api && typeof api.setText === "function") api.setText(back);
             await store.put("text", back);
             if (nextBase !== null) await store.put("hubBase", nextBase);

@@ -176,3 +176,17 @@ test('unflushed editor text blocks adopting the reply', async () => {
   assert.equal(store.m.get('hubBase'), 'one');
   assert.equal(sync.isDirty(), true);
 });
+
+// Regression guard: FEAT-18 review A. A newly paired browser with no saved text (store undefined, editor '') adopts the note.
+test('a fresh browser with an empty editor shows the hub note', async () => {
+  const store = memStore({ hubToken: 't'.repeat(32) });
+  const shown = [];
+  const sync = createHubSync({
+    store, getApi: () => ({ getText: () => '', setText: t => shown.push(t) }),
+    fetchFn: async () => reply(200, { status: 'adopt', text: 'the note', base: 'the note' }),
+    setTimer: fn => fn, clearTimer() {}
+  });
+  await sync.run();
+  assert.deepEqual(shown, ['the note']);
+  assert.equal(store.m.get('hubBase'), 'the note');
+});

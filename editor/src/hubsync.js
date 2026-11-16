@@ -59,7 +59,7 @@ export function createHubSync({ store, fetchFn, getApi, setTimer, clearTimer, no
         const typedSince = await store.get('text');
         const api = getApi();
         const live = api && typeof api.getText === 'function' ? api.getText() : undefined;
-        if (typedSince === raw && (live === undefined || live === raw)) {
+        if (typedSince === raw && (live === undefined || live === mine)) {
           if (api && typeof api.setText === 'function') api.setText(back);
           await store.put('text', back);                            // text first, base second: a crash between is safe
           if (nextBase !== null) await store.put('hubBase', nextBase);
