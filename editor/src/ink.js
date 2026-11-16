@@ -2,6 +2,8 @@
 // Line-anchored plain JSON storage, shape snapping, whole/partial erasers,
 // and CRDT-safe multi-device merge.
 
+import { nextPressure } from './pressure.js';
+
 export const INK_TOOLS = [
   'pen',
   'highlighter',
@@ -1514,8 +1516,8 @@ export function createInkLayer(view, options = {}) {
     const scrollTop = scrollDOM?.scrollTop || 0;
     const x = e.clientX - rect.left + scrollLeft;
     const y = e.clientY - rect.top + scrollTop;
-    const p = typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 0.5;
     const t = strokeStartTime;
+    const p = nextPressure(e, x, y, t, null);
 
     activePoints = [[x, y, p, t]];
 
@@ -1545,8 +1547,8 @@ export function createInkLayer(view, options = {}) {
     for (const ev of events) {
       const x = ev.clientX - rect.left + scrollLeft;
       const y = ev.clientY - rect.top + scrollTop;
-      const p = typeof ev.pressure === 'number' && ev.pressure > 0 ? ev.pressure : 0.5;
       const t = ev.timeStamp || Date.now();
+      const p = nextPressure(ev, x, y, t, activePoints[activePoints.length - 1] || null);
 
       activePoints.push([x, y, p, t]);
 
