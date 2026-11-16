@@ -57,7 +57,7 @@ const pwaDir = path.join(distDir, 'pwa');
 fs.mkdirSync(pwaDir, { recursive: true });
 const store = await esbuild.build({ entryPoints: [path.join(srcDir, 'webstore.js')], bundle: true, write: false, format: 'iife', platform: 'browser', target: ['es2022'] });
 const storeJs = store.outputFiles[0].text.replace(/<\/script>/gi, '<\\/script>');
-const buildId = crypto.createHash('sha1').update(html).digest('hex').slice(0, 10);
+const buildId = crypto.createHash('sha1').update(html + storeJs).digest('hex').slice(0, 10);
 const head = `<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
