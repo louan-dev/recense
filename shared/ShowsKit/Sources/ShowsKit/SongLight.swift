@@ -37,6 +37,10 @@ public enum SongLight {
         return d
     }
 
+    /// The Mac's and the web player's light (gallery.js UPCOMING / AHEAD, Cadence's settle): a word not yet sung at
+    /// 35 %, a sung word easing from gold into white over 0.45 s.
+    public static let ahead = 0.35, settle = 0.45
+
     // ---------- the light inside a word ----------
 
     /// How far the light has crossed a word at t, 0…1: cadence.js `fill`, the Mac's Cadence.progress, rule for rule.

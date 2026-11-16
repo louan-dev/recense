@@ -180,12 +180,12 @@ public struct TranscriptLineText: View {
     /// syllable has reached (SongLight.fill), the words sung white, a word written but not sung never lit, the rest dim.
     static func sung(_ line: TranscriptLine, _ t: Double) -> AttributedString {
         var a = AttributedString(line.text)
-        a.foregroundColor = .white.opacity(0.4)
+        a.foregroundColor = .white.opacity(SongLight.ahead)
         for (i, r) in TranscriptLight.ranges(line).enumerated() {
             let w = line.words[i]
             guard let r, w.un != true, t >= w.start else { continue }
-            if t >= w.end {
-                if let ar = Range(r, in: a) { a[ar].foregroundColor = .white }
+            if t >= w.end {   // sung: the gold eases into white over 0.45 s, as on the Mac and the web
+                if let ar = Range(r, in: a) { a[ar].foregroundColor = SongLight.settled((t - w.end) / SongLight.settle) }
                 continue
             }
             let k = SongLight.litCount(w, at: t)
@@ -459,4 +459,9 @@ struct SelectableText: NSViewRepresentable {
 extension SongLight {
     /// The light's head as the Mac and the web player draw it (gallery.js GOLD: 255, 214, 51).
     static let gold = Color(red: 1, green: 214 / 255, blue: 51 / 255)
+    /// A sung word, `f` (0…1) of the way from gold to white (gallery.js `mix(GOLD, SPOKEN, …)`).
+    static func settled(_ f: Double) -> Color {
+        let x = max(0, min(1, f))
+        return Color(red: 1, green: (214 + 41 * x) / 255, blue: (51 + 204 * x) / 255)
+    }
 }

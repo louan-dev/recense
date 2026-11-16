@@ -63,7 +63,7 @@ never the Mac (FEAT-11 downloads while away), and only after a spike measures si
 iPhone 12 Pro Max. Ladder for a song's light on iOS:
 1. a measure on this device (cached, or carried: P3);
 2. the Mac's measure through the Worker (saved here);
-3. (P4) separated and measured on this device;
+3. (P4) separated and measured on this device (model downloaded once; replaced by the Mac's measure when it comes);
 4. the words' own times (today's light), never nothing.
 
 ## P1 (built: coded, not compiled, device check owed)
@@ -94,12 +94,25 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
 - **P2** prosody ribbon, ties, chords, notes on iOS (stage 8): `prosody.js` + `prosogram.js` bundled, a hidden
   WKWebView engine as `strip/prosody.swift`'s, row pictures under `TranscriptLineText`. Follow/Learn toggle as the Mac's.
 - **P3** carry `keep/<key>/features.json` with FEAT-09 (a carried sidecar of the song, not a home of its own).
-- **P4** Route B spike (above).
+- **P4** Route B: spike first (go/no-go under "Decided"), then the device separator as ladder step 3.
 
-## Open (the owner's to decide)
-- The look: P1 keeps the Podcasts-style transcript (serif, white on the show's colour) and adds the Mac's gold head.
-  Should the iOS song view instead take the Mac overlay's whole look (35 % ghost line, centred, one line at a time)?
-- P4: is a ~80 MB on-device separator wanted at all, or is "songs light once the Mac has seen them" enough?
+## Decided (2026-11-16, the owner: "you decide what's best based on what I'd choose")
+1. **The look: the Podcasts layout stays; the Mac's light inside it, exactly.** The owner chose the iOS transcript's
+   look himself (as iOS Podcasts, his screenshots 08-91: `Views/Transcript.swift:1`), and "1:1" asks for the Mac's
+   *light*, not the Mac's window. So iOS keeps its serif lines, scrolling and menus, and the active line of a song is
+   lit as the Mac lights it: words not yet sung at 35 % (gallery.js `UPCOMING`), the word being sung gold up to the
+   letter its syllable has reached, a sung word easing gold → white over 0.45 s, an unsung word never lit
+   (`SongLight.ahead`, `settle`, `settled`; built). A song shown as the Mac's one-line overlay is not wanted.
+2. **Route B: yes, as ladder step 3 (P4), never in place of A.** The offline law says the network is "an
+   optimization, never a dependency" and the Mac mini is a relay, not a vital (`docs/law/offline.md:10, 18, 27`): a
+   song downloaded on the phone away from the Mac (FEAT-11) must still light by its syllables. Under these rules:
+   - the separator model is a **one-time download** with its source, size and checksum (offline law), never in the
+     app binary, and only fetched once the owner turns it on (or the first song needs it, on Wi-Fi);
+   - it runs only for a song with no Mac measure, on power or in the foreground; the Mac's measure, once it comes,
+     **replaces** the device's (one measure, the Mac's, so the light is the Mac's: 1:1);
+   - its output is the same `features.json` (source `vocals`), so nothing after stage 3 changes;
+   - before any code: a spike on the iPhone 12 Pro Max (model size, seconds per 4-minute song, peak memory,
+     heat) with a go/no-go of under 2 minutes and under 1.5 GB per song.
 
 ## Handoff
 
@@ -136,4 +149,5 @@ are never lit; a listener's timing wins. Files: `shared/ShowsKit/Sources/ShowsKi
 6. If a device shows no gold: Console for `cadence.js` missing from the bundle (SongVoice returns the lines as they
    were), or the Worker answering `{none:true}` for that path.
 
-**Questions for the owner:** the two under "Open".
+**Questions for the owner:** none open. Both were decided under "Decided" (Podcasts layout with the Mac's light;
+Route B wanted as ladder step 3, spike first). Say so if either is wrong.
