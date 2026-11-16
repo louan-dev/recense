@@ -27,6 +27,37 @@ func coordinatedWrite(_ text: String, to path: String) -> Bool {
     return ok && err == nil
 }
 
+/// What reading the note gave (T-0114). "No file yet" and "a file I cannot read now" are different answers: an iCloud file
+/// evicted while offline, or one a sync is replacing, exists but fails to read, and treating that as blank lets the next
+/// save write over the whole note.
+enum NoteRead: Equatable { case text(String), missing, unreadable }
+
+func readNote(_ path: String) -> NoteRead {
+    if let s = coordinatedRead(path) { return .text(s) }
+    let fm = FileManager.default
+    let dir = (path as NSString).deletingLastPathComponent
+    let placeholder = (dir as NSString).appendingPathComponent("." + (path as NSString).lastPathComponent + ".icloud")
+    return fm.fileExists(atPath: path) || fm.fileExists(atPath: placeholder) ? .unreadable : .missing
+}
+
+/// A save when the editor started blank because the load could not read the note (T-0114): what was typed over that blank
+/// is never written over a note this device has not seen.
+enum BlindSave: Equatable {
+    case wait                                   // still unreadable: write nothing, keep what was typed safe elsewhere
+    case recovered(seen: String, joined: String) // the file as it is now, and what to show and write (the note, then what was typed)
+}
+
+func planBlindSave(mine: String, now: NoteRead) -> BlindSave {
+    switch now {
+    case .unreadable: return .wait
+    case .missing: return .recovered(seen: "", joined: mine)
+    case .text(let t):
+        if mine.isEmpty || mine == t { return .recovered(seen: t, joined: t) }
+        if t.isEmpty { return .recovered(seen: t, joined: mine) }
+        return .recovered(seen: t, joined: t + (t.hasSuffix("\n") ? "" : "\n") + mine)
+    }
+}
+
 /// One changed region of base: lines base[s..<e] become `lines`.
 private struct Hunk: Equatable { let s: Int, e: Int, lines: [Substring] }
 
