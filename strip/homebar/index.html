@@ -82,7 +82,7 @@
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   // the player as main.swift last reported it; time runs on between reports
-  const st = { time: 0, at: performance.now(), duration: 0, paused: true, rate: 1, lang: "en", view: "follow", size: 1, sizeMin: 0.7, sizeMax: 1.6, prominence: null, bookmarks: [], volume: null };
+  const st = { time: 0, at: performance.now(), duration: 0, paused: true, rate: 1, lang: "en", view: "follow", size: 1, sizeMin: 0.7, sizeMax: 1.6, prominence: null, bookmarks: [], volume: null, lines: [] };
   const now = () => (st.paused ? st.time : st.time + ((performance.now() - st.at) / 1000) * st.rate);
   let lastLoop = ""; // the loop state Recense has, so the bar never echoes it back
   let live = false; // nothing is sent until the first report (the bar's own first paint is not a command)
@@ -169,6 +169,22 @@
     },
     // a firm press on the stroke: bookmark this moment (no hover slide: the bookmarks live in the editor, SPEC 53)
     firmPress: () => post({ k: "bookmark" }),
+    // FEAT-16 P5: the FEAT-07 pill. Find over the transcript main.swift sends (Recense.lines, the player's times);
+    // a hit seeks there and plays (FEAT-07 rule 1). While Find is open its field takes the keys (main.swift "find").
+    find: {
+      lines: () => st.lines,
+      go: (t) => {
+        st.time = t;
+        st.at = performance.now();
+        post({ k: "cmd", c: "seek", t });
+        if (st.paused) post({ k: "cmd", c: "playPause" });
+      },
+      onOpen: (on) => {
+        post({ k: "find", on });
+        wake();
+        hits();
+      },
+    },
     // slide 1 text size · 2 Loop · A · B · 3 the speed ruler. No volume slide (notes 2026-10-26 #16): the source player, keys or Touch Bar set it. Language, Follow · Learn, Clear, Download,
     // Share, Retranscribe, the exports and the bookmarks are the transcript editor's (SPEC 57): click the words.
     slides: () => ["size", "loop", "speed"],
@@ -345,6 +361,8 @@
       }
       return;
     }
+    if (bar.find && bar.find.finding) add(bar.find.face); // FEAT-16 P5: the pill's Find face, in the stroke's place
+    else if (bar.find && !bar.find.btn.hidden) add(bar.find.btn); // and its magnifier, at the stroke's start
     add(bar.el.querySelector(".p-hbbox"), bar.open ? [0, 0, 0, 0] : [18, 14, 6, 14]); // item 31: a roomier zone (::before)
     if (bar.open) {
       add(bar.el.querySelector(".p-hbbarrel"));
@@ -411,7 +429,14 @@
     },
     close: () => {
       bar.close();
+      if (bar.find) bar.find.close();
       if (tray.isOpen()) tray.hide();
+    },
+    // FEAT-16 P5: the transcript Find searches: [{s (the player's time), text, tr}]
+    lines: (ls) => {
+      st.lines = Array.isArray(ls) ? ls : [];
+      if (bar.find) bar.find.paint();
+      hits();
     },
     // why the followed player can't take the sound (QuickTime, Music, a page whose file another site serves), or null
     sound: (why) => {
