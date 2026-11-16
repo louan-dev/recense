@@ -2223,6 +2223,36 @@ html.rc-wings-page body {
 <div id="app"></div>
 <script>
 (() => {
+  // src/devicelayout.js
+  var ROWS = {
+    phone: { portrait: [18, 44, 16, 20, 96], landscape: [18, 52, 24, 8, 48] },
+    // iPhone 12 Pro Max 428×926
+    pad11: { portrait: [20, 58, 32, 32, 120], landscape: [20, 62, 48, 24, 96] },
+    // fallback band: 11-inch iPads, split view
+    pad13: { portrait: [21, 60, 40, 36, 120], landscape: [21, 64, 56, 28, 96] }
+    // iPad Air M2 13-inch 1024×1366 (owner's iPad)
+  };
+  function deviceClass(width, height) {
+    const short = Math.min(width, height);
+    return short < 500 ? "phone" : short < 900 ? "pad11" : "pad13";
+  }
+  function deviceLayout(width, height, touch) {
+    if (!touch || !(width > 0) || !(height > 0)) return null;
+    const device = deviceClass(width, height);
+    const orientation = width > height ? "landscape" : "portrait";
+    const [fontSize, columnCh, padX, padTop, padBottom] = ROWS[device][orientation];
+    return { device, orientation, fontSize, columnCh, padX, padTop, padBottom };
+  }
+  function layoutVars(layout) {
+    if (!layout) return { "--rc-col": null, "--rc-pad-x": null, "--rc-pad-top": null, "--rc-pad-bottom": null };
+    return {
+      "--rc-col": `${layout.columnCh}ch`,
+      "--rc-pad-x": `max(${layout.padX}px, env(safe-area-inset-left), env(safe-area-inset-right))`,
+      "--rc-pad-top": `${layout.padTop}px`,
+      "--rc-pad-bottom": `max(${layout.padBottom}px, env(safe-area-inset-bottom))`
+    };
+  }
+
   // src/lenses.js
   var STOP = new Set("the a an and or but if of to in on at by for with from as is are was were be been being it its this that these those there their they them he she his her we our you your i me my not no so than then also which who whom whose what when where how why all any each into over under about after before between because while would could should shall must may can will has have had do does did very more most such only own same other some just here out up down off again l\xE0 v\xE0 c\u1EE7a c\xE1c nh\u1EEFng m\u1ED9t cho v\u1EDBi trong \u0111\u01B0\u1EE3c kh\xF4ng c\xF3 n\xE0y \u0111\xF3 khi th\xEC \u0111\u1EC3 t\u1EEB theo nh\u01B0 ng\u01B0\u1EDDi c\u0169ng \u0111\xE3 s\u1EBD \u0111ang ra v\xE0o le la les un une des et ou de du en au aux est sont pour par avec dans sur que qui ne pas ce cette ces il elle ils".split(/\s+/));
   function keyTerms(text) {
@@ -39586,9 +39616,10 @@ ${clean(nextLineText)}`;
         },
         ".cm-content": {
           caretColor: palette.cyan,
-          maxWidth: `${COLUMN_CHARS}ch`,
+          // UI-07 · devicelayout.js sets these per device; the Mac keeps the fallbacks.
+          maxWidth: `var(--rc-col, ${COLUMN_CHARS}ch)`,
           margin: "0 auto",
-          padding: "28px 20px 96px 20px",
+          padding: "var(--rc-pad-top, 28px) var(--rc-pad-x, 20px) var(--rc-pad-bottom, 96px) var(--rc-pad-x, 20px)",
           lineHeight: "1.65"
         },
         ".cm-cursor, .cm-dropCursor": {
@@ -39729,6 +39760,7 @@ ${clean(nextLineText)}`;
   function mountEditor(root = document.body, initialDoc = "") {
     let currentTheme = "dark";
     let currentFontSize = DEFAULT_FONT_SIZE;
+    let userFontSize = false;
     let newestFirst = false;
     let outlineVisible = false;
     let menuOpen = false;
@@ -40525,6 +40557,10 @@ ${String(text ?? "")}`;
       });
     }
     function setFontSize(px) {
+      userFontSize = true;
+      applyFontSize(px);
+    }
+    function applyFontSize(px) {
       currentFontSize = normalizeFontSize(px);
       if (typeof document !== "undefined" && document.documentElement) {
         document.documentElement.style.setProperty("--rc-font-size", `${currentFontSize}px`);
@@ -40930,7 +40966,17 @@ ${String(text ?? "")}`;
       window.addEventListener("blur", endDragSelection, true);
     }
     setTheme(currentTheme);
-    setFontSize(currentFontSize);
+    applyFontSize(currentFontSize);
+    function applyDeviceLayout() {
+      if (typeof window === "undefined" || !document.documentElement) return;
+      const touch = typeof window.matchMedia === "function" && window.matchMedia("(any-pointer: coarse)").matches;
+      const layout = deviceLayout(window.innerWidth, window.innerHeight, touch);
+      for (const [k, v] of Object.entries(layoutVars(layout))) document.documentElement.style.setProperty(k, v ?? "");
+      if (layout && !userFontSize) applyFontSize(layout.fontSize);
+      view.requestMeasure();
+    }
+    applyDeviceLayout();
+    if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("resize", applyDeviceLayout);
     updatePageIndicator();
     renderOutline();
     return {

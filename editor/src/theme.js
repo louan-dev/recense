@@ -63,9 +63,10 @@ export function buildThemeExtension(mode = 'dark') {
       },
       '.cm-content': {
         caretColor: palette.cyan,
-        maxWidth: `${COLUMN_CHARS}ch`,
+        // UI-07 · devicelayout.js sets these per device; the Mac keeps the fallbacks.
+        maxWidth: `var(--rc-col, ${COLUMN_CHARS}ch)`,
         margin: '0 auto',
-        padding: '28px 20px 96px 20px',
+        padding: 'var(--rc-pad-top, 28px) var(--rc-pad-x, 20px) var(--rc-pad-bottom, 96px) var(--rc-pad-x, 20px)',
         lineHeight: '1.65'
       },
       '.cm-cursor, .cm-dropCursor': {

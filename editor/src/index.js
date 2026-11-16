@@ -1,3 +1,4 @@
+import { deviceLayout, layoutVars } from './devicelayout.js';
 import { isMixed } from './lenses.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightSpecialChars } from '@codemirror/view';
@@ -218,6 +219,7 @@ export function createEditorState(doc = '', options = {}) {
 export function mountEditor(root = document.body, initialDoc = '') {
   let currentTheme = 'dark';
   let currentFontSize = DEFAULT_FONT_SIZE;
+  let userFontSize = false;
   let newestFirst = false;
   let outlineVisible = false;
   let menuOpen = false;
@@ -970,7 +972,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
     });
   }
 
+  // UI-07 · a size the person (or a host) picks wins over the device default until reload.
   function setFontSize(px) {
+    userFontSize = true;
+    applyFontSize(px);
+  }
+
+  function applyFontSize(px) {
     currentFontSize = normalizeFontSize(px);
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.style.setProperty('--rc-font-size', `${currentFontSize}px`);
@@ -1377,7 +1385,20 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   setTheme(currentTheme);
-  setFontSize(currentFontSize);
+  applyFontSize(currentFontSize);
+
+  // UI-07 · the box for this device and orientation, again on every rotation or resize.
+  function applyDeviceLayout() {
+    if (typeof window === 'undefined' || !document.documentElement) return;
+    const touch = typeof window.matchMedia === 'function' && window.matchMedia('(any-pointer: coarse)').matches;
+    const layout = deviceLayout(window.innerWidth, window.innerHeight, touch);
+    // An empty value removes the variable, so the Mac box's fallbacks apply again.
+    for (const [k, v] of Object.entries(layoutVars(layout))) document.documentElement.style.setProperty(k, v ?? '');
+    if (layout && !userFontSize) applyFontSize(layout.fontSize);
+    view.requestMeasure();
+  }
+  applyDeviceLayout();
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', applyDeviceLayout);
   updatePageIndicator();
   renderOutline();
 
