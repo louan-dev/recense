@@ -1972,6 +1972,17 @@ await test("BUG-23: the owner adds to their own upload link through /main/api/li
   const g = await mf.dispatchFetch(ORIGIN + "/api/upload?" + new URLSearchParams({ id: up.id, action: "start", i, total: 1 }), { method: "POST", headers: { origin: ORIGIN, cookie: "gv=" + "a".repeat(32) } });
   assert.equal(g.status, 403);
   assert.ok(headers && !headers.cookie, "no guest cookie for the owner");
+  // cancel mid-way: abort leaves no file, no progress ring and no "uploading" tile behind
+  const lk = (q, init = {}) => call("/main/api/linkadd?" + new URLSearchParams({ id: up.id, ...q }), { as: "owner", method: "POST", ...init });
+  const res = await (await lk({ action: "reserve" }, { body: JSON.stringify({ name: BUG23_NAME, size: 2 * BUG23_PART, type: "video/mp4" }) })).json();
+  const uid = await (await lk({ action: "start", i: res.i, total: 2 })).text();
+  assert.equal((await lk({ action: "part", i: res.i, uploadId: uid, part: 1, total: 2 }, { method: "PUT", body: Buffer.alloc(BUG23_PART, 1) })).status, 200);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/" + res.n + ".progress"), "a ring while it goes up");
+  assert.equal((await lk({ action: "abort", i: res.i, uploadId: uid })).status, 200);
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/" + res.n)));
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/" + res.n + ".progress")));
+  const after = await (await mf.dispatchFetch(ORIGIN + "/api/gallery?id=" + up.id)).json();
+  assert.ok(!after.items.some((f) => f.n === res.n), "no pending tile left");
 });
 
 await test("archive shares start view-and-comment only (item 16)", async () => {

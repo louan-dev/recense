@@ -4,7 +4,7 @@
 import { Miniflare } from "miniflare";
 import { chromium } from "playwright";
 import { readdirSync, readFileSync } from "node:fs";
-import { webcrypto as crypto } from "node:crypto";
+import { webcrypto as crypto, createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtempSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -370,42 +370,68 @@ const bug23Video = (bytes) => {
   truncateSync(path, bytes);
   return path;
 };
-await test("BUG-23: the owner adds a big .MP4 to their own share link (multipart, into the link)", true, async (pg) => {
+await test("BUG-23: the owner adds the real 160 MB .MP4 to their own mixed share from the browser (multipart, into the link)", true, async (pg) => {
+  // a share that already holds a photo, a song and a small video, as the owner's real ones do
   const r = await mf.dispatchFetch(base + "/main/api/link?action=start&days=7", {
     method: "POST",
     headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
-    body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg",
+    body: ["1\t1700000000000\timage%2Fjpeg\tdune.jpg", "1\t1700000000001\taudio%2Fmpeg\tsong.mp3", "1\t1700000000002\tvideo%2Fmp4\tclip.mp4"].join("\n"),
   });
   const up = await r.json();
-  await PUBLIC.put("links/" + up.id + "/000", "J", {
-    httpMetadata: { contentType: "image/jpeg" },
-    customMetadata: { name: "dune.jpg", expires: String(up.exp) },
-  });
+  const mixed = [["000", "dune.jpg", "image/jpeg", "J"], ["001", "song.mp3", "audio/mpeg", "M"], ["002", "clip.mp4", "video/mp4", readFileSync(new URL("./fixtures/bug23/h264.MP4", import.meta.url))]];
+  for (const [n, name, type, body] of mixed) {
+    await PUBLIC.put("links/" + up.id + "/" + n, body, { httpMetadata: { contentType: type }, customMetadata: { name, expires: String(up.exp) } });
+  }
   let biggest = 0;
+  const parts = [];
   pg.on("request", (q) => {
-    const n = Number(q.headers()["content-length"] || (q.postDataBuffer() || []).length || 0);
+    const n = Number(q.headers()["content-length"] || 0);
     if (n > biggest) biggest = n;
   });
-  if (process.env.DEBUG) pg.on("response", (q) => /api\/(upload|file)/.test(q.url()) && console.log("     " + q.request().method() + " " + q.url().replace(base, "") + " -> " + q.status()));
+  // the phone drops the first part once: it is sent again, not the whole video failed
+  let dropped = false;
+  await pg.route(/\/main\/api\/linkadd\?.*action=part/, (rt) => {
+    parts.push(rt.request().url());
+    if (!dropped) {
+      dropped = true;
+      return rt.abort("failed");
+    }
+    return rt.continue();
+  });
+  if (process.env.DEBUG) pg.on("response", (q) => /api\/(upload|file|linkadd)/.test(q.url()) && console.log("     " + q.request().method() + " " + q.url().replace(base, "") + " -> " + q.status()));
   await pg.goto(base + "/s/" + up.id);
   await pg.waitForTimeout(800); // whoami has answered: the page knows the owner
   assert.ok(await pg.isVisible("#up"), "the owner sees Add on their own upload link");
   pg.removeAllListeners("dialog");
   pg.on("dialog", (d) => d.accept("Owner Tester"));
-  const size = 110 * 1000 * 1000;
-  await pg.setInputFiles("#upin", bug23Video(size));
+  const size = 159964662; // the owner's real recording, in bytes (HEVC 2732x2048, 4:20)
+  const path = bug23Video(size);
+  await pg.setInputFiles("#upin", path);
+  // it shows as uploading, with its ring, while the parts go up
+  await pg.waitForSelector(".tile.pending", { timeout: 10000 });
   let head = null;
-  for (let t = 0; t < 120 && !head; t++) {
-    head = await PUBLIC.head("links/" + up.id + "/001");
+  for (let t = 0; t < 240 && !head; t++) {
+    head = await PUBLIC.head("links/" + up.id + "/003");
     if (!head) await pg.waitForTimeout(250);
   }
   const note = await pg.evaluate(() => { const n = document.getElementById("note"); return n && !n.hidden ? n.textContent : ""; });
-  assert.ok(head, "the video reached the link (links/<id>/001); page said: " + JSON.stringify(note) + "; Main has it: " + !!(await MAIN.head("files/" + BUG23_NAME)));
+  assert.ok(head, "the video reached the link (links/<id>/003); page said: " + JSON.stringify(note) + "; Main has it: " + !!(await MAIN.head("files/" + BUG23_NAME)));
   assert.equal(head.size, size);
+  const sha = (b) => createHash("sha256").update(b).digest("hex");
+  assert.equal(sha(Buffer.from(await (await PUBLIC.get("links/" + up.id + "/003")).arrayBuffer())), sha(readFileSync(path)), "bytes match (sha256)");
   assert.equal(decodeURIComponent(head.customMetadata.name), BUG23_NAME);
   assert.match(head.httpMetadata.contentType, /^video\/mp4/);
   assert.ok(biggest <= 90 * 1024 * 1024, "no single request over 90 MiB (biggest " + biggest + ")");
+  assert.equal(parts.length, Math.ceil(size / (16 * 1024 * 1024)) + 1, "10 parts, the dropped one sent twice");
   assert.ok(!(await MAIN.head("files/" + BUG23_NAME)), "nothing lands in Main");
+  // the mix is untouched and the new one is there for everyone, named and typed
+  const d = await (await mf.dispatchFetch(base + "/api/gallery?id=" + up.id)).json();
+  assert.deepEqual(d.items.map((f) => [f.n, f.name, f.type, !!f.pending]), [
+    ["000", "dune.JPG", "image/jpeg", false],
+    ["001", "song.MP3", "audio/mpeg", false],
+    ["002", "clip.MP4", "video/mp4", false],
+    ["003", BUG23_NAME, "video/mp4", false],
+  ]);
 });
 
 await test("BUG-23: a guest adds a 40 MB .MP4 with spaces in its name to a share link (3 parts)", false, async (pg) => {
