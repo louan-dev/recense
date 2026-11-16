@@ -149,7 +149,7 @@ public enum SongLight {
         private let context: JSContext
         /// - script: cadence.js's text (the host's bundled copy; the tests read library/src/client/cadence.js).
         public init?(script: String) {
-            guard let c = JSContext() else { return nil }
+            guard let c = JSContext() as JSContext? else { return nil }
             c.evaluateScript(script)
             guard c.exception == nil, c.evaluateScript("typeof Cadence === 'object' && typeof Cadence.fit === 'function'")?.toBool() == true
             else { return nil }

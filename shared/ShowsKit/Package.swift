@@ -10,6 +10,6 @@ let package = Package(
     products: [.library(name: "ShowsKit", targets: ["ShowsKit"])],
     targets: [
         .target(name: "ShowsKit"),
-        .testTarget(name: "ShowsKitTests", dependencies: ["ShowsKit"]),
+        .testTarget(name: "ShowsKitTests", dependencies: ["ShowsKit"], exclude: ["Fixtures"]),   // read by path (SongLightTests)
     ]
 )
