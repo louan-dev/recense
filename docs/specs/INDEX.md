@@ -43,6 +43,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
 - FEAT-16 · Transcript complete before audio plays (spinner, synced autoscroll) + the search-scrubber pill on every transcript surface · `[ ]` · T-0095 · `FEAT-16-transcript-before-play.md`; builds on FEAT-07
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
+- FEAT-18 · Offline Recense hub: `https://recense.local` served by our own Mac (own root, Bonjour, Draftpad + note sync; H2 library, H3 standby) · `[~]` H1 building · owner 2026-11-16 · `FEAT-18-offline-hub.md`; `hub/`, `editor/src/hubsync.js`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —
