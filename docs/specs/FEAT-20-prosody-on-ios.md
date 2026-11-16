@@ -98,7 +98,7 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
 
 ## Decided (2026-11-16, the owner: "you decide what's best based on what I'd choose")
 1. **The look: the Podcasts layout stays; the Mac's light inside it, exactly.** The owner chose the iOS transcript's
-   look himself (as iOS Podcasts, his screenshots 08-91: `Views/Transcript.swift:1`), and "1:1" asks for the Mac's
+   look (as iOS Podcasts, the owner's screenshots 08-91: `Views/Transcript.swift:1`), and "1:1" asks for the Mac's
    *light*, not the Mac's window. So iOS keeps its serif lines, scrolling and menus, and the active line of a song is
    lit as the Mac lights it: words not yet sung at 35 % (gallery.js `UPCOMING`), the word being sung gold up to the
    letter its syllable has reached, a sung word easing gold → white over 0.45 s, an unsung word never lit
