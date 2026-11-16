@@ -27,7 +27,7 @@ O = Recense
 basicConstraints = critical,CA:TRUE,pathlen:0
 keyUsage = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
-nameConstraints = critical,permitted;DNS:recense.local
+nameConstraints = critical,permitted;DNS:recense.local,excluded;IP:0.0.0.0/0.0.0.0,excluded;IP:0:0:0:0:0:0:0:0/0:0:0:0:0:0:0:0
 EOF
   "$OPENSSL" req -x509 -new -key "$CA/root.key" -sha256 -days 3650 -config "$CA/root.cnf" -out "$CA/root.pem"
   echo "root made: $CA/root.pem"
