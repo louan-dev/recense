@@ -429,29 +429,46 @@ export function newPage(view, { onSnap = null, onBounce = null, globalObj, now }
 }
 
 /** G4 · Move page `index` to the front. Only the order changes: each page keeps its own bytes. */
-export function promotePage(view, index, { onSnap = null, globalObj } = {}) {
+export function promotePage(view, index, opts = {}) {
+  if (index <= 0) return false;
+  return movePage(view, index, 0, opts);
+}
+
+/** G4 · Move page `index` to position `to` (T-0089: any place, either way). Only the order changes: bytes stay. */
+export function movePage(view, index, to, { onSnap = null, globalObj } = {}) {
   const text = view.state.doc.toString();
   const pages = inspectDraftpadPages(text);
-  if (index <= 0 || index >= pages.length) return false;
+  if (index < 0 || index >= pages.length) return false;
+  to = Math.max(0, Math.min(pages.length - 1, to));
+  if (to === index) return false;
   saveCurrentWindowMemory(view);
   const slices = pages.map(p => text.slice(p.from, p.to));
   const moved = slices.splice(index, 1)[0];
-  const insert = [moved, ...slices].join(PAGE_JOINER);
+  slices.splice(to, 0, moved);
+  const insert = slices.join(PAGE_JOINER);
   const from = pages[0].from;
-  const to = pages[pages.length - 1].to;
+  const end = pages[pages.length - 1].to;
   const mem = getMemory(view);
-  const order = [index, ...pages.map((_, i) => i).filter(i => i !== index)];
+  const order = pages.map((_, i) => i).filter(i => i !== index);
+  order.splice(to, 0, index);
   const cursors = new Map(), scrolls = new Map();
   order.forEach((old, dst) => {
     if (mem.cursors.has(old)) cursors.set(dst, mem.cursors.get(old));
     if (mem.scrolls.has(old)) scrolls.set(dst, mem.scrolls.get(old));
   });
   mem.cursors = cursors; mem.scrolls = scrolls;
-  view.dispatch({ changes: { from, to, insert }, userEvent: 'move.page' });
-  showPage(view, 0, { preserveMemory: false });
+  view.dispatch({ changes: { from, to: end, insert }, userEvent: 'move.page' });
+  showPage(view, to, { preserveMemory: false });
   postHaptic('snap', globalObj);
-  if (typeof onSnap === 'function') onSnap(0);
+  if (typeof onSnap === 'function') onSnap(to);
   return true;
+}
+
+/** T-0089 · Where a dragged dot lands: the slot whose centre the pointer passed. `centres` excludes nothing. */
+export function dropIndex(centres, index, x) {
+  let to = 0;
+  centres.forEach((c, i) => { if (i !== index && x > c) to += 1; });
+  return to;
 }
 
 /** S1 · { slot: pageIndex } for every `<!-- slot N -->` line. */

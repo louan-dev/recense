@@ -42,6 +42,8 @@ import {
   goToPage,
   newPage,
   promotePage,
+  movePage,
+  dropIndex,
   setPageSlot,
   pageSlots,
   slotPage,
@@ -548,14 +550,32 @@ export function mountEditor(root = document.body, initialDoc = '') {
     return i;
   }
 
-  // G3 tap · G4 drag left of the first dot · G5 hold 500 ms (moving < 8 px).
+  // G3 tap · G4 drag a dot to any place (T-0089) · G5 hold 500 ms (moving < 8 px).
   const HOLD_MS = 500;
   const TAP_SLOP_PX = 8;
   function attachDotGestures(dot, index) {
     let x0 = 0, t0 = 0, dragging = false, held = false, timer = null, id = null;
     const reset = () => {
       clearTimeout(timer); timer = null; dragging = false; id = null;
-      dot.style.transform = ''; dot.classList.remove('is-dragging');
+      dot.classList.remove('is-dragging');
+      for (const d of pageIndicator.children) d.style.transform = '';
+      centres = null;
+    };
+    // T-0089 · while a dot is dragged, the dots it passes slide one place the other way, so the gap shows where it lands.
+    let centres = null, pitch = 0;
+    const measure = () => {
+      const dots = [...pageIndicator.children];
+      centres = dots.map(d => { const r = d.getBoundingClientRect(); return r.left + r.width / 2; });
+      pitch = centres.length > 1 ? (centres[centres.length - 1] - centres[0]) / (centres.length - 1) : 0;
+    };
+    const preview = x => {
+      const to = dropIndex(centres, index, x);
+      [...pageIndicator.children].forEach((d, i) => {
+        if (i === index) return;
+        const shift = index < to && i > index && i <= to ? -pitch : index > to && i >= to && i < index ? pitch : 0;
+        d.style.transform = shift ? `translateX(${shift}px)` : '';
+      });
+      return to;
     };
     dot.addEventListener('pointerdown', e => {
       e.stopPropagation();
@@ -567,19 +587,18 @@ export function mountEditor(root = document.body, initialDoc = '') {
       if (id !== e.pointerId) return;
       const dx = e.clientX - x0;
       if (!dragging && Math.abs(dx) >= TAP_SLOP_PX && !held) {
-        dragging = true; clearTimeout(timer); dot.classList.add('is-dragging');
+        dragging = true; clearTimeout(timer); dot.classList.add('is-dragging'); measure();
       }
-      if (dragging) dot.style.transform = `translateX(${dx}px)`;
+      if (dragging) { dot.style.transform = `translateX(${dx}px)`; preview(e.clientX); }
     });
     dot.addEventListener('pointerup', e => {
       if (id !== e.pointerId) return;
       const wasDrag = dragging, wasHeld = held;
-      const first = pageIndicator.firstElementChild;
-      const frontEdge = first ? first.getBoundingClientRect().left : 0;
+      const to = wasDrag && centres ? dropIndex(centres, index, e.clientX) : index;
       reset();
       if (wasHeld) return;
       if (wasDrag) {
-        if (e.clientX < frontEdge && index > 0) promotePage(view, index);
+        if (to !== index) movePage(view, index, to);
         return;
       }
       if (Date.now() - t0 < HOLD_MS) goToPage(view, index);

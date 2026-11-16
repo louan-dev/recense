@@ -2138,6 +2138,18 @@ html.rc-wings-page body {
 .rc-panel-tabs { flex-wrap: nowrap; }
 .rc-panel-tab, #rc-newest-first-btn { white-space: nowrap; }
 
+/* Derived from Spec: UI-06 D2 · the page's date as a small muted label at its top right, never a heading. */
+.cm-page-date-label {
+  text-align: right;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--rc-muted);
+  opacity: 0.6;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
 </style>
 </head>
 <body>
@@ -28485,6 +28497,58 @@ ${PAGE_MARKER}
     }
     return dt.getTime();
   }
+  var WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ];
+  function formatDateLine(ms = Date.now()) {
+    const d = new Date(ms);
+    return `${WEEKDAY_NAMES[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  }
+  function discreetDate(ms, now = Date.now(), lang = typeof navigator !== "undefined" && navigator.language || "en") {
+    const day = (t2) => {
+      const d = new Date(t2);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    };
+    const diff = Math.round((day(now) - day(ms)) / 864e5);
+    if (diff === 0 || diff === 1) {
+      const w = new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(-diff, "day");
+      return w.charAt(0).toLocaleUpperCase(lang) + w.slice(1);
+    }
+    const sameYear = new Date(ms).getFullYear() === new Date(now).getFullYear();
+    const opts = { weekday: "short", day: "numeric", month: "short", ...sameYear ? {} : { year: "numeric" } };
+    return new Intl.DateTimeFormat(lang, opts).format(new Date(ms)).replace(/,/g, "");
+  }
+  var DateLabelWidget = class extends WidgetType {
+    constructor(ms) {
+      super();
+      this.ms = ms;
+    }
+    eq(other) {
+      return other.ms === this.ms;
+    }
+    toDOM() {
+      const el5 = document.createElement("div");
+      el5.className = "cm-page-date-label";
+      el5.setAttribute("aria-label", formatDateLine(this.ms));
+      el5.textContent = discreetDate(this.ms);
+      return el5;
+    }
+    ignoreEvent() {
+      return false;
+    }
+  };
   function isFullDateLine(line) {
     return parseDateLine(line) !== null;
   }
@@ -28607,11 +28671,6 @@ ${PAGE_MARKER}
       "aria-label": "Page break"
     }
   });
-  var pageDateLineDeco = Decoration.line({
-    attributes: {
-      class: "cm-page-date-line"
-    }
-  });
   var metaHiddenDeco = Decoration.replace({ block: true });
   function buildPageDecoSet(doc2) {
     const text = doc2.toString();
@@ -28624,7 +28683,8 @@ ${PAGE_MARKER}
       items.push(pageDividerLineDeco.range(m.from));
     }
     for (const d of dateLines) {
-      items.push(pageDateLineDeco.range(d.from));
+      const ms = parseDateLine(d.text);
+      items.push(Decoration.replace({ widget: new DateLabelWidget(ms), block: true }).range(d.from, d.to));
     }
     items.sort((a, b) => a.from - b.from);
     return Decoration.set(items, true);
@@ -31156,7 +31216,8 @@ ${PAGE_MARKER}
       }),
       openWatcher,
       searchHighlightField,
-      highlightSelectionMatches(),
+      // T-0088 · whole words of 3+ letters only, so selecting part of a word never lights up its other halves.
+      highlightSelectionMatches({ wholeWords: true, minSelectionLength: 3 }),
       keymap.of([
         {
           key: "Mod-f",
@@ -32451,7 +32512,7 @@ ${PAGE_MARKER}
     if (typeof onSnap === "function") onSnap(nextIndex);
     return true;
   }
-  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj, now = Date.now() } = {}) {
     const docText = view.state.doc.toString();
     const pages = inspectDraftpadPages(docText);
     if (pages.length > 0 && isWindowEmpty(pages[0].rawContent)) {
@@ -32462,9 +32523,12 @@ ${PAGE_MARKER}
     saveCurrentWindowMemory(view);
     const mem = getMemory(view);
     shiftWindowMemoryOnPrepend(mem, pages.length);
+    const dateHead = `${formatDateLine(now)}
+
+`;
     view.dispatch({
-      changes: { from: 0, to: 0, insert: PAGE_JOINER },
-      selection: { anchor: 0 },
+      changes: { from: 0, to: 0, insert: dateHead + PAGE_JOINER },
+      selection: { anchor: dateHead.length },
       effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: "start", yMargin: 8 })],
       userEvent: "input.page"
     });
@@ -32551,22 +32615,30 @@ ${PAGE_MARKER}
     if (typeof onSnap === "function") onSnap(i);
     return true;
   }
-  function newPage(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+  function newPage(view, { onSnap = null, onBounce = null, globalObj, now } = {}) {
     if (currentPage(view.state) !== 0) showPage(view, 0);
-    return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+    return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj, now });
   }
-  function promotePage(view, index, { onSnap = null, globalObj } = {}) {
+  function promotePage(view, index, opts = {}) {
+    if (index <= 0) return false;
+    return movePage(view, index, 0, opts);
+  }
+  function movePage(view, index, to, { onSnap = null, globalObj } = {}) {
     const text = view.state.doc.toString();
     const pages = inspectDraftpadPages(text);
-    if (index <= 0 || index >= pages.length) return false;
+    if (index < 0 || index >= pages.length) return false;
+    to = Math.max(0, Math.min(pages.length - 1, to));
+    if (to === index) return false;
     saveCurrentWindowMemory(view);
     const slices = pages.map((p) => text.slice(p.from, p.to));
     const moved = slices.splice(index, 1)[0];
-    const insert2 = [moved, ...slices].join(PAGE_JOINER);
+    slices.splice(to, 0, moved);
+    const insert2 = slices.join(PAGE_JOINER);
     const from = pages[0].from;
-    const to = pages[pages.length - 1].to;
+    const end = pages[pages.length - 1].to;
     const mem = getMemory(view);
-    const order = [index, ...pages.map((_, i) => i).filter((i) => i !== index)];
+    const order = pages.map((_, i) => i).filter((i) => i !== index);
+    order.splice(to, 0, index);
     const cursors = /* @__PURE__ */ new Map(), scrolls = /* @__PURE__ */ new Map();
     order.forEach((old, dst) => {
       if (mem.cursors.has(old)) cursors.set(dst, mem.cursors.get(old));
@@ -32574,11 +32646,18 @@ ${PAGE_MARKER}
     });
     mem.cursors = cursors;
     mem.scrolls = scrolls;
-    view.dispatch({ changes: { from, to, insert: insert2 }, userEvent: "move.page" });
-    showPage(view, 0, { preserveMemory: false });
+    view.dispatch({ changes: { from, to: end, insert: insert2 }, userEvent: "move.page" });
+    showPage(view, to, { preserveMemory: false });
     postHaptic("snap", globalObj);
-    if (typeof onSnap === "function") onSnap(0);
+    if (typeof onSnap === "function") onSnap(to);
     return true;
+  }
+  function dropIndex(centres, index, x) {
+    let to = 0;
+    centres.forEach((c, i) => {
+      if (i !== index && x > c) to += 1;
+    });
+    return to;
   }
   function pageSlots(text) {
     const out = {};
@@ -32633,6 +32712,8 @@ ${PAGE_MARKER}
     const pages = inspectDraftpadPages(text);
     if (!saved || !pages.length) return 0;
     const head = String(saved.head || "").trim();
+    const at = Number(saved.index) || 0;
+    if (head && pages[at] && pageHead(pages[at]) === head.slice(0, 120)) return at;
     if (head) {
       const hit = pages.findIndex((p) => pageHead(p) === head.slice(0, 120));
       if (hit !== -1) return hit;
@@ -37780,7 +37861,7 @@ ${clean(nextLineText)}`;
         else if (d.mode === "reorder") {
           slot.classList.remove("rc-wing-lifted");
           if (card?.style) card.style.transform = "";
-          if (e?.type === "pointerup") reorderWidget(side, id2, dropIndex(side, id2, e.clientY));
+          if (e?.type === "pointerup") reorderWidget(side, id2, dropIndex2(side, id2, e.clientY));
         }
       };
       slot.addEventListener("pointerup", finish);
@@ -37811,7 +37892,7 @@ ${clean(nextLineText)}`;
       slots[side][id2] = s;
       return s;
     }
-    function dropIndex(side, id2, clientY) {
+    function dropIndex2(side, id2, clientY) {
       let n = 0;
       for (const other of listOf(side)) {
         if (other === id2) continue;
@@ -39092,7 +39173,7 @@ ${clean(nextLineText)}`;
       blue: "#5b9bd5",
       cyan: "#38bdf8",
       border: "rgba(91, 155, 213, 0.22)",
-      selection: "rgba(56, 189, 248, 0.20)",
+      selection: "rgba(56, 189, 248, 0.40)",
       activeLine: "rgba(91, 155, 213, 0.07)"
     },
     light: {
@@ -39105,7 +39186,7 @@ ${clean(nextLineText)}`;
       blue: "#2b6cb0",
       cyan: "#0891b2",
       border: "rgba(43, 108, 176, 0.22)",
-      selection: "rgba(8, 145, 178, 0.18)",
+      selection: "rgba(8, 145, 178, 0.30)",
       activeLine: "rgba(43, 108, 176, 0.06)"
     }
   };
@@ -39144,7 +39225,8 @@ ${clean(nextLineText)}`;
           borderLeftColor: palette.cyan,
           borderLeftWidth: "2px"
         },
-        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+        // T-0088 · as specific as CodeMirror's own focused rule, or its #233 grey wins and the selection all but vanishes.
+        "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
           backgroundColor: palette.selection
         },
         ".cm-activeLine": {
@@ -39168,6 +39250,12 @@ ${clean(nextLineText)}`;
           backgroundColor: palette.panelBg,
           color: palette.text,
           borderBottom: `1px solid ${palette.border}`
+        },
+        // T-0088 · other copies of the selected word: a dotted underline, never a fill that looks like a selection.
+        ".cm-selectionMatch": {
+          backgroundColor: "transparent",
+          textDecoration: `underline dotted ${palette.muted}`,
+          textUnderlineOffset: "4px"
         },
         ".cm-searchMatch": {
           backgroundColor: "rgba(56, 189, 248, 0.22)",
@@ -39616,8 +39704,27 @@ ${clean(nextLineText)}`;
         timer = null;
         dragging = false;
         id2 = null;
-        dot2.style.transform = "";
         dot2.classList.remove("is-dragging");
+        for (const d of pageIndicator.children) d.style.transform = "";
+        centres = null;
+      };
+      let centres = null, pitch = 0;
+      const measure = () => {
+        const dots = [...pageIndicator.children];
+        centres = dots.map((d) => {
+          const r = d.getBoundingClientRect();
+          return r.left + r.width / 2;
+        });
+        pitch = centres.length > 1 ? (centres[centres.length - 1] - centres[0]) / (centres.length - 1) : 0;
+      };
+      const preview = (x) => {
+        const to = dropIndex(centres, index, x);
+        [...pageIndicator.children].forEach((d, i) => {
+          if (i === index) return;
+          const shift2 = index < to && i > index && i <= to ? -pitch : index > to && i >= to && i < index ? pitch : 0;
+          d.style.transform = shift2 ? `translateX(${shift2}px)` : "";
+        });
+        return to;
       };
       dot2.addEventListener("pointerdown", (e) => {
         e.stopPropagation();
@@ -39644,18 +39751,21 @@ ${clean(nextLineText)}`;
           dragging = true;
           clearTimeout(timer);
           dot2.classList.add("is-dragging");
+          measure();
         }
-        if (dragging) dot2.style.transform = `translateX(${dx}px)`;
+        if (dragging) {
+          dot2.style.transform = `translateX(${dx}px)`;
+          preview(e.clientX);
+        }
       });
       dot2.addEventListener("pointerup", (e) => {
         if (id2 !== e.pointerId) return;
         const wasDrag = dragging, wasHeld = held;
-        const first = pageIndicator.firstElementChild;
-        const frontEdge = first ? first.getBoundingClientRect().left : 0;
+        const to = wasDrag && centres ? dropIndex(centres, index, e.clientX) : index;
         reset();
         if (wasHeld) return;
         if (wasDrag) {
-          if (e.clientX < frontEdge && index > 0) promotePage(view, index);
+          if (to !== index) movePage(view, index, to);
           return;
         }
         if (Date.now() - t0 < HOLD_MS) goToPage(view, index);
