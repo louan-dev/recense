@@ -16,6 +16,7 @@
 
 import { page, notice, jsonResponse, esc, OWNER, cleanPath } from "./common.js";
 import { isOwner, sameSite, signedInAs } from "./access.js";
+import { editorPwa } from "./editorpwa.js";
 import { dav, notabilityAuth, ownerMount, NOTABILITY_DAV } from "./dav.js";
 import { keyWorklet } from "./player-key.js";
 import { uploadPage } from "./page/upload.js";
@@ -95,6 +96,10 @@ async function mainRoute(req, env, ctx, url, path, method) {
   // WebDAV clients send no Origin; their writes (PUT, MKCOL, MOVE…) can't be sent cross-site without a CORS preflight, which gets no CORS answer
   const davMount = ownerMount(path);
   if (davMount) return dav(req, env, url, davMount);
+
+  // the Draftpad editor as an offline web page (editorpwa.js)
+  if (path === "/main/editor") return Response.redirect(url.origin + "/main/editor/", 302);
+  if (path.startsWith("/main/editor/")) return editorPwa(req, path);
 
   // the archive shelf: Main's page and player over gallery-archive, read-only (archive.js)
   if (path === "/main/archive" || path.startsWith("/main/archive/")) return archive(req, env, ctx, url, path);
