@@ -12,6 +12,10 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `CatalogEvent`, `ChangesPage`: the Worker's changes feed (`library/src/fp.js`).
 - `Sources/ShowsKit/Word.swift`: `Word` (with `Pin`, `Syl`), the one timed word every app uses (FEAT-04), timed in
   seconds into the recording.
+- `Sources/ShowsKit/Cadence/`: the karaoke light (FEAT-20), one copy for the Mac, iPhone and iPad. `Features` is a
+  song's voice measured on its vocals; `Cadence.fit` times each word to it and splits it into sung syllables, `Cadence.pin`
+  applies the listener's own timing, `Cadence.progress` says how far the light is through a word. Moved unchanged from
+  `strip/` (2026-11-16): on all 381 songs measured on the Mac it gives the same words, syllables and light as before.
 - `Sources/ShowsKit/ContentClock.swift`: the one clock (FEAT-04): live words cross from the wall clock onto the content's
   clock when stored (`content`), and an `Anchor` says where the content is at a wall-clock moment.
   - `OutboxOp`: a change waiting to be sent, with an `opId` that applies once.
@@ -82,7 +86,7 @@ Recense/.trash/…                         → deletes, kept 30 days
 ```
 
 ## Build and test
-- Test: `swift test` in this folder (36 tests; with Xcode's toolchain: the Command Line Tools have no XCTest).
+- Test: `swift test` in this folder (78 tests; with Xcode's toolchain: the Command Line Tools have no XCTest).
 - Mac: `strip/Package.swift` depends on it by path; `zsh strip/build.sh` builds it in.
 - iOS: a local package of `mobile/ios/GalleryFiles.xcodeproj`. This folder is excluded from the project's
   synchronized `shared/` group, so its files compile only as the package.

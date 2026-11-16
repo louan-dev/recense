@@ -8,6 +8,11 @@ typealias Word = ShowsKit.Word
 typealias Pin = ShowsKit.Pin
 typealias Syl = ShowsKit.Syl
 typealias Phrasing = ShowsKit.Phrasing   // sentence lines (BUG-13)
+// The karaoke light's rules (FEAT-20): one copy in ShowsKit, run by the Mac, iPhone and iPad alike.
+typealias Cadence = ShowsKit.Cadence
+typealias Features = ShowsKit.Features
+typealias Beat = ShowsKit.Beat
+func frameDB(_ s: [Float]) -> [Float] { ShowsKit.frameDB(s) }
 
 // The transcript, one copy for the Mac and iOS (moved here from strip/recense.swift, 2026-11-08): what Recense plays
 // (a Line of timed Words, its translation as EnWords that point back at the words they come from) and the rules that
@@ -23,6 +28,11 @@ struct Line: Codable {
     var fixed: Bool? = nil   // a listener corrected its text (Gallery's `fixed`): Cadence lights its words even where it finds no voice for them
     var start: Double { words.first?.start ?? 0 }
     var end: Double { words.last?.end ?? 0 }
+}
+extension Line: CadenceLine {
+    var cadenceID: Int { id }
+    var translated: Bool { english?.isEmpty == false }
+    func with(words: [Word]) -> Line { Line(id: id, words: words, english: english, draft: draft, fixed: fixed) }
 }
 
 /// The script a language is written in (ISO 15924; the CJK scripts as one, Nastaliq as Arabic).

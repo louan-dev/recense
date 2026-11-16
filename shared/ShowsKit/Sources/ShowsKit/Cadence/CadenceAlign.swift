@@ -1,3 +1,4 @@
+// Derived from Spec: FEAT-20 (moved verbatim from strip/cadence.swift, 2026-11-16: one copy for the Mac, iPhone and iPad)
 import Foundation
 
 // Cadence's voice-first pass, rule for rule with Gallery's cadence.js (`syllables`, `unitsOf`, `align`): change one,
@@ -13,7 +14,7 @@ extension Cadence {
     /// each. Latin, Cyrillic and Greek: one per run of vowels, split where two vowels are sung apart (va-ri-a-tions; not
     /// the -tion of "nation"), the consonants between two going to the second (or one to each, from two on, but pl,
     /// br… together). English drops a silent final e, -es or -ed (love, loves, liked; not the, lit-tle, wan-ted).
-    static func syllables(_ word: String, lang: String?) -> [Int] {
+    public static func syllables(_ word: String, lang: String?) -> [Int] {
         let cs = Array(word.unicodeScalars)
         if cs.isEmpty { return [] }
         if word.range(of: #"[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Ethiopic}]"#, options: .regularExpression) != nil {
@@ -60,12 +61,12 @@ extension Cadence {
     /// under the song's sung level, or 11 semitones or more from the singer's middle: bleed, an octave slip, a breath).
     /// A quiet one joined to the singing (300 ms or less between, a chain of them) is the voice going soft, not bleed: a
     /// word sung out to a whisper is held for as long as it's sung (Variations on a Dream's "dream" at 2:51).
-    struct Unit { var s: Double, e: Double, m: Int, db: Double, weak: Bool }
+    public struct Unit { var s: Double, e: Double, m: Int, db: Double, weak: Bool }
 
     /// The voice's own syllables, from the stem alone: where it's pitched, cut where it stops for 30 ms or more (a
     /// consonant, a breath) and where its loudness dips 2.5 dB or more between two peaks (syllables sung legato on one
     /// breath). A pitch move with no dip stays inside its syllable (a held word falling to its next note).
-    static func units(_ f: Features) -> [Unit] {
+    public static func units(_ f: Features) -> [Unit] {
         let n = f.count, p = f.pitch, db = f.db
         let on = { (k: Int) in f.isVoiced(k) && p[k] > 0 }
         var L = [Double](repeating: 0, count: n)
@@ -117,23 +118,22 @@ extension Cadence {
     /// Lyric to voice (see cadence.js `align` for the costs, kept the same): a song's words (lines with ids 2 000 000
     /// and up) hung on the voice's syllables over the whole song by dynamic programming. `s`/`e` are retimed in place;
     /// → per word its syllables (nil: as it was) and whether it's unsung.
-    static func align(_ lines: [Line], _ f: Features, _ flat: [Word], _ s: inout [Double], _ e: inout [Double]) -> (syl: [[Syl]?], un: [Bool]) {
+    public static func align<L: CadenceLine>(_ lines: [L], _ f: Features, _ flat: [Word], _ s: inout [Double], _ e: inout [Double]) -> (syl: [[Syl]?], un: [Bool]) {
         let F = flat.count
         var res = [[Syl]?](repeating: nil, count: F), un = [Bool](repeating: false, count: F)
-        struct Y { let i: Int, c: Int, exp: Double, wt: Double, inner: Bool, first: Bool, end: Bool, fx: Bool }
-        var Ys: [Y] = []
+        var Ys: [AlignY] = []
         var at = 0
         for l in lines {
             let from = at, c = l.words.count
             at += c
-            guard c > 0, l.id >= 2_000_000 else { continue }
-            let hint: String? = (l.english?.isEmpty == false) ? "und" : nil
+            guard c > 0, l.cadenceID >= 2_000_000 else { continue }
+            let hint: String? = l.translated ? "und" : nil
             // a line a listener wrote (a text override, or one of Recense's own edits): Gallery's `fixed`
-            let fx = l.fixed == true || (l.id >= edited && l.id < edited + cutShort)
+            let fx = l.fixed == true || (l.cadenceID >= edited && l.cadenceID < edited + cutShort)
             for i in from..<at {
                 let cut = syllables(flat[i].text, lang: flat[i].lang ?? hint), K = max(1, cut.count)
                 for k in 0..<K {
-                    Ys.append(Y(i: i, c: k < cut.count ? cut[k] : flat[i].text.unicodeScalars.count,
+                    Ys.append(AlignY(i: i, c: k < cut.count ? cut[k] : flat[i].text.unicodeScalars.count,
                                 exp: s[i] + (e[i] - s[i]) * Double(k) / Double(K), wt: (k > 0 ? 0.3 : 1) * (fx ? 0.25 : 1),
                                 inner: k > 0, first: i == from && k == 0, end: i == at - 1 && k == K - 1, fx: fx))
                 }
@@ -154,7 +154,7 @@ extension Cadence {
             M[k] = M[k - 1] + (g <= 0.03 ? 1.2 : g < 0.3 ? 1.6 : 3 + g)
             Mend[k] = Mend[k - 1] + (g <= 0.03 ? 0.4 : g < 0.3 ? 0.8 : 3 + g)
         }
-        func start(_ y: Y, _ a: Int) -> Double {
+        func start(_ y: AlignY, _ a: Int) -> Double {
             y.wt * min(4, abs(U[a].s - y.exp) / 0.5) + (U[a].weak ? 1.5 : 0) - (y.first && gap[a] >= 0.5 ? 1 : 0)
         }
         var how: [[Int]] = [], back: [[Int]] = [], fl: [[Bool]] = [], uf: [[Bool]] = []
@@ -264,7 +264,7 @@ extension Cadence {
     /// The listener's own timing (a word's `tm`, corrections field "time", set with its sliders while listening; notes
     /// 20261029 row 35) over whatever was worked out: the word is lit from s to e, its light shaped by k (`progress`),
     /// and the words beside it give way so none runs into it. Same rule as Gallery's cadence.js `pin`.
-    static func pin(_ lines: [Line]) -> [Line] {
+    public static func pin<L: CadenceLine>(_ lines: [L]) -> [L] {
         lines.map { l in
             guard l.words.contains(where: { $0.tm != nil }) else { return l }
             var ws = l.words.map { w -> Word in
@@ -287,7 +287,11 @@ extension Cadence {
                 if i > 0, ws[i - 1].tm == nil, ws[i - 1].end > ws[i].start { ws[i - 1] = trim(ws[i - 1], min(ws[i - 1].start, ws[i].start), ws[i].start) }
                 if i + 1 < ws.count, ws[i + 1].tm == nil, ws[i + 1].start < ws[i].end { ws[i + 1] = trim(ws[i + 1], ws[i].end, max(ws[i + 1].end, ws[i].end + 0.05)) }
             }
-            return Line(id: l.id, words: ws, english: l.english, draft: l.draft, fixed: l.fixed)
+            return l.with(words: ws)
         }
     }
 }
+
+/// A written syllable to hang on the voice (align): its word, its letters, how long it should last and weigh. Outside
+/// the function only because Swift nests no type in a generic one.
+struct AlignY { let i: Int, c: Int, exp: Double, wt: Double, inner: Bool, first: Bool, end: Bool, fx: Bool }
