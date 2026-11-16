@@ -29,6 +29,12 @@ Already built (SPEC 69, notes 27). Kept as is:
 - iOS Safari limits:
   - `<video>` in a backgrounded or locked tab: Safari pauses it unless in Picture in Picture. **untested** here;
     PiP is the path (the player's PiP control).
+  - **P3 · built:** when the page is hidden and the system pauses a playing `<video>` (or pauses it up to 500 ms
+    before the hide), the player plays it again, once per hide. A pause from the Lock Screen or headphones
+    (`mediaSession` pause) or one while the page is seen holds. **proven** in Chromium with a faked hidden page
+    (ui.test.mjs "FEAT-19: a video…"); **untested** on iOS Safari, which may refuse `play()` from the background
+    (then the Lock Screen shows paused, truthfully, and PiP stays the path).
+    Edge, accepted: the page's own Pause tapped less than half a second before locking is taken as the system's.
   - Home Screen web app (standalone): background audio and Now Playing as in Safari since iOS 15.4. **assumed**.
 
 ### S-editor · Recense in a browser (offline: the hub at https://recense.local; online: `/main/editor/`)
