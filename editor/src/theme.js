@@ -17,8 +17,7 @@ export const THEMES = {
     blue: '#5b9bd5',
     cyan: '#38bdf8',
     border: 'rgba(91, 155, 213, 0.22)',
-    selection: 'rgba(56, 189, 248, 0.40)',
-    activeLine: 'rgba(91, 155, 213, 0.07)'
+    selection: 'rgba(56, 189, 248, 0.40)'
   },
   light: {
     name: 'light',
@@ -30,8 +29,7 @@ export const THEMES = {
     blue: '#2b6cb0',
     cyan: '#0891b2',
     border: 'rgba(43, 108, 176, 0.22)',
-    selection: 'rgba(8, 145, 178, 0.30)',
-    activeLine: 'rgba(43, 108, 176, 0.06)'
+    selection: 'rgba(8, 145, 178, 0.30)'
   }
 };
 
@@ -65,9 +63,10 @@ export function buildThemeExtension(mode = 'dark') {
       },
       '.cm-content': {
         caretColor: palette.cyan,
-        maxWidth: `${COLUMN_CHARS}ch`,
+        // UI-07 · devicelayout.js sets these per device; the Mac keeps the fallbacks.
+        maxWidth: `var(--rc-col, ${COLUMN_CHARS}ch)`,
         margin: '0 auto',
-        padding: '28px 20px 96px 20px',
+        padding: 'var(--rc-pad-top, 28px) var(--rc-pad-x, 20px) var(--rc-pad-bottom, 96px) var(--rc-pad-x, 20px)',
         lineHeight: '1.65'
       },
       '.cm-cursor, .cm-dropCursor': {
@@ -77,10 +76,6 @@ export function buildThemeExtension(mode = 'dark') {
       // T-0088 · as specific as CodeMirror's own focused rule, or its #233 grey wins and the selection all but vanishes.
       '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: palette.selection
-      },
-      '.cm-activeLine': {
-        backgroundColor: palette.activeLine,
-        borderRadius: '4px'
       },
       '.cm-gutters': {
         backgroundColor: 'transparent',

@@ -202,3 +202,15 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   `nativeSwipe` does nothing during a drag. Spec: `docs/specs/bugs/BUG-08-drag-selection-moved.md`.
   Test: `test/bug08-drag-selection.test.mjs`.
 - Device check (real iPhone, iPad, Mac) still owed for both — not run from this session.
+
+## No line guide (2026-11-16)
+- **BUG-22 — no blue band behind the caret's line** (`src/index.js`, `src/theme.js`): CodeMirror's
+  `highlightActiveLine()` and its `.cm-activeLine` colour are gone, so the PWA, the Mac and the iPhone/iPad apps
+  show plain text with only the caret. Test: `test/bug22-no-line-guide.test.mjs`.
+
+## The editor box per device (2026-11-16)
+- **UI-07 — sized for each device, not the Mac's box scaled** (`src/devicelayout.js`, read by `src/theme.js`):
+  on a touch screen the editor picks its font, column and padding from the viewport and orientation (iPhone 12 Pro
+  Max, iPad Air M2 13-inch; an 11-inch band as fallback), again on every rotation. The Mac (fine pointer) keeps 66ch, 20px sides,
+  28px top. A size picked later with `setFontSize` wins. The iOS host no longer forces 17/19pt.
+  Test: `test/ui07-device-layout.test.mjs`. Spec: `docs/specs/ui-teardowns/UI-07-draftpad-device-sizes/UI-07.md`.

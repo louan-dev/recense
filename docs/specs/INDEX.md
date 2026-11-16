@@ -28,6 +28,7 @@ Row: ID · title · status · From · code pointer
 - UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `mobile/HostApp/iOS/Draftpad.swift`
 - UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
 - UI-06 · Draftpad page navigation, gesture-only (Antinote study): dots tap/drag/hold, slots, reopen, no ⌘ keys · `[~]` · owner 2026-11-15, T-0020/21/22/24 · D1–D4 date label added; G4 drag a dot to any place (T-0089); device check (Mac/iPhone/iPad) owed · `ui-teardowns/UI-06-antinote-navigation/UI-06.md`, `editor/src/pagemode.js`, `editor/src/index.js`
+- UI-07 · Draftpad's editor box per device and orientation (iPhone 12 Pro Max, iPad Air M2 13-inch; 11-inch fallback band), not the Mac's box scaled · `[~]` · owner 2026-11-16 · built in editor; device check (iPhone/iPad) owed · `ui-teardowns/UI-07-draftpad-device-sizes/UI-07.md`, `editor/src/devicelayout.js`
 
 ### Features
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
@@ -63,6 +64,7 @@ Row: ID · title · status · From · code pointer
 - BUG-19 · Carried files counted settled before they arrived (bytes lost in transit, never asked for again) · `[x]` device-checked 11-15 on iPad and iPhone · T-0087 · `bugs/BUG-19-carry-applied-before-bytes.md`
 - BUG-21 · A finger drag scrolls the page instead of inking (touch-action never set) · `[~]` fixed in editor, device check owed · T-0131 · `bugs/BUG-21-finger-ink-pans-page.md`
 - BUG-20 · Guests can't add media to a share link: Main's "hide the old Upload pill" CSS (`#up{display:none!important}`) also swallowed the guest's reused "Add" button · `[x]` (tests pass; checks in `library/`) · T-0130 · `bugs/BUG-20-guest-add-button-css-hidden.md`
+- BUG-22 · A blue band follows the caret's line in Draftpad (highlightActiveLine) · `[~]` fixed in editor, device check owed · owner 2026-11-16 · `bugs/BUG-22-blue-line-guide.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

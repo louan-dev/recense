@@ -205,7 +205,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         loaded = true
         call("setTheme('dark')")
-        call("setFontSize(\(UIDevice.current.userInterfaceIdiom == .pad ? 19 : 17))")
+        // UI-07 · the editor picks its own font and box per device and orientation (editor/src/devicelayout.js).
         call("setText(\(jsLiteral(file.load())))")
         let initialInk = file.loadInk()
         if !initialInk.isEmpty {
