@@ -67,7 +67,7 @@ final class NativePlayer: Transport {
     /// keep-awake sound never stops another app. Before, each set its own and the last one won.
     static func session(hearing: Bool) {
         let s = AVAudioSession.sharedInstance()
-        if shared.path != nil && !hearing { try? s.setCategory(.playback, mode: .spokenAudio) }
+        if NowPlayingInfo.ownsSession(holdsFile: shared.path != nil, hearingOutside: hearing) { try? s.setCategory(.playback, mode: .spokenAudio) }
         else { try? s.setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers) }
     }
     private func refresh() {

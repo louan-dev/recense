@@ -25,5 +25,11 @@ check(c[MPMediaItemPropertyPlaybackDuration] == nil, "unknown duration → no ba
 check(c[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 0, "non-finite time → 0")
 check(NowPlayingInfo.skipBack == 15 && NowPlayingInfo.skipForward == 30, "skip steps match the in-app buttons")
 
+// FEAT-19 Gap B: Recense playing owns the sound (and Now Playing); mixing only while Listen hears outside audio
+check(NowPlayingInfo.ownsSession(holdsFile: true, hearingOutside: false), "our file plays: own it, the Lock Screen shows our scrubber")
+check(!NowPlayingInfo.ownsSession(holdsFile: true, hearingOutside: true), "Listen hears another app: mix, never stop it")
+check(!NowPlayingInfo.ownsSession(holdsFile: false, hearingOutside: false), "nothing of ours: mix (the window's keep-awake sound)")
+check(!NowPlayingInfo.ownsSession(holdsFile: false, hearingOutside: true), "hearing only: mix")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
