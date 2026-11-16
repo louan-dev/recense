@@ -1737,6 +1737,33 @@ export function createInkLayer(view, options = {}) {
     }, SNAP_HOLD_MS);
   }
 
+  // Derived from Spec: UI-04 P13 — a 2x loupe above the point while a finger or the Pencil drags a corner handle or
+  // a selection, so the hand doesn't hide what moves. Shows the ink (not the text under it).
+  const LOUPE_R = 56, LOUPE_ZOOM = 2, LOUPE_LIFT = 96;
+  let loupe = null, loupeSvg = null;
+  function showLoupe(e, x, y) {
+    if (e.pointerType === 'mouse' || !svg || !docNode || typeof docNode.createElement !== 'function') return;
+    if (!loupe) {
+      loupe = docNode.createElement('div');
+      loupe.className = 'rc-ink-loupe';
+      loupe.setAttribute('aria-hidden', 'true');
+      loupeSvg = docNode.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      loupeSvg.setAttribute('width', String(2 * LOUPE_R));
+      loupeSvg.setAttribute('height', String(2 * LOUPE_R));
+      loupe.appendChild(loupeSvg);
+      (docNode.body || null)?.appendChild?.(loupe);
+    }
+    const half = LOUPE_R / LOUPE_ZOOM;
+    loupeSvg.setAttribute('viewBox', `${x - half} ${y - half} ${2 * half} ${2 * half}`);
+    loupeSvg.innerHTML = [highlightGroup, penGroup, handleGroup, svg.querySelector?.('.rc-ink-selection')]
+      .map(g => (g && typeof g.outerHTML === 'string' ? g.outerHTML : '')).join('');
+    const [cx, cy] = contentToClient(x, y);
+    loupe.style.left = `${cx}px`;
+    loupe.style.top = `${Math.max(LOUPE_R, cy - LOUPE_LIFT)}px`;
+    loupe.hidden = false;
+  }
+  function hideLoupe() { if (loupe) loupe.hidden = true; }
+
   function contentPoint(e) {
     const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
     return [e.clientX - rect.left + (scrollDOM?.scrollLeft || 0), e.clientY - rect.top + (scrollDOM?.scrollTop || 0)];
@@ -1814,6 +1841,7 @@ export function createInkLayer(view, options = {}) {
       const [mx, my] = contentPoint(e);
       if (lassoing) { if (selection) selection.move(mx, my); }
       else replaceStrokes([moveHandle(handleDrag.original, handleDrag.index, mx, my)], false);
+      if (handleDrag || selection?.isDragging()) showLoupe(e, mx, my);
       prevent(e);
       return;
     }
@@ -1851,6 +1879,7 @@ export function createInkLayer(view, options = {}) {
     const gate = palm.up(e);
     if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
     stopFillTimer();
+    hideLoupe();
     if (lassoing || handleDrag || fillDone) {
       const [ux, uy] = contentPoint(e);
       if (lassoing) { lassoing = false; isDrawing = false; drawingId = null; if (selection) selection.up(ux, uy); }
@@ -2054,6 +2083,7 @@ export function createInkLayer(view, options = {}) {
     if (e) palm.cancel(e);
     if (e && isDrawing && !sameId(drawingId, e.pointerId)) return;
     stopFillTimer();
+    hideLoupe();
     fillDone = false;
     if (lassoing) { lassoing = false; if (selection) selection.cancel(); }
     if (handleDrag) { const hd = handleDrag; handleDrag = null; replaceStrokes([hd.original], false); }
@@ -2097,6 +2127,7 @@ export function createInkLayer(view, options = {}) {
 
   function destroy() {
     stopFillTimer();
+    if (loupe) loupe.remove?.();
     if (selection) selection.clear();
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer);

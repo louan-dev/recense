@@ -225,3 +225,23 @@ test('UI-04: merge keeps the later edit of a stroke, files without new fields me
   const old2 = { strokes: [{ id: 's', at: 2, points: [[2, 2]] }], removed: [] };
   assert.deepEqual(mergeInkDocuments(old, old2).strokes[0].points, [[2, 2]]);
 });
+
+test('P10: the selection box hit-test and the drag transforms (move, scale about the left side, rotate)', async () => {
+  const { selectionHit, dragMatrix, ROTATE_STEM } = await import('../src/inkselection.js');
+  const { applyPoint } = await import('../src/inkshapes.js');
+  const box = { minX: 0, minY: 0, maxX: 100, maxY: 50 };
+  assert.equal(selectionHit(box, 50, -ROTATE_STEM), 'rotate');
+  assert.equal(selectionHit(box, 100, 25), 'scale');
+  assert.equal(selectionHit(box, 40, 20), 'move');
+  assert.equal(selectionHit(box, 300, 300), null);
+  assert.equal(selectionHit(null, 0, 0), null);
+  assert.deepEqual(applyPoint(dragMatrix('move', box, 10, 10, 30, 5), 0, 0), [20, -5]);
+  const sc = dragMatrix('scale', box, 100, 25, 200, 25);   // twice as wide, about (0, 25)
+  assert.deepEqual(applyPoint(sc, 100, 50), [200, 75]);
+  assert.deepEqual(applyPoint(sc, 0, 25), [0, 25]);
+  const tiny = dragMatrix('scale', box, 100, 25, -500, 25);
+  assert.ok(Math.abs(tiny[0] - 0.1) < 1e-9, 'minimum 0.1x');
+  const rot = dragMatrix('rotate', box, 50, -ROTATE_STEM, 50 + 100, 25);   // up → right: a quarter turn
+  const [x, y] = applyPoint(rot, 50, 0);
+  assert.ok(Math.abs(x - 75) < 1e-9 && Math.abs(y - 25) < 1e-9);
+});

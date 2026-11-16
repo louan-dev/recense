@@ -168,3 +168,24 @@ test('UI-04 P10: Boxed lasso, then mirror horizontally about the box centre', ()
   const xs = h.layer.getInk().strokes[0].points.map(p => p[0]);
   assert.deepEqual([xs[0], xs[xs.length - 1]].map(Math.round), [180, 100]);
 });
+
+test('UI-04 P13: a loupe shows while the Pencil drags a corner handle, and goes on lift; never for the mouse', () => {
+  const h = harness();
+  h.layer.setTool('pen');
+  draw(h, triangleLoop(), 600);
+  const c = polygonCorners(h.layer.getInk().strokes[0])[0];
+  h.fire('pointerdown', { clientX: c[0], clientY: c[1], timeStamp: 5000 });
+  h.fire('pointermove', { clientX: c[0] + 10, clientY: c[1], timeStamp: 5010 });
+  const loupe = h.body.children.find(x => x.className === 'rc-ink-loupe');
+  assert.ok(loupe && loupe.hidden === false, 'loupe up while dragging');
+  h.fire('pointerup', { clientX: c[0] + 10, clientY: c[1], timeStamp: 5020 });
+  assert.equal(loupe.hidden, true);
+
+  const m = harness();
+  m.layer.setTool('pen');
+  draw(m, triangleLoop(), 600);
+  const d = polygonCorners(m.layer.getInk().strokes[0])[0];
+  m.fire('pointerdown', { pointerType: 'mouse', clientX: d[0], clientY: d[1], timeStamp: 5000 });
+  m.fire('pointermove', { pointerType: 'mouse', clientX: d[0] + 10, clientY: d[1], timeStamp: 5010 });
+  assert.equal(m.body.children.some(x => x.className === 'rc-ink-loupe'), false);
+});

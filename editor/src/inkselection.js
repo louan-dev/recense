@@ -368,6 +368,7 @@ export function createInkSelection(host) {
       try { globalObj?.localStorage?.setItem(MODE_KEY, m); } catch { /* none */ }
     },
     isBusy: () => Boolean(drag || lasso),
+    isDragging: () => Boolean(drag),
     // Menu actions, also for keyboard and tests.
     duplicate, copy, cut, paste, del, mirror, group: group_, showPanel,
     menuElement: () => menu, panelElement: () => panel,
