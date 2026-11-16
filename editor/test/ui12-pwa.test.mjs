@@ -20,7 +20,9 @@ test('S1: offline after one visit; text persists across reload', { skip: !playwr
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const url = `http://127.0.0.1:${server.address().port}/`;
-  const browser = await playwright.webkit.launch();
+  // A missing browser must fail the test, not hang the suite with the server left open.
+  let browser;
+  try { browser = await playwright.webkit.launch(); } catch (e) { server.close(); throw e; }
   try {
     const ctx = await browser.newContext({ serviceWorkers: 'allow' });
     const page = await ctx.newPage();
