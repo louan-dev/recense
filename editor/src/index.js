@@ -3,7 +3,7 @@ import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { pageMarkersExtension } from './pages.js';
+import { pageMarkersExtension, controlCharFilter } from './pages.js';
 import {
   extractHeadings,
   orderPagesForOutline,
@@ -166,6 +166,7 @@ export function createEditorExtensions({
     removedRecordExtension(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     pageMarkersExtension(),
+    controlCharFilter(),
     pageModeExtension(),
     embedsExtension(),
     linksExtension(),

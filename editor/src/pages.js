@@ -1,4 +1,4 @@
-import { StateField } from '@codemirror/state';
+import { EditorState, StateField, Transaction } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 
 export const PAGE_MARKER = '<!-- page -->';
@@ -47,9 +47,29 @@ export function isFullDateLine(line) {
   return parseDateLine(line) !== null;
 }
 
+// Derived from Spec: BUG-18. Control characters (C0 except tab, newline, return; and DEL) are not text:
+// they render as ⌧ boxes, and a page of them must still count as empty so swipe can delete it.
+export const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+
+/** Strips control characters from what the user types or pastes; a host load is left as it is. */
+export function controlCharFilter() {
+  return EditorState.transactionFilter.of(tr => {
+    if (!tr.docChanged || !(tr.isUserEvent('input') || tr.isUserEvent('paste') || tr.isUserEvent('drop'))) return tr;
+    let dirty = false;
+    tr.changes.iterChanges((_a, _b, _c, _d, ins) => { if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(ins.toString())) dirty = true; });
+    if (!dirty) return tr;
+    const changes = [];
+    tr.changes.iterChanges((fromA, toA, _fb, _tb, ins) => {
+      changes.push({ from: fromA, to: toA, insert: ins.toString().replace(CONTROL_CHARS_RE, '') });
+    });
+    const userEvent = tr.annotation(Transaction.userEvent);
+    return { changes, userEvent, scrollIntoView: tr.scrollIntoView };
+  });
+}
+
 export function isWindowEmpty(rawContent) {
   if (typeof rawContent !== 'string') return true;
-  const trimmed = rawContent.trim();
+  const trimmed = rawContent.replace(CONTROL_CHARS_RE, '').trim();
   if (trimmed.length === 0) return true;
   // A window holding only an auto-inserted full date heading and no body text is also treated as empty.
   if (!trimmed.includes('\n') && isFullDateLine(trimmed)) return true;
