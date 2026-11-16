@@ -47,15 +47,28 @@ export function createHubSync({ store, fetchFn, getApi, setTimer, clearTimer, no
       if (res.status !== 200) { dirty = true; return; }
       const reply = await res.json();
       dirty = false;
-      if (typeof reply.base === 'string') await store.put('hubBase', reply.base);
-      if (typeof reply.text === 'string' && reply.text !== mine) {
-        // Something arrived (the Mac's edit, a recovered note, a conflict kept as mine): show it and keep it here too.
+      const back = typeof reply.text === 'string' ? reply.text : null;
+      const nextBase = typeof reply.base === 'string' ? reply.base : null;
+      if (back === null || back === mine) {
+        // The hub holds what was sent: that is the new agreed base.
+        if (nextBase !== null) await store.put('hubBase', nextBase);
+      } else {
+        // Something arrived (the Mac's edit, a recovered note, a conflict kept as mine). Show it only if nothing was typed
+        // since: neither saved (the store) nor still in the editor's 300 ms debounce (getText). No await between this
+        // check and setText, so no keystroke can slip in between (FEAT-18 review #2).
         const typedSince = await store.get('text');
-        if (typedSince === raw) {
-          await store.put('text', reply.text);
-          const api = getApi();
-          if (api && typeof api.setText === 'function') api.setText(reply.text);
-        } else dirty = true; // more was typed while the request was out: send that next, from the new base
+        const api = getApi();
+        const live = api && typeof api.getText === 'function' ? api.getText() : undefined;
+        if (typedSince === raw && (live === undefined || live === raw)) {
+          if (api && typeof api.setText === 'function') api.setText(back);
+          await store.put('text', back);                            // text first, base second: a crash between is safe
+          if (nextBase !== null) await store.put('hubBase', nextBase);
+        } else {
+          // More was typed while the request was out. The base stays what was sent, never the hub's text, so the next
+          // send merges both sides instead of overwriting the other device's edit (FEAT-18 review #1).
+          await store.put('hubBase', mine);
+          dirty = true;
+        }
       }
     } finally {
       busy = false;

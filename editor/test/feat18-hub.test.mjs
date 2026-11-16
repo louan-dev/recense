@@ -146,3 +146,33 @@ test('no localStorage use in the editor source can throw: each sits inside a try
   }
   assert.deepEqual(bad, []);
 });
+
+// Regression guard: FEAT-18 review #1 (2026-11-17). When the reply is not adopted because the writer typed meanwhile, the
+// base must stay what this browser sent, never the hub's text; else the next send reads as "nothing changed on the hub"
+// and the other device's edit is overwritten.
+test('typing during the request keeps the sent text as base, so the Mac edit survives the next send', async () => {
+  const store = memStore({ hubToken: 't'.repeat(32), text: 'one', hubBase: 'one' });
+  const sync = createHubSync({
+    store, getApi: () => ({ setText: () => assert.fail('must not overwrite newer typing') }),
+    fetchFn: async () => { await store.put('text', 'one\nI kept typing'); return reply(200, { status: 'adopt', text: 'one\nMac', base: 'one\nMac' }); },
+    setTimer: fn => fn, clearTimer() {}
+  });
+  await sync.run();
+  assert.equal(store.m.get('hubBase'), 'one', 'base = what was sent, not the reply');
+});
+
+// Regression guard: FEAT-18 review #2. Keys typed in the editor but not yet flushed to the store (300 ms debounce) count
+// as typed: the reply is not shown over them, and the base stays what was sent.
+test('unflushed editor text blocks adopting the reply', async () => {
+  const store = memStore({ hubToken: 't'.repeat(32), text: 'one', hubBase: 'one' });
+  const sync = createHubSync({
+    store,
+    getApi: () => ({ getText: () => 'one\nunsaved keys', setText: () => assert.fail('must not replace unsaved keys') }),
+    fetchFn: async () => reply(200, { status: 'adopt', text: 'one\nMac', base: 'one\nMac' }),
+    setTimer: fn => fn, clearTimer() {}
+  });
+  await sync.run();
+  assert.equal(store.m.get('text'), 'one');
+  assert.equal(store.m.get('hubBase'), 'one');
+  assert.equal(sync.isDirty(), true);
+});

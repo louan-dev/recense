@@ -2391,14 +2391,22 @@ html.rc-wings-page body {
         }
         const reply = await res.json();
         dirty = false;
-        if (typeof reply.base === "string") await store.put("hubBase", reply.base);
-        if (typeof reply.text === "string" && reply.text !== mine) {
+        const back = typeof reply.text === "string" ? reply.text : null;
+        const nextBase = typeof reply.base === "string" ? reply.base : null;
+        if (back === null || back === mine) {
+          if (nextBase !== null) await store.put("hubBase", nextBase);
+        } else {
           const typedSince = await store.get("text");
-          if (typedSince === raw) {
-            await store.put("text", reply.text);
-            const api = getApi();
-            if (api && typeof api.setText === "function") api.setText(reply.text);
-          } else dirty = true;
+          const api = getApi();
+          const live = api && typeof api.getText === "function" ? api.getText() : void 0;
+          if (typedSince === raw && (live === void 0 || live === raw)) {
+            if (api && typeof api.setText === "function") api.setText(back);
+            await store.put("text", back);
+            if (nextBase !== null) await store.put("hubBase", nextBase);
+          } else {
+            await store.put("hubBase", mine);
+            dirty = true;
+          }
         }
       } finally {
         busy = false;
