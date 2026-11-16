@@ -6808,6 +6808,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         Downloads.watchFolder()              // BUG-16: whatever lands in downloads/ is adopted; audio settles into Music
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
+        // UI-12 P1: the editor at a local path, http://127.0.0.1:47823/ in any browser on this Mac, loopback only
+        // (shared/localorigin.swift). Its saves land in the same vault through notesync, so the strip's poll shows them.
+        LocalOriginServer.shared.onLog = { log($0) }
+        LocalOriginServer.shared.start(vault: URL(fileURLWithPath: (notePath as NSString).deletingLastPathComponent),
+                                       pageDir: Bundle.main.resourceURL?.appendingPathComponent("editor/pwa"))
         bose.start()                         // the headphone route follows what is plugged in (bosebridge.swift, FEAT-15)
         PairCodeWindow.shared.follow()       // the pairing code in a visible window (paircode.swift, FEAT-09 P1b)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
@@ -8156,7 +8161,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
     let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), t = boseBridgeSelftest(), u = carrymanagerSelftest(), v = transcriptGateSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v ? 0 : 1)
+    let w = localOriginSelftest()   // UI-12 P1/P2
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-15

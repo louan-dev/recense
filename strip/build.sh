@@ -47,6 +47,10 @@ rm -rf "$app/Contents/Resources/editor"
 if [[ -f ../editor/dist/editor.html ]]; then
   mkdir -p "$app/Contents/Resources/editor" && cp ../editor/dist/editor.html "$app/Contents/Resources/editor/"
 fi
+# UI-12 P1: the same page as the local origin serves it (shared/localorigin.swift): page, service worker, manifest, icon.
+if [[ -f ../editor/dist/pwa/index.html ]]; then
+  mkdir -p "$app/Contents/Resources/editor/pwa" && cp ../editor/dist/pwa/{index.html,sw.js,manifest.webmanifest,icon.svg} "$app/Contents/Resources/editor/pwa/"
+fi
 
 if [[ "$1" == "universal" ]]; then
   swiftc -O -target arm64-apple-macos14 app.swift -o .recense-arm64
