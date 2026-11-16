@@ -37,6 +37,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place
   that writes to disk for a settled change), after any change to it or to `shared/homes.swift`: it needs ShowsKit
   linked, so it runs inside `strip/recense selftest` (`carrymanagerSelftest`, ALL OK there), not a standalone swiftc test.
+  A fetched file never deletes what is already at its key (T-0109): the "fetch over a file that appeared meanwhile" case in
+  that selftest prints three ok lines, and `grep -n 'removeItem(at: dest)' shared/carryapply.swift` prints nothing.
+  (`ink ocr` fails in that selftest on the installed app too: T-0071/T-0079, not this.)
 - The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:

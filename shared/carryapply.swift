@@ -38,7 +38,12 @@ enum CarryApply {
             guard let bytesAt else { throw Failure.noBytes }
             guard let (dest, home) = locate(key) else { throw Failure.badKey(key) }
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? fm.removeItem(at: dest)
+            // T-0109: .fetch was decided from a scan taken before these bytes arrived (a big file takes minutes), so a file
+            // may sit at the key now. It goes to trash/ as .replace does, never deleted.
+            if fm.fileExists(atPath: dest.path) {
+                let existing = try Homes.entry(for: dest, in: home)
+                _ = try Homes.remove(existing, from: home)
+            }
             try fm.moveItem(at: bytesAt, to: dest)
             try Homes.record(Homes.entry(for: dest, in: home), in: home)
             return key
@@ -96,6 +101,16 @@ func carrymanagerSelftest() -> Bool {
         check(r == "library/Music/a.m4a", "fetch lands at the exact key")
         check((try? String(contentsOf: Homes.root.appendingPathComponent("library/Music/a.m4a"))) == "hello", "with the right bytes")
         check(Homes.index(.music).contains { $0.path == "a.m4a" }, "and is recorded in the home's index")
+    }
+
+    // fetch onto a file that appeared while the bytes were in flight (T-0109): it goes to trash/, never deleted
+    do {
+        put("library/Music/late.m4a", "appeared meanwhile")
+        _ = try? CarryApply.apply(.fetch(key: "library/Music/late.m4a", sha256: "X"), bytesAt: drop("arrived"))
+        check((try? String(contentsOf: Homes.root.appendingPathComponent("library/Music/late.m4a"))) == "arrived", "fetch over a file that appeared meanwhile lands the fetched bytes")
+        let kept = Homes.index(.trash).first { $0.tags.contains("from:library/Music/late.m4a") }
+        check(kept != nil, "and the file that was there is in trash/, not deleted")
+        if let t = kept { check((try? String(contentsOf: Homes.url(.trash).appendingPathComponent(t.path))) == "appeared meanwhile", "with its own bytes intact") }
     }
 
     // replace: the old version is never deleted, only moved to trash — then the new one lands clean
