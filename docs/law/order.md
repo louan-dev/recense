@@ -62,3 +62,9 @@ The owner's full text (2026-11-14) is kept private: `~/.claude/context/recense/r
   emphasis is counted as days in the owner's words; "fulfilled" means a spec's Done checks plus a named
   baseline; only files on disk count. Replaces the FIFO fix queue in `triage-watch.zsh` and the global rule
   "resume the oldest PAUSED objective".
+
+### Handoff
+- 2026-11-16 · claude (lane wish-order, branch `work/wish-order`): wishrank finds its own repo, names a missing input in one line (exit 3),
+  and `export` writes the public snapshot `docs/law/queue.md`; every CLAUDE.md and AGENTS.md point off-Mac agents to it.
+  The owner's three global CLAUDE.md lines (2026-11-16) add nothing beyond rules 3-4 and "Running it", so no amendment.
+  Mac to do once, then after triage changes: `cd ~/Developer/recense/sync && node src/wishrank.mjs export && git -C .. add docs/law/queue.md && git -C .. commit -m "queue: wishrank export"`.
