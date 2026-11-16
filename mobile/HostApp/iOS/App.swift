@@ -20,6 +20,7 @@ struct GalleryFilesApp: App {
                 .task { status = await setUp() }
                 .onChange(of: phase, initial: true) { _, p in   // automatic carry (FEAT-09 P4): launch or to the front → carry
                     guard p == .active else { return }
+                    DraftpadFile.serveSavedVault()   // UI-12 P2: the editor at http://127.0.0.1:47823/ (localorigin.swift)
                     let c = CarryManager.shared
                     c.reloadFromDisk()
                     guard !c.peers.isEmpty else { return }   // never paired: no radios, no Local Network prompt

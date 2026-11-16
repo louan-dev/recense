@@ -39,6 +39,7 @@ final class DraftpadFile: ObservableObject {
         if let u = try? URL(resolvingBookmarkData: d, bookmarkDataIsStale: &stale), u.startAccessingSecurityScopedResource() {
             vault = u
             if stale, let fresh = try? u.bookmarkData() { UserDefaults.standard.set(fresh, forKey: Self.key) }
+            Self.serveLocalOrigin(u)   // UI-12 P2
         }
     }
 
@@ -46,6 +47,25 @@ final class DraftpadFile: ObservableObject {
         guard folder.startAccessingSecurityScopedResource() else { return }
         if let d = try? folder.bookmarkData() { UserDefaults.standard.set(d, forKey: Self.key) }
         vault = folder
+        Self.serveLocalOrigin(folder)
+    }
+
+    // Derived from Spec: UI-12 P2 · coded, not compiled; device check owed.
+    /// The editor at a local path on this iPhone or iPad: http://127.0.0.1:47823/ in Safari, loopback only
+    /// (shared/localorigin.swift), saving into this same vault through notesync. The app's own Draftpad keeps loading the
+    /// bundled page from disk with its native handlers. iOS stops the listener while the app is suspended; Safari still
+    /// opens the page from its service-worker cache and its edits wait in the page's outbox until the app is in front.
+    private(set) static var servedVault: URL?
+    static func serveLocalOrigin(_ vault: URL?) {
+        guard let vault else { return }
+        servedVault = vault
+        LocalOriginServer.shared.onLog = { log($0) }
+        LocalOriginServer.shared.start(vault: vault, pageDir: Bundle.main.url(forResource: "pwa", withExtension: nil))
+    }
+    /// The vault picked once, resolved once per launch, served whenever the app comes to the front.
+    static func serveSavedVault() {
+        if servedVault == nil { _ = DraftpadFile() }   // init resolves the bookmark and serves it
+        serveLocalOrigin(servedVault)
     }
 
     /// The file as it is now (coordinated, so iCloud downloads it first if needed); it becomes the base.
