@@ -1215,6 +1215,15 @@ export function mountEditor(root = document.body, initialDoc = '') {
       // A widget only this host can run (the Mac: 'iphone').
       enableWidget: id => (dualWings ? dualWings.enableHostWidget(id) : null),
       updateAudioTime: sec => audioSidecar.updateTime(sec),
+      // UI-12 P6: the player. Host present: posted to it (host wins). Browser: Gallery's player rules, in the page.
+      loadAudio: (src, title) => audioSidecar.load(src, title),
+      playAudio: () => audioSidecar.play(),
+      pauseAudio: () => audioSidecar.pause(),
+      seekAudio: sec => audioSidecar.seek(sec),
+      setAudioRate: rate => audioSidecar.setRate(rate),
+      setAudioLoop: (a, b) => audioSidecar.setLoop(a, b),
+      audioState: () => audioSidecar.player.state(),
+      showAudio: () => audioSidecar.pane?.show(),
       bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
       annotateAudioCue: (idx, text) => {
         const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());

@@ -1,5 +1,6 @@
 import { inspectDraftpadPages, PAGE_MARKER, isFullDateLine } from './pages.js';
 import { parseHeadingLine } from './outline.js';
+import { createPlayer, createTransport } from './player.js';
 
 /**
  * Formats a time in seconds to MM:SS or H:MM:SS for audio timestamps.
@@ -402,6 +403,13 @@ export function createTranscriptPane(container, options = {}) {
   header.appendChild(closeControl);
   pane.appendChild(header);
 
+  // UI-12 P6: in a browser (no native host) the pane carries the player's own transport; a host draws its own.
+  let transport = null;
+  if (sidecar?.player?.backend === 'web' && doc?.createElement) {
+    transport = createTransport(doc, sidecar.player, { onPick: (url, name) => sidecar.load(url, name) });
+    pane.appendChild(transport.el);
+  }
+
   const cuesContainer = makeDomElement(doc, 'div', { className: 'rc-transcript-cues' }, {
     role: 'feed',
     'aria-label': 'Transcript cues'
@@ -782,7 +790,8 @@ export function createTranscriptPane(container, options = {}) {
     currentCues = Array.isArray(state.cues) ? state.cues : [];
 
     // Auto un-hide when playing with cues; hide when cues are empty or cleared
-    if (state.playing && currentCues.length > 0) {
+    // (UI-12 P6: a recording loaded in the browser keeps the pane, and its transport, shown)
+    if ((state.playing && currentCues.length > 0) || (transport && state.src)) {
       pane.hidden = false;
       pane.removeAttribute('hidden');
     } else if (currentCues.length === 0) {
@@ -822,6 +831,7 @@ export function createTranscriptPane(container, options = {}) {
 
   return {
     element: pane,
+    transport,
     update,
     updateCue,
     highlightCue,
@@ -860,6 +870,20 @@ export function createAudioSidecar(options = {}) {
 
   let pane = null;
 
+  // UI-12 P6: one interface, two backends (native host bridge | Gallery's player rules in the page).
+  const player = options.player ?? createPlayer({
+    globalObj,
+    onTime: t => {
+      updateTime(t);
+      pane?.transport?.setTime(t);
+    },
+    onState: ({ playing }) => {
+      state.playing = playing;
+      pane?.transport?.setPlaying(playing);
+    },
+    onStatus: line => pane?.transport?.setStatus(line)
+  });
+
   function setAudioTranscript(data = {}) {
     if (typeof data.playing === 'boolean') {
       state.playing = data.playing;
@@ -869,6 +893,10 @@ export function createAudioSidecar(options = {}) {
     }
     if (typeof data.title === 'string') {
       state.title = data.title;
+    }
+    if (typeof data.src === 'string' && data.src !== state.src) {
+      // UI-12 P6: the host (or a page script) names the recording; the player loads it
+      load(data.src, typeof data.title === 'string' ? data.title : state.title);
     }
     if (typeof data.sourceKey === 'string') {
       state.sourceKey = data.sourceKey;
@@ -923,10 +951,17 @@ export function createAudioSidecar(options = {}) {
   }
 
   function seek(time) {
-    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-      globalObj.webkit.messageHandlers.audio.postMessage({ action: 'seek', time });
-    }
+    player.seek(time);
     updateTime(time);
+  }
+
+  // UI-12 P6: load a recording (host: posted; browser: Gallery's player, if this device holds it).
+  async function load(src, title = '', artwork = '') {
+    state.src = String(src || '');
+    if (title) state.title = String(title);
+    const where = await player.load(state.src, state.title, artwork);
+    if (pane) pane.update(state);
+    return where;
   }
 
   const sidecarApi = {
@@ -937,6 +972,13 @@ export function createAudioSidecar(options = {}) {
     toggleBookmarkCue: toggleBookmark,
     annotateCue: annotate,
     seek,
+    load,
+    play: () => player.play(),
+    pause: () => player.pause(),
+    toggle: () => player.toggle(),
+    setRate: r => player.setRate(r),
+    setLoop: (a, b) => player.setLoop(a, b),
+    player,
     activeCueIndexAt: (t) => activeCueIndexAt(state.cues, t !== undefined ? t : state.currentTime),
     getActiveCueIndex: () => activeCueIndexAt(state.cues, state.currentTime),
     get pane() {

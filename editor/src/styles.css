@@ -2151,3 +2151,10 @@ html.rc-wings-page body {
   width: 0.6ch;
   text-align: center;
 }
+
+/* UI-12 P6: the browser's player transport (a native host draws its own) */
+.rc-player { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; font: inherit; }
+.rc-player button, .rc-player-pick { background: none; border: 0; color: var(--rc-accent, #0a84ff); font: inherit; cursor: pointer; padding: 4px 2px; }
+.rc-player-time { font-variant-numeric: tabular-nums; opacity: .7; min-width: 3.2em; }
+.rc-player-scrub { flex: 1 1 120px; min-width: 80px; accent-color: var(--rc-accent, #0a84ff); }
+.rc-player-status { flex-basis: 100%; margin: 0; opacity: .8; }
