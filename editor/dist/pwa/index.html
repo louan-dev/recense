@@ -2159,6 +2159,47 @@ html.rc-wings-page body {
   text-align: center;
 }
 
+/* ---- UI-04 ink (draftpad-ink lane): radial menu, shape handles, lasso, selection, style panel ---- */
+/* P2: the held squeeze's radial menu, centred on the Pencil's hover point. */
+.rc-radial {
+  position: fixed;
+  width: 0;
+  height: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.rc-radial::before {
+  content: '';
+  position: absolute;
+  left: -140px;
+  top: -140px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 27px, color-mix(in srgb, var(--rc-panel) 82%, transparent) 28px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  animation: rc-radial-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rc-radial[hidden] { display: none; }
+.rc-radial.rc-still::before { animation: none; }
+.rc-radial-item {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--rc-text);
+  background: color-mix(in srgb, var(--rc-panel) 70%, var(--rc-text) 30%);
+  font-size: 11px;
+}
+.rc-radial-item.rc-hot { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
+.rc-radial-item svg { width: 20px; height: 20px; }
+@keyframes rc-radial-in { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rc-radial::before { animation: none; } }
+
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -33053,7 +33094,7 @@ ${PAGE_MARKER}
     const p = inspectDraftpadPages(state.doc.toString())[i];
     return { index: i, head: pageHead(p) };
   }
-  var AXIS_SLOP_PX = 12;
+  var AXIS_SLOP_PX = 6;
   var AXIS_RATIO = 1.4;
   function decideAxis(dx, dy) {
     const ax = Math.abs(dx), ay = Math.abs(dy);
@@ -33101,7 +33142,7 @@ ${PAGE_MARKER}
       ]))
     ];
   }
-  function attachSwipePaging(view, { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
+  function attachSwipePaging(view, { threshold = 36, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
     let wheelAcc = 0;
     let wheelSpent = false;
     let wheelTimer = null;
@@ -33121,7 +33162,7 @@ ${PAGE_MARKER}
     }
     function settleDrag(dx) {
       const el5 = targetEl();
-      const limit = Math.min(threshold, widthOf() * 0.2);
+      const limit = Math.min(threshold, widthOf() * 0.12);
       const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce }) : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
       if (!el5 || !el5.style) {
         if (turn) turn();
@@ -33179,7 +33220,7 @@ ${PAGE_MARKER}
       const dx = e.isDirectionInvertedFromDevice === false ? e.deltaX : -e.deltaX;
       wheelAcc += dx;
       renderDrag(wheelAcc);
-      const limit = Math.min(threshold, widthOf() * 0.2);
+      const limit = Math.min(threshold, widthOf() * 0.12);
       if (Math.abs(wheelAcc) >= limit) {
         wheelSpent = true;
         const finalDx = wheelAcc;
@@ -34105,6 +34146,122 @@ ${PAGE_MARKER}
     for (let i = n - 2; i >= 0; i--) d += ` L ${f(right[i][0])} ${f(right[i][1])}`;
     d += ` A ${f(r[0])} ${f(r[0])} 0 0 0 ${f(left[0][0])} ${f(left[0][1])} Z`;
     return d;
+  }
+
+  // src/radialmenu.js
+  var RADIAL_DEADZONE = 28;
+  var RADIAL_INNER_R = 68;
+  var RADIAL_OUTER_R = 112;
+  var RADIAL_SPLIT = (RADIAL_INNER_R + RADIAL_OUTER_R) / 2;
+  var RADIAL_MAX = RADIAL_OUTER_R + (RADIAL_SPLIT - RADIAL_INNER_R) + 6;
+  function radialItemAngle(i, n) {
+    return -Math.PI / 2 + 2 * Math.PI * i / Math.max(1, n);
+  }
+  function radialItemPos(i, n, r) {
+    const a = radialItemAngle(i, n);
+    return { x: r * Math.cos(a), y: r * Math.sin(a) };
+  }
+  function radialHitTest(dx, dy, inner, outer = 0) {
+    const d = Math.hypot(dx, dy);
+    if (!(d >= RADIAL_DEADZONE) || d > RADIAL_MAX) return null;
+    const ring = d < RADIAL_SPLIT ? "inner" : "outer";
+    const n = ring === "inner" ? inner : outer;
+    if (!n) return null;
+    let a = Math.atan2(dy, dx) + Math.PI / 2;
+    a = (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    const sector = 2 * Math.PI / n;
+    const index = Math.floor((a + sector / 2) / sector) % n;
+    return { ring, index };
+  }
+  function createRadialMenu({ doc: doc2, mount, items, onPick = () => {
+  }, reduceMotion = () => false } = {}) {
+    let el5 = null;
+    let cx = 0, cy = 0;
+    let open = false;
+    let hot = null;
+    const nodes = { inner: [], outer: [] };
+    const list = () => ({ inner: items?.inner || [], outer: items?.outer || [] });
+    function build3() {
+      if (el5 || !doc2 || typeof doc2.createElement !== "function") return;
+      el5 = doc2.createElement("div");
+      el5.className = "rc-radial";
+      el5.setAttribute("role", "menu");
+      el5.setAttribute("aria-label", "Tools");
+      el5.hidden = true;
+      const host = mount || doc2.body;
+      if (host && typeof host.appendChild === "function") host.appendChild(el5);
+    }
+    function fill() {
+      el5.innerHTML = "";
+      nodes.inner = [];
+      nodes.outer = [];
+      const all = list();
+      for (const ring of ["inner", "outer"]) {
+        const r = ring === "inner" ? RADIAL_INNER_R : RADIAL_OUTER_R;
+        all[ring].forEach((it, i) => {
+          const b = doc2.createElement("div");
+          b.className = `rc-radial-item rc-radial-${ring}`;
+          b.setAttribute("role", "menuitem");
+          b.setAttribute("aria-label", it.label || it.id);
+          b.setAttribute("data-id", it.id);
+          const p = radialItemPos(i, all[ring].length, r);
+          b.style.left = `${p.x}px`;
+          b.style.top = `${p.y}px`;
+          b.innerHTML = it.icon || "";
+          if (!it.icon) b.textContent = it.label || it.id;
+          el5.appendChild(b);
+          nodes[ring].push(b);
+        });
+      }
+    }
+    function setHot(h) {
+      hot = h;
+      for (const ring of ["inner", "outer"]) {
+        nodes[ring].forEach((b, i) => {
+          const on = Boolean(h && h.ring === ring && h.index === i);
+          if (b.classList) b.classList.toggle("rc-hot", on);
+        });
+      }
+    }
+    function hitAt(x, y) {
+      const all = list();
+      return radialHitTest(x - cx, y - cy, all.inner.length, all.outer.length);
+    }
+    return {
+      open(x, y) {
+        build3();
+        cx = Number(x) || 0;
+        cy = Number(y) || 0;
+        open = true;
+        if (!el5) return;
+        fill();
+        el5.style.left = `${cx}px`;
+        el5.style.top = `${cy}px`;
+        if (el5.classList) el5.classList.toggle("rc-still", Boolean(reduceMotion()));
+        el5.hidden = false;
+        setHot(null);
+      },
+      move(x, y) {
+        if (!open) return;
+        setHot(hitAt(x, y));
+      },
+      release(x, y) {
+        if (!open) return null;
+        const h = Number.isFinite(Number(x)) ? hitAt(Number(x), Number(y)) : hot;
+        this.close();
+        if (!h) return null;
+        const item = list()[h.ring][h.index];
+        if (item) onPick(item, h.ring);
+        return item || null;
+      },
+      close() {
+        open = false;
+        hot = null;
+        if (el5) el5.hidden = true;
+      },
+      isOpen: () => open,
+      element: () => el5
+    };
   }
 
   // src/ink.js
@@ -35332,6 +35489,30 @@ ${clean(nextLineText)}`;
       eraserRing.setAttribute("r", String(ERASER_RADIUS[currentTool] || 12));
       eraserRing.style.display = "";
     }
+    let radial = null;
+    function radialMenu() {
+      if (!radial) {
+        radial = createRadialMenu({
+          doc: docNode,
+          mount: docNode?.body || null,
+          // fixed to the viewport: no transformed ancestor
+          items: {
+            inner: PALETTE_TOOLS.map((t2) => ({ id: t2, label: INK_TOOL_NAMES[t2] || t2, icon: INK_TOOL_ICONS[t2] || "" })),
+            outer: []
+          },
+          onPick: (item) => {
+            setTool(item.id);
+            haptic("snap");
+          },
+          reduceMotion: () => Boolean(globalObj?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
+        });
+      }
+      return radial;
+    }
+    function haptic(kind, extra = null) {
+      const h = globalObj?.webkit?.messageHandlers?.ui;
+      if (h && typeof h.postMessage === "function") h.postMessage({ haptic: kind, ...extra || {} });
+    }
     function getTool() {
       return currentTool;
     }
@@ -35489,6 +35670,7 @@ ${clean(nextLineText)}`;
         const res = detectAndSnapShape(activePoints, { holdDurationMs, forceCircle: false });
         finalPoints = res.points;
         finalShape = res.shape;
+        if (res.snapped) haptic("shapeSnap", { x: Number(e.clientX) || 0, y: Number(e.clientY) || 0 });
       }
       const stroke = {
         id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -35705,7 +35887,8 @@ ${clean(nextLineText)}`;
       removePageInk,
       findInk,
       markInk,
-      recognizeNow
+      recognizeNow,
+      radialMenu
     };
   }
 
@@ -41031,7 +41214,7 @@ ${String(text ?? "")}`;
           return card;
         },
         // Derived from Spec: UI-04 P1 — the host sends every squeeze phase with the hover point:
-        // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2; until then, toggles on release).
+        // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2) at the hover point.
         onPencilSqueeze: (phase, x, y) => {
           if (!inkLayer) return "idle";
           if (!pencilSqueeze) {
@@ -41040,7 +41223,7 @@ ${String(text ?? "")}`;
                 postHaptic("squeeze");
                 return inkLayer.toggleMenu();
               },
-              radial: () => null
+              radial: () => typeof inkLayer.radialMenu === "function" ? inkLayer.radialMenu() : null
             });
           }
           return pencilSqueeze(String(phase), Number(x), Number(y));

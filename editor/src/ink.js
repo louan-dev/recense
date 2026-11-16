@@ -5,6 +5,7 @@
 import { nextPressure } from './pressure.js';
 import { createPalmGate, isTinyStroke, isBrush } from './palm.js';
 import { outlinePath } from './strokeoutline.js';
+import { createRadialMenu } from './radialmenu.js';
 
 export const INK_TOOLS = [
   'pen',
@@ -1496,6 +1497,31 @@ export function createInkLayer(view, options = {}) {
     eraserRing.style.display = '';
   }
 
+  // Derived from Spec: UI-04 P2 — the held squeeze's radial menu: the palette's tools on the inner ring
+  // (every item is also a palette button), `::` macros on the outer ring (none exist yet).
+  let radial = null;
+  function radialMenu() {
+    if (!radial) {
+      radial = createRadialMenu({
+        doc: docNode,
+        mount: docNode?.body || null,   // fixed to the viewport: no transformed ancestor
+        items: {
+          inner: PALETTE_TOOLS.map(t => ({ id: t, label: INK_TOOL_NAMES[t] || t, icon: INK_TOOL_ICONS[t] || '' })),
+          outer: []
+        },
+        onPick: item => { setTool(item.id); haptic('snap'); },
+        reduceMotion: () => Boolean(globalObj?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+      });
+    }
+    return radial;
+  }
+
+  // Posts a haptic to the native host (iOS); extra fields (a point for the Pencil's own haptic) ride along.
+  function haptic(kind, extra = null) {
+    const h = globalObj?.webkit?.messageHandlers?.ui;
+    if (h && typeof h.postMessage === 'function') h.postMessage({ haptic: kind, ...(extra || {}) });
+  }
+
   function getTool() {
     return currentTool;
   }
@@ -1676,6 +1702,8 @@ export function createInkLayer(view, options = {}) {
       const res = detectAndSnapShape(activePoints, { holdDurationMs, forceCircle: false });
       finalPoints = res.points;
       finalShape = res.shape;
+      // Derived from Spec: UI-04 P3 — the snap is felt in the Pencil Pro, where the nib lifted (viewport point).
+      if (res.snapped) haptic('shapeSnap', { x: Number(e.clientX) || 0, y: Number(e.clientY) || 0 });
     }
 
     const stroke = {
@@ -1905,6 +1933,7 @@ export function createInkLayer(view, options = {}) {
     removePageInk,
     findInk,
     markInk,
-    recognizeNow
+    recognizeNow,
+    radialMenu
   };
 }

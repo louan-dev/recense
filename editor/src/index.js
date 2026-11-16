@@ -1172,13 +1172,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return card;
       },
       // Derived from Spec: UI-04 P1 — the host sends every squeeze phase with the hover point:
-      // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2; until then, toggles on release).
+      // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2) at the hover point.
       onPencilSqueeze: (phase, x, y) => {
         if (!inkLayer) return 'idle';
         if (!pencilSqueeze) {
           pencilSqueeze = squeezeHost({
             toggle: () => { postHaptic('squeeze'); return inkLayer.toggleMenu(); },
-            radial: () => null
+            radial: () => (typeof inkLayer.radialMenu === 'function' ? inkLayer.radialMenu() : null)
           });
         }
         return pencilSqueeze(String(phase), Number(x), Number(y));
