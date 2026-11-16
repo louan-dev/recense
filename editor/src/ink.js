@@ -822,7 +822,8 @@ export function createInkLayer(view, options = {}) {
     // Where the pill and palette float. Never the text's scroller: a child there joins
     // CodeMirror's flex row and squeezes the text column.
     mount = null,
-    onToolChange = null
+    onToolChange = null,
+    onStrokeAdded = null   // FEAT-08 #2: called with each new drawn stroke (word attachment)
   } = options;
 
   // Regression guard: BUG-07 — prefer the view's own live, measured line height over the
@@ -1692,6 +1693,7 @@ export function createInkLayer(view, options = {}) {
     anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
     inkDoc.strokes.push(stroke);
     if (stroke.tool === 'pen') scheduleRecognition();
+    if (typeof onStrokeAdded === 'function') { try { onStrokeAdded(stroke); } catch { /* never lose the stroke */ } }
 
     activePoints = [];
     if (activeGroup) activeGroup.innerHTML = '';

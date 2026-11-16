@@ -30,6 +30,9 @@ final class DraftpadFile: ObservableObject {
     private(set) var lastInk = ""       // what this device last read or wrote for draftpad.ink.json
     var note: URL? { vault?.appendingPathComponent("draftpad.md") }
     var inkNote: URL? { vault?.appendingPathComponent("draftpad.ink.json") }
+    /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
+    var matterNote: URL? { vault?.appendingPathComponent("draftpad.matter.json") }
+    private(set) var lastMatter = ""    // what this device last read or wrote for draftpad.matter.json
     var eventsNote: URL? { vault?.appendingPathComponent("draftpad.events.json") }
     var wingsNote: URL? { vault?.appendingPathComponent("draftpad.wings.json") }
 
@@ -87,6 +90,20 @@ final class DraftpadFile: ObservableObject {
         let s = coordinatedRead(p) ?? ""
         lastInk = s
         return s
+    }
+
+    /// FEAT-08 · coded, not compiled; device check owed.
+    func loadMatter() -> String {
+        guard let p = matterNote?.path else { return "" }
+        let s = coordinatedRead(p) ?? ""
+        lastMatter = s
+        return s
+    }
+
+    func saveMatterJSON(_ json: String) {
+        guard let p = matterNote?.path, !json.isEmpty, json != lastMatter else { return }
+        coordinatedWrite(json, to: p)
+        lastMatter = json
     }
 
     /// Writes the line-anchored ink sidecar JSON to the vault folder.
@@ -170,7 +187,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         web = WKWebView(frame: .zero, configuration: cfg)
         super.init()
-        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
+        for name in ["editor", "link", "ui", "ink", "matter", "audio", "calendar", "wings"] {
             cfg.userContentController.add(Weak(self), name: name)
         }
         if let p = file.eventsNote?.path,
@@ -211,6 +228,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         if !initialInk.isEmpty {
             call("setInk(\(jsLiteral(initialInk)))")
         }
+        let initialMatter = file.loadMatter()
+        if !initialMatter.isEmpty { call("setMatter(\(jsLiteral(initialMatter)))") }   // FEAT-08
         if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
             call("setWingsState(\(jsLiteral(wingsJSON)))")
         }
@@ -268,6 +287,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                       let json = String(data: data, encoding: .utf8) {
                 file.saveInkJSON(json)
             }
+        case "matter":   // FEAT-08
+            if let json = m.body as? String { file.saveMatterJSON(json) }
         case "audio":
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
@@ -428,6 +449,12 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                       let data = try? JSONSerialization.data(withJSONObject: obj),
                       let json = String(data: data, encoding: .utf8) else { return }
                 self.file.saveInkJSON(json)
+            }
+        }
+        // FEAT-08 · another device's sidecar: union it (src/matter.js mergeMatter), keep the result.
+        if let mp = file.matterNote?.path, let remote = coordinatedRead(mp), !remote.isEmpty, remote != file.lastMatter {
+            call("mergeMatter(\(jsLiteral(remote)))") { [weak self] merged in
+                if let json = merged as? String { self?.file.saveMatterJSON(json) }
             }
         }
     }
