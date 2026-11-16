@@ -223,10 +223,13 @@ test('Zero-chrome resting state: toolbar starts faded, formatDotIndicator has ze
   // Verify pageIndicator rendered textContent has zero words or digits
   const shell = root.children[0];
   const toolbar = shell?.children[0];
-  const indicator = toolbar?.children[0];
+  // UI-06: the toolbar's first child is the page nav (＋ ‹ dots › slots); the dots are buttons.
+  const indicator = toolbar?.children[0]?.children.find(c => c.className === 'rc-page-indicator');
+  assert.ok(indicator, 'page dots present in the nav');
   if (indicator) {
-    assert.equal(indicator.textContent, '● ○');
-    assert.equal(/[a-zA-Z0-9]/.test(indicator.textContent), false, 'pageIndicator.textContent must contain zero words or digits');
+    const glyphs = indicator.children.map(d => d.textContent).join(' ');
+    assert.equal(glyphs, '● ○');
+    assert.equal(/[a-zA-Z0-9]/.test(glyphs), false, 'page dots must contain zero words or digits');
     assert.equal(indicator.getAttribute('data-dots'), '● ○');
     assert.equal(indicator.getAttribute('data-label'), 'Page 1 of 2');
   }

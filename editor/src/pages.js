@@ -5,8 +5,11 @@ export const PAGE_MARKER = '<!-- page -->';
 export const PAGE_JOINER = `\n\n${PAGE_MARKER}\n\n`;
 /** A saved page's hidden line (library.js): `<!-- saved k3x9q2 -->`. */
 export const META_RE = /^<!-- saved ([a-z0-9]{6}) -->$/;
+/** A slotted page's hidden line (UI-06 S1): `<!-- slot 3 -->`, slots 1–9. */
+export const SLOT_RE = /^<!-- slot ([1-9]) -->$/;
 export function isMetaLine(line) {
-  return META_RE.test(String(line || '').trim());
+  const t = String(line || '').trim();
+  return META_RE.test(t) || SLOT_RE.test(t);
 }
 
 const WEEKDAYS = new Set([

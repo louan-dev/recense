@@ -3,7 +3,7 @@ import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { pageMarkersExtension, controlCharFilter } from './pages.js';
+import { pageMarkersExtension, controlCharFilter, inspectDraftpadPages, isWindowEmpty } from './pages.js';
 import {
   extractHeadings,
   orderPagesForOutline,
@@ -38,7 +38,15 @@ import {
   swipeRightToLeft,
   openNewWindowOnLeft,
   deleteEmptyWindow,
-  computeEffectiveDrag
+  computeEffectiveDrag,
+  goToPage,
+  newPage,
+  promotePage,
+  setPageSlot,
+  pageSlots,
+  slotPage,
+  reopenTarget,
+  reopenMemo
 } from './pagemode.js';
 import { embedsExtension, formatDroppedEmbed } from './embeds.js';
 import { linksExtension } from './links.js';
@@ -208,12 +216,37 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const toolbar = document.createElement('header');
   toolbar.className = 'rc-toolbar rc-toolbar-faded';
 
+  // Derived from Spec: UI-06 · ＋ new page · ‹ newer · page dots (tap / drag to front / hold) · › older · slot dots.
+  const nav = document.createElement('nav');
+  nav.className = 'rc-nav';
+  nav.setAttribute('aria-label', 'Pages');
+  function navButton(cls, label, glyph) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `rc-btn rc-nav-btn ${cls}`;
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    b.textContent = glyph;
+    return b;
+  }
+  const newPageNavBtn = navButton('rc-nav-new', 'New page', '＋');
+  const newerNavBtn = navButton('rc-nav-newer', 'Newer page', '‹');
+  const olderNavBtn = navButton('rc-nav-older', 'Older page', '›');
   const pageIndicator = document.createElement('span');
   pageIndicator.className = 'rc-page-indicator';
   pageIndicator.id = 'rc-page-indicator';
-  pageIndicator.textContent = formatDotIndicator(0, 1);
+  pageIndicator.setAttribute('role', 'group');
   pageIndicator.setAttribute('data-dots', formatDotIndicator(0, 1));
   pageIndicator.setAttribute('data-label', formatPageIndicator(0, 1));
+  const slotRow = document.createElement('span');
+  slotRow.className = 'rc-slot-row';
+  slotRow.setAttribute('role', 'group');
+  slotRow.setAttribute('aria-label', 'Slots');
+  const dotSheet = document.createElement('div');
+  dotSheet.className = 'rc-dot-sheet';
+  dotSheet.setAttribute('role', 'menu');
+  dotSheet.hidden = true;
+  nav.append(newPageNavBtn, newerNavBtn, pageIndicator, olderNavBtn, slotRow, dotSheet);
 
   const menuWrap = document.createElement('div');
   menuWrap.className = 'rc-menu-wrap';
@@ -255,13 +288,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const recenseReadBtn = makeMenuItem('rc-recense-read-btn', 'Read lens aloud', 'Hear the lens lines of the section you are in');
   const recenseIntoBtn = makeMenuItem('rc-recense-into-btn', 'Translate into: Auto', 'The Source lens’s language for this page');
   const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
-  const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'Newer page (⌘[)');
-  const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'Older page (⌘])');
-  const pagesBtn = makeMenuItem(
-    'rc-pages-btn',
-    'Pages',
-    'Swipe or ⌘] / ⌘[ to glide between pages'
-  );
+  const newPageMenuBtn = makeMenuItem('rc-new-page-btn', 'New page', 'A new page at the front');
+  const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'One page to the left');
+  const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'One page to the right');
+  const promoteMenuBtn = makeMenuItem('rc-promote-btn', 'Promote to front', 'Move this page to the front');
+  const pagesBtn = makeMenuItem('rc-pages-btn', 'Pages', 'Swipe to glide between pages');
   pagesBtn.setAttribute('aria-pressed', 'true');
   const newestFirstMenuBtn = makeMenuItem('rc-newest-first-menu-btn', 'Newest first', 'Order outline newest first');
   const themeBtn = makeMenuItem('rc-theme-btn', 'Light theme', 'Switch theme');
@@ -274,14 +305,16 @@ export function mountEditor(root = document.body, initialDoc = '') {
     recenseReadBtn,
     recenseIntoBtn,
     searchBtn,
+    newPageMenuBtn,
     prevPageBtn,
     nextPageBtn,
+    promoteMenuBtn,
     pagesBtn,
     newestFirstMenuBtn,
     themeBtn
   );
   menuWrap.append(menuBtn, menu);
-  toolbar.append(pageIndicator, menuWrap);
+  toolbar.append(nav, menuWrap);
 
   const workspace = document.createElement('div');
   workspace.className = 'rc-workspace';
@@ -455,12 +488,144 @@ export function mountEditor(root = document.body, initialDoc = '') {
     const cur = currentPage(state);
     const count = pageCount(state);
     const dots = formatDotIndicator(cur, count);
-    pageIndicator.textContent = dots;
     pageIndicator.setAttribute('data-dots', dots);
     pageIndicator.setAttribute('data-label', formatPageIndicator(cur, count));
+    const size = 8;
+    const start = count <= size ? 0 : Math.max(0, Math.min(count - size, cur - Math.floor(size / 2)));
+    const end = Math.min(count, start + size);
+    const key = `${start}:${end}:${cur}`;
+    if (pageIndicator.getAttribute('data-key') !== key) {
+      pageIndicator.setAttribute('data-key', key);
+      clearEl(pageIndicator);
+      for (let i = start; i < end; i++) {
+        const d = document.createElement('button');
+        d.type = 'button';
+        d.className = `rc-dot${i === cur ? ' is-current' : ''}`;
+        d.setAttribute('data-page', String(i));
+        d.setAttribute('aria-label', formatPageIndicator(i, count));
+        d.setAttribute('aria-current', i === cur ? 'page' : 'false');
+        d.textContent = i === cur ? '●' : '○';
+        attachDotGestures(d, i);
+        pageIndicator.appendChild(d);
+      }
+    }
+    const slots = pageSlots(state.doc.toString());
+    const skey = JSON.stringify(slots) + cur;
+    if (slotRow.getAttribute('data-key') !== skey) {
+      slotRow.setAttribute('data-key', skey);
+      clearEl(slotRow);
+      for (const n of Object.keys(slots).map(Number).sort((a, b) => a - b)) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `rc-slot${slots[n] === cur ? ' is-current' : ''}`;
+        b.setAttribute('aria-label', `Slot ${n}`);
+        b.textContent = String(n);
+        b.addEventListener('click', e => { e.stopPropagation(); slotPage(view, n); });
+        slotRow.appendChild(b);
+      }
+    }
+    newerNavBtn.disabled = cur <= 0;
+    olderNavBtn.disabled = cur >= count - 1 && !isWindowEmpty(inspectDraftpadPages(state.doc.toString())[cur]?.rawContent);
+    saveReopenMemo(state);
+  }
+
+  function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  // R1 · reopen on the page you were last on (this device only).
+  const REOPEN_KEY = 'recense.draftpad.reopen';
+  let reopenReady = false;
+  function saveReopenMemo(state) {
+    if (!reopenReady) return;
+    try { localStorage.setItem(REOPEN_KEY, JSON.stringify(reopenMemo(state))); } catch (_) { /* storage blocked */ }
+  }
+  function reopen() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(REOPEN_KEY) || 'null'); } catch (_) { saved = null; }
+    const i = reopenTarget(view.state.doc.toString(), saved);
+    reopenReady = true;
+    if (i !== currentPage(view.state)) showPage(view, i, { preserveMemory: false });
+    updatePageIndicator();
+    return i;
+  }
+
+  // G3 tap · G4 drag left of the first dot · G5 hold 500 ms (moving < 8 px).
+  const HOLD_MS = 500;
+  const TAP_SLOP_PX = 8;
+  function attachDotGestures(dot, index) {
+    let x0 = 0, t0 = 0, dragging = false, held = false, timer = null, id = null;
+    const reset = () => {
+      clearTimeout(timer); timer = null; dragging = false; id = null;
+      dot.style.transform = ''; dot.classList.remove('is-dragging');
+    };
+    dot.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      x0 = e.clientX; t0 = Date.now(); held = false; dragging = false; id = e.pointerId;
+      try { dot.setPointerCapture(e.pointerId); } catch (_) { /* not capturable */ }
+      timer = setTimeout(() => { if (!dragging) { held = true; openDotSheet(index, dot); } }, HOLD_MS);
+    });
+    dot.addEventListener('pointermove', e => {
+      if (id !== e.pointerId) return;
+      const dx = e.clientX - x0;
+      if (!dragging && Math.abs(dx) >= TAP_SLOP_PX && !held) {
+        dragging = true; clearTimeout(timer); dot.classList.add('is-dragging');
+      }
+      if (dragging) dot.style.transform = `translateX(${dx}px)`;
+    });
+    dot.addEventListener('pointerup', e => {
+      if (id !== e.pointerId) return;
+      const wasDrag = dragging, wasHeld = held;
+      const first = pageIndicator.firstElementChild;
+      const frontEdge = first ? first.getBoundingClientRect().left : 0;
+      reset();
+      if (wasHeld) return;
+      if (wasDrag) {
+        if (e.clientX < frontEdge && index > 0) promotePage(view, index);
+        return;
+      }
+      if (Date.now() - t0 < HOLD_MS) goToPage(view, index);
+    });
+    dot.addEventListener('pointercancel', reset);
+    dot.addEventListener('click', e => e.stopPropagation());
+  }
+
+  function closeDotSheet() { dotSheet.hidden = true; clearEl(dotSheet); }
+  dotSheet.addEventListener('pointerdown', e => e.stopPropagation());
+  function openDotSheet(index, anchor) {
+    postHaptic('snap');
+    clearEl(dotSheet);
+    const item = (label, run) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rc-menu-item';
+      b.setAttribute('role', 'menuitem');
+      b.textContent = label;
+      b.addEventListener('click', e => { e.stopPropagation(); closeDotSheet(); run(); });
+      dotSheet.appendChild(b);
+    };
+    if (index > 0) item('Promote to front', () => promotePage(view, index));
+    const slots = pageSlots(view.state.doc.toString());
+    const mine = Object.keys(slots).find(n => slots[n] === index);
+    const grid = document.createElement('div');
+    grid.className = 'rc-slot-grid';
+    for (let n = 1; n <= 9; n++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `rc-slot${String(n) === mine ? ' is-current' : ''}`;
+      b.setAttribute('aria-label', `Put in slot ${n}`);
+      b.textContent = String(n);
+      b.addEventListener('click', e => { e.stopPropagation(); closeDotSheet(); setPageSlot(view, index, n); updatePageIndicator(); });
+      grid.appendChild(b);
+    }
+    dotSheet.appendChild(grid);
+    if (mine) item('Clear slot', () => { setPageSlot(view, index, null); updatePageIndicator(); });
+    const r = anchor.getBoundingClientRect();
+    const nr = nav.getBoundingClientRect();
+    dotSheet.style.left = `${Math.max(0, r.left - nr.left - 40)}px`;
+    dotSheet.hidden = false;
   }
 
   function setToolbarFaded(faded) {
+    if (faded && dotSheet && !dotSheet.hidden) return;   // UI-06 G5: the bar stays while its sheet is open
     toolbarFaded = Boolean(faded);
     if (toolbarFaded) {
       toolbar.classList.add('rc-toolbar-faded');
@@ -534,7 +699,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
       updatePageIndicator(update.state);
       if (update.docChanged) {
         const isExternal = update.transactions.some(tr => Boolean(tr.annotation(externalSetTextAnnotation)));
-        if (!isExternal && !menuOpen) {
+        // UI-06: page actions (new, delete, promote, slot) come from the bar itself; only writing fades it.
+        const pageAction = update.transactions.every(tr =>
+          ['move.page', 'delete.page', 'input.page', 'input.slot'].some(ev => tr.isUserEvent(ev)));
+        if (!isExternal && !menuOpen && !pageAction) {
           setToolbarFaded(true);
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
@@ -797,6 +965,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   const voiceHandlers = {
+    newPage: () => (newPage(view) ? 'ok' : 'bounce'),
+    promotePage: () => (promotePage(view, currentPage(view.state)) ? 'ok' : 'bounce'),
+    slotPage: n => (slotPage(view, n) ? 'ok' : 'bounce'),
     swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
     swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
     deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
@@ -867,6 +1038,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
       openNewWindowOnLeft: () => (openNewWindowOnLeft(view) ? 'ok' : 'bounce'),
       deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
       showPage: i => showPage(view, Number(i) || 0),
+      reopen: () => reopen(),
+      goToPage: i => (goToPage(view, Number(i)) ? 'ok' : 'bounce'),
+      newPage: () => (newPage(view) ? 'ok' : 'bounce'),
+      promotePage: i => (promotePage(view, i == null ? currentPage(view.state) : Number(i)) ? 'ok' : 'bounce'),
+      setPageSlot: (i, n) => (setPageSlot(view, Number(i), n == null ? null : Number(n)) ? 'ok' : 'bounce'),
+      slotPage: n => (slotPage(view, Number(n)) ? 'ok' : 'bounce'),
       currentPage: () => currentPage(view.state),
       pageCount: () => pageCount(view.state),
       setPageMode: on => setPages(on),
@@ -1032,6 +1209,17 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   });
 
+  // UI-06 R1 · the host's first text is the file opening: land on the page last used on this device.
+  {
+    const hostSetText = bridge.api.setText;
+    let first = true;
+    bridge.api.setText = text => {
+      const r = hostSetText(text);
+      if (first && view) { first = false; reopen(); }
+      return r;
+    };
+  }
+
   menuBtn.addEventListener('click', e => {
     e.stopPropagation();
     toggleMenu();
@@ -1040,6 +1228,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
   toolbar.addEventListener('pointerenter', () => setToolbarFaded(false));
   toolbar.addEventListener('mousemove', () => setToolbarFaded(false));
   toolbar.addEventListener('touchstart', () => setToolbarFaded(false), { passive: true });
+  // UI-06 · lifting a finger on the bar is not leaving it: without this the haptic-zone pointerup faded the bar
+  // after every tap, so the next tap on touch landed on the page behind (T-0024 "top strip fails mobile").
+  toolbar.addEventListener('pointerup', e => e.stopPropagation());
+  toolbar.addEventListener('touchend', e => e.stopPropagation(), { passive: true });
   shell.addEventListener('mousemove', e => {
     if (typeof e.clientY === 'number' && e.clientY <= 48) {
       setToolbarFaded(false);
@@ -1052,11 +1244,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   }, { passive: true });
 
-  pageIndicator.addEventListener('click', () => {
-    setToolbarFaded(false);
-    if (outlineVisible) hideOutline();
-    else showOutline();
-  });
+  document.addEventListener('pointerdown', e => { if (!dotSheet.hidden && !dotSheet.contains(e.target)) closeDotSheet(); });
+  newPageNavBtn.addEventListener('click', () => { setToolbarFaded(false); newPage(view); });
+  newerNavBtn.addEventListener('click', () => { setToolbarFaded(false); swipeLeftToRight(view, { allowCreate: false }); });
+  olderNavBtn.addEventListener('click', () => { setToolbarFaded(false); swipeRightToLeft(view); });
+  newPageMenuBtn.addEventListener('click', () => { closeMenu(); newPage(view); });
+  promoteMenuBtn.addEventListener('click', () => { closeMenu(); promotePage(view, currentPage(view.state)); });
 
   outlineToggleBtn.addEventListener('click', () => {
     closeMenu();
@@ -1066,12 +1259,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   prevPageBtn.addEventListener('click', () => {
     closeMenu();
-    stepPage(view, -1);
+    swipeLeftToRight(view, { allowCreate: false });
   });
 
   nextPageBtn.addEventListener('click', () => {
     closeMenu();
-    stepPage(view, 1);
+    swipeRightToLeft(view);
   });
 
   pagesBtn.addEventListener('click', () => {

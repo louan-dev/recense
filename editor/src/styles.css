@@ -71,16 +71,93 @@ body {
   pointer-events: none;
 }
 
-.rc-page-indicator {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--rc-muted);
-  cursor: pointer;
+/* Derived from Spec: UI-06 · ＋ ‹ dots › slots; every dot a ≥28 px target, the row 44 px on touch. */
+.rc-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
   user-select: none;
+  -webkit-user-select: none;
 }
 
-.rc-page-indicator:hover {
+.rc-nav-btn {
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 15px;
+  color: var(--rc-muted);
+}
+
+.rc-nav-btn:disabled {
+  opacity: 0.3;
+}
+
+.rc-page-indicator,
+.rc-slot-row {
+  display: flex;
+  align-items: center;
+}
+
+.rc-dot,
+.rc-slot {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rc-muted);
+  font: 500 12px/1 inherit;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rc-dot:hover,
+.rc-slot:hover,
+.rc-dot.is-current,
+.rc-slot.is-current {
   color: var(--rc-cyan);
+}
+
+.rc-dot.is-dragging {
+  position: relative;
+  z-index: 2;
+  color: var(--rc-cyan);
+}
+
+.rc-slot-row:not(:empty) {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--rc-muted);
+}
+
+.rc-dot-sheet {
+  position: absolute;
+  top: 100%;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--rc-bg, #111);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.rc-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 4px 0;
+}
+
+@media (pointer: coarse) {
+  .rc-nav { min-height: 44px; }
+  .rc-nav-btn, .rc-dot, .rc-slot { min-width: 32px; min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rc-dot:not(.is-dragging) { transition: transform 160ms ease-out; }
 }
 
 .rc-menu-wrap {

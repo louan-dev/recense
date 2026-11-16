@@ -331,6 +331,26 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     return { matched: true, action: 'swapWings' };
   }
 
+  // 1b. Derived from Spec: UI-06 · promote, slots, new page, newer page (every gesture also has a voice phrase)
+  if (hasWord('promote') || hasPhrase('to the front') || hasPhrase('to front') || hasPhrase('mettre devant') || hasPhrase('lên đầu')) {
+    if (typeof handlers.promotePage === 'function') handlers.promotePage();
+    return { matched: true, action: 'promotePage' };
+  }
+  const slotMatch = /(?:^|\s)(?:slot|emplacement|ô)\s*([1-9])(?:\s|$)/u.exec(raw);
+  if (slotMatch) {
+    if (typeof handlers.slotPage === 'function') handlers.slotPage(Number(slotMatch[1]));
+    return { matched: true, action: 'slotPage' };
+  }
+  if (typeof handlers.newPage === 'function' &&
+      ['new page', 'new topic', 'new window', 'nouvelle page', 'nouveau sujet', 'trang mới', 'chủ đề mới'].some(hasPhrase)) {
+    handlers.newPage();
+    return { matched: true, action: 'newPage' };
+  }
+  if (hasPhrase('newer page') || hasPhrase('page précédente') || hasPhrase('trang trước')) {
+    if (typeof handlers.swipeLeftToRight === 'function') handlers.swipeLeftToRight();
+    return { matched: true, action: 'swipeLeftToRight' };
+  }
+
   // 2. Navigation: swipe left (older) vs swipe right (newer) before bare left / right
   const rightToLeftKeywords = [
     'swipe left',

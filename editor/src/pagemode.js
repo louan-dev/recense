@@ -11,7 +11,7 @@
 //   220ms ease-out snap.
 import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
-import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty } from './pages.js';
+import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty, SLOT_RE, isMetaLine, CONTROL_CHARS_RE } from './pages.js';
 import { postHaptic } from './bridge.js';
 
 export { isWindowEmpty };
@@ -403,6 +403,130 @@ export function stepPage(
   return false;
 }
 
+// Derived from Spec: UI-06. One function per action; every gesture, control and voice phrase calls these.
+
+/** G3 · Go straight to page `index`. */
+export function goToPage(view, index, { onSnap = null, onBounce = null, globalObj } = {}) {
+  const n = pageCount(view.state);
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0 || i >= n) {
+    postHaptic('edge', globalObj);
+    if (typeof onBounce === 'function') onBounce();
+    return false;
+  }
+  if (i !== currentPage(view.state)) showPage(view, i);
+  postHaptic('snap', globalObj);
+  if (typeof onSnap === 'function') onSnap(i);
+  return true;
+}
+
+/** ＋ · A new empty page at the front, from any page (the front page must have text). */
+export function newPage(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+  if (currentPage(view.state) !== 0) showPage(view, 0);
+  return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+}
+
+/** G4 · Move page `index` to the front. Only the order changes: each page keeps its own bytes. */
+export function promotePage(view, index, { onSnap = null, globalObj } = {}) {
+  const text = view.state.doc.toString();
+  const pages = inspectDraftpadPages(text);
+  if (index <= 0 || index >= pages.length) return false;
+  saveCurrentWindowMemory(view);
+  const slices = pages.map(p => text.slice(p.from, p.to));
+  const moved = slices.splice(index, 1)[0];
+  const insert = [moved, ...slices].join(PAGE_JOINER);
+  const from = pages[0].from;
+  const to = pages[pages.length - 1].to;
+  const mem = getMemory(view);
+  const order = [index, ...pages.map((_, i) => i).filter(i => i !== index)];
+  const cursors = new Map(), scrolls = new Map();
+  order.forEach((old, dst) => {
+    if (mem.cursors.has(old)) cursors.set(dst, mem.cursors.get(old));
+    if (mem.scrolls.has(old)) scrolls.set(dst, mem.scrolls.get(old));
+  });
+  mem.cursors = cursors; mem.scrolls = scrolls;
+  view.dispatch({ changes: { from, to, insert }, userEvent: 'move.page' });
+  showPage(view, 0, { preserveMemory: false });
+  postHaptic('snap', globalObj);
+  if (typeof onSnap === 'function') onSnap(0);
+  return true;
+}
+
+/** S1 · { slot: pageIndex } for every `<!-- slot N -->` line. */
+export function pageSlots(text) {
+  const out = {};
+  for (const p of inspectDraftpadPages(text)) {
+    for (const line of p.rawContent.split('\n')) {
+      const m = SLOT_RE.exec(line.trim());
+      if (m) out[Number(m[1])] = p.index;
+    }
+  }
+  return out;
+}
+
+/** S1/S2 · Put page `index` in `slot` (1–9), clearing that slot elsewhere and the page's old slot; null clears. */
+export function setPageSlot(view, index, slot) {
+  const text = view.state.doc.toString();
+  const pages = inspectDraftpadPages(text);
+  const page = pages[index];
+  if (!page) return false;
+  const n = slot == null ? null : Number(slot);
+  if (n !== null && !(n >= 1 && n <= 9)) return false;
+  const changes = [];
+  for (const p of pages) {
+    let pos = p.from;
+    for (const line of p.rawContent.split('\n')) {
+      const m = SLOT_RE.exec(line.trim());
+      if (m && (p.index === index || Number(m[1]) === n)) {
+        const end = pos + line.length;
+        changes.push({ from: pos, to: Math.min(end + 1, view.state.doc.length) });
+      }
+      pos += line.length + 1;
+    }
+  }
+  if (n !== null) changes.push({ from: page.from, insert: `<!-- slot ${n} -->\n` });
+  if (!changes.length) return false;
+  view.dispatch({ changes, userEvent: 'input.slot' });
+  return true;
+}
+
+/** G6 · Go to the page in `slot`. */
+export function slotPage(view, slot, opts = {}) {
+  const at = pageSlots(view.state.doc.toString())[Number(slot)];
+  if (at === undefined) {
+    postHaptic('edge', opts.globalObj);
+    if (typeof opts.onBounce === 'function') opts.onBounce();
+    return false;
+  }
+  return goToPage(view, at, opts);
+}
+
+function pageHead(p) {
+  if (!p) return '';
+  const line = p.rawContent.split('\n').map(l => l.replace(CONTROL_CHARS_RE, '').trim()).find(l => l && !isMetaLine(l));
+  return (line || '').slice(0, 120);
+}
+
+/** R1 · Which page to reopen on, from { index, head } saved on this device. */
+export function reopenTarget(text, saved) {
+  const pages = inspectDraftpadPages(text);
+  if (!saved || !pages.length) return 0;
+  const head = String(saved.head || '').trim();
+  if (head) {
+    const hit = pages.findIndex(p => pageHead(p) === head.slice(0, 120));
+    if (hit !== -1) return hit;
+  }
+  const i = Number(saved.index) || 0;
+  return Math.max(0, Math.min(pages.length - 1, i));
+}
+
+/** R1 · What to save for reopening: the current page's index and first line. */
+export function reopenMemo(state) {
+  const i = currentPage(state);
+  const p = inspectDraftpadPages(state.doc.toString())[i];
+  return { index: i, head: pageHead(p) };
+}
+
 /**
  * Computes rubber-banded horizontal drag offset matching `reference/draftpad/draftpad.swift` (`effectiveDrag`).
  * `dragX > 0`: fingers moving left-to-right.
@@ -463,9 +587,8 @@ export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     pageModeField,
     narrowWholeSelection,
     Prec.highest(keymap.of([
-      { key: 'Mod-a', run: selectPage },
-      { key: 'Mod-]', run: v => { swipeRightToLeft(v, { onSnap, onBounce }); return true; } },
-      { key: 'Mod-[', run: v => { swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce }); return true; } }
+      // UI-06 K1: no page-navigation keys; pages move by gesture and visible controls only.
+      { key: 'Mod-a', run: selectPage }
     ]))
   ];
 }

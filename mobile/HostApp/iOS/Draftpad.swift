@@ -167,7 +167,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         call("setCalendarAdded(\(jsLiteral(syncedEventIdsJSON)))")
         for c in DraftpadLibrary.loadCalls(vault: file.vault, quote: jsLiteral) { call(c) }
-        call("showPage(0)")
+        call("reopen()")   // UI-06 R1: the page you were last on
         // Another device's edit (the Mac, Obsidian) reaches the file through iCloud: merge it in while open.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.pollExternal() }
     }

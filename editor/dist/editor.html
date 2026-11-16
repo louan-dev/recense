@@ -78,16 +78,93 @@ body {
   pointer-events: none;
 }
 
-.rc-page-indicator {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--rc-muted);
-  cursor: pointer;
+/* Derived from Spec: UI-06 · ＋ ‹ dots › slots; every dot a ≥28 px target, the row 44 px on touch. */
+.rc-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
   user-select: none;
+  -webkit-user-select: none;
 }
 
-.rc-page-indicator:hover {
+.rc-nav-btn {
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 15px;
+  color: var(--rc-muted);
+}
+
+.rc-nav-btn:disabled {
+  opacity: 0.3;
+}
+
+.rc-page-indicator,
+.rc-slot-row {
+  display: flex;
+  align-items: center;
+}
+
+.rc-dot,
+.rc-slot {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rc-muted);
+  font: 500 12px/1 inherit;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rc-dot:hover,
+.rc-slot:hover,
+.rc-dot.is-current,
+.rc-slot.is-current {
   color: var(--rc-cyan);
+}
+
+.rc-dot.is-dragging {
+  position: relative;
+  z-index: 2;
+  color: var(--rc-cyan);
+}
+
+.rc-slot-row:not(:empty) {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--rc-muted);
+}
+
+.rc-dot-sheet {
+  position: absolute;
+  top: 100%;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--rc-bg, #111);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.rc-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 4px 0;
+}
+
+@media (pointer: coarse) {
+  .rc-nav { min-height: 44px; }
+  .rc-nav-btn, .rc-dot, .rc-slot { min-width: 32px; min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rc-dot:not(.is-dragging) { transition: transform 160ms ease-out; }
 }
 
 .rc-menu-wrap {
@@ -28362,8 +28439,10 @@ ${PAGE_MARKER}
 
 `;
   var META_RE = /^<!-- saved ([a-z0-9]{6}) -->$/;
+  var SLOT_RE = /^<!-- slot ([1-9]) -->$/;
   function isMetaLine(line) {
-    return META_RE.test(String(line || "").trim());
+    const t2 = String(line || "").trim();
+    return META_RE.test(t2) || SLOT_RE.test(t2);
   }
   var WEEKDAYS = /* @__PURE__ */ new Set([
     "Sunday",
@@ -32459,6 +32538,113 @@ ${PAGE_MARKER}
     }
     return false;
   }
+  function goToPage(view, index, { onSnap = null, onBounce = null, globalObj } = {}) {
+    const n = pageCount(view.state);
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || i >= n) {
+      postHaptic("edge", globalObj);
+      if (typeof onBounce === "function") onBounce();
+      return false;
+    }
+    if (i !== currentPage(view.state)) showPage(view, i);
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(i);
+    return true;
+  }
+  function newPage(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+    if (currentPage(view.state) !== 0) showPage(view, 0);
+    return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+  }
+  function promotePage(view, index, { onSnap = null, globalObj } = {}) {
+    const text = view.state.doc.toString();
+    const pages = inspectDraftpadPages(text);
+    if (index <= 0 || index >= pages.length) return false;
+    saveCurrentWindowMemory(view);
+    const slices = pages.map((p) => text.slice(p.from, p.to));
+    const moved = slices.splice(index, 1)[0];
+    const insert2 = [moved, ...slices].join(PAGE_JOINER);
+    const from = pages[0].from;
+    const to = pages[pages.length - 1].to;
+    const mem = getMemory(view);
+    const order = [index, ...pages.map((_, i) => i).filter((i) => i !== index)];
+    const cursors = /* @__PURE__ */ new Map(), scrolls = /* @__PURE__ */ new Map();
+    order.forEach((old, dst) => {
+      if (mem.cursors.has(old)) cursors.set(dst, mem.cursors.get(old));
+      if (mem.scrolls.has(old)) scrolls.set(dst, mem.scrolls.get(old));
+    });
+    mem.cursors = cursors;
+    mem.scrolls = scrolls;
+    view.dispatch({ changes: { from, to, insert: insert2 }, userEvent: "move.page" });
+    showPage(view, 0, { preserveMemory: false });
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(0);
+    return true;
+  }
+  function pageSlots(text) {
+    const out = {};
+    for (const p of inspectDraftpadPages(text)) {
+      for (const line of p.rawContent.split("\n")) {
+        const m = SLOT_RE.exec(line.trim());
+        if (m) out[Number(m[1])] = p.index;
+      }
+    }
+    return out;
+  }
+  function setPageSlot(view, index, slot) {
+    const text = view.state.doc.toString();
+    const pages = inspectDraftpadPages(text);
+    const page = pages[index];
+    if (!page) return false;
+    const n = slot == null ? null : Number(slot);
+    if (n !== null && !(n >= 1 && n <= 9)) return false;
+    const changes = [];
+    for (const p of pages) {
+      let pos = p.from;
+      for (const line of p.rawContent.split("\n")) {
+        const m = SLOT_RE.exec(line.trim());
+        if (m && (p.index === index || Number(m[1]) === n)) {
+          const end = pos + line.length;
+          changes.push({ from: pos, to: Math.min(end + 1, view.state.doc.length) });
+        }
+        pos += line.length + 1;
+      }
+    }
+    if (n !== null) changes.push({ from: page.from, insert: `<!-- slot ${n} -->
+` });
+    if (!changes.length) return false;
+    view.dispatch({ changes, userEvent: "input.slot" });
+    return true;
+  }
+  function slotPage(view, slot, opts = {}) {
+    const at = pageSlots(view.state.doc.toString())[Number(slot)];
+    if (at === void 0) {
+      postHaptic("edge", opts.globalObj);
+      if (typeof opts.onBounce === "function") opts.onBounce();
+      return false;
+    }
+    return goToPage(view, at, opts);
+  }
+  function pageHead(p) {
+    if (!p) return "";
+    const line = p.rawContent.split("\n").map((l) => l.replace(CONTROL_CHARS_RE, "").trim()).find((l) => l && !isMetaLine(l));
+    return (line || "").slice(0, 120);
+  }
+  function reopenTarget(text, saved) {
+    const pages = inspectDraftpadPages(text);
+    if (!saved || !pages.length) return 0;
+    const head = String(saved.head || "").trim();
+    if (head) {
+      const hit = pages.findIndex((p) => pageHead(p) === head.slice(0, 120));
+      if (hit !== -1) return hit;
+    }
+    const i = Number(saved.index) || 0;
+    return Math.max(0, Math.min(pages.length - 1, i));
+  }
+  function reopenMemo(state) {
+    const i = currentPage(state);
+    const p = inspectDraftpadPages(state.doc.toString())[i];
+    return { index: i, head: pageHead(p) };
+  }
   var AXIS_SLOP_PX = 12;
   var AXIS_RATIO = 1.4;
   function decideAxis(dx, dy) {
@@ -32502,15 +32688,8 @@ ${PAGE_MARKER}
       pageModeField,
       narrowWholeSelection,
       Prec.highest(keymap.of([
-        { key: "Mod-a", run: selectPage },
-        { key: "Mod-]", run: (v) => {
-          swipeRightToLeft(v, { onSnap, onBounce });
-          return true;
-        } },
-        { key: "Mod-[", run: (v) => {
-          swipeLeftToRight(v, { allowCreate: true, onSnap, onBounce });
-          return true;
-        } }
+        // UI-06 K1: no page-navigation keys; pages move by gesture and visible controls only.
+        { key: "Mod-a", run: selectPage }
       ]))
     ];
   }
@@ -33156,6 +33335,23 @@ ${PAGE_MARKER}
         handlers2.swapWings();
       }
       return { matched: true, action: "swapWings" };
+    }
+    if (hasWord("promote") || hasPhrase("to the front") || hasPhrase("to front") || hasPhrase("mettre devant") || hasPhrase("l\xEAn \u0111\u1EA7u")) {
+      if (typeof handlers2.promotePage === "function") handlers2.promotePage();
+      return { matched: true, action: "promotePage" };
+    }
+    const slotMatch = /(?:^|\s)(?:slot|emplacement|ô)\s*([1-9])(?:\s|$)/u.exec(raw);
+    if (slotMatch) {
+      if (typeof handlers2.slotPage === "function") handlers2.slotPage(Number(slotMatch[1]));
+      return { matched: true, action: "slotPage" };
+    }
+    if (typeof handlers2.newPage === "function" && ["new page", "new topic", "new window", "nouvelle page", "nouveau sujet", "trang m\u1EDBi", "ch\u1EE7 \u0111\u1EC1 m\u1EDBi"].some(hasPhrase)) {
+      handlers2.newPage();
+      return { matched: true, action: "newPage" };
+    }
+    if (hasPhrase("newer page") || hasPhrase("page pr\xE9c\xE9dente") || hasPhrase("trang tr\u01B0\u1EDBc")) {
+      if (typeof handlers2.swipeLeftToRight === "function") handlers2.swipeLeftToRight();
+      return { matched: true, action: "swipeLeftToRight" };
     }
     const rightToLeftKeywords = [
       "swipe left",
@@ -39078,12 +39274,36 @@ ${clean(nextLineText)}`;
     shell.className = "rc-shell";
     const toolbar = document.createElement("header");
     toolbar.className = "rc-toolbar rc-toolbar-faded";
+    const nav2 = document.createElement("nav");
+    nav2.className = "rc-nav";
+    nav2.setAttribute("aria-label", "Pages");
+    function navButton(cls, label, glyph) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `rc-btn rc-nav-btn ${cls}`;
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.textContent = glyph;
+      return b;
+    }
+    const newPageNavBtn = navButton("rc-nav-new", "New page", "\uFF0B");
+    const newerNavBtn = navButton("rc-nav-newer", "Newer page", "\u2039");
+    const olderNavBtn = navButton("rc-nav-older", "Older page", "\u203A");
     const pageIndicator = document.createElement("span");
     pageIndicator.className = "rc-page-indicator";
     pageIndicator.id = "rc-page-indicator";
-    pageIndicator.textContent = formatDotIndicator(0, 1);
+    pageIndicator.setAttribute("role", "group");
     pageIndicator.setAttribute("data-dots", formatDotIndicator(0, 1));
     pageIndicator.setAttribute("data-label", formatPageIndicator(0, 1));
+    const slotRow = document.createElement("span");
+    slotRow.className = "rc-slot-row";
+    slotRow.setAttribute("role", "group");
+    slotRow.setAttribute("aria-label", "Slots");
+    const dotSheet = document.createElement("div");
+    dotSheet.className = "rc-dot-sheet";
+    dotSheet.setAttribute("role", "menu");
+    dotSheet.hidden = true;
+    nav2.append(newPageNavBtn, newerNavBtn, pageIndicator, olderNavBtn, slotRow, dotSheet);
     const menuWrap = document.createElement("div");
     menuWrap.className = "rc-menu-wrap";
     const menuBtn = document.createElement("button");
@@ -39118,13 +39338,11 @@ ${clean(nextLineText)}`;
     const recenseReadBtn = makeMenuItem("rc-recense-read-btn", "Read lens aloud", "Hear the lens lines of the section you are in");
     const recenseIntoBtn = makeMenuItem("rc-recense-into-btn", "Translate into: Auto", "The Source lens\u2019s language for this page");
     const searchBtn = makeMenuItem("rc-search-btn", "Find", "Find (\u2318F)");
-    const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "Newer page (\u2318[)");
-    const nextPageBtn = makeMenuItem("rc-next-page-btn", "Older page", "Older page (\u2318])");
-    const pagesBtn = makeMenuItem(
-      "rc-pages-btn",
-      "Pages",
-      "Swipe or \u2318] / \u2318[ to glide between pages"
-    );
+    const newPageMenuBtn = makeMenuItem("rc-new-page-btn", "New page", "A new page at the front");
+    const prevPageBtn = makeMenuItem("rc-prev-page-btn", "Newer page", "One page to the left");
+    const nextPageBtn = makeMenuItem("rc-next-page-btn", "Older page", "One page to the right");
+    const promoteMenuBtn = makeMenuItem("rc-promote-btn", "Promote to front", "Move this page to the front");
+    const pagesBtn = makeMenuItem("rc-pages-btn", "Pages", "Swipe to glide between pages");
     pagesBtn.setAttribute("aria-pressed", "true");
     const newestFirstMenuBtn = makeMenuItem("rc-newest-first-menu-btn", "Newest first", "Order outline newest first");
     const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
@@ -39136,14 +39354,16 @@ ${clean(nextLineText)}`;
       recenseReadBtn,
       recenseIntoBtn,
       searchBtn,
+      newPageMenuBtn,
       prevPageBtn,
       nextPageBtn,
+      promoteMenuBtn,
       pagesBtn,
       newestFirstMenuBtn,
       themeBtn
     );
     menuWrap.append(menuBtn, menu);
-    toolbar.append(pageIndicator, menuWrap);
+    toolbar.append(nav2, menuWrap);
     const workspace = document.createElement("div");
     workspace.className = "rc-workspace";
     const outlinePanel = document.createElement("aside");
@@ -39319,11 +39539,182 @@ ${clean(nextLineText)}`;
       const cur = currentPage(state2);
       const count2 = pageCount(state2);
       const dots = formatDotIndicator(cur, count2);
-      pageIndicator.textContent = dots;
       pageIndicator.setAttribute("data-dots", dots);
       pageIndicator.setAttribute("data-label", formatPageIndicator(cur, count2));
+      const size = 8;
+      const start = count2 <= size ? 0 : Math.max(0, Math.min(count2 - size, cur - Math.floor(size / 2)));
+      const end = Math.min(count2, start + size);
+      const key = `${start}:${end}:${cur}`;
+      if (pageIndicator.getAttribute("data-key") !== key) {
+        pageIndicator.setAttribute("data-key", key);
+        clearEl(pageIndicator);
+        for (let i = start; i < end; i++) {
+          const d = document.createElement("button");
+          d.type = "button";
+          d.className = `rc-dot${i === cur ? " is-current" : ""}`;
+          d.setAttribute("data-page", String(i));
+          d.setAttribute("aria-label", formatPageIndicator(i, count2));
+          d.setAttribute("aria-current", i === cur ? "page" : "false");
+          d.textContent = i === cur ? "\u25CF" : "\u25CB";
+          attachDotGestures(d, i);
+          pageIndicator.appendChild(d);
+        }
+      }
+      const slots = pageSlots(state2.doc.toString());
+      const skey = JSON.stringify(slots) + cur;
+      if (slotRow.getAttribute("data-key") !== skey) {
+        slotRow.setAttribute("data-key", skey);
+        clearEl(slotRow);
+        for (const n of Object.keys(slots).map(Number).sort((a, b) => a - b)) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = `rc-slot${slots[n] === cur ? " is-current" : ""}`;
+          b.setAttribute("aria-label", `Slot ${n}`);
+          b.textContent = String(n);
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            slotPage(view, n);
+          });
+          slotRow.appendChild(b);
+        }
+      }
+      newerNavBtn.disabled = cur <= 0;
+      olderNavBtn.disabled = cur >= count2 - 1 && !isWindowEmpty(inspectDraftpadPages(state2.doc.toString())[cur]?.rawContent);
+      saveReopenMemo(state2);
+    }
+    function clearEl(el5) {
+      while (el5.firstChild) el5.removeChild(el5.firstChild);
+    }
+    const REOPEN_KEY = "recense.draftpad.reopen";
+    let reopenReady = false;
+    function saveReopenMemo(state2) {
+      if (!reopenReady) return;
+      try {
+        localStorage.setItem(REOPEN_KEY, JSON.stringify(reopenMemo(state2)));
+      } catch (_) {
+      }
+    }
+    function reopen() {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem(REOPEN_KEY) || "null");
+      } catch (_) {
+        saved = null;
+      }
+      const i = reopenTarget(view.state.doc.toString(), saved);
+      reopenReady = true;
+      if (i !== currentPage(view.state)) showPage(view, i, { preserveMemory: false });
+      updatePageIndicator();
+      return i;
+    }
+    const HOLD_MS = 500;
+    const TAP_SLOP_PX = 8;
+    function attachDotGestures(dot2, index) {
+      let x0 = 0, t0 = 0, dragging = false, held = false, timer = null, id2 = null;
+      const reset = () => {
+        clearTimeout(timer);
+        timer = null;
+        dragging = false;
+        id2 = null;
+        dot2.style.transform = "";
+        dot2.classList.remove("is-dragging");
+      };
+      dot2.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        x0 = e.clientX;
+        t0 = Date.now();
+        held = false;
+        dragging = false;
+        id2 = e.pointerId;
+        try {
+          dot2.setPointerCapture(e.pointerId);
+        } catch (_) {
+        }
+        timer = setTimeout(() => {
+          if (!dragging) {
+            held = true;
+            openDotSheet(index, dot2);
+          }
+        }, HOLD_MS);
+      });
+      dot2.addEventListener("pointermove", (e) => {
+        if (id2 !== e.pointerId) return;
+        const dx = e.clientX - x0;
+        if (!dragging && Math.abs(dx) >= TAP_SLOP_PX && !held) {
+          dragging = true;
+          clearTimeout(timer);
+          dot2.classList.add("is-dragging");
+        }
+        if (dragging) dot2.style.transform = `translateX(${dx}px)`;
+      });
+      dot2.addEventListener("pointerup", (e) => {
+        if (id2 !== e.pointerId) return;
+        const wasDrag = dragging, wasHeld = held;
+        const first = pageIndicator.firstElementChild;
+        const frontEdge = first ? first.getBoundingClientRect().left : 0;
+        reset();
+        if (wasHeld) return;
+        if (wasDrag) {
+          if (e.clientX < frontEdge && index > 0) promotePage(view, index);
+          return;
+        }
+        if (Date.now() - t0 < HOLD_MS) goToPage(view, index);
+      });
+      dot2.addEventListener("pointercancel", reset);
+      dot2.addEventListener("click", (e) => e.stopPropagation());
+    }
+    function closeDotSheet() {
+      dotSheet.hidden = true;
+      clearEl(dotSheet);
+    }
+    dotSheet.addEventListener("pointerdown", (e) => e.stopPropagation());
+    function openDotSheet(index, anchor) {
+      postHaptic("snap");
+      clearEl(dotSheet);
+      const item = (label, run) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "rc-menu-item";
+        b.setAttribute("role", "menuitem");
+        b.textContent = label;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeDotSheet();
+          run();
+        });
+        dotSheet.appendChild(b);
+      };
+      if (index > 0) item("Promote to front", () => promotePage(view, index));
+      const slots = pageSlots(view.state.doc.toString());
+      const mine = Object.keys(slots).find((n) => slots[n] === index);
+      const grid = document.createElement("div");
+      grid.className = "rc-slot-grid";
+      for (let n = 1; n <= 9; n++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `rc-slot${String(n) === mine ? " is-current" : ""}`;
+        b.setAttribute("aria-label", `Put in slot ${n}`);
+        b.textContent = String(n);
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeDotSheet();
+          setPageSlot(view, index, n);
+          updatePageIndicator();
+        });
+        grid.appendChild(b);
+      }
+      dotSheet.appendChild(grid);
+      if (mine) item("Clear slot", () => {
+        setPageSlot(view, index, null);
+        updatePageIndicator();
+      });
+      const r = anchor.getBoundingClientRect();
+      const nr = nav2.getBoundingClientRect();
+      dotSheet.style.left = `${Math.max(0, r.left - nr.left - 40)}px`;
+      dotSheet.hidden = false;
     }
     function setToolbarFaded(faded) {
+      if (faded && dotSheet && !dotSheet.hidden) return;
       toolbarFaded = Boolean(faded);
       if (toolbarFaded) {
         toolbar.classList.add("rc-toolbar-faded");
@@ -39388,7 +39779,8 @@ ${clean(nextLineText)}`;
         updatePageIndicator(update.state);
         if (update.docChanged) {
           const isExternal = update.transactions.some((tr) => Boolean(tr.annotation(externalSetTextAnnotation)));
-          if (!isExternal && !menuOpen) {
+          const pageAction = update.transactions.every((tr) => ["move.page", "delete.page", "input.page", "input.slot"].some((ev) => tr.isUserEvent(ev)));
+          if (!isExternal && !menuOpen && !pageAction) {
             setToolbarFaded(true);
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
@@ -39669,6 +40061,9 @@ ${String(text ?? "")}`;
       return t2;
     }
     const voiceHandlers = {
+      newPage: () => newPage(view) ? "ok" : "bounce",
+      promotePage: () => promotePage(view, currentPage(view.state)) ? "ok" : "bounce",
+      slotPage: (n) => slotPage(view, n) ? "ok" : "bounce",
       swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
       swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
       deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
@@ -39729,6 +40124,12 @@ ${String(text ?? "")}`;
         openNewWindowOnLeft: () => openNewWindowOnLeft(view) ? "ok" : "bounce",
         deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
         showPage: (i) => showPage(view, Number(i) || 0),
+        reopen: () => reopen(),
+        goToPage: (i) => goToPage(view, Number(i)) ? "ok" : "bounce",
+        newPage: () => newPage(view) ? "ok" : "bounce",
+        promotePage: (i) => promotePage(view, i == null ? currentPage(view.state) : Number(i)) ? "ok" : "bounce",
+        setPageSlot: (i, n) => setPageSlot(view, Number(i), n == null ? null : Number(n)) ? "ok" : "bounce",
+        slotPage: (n) => slotPage(view, Number(n)) ? "ok" : "bounce",
         currentPage: () => currentPage(view.state),
         pageCount: () => pageCount(view.state),
         setPageMode: (on) => setPages(on),
@@ -39908,6 +40309,18 @@ ${String(text ?? "")}`;
         }
       }
     });
+    {
+      const hostSetText = bridge.api.setText;
+      let first = true;
+      bridge.api.setText = (text) => {
+        const r = hostSetText(text);
+        if (first && view) {
+          first = false;
+          reopen();
+        }
+        return r;
+      };
+    }
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleMenu();
@@ -39915,6 +40328,8 @@ ${String(text ?? "")}`;
     toolbar.addEventListener("pointerenter", () => setToolbarFaded(false));
     toolbar.addEventListener("mousemove", () => setToolbarFaded(false));
     toolbar.addEventListener("touchstart", () => setToolbarFaded(false), { passive: true });
+    toolbar.addEventListener("pointerup", (e) => e.stopPropagation());
+    toolbar.addEventListener("touchend", (e) => e.stopPropagation(), { passive: true });
     shell.addEventListener("mousemove", (e) => {
       if (typeof e.clientY === "number" && e.clientY <= 48) {
         setToolbarFaded(false);
@@ -39926,10 +40341,28 @@ ${String(text ?? "")}`;
         setToolbarFaded(false);
       }
     }, { passive: true });
-    pageIndicator.addEventListener("click", () => {
+    document.addEventListener("pointerdown", (e) => {
+      if (!dotSheet.hidden && !dotSheet.contains(e.target)) closeDotSheet();
+    });
+    newPageNavBtn.addEventListener("click", () => {
       setToolbarFaded(false);
-      if (outlineVisible) hideOutline();
-      else showOutline();
+      newPage(view);
+    });
+    newerNavBtn.addEventListener("click", () => {
+      setToolbarFaded(false);
+      swipeLeftToRight(view, { allowCreate: false });
+    });
+    olderNavBtn.addEventListener("click", () => {
+      setToolbarFaded(false);
+      swipeRightToLeft(view);
+    });
+    newPageMenuBtn.addEventListener("click", () => {
+      closeMenu();
+      newPage(view);
+    });
+    promoteMenuBtn.addEventListener("click", () => {
+      closeMenu();
+      promotePage(view, currentPage(view.state));
     });
     outlineToggleBtn.addEventListener("click", () => {
       closeMenu();
@@ -39938,11 +40371,11 @@ ${String(text ?? "")}`;
     });
     prevPageBtn.addEventListener("click", () => {
       closeMenu();
-      stepPage(view, -1);
+      swipeLeftToRight(view, { allowCreate: false });
     });
     nextPageBtn.addEventListener("click", () => {
       closeMenu();
-      stepPage(view, 1);
+      swipeRightToLeft(view);
     });
     pagesBtn.addEventListener("click", () => {
       closeMenu();

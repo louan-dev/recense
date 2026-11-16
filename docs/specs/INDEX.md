@@ -27,6 +27,7 @@ Row: ID · title · status · From · code pointer
 - UI-03 · Shared playlist (Spotify, iOS) · `[ ]` · owner 2026-11-08 · —
 - UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `mobile/HostApp/iOS/Draftpad.swift`
 - UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
+- UI-06 · Draftpad page navigation, gesture-only (Antinote study): dots tap/drag/hold, slots, reopen, no ⌘ keys · `[~]` · owner 2026-11-15, T-0020/21/22/24 · `ui-teardowns/UI-06-antinote-navigation/UI-06.md`, `editor/src/pagemode.js`, `editor/src/index.js`
 
 ### Features
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
