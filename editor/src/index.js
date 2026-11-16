@@ -98,6 +98,7 @@ import { createSpeaker } from './speech.js';
 import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
 import * as matterCore from './matter.js';
+import { createMatterMenu } from './mattermenu.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -682,6 +683,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   let inkLayer = null;
+  let matterMenu = null;   // FEAT-08
   let pencilSqueeze = null;   // UI-04 P1: built on the first squeeze phase
   let library = null;
   let recense = null;
@@ -747,6 +749,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
         if (recense) recense.docChanged();
       }
       if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
+      if (matterMenu && update.selectionSet) matterMenu.selectionChanged();
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
         if (inkLayer) inkLayer.relayout();
@@ -776,6 +779,16 @@ export function mountEditor(root = document.body, initialDoc = '') {
   // FEAT-08 · the sidecar of the one page. A crossing runs on (body, ink, sidecar) together, then lands the body
   // change as one ordinary edit (so the host saves it through its 3-way merge) and the ink through setInk.
   let matterSide = { version: 1, passages: {}, log: [] };
+  // This device's name for seeds and per-device undo; the host may set a better one (setMatterDevice).
+  let matterDevice = (() => {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/Macintosh/.test(ua)) return 'Mac';
+    return 'web';
+  })();
+  let matterInput = 'keys';
+  const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
   function postMatter() {
     const h = window.webkit?.messageHandlers?.matter;
     if (h && typeof h.postMessage === 'function') h.postMessage(JSON.stringify(matterSide));
@@ -802,8 +815,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
       inkLayer.relayout();
       window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));   // setInk alone does not save
     }
+    const sideChanged = JSON.stringify(after.side) !== JSON.stringify(matterSide);
     matterSide = after.side;
-    postMatter();
+    if (sideChanged) postMatter();
     return { ok: true };
   }
 
@@ -825,7 +839,30 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onToolChange: tool => {
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
+    },
+    // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
+    onStrokeAdded: stroke => {
+      if (!Object.values(matterSide.passages).some(p => p.forms.ink && p.forms.ink.surface)) return;
+      const p0 = stroke.points && stroke.points[0];
+      const sd = view.scrollDOM;
+      if (!p0 || !sd || !sd.getBoundingClientRect) return;
+      const r = sd.getBoundingClientRect();
+      const pos = view.posAtCoords({ x: r.left + p0[0] - sd.scrollLeft, y: r.top + p0[1] - sd.scrollTop });
+      if (pos != null) applyMatter(m => matterCore.attachStrokeToWord(m, stroke.id, pos));
     }
+  });
+
+  // FEAT-08 · the Matter menu on a selection (pill, right-click, long-press).
+  view.dom.addEventListener('pointerdown', e => {
+    matterInput = e.pointerType === 'pen' ? 'pencil' : e.pointerType === 'touch' ? 'touch' : 'keys';
+  }, true);
+  view.dom.addEventListener('keydown', () => { matterInput = 'keys'; }, true);
+  matterMenu = createMatterMenu({
+    mount: editorHost,
+    view,
+    getMenu: (from, to) => matterCore.menuForSelection(
+      matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }), from, to),
+    onRun: action => applyMatter(m => action.run(m, { seed: matterSeed() }))
   });
 
   speaker = createSpeaker(typeof window !== 'undefined' ? window : null);
@@ -1167,7 +1204,19 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return matterCore.seedTypePassage(m, a);
       }),
       cross: (n, pid, opts) => applyMatter(m => matterCore.cross(m, Number(n), String(pid), typeof opts === 'string' ? JSON.parse(opts) : opts || {})),
-      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m)),
+      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice })),   // per device
+      setMatterDevice: name => { if (name) matterDevice = String(name); return matterDevice; },
+      // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
+      matterMenu: (from, to) => {
+        const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+        return matterCore.menuForSelection(m, Number(from), Number(to)).actions.map(({ id, label, from: f, to: t }) => ({ id, label, from: f, to: t }));
+      },
+      runMatterAction: (id, from, to) => {
+        const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+        const a = matterCore.menuForSelection(m, Number(from), Number(to)).actions.find(x => x.id === id);
+        return a ? applyMatter(mm => a.run(mm, { seed: matterSeed() })) : { ok: false, error: 'not available here' };
+      },
+      openMatterMenu: () => (matterMenu ? matterMenu.open() : false),
       crossings: () => matterCore.CROSSINGS.map(c => ({ ...c })),
       getInkTool: () => (inkLayer ? inkLayer.getTool() : 'select'),
       setInkTool: tool => voiceHandlers.setInkTool(tool),

@@ -2159,6 +2159,47 @@ html.rc-wings-page body {
   text-align: center;
 }
 
+/* FEAT-08 · the Matter menu: one plain list of crossings on a passage */
+.rc-matter-pill {
+  position: absolute;
+  z-index: 45;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--rc-muted) 45%, transparent);
+  border-radius: 999px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  font: 13px/1.2 -apple-system, system-ui, sans-serif;
+  opacity: 0.9;
+  cursor: pointer;
+}
+.rc-matter-pill[hidden], .rc-matter-menu[hidden] { display: none; }
+.rc-matter-menu {
+  position: absolute;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.rc-matter-item {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 16px/1.2 -apple-system, system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.rc-matter-item:hover, .rc-matter-item:focus-visible { background: color-mix(in srgb, var(--rc-muted) 22%, transparent); outline: none; }
+.rc-matter-note { padding: 6px 12px; color: var(--rc-muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .rc-matter-menu, .rc-matter-pill { transition: none; } }
+
 </style>
 </head>
 <body>
@@ -34686,7 +34727,9 @@ ${clean(nextLineText)}`;
       // Where the pill and palette float. Never the text's scroller: a child there joins
       // CodeMirror's flex row and squeezes the text column.
       mount = null,
-      onToolChange = null
+      onToolChange = null,
+      onStrokeAdded = null
+      // FEAT-08 #2: called with each new drawn stroke (word attachment)
     } = options;
     function currentLineHeight() {
       return view && typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0 ? view.defaultLineHeight : lineHeight;
@@ -35445,6 +35488,12 @@ ${clean(nextLineText)}`;
       anchorStrokeToDoc(stroke, getDocText(), currentLineHeight(), getCurrentPageIndex());
       inkDoc.strokes.push(stroke);
       if (stroke.tool === "pen") scheduleRecognition();
+      if (typeof onStrokeAdded === "function") {
+        try {
+          onStrokeAdded(stroke);
+        } catch {
+        }
+      }
       activePoints = [];
       if (activeGroup) activeGroup.innerHTML = "";
       render();
@@ -39915,6 +39964,18 @@ ${clean(nextLineText)}`;
     while (r = re.exec(quote)) out.push({ w: r[0], from: r.index, to: r.index + r[0].length });
     return out;
   }
+  function wordAt(surface, charIndex) {
+    let best = null;
+    let d = Infinity;
+    for (const w of surface || []) {
+      const dist2 = charIndex < w.from ? w.from - charIndex : charIndex >= w.to ? charIndex - w.to + 1 : 0;
+      if (dist2 < d) {
+        d = dist2;
+        best = w;
+      }
+    }
+    return best;
+  }
   function validSeed(seed) {
     return !!seed && typeof seed.device === "string" && !!seed.device && typeof seed.input === "string" && !!seed.input && typeof seed.time === "number" && Number.isFinite(seed.time);
   }
@@ -39933,8 +39994,8 @@ ${clean(nextLineText)}`;
     if (!strokeIds || !strokeIds.length || !strokeIds.every((i) => have.has(i))) throw new Error("no ink: strokes not on the page");
     return addPassage(m, id2, "ink", seed, { ink: { strokes: [...strokeIds] } });
   }
-  function seedTypePassage(m, { id: id2, quote, seed }) {
-    const off = m.text.indexOf(quote);
+  function seedTypePassage(m, { id: id2, quote, seed, at = null }) {
+    const off = typeof at === "number" && m.text.slice(at, at + String(quote).length) === quote ? at : m.text.indexOf(quote);
     if (!quote || off === -1) throw new Error("no type: the words are not on the page");
     return addPassage(m, id2, "type", seed, { type: makeQuote(m.text, off, quote.length) });
   }
@@ -40173,14 +40234,44 @@ ${clean(nextLineText)}`;
       pid,
       state: c.to,
       seed: seedOf(opts.seed),
+      after: hashOf(p),
       undo: { text: textPatch(m.text, out.text), passage: priorPassage, strokes: { changed, added } }
     });
+    compactLog(out.side, from.device);
     return out;
   }
-  function reverseLast(m) {
-    if (!m.side.log.length) throw new Error("nothing to reverse");
+  function hashOf(v) {
+    const str = JSON.stringify(v);
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  var KEEP_REVERSIBLE = 24;
+  function compactLog(side, device, keep = KEEP_REVERSIBLE) {
+    let n = 0;
+    for (let i = side.log.length - 1; i >= 0; i--) {
+      const e = side.log[i];
+      if (e.seed.device !== device || !e.undo) continue;
+      if (++n > keep) {
+        e.undo = null;
+        e.compacted = true;
+      }
+    }
+  }
+  function reverseLast(m, { device = null } = {}) {
+    let idx = m.side.log.length - 1;
+    if (device) while (idx >= 0 && m.side.log[idx].seed.device !== device) idx--;
+    if (idx < 0) throw new Error(device ? `nothing to reverse on ${device}` : "nothing to reverse");
     const out = createMatter(m);
-    const e = out.side.log.pop();
+    const e = out.side.log[idx];
+    if (!e.undo) throw new Error("that crossing is too old to reverse (its undo was compacted)");
+    const cur = out.side.passages[e.pid];
+    if (e.after && (!cur || hashOf(cur) !== e.after)) throw new Error("the passage changed since that crossing; not reversed");
+    if (out.side.log.slice(idx + 1).some((x) => x.pid === e.pid)) throw new Error("the passage changed since that crossing; not reversed");
+    out.side.log.splice(idx, 1);
     const { text, passage, strokes } = e.undo;
     let at = text.at;
     if (out.text.slice(at, at + text.del.length) !== text.del) {
@@ -40238,6 +40329,202 @@ ${clean(nextLineText)}`;
       passages[id2] = p;
     }
     return { version: 1, passages, log: entries };
+  }
+  var LABELS = {
+    1: "Make text",
+    10: "Make text",
+    4: "Make quote",
+    2: "Pencil over",
+    6: "Pencil note",
+    12: "Pin here",
+    3: "Highlight",
+    5: "Circle as note",
+    8: "Keep as note",
+    9: "Read aloud",
+    7: "Read aloud",
+    11: "Read aloud"
+  };
+  var SOURCE_NAME = { ink: "pencil", type: "text", mark: "mark", voice: "voice" };
+  function matterActions(m, pid, probe = {}) {
+    if (!m.side.passages[pid]) return [];
+    const seed = { device: "probe", input: "probe", time: 0 };
+    const list = [];
+    for (const c of CROSSINGS) {
+      try {
+        cross(m, c.n, pid, { ...probe, seed });
+      } catch {
+        continue;
+      }
+      list.push({ id: `cross-${c.n}`, n: c.n, label: LABELS[c.n], from: c.from, to: c.to, run: (mm, opts) => cross(mm, c.n, pid, opts) });
+    }
+    const seen = /* @__PURE__ */ new Map();
+    for (const a of list) seen.set(a.label, (seen.get(a.label) || 0) + 1);
+    for (const a of list) if (seen.get(a.label) > 1) a.label = `${a.label} from ${SOURCE_NAME[a.from]}`;
+    return list;
+  }
+  function passageAt(m, from, to = from) {
+    let best = null;
+    for (const p of Object.values(m.side.passages)) {
+      const f = p.forms.type;
+      if (!f) continue;
+      const off = findQuote(m.text, f);
+      if (off === -1) continue;
+      const end = off + f.quote.length;
+      if (off <= Math.max(from, to - 1) && end >= Math.min(to, from + 1)) {
+        if (!best || f.quote.length < best.len) best = { id: p.id, len: f.quote.length };
+      }
+    }
+    return best ? best.id : null;
+  }
+  function menuForSelection(m, from, to) {
+    const pid = passageAt(m, from, to);
+    if (pid) return { pid, actions: matterActions(m, pid) };
+    const quote = m.text.slice(from, to);
+    if (!wordsOf(quote).length) return { pid: null, actions: [] };
+    const newId = `p-${hashOf([from, quote])}`;
+    const probe = seedTypePassage(m, { id: newId, quote, at: from, seed: { device: "probe", input: "probe", time: 0 } });
+    const actions = matterActions(probe, newId).map((a) => ({
+      ...a,
+      run: (mm, opts) => {
+        const id2 = mm.side.passages[newId] ? `${newId}-${opts.seed.time}` : newId;
+        return cross(seedTypePassage(mm, { id: id2, quote, at: from, seed: opts.seed }), a.n, id2, opts);
+      }
+    }));
+    return { pid: null, actions };
+  }
+  function attachStrokeToWord(m, strokeId, bodyOffset) {
+    const stroke = m.ink.strokes.find((s) => s.id === strokeId);
+    if (!stroke || typeof bodyOffset !== "number") return m;
+    for (const p of Object.values(m.side.passages)) {
+      const surf = p.forms.ink && p.forms.ink.surface;
+      if (!surf || !p.forms.type) continue;
+      const off = findQuote(m.text, p.forms.type);
+      if (off === -1 || bodyOffset < off || bodyOffset > off + p.forms.type.quote.length) continue;
+      const w = wordAt(surf, bodyOffset - off);
+      if (!w) continue;
+      const out = createMatter(m);
+      const st = out.ink.strokes.find((s) => s.id === strokeId);
+      st.word = { pid: p.id, i: surf.indexOf(w), w: w.w };
+      const ink = out.side.passages[p.id].forms.ink;
+      if (!ink.strokes.includes(strokeId)) ink.strokes.push(strokeId);
+      return out;
+    }
+    return m;
+  }
+
+  // src/mattermenu.js
+  var PILL_DELAY_MS = 450;
+  function createMatterMenu({ mount, view, getMenu, onRun, doc: doc2 = typeof document !== "undefined" ? document : null }) {
+    if (!mount || !view || !doc2) return { selectionChanged() {
+    }, open() {
+    }, close() {
+    }, isOpen: () => false };
+    const pill = doc2.createElement("button");
+    pill.type = "button";
+    pill.className = "rc-matter-pill";
+    pill.textContent = "Matter";
+    pill.hidden = true;
+    pill.setAttribute("aria-label", "Matter: change this passage into another form");
+    const list = doc2.createElement("div");
+    list.className = "rc-matter-menu";
+    list.setAttribute("role", "menu");
+    list.hidden = true;
+    mount.appendChild(pill);
+    mount.appendChild(list);
+    let timer = null;
+    let range = null;
+    const sel = () => {
+      const r = view.state.selection.main;
+      return r.empty ? null : { from: r.from, to: r.to };
+    };
+    function placeAt(el5, x, y) {
+      const box = mount.getBoundingClientRect ? mount.getBoundingClientRect() : { left: 0, top: 0, width: 800 };
+      const left = Math.max(8, Math.min((box.width || 800) - 180, x - box.left));
+      el5.style.left = `${left}px`;
+      el5.style.top = `${Math.max(8, y - box.top)}px`;
+    }
+    function hidePill() {
+      clearTimeout(timer);
+      pill.hidden = true;
+    }
+    function close() {
+      list.hidden = true;
+      list.innerHTML = "";
+    }
+    function open(r = sel(), x = null, y = null) {
+      if (!r) return false;
+      const menu = getMenu(r.from, r.to);
+      if (!menu || !menu.actions.length) return false;
+      range = r;
+      list.innerHTML = "";
+      for (const a of menu.actions) {
+        const b = doc2.createElement("button");
+        b.type = "button";
+        b.className = "rc-matter-item";
+        b.setAttribute("role", "menuitem");
+        b.dataset.id = a.id;
+        b.textContent = a.label;
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const res = onRun(a, range);
+          if (res && res.ok === false) {
+            const note = doc2.createElement("div");
+            note.className = "rc-matter-note";
+            note.textContent = res.error || "Not done";
+            list.appendChild(note);
+            setTimeout(close, 2400);
+          } else close();
+        });
+        list.appendChild(b);
+      }
+      if (x == null) {
+        const c = view.coordsAtPos ? view.coordsAtPos(r.to) : null;
+        if (c) {
+          x = c.left;
+          y = c.bottom + 6;
+        }
+      }
+      if (x != null) placeAt(list, x, y);
+      hidePill();
+      list.hidden = false;
+      const first = list.querySelector("button");
+      if (first && first.focus) first.focus();
+      return true;
+    }
+    function selectionChanged() {
+      hidePill();
+      if (!list.hidden) close();
+      const r = sel();
+      if (!r) return;
+      timer = setTimeout(() => {
+        const now2 = sel();
+        if (!now2 || now2.from !== r.from || now2.to !== r.to) return;
+        const menu = getMenu(r.from, r.to);
+        if (!menu || !menu.actions.length) return;
+        const c = view.coordsAtPos ? view.coordsAtPos(r.to) : null;
+        if (!c) return;
+        placeAt(pill, c.left, c.bottom + 6);
+        pill.hidden = false;
+      }, PILL_DELAY_MS);
+    }
+    pill.addEventListener("pointerdown", (e) => e.preventDefault());
+    pill.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    });
+    view.dom.addEventListener("contextmenu", (e) => {
+      if (!sel()) return;
+      if (open(sel(), e.clientX, e.clientY)) e.preventDefault();
+    });
+    doc2.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !list.hidden) close();
+    });
+    doc2.addEventListener("pointerdown", (e) => {
+      if (!list.hidden && !list.contains(e.target)) close();
+    });
+    return { selectionChanged, open, close, isOpen: () => !list.hidden, pill, list };
   }
 
   // src/theme.js
@@ -40930,6 +41217,7 @@ ${clean(nextLineText)}`;
       if (menuOpen) setToolbarFaded(false);
     }
     let inkLayer = null;
+    let matterMenu = null;
     let pencilSqueeze = null;
     let library = null;
     let recense = null;
@@ -40987,6 +41275,7 @@ ${clean(nextLineText)}`;
           if (recense) recense.docChanged();
         }
         if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
+        if (matterMenu && update.selectionSet) matterMenu.selectionChanged();
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
           if (inkLayer) inkLayer.relayout();
@@ -41011,6 +41300,15 @@ ${clean(nextLineText)}`;
     });
     attachSwipePaging(view);
     let matterSide = { version: 1, passages: {}, log: [] };
+    let matterDevice = (() => {
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      if (/iPhone/.test(ua)) return "iPhone";
+      if (/iPad/.test(ua) || /Macintosh/.test(ua) && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1) return "iPad";
+      if (/Macintosh/.test(ua)) return "Mac";
+      return "web";
+    })();
+    let matterInput = "keys";
+    const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
     function postMatter() {
       const h = window.webkit?.messageHandlers?.matter;
       if (h && typeof h.postMessage === "function") h.postMessage(JSON.stringify(matterSide));
@@ -41041,8 +41339,9 @@ ${clean(nextLineText)}`;
         inkLayer.relayout();
         window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));
       }
+      const sideChanged = JSON.stringify(after.side) !== JSON.stringify(matterSide);
       matterSide = after.side;
-      postMatter();
+      if (sideChanged) postMatter();
       return { ok: true };
     }
     function insertBlock(text) {
@@ -41063,7 +41362,33 @@ ${String(text ?? "")}`;
       onToolChange: (tool) => {
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+      },
+      // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
+      onStrokeAdded: (stroke) => {
+        if (!Object.values(matterSide.passages).some((p) => p.forms.ink && p.forms.ink.surface)) return;
+        const p0 = stroke.points && stroke.points[0];
+        const sd = view.scrollDOM;
+        if (!p0 || !sd || !sd.getBoundingClientRect) return;
+        const r = sd.getBoundingClientRect();
+        const pos = view.posAtCoords({ x: r.left + p0[0] - sd.scrollLeft, y: r.top + p0[1] - sd.scrollTop });
+        if (pos != null) applyMatter((m) => attachStrokeToWord(m, stroke.id, pos));
       }
+    });
+    view.dom.addEventListener("pointerdown", (e) => {
+      matterInput = e.pointerType === "pen" ? "pencil" : e.pointerType === "touch" ? "touch" : "keys";
+    }, true);
+    view.dom.addEventListener("keydown", () => {
+      matterInput = "keys";
+    }, true);
+    matterMenu = createMatterMenu({
+      mount: editorHost,
+      view,
+      getMenu: (from, to) => menuForSelection(
+        createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }),
+        from,
+        to
+      ),
+      onRun: (action) => applyMatter((m) => action.run(m, { seed: matterSeed() }))
     });
     speaker = createSpeaker(typeof window !== "undefined" ? window : null);
     library = createLibraryUI({
@@ -41414,7 +41739,23 @@ ${String(text ?? "")}`;
           return seedTypePassage(m, a);
         }),
         cross: (n, pid, opts) => applyMatter((m) => cross(m, Number(n), String(pid), typeof opts === "string" ? JSON.parse(opts) : opts || {})),
-        reverseCrossing: () => applyMatter((m) => reverseLast(m)),
+        reverseCrossing: () => applyMatter((m) => reverseLast(m, { device: matterDevice })),
+        // per device
+        setMatterDevice: (name2) => {
+          if (name2) matterDevice = String(name2);
+          return matterDevice;
+        },
+        // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
+        matterMenu: (from, to) => {
+          const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+          return menuForSelection(m, Number(from), Number(to)).actions.map(({ id: id2, label, from: f, to: t2 }) => ({ id: id2, label, from: f, to: t2 }));
+        },
+        runMatterAction: (id2, from, to) => {
+          const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+          const a = menuForSelection(m, Number(from), Number(to)).actions.find((x) => x.id === id2);
+          return a ? applyMatter((mm) => a.run(mm, { seed: matterSeed() })) : { ok: false, error: "not available here" };
+        },
+        openMatterMenu: () => matterMenu ? matterMenu.open() : false,
         crossings: () => CROSSINGS.map((c) => ({ ...c })),
         getInkTool: () => inkLayer ? inkLayer.getTool() : "select",
         setInkTool: (tool) => voiceHandlers.setInkTool(tool),

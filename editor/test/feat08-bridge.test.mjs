@@ -13,6 +13,11 @@ test('FEAT-08: window.recenseEditor exposes the matter calls', () => {
     assert.ok(src.includes(k), `index.js exposes ${k}`);
   }
   assert.ok(src.includes('messageHandlers?.matter'), 'the sidecar is posted to the host');
+  for (const k of ['setMatterDevice:', 'matterMenu:', 'runMatterAction:', 'openMatterMenu:', 'createMatterMenu(', 'onStrokeAdded:']) {
+    assert.ok(src.includes(k), `index.js wires ${k}`);
+  }
+  assert.ok(src.includes('reverseLast(m, { device: matterDevice })'), 'undo from the editor is per device');
+  assert.ok(read('../src/ink.js').includes('onStrokeAdded(stroke)'), 'the ink layer reports each new stroke');
 });
 
 test('FEAT-08: Mac and iOS hosts read and write draftpad.matter.json beside the page', () => {
