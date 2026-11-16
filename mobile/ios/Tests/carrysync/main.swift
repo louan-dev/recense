@@ -149,5 +149,49 @@ do {
     check(CarrySync.settledThrough(received: 8, pending: [1]) == 0, "the first op waiting holds everything back")
 }
 
+// Derived from Spec: FEAT-09 P4 (automatic carry, T-0084) · CarrySchedule: events in, "run now" out
+do {
+    /// Steps the clock in 0.1 s ticks from `from` to `to`; returns the times a carry started (each runs `dur` s).
+    func runs(_ s: inout CarrySchedule, from: Double, to: Double, dur: Double = 0.3, events: [(Double, CarrySchedule.Event)]) -> [Double] {
+        var out: [Double] = [], ends: [Double] = [], ev = events.sorted { $0.0 < $1.0 }
+        var t = from
+        while t <= to + 1e-9 {
+            while let e = ev.first, e.0 <= t + 1e-9 { s.handle(e.1, at: e.0); ev.removeFirst() }
+            if let e = ends.first, e <= t + 1e-9 { s.handle(.finished, at: t); ends.removeFirst() }
+            if s.tick(at: t) { out.append(t); ends.append(t + dur) }
+            t = (t * 10 + 1).rounded() / 10
+        }
+        return out
+    }
+    var s = CarrySchedule()
+    var r = runs(&s, from: 0, to: 10, events: [(1, .connected)])
+    check(r.count == 1 && r[0] >= 1 && r[0] <= 3, "a paired peer connects → one carry within 2 s: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected)] + (0..<10).map { (5 + Double($0) * 0.5, .changed) })
+    check(r.count == 2 && abs(r[1] - (9.5 + CarrySchedule.quiet)) < 0.15, "ten changes 0.5 s apart → one carry, 2 s after the last: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, dur: 3, events: [(0, .connected), (1, .changed), (1.2, .changed), (1.4, .foreground)])
+    check(r.count == 2, "triggers during a carry → exactly one follow-up: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected), (8, .foreground)])
+    check(r.count == 2 && r[1] >= 8 && r[1] <= 10, "coming to the front → a carry: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(1, .changed), (2, .foreground)])
+    check(r.isEmpty, "no paired peer connected → no carry: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected), (4, .disconnected), (5, .changed)])
+    check(r.count == 1, "after the last peer leaves, a change waits: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 5, events: [(1, .tapped)])
+    check(r == [1], "Carry Now runs at once, connected or not (it shows its own result): \(r)")
+    check(CarrySchedule.connectDelay <= 2 && CarrySchedule.quiet == 2, "the spec's 2 s")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

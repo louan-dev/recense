@@ -138,7 +138,7 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   a restore replays correctly on the other side — not just a plain file push (`shared/carrymanager.swift`,
   `shared/carryapply.swift`). A real conflict (both sides changed, no tracked base yet) always settles the safe
   way, keeping both as named siblings, rather than merging — the one piece of P3 still open, named honestly.
-- **Automatic — `[ ]` · From: T-0084 (owner 11-15: "i dont want to carry now, i want it to be automatic").**
+- **Automatic — `[~]` (built and tested; device check owed) · From: T-0084 (owner 11-15: "i dont want to carry now, i want it to be automatic").**
   - A paired peer connects: carry starts within 2 s.
   - While connected, a home changes (new file, rename, trash, restore): carry after 2 s of quiet (debounce).
     Mac: an FSEvents stream on `~/Recense` (homes only, `.carry/` ignored). iOS: Homes' own changes post
@@ -151,7 +151,9 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   - Pure scheduler `CarrySchedule` (`shared/carrysync.swift`): events in, "run now / at t" out; tested without radios.
   - **Invariants (tested, `mobile/ios/Tests/carrysync/main.swift`):** connect → a run within 2 s; ten changes
     0.5 s apart → one run, 2 s after the last; a trigger during a run → exactly one follow-up; foreground → a run;
-    no paired peer connected → no run.
+    no paired peer connected → no run; after the last peer leaves, a change waits; Carry Now runs at once
+    (it reports its own result). `Carry.verify(reuse:)` keeps an unchanged file's hash and re-hashes a changed one
+    (`recense selftest`). Timing as built: connect and foreground 0.5 s, quiet 2 s.
 - A dropped link resumes from the pieces already held (`shared/pieces`) — not yet wired into this path; today a
   dropped link's file resends from the top, acceptable for the sizes Homes carries so far.
 - iOS: while Recense is open, plus the background processing window. Never blocks playing, reading or writing.
