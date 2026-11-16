@@ -14,6 +14,7 @@ enum PairMessage: Codable, Equatable, Sendable {
     case nonce(Data)
     case group(Data)                       // the group secret, sealed (ChaChaPoly) after both people tapped "They match"
     case refuse(String)
+    case sameGroup(Data)                   // both already hold a group: its keyed fingerprint, never the secret (BUG-17)
 }
 
 enum PairFailure: Error, Equatable, Sendable {
@@ -49,7 +50,7 @@ struct CarryPairSession {
     mutating func receive(_ m: PairMessage) throws -> PairMessage? {
         switch m {
         case .hello(let key, let n, let grouped):
-            guard theirKey == nil else { throw PairFailure.outOfOrder }
+            if let k = theirKey { if k == key { return nil }; throw PairFailure.outOfOrder }   // the same hello again: ignored (BUG-17 echo)
             guard (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: key)) != nil, key != myKey else { throw PairFailure.badKey }
             theirKey = key; theirName = n; theirGrouped = grouped ?? false
             return commits ? .commit(Self.commitment(myKey, key, myNonce)) : nil
@@ -63,7 +64,7 @@ struct CarryPairSession {
             guard let c = theirCommit, Self.commitment(k, myKey, n) == c else { throw PairFailure.badCommit }
             theirNonce = n
             return nil
-        case .group, .refuse:
+        case .group, .refuse, .sameGroup:
             throw PairFailure.outOfOrder                           // handled by openGroup / the glue
         }
     }
@@ -148,6 +149,7 @@ struct CarryPairFlow {
     private(set) var done = false
     private var held: PairMessage?          // their sealed group, waiting for this side's own tap
     private var codeShown = false
+    private var echoed = false              // our hello sent again on the first of theirs (BUG-17)
 
     init(me: Curve25519.KeyAgreement.PrivateKey, name: String, group: Data?, nonce: Data? = nil) {
         session = CarryPairSession(me: me, name: name, nonce: nonce); mine = group
@@ -159,13 +161,17 @@ struct CarryPairFlow {
         guard !done else { throw PairFailure.outOfOrder }
         switch m {
         case .refuse: throw PairFailure.refused
-        case .group:
+        case .group, .sameGroup:
             guard session.code() != nil, held == nil else { throw PairFailure.outOfOrder }
             if confirmed { return try open(m) }
             held = m
             return Step()
         default:
             var step = Step()
+            // Already connected when one side started: its first hello reached a device that was not looking yet and
+            // was dropped. Answering the first hello with ours again, ahead of anything else, means each side always
+            // gets the other's hello first; the copy that did arrive is ignored (owner's iPad, 11-15 17:4x).
+            if case .hello = m, !echoed { echoed = true; step.send.append(session.hello(grouped: mine != nil)) }
             if let r = try session.receive(m) { step.send.append(r) }
             if !codeShown, let c = session.code() { codeShown = true; step.code = c }
             return step
@@ -177,6 +183,12 @@ struct CarryPairFlow {
         guard !done, session.code() != nil else { throw PairFailure.outOfOrder }
         if confirmed { return Step() }             // a second tap while waiting for theirs changes nothing
         confirmed = true
+        if let mine, session.theirGrouped {   // both already in a group: the same one pairs, a different one is refused
+            let step = Step(send: [.sameGroup(try session.groupFingerprint(mine))])
+            guard let h = held else { return step }
+            var opened = try open(h); opened.send = step.send
+            return opened
+        }
         if let h = held { return try open(h) }
         guard let offer = try session.offerGroup(mine: mine, theirsExists: session.theirGrouped) else { return Step() }
         done = true
@@ -184,6 +196,11 @@ struct CarryPairFlow {
     }
 
     private mutating func open(_ m: PairMessage) throws -> Step {
+        if case .sameGroup(let theirs) = m {
+            guard let mine, try session.groupFingerprint(mine) == theirs else { throw PairFailure.otherGroup }
+            done = true
+            return Step(paired: Paired(key: session.theirKey!, name: session.theirName ?? "", group: mine))
+        }
         guard mine == nil else { throw PairFailure.otherGroup }   // two groups never merge (FEAT-09 P1)
         let g = try session.openGroup(m)
         done = true
@@ -200,6 +217,14 @@ enum CarryInvites {
     static func due(picked: [String: Date], nearby: Set<String>, connected: Set<String>, now: Date) -> [String] {
         picked.filter { nearby.contains($0.key) && !connected.contains($0.key) && now.timeIntervalSince($0.value) >= every }
             .keys.sorted()
+    }
+
+    /// Owner rule (BUG-17): each device shows once in the pair list. Two advertisers with one name (a second Recense
+    /// process on the same Mac) collapse to the newest one found, which is the one still answering.
+    static func newestPerName<T>(_ items: [T], name: (T) -> String) -> [T] {
+        var seen = Set<String>(), out: [T] = []
+        for i in items.reversed() where seen.insert(name(i)).inserted { out.append(i) }
+        return out.reversed()
     }
 }
 

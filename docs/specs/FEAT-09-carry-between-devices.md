@@ -66,6 +66,9 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   whether its sender already holds a group, so exactly one side sends one. While "Pair a device" is on, a peer
   already in `peers.json` pairs again, and the new entry replaces the old one (a one-sided pairing can be redone).
   Either device may start first: a picked device that has not answered is invited again every 11 s.
+  Each side answers the first hello with its own again, so a hello lost before the other side was looking is
+  replaced. Two devices that already hold the same group pair by comparing fingerprints. The pair list shows
+  each device once.
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
 - **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
   under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).

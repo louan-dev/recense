@@ -81,8 +81,9 @@ do {
     let commit = try c.receive(r.hello())!
     let reveal = try r.receive(commit)!
     _ = try c.receive(reveal)
-    do { _ = try c.receive(r.hello()); check(false, "second hello must fail") }
-    catch { check(error as? PairFailure == .outOfOrder, "a second hello is out of order") }
+    check((try? c.receive(r.hello())) == .some(nil), "the same hello again is ignored (BUG-17 echo)")
+    do { _ = try c.receive(CarryPairSession(me: Key(), name: "x").hello()); check(false, "a different second hello must fail") }
+    catch { check(error as? PairFailure == .outOfOrder, "a hello from a different key is out of order") }
     do { _ = try r.receive(.nonce(Data(repeating: 1, count: 32))); check(false, "forged nonce must fail") }
     catch { check(error as? PairFailure == .badCommit, "a nonce that doesn't match the commitment is refused") }
     do { var z = CarryPairSession(me: Key(), name: "z"); _ = try z.receive(.hello(key: Data([1, 2, 3]), name: "bad")); check(false, "bad key") }
@@ -123,7 +124,7 @@ func pairFlows(mac: Data?, phone: Data?, order: Order) throws -> (a: CarryPairFl
 }
 do {
     let macGroup = Data(repeating: 7, count: 32)
-    for (mac, phone) in [(macGroup, nil), (nil, nil), (nil, macGroup)] as [(Data?, Data?)] {
+    for (mac, phone) in [(macGroup, nil), (nil, nil), (nil, macGroup), (macGroup, macGroup)] as [(Data?, Data?)] {
         for order in [Order.aFirst, .bFirst, .bothBeforeDelivery] {
             let r = try pairFlows(mac: mac, phone: phone, order: order)
             let what = "mac group \(mac != nil), phone group \(phone != nil), \(order)"
@@ -179,6 +180,26 @@ do {
     check(r.count == 2 && r.contains(b) && r.first { $0.name == "iPhone" }?.paired == "new", "replaces the same device, keeps the rest")
     check(CarryPeer.replacing([a], with: CarryPeer(name: "iPhone 2", key: Data([1]), paired: "x")).count == 1, "same key, renamed: still one entry")
 }
+
+// Regression guard: BUG-17 · already connected, one side starts first: its hello reaches a device that is not
+// looking yet and is dropped; the other side starts later. Both must still reach a code and pair (the owner's iPad, 17:4x).
+do {
+    let macGroup = Data(repeating: 7, count: 32)
+    for macFirst in [true, false] {
+        var a = CarryPairFlow(me: Key(), name: "Mac", group: macGroup), b = CarryPairFlow(me: Key(), name: "iPad", group: nil)
+        var toA: [PairMessage] = [], toB: [PairMessage] = []
+        var paired: [String: CarryPairFlow.Paired] = [:], codes: [String: String] = [:]
+        if macFirst { _ = a.start(); toA = b.start().send } else { _ = b.start(); toB = a.start().send }   // the first hello is lost
+        try pump(&a, &b, &toA, &toB, paired: &paired, codes: &codes)
+        check(codes["a"] != nil && codes["a"] == codes["b"], "a lost first hello still ends in one code on both (mac first: \(macFirst))")
+        let ta = try a.confirm(), tb = try b.confirm()
+        toB += ta.send; toA += tb.send; paired["a"] = ta.paired ?? paired["a"]; paired["b"] = tb.paired ?? paired["b"]
+        try pump(&a, &b, &toA, &toB, paired: &paired, codes: &codes)
+        check(paired["a"] != nil && paired["b"]?.group == macGroup, "and both pair (mac first: \(macFirst))")
+    }
+}
+// Owner rule (BUG-17): "it should only show mac pro once each time it pairs, there should not be two".
+check(CarryInvites.newestPerName(["Mac#1", "iPad", "Mac#2"], name: { String($0.prefix(3)) }) == ["iPad", "Mac#2"], "one row per name, the newest kept")
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
