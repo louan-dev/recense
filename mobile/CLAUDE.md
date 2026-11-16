@@ -45,6 +45,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   responsiveness (no freeze, no 0x8BADF00D) while a large library settles.
 - The Lock Screen player (`HostApp/iOS/NowPlayingInfo.swift`, BUG-09), after any change to it or to `NativePlayer`'s publish/remote:
   `swiftc -O mobile/HostApp/iOS/NowPlayingInfo.swift mobile/ios/Tests/nowplaying/main.swift -o "$TMPDIR/nowplaying" && "$TMPDIR/nowplaying"` (ALL OK).
+- A video's sound on the Lock Screen (`HostApp/iOS/BackgroundVideo.swift`, FEAT-19 P2), after any change to it or to `VideoLayer`:
+  `swiftc -O mobile/HostApp/iOS/BackgroundVideo.swift mobile/ios/Tests/backgroundvideo/main.swift -o "$TMPDIR/bgvideo" && "$TMPDIR/bgvideo"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
   `swiftc -O shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
 - A played file's language (`shared/speechcore.swift` SpeechAhead, BUG-11), after any change to SpeechAhead or to
