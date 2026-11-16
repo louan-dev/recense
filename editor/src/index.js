@@ -96,6 +96,7 @@ import { mountWingPanel, wingSideFrom } from './wingpanel.js';
 import { createLibraryUI } from './libraryui.js';
 import { createSpeaker } from './speech.js';
 import { createCalendarSheet } from './calsheet.js';
+import { squeezeHost } from './pencilstate.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -680,6 +681,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   let inkLayer = null;
+  let pencilSqueeze = null;   // UI-04 P1: built on the first squeeze phase
   let library = null;
   let recense = null;
   let recenseActions = null;
@@ -1168,6 +1170,18 @@ export function mountEditor(root = document.body, initialDoc = '') {
         const card = recense ? recense.cardFor(Number(offset)) : null;
         if (dualWings) dualWings.setTypedLine(card);
         return card;
+      },
+      // Derived from Spec: UI-04 P1 — the host sends every squeeze phase with the hover point:
+      // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2; until then, toggles on release).
+      onPencilSqueeze: (phase, x, y) => {
+        if (!inkLayer) return 'idle';
+        if (!pencilSqueeze) {
+          pencilSqueeze = squeezeHost({
+            toggle: () => { postHaptic('squeeze'); return inkLayer.toggleMenu(); },
+            radial: () => null
+          });
+        }
+        return pencilSqueeze(String(phase), Number(x), Number(y));
       },
       // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
       onPencilAction: action => {

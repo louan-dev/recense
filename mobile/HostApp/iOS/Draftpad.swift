@@ -443,6 +443,12 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         call("onPencilAction(\(jsLiteral(action)))")
     }
 
+    // Derived from Spec: UI-04 P1 — every squeeze phase goes to the editor with the hover point; the editor
+    // times the 250 ms tap/hold split and plays the haptic, so no impact here.
+    func handleSqueeze(_ phase: String, at p: CGPoint) {
+        call("onPencilSqueeze(\(jsLiteral(phase)), \(Double(p.x)), \(Double(p.y)))")
+    }
+
     /// A swipe in from the screen's left or right edge brings that wing out (owner, 11-08: the edge swipe, not a hold).
     func openWing(_ side: String) {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
@@ -498,9 +504,10 @@ func jsLiteral(_ s: String) -> String {
 struct EditorSurface: UIViewRepresentable {
     let web: WKWebView
     var onEdge: (String) -> Void = { _ in }
+    var onSqueeze: (String, CGPoint) -> Void = { _, _ in }
     let onPencilAction: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction, onEdge) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction, onEdge, onSqueeze) }
 
     func makeUIView(context: Context) -> WKWebView {
         let i = UIPencilInteraction(delegate: context.coordinator)
@@ -516,13 +523,17 @@ struct EditorSurface: UIViewRepresentable {
     func updateUIView(_ v: WKWebView, context: Context) {
         context.coordinator.onPencilAction = onPencilAction
         context.coordinator.onEdge = onEdge
+        context.coordinator.onSqueeze = onSqueeze
     }
 
     final class Coordinator: NSObject, UIPencilInteractionDelegate, UIGestureRecognizerDelegate {
         var onPencilAction: (String) -> Void
         var onEdge: (String) -> Void
+        var onSqueeze: (String, CGPoint) -> Void
         private var fired = false
-        init(_ f: @escaping (String) -> Void, _ e: @escaping (String) -> Void) { onPencilAction = f; onEdge = e }
+        init(_ f: @escaping (String) -> Void, _ e: @escaping (String) -> Void, _ q: @escaping (String, CGPoint) -> Void) {
+            onPencilAction = f; onEdge = e; onSqueeze = q
+        }
         /// One wing per swipe, once the finger has come 40 pt in from the edge.
         @objc func edgePan(_ g: UIScreenEdgePanGestureRecognizer) {
             switch g.state {
@@ -535,7 +546,17 @@ struct EditorSurface: UIViewRepresentable {
         }
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { false }
         func pencilInteraction(_ i: UIPencilInteraction, didReceiveSqueeze s: UIPencilInteraction.Squeeze) {
-            if s.phase == .ended { onPencilAction("squeeze") }
+            // Derived from Spec: UI-04 P1 — respect the system's squeeze setting; forward every phase.
+            if UIPencilInteraction.preferredSqueezeAction == .ignore { return }
+            let name: String
+            switch s.phase {
+            case .began: name = "began"
+            case .changed: name = "changed"
+            case .ended: name = "ended"
+            case .cancelled: name = "cancelled"
+            @unknown default: return
+            }
+            onSqueeze(name, s.hoverPose?.location ?? .zero)
         }
         func pencilInteraction(_ i: UIPencilInteraction, didReceiveTap t: UIPencilInteraction.Tap) {
             onPencilAction("doubleTap")
@@ -585,7 +606,8 @@ struct DraftpadEditor: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            EditorSurface(web: editor.web.web, onEdge: { editor.web.openWing($0) }) { action in
+            EditorSurface(web: editor.web.web, onEdge: { editor.web.openWing($0) },
+                          onSqueeze: { editor.web.handleSqueeze($0, at: $1) }) { action in
                 editor.web.handlePencilAction(action)
             }
         }
