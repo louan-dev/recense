@@ -1,6 +1,6 @@
-// Gallery Files (macOS): puts the archive in Finder's sidebar as a File Provider location and keeps it current, and
-// opened by hand shows Gallery's window with the assistant (Window.swift). At login it has no window; it stays running
-// (login item) and every 60 s tells the system to ask the extension what changed
+// Gallery Files (macOS): its Finder location (~/Library/CloudStorage/GalleryFiles-Archive) is RETIRED (2026-11-16):
+// every launch removes it. Opened by hand it shows Gallery's window with the assistant (Window.swift). Until 2026-11-16
+// it stayed running at login and every 60 s told the system to ask the extension what changed
 // (there's no push without a paid account: docs/architecture.md §3).
 //   "Gallery Files.app/Contents/MacOS/GalleryFiles" remove   takes the location out of Finder (R2 is untouched)
 import AppKit
@@ -48,14 +48,12 @@ guard handOverToken() else {
     log("no gallery-access token in the Keychain")
     exit(1)
 }
-// the location was "Chauphan" until 2026-10-31; take that one out so Finder shows only Archive
+// the location was "Chauphan" until 2026-10-31; take that one out too
 NSFileProviderManager.remove(NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("chauphan"), displayName: "Chauphan")) { _ in }
-NSFileProviderManager.add(domain) { e in
-    log(e.map { "add failed: \($0)" } ?? "Archive is in Finder")
-}
-
-Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-    NSFileProviderManager(for: domain)?.signalEnumerator(for: .workingSet) { e in if let e { log("signal: \(e)") } }
+// Retired 2026-11-16 (owner: "~/Library/CloudStorage/GalleryFiles-Archive this must retire"): every launch takes the
+// Archive location out of Finder and never adds it again. R2 is untouched; the window still browses Archive.
+NSFileProviderManager.remove(domain) { e in
+    log(e.map { "remove failed: \($0)" } ?? "Archive location retired (not in Finder)")
 }
 
 let app = NSApplication.shared
