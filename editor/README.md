@@ -76,6 +76,12 @@ npm run build
 
 Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 
+## Reaching the editor on iPad and iPhone (T-0093)
+- Never a localhost link (the wrangler dev port): on an iPad, localhost is the iPad itself, so it cannot open there.
+- In the Recense app: sidebar > Locations > Draftpad. The page is bundled (`editor.html`), so it works in airplane mode.
+- In a browser, no app: the owner-only page `/main/editor/` on the Gallery Worker (once deployed); add it to the Home Screen and it also runs offline.
+- Check: `npm test` (`test/t0093-no-localhost-link.test.mjs`) fails if any source or README hands out a localhost editor link.
+
 ## Ink palette and shape snapping (2026-11-08)
 - The palette's tool buttons show icons (select, pen, highlighter, eraser), with names on hover and for VoiceOver. Circle and underline are gone: hold the stroke's end instead.
 - The pen only turns a stroke into a shape when you hold still at its end for 0.5 s (`SNAP_HOLD_MS`) and it's bigger than a letter (`SNAP_MIN_SIZE`, 40 px):
