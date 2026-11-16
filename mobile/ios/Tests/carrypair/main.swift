@@ -201,5 +201,127 @@ do {
 // Owner rule (BUG-17): "it should only show mac pro once each time it pairs, there should not be two".
 check(CarryInvites.newestPerName(["Mac#1", "iPad", "Mac#2"], name: { String($0.prefix(3)) }) == ["iPad", "Mac#2"], "one row per name, the newest kept")
 
+// Derived from Spec: FEAT-09 P1b (pair by typing the code, T-0086): one side shows six digits, the other types them
+struct Leg {
+    var f: CarryPairFlow
+    var inbox: [PairMessage] = []
+    var code: String?            // shown on this screen
+    var wants = false            // this screen asks for the code
+    var paired: CarryPairFlow.Paired?
+    var failure: PairFailure?
+    mutating func take(_ s: CarryPairFlow.Step, to other: inout Leg) {
+        other.inbox += s.send
+        if let c = s.code { code = c }
+        if s.wantsCode { wants = true }
+        if let p = s.paired { paired = p }
+    }
+}
+/// Delivers until quiet. A side that throws refuses, as the glue does; `typed` is what the owner types on the asking side.
+func passkey(_ a: inout Leg, _ b: inout Leg, typed: (String) -> String) {
+    var typedDone = false
+    func step(_ x: inout Leg, _ y: inout Leg) -> Bool {
+        guard x.failure == nil, !x.inbox.isEmpty else { return false }
+        let m = x.inbox.removeFirst()
+        do { x.take(try x.f.receive(m), to: &y) }
+        catch { x.failure = error as? PairFailure; y.inbox.append(.refuse("pairing failed")) }
+        return true
+    }
+    var moved = true
+    while moved {
+        moved = false
+        while step(&b, &a) || step(&a, &b) { moved = true }
+        if !typedDone, a.wants != b.wants, let shown = (a.wants ? b.code : a.code) {
+            typedDone = true; moved = true
+            do {
+                if a.wants { a.take(try a.f.enter(typed(shown)), to: &b) } else { b.take(try b.f.enter(typed(shown)), to: &a) }
+            } catch { if a.wants { a.failure = error as? PairFailure; b.inbox.append(.refuse("x")) } else { b.failure = error as? PairFailure; a.inbox.append(.refuse("x")) } }
+        }
+    }
+}
+func legs(macPicked: Bool, phonePicked: Bool, mac: Data? = nil, phone: Data? = nil) -> (Leg, Leg) {
+    var a = Leg(f: CarryPairFlow(me: Key(), name: "Mac", group: mac, picked: macPicked))
+    var b = Leg(f: CarryPairFlow(me: Key(), name: "iPhone", group: phone, picked: phonePicked))
+    a.take(a.f.start(), to: &b); b.take(b.f.start(), to: &a)
+    return (a, b)
+}
+do {
+    let g = Data(repeating: 9, count: 32)
+    for (mp, pp) in [(true, false), (false, true), (true, true), (false, false)] {
+        for (mac, phone) in [(g, nil), (nil, nil), (nil, g), (g, g)] as [(Data?, Data?)] {
+            var (a, b) = legs(macPicked: mp, phonePicked: pp, mac: mac, phone: phone)
+            passkey(&a, &b) { $0 }
+            let what = "mac picked \(mp), phone picked \(pp), mac group \(mac != nil), phone group \(phone != nil)"
+            check((a.code != nil) != (b.code != nil), "exactly one side shows a code (\(what))")
+            check(a.wants != b.wants && (a.wants == (b.code != nil)), "the other side asks for it (\(what))")
+            if mp != pp { check((mp ? a.code : b.code) != nil, "the side that picked shows the code (\(what))") }
+            check((a.code ?? b.code)?.count == 6 && (a.code ?? b.code)!.allSatisfy(\.isNumber), "six digits (\(what))")
+            check(a.paired != nil && b.paired != nil && a.failure == nil && b.failure == nil, "the right code pairs both (\(what))")
+            check(a.paired?.group == b.paired?.group && a.paired?.group != nil, "one group on both (\(what))")
+            if let m = mac ?? phone { check(a.paired?.group == m, "an existing group is kept (\(what))") }
+            check(a.paired?.name == "iPhone" && b.paired?.name == "Mac", "names saved (\(what))")
+        }
+    }
+    // a wrong code refuses both, wherever the digits differ
+    for wrong in ["000000", "999999"] as [String] {
+        var (a, b) = legs(macPicked: true, phonePicked: false)
+        passkey(&a, &b) { $0 == wrong ? "123456" : wrong }
+        check(a.paired == nil && b.paired == nil, "a wrong code pairs neither (\(wrong))")
+        check(a.failure != nil || b.failure != nil, "a wrong code refuses (\(wrong)): \(String(describing: a.failure)) \(String(describing: b.failure))")
+        check([a.failure, b.failure].contains(.refused) || (a.failure != nil && b.failure != nil), "the other side learns it was refused")
+    }
+    // every last digit matters: one digit off is refused
+    do {
+        var (a, b) = legs(macPicked: true, phonePicked: false)
+        passkey(&a, &b) { c in String(c.dropLast()) + String((Int(String(c.last!))! + 1) % 10) }
+        check(a.paired == nil && b.paired == nil, "the last digit off by one pairs neither")
+    }
+    // a malformed code is refused at once
+    do {
+        var (a, b) = legs(macPicked: true, phonePicked: false)
+        while let m = b.inbox.first { b.inbox.removeFirst(); b.take(try b.f.receive(m), to: &a) }
+        check(b.wants, "the typer asks for the code")
+        check((try? b.f.enter("12a45")) == nil && (try? b.f.enter("1234567")) == nil, "not six digits: refused")
+    }
+    // a device in the middle with its own keys, relaying every round message: both honest sides refuse
+    do {
+        var a = Leg(f: CarryPairFlow(me: Key(), name: "Mac", group: nil, picked: true))
+        var b = Leg(f: CarryPairFlow(me: Key(), name: "iPhone", group: nil, picked: false))
+        let mk = Key()
+        let mHello = PairMessage.hello(key: mk.publicKey.rawRepresentation, name: "Mac", grouped: false, picked: true)
+        let mHelloToA = PairMessage.hello(key: mk.publicKey.rawRepresentation, name: "iPhone", grouped: false, picked: false)
+        func swap(_ ms: [PairMessage], toA: Bool) -> [PairMessage] { ms.map { if case .hello = $0 { return toA ? mHelloToA : mHello }; return $0 } }
+        a.take(a.f.start(), to: &b); b.take(b.f.start(), to: &a)
+        a.inbox = swap(a.inbox, toA: true); b.inbox = swap(b.inbox, toA: false)
+        var typed = false
+        for _ in 0..<500 {
+            var outA: [PairMessage] = [], outB: [PairMessage] = []
+            if a.failure == nil, !a.inbox.isEmpty { let m = a.inbox.removeFirst(); var sink = Leg(f: b.f)
+                do { a.take(try a.f.receive(m), to: &sink); outB = sink.inbox } catch { a.failure = error as? PairFailure } }
+            if b.failure == nil, !b.inbox.isEmpty { let m = b.inbox.removeFirst(); var sink = Leg(f: a.f)
+                do { b.take(try b.f.receive(m), to: &sink); outA = sink.inbox } catch { b.failure = error as? PairFailure } }
+            if !typed, b.wants, let c = a.code { typed = true; var sink = Leg(f: a.f)
+                do { b.take(try b.f.enter(c), to: &sink); outA += sink.inbox } catch { b.failure = error as? PairFailure } }
+            b.inbox += swap(outB, toA: false); a.inbox += swap(outA, toA: true)
+            if a.inbox.isEmpty && b.inbox.isEmpty && (typed || a.failure != nil || b.failure != nil) { break }
+        }
+        check(a.paired == nil && b.paired == nil, "a relaying device in the middle pairs neither side")
+        check(b.failure == .badCommit && b.f.passkey?.finished != true && a.f.passkey?.finished != true,
+              "the rounds themselves refuse a relay (not just the seal after): \(String(describing: b.failure))")
+    }
+    // a new attempt draws a new code
+    var seen = Set<String>()
+    for _ in 0..<8 { var (a, b) = legs(macPicked: true, phonePicked: false); passkey(&a, &b) { $0 }; if let c = a.code { seen.insert(c) } }
+    check(seen.count >= 7, "each attempt draws a fresh code: \(seen.count) of 8 distinct")
+    // an older peer (no `picked` in its hello) still pairs by comparing codes
+    do {
+        var a = CarryPairFlow(me: Key(), name: "Mac", group: nil, picked: true), b = CarryPairFlow(me: Key(), name: "iPhone", group: nil)
+        var toB = a.start().send, toA = b.start().send
+        var paired: [String: CarryPairFlow.Paired] = [:], codes: [String: String] = [:]
+        try pump(&a, &b, &toA, &toB, paired: &paired, codes: &codes)
+        check(codes["a"] != nil && codes["a"] == codes["b"], "an older peer: both compare the same code")
+    }
+    check(CarryPasskey.rounds == 20, "20 rounds, one per bit of a code below 2^20")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

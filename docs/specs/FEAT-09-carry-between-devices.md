@@ -71,7 +71,7 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   each device once.
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
 
-### P1b · Pair by typing the code (passkey entry) — `[ ]` · From: T-0086 (owner 11-15: "type the code")
+### P1b · Pair by typing the code (passkey entry) — `[~]` (built and tested; device check owed) · From: T-0086 (owner 11-15: "type the code")
 - One action pairs: one device shows six digits, you type them on the other. No "They Match" on either.
 - Who shows: the device on which you picked the other's name. If both or neither picked, the greater public key shows.
   Each `hello` carries `picked: Bool`, so both decide alone and agree.
@@ -95,6 +95,11 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
 - **Invariants (tested, `mobile/ios/Tests/carrypair/main.swift`):** the right code pairs both, in either role; a
   wrong code refuses both; a device in the middle with its own keys refuses (each leg's codes differ); a new attempt
   draws a new code; the group rules of P1 hold unchanged.
+- As built: `CarryPasskey` + `CarryPairFlow(picked:)` (`shared/carrypair.swift`); `CarryManager.enterCode`, `askingCode`,
+  `codeIsCompare`; a failed pairing sends `.refuse` so both sides stop ("Code didn't match"). iOS: Library › Devices
+  field; voice: "Enter Pairing Code" (`EnterPairingCodeIntent`); Mac: `strip/paircode.swift` window + Devices menu;
+  CLI prompts. Tests: right code (4 pick orders × 4 group cases), wrong code, last digit off, malformed code, a relaying
+  device in the middle (mutation-checked: drop the keys from the commitment → red), fresh code per attempt, older peer.
 - **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
   under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).
 

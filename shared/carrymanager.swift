@@ -57,6 +57,8 @@ private enum CarryKeychain {
     @Published private(set) var nearby: [MCPeerID] = []   // seen while browsing, not yet necessarily paired
     @Published var pairingCode: String?                    // non-nil once both nonces are in: show, ask "They match"
     @Published var pairingWith: String?                     // their display name, while `pairingCode` is shown
+    @Published var askingCode = false                       // P1b: type the code shown on `pairingWith`
+    @Published var codeIsCompare = false                    // P1 (older peer): compare and tap They Match
     @Published var isLookingToPair = false                  // "Pair a device" tapped: accept the next stranger
     @Published var lastCarryAt: Date?
     @Published var status = "Off"
@@ -159,7 +161,7 @@ private enum CarryKeychain {
 
     /// "Stop Pairing": ends the pairing only; the link stays on for carrying.
     func stopPairing() {
-        isLookingToPair = false; flows = [:]; picked = [:]; pairingCode = nil; pairingWith = nil
+        isLookingToPair = false; flows = [:]; picked = [:]; pairingCode = nil; pairingWith = nil; askingCode = false
         if status == "Pairing" { status = "Looking for devices" }
     }
 
@@ -266,7 +268,9 @@ private enum CarryKeychain {
     private func startFlow(_ peer: MCPeerID) {
         guard isLookingToPair, flows[peer] == nil else { return }
         reloadFromDisk()
-        let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group)
+        // P1b: the device on which the owner picked the other's name shows the code; the other asks for it
+        let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group,
+                              picked: picked[peer.displayName] != nil)
         flows[peer] = f
         apply(f.start(), peer)
     }
@@ -293,17 +297,38 @@ private enum CarryKeychain {
         } catch { fail(peer, error) }
     }
 
+    /// P1b: the owner typed the six digits shown on the other device (touch, keyboard, voice or the CLI).
+    func enterCode(_ code: String) {
+        guard let peer = flows.keys.first(where: { $0.displayName == pairingWith }) ?? flows.keys.first,
+              var f = flows[peer] else { lastError = "nothing is waiting for a code"; return }
+        do {
+            let step = try f.enter(code)
+            flows[peer] = f
+            askingCode = false
+            status = "Checking the code with \(peer.displayName)"
+            apply(step, peer)
+        } catch { fail(peer, error) }
+    }
+
     private func apply(_ step: CarryPairFlow.Step, _ peer: MCPeerID) {
         do { for m in step.send { try t.send(m, type: "pair", to: peer) } } catch { fail(peer, error); return }
-        if let c = step.code { pairingCode = c; pairingWith = peer.displayName }
+        if let c = step.code {
+            pairingCode = c; pairingWith = peer.displayName; codeIsCompare = flows[peer]?.passkey == nil
+            if !codeIsCompare { status = "Type \(c) on \(peer.displayName)" }
+        }
+        if step.wantsCode { askingCode = true; pairingWith = peer.displayName }
         if let p = step.paired { finish(peer, p) }
     }
 
     private func fail(_ peer: MCPeerID, _ error: Error) {
-        flows[peer] = nil; pairingCode = nil; pairingWith = nil
-        lastError = error as? PairFailure == .otherGroup
-            ? "\(peer.displayName) already belongs to a different pairing; not merged"
-            : "pairing with \(peer.displayName) failed: \(error)"
+        let e = error as? PairFailure
+        if e != .refused { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
+        flows[peer] = nil; pairingCode = nil; pairingWith = nil; askingCode = false
+        switch e {
+        case .otherGroup: lastError = "\(peer.displayName) already belongs to a different pairing; not merged"
+        case .badCommit, .refused: lastError = "Code didn't match. Pick \(peer.displayName) again for a new code."
+        default: lastError = "pairing with \(peer.displayName) failed: \(error)"
+        }
     }
 
     private func finish(_ peer: MCPeerID, _ p: CarryPairFlow.Paired) {
@@ -314,7 +339,7 @@ private enum CarryKeychain {
         do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
         catch { lastError = "saving peers.json failed: \(error)" }
         flows[peer] = nil
-        pairingCode = nil; pairingWith = nil; isLookingToPair = false; picked = [:]
+        pairingCode = nil; pairingWith = nil; askingCode = false; isLookingToPair = false; picked = [:]
         status = "Paired with \(peer.displayName)"
     }
 
@@ -464,11 +489,10 @@ private enum CarryKeychain {
     }
 }
 
-// `recense carry pair` (Mac CLI): the terminal equivalent of tapping "Pair a Device…" (FEAT-09 P1). Opens this
-// device to the next stranger (re-inviting until it answers, BUG-17), prints the six-digit code here, and
-// waits for Enter in place of a tap on "They Match". The eye-compare step itself still needs the owner looking
-// at both screens — that is the whole point of the code (FEAT-09 P1's defense against a device in the middle)
-// and is not automatable here.
+// `recense carry pair` (Mac CLI): the terminal equivalent of tapping "Pair a Device…" (FEAT-09 P1/P1b). Opens this
+// device to the next stranger (re-inviting until it answers, BUG-17). It invites, so it shows the six digits to type
+// on the other device (P1b); if the other device picked first, it asks for that device's code instead. An older
+// peer still compares codes (P1): Enter stands for "They Match".
 //
 // The GUI's "Pair a device" only makes this device discoverable; the actual invite is sent when the owner taps
 // a specific name in the "Looking for a device to pair" list (Devices.swift). A terminal has no such list to
@@ -492,7 +516,7 @@ func runCarryPairCLI() async -> Never {
     cm.beginPairing()
     var invited: MCPeerID?
     var waited = 0
-    while cm.pairingCode == nil {
+    while cm.pairingCode == nil && !cm.askingCode {
         if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
         waited += 1
         if invited == nil, waited % 50 == 0 {   // every 15 s with nothing seen
@@ -505,11 +529,18 @@ func runCarryPairCLI() async -> Never {
         }
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
-    let code = cm.pairingCode!, who = cm.pairingWith!
-    print("Code with \(who): \(code)")
-    print("Check the same code is on the other screen, then press Enter to confirm (Ctrl-C to cancel):")
-    _ = readLine()
-    cm.confirmMatch(for: who)
+    let who = cm.pairingWith!
+    if cm.askingCode {                       // FEAT-09 P1b: the other device shows the code
+        print("Type the code shown on \(who), then Enter:")
+        cm.enterCode(readLine() ?? "")
+    } else if !cm.codeIsCompare {            // P1b: this side shows it (it picked the other)
+        print("Type this code on \(who): \(cm.pairingCode!)")
+    } else {                                 // P1, an older peer: compare and confirm
+        print("Code with \(who): \(cm.pairingCode!)")
+        print("Check the same code is on the other screen, then press Enter to confirm (Ctrl-C to cancel):")
+        _ = readLine()
+        cm.confirmMatch(for: who)
+    }
     while cm.pairingWith != nil {
         if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
         try? await Task.sleep(nanoseconds: 200_000_000)

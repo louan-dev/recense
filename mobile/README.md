@@ -144,6 +144,8 @@ updates in place.
   either order (the device you pick is invited again until it answers).
   A carried file counts as settled only once its bytes are placed; a file still owed shows "Waiting for N files" and
   is asked for again on the next Carry Now (BUG-19).
+  Pairing (T-0086): pick the other device's name in Library › Devices; this screen shows six digits; type them on the
+  other device (number field, "Enter Pairing Code" by voice, the Mac's Pair a Device window, or `recense carry pair`).
   Carry runs by itself (T-0084): when a paired device connects, 2 s after a home stops changing, and when Recense
   comes to the front; Carry Now stays as the visible retry. The scan runs off the main thread and re-hashes only
   files whose size or date changed.
