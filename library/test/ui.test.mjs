@@ -331,6 +331,33 @@ await test("T-0130: a guest can add a file to a plain upload link (item 16)", fa
   assert.ok(await PUBLIC.head("links/" + up.id + "/001"));
 });
 
+await test("T-0130: a guest can drag and drop a file onto a plain upload link (item 16)", false, async (pg) => {
+  const r = await mf.dispatchFetch(base + "/main/api/link?action=start&days=7", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
+    body: "1\t1700000000000\timage%2Fjpeg\tdune.jpg",
+  });
+  const up = await r.json();
+  await PUBLIC.put("links/" + up.id + "/000", "J", {
+    httpMetadata: { contentType: "image/jpeg" },
+    customMetadata: { name: "dune.jpg", expires: String(up.exp) },
+  });
+
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+
+  pg.removeAllListeners("dialog");
+  pg.once("dialog", (d) => d.accept("Guest"));
+  const dt = await pg.evaluateHandle(() => {
+    const d = new DataTransfer();
+    d.items.add(new File(["g"], "dropped.jpg", { type: "image/jpeg" }));
+    return d;
+  });
+  await pg.dispatchEvent("body", "drop", { dataTransfer: dt });
+  await pg.waitForSelector('.tile[aria-label="dropped.JPG"]:not(.pending)', { timeout: 10000 });
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"));
+});
+
 await test("the landing page offers a visitor the sign-in", false, async (pg) => {
   await pg.goto(base + "/");
   assert.ok(await pg.isVisible('a[href="/main/"]'));
