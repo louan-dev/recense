@@ -776,13 +776,13 @@ body {
 
 .cm-line.cm-page-date-line {
   text-align: center;
-  color: var(--rc-blue);
+  color: var(--rc-text);   /* owner 2026-11-16: no blue date line */
   font-weight: 500;
   letter-spacing: 0.01em;
 }
 
 .cm-line.cm-section-heading-line {
-  color: var(--rc-blue);
+  color: var(--rc-text);   /* owner 2026-11-16: no blue heading line */
   font-weight: 600;
 }
 
