@@ -2150,6 +2150,15 @@ html.rc-wings-page body {
   pointer-events: none;
 }
 
+/* T-0090 · a stray control character: a faint dot the width of a letter, so clicks around it stay true. */
+.cm-control-char {
+  color: var(--rc-muted);
+  opacity: 0.5;
+  display: inline-block;
+  width: 0.6ch;
+  text-align: center;
+}
+
 </style>
 </head>
 <body>
@@ -14947,7 +14956,263 @@ html.rc-wings-page body {
       }
     }
   }));
+  function iterMatches(doc2, re, from, to, f) {
+    re.lastIndex = 0;
+    for (let cursor = doc2.iterRange(from, to), pos = from, m; !cursor.next().done; pos += cursor.value.length) {
+      if (!cursor.lineBreak)
+        while (m = re.exec(cursor.value))
+          f(pos + m.index, m);
+    }
+  }
+  function matchRanges(view, maxLength) {
+    let visible = view.visibleRanges;
+    if (visible.length == 1 && visible[0].from == view.viewport.from && visible[0].to == view.viewport.to)
+      return visible;
+    let result = [];
+    for (let { from, to } of visible) {
+      from = Math.max(view.state.doc.lineAt(from).from, from - maxLength);
+      to = Math.min(view.state.doc.lineAt(to).to, to + maxLength);
+      if (result.length && result[result.length - 1].to >= from)
+        result[result.length - 1].to = to;
+      else
+        result.push({ from, to });
+    }
+    return result;
+  }
+  var MatchDecorator = class {
+    /**
+    Create a decorator.
+    */
+    constructor(config) {
+      const { regexp, decoration, decorate, boundary, maxLength = 1e3 } = config;
+      if (!regexp.global)
+        throw new RangeError("The regular expression given to MatchDecorator should have its 'g' flag set");
+      this.regexp = regexp;
+      if (decorate) {
+        this.addMatch = (match, view, from, add2) => decorate(add2, from, from + match[0].length, match, view);
+      } else if (typeof decoration == "function") {
+        this.addMatch = (match, view, from, add2) => {
+          let deco = decoration(match, view, from);
+          if (deco)
+            add2(from, from + match[0].length, deco);
+        };
+      } else if (decoration) {
+        this.addMatch = (match, _view, from, add2) => add2(from, from + match[0].length, decoration);
+      } else {
+        throw new RangeError("Either 'decorate' or 'decoration' should be provided to MatchDecorator");
+      }
+      this.boundary = boundary;
+      this.maxLength = maxLength;
+    }
+    /**
+    Compute the full set of decorations for matches in the given
+    view's viewport. You'll want to call this when initializing your
+    plugin.
+    */
+    createDeco(view) {
+      let build3 = new RangeSetBuilder(), add2 = build3.add.bind(build3);
+      for (let { from, to } of matchRanges(view, this.maxLength))
+        iterMatches(view.state.doc, this.regexp, from, to, (from2, m) => this.addMatch(m, view, from2, add2));
+      return build3.finish();
+    }
+    /**
+    Update a set of decorations for a view update. `deco` _must_ be
+    the set of decorations produced by _this_ `MatchDecorator` for
+    the view state before the update.
+    */
+    updateDeco(update, deco) {
+      let changeFrom = 1e9, changeTo = -1;
+      if (update.docChanged)
+        update.changes.iterChanges((_f, _t, from, to) => {
+          if (to >= update.view.viewport.from && from <= update.view.viewport.to) {
+            changeFrom = Math.min(from, changeFrom);
+            changeTo = Math.max(to, changeTo);
+          }
+        });
+      if (update.viewportMoved || changeTo - changeFrom > 1e3)
+        return this.createDeco(update.view);
+      if (changeTo > -1)
+        return this.updateRange(update.view, deco.map(update.changes), changeFrom, changeTo);
+      return deco;
+    }
+    updateRange(view, deco, updateFrom, updateTo) {
+      for (let r of view.visibleRanges) {
+        let from = Math.max(r.from, updateFrom), to = Math.min(r.to, updateTo);
+        if (to >= from) {
+          let fromLine = view.state.doc.lineAt(from), toLine = fromLine.to < to ? view.state.doc.lineAt(to) : fromLine;
+          let start = Math.max(r.from, fromLine.from), end = Math.min(r.to, toLine.to);
+          if (this.boundary) {
+            for (; from > fromLine.from; from--)
+              if (this.boundary.test(fromLine.text[from - 1 - fromLine.from])) {
+                start = from;
+                break;
+              }
+            for (; to < toLine.to; to++)
+              if (this.boundary.test(toLine.text[to - toLine.from])) {
+                end = to;
+                break;
+              }
+          }
+          let ranges = [], m;
+          let add2 = (from2, to2, deco2) => ranges.push(deco2.range(from2, to2));
+          if (fromLine == toLine) {
+            this.regexp.lastIndex = start - fromLine.from;
+            while ((m = this.regexp.exec(fromLine.text)) && m.index < end - fromLine.from)
+              this.addMatch(m, view, m.index + fromLine.from, add2);
+          } else {
+            iterMatches(view.state.doc, this.regexp, start, end, (from2, m2) => this.addMatch(m2, view, from2, add2));
+          }
+          deco = deco.update({ filterFrom: start, filterTo: end, filter: (from2, to2) => from2 < start || to2 > end, add: ranges });
+        }
+      }
+      return deco;
+    }
+  };
   var UnicodeRegexpSupport = /x/.unicode != null ? "gu" : "g";
+  var Specials = /* @__PURE__ */ new RegExp("[\0-\b\n-\x7F-\x9F\xAD\u061C\u200B\u200E\u200F\u2028\u2029\u202D\u202E\u2066\u2067\u2069\uFEFF\uFFF9-\uFFFC]", UnicodeRegexpSupport);
+  var Names = {
+    0: "null",
+    7: "bell",
+    8: "backspace",
+    10: "newline",
+    11: "vertical tab",
+    13: "carriage return",
+    27: "escape",
+    8203: "zero width space",
+    8204: "zero width non-joiner",
+    8205: "zero width joiner",
+    8206: "left-to-right mark",
+    8207: "right-to-left mark",
+    8232: "line separator",
+    8237: "left-to-right override",
+    8238: "right-to-left override",
+    8294: "left-to-right isolate",
+    8295: "right-to-left isolate",
+    8297: "pop directional isolate",
+    8233: "paragraph separator",
+    65279: "zero width no-break space",
+    65532: "object replacement"
+  };
+  var _supportsTabSize = null;
+  function supportsTabSize() {
+    var _a2;
+    if (_supportsTabSize == null && typeof document != "undefined" && document.body) {
+      let styles = document.body.style;
+      _supportsTabSize = ((_a2 = styles.tabSize) !== null && _a2 !== void 0 ? _a2 : styles.MozTabSize) != null;
+    }
+    return _supportsTabSize || false;
+  }
+  var specialCharConfig = /* @__PURE__ */ Facet.define({
+    combine(configs) {
+      let config = combineConfig(configs, {
+        render: null,
+        specialChars: Specials,
+        addSpecialChars: null
+      });
+      if (config.replaceTabs = !supportsTabSize())
+        config.specialChars = new RegExp("	|" + config.specialChars.source, UnicodeRegexpSupport);
+      if (config.addSpecialChars)
+        config.specialChars = new RegExp(config.specialChars.source + "|" + config.addSpecialChars.source, UnicodeRegexpSupport);
+      return config;
+    }
+  });
+  function highlightSpecialChars(config = {}) {
+    return [specialCharConfig.of(config), specialCharPlugin()];
+  }
+  var _plugin = null;
+  function specialCharPlugin() {
+    return _plugin || (_plugin = ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.view = view;
+        this.decorations = Decoration.none;
+        this.decorationCache = /* @__PURE__ */ Object.create(null);
+        this.decorator = this.makeDecorator(view.state.facet(specialCharConfig));
+        this.decorations = this.decorator.createDeco(view);
+      }
+      makeDecorator(conf) {
+        return new MatchDecorator({
+          regexp: conf.specialChars,
+          decoration: (m, view, pos) => {
+            let { doc: doc2 } = view.state;
+            let code = codePointAt2(m[0], 0);
+            if (code == 9) {
+              let line = doc2.lineAt(pos);
+              let size = view.state.tabSize, col = countColumn(line.text, size, pos - line.from);
+              return Decoration.replace({
+                widget: new TabWidget((size - col % size) * this.view.defaultCharacterWidth / this.view.scaleX)
+              });
+            }
+            return this.decorationCache[code] || (this.decorationCache[code] = Decoration.replace({ widget: new SpecialCharWidget(conf, code) }));
+          },
+          boundary: conf.replaceTabs ? void 0 : /[^]/
+        });
+      }
+      update(update) {
+        let conf = update.state.facet(specialCharConfig);
+        if (update.startState.facet(specialCharConfig) != conf) {
+          this.decorator = this.makeDecorator(conf);
+          this.decorations = this.decorator.createDeco(update.view);
+        } else {
+          this.decorations = this.decorator.updateDeco(update, this.decorations);
+        }
+      }
+    }, {
+      decorations: (v) => v.decorations
+    }));
+  }
+  var DefaultPlaceholder = "\u2022";
+  function placeholder$1(code) {
+    if (code >= 32)
+      return DefaultPlaceholder;
+    if (code == 10)
+      return "\u2424";
+    return String.fromCharCode(9216 + code);
+  }
+  var SpecialCharWidget = class extends WidgetType {
+    constructor(options, code) {
+      super();
+      this.options = options;
+      this.code = code;
+    }
+    eq(other) {
+      return other.code == this.code;
+    }
+    toDOM(view) {
+      let ph = placeholder$1(this.code);
+      let desc = view.state.phrase("Control character") + " " + (Names[this.code] || "0x" + this.code.toString(16));
+      let custom = this.options.render && this.options.render(this.code, desc, ph);
+      if (custom)
+        return custom;
+      let span = document.createElement("span");
+      span.textContent = ph;
+      span.title = desc;
+      span.setAttribute("aria-label", desc);
+      span.className = "cm-specialChar";
+      return span;
+    }
+    ignoreEvent() {
+      return false;
+    }
+  };
+  var TabWidget = class extends WidgetType {
+    constructor(width) {
+      super();
+      this.width = width;
+    }
+    eq(other) {
+      return other.width == this.width;
+    }
+    toDOM() {
+      let span = document.createElement("span");
+      span.textContent = "	";
+      span.className = "cm-tab";
+      span.style.width = this.width + "px";
+      return span;
+    }
+    ignoreEvent() {
+      return false;
+    }
+  };
   function highlightActiveLine() {
     return activeLineHighlighter;
   }
@@ -39316,6 +39581,8 @@ ${clean(nextLineText)}`;
   } = {}) {
     const extensions = [
       EditorState.lineSeparator.of("\n"),
+      // T-0090 · raw control characters (0x04 …) as measured widgets, so a click among them lands where it is aimed.
+      highlightSpecialChars({ render: renderControlChar }),
       history(),
       drawSelection(),
       highlightActiveLine(),
@@ -39342,6 +39609,13 @@ ${clean(nextLineText)}`;
       compartments,
       extensions
     };
+  }
+  function renderControlChar(code, _description, _placeholder, doc2 = document) {
+    const el5 = doc2.createElement("span");
+    el5.className = "cm-control-char";
+    el5.textContent = "\xB7";
+    el5.setAttribute("title", `Control character U+${code.toString(16).toUpperCase().padStart(4, "0")}`);
+    return el5;
   }
   function createEditorState(doc2 = "", options = {}) {
     const { compartments, extensions } = createEditorExtensions(options);
