@@ -2,7 +2,7 @@
 
 From: T-0081 (owner, 2026-11-15: "doesnt work To pair, open Library › Devices › Pair a Device… on the iPhone") ·
 Guards: FEAT-09 P1 · Device: iPhone 12 Pro Max (00008101-001A50643A98001E), iPad, Mac ·
-Status: `[~]` (fixed, tests green; device check owed)
+Status: `[~]` (pairing checked on Mac, iPhone, iPad 11-15 18:09; rename-carry check owed)
 
 ## What the owner sees
 - iPhone › Library › Devices: "No paired devices yet." after pairing with the Mac.
@@ -92,6 +92,10 @@ Status: `[~]` (fixed, tests green; device check owed)
 - Pick the other device. Compare the codes. Tap They Match on both.
 - The Mac's stale entry is replaced.
 
-## Device check (owed)
-- iPhone ↔ Mac: both list each other after They Match.
-- A file renamed in Library › Music on one appears renamed on the other after Carry Now.
+## Device check
+- 2026-11-15 18:09, pairing ✓ (Mac on work/music 3419273 = music + 7591767; iPhone and iPad on 7591767):
+  - Mac `~/Recense/.carry/peers.json`: iPhone (01:30:22Z) and iPad (02:09:22Z), one entry each, the stale 11-14 ones replaced.
+  - iPad and iPhone `Documents/Recense/.carry/peers.json` (read with `xcrun devicectl device copy from`): each lists
+    "Chau's MacBook Pro" once, with the same key, `x3rq…`.
+  - The iPad was paired again from the app menu while the iPhone's entry was kept on disk (reloadFromDisk).
+- Owed: a file renamed in Library › Music on one device appears renamed on the other after Carry Now.

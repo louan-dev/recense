@@ -150,5 +150,15 @@ do {
     check(m == "a\nB\nc\nd", "markdown merge keeps both sides' lines: \(m ?? "nil")")
 }
 
+// Regression guard: BUG-19 (ops counted applied before their bytes landed; T-0087)
+do {
+    check(CarrySync.settledThrough(received: 8, pending: []) == 8, "nothing waiting: settled through the last op")
+    check(CarrySync.settledThrough(received: 8, pending: [3, 4, 5, 6, 7, 8]) == 2,
+          "six songs waiting for bytes: settled only through op 2, so the next seen asks for 3 on")
+    check(CarrySync.settledThrough(received: 8, pending: [8]) == 7, "the last op waiting holds 8 back")
+    check(CarrySync.settledThrough(received: 0, pending: []) == 0, "nothing received")
+    check(CarrySync.settledThrough(received: 8, pending: [1]) == 0, "the first op waiting holds everything back")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

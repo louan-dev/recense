@@ -70,11 +70,15 @@ private enum CarryKeychain {
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
     private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
+    private var waiting: [String: (peer: String, seq: Int)] = [:]   // destination key → the op whose bytes are owed (BUG-19)
+    private var received: [String: Int] = [:]                 // peer → highest seq of its ops seen this run
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
     private var lastSentURL: URL { dir.appendingPathComponent("last-sent.json") }
-    private var appliedURL: URL { dir.appendingPathComponent("applied.json") }
+    // BUG-19: v1 (applied.json) counted ops applied before their bytes landed; a fresh name asks every peer
+    // for its whole log once more, which settles idempotently (CarrySync.decide skips what is already here).
+    private var appliedURL: URL { dir.appendingPathComponent("applied-v2.json") }
     private var opsDir: URL { dir.appendingPathComponent("ops", isDirectory: true) }
     private var stagingDir: URL { dir.appendingPathComponent("incoming", isDirectory: true) }
     private func opsLogURL(_ device: String) -> URL { opsDir.appendingPathComponent("\(device).jsonl") }
@@ -119,7 +123,10 @@ private enum CarryKeychain {
             default: break
             }
         }
-        t.onReceive = { [weak self] url, peer in self?.landed(url, from: peer) }
+        t.onReceive = { [weak self] url, name, peer in self?.landed(url, named: name, from: peer) }
+        t.onReceiveFailed = { [weak self] name, peer, error in
+            self?.lastError = "a file from \(peer.displayName) did not arrive (\(Self.decode(name) ?? name)): \(error.localizedDescription)"
+        }
     }
 
     func start() { t.advertise(); t.browse(); if !isLookingToPair { status = "Looking for devices" } }
@@ -280,6 +287,7 @@ private enum CarryKeychain {
             for peer in targets { try t.send(appliedSeq[peer.displayName] ?? 0, type: "seen", to: peer) }
             lastCarryAt = Date(); lastError = nil
             status = ops.isEmpty ? "Up to date" : "Settling \(ops.count) change\(ops.count == 1 ? "" : "s")"
+            if !waiting.isEmpty { status += " · waiting for \(waiting.count) file\(waiting.count == 1 ? "" : "s")" }   // BUG-19
         } catch { lastError = "carry failed: \(error)" }
     }
 
@@ -308,16 +316,29 @@ private enum CarryKeychain {
             let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
             let key = resultKey(op)
             switch action {
-            case .nothing: discardStaged(key)
+            case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
-                        discardStaged(key)
-            case .fetch, .replace, .keepBoth: pendingActions[key] = action; tryPlace(key)
+                        discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
+            case .fetch, .replace, .keepBoth:
+                pendingActions[key] = action; waiting[key] = (peer.displayName, op.seq); tryPlace(key)
             case .merge: break   // unreachable with an empty base; text conflicts still settle as keepBoth
             }
         }
-        appliedSeq[peer.displayName] = max(appliedSeq[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
-        try? JSONEncoder().encode(appliedSeq).write(to: appliedURL, options: .atomic)
-        status = "Settled \(ops.count) change\(ops.count == 1 ? "" : "s") from \(peer.displayName)"
+        received[peer.displayName] = max(received[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
+        advance(peer.displayName)
+    }
+
+    /// appliedSeq moves only past ops fully settled: an op still owed its bytes is asked for again on the next
+    /// "seen" (the next carry, or the next connect). Never counted applied before it is (BUG-19).
+    private func advance(_ peer: String) {
+        guard let got = received[peer] else { return }
+        let owed = waiting.values.filter { $0.peer == peer }.map(\.seq)
+        let through = CarrySync.settledThrough(received: got, pending: owed)
+        if through > (appliedSeq[peer] ?? 0) {
+            appliedSeq[peer] = through
+            try? JSONEncoder().encode(appliedSeq).write(to: appliedURL, options: .atomic)
+        }
+        status = owed.isEmpty ? "Up to date with \(peer)" : "Waiting for \(owed.count) file\(owed.count == 1 ? "" : "s") from \(peer)"
     }
 
     private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(Self.encode(key)) }
@@ -331,14 +352,18 @@ private enum CarryKeychain {
         let staged = stagedURL(key)
         guard FileManager.default.fileExists(atPath: staged.path) else { return }
         do {
-            let placed = try CarryApply.apply(action, bytesAt: staged)
+            _ = try CarryApply.apply(action, bytesAt: staged)
             pendingActions[key] = nil
-            if let placed { status = "Settled \((placed as NSString).lastPathComponent)" }
-        } catch { lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil }
+            if let w = waiting.removeValue(forKey: key) { advance(w.peer) }
+        } catch {   // stays owed: the next "seen" asks for it again
+            lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil
+        }
     }
 
-    private func landed(_ url: URL, from peer: MCPeerID) {
-        guard let key = Self.decode(url.lastPathComponent) else { try? FileManager.default.removeItem(at: url); return }
+    private func landed(_ url: URL, named name: String, from peer: MCPeerID) {
+        guard let key = Self.decode(name) else {
+            try? FileManager.default.removeItem(at: url); lastError = "a file from \(peer.displayName) had no usable name"; return
+        }
         let staged = stagedURL(key)
         do {
             try? FileManager.default.removeItem(at: staged)
