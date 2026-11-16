@@ -3,6 +3,7 @@
 // and CRDT-safe multi-device merge.
 
 import { nextPressure } from './pressure.js';
+import { outlinePath } from './strokeoutline.js';
 
 export const INK_TOOLS = [
   'pen',
@@ -1297,6 +1298,20 @@ export function createInkLayer(view, options = {}) {
       else if (isOrphaned) el.setAttribute('opacity', '0.38');
       targetGroup.appendChild(el);
       return;
+    }
+
+    // Derived from Spec: T-0094 — the pen is a filled outline whose width follows pressure.
+    if (stroke.tool === 'pen') {
+      const outline = outlinePath(pts, strokeWidth);
+      if (outline) {
+        const el = docNode.createElementNS('http://www.w3.org/2000/svg', 'path');
+        el.setAttribute('d', outline);
+        el.setAttribute('fill', stroke.color || currentColor);
+        el.setAttribute('fill-rule', 'nonzero');
+        if (isOrphaned) el.setAttribute('opacity', '0.38');
+        targetGroup.appendChild(el);
+        return;
+      }
     }
 
     const path = docNode.createElementNS('http://www.w3.org/2000/svg', 'path');
