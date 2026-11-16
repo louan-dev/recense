@@ -189,3 +189,36 @@ test('UI-04 P13: a loupe shows while the Pencil drags a corner handle, and goes 
   m.fire('pointermove', { pointerType: 'mouse', clientX: d[0] + 10, clientY: d[1], timeStamp: 5010 });
   assert.equal(m.body.children.some(x => x.className === 'rc-ink-loupe'), false);
 });
+
+test('UI-04 P11 (coordinator 2026-11-16): strokes attached to one passage add its matter actions after the ink items', async () => {
+  const { passageOfStrokes } = await import('../src/inkselection.js');
+  const passages = {
+    p1: { id: 'p1', forms: { ink: { strokes: ['a', 'b'] } } },
+    p2: { id: 'p2', forms: { ink: { strokes: ['c'] } } },
+    p3: { id: 'p3', forms: { type: { quote: 'x' } } }
+  };
+  assert.equal(passageOfStrokes(passages, ['a']), 'p1');
+  assert.equal(passageOfStrokes(passages, ['a', 'b', 'z']), 'p1', 'unattached strokes do not count');
+  assert.equal(passageOfStrokes(passages, ['a', 'c']), null, 'several passages: none');
+  assert.equal(passageOfStrokes(passages, ['z']), null, 'no attachment: none');
+  assert.equal(passageOfStrokes(null, ['a']), null);
+
+  // Through the layer: the host's list follows the ink items; a pick runs it and closes the menu.
+  const h = harness();
+  const ran = [];
+  let asked = null;
+  const extras = ids => { asked = ids; return [{ id: 'cross-2', label: 'Type it', pick: () => ran.push('cross-2') }]; };
+  const layer2 = (await import('../src/ink.js')).createInkLayer(
+    { scrollDOM: h.layer.svg.parentNode, state: { doc: { toString: () => '' } } },
+    { globalObj: { document: h.doc }, selectionExtras: extras }
+  );
+  assert.ok(layer2.selection());
+  layer2.addStroke({ id: 'k', tool: 'pen', points: [[10, 10, 0.5, 0], [30, 30, 0.5, 1]] });
+  layer2.selection().select(['k']);
+  const labels = layer2.selection().menuElement().children.map(b => b.textContent);
+  assert.deepEqual(labels, ['Style', 'Duplicate', 'Cut', 'Copy', 'Delete', '›', 'Type it']);
+  assert.deepEqual(asked, ['k']);
+  layer2.selection().menuElement().children[6]._listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
+  assert.deepEqual(ran, ['cross-2']);
+  assert.equal(layer2.selection().menuElement(), null, 'menu closed after a pick');
+});

@@ -99,6 +99,7 @@ import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
 import * as matterCore from './matter.js';
 import { createMatterMenu } from './mattermenu.js';
+import { passageOfStrokes } from './inkselection.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -684,6 +685,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   let inkLayer = null;
   let matterMenu = null;   // FEAT-08
+  let selectionMatterItems = () => [];   // UI-04 P11: FEAT-08 matter actions for lasso-selected strokes
   let radialOuterItems = () => [];   // UI-04 P2 outer ring: FEAT-08 matter actions for the text selection
   let pencilSqueeze = null;   // UI-04 P1: built on the first squeeze phase
   let library = null;
@@ -838,6 +840,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     globalObj: typeof window !== 'undefined' ? window : null,
     mount: editorHost,
     radialOuter: () => radialOuterItems(),
+    selectionExtras: ids => selectionMatterItems(ids),
     onToolChange: tool => {
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
@@ -869,6 +872,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (r.empty) return [];
     const menu = matterMenuFor(r.from, r.to);
     return (menu && menu.actions ? menu.actions : []).map(a => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
+  };
+  // UI-04 P11 (coordinator 2026-11-16) · lasso-selected strokes attached to exactly one passage: that passage's actions.
+  selectionMatterItems = ids => {
+    const pid = passageOfStrokes(matterSide.passages, ids);
+    if (!pid) return [];
+    const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+    return matterCore.matterActions(m, pid).map(a => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
   };
 
   speaker = createSpeaker(typeof window !== 'undefined' ? window : null);

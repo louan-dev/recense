@@ -852,6 +852,8 @@ export function createInkLayer(view, options = {}) {
     onToolChange = null,
     // UI-04 P2 outer ring: [{ id, label, pick() }] read when the radial menu opens (FEAT-08 matter actions).
     radialOuter = null,
+    // UI-04 P11: extra lasso-menu items for the selected stroke ids: [{ id, label, pick() }] (FEAT-08 matter actions).
+    selectionExtras = null,
     onStrokeAdded = null   // FEAT-08 #2: called with each new drawn stroke (word attachment)
   } = options;
 
@@ -2218,6 +2220,7 @@ export function createInkLayer(view, options = {}) {
       remove: removeStrokes,
       toClient: contentToClient,
       colors: () => [...paletteColors],
+      extras: ids => (typeof selectionExtras === 'function' ? selectionExtras(ids) : []),
       haptic: kind => haptic(kind)
     });
   }

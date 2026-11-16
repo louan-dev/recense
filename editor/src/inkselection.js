@@ -18,6 +18,23 @@ export const PASTE_OFFSET = 16;
 const MODE_KEY = 'rc-ink-lasso-mode';
 const SVG = 'http://www.w3.org/2000/svg';
 
+/**
+ * Derived from Spec: UI-04 P11 (coordinator decision 2026-11-16, owner delegated) — the one FEAT-08 passage the selected
+ * strokes are attached to (`passage.forms.ink.strokes`), or null when the attached ones span several passages or none
+ * is attached. Unattached strokes in the selection don't count either way. Pure.
+ */
+export function passageOfStrokes(passages, ids) {
+  const want = new Set(ids || []);
+  let found = null;
+  for (const p of Object.values(passages || {})) {
+    const strokes = (p && p.forms && p.forms.ink && p.forms.ink.strokes) || [];
+    if (!strokes.some(id => want.has(id))) continue;
+    if (found !== null) return null;
+    found = p.id;
+  }
+  return found;
+}
+
 /** Where a press at (x, y) lands on a selection box: 'rotate' | 'scale' | 'move' | null. Pure. */
 export function selectionHit(box, x, y) {
   if (!box) return null;
@@ -160,6 +177,11 @@ export function createInkSelection(host) {
       if (clipboard.length) menu.appendChild(button('Paste', () => paste()));
       menu.appendChild(button('Delete', del));
       menu.appendChild(button('›', showMore, 'rc-ink-selmenu-more'));
+      // FEAT-08: the attached passage's matter actions, after the ink items (the host's list, its own labels).
+      const extras = typeof host.extras === 'function' ? (host.extras([...ids]) || []) : [];
+      for (const a of extras) {
+        menu.appendChild(button(a.label, () => { hideMenu(); a.pick(); }, 'rc-ink-selmenu-matter'));
+      }
       placeAt(menu, (b.minX + b.maxX) / 2, b.minY - ROTATE_STEM - 16);
     } else if (at) {
       menu.appendChild(button('Paste', () => paste(at), clipboard.length ? '' : 'rc-disabled'));

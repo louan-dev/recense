@@ -34882,6 +34882,17 @@ ${PAGE_MARKER}
   var PASTE_OFFSET = 16;
   var MODE_KEY = "rc-ink-lasso-mode";
   var SVG = "http://www.w3.org/2000/svg";
+  function passageOfStrokes(passages, ids) {
+    const want = new Set(ids || []);
+    let found = null;
+    for (const p of Object.values(passages || {})) {
+      const strokes = p && p.forms && p.forms.ink && p.forms.ink.strokes || [];
+      if (!strokes.some((id2) => want.has(id2))) continue;
+      if (found !== null) return null;
+      found = p.id;
+    }
+    return found;
+  }
   function selectionHit(box, x, y) {
     if (!box) return null;
     const midX = (box.minX + box.maxX) / 2, midY = (box.minY + box.maxY) / 2;
@@ -35026,6 +35037,13 @@ ${PAGE_MARKER}
         if (clipboard.length) menu.appendChild(button2("Paste", () => paste()));
         menu.appendChild(button2("Delete", del));
         menu.appendChild(button2("\u203A", showMore, "rc-ink-selmenu-more"));
+        const extras = typeof host.extras === "function" ? host.extras([...ids]) || [] : [];
+        for (const a of extras) {
+          menu.appendChild(button2(a.label, () => {
+            hideMenu();
+            a.pick();
+          }, "rc-ink-selmenu-matter"));
+        }
         placeAt(menu, (b.minX + b.maxX) / 2, b.minY - ROTATE_STEM - 16);
       } else if (at) {
         menu.appendChild(button2("Paste", () => paste(at), clipboard.length ? "" : "rc-disabled"));
@@ -35947,6 +35965,8 @@ ${clean(nextLineText)}`;
       onToolChange = null,
       // UI-04 P2 outer ring: [{ id, label, pick() }] read when the radial menu opens (FEAT-08 matter actions).
       radialOuter = null,
+      // UI-04 P11: extra lasso-menu items for the selected stroke ids: [{ id, label, pick() }] (FEAT-08 matter actions).
+      selectionExtras = null,
       onStrokeAdded = null
       // FEAT-08 #2: called with each new drawn stroke (word attachment)
     } = options;
@@ -37213,6 +37233,7 @@ ${clean(nextLineText)}`;
         remove: removeStrokes,
         toClient: contentToClient,
         colors: () => [...paletteColors],
+        extras: (ids) => typeof selectionExtras === "function" ? selectionExtras(ids) : [],
         haptic: (kind) => haptic(kind)
       });
     }
@@ -42772,6 +42793,7 @@ ${clean(nextLineText)}`;
     }
     let inkLayer = null;
     let matterMenu = null;
+    let selectionMatterItems = () => [];
     let radialOuterItems = () => [];
     let pencilSqueeze = null;
     let library = null;
@@ -42915,6 +42937,7 @@ ${String(text ?? "")}`;
       globalObj: typeof window !== "undefined" ? window : null,
       mount: editorHost,
       radialOuter: () => radialOuterItems(),
+      selectionExtras: (ids) => selectionMatterItems(ids),
       onToolChange: (tool) => {
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
@@ -42948,6 +42971,12 @@ ${String(text ?? "")}`;
       if (r.empty) return [];
       const menu2 = matterMenuFor(r.from, r.to);
       return (menu2 && menu2.actions ? menu2.actions : []).map((a) => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
+    };
+    selectionMatterItems = (ids) => {
+      const pid = passageOfStrokes(matterSide.passages, ids);
+      if (!pid) return [];
+      const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+      return matterActions(m, pid).map((a) => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
     };
     speaker = createSpeaker(typeof window !== "undefined" ? window : null);
     library = createLibraryUI({
