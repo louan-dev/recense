@@ -30,6 +30,7 @@ import ShowsKit
         guard let e = model.playing else { ahead?.stop(); ahead = nil; key = nil; return }
         guard e.id != key else { return }
         ahead?.stop(); ahead = nil; key = e.id
+        gate?.cancel(); gate = nil; held = false
         model.transcript = []
         model.transcriptSource = nil
         model.transcriptNote = "Opening the transcript…"
@@ -68,13 +69,39 @@ import ShowsKit
             let lines = Self.lines(ps), heardIn = a?.heardIn ?? lang
             model?.transcript = lines
             model?.transcriptSource = "Heard on this device in \(Listener.short(heardIn))\(auto ? " (automatic)" : "")."
-            model?.transcriptNote = a.map { $0.finished ? nil : "Hearing ahead of the playhead…" } ?? nil
+            model?.transcriptNote = a.map { $0.finished ? nil : "Loading transcript… \(Int(Double($0.done.count) / Double($0.count) * 100))%" } ?? nil
             if let model { PlaybackTranslator.shared.run(model, lang: heardIn) }
             if a?.finished == true { Self.cache.write(path, lines) }   // the next open needs no hearing
         }
         model.transcriptNote = auto ? "Hearing on this device, finding its language…" : "Hearing \(Listener.short(lang)) on this device…"
         ahead = a
         a.start()
+        holdUntilWhole(model, a, key: e.id)
+    }
+
+    // FEAT-16 P3 (T-0095): a stored piece with no finished transcript plays only once it is whole, so the words never drift
+    // from the sound. hold = pause (again, if the listener presses play); release = play once whole, or once it can't be made.
+    enum Gate { case hold, release, none }
+    nonisolated static func gate(playing: Bool, complete: Bool, giveUp: Bool, held: Bool) -> Gate {
+        if !complete && !giveUp { return playing ? .hold : .none }
+        return held ? .release : .none
+    }
+    private var gate: Task<Void, Never>?
+    private var held = false
+
+    private func holdUntilWhole(_ model: ShowsModel, _ a: SpeechAhead, key id: String) {
+        gate?.cancel()
+        gate = Task { @MainActor [weak self, weak model, weak a] in
+            while !Task.isCancelled {
+                guard let self, let model, let a, self.key == id, let t = model.transport else { return }
+                switch Self.gate(playing: t.isPlaying, complete: a.finished, giveUp: a.problem != nil, held: self.held) {
+                case .hold: self.held = true; t.toggle()
+                case .release: self.held = false; t.toggle(); return
+                case .none: if a.finished { return }
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        }
     }
 
     static func length(_ url: URL) -> Double {

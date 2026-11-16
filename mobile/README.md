@@ -216,6 +216,8 @@ Tap **Music** under Library › Recently Updated. You get every track in `Recens
   Finder, and a file deleted in Finder or Files goes to Gallery's trash for 30 days (`DELETE /main/api/fp/<root>/item`);
   folders are deleted in Gallery.
 
+**FEAT-16 P3 (11-16):** a stored show with no finished transcript is paused at once and plays only when the on-device hearing is whole ("Loading transcript… N%"); a failed hearing releases it. `Ears.gate` holds the rule.
+
 ## Build and install
 
 ```
