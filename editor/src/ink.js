@@ -3,6 +3,7 @@
 // and CRDT-safe multi-device merge.
 
 import { nextPressure } from './pressure.js';
+import { createPalmGate, isTinyStroke, isBrush } from './palm.js';
 import { outlinePath } from './strokeoutline.js';
 
 export const INK_TOOLS = [
@@ -848,6 +849,12 @@ export function createInkLayer(view, options = {}) {
   let currentColor = null;
   let isDrawing = false;
   let activePoints = [];
+  // Derived from Spec: UI-04 P6 — which pointer draws, and whether a touch is still on probation.
+  let drawingId = null;
+  let inkLive = true;
+  const palm = createPalmGate({
+    viewport: () => ({ w: Number(globalObj?.innerWidth) || 0, h: Number(globalObj?.innerHeight) || 0 })
+  });
   let strokeStartTime = 0;
   let debounceTimer = null;
 
@@ -1523,10 +1530,34 @@ export function createInkLayer(view, options = {}) {
     return currentTool !== SELECT_TOOL;
   }
 
+  const sameId = (a, b) => a === undefined || a === null || b === undefined || b === null || a === b;
+  const prevent = e => { if (typeof e.preventDefault === 'function') e.preventDefault(); };
+
+  // Derived from Spec: UI-04 P6 — the page moves only by the gate's two-finger (or Pencil-mode) scroll.
+  function scrollBy(dx, dy) {
+    if (!scrollDOM) return;
+    if (dy) scrollDOM.scrollTop = (scrollDOM.scrollTop || 0) - dy;
+    if (dx) scrollDOM.scrollLeft = (scrollDOM.scrollLeft || 0) - dx;
+  }
+
+  function dropActive() {
+    isDrawing = false;
+    drawingId = null;
+    inkLive = true;
+    activePoints = [];
+    if (activeGroup) activeGroup.innerHTML = '';
+  }
+
   function onPointerDown(e) {
-    if (isDrawing || !inks(e)) return;
+    if (!inks(e)) return;
+    const gate = palm.down(e);
+    if (gate.cancel && isDrawing) dropActive();
+    if (gate.act === 'scroll' || gate.act === 'ignore') { prevent(e); return; }
+    if (isDrawing) return;
 
     isDrawing = true;
+    drawingId = e.pointerId;
+    inkLive = gate.act !== 'wait';
     strokeStartTime = e.timeStamp || Date.now();
 
     const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
@@ -1539,20 +1570,28 @@ export function createInkLayer(view, options = {}) {
 
     activePoints = [[x, y, p, t]];
 
+    if (inkLive) startLive();
+    prevent(e);
+  }
+
+  // Draw what has been buffered so far: the whole stroke from where the pointer landed.
+  function startLive() {
+    inkLive = true;
     if (currentTool.startsWith('eraser')) {
-      eraseAt([[x, y]], currentTool === 'eraser-partial' ? 'partial' : 'whole');
+      eraseAt(activePoints.map(q => [q[0], q[1]]), currentTool === 'eraser-partial' ? 'partial' : 'whole');
     } else {
       renderActiveStroke();
-    }
-
-    if (typeof e.preventDefault === 'function') {
-      e.preventDefault();
     }
   }
 
   function onPointerMove(e) {
     moveRing(e);   // also while hovering (mouse, or a Pencil above the glass)
-    if (!isDrawing) return;
+    if (currentTool === SELECT_TOOL) return;
+    const gate = palm.move(e);
+    if (gate.act === 'scroll') { scrollBy(gate.dx, gate.dy); prevent(e); return; }
+    if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+    if (gate.act === 'ignore') { if (gate.cancel) dropActive(); prevent(e); return; }
+    const goLive = gate.act === 'start';
 
     const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
     const scrollLeft = scrollDOM?.scrollLeft || 0;
@@ -1570,23 +1609,24 @@ export function createInkLayer(view, options = {}) {
 
       activePoints.push([x, y, p, t]);
 
-      if (currentTool.startsWith('eraser')) {
+      if (inkLive && currentTool.startsWith('eraser')) {
         eraseAt([[x, y]], currentTool === 'eraser-partial' ? 'partial' : 'whole');
       }
     }
 
-    if (!currentTool.startsWith('eraser')) {
-      renderActiveStroke();
-    }
-
-    if (typeof e.preventDefault === 'function') {
-      e.preventDefault();
-    }
+    if (goLive) startLive();
+    else if (inkLive && !currentTool.startsWith('eraser')) renderActiveStroke();
+    prevent(e);
   }
 
   function onPointerUp(e) {
-    if (!isDrawing) return;
+    const gate = palm.up(e);
+    if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+    const live = inkLive;
     isDrawing = false;
+    drawingId = null;
+    inkLive = true;
+    if (!live || gate.cancel) { dropActive(); render(); return; }
 
     if (currentTool.startsWith('eraser')) {
       activePoints = [];
@@ -1609,6 +1649,15 @@ export function createInkLayer(view, options = {}) {
         render();
         return;
       }
+    }
+
+    // Derived from Spec: UI-04 P6 — a finger or trackpad tap, or a trackpad brush, leaves no mark.
+    const upTime = e.timeStamp || Date.now();
+    if ((e.pointerType === 'touch' || e.pointerType === 'mouse') && isTinyStroke(activePoints)
+        || e.pointerType === 'mouse' && isBrush(activePoints, upTime)) {
+      dropActive();
+      render();
+      return;
     }
 
     // Only the stillness at the end counts, not the whole stroke's length.
@@ -1752,10 +1801,18 @@ export function createInkLayer(view, options = {}) {
     render();
   }
 
-  function onPointerCancel() {
-    isDrawing = false;
-    activePoints = [];
-    if (activeGroup) activeGroup.innerHTML = '';
+  function onPointerCancel(e) {
+    if (e) palm.cancel(e);
+    if (e && isDrawing && !sameId(drawingId, e.pointerId)) return;
+    dropActive();
+  }
+
+  // Derived from Spec: UI-04 P6 — on the Mac, CodeMirror's mousedown starts a text-selection drag that
+  // autoscrolls the page under the trackpad. While a tool inks, it never sees the press.
+  function onMouseDownCapture(e) {
+    if (!allowMouse || currentTool === SELECT_TOOL || (e && e.button !== undefined && e.button !== 0)) return;
+    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+    prevent(e);
   }
 
   // Intercept Pencil events over .cm-embed with capture listeners
@@ -1777,6 +1834,7 @@ export function createInkLayer(view, options = {}) {
   if (scrollDOM && typeof scrollDOM.addEventListener === 'function') {
     scrollDOM.addEventListener('pointerdown', onPointerDownCapture, true);
     scrollDOM.addEventListener('pointerenter', onPointerEnterCapture, true);
+    scrollDOM.addEventListener('mousedown', onMouseDownCapture, true);
     scrollDOM.addEventListener('pointerdown', onPointerDown);
     scrollDOM.addEventListener('pointermove', onPointerMove);
     scrollDOM.addEventListener('pointerup', onPointerUp);
@@ -1796,6 +1854,7 @@ export function createInkLayer(view, options = {}) {
     if (scrollDOM && typeof scrollDOM.removeEventListener === 'function') {
       scrollDOM.removeEventListener('pointerdown', onPointerDownCapture, true);
       scrollDOM.removeEventListener('pointerenter', onPointerEnterCapture, true);
+      scrollDOM.removeEventListener('mousedown', onMouseDownCapture, true);
       scrollDOM.removeEventListener('pointerdown', onPointerDown);
       scrollDOM.removeEventListener('pointermove', onPointerMove);
       scrollDOM.removeEventListener('pointerup', onPointerUp);

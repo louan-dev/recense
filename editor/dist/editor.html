@@ -19191,9 +19191,9 @@ html.rc-wings-page body {
     }
     work(deadline) {
       this.working = null;
-      let now = Date.now();
-      if (this.chunkEnd < now && (this.chunkEnd < 0 || this.view.hasFocus)) {
-        this.chunkEnd = now + 3e4;
+      let now2 = Date.now();
+      if (this.chunkEnd < now2 && (this.chunkEnd < 0 || this.view.hasFocus)) {
+        this.chunkEnd = now2 + 3e4;
         this.chunkBudget = 3e3;
       }
       if (this.chunkBudget <= 0)
@@ -19209,7 +19209,7 @@ html.rc-wings-page body {
       let done = field.context.work(() => {
         return isInputPending && isInputPending() || Date.now() > endTime;
       }, vpTo + (viewportFirst ? 0 : 1e5));
-      this.chunkBudget -= Date.now() - now;
+      this.chunkBudget -= Date.now() - now2;
       if (done || this.chunkBudget <= 0) {
         field.context.takeTree();
         this.view.dispatch({ effects: Language.setState.of(new LanguageState(field.context)) });
@@ -28781,17 +28781,17 @@ ${PAGE_MARKER}
     const d = new Date(ms);
     return `${WEEKDAY_NAMES[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
   }
-  function discreetDate(ms, now = Date.now(), lang = typeof navigator !== "undefined" && navigator.language || "en") {
+  function discreetDate(ms, now2 = Date.now(), lang = typeof navigator !== "undefined" && navigator.language || "en") {
     const day = (t2) => {
       const d = new Date(t2);
       return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     };
-    const diff = Math.round((day(now) - day(ms)) / 864e5);
+    const diff = Math.round((day(now2) - day(ms)) / 864e5);
     if (diff === 0 || diff === 1) {
       const w = new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(-diff, "day");
       return w.charAt(0).toLocaleUpperCase(lang) + w.slice(1);
     }
-    const sameYear = new Date(ms).getFullYear() === new Date(now).getFullYear();
+    const sameYear = new Date(ms).getFullYear() === new Date(now2).getFullYear();
     const opts = { weekday: "short", day: "numeric", month: "short", ...sameYear ? {} : { year: "numeric" } };
     return new Intl.DateTimeFormat(lang, opts).format(new Date(ms)).replace(/,/g, "");
   }
@@ -31654,25 +31654,25 @@ ${PAGE_MARKER}
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
     return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], 12) : null;
   }
-  function todayKey(now = Date.now()) {
-    const d = new Date(now);
+  function todayKey(now2 = Date.now()) {
+    const d = new Date(now2);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
   function lifeStart(page, edited) {
     const e = editedMs(edited);
     return e !== null && e > page.dateMs ? e : page.dateMs;
   }
-  function daysLeft(page, now = Date.now(), edited = null) {
+  function daysLeft(page, now2 = Date.now(), edited = null) {
     if (!page || pageSavedId(page) || typeof page.dateMs !== "number") return null;
     const end = lifeStart(page, edited) + PAGE_KEEP_DAYS * DAY_MS;
-    return Math.max(0, Math.ceil((end - now) / DAY_MS));
+    return Math.max(0, Math.ceil((end - now2) / DAY_MS));
   }
   function mergeEdited(a = {}, b = {}) {
     const out = { ...a };
     for (const [k, v] of Object.entries(b || {})) if (!out[k] || String(v) > String(out[k])) out[k] = v;
     return out;
   }
-  function expiredPageIndices(text, { now = Date.now(), keepIndex = -1, edited = {} } = {}) {
+  function expiredPageIndices(text, { now: now2 = Date.now(), keepIndex = -1, edited = {} } = {}) {
     const pages = inspectDraftpadPages(text);
     const out = [];
     for (const p of pages) {
@@ -31680,7 +31680,7 @@ ${PAGE_MARKER}
       if (typeof p.dateMs !== "number") continue;
       if (pageSavedId(p)) continue;
       const start = lifeStart(p, edited[pageKey(pages, p.index)]);
-      if (now - start >= PAGE_KEEP_DAYS * DAY_MS) out.push(p.index);
+      if (now2 - start >= PAGE_KEEP_DAYS * DAY_MS) out.push(p.index);
     }
     return out;
   }
@@ -31742,8 +31742,8 @@ ${PAGE_MARKER}
     }
     return emptyPlaylists();
   }
-  function createPlaylist(state, name2, { now = /* @__PURE__ */ new Date(), rand } = {}) {
-    const iso = now.toISOString();
+  function createPlaylist(state, name2, { now: now2 = /* @__PURE__ */ new Date(), rand } = {}) {
+    const iso = now2.toISOString();
     const pl = {
       id: "pl-" + newPageId(rand),
       name: String(name2 || "").trim() || "New playlist",
@@ -31760,20 +31760,20 @@ ${PAGE_MARKER}
   function mapPlaylist(state, id2, f) {
     return { ...state, playlists: state.playlists.map((p) => p.id === id2 ? f(p) : p) };
   }
-  function addToPlaylist(state, id2, item, { now = /* @__PURE__ */ new Date() } = {}) {
+  function addToPlaylist(state, id2, item, { now: now2 = /* @__PURE__ */ new Date() } = {}) {
     return mapPlaylist(state, id2, (p) => {
       if (p.items.some((i) => i.kind === item.kind && i.ref === item.ref)) return p;
-      const iso = now.toISOString();
+      const iso = now2.toISOString();
       return { ...p, updated: iso, items: [...p.items, { kind: item.kind, ref: item.ref, added: iso, addedBy: "me", note: "" }] };
     });
   }
-  function removeFromPlaylist(state, id2, ref, { now = /* @__PURE__ */ new Date() } = {}) {
-    return mapPlaylist(state, id2, (p) => ({ ...p, updated: now.toISOString(), items: p.items.filter((i) => i.ref !== ref) }));
+  function removeFromPlaylist(state, id2, ref, { now: now2 = /* @__PURE__ */ new Date() } = {}) {
+    return mapPlaylist(state, id2, (p) => ({ ...p, updated: now2.toISOString(), items: p.items.filter((i) => i.ref !== ref) }));
   }
-  function editPlaylist(state, id2, { name: name2, description }, { now = /* @__PURE__ */ new Date() } = {}) {
+  function editPlaylist(state, id2, { name: name2, description }, { now: now2 = /* @__PURE__ */ new Date() } = {}) {
     return mapPlaylist(state, id2, (p) => ({
       ...p,
-      updated: now.toISOString(),
+      updated: now2.toISOString(),
       name: name2 !== void 0 ? String(name2).trim() || p.name : p.name,
       description: description !== void 0 ? String(description) : p.description
     }));
@@ -32047,7 +32047,7 @@ ${PAGE_MARKER}
     hasFocus = () => false,
     post = null,
     storage = null,
-    now = () => Date.now(),
+    now: now2 = () => Date.now(),
     wingCard = null,
     onChaptersChanged = null,
     speak = null,
@@ -32097,7 +32097,7 @@ ${PAGE_MARKER}
       if (text !== sectionsFor) {
         sections = docSections(text).map((s) => ({ ...s, kind: reformatKind(s.sentences) }));
         sectionsFor = text;
-        const t2 = now();
+        const t2 = now2();
         const live2 = new Set(sections.map((s) => s.key));
         for (const s of sections) if (!seen.has(s.key)) seen.set(s.key, t2);
         for (const k of [...seen.keys()]) if (!live2.has(k)) seen.delete(k);
@@ -32255,7 +32255,7 @@ ${PAGE_MARKER}
     function powerOK() {
       return power.onPower || power.percent > MIN_BATTERY;
     }
-    function due(t2 = now()) {
+    function due(t2 = now2()) {
       const busy = new Set([...inflight.values()].flatMap((m) => [...m.keys()]));
       return current().filter((s) => !results.has(s.key) && !busy.has(s.key) && t2 - (seen.get(s.key) ?? t2) >= QUIET_MS);
     }
@@ -32311,7 +32311,7 @@ ${PAGE_MARKER}
     function done(id2) {
       inflight.delete(id2);
       reqLenses.delete(id2);
-      lastDone = now();
+      lastDone = now2();
       persist();
       onChaptersChanged?.();
     }
@@ -32361,7 +32361,7 @@ ${PAGE_MARKER}
         version: 1,
         pageId,
         title: pageTitle(page),
-        updated: new Date(now()).toISOString(),
+        updated: new Date(now2()).toISOString(),
         lines: secs.flatMap((s) => s.sentences.map((x) => ({ ...sentenceLine(x, n++), key: x.key }))),
         chapters: secs.filter((s) => results.get(s.key)?.title).map((s) => ({ title: results.get(s.key).title, from: s.sentences.map((x) => x.key), start: 0 })),
         sections: secs.filter((s) => results.has(s.key)).map((s) => {
@@ -32480,7 +32480,7 @@ ${PAGE_MARKER}
       setTarget,
       getTarget: targetFor,
       setPowerState: (onPower, percent2) => {
-        power = { onPower: Boolean(onPower), percent: Number(percent2) || 0, at: now() };
+        power = { onPower: Boolean(onPower), percent: Number(percent2) || 0, at: now2() };
       },
       powerOK,
       due,
@@ -32523,7 +32523,7 @@ ${PAGE_MARKER}
       return tr;
     }
     const entries = [];
-    const now = Date.now();
+    const now2 = Date.now();
     const startDoc = tr.startState.doc;
     tr.changes.iterChanges((fromA, toA) => {
       if (toA <= fromA) return;
@@ -32534,7 +32534,7 @@ ${PAGE_MARKER}
         text,
         from: fromA,
         to: toA,
-        time: now,
+        time: now2,
         before,
         after,
         context: `${before}${after}`
@@ -32777,7 +32777,7 @@ ${PAGE_MARKER}
     if (typeof onSnap === "function") onSnap(nextIndex);
     return true;
   }
-  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj, now = Date.now() } = {}) {
+  function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj, now: now2 = Date.now() } = {}) {
     const docText = view.state.doc.toString();
     const pages = inspectDraftpadPages(docText);
     if (pages.length > 0 && isWindowEmpty(pages[0].rawContent)) {
@@ -32788,7 +32788,7 @@ ${PAGE_MARKER}
     saveCurrentWindowMemory(view);
     const mem = getMemory(view);
     shiftWindowMemoryOnPrepend(mem, pages.length);
-    const dateHead = `${formatDateLine(now)}
+    const dateHead = `${formatDateLine(now2)}
 
 `;
     view.dispatch({
@@ -32880,9 +32880,9 @@ ${PAGE_MARKER}
     if (typeof onSnap === "function") onSnap(i);
     return true;
   }
-  function newPage(view, { onSnap = null, onBounce = null, globalObj, now } = {}) {
+  function newPage(view, { onSnap = null, onBounce = null, globalObj, now: now2 } = {}) {
     if (currentPage(view.state) !== 0) showPage(view, 0);
-    return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj, now });
+    return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj, now: now2 });
   }
   function promotePage(view, index, opts = {}) {
     if (index <= 0) return false;
@@ -33885,6 +33885,130 @@ ${PAGE_MARKER}
     return prev[2] + (pressureForSpeed(v) - prev[2]) * PRESSURE_SMOOTH;
   }
 
+  // src/palm.js
+  var TWO_FINGER_MS = 250;
+  var PALM_CONTACT_PX = 50;
+  var TOUCH_SLOP_PX = 4;
+  var REST_MS = 300;
+  var MIN_STROKE_PX = 3;
+  var BRUSH_MS = 60;
+  var BRUSH_PX = 8;
+  var EDGE_BOTTOM_PX = 34;
+  var PEN_GRACE_MS = 3e4;
+  var now = (e) => typeof e.timeStamp === "number" && e.timeStamp > 0 ? e.timeStamp : Date.now();
+  var isPalmSized = (e) => (Number(e.width) || 0) > PALM_CONTACT_PX || (Number(e.height) || 0) > PALM_CONTACT_PX;
+  function isTinyStroke(points, px = MIN_STROKE_PX) {
+    if (!Array.isArray(points) || points.length === 0) return true;
+    const [x0, y0] = points[0];
+    return !points.some((p) => Math.hypot(p[0] - x0, p[1] - y0) >= px);
+  }
+  function isBrush(points, upTime) {
+    if (!Array.isArray(points) || points.length === 0) return true;
+    const dt = (upTime ?? points[points.length - 1][3]) - points[0][3];
+    return dt < BRUSH_MS && isTinyStroke(points, BRUSH_PX);
+  }
+  function createPalmGate({ viewport = () => ({ w: Infinity, h: Infinity }) } = {}) {
+    const touches = /* @__PURE__ */ new Map();
+    let penDown = false;
+    let lastPenAt = -Infinity;
+    const idOf = (e) => e.pointerId === void 0 ? "touch" : e.pointerId;
+    const counting = () => [...touches.values()].filter((t2) => t2.state !== "ignore");
+    function inEdge(e) {
+      const { h } = viewport() || {};
+      const y = Number(e.clientY) || 0;
+      return h > 0 && y > h - EDGE_BOTTOM_PX;
+    }
+    function down(e) {
+      const t2 = now(e);
+      if (e.pointerType === "pen") {
+        penDown = true;
+        lastPenAt = t2;
+        const inking = [...touches.values()].some((s) => s.state === "ink" || s.state === "wait");
+        for (const s of touches.values()) s.state = "ignore";
+        return { act: "ink", cancel: inking };
+      }
+      if (e.pointerType !== "touch") return { act: "ink" };
+      const id2 = idOf(e);
+      const x0 = Number(e.clientX) || 0, y0 = Number(e.clientY) || 0;
+      const rec = { x0, y0, x: x0, y: y0, t: t2, state: "ignore", inkAt: null };
+      touches.set(id2, rec);
+      for (const s of touches.values()) if (s !== rec && s.state === "wait" && t2 - s.t > REST_MS) s.state = "ignore";
+      if (penDown || isPalmSized(e) || inEdge(e)) return { act: "ignore" };
+      const others = counting().filter((s) => s !== rec);
+      if (others.some((s) => s.state === "scroll")) return { act: "ignore" };
+      if (others.length > 0) {
+        const first = others[0];
+        const young = first.state === "wait" || first.state === "pan" || first.state === "ink" && t2 - first.inkAt < TWO_FINGER_MS;
+        if (!young) return { act: "ignore" };
+        const cancel2 = first.state === "ink" || first.state === "wait";
+        first.state = "scroll";
+        rec.state = "scroll";
+        return { act: "scroll", dx: 0, dy: 0, cancel: cancel2 };
+      }
+      if (t2 - lastPenAt < PEN_GRACE_MS) {
+        rec.state = "pan";
+        return { act: "scroll", dx: 0, dy: 0 };
+      }
+      rec.state = "wait";
+      return { act: "wait" };
+    }
+    function move(e) {
+      if (e.pointerType === "pen") {
+        lastPenAt = now(e);
+        return { act: "ink" };
+      }
+      if (e.pointerType !== "touch") return { act: "ink" };
+      const rec = touches.get(idOf(e));
+      if (!rec) return { act: "ignore" };
+      const x = Number(e.clientX) || 0, y = Number(e.clientY) || 0, t2 = now(e);
+      const dx = x - rec.x, dy = y - rec.y;
+      rec.x = x;
+      rec.y = y;
+      switch (rec.state) {
+        case "wait": {
+          if (isPalmSized(e) || t2 - rec.t > REST_MS) {
+            rec.state = "ignore";
+            return { act: "ignore", cancel: true };
+          }
+          if (Math.hypot(x - rec.x0, y - rec.y0) < TOUCH_SLOP_PX) return { act: "wait" };
+          rec.state = "ink";
+          rec.inkAt = t2;
+          return { act: "start" };
+        }
+        case "ink":
+          return { act: "ink" };
+        case "pan":
+          return { act: "scroll", dx, dy };
+        case "scroll": {
+          const n = [...touches.values()].filter((s) => s.state === "scroll").length || 1;
+          return { act: "scroll", dx: dx / n, dy: dy / n };
+        }
+        default:
+          return { act: "ignore" };
+      }
+    }
+    function up(e) {
+      if (e.pointerType === "pen") {
+        penDown = false;
+        lastPenAt = now(e);
+        return { act: "ink" };
+      }
+      if (e.pointerType !== "touch") return { act: "ink" };
+      const id2 = idOf(e);
+      const rec = touches.get(id2);
+      touches.delete(id2);
+      if (!rec) return { act: "ignore" };
+      if (rec.state === "scroll") {
+        for (const s of touches.values()) if (s.state === "scroll") s.state = "ignore";
+      }
+      if (rec.state === "ink") return { act: "ink" };
+      if (rec.state === "wait") return { act: "ignore", cancel: true };
+      return { act: "ignore" };
+    }
+    const cancel = up;
+    return { down, move, up, cancel, state: (id2) => touches.get(id2)?.state };
+  }
+
   // src/strokeoutline.js
   var WIDTH_MIN = 0.25;
   var WIDTH_MAX = 1.6;
@@ -34575,6 +34699,11 @@ ${clean(nextLineText)}`;
     let currentColor = null;
     let isDrawing = false;
     let activePoints = [];
+    let drawingId = null;
+    let inkLive = true;
+    const palm = createPalmGate({
+      viewport: () => ({ w: Number(globalObj?.innerWidth) || 0, h: Number(globalObj?.innerHeight) || 0 })
+    });
     let strokeStartTime = 0;
     let debounceTimer = null;
     const docNode = globalObj?.document || (typeof document !== "undefined" ? document : null);
@@ -35167,9 +35296,34 @@ ${clean(nextLineText)}`;
       }
       return currentTool !== SELECT_TOOL;
     }
+    const sameId = (a, b) => a === void 0 || a === null || b === void 0 || b === null || a === b;
+    const prevent = (e) => {
+      if (typeof e.preventDefault === "function") e.preventDefault();
+    };
+    function scrollBy(dx, dy) {
+      if (!scrollDOM) return;
+      if (dy) scrollDOM.scrollTop = (scrollDOM.scrollTop || 0) - dy;
+      if (dx) scrollDOM.scrollLeft = (scrollDOM.scrollLeft || 0) - dx;
+    }
+    function dropActive() {
+      isDrawing = false;
+      drawingId = null;
+      inkLive = true;
+      activePoints = [];
+      if (activeGroup) activeGroup.innerHTML = "";
+    }
     function onPointerDown(e) {
-      if (isDrawing || !inks(e)) return;
+      if (!inks(e)) return;
+      const gate = palm.down(e);
+      if (gate.cancel && isDrawing) dropActive();
+      if (gate.act === "scroll" || gate.act === "ignore") {
+        prevent(e);
+        return;
+      }
+      if (isDrawing) return;
       isDrawing = true;
+      drawingId = e.pointerId;
+      inkLive = gate.act !== "wait";
       strokeStartTime = e.timeStamp || Date.now();
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
       const scrollLeft = scrollDOM?.scrollLeft || 0;
@@ -35179,18 +35333,33 @@ ${clean(nextLineText)}`;
       const t2 = strokeStartTime;
       const p = nextPressure(e, x, y, t2, null);
       activePoints = [[x, y, p, t2]];
+      if (inkLive) startLive();
+      prevent(e);
+    }
+    function startLive() {
+      inkLive = true;
       if (currentTool.startsWith("eraser")) {
-        eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
+        eraseAt(activePoints.map((q) => [q[0], q[1]]), currentTool === "eraser-partial" ? "partial" : "whole");
       } else {
         renderActiveStroke();
-      }
-      if (typeof e.preventDefault === "function") {
-        e.preventDefault();
       }
     }
     function onPointerMove(e) {
       moveRing(e);
-      if (!isDrawing) return;
+      if (currentTool === SELECT_TOOL) return;
+      const gate = palm.move(e);
+      if (gate.act === "scroll") {
+        scrollBy(gate.dx, gate.dy);
+        prevent(e);
+        return;
+      }
+      if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+      if (gate.act === "ignore") {
+        if (gate.cancel) dropActive();
+        prevent(e);
+        return;
+      }
+      const goLive = gate.act === "start";
       const rect = scrollDOM?.getBoundingClientRect ? scrollDOM.getBoundingClientRect() : { left: 0, top: 0 };
       const scrollLeft = scrollDOM?.scrollLeft || 0;
       const scrollTop = scrollDOM?.scrollTop || 0;
@@ -35202,20 +35371,26 @@ ${clean(nextLineText)}`;
         const t2 = ev.timeStamp || Date.now();
         const p = nextPressure(ev, x, y, t2, activePoints[activePoints.length - 1] || null);
         activePoints.push([x, y, p, t2]);
-        if (currentTool.startsWith("eraser")) {
+        if (inkLive && currentTool.startsWith("eraser")) {
           eraseAt([[x, y]], currentTool === "eraser-partial" ? "partial" : "whole");
         }
       }
-      if (!currentTool.startsWith("eraser")) {
-        renderActiveStroke();
-      }
-      if (typeof e.preventDefault === "function") {
-        e.preventDefault();
-      }
+      if (goLive) startLive();
+      else if (inkLive && !currentTool.startsWith("eraser")) renderActiveStroke();
+      prevent(e);
     }
     function onPointerUp(e) {
-      if (!isDrawing) return;
+      const gate = palm.up(e);
+      if (!isDrawing || !sameId(drawingId, e.pointerId)) return;
+      const live2 = inkLive;
       isDrawing = false;
+      drawingId = null;
+      inkLive = true;
+      if (!live2 || gate.cancel) {
+        dropActive();
+        render();
+        return;
+      }
       if (currentTool.startsWith("eraser")) {
         activePoints = [];
         if (activeGroup) activeGroup.innerHTML = "";
@@ -35231,6 +35406,12 @@ ${clean(nextLineText)}`;
           render();
           return;
         }
+      }
+      const upTime = e.timeStamp || Date.now();
+      if ((e.pointerType === "touch" || e.pointerType === "mouse") && isTinyStroke(activePoints) || e.pointerType === "mouse" && isBrush(activePoints, upTime)) {
+        dropActive();
+        render();
+        return;
       }
       const holdDurationMs = endHoldMs(activePoints, e.timeStamp || Date.now());
       let finalPoints = activePoints;
@@ -35369,10 +35550,15 @@ ${clean(nextLineText)}`;
       inkMarks = new Set(ids || []);
       render();
     }
-    function onPointerCancel() {
-      isDrawing = false;
-      activePoints = [];
-      if (activeGroup) activeGroup.innerHTML = "";
+    function onPointerCancel(e) {
+      if (e) palm.cancel(e);
+      if (e && isDrawing && !sameId(drawingId, e.pointerId)) return;
+      dropActive();
+    }
+    function onMouseDownCapture(e) {
+      if (!allowMouse || currentTool === SELECT_TOOL || e && e.button !== void 0 && e.button !== 0) return;
+      if (typeof e.stopPropagation === "function") e.stopPropagation();
+      prevent(e);
     }
     function onPointerDownCapture(e) {
       if (e.pointerType === "pen" && inks(e)) {
@@ -35390,6 +35576,7 @@ ${clean(nextLineText)}`;
     if (scrollDOM && typeof scrollDOM.addEventListener === "function") {
       scrollDOM.addEventListener("pointerdown", onPointerDownCapture, true);
       scrollDOM.addEventListener("pointerenter", onPointerEnterCapture, true);
+      scrollDOM.addEventListener("mousedown", onMouseDownCapture, true);
       scrollDOM.addEventListener("pointerdown", onPointerDown);
       scrollDOM.addEventListener("pointermove", onPointerMove);
       scrollDOM.addEventListener("pointerup", onPointerUp);
@@ -35408,6 +35595,7 @@ ${clean(nextLineText)}`;
       if (scrollDOM && typeof scrollDOM.removeEventListener === "function") {
         scrollDOM.removeEventListener("pointerdown", onPointerDownCapture, true);
         scrollDOM.removeEventListener("pointerenter", onPointerEnterCapture, true);
+        scrollDOM.removeEventListener("mousedown", onMouseDownCapture, true);
         scrollDOM.removeEventListener("pointerdown", onPointerDown);
         scrollDOM.removeEventListener("pointermove", onPointerMove);
         scrollDOM.removeEventListener("pointerup", onPointerUp);
@@ -36018,13 +36206,13 @@ ${clean(nextLineText)}`;
       });
       cueEl.addEventListener("touchend", (e) => {
         clearDwellTimer();
-        const now = Date.now();
-        if (now - lastTap < 350) {
+        const now2 = Date.now();
+        if (now2 - lastTap < 350) {
           handleBookmarkToggle(index);
           lastTap = 0;
           return;
         }
-        lastTap = now;
+        lastTap = now2;
         if (touchStartX !== null) {
           const t2 = e.changedTouches && e.changedTouches[0];
           if (t2) {
@@ -38788,7 +38976,7 @@ ${clean(nextLineText)}`;
     ink,
     speaker,
     globalObj = typeof window !== "undefined" ? window : null,
-    now = () => Date.now()
+    now: now2 = () => Date.now()
   }) {
     const host = () => globalObj?.webkit?.messageHandlers?.ui;
     let playlists = emptyPlaylists();
@@ -38815,7 +39003,7 @@ ${clean(nextLineText)}`;
       mark.setAttribute("aria-label", label);
       mark.title = label;
       const v0 = getView();
-      const d = daysLeft(p, now(), p && v0 ? edited[pageKey(inspectDraftpadPages(v0.state.doc.toString()), p.index)] : null);
+      const d = daysLeft(p, now2(), p && v0 ? edited[pageKey(inspectDraftpadPages(v0.state.doc.toString()), p.index)] : null);
       left.textContent = d === null ? "" : d === 0 ? "Expires today" : `${d} ${d === 1 ? "day" : "days"} left`;
       left.hidden = d === null;
     }
@@ -39177,7 +39365,7 @@ ${clean(nextLineText)}`;
       if (!v) return;
       const pages = inspectDraftpadPages(v.state.doc.toString());
       const key = pageKey(pages, currentPage(v.state));
-      const day = todayKey(now());
+      const day = todayKey(now2());
       if (!key || edited[key] === day) return;
       edited = { ...edited, [key]: day };
       clearTimeout(editTimer);
@@ -39219,7 +39407,7 @@ ${clean(nextLineText)}`;
       const h = host();
       if (!v || !h || typeof h.postMessage !== "function") return 0;
       const text = v.state.doc.toString();
-      const idx = expiredPageIndices(text, { now: now(), keepIndex: currentPage(v.state), edited });
+      const idx = expiredPageIndices(text, { now: now2(), keepIndex: currentPage(v.state), edited });
       if (!idx.length) return 0;
       const pages = inspectDraftpadPages(text);
       const raw = idx.map((i) => pages[i].rawContent);
@@ -39235,7 +39423,7 @@ ${clean(nextLineText)}`;
       const v = getView();
       const text = v.state.doc.toString();
       const pages = inspectDraftpadPages(text);
-      const still = new Set(expiredPageIndices(text, { now: now(), keepIndex: currentPage(v.state), edited }));
+      const still = new Set(expiredPageIndices(text, { now: now2(), keepIndex: currentPage(v.state), edited }));
       const want = new Set(raw);
       const drop = pages.filter((p) => still.has(p.index) && want.has(p.rawContent)).map((p) => p.index);
       if (!drop.length) return 0;
@@ -39371,10 +39559,10 @@ ${clean(nextLineText)}`;
       notes: String(f.notes || "").trim()
     };
   }
-  function eventsToOffer(events, { dismissed, offered, now = Date.now() }) {
-    return events.filter((ev) => !ev.added && !dismissed.has(ev.id) && !offered.has(ev.id) && Date.parse(ev.endISO || ev.startISO) >= now);
+  function eventsToOffer(events, { dismissed, offered, now: now2 = Date.now() }) {
+    return events.filter((ev) => !ev.added && !dismissed.has(ev.id) && !offered.has(ev.id) && Date.parse(ev.endISO || ev.startISO) >= now2);
   }
-  function createCalendarSheet({ layer: layer2, onAdd, onDismiss, now = () => Date.now() }) {
+  function createCalendarSheet({ layer: layer2, onAdd, onDismiss, now: now2 = () => Date.now() }) {
     const dismissed = /* @__PURE__ */ new Set();
     const offered = /* @__PURE__ */ new Set();
     const queue = [];
@@ -39487,7 +39675,7 @@ ${clean(nextLineText)}`;
       scrim.hidden = true;
     }
     function offer(events) {
-      for (const ev of eventsToOffer(events, { dismissed, offered, now: now() })) {
+      for (const ev of eventsToOffer(events, { dismissed, offered, now: now2() })) {
         offered.add(ev.id);
         queue.push(ev);
       }
