@@ -204,5 +204,15 @@ do {
     check(CarrySchedule.connectDelay <= 2 && CarrySchedule.quiet == 2, "the spec's 2 s")
 }
 
+do {   // T-0091: keep/ writes (Gallery transcripts, every few seconds) re-ran carry every ~4 s
+    let root = "/Users/x/Recense", homes = ["library/Music", "downloads", "trash"]
+    check(CarryWatch.counts("/Users/x/Recense/library/Music/a.m4a", root: root, homes: homes), "a song in a home counts")
+    check(CarryWatch.counts("/Users/x/Recense/downloads", root: root, homes: homes), "the home folder itself counts")
+    check(!CarryWatch.counts("/Users/x/Recense/keep/be25.v2.json", root: root, homes: homes), "keep/ never starts a carry")
+    check(!CarryWatch.counts("/Users/x/Recense/.carry/last-sent.json", root: root, homes: homes), ".carry/ never starts a carry")
+    check(!CarryWatch.counts("/Users/x/Recense/library/MusicOld/a.m4a", root: root, homes: homes), "a lookalike folder is not a home")
+    check(!CarryWatch.counts("/Users/x/Recense", root: root, homes: homes), "the root alone is not a home")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

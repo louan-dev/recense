@@ -439,7 +439,8 @@ Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files a
 - The terminal commands run in place (`status`, `hide`, `quit`, `selftest`, `hear-app`, `carry`, `download`, `homes`); every other verb opens the app.
 - `recense carry verify` writes `~/Recense/.carry/manifest.jsonl`: one line per file across every home (home, path, size, mtime, SHA-256, device) — what this Mac holds, readable by any tool.
 - `recense carry move --to <folder>` copies every home there, verifies every SHA-256 after the copy, writes `carry-receipt-<when>.json`, and **leaves the source in place**. That is the exit: any folder works (a USB stick, iCloud Drive, the WebDAV mount), no Recense needed to read it.
-- Local only: filesystem and CryptoKit, no network at any point. Moving bytes between devices by themselves (carry C1/C2) is not built yet.
+- Local only: filesystem, CryptoKit and MultipeerConnectivity (device to device), no internet at any point.
+- Automatic carry: a paired device that connects, a change inside a home (2 s after it stops), or the iPhone/iPad app coming to the front starts a carry. Only the homes count: writes to `keep/` (Gallery transcripts) or `.carry/` never start one (T-0091).
 
 ## SSH (Topic › Connect To)
 The terminal connects to any host in `~/Recense/ssh/hosts.json` (made from `~/.ssh/config` the first time; Topic › Connect To › Edit Hosts…). Each host lists routes tried in order: `lan` (same network, no internet), `tailscale`, `tunnel` (Cloudflare Tunnel through cloudflared, only when installed); the first that answers in 3 s is used. When ssh ends, the terminal goes back to its own session. Code: `shared/sshhosts.swift`.

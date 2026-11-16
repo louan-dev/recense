@@ -226,7 +226,7 @@ private enum CarryKeychain {
     }
 
     /// Homes changed: the app's own writes (`Homes.changed`, both platforms) and, on the Mac, anything else
-    /// that writes into ~/Recense (Finder, a download) through FSEvents. Carry's own folder is ignored.
+    /// that writes into a home under ~/Recense (Finder, a download) through FSEvents. Only homes count (T-0091).
     private func watchHomes() {
         guard !watching else { return }
         watching = true
@@ -239,7 +239,8 @@ private enum CarryKeychain {
         let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
             guard let info else { return }
             let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
-            guard list.prefix(n).contains(where: { !$0.contains("/.carry/") && !$0.hasSuffix("/.carry") }) else { return }
+            let root = Homes.root.resolvingSymlinksInPath().path, homes = Home.allCases.map(\.folder)
+            guard list.prefix(n).contains(where: { CarryWatch.counts($0, root: root, homes: homes) }) else { return }   // T-0091
             let me = Unmanaged<CarryManager>.fromOpaque(info).takeUnretainedValue()
             DispatchQueue.main.async { MainActor.assumeIsolated { me.trigger(.changed) } }
         }

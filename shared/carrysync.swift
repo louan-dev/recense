@@ -199,6 +199,17 @@ func carrysyncSelftest() -> Bool {
 /// - Carry Now: at once, connected or not (it reports its own result).
 /// - One carry at a time; triggers during a carry fold into one follow-up after it.
 /// - No paired peer connected: automatic triggers wait (Carry Now still runs).
+/// Which file events start an automatic carry (T-0091). Only the carried homes count: other writes under the
+/// root (keep/, the Gallery transcript cache, saved every few seconds; .carry/ itself) re-ran carry every ~4 s.
+enum CarryWatch {
+    static func counts(_ path: String, root: String, homes: [String]) -> Bool {
+        let r = root.hasSuffix("/") ? root : root + "/"
+        guard path.hasPrefix(r) else { return false }
+        let rel = path.dropFirst(r.count)
+        return homes.contains { rel == $0 || rel.hasPrefix($0 + "/") }
+    }
+}
+
 struct CarrySchedule {
     static let connectDelay: Double = 0.5
     static let quiet: Double = 2
