@@ -27,6 +27,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `swiftc -O shared/fingerprint.swift shared/CaptionSeek.swift mobile/ios/Tests/captionseek/main.swift -o "$TMPDIR/captionseek" && "$TMPDIR/captionseek"` (ALL OK).
 - Carry's rules (`shared/carrysync.swift`: scan diff → ops, settling, the seen vector), after any change to it or to
   `shared/notesync.swift`: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"` (ALL OK).
+- Carry's received files (BUG-19), after any change to `shared/p2ptransport.swift` or `CarryManager.landed`:
+  `grep -n 'moveItem(at: localURL' shared/p2ptransport.swift` prints one line (moved before the callback returns) and
+  `grep -n 'lastPathComponent' shared/carrymanager.swift` prints nothing (the key rides the resource name).
 - Carry's pairing (`shared/carrypair.swift`: the six-digit code, group sealing, invitation proof), after any change to it:
   `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"` (ALL OK).
 - Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place

@@ -142,6 +142,8 @@ updates in place.
   across devices is not built yet. Pairing finishes on both devices whichever taps "They Match" first (BUG-17).
   A device paired on one side only is fixed by pairing again: Library › Devices › Pair a Device… on both, in
   either order (the device you pick is invited again until it answers).
+  A carried file counts as settled only once its bytes are placed; a file still owed shows "Waiting for N files" and
+  is asked for again on the next Carry Now (BUG-19).
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new

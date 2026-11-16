@@ -48,6 +48,13 @@ enum CarrySync {
 
     static func key(_ home: String, _ path: String) -> String { home + "/" + path }
 
+    // Derived from Spec: BUG-19 (T-0087)
+    /// The highest seq of a peer's log this device has fully settled: every op at or below it is placed or needed
+    /// nothing. An op still waiting for its bytes holds it back, so the next "seen" asks for that op again.
+    static func settledThrough(received: Int, pending: [Int]) -> Int {
+        min(received, pending.min().map { $0 - 1 } ?? received)
+    }
+
     static func split(_ key: String, homes: [String]) -> (home: String, path: String)? {
         // longest home first: "library/Music/a.m4a" must not split as "library" + "Music/a.m4a"
         for h in homes.sorted(by: { $0.count > $1.count }) where key.hasPrefix(h + "/") {

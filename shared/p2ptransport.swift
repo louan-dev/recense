@@ -29,7 +29,10 @@ import UIKit
     /// A small message arrived: its type tag ("pair", "carryop", …), the payload bytes, who sent it.
     var onMessage: ((String, Data, MCPeerID) -> Void)?
     /// A file finished arriving, saved at this URL (move it before returning, the system reclaims it after).
-    var onReceive: ((URL, MCPeerID) -> Void)?
+    /// A file arrived: where it is now (ours to move), the name it was sent under, and from whom (BUG-19).
+    var onReceive: ((URL, String, MCPeerID) -> Void)?
+    /// A file did not arrive: its name, from whom, why (BUG-19: this was dropped in silence).
+    var onReceiveFailed: ((String, MCPeerID, Error) -> Void)?
     /// A connected peer's session state changed (FEAT-09's glue starts the pairing exchange on `.connected`).
     var onStateChange: ((MCPeerID, MCSessionState) -> Void)?
 
@@ -114,8 +117,18 @@ extension P2PTransport: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, didStartReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, with progress: Progress) {}
 
     nonisolated func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, at localURL: URL?, withError error: Error?) {
-        guard let localURL, error == nil else { return }
-        Task { @MainActor in P2PTransport.shared.onReceive?(localURL, peerID) }
+        // BUG-19: MultipeerConnectivity deletes `localURL` once this returns, so the file is moved here, before
+        // the hop to the main actor; and the key rides `resourceName`, never the temporary file's random name.
+        guard let localURL, error == nil else {
+            let e = error ?? CocoaError(.fileNoSuchFile)
+            Task { @MainActor in P2PTransport.shared.onReceiveFailed?(resourceName, peerID, e) }
+            return
+        }
+        let keep = FileManager.default.temporaryDirectory
+            .appendingPathComponent("recense-incoming-\(UUID().uuidString)")
+        do { try FileManager.default.moveItem(at: localURL, to: keep) }
+        catch { Task { @MainActor in P2PTransport.shared.onReceiveFailed?(resourceName, peerID, error) }; return }
+        Task { @MainActor in P2PTransport.shared.onReceive?(keep, resourceName, peerID) }
     }
 }
 
