@@ -230,8 +230,8 @@ export function seedInkPassage(m, { id, strokeIds, seed }) {
   return addPassage(m, id, 'ink', seed, { ink: { strokes: [...strokeIds] } });
 }
 
-export function seedTypePassage(m, { id, quote, seed }) {
-  const off = m.text.indexOf(quote);
+export function seedTypePassage(m, { id, quote, seed, at = null }) {
+  const off = typeof at === 'number' && m.text.slice(at, at + String(quote).length) === quote ? at : m.text.indexOf(quote);
   if (!quote || off === -1) throw new Error('no type: the words are not on the page');
   return addPassage(m, id, 'type', seed, { type: makeQuote(m.text, off, quote.length) });
 }
@@ -490,16 +490,55 @@ export function cross(m, n, pid, opts = {}) {
     pid,
     state: c.to,
     seed: seedOf(opts.seed),
+    after: hashOf(p),
     undo: { text: textPatch(m.text, out.text), passage: priorPassage, strokes: { changed, added } }
   });
+  compactLog(out.side, from.device);
   return out;
 }
 
-/** Undoes the last crossing exactly. Refuses if the body moved under it in a way it cannot place. */
-export function reverseLast(m) {
-  if (!m.side.log.length) throw new Error('nothing to reverse');
+function hashOf(v) {
+  const str = JSON.stringify(v);
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+
+/** How many crossings per device stay reversible; older ones keep their trace (seed, state) but not their undo. */
+export const KEEP_REVERSIBLE = 24;
+
+function compactLog(side, device, keep = KEEP_REVERSIBLE) {
+  let n = 0;
+  for (let i = side.log.length - 1; i >= 0; i--) {
+    const e = side.log[i];
+    if (e.seed.device !== device || !e.undo) continue;
+    if (++n > keep) { e.undo = null; e.compacted = true; }
+  }
+}
+
+/** Drops the undo data of all but the last `keep` crossings of every device (the trace stays). */
+export function compactMatter(side, keep = KEEP_REVERSIBLE) {
+  const out = clone(side);
+  for (const d of new Set(out.log.map(e => e.seed.device))) compactLog(out, d, keep);
+  return out;
+}
+
+/**
+ * Undoes the last crossing exactly: the last on the page, or with `{ device }` the last one made on that device
+ * (owner decision 2026-11-16: undo is per device). Never undoes a passage that changed since that crossing
+ * (another device, a stroke attached, a later move): it refuses with a short note instead of guessing.
+ */
+export function reverseLast(m, { device = null } = {}) {
+  let idx = m.side.log.length - 1;
+  if (device) while (idx >= 0 && m.side.log[idx].seed.device !== device) idx--;
+  if (idx < 0) throw new Error(device ? `nothing to reverse on ${device}` : 'nothing to reverse');
   const out = createMatter(m);
-  const e = out.side.log.pop();
+  const e = out.side.log[idx];
+  if (!e.undo) throw new Error('that crossing is too old to reverse (its undo was compacted)');
+  const cur = out.side.passages[e.pid];
+  if (e.after && (!cur || hashOf(cur) !== e.after)) throw new Error('the passage changed since that crossing; not reversed');
+  if (out.side.log.slice(idx + 1).some(x => x.pid === e.pid)) throw new Error('the passage changed since that crossing; not reversed');
+  out.side.log.splice(idx, 1);
   const { text, passage, strokes } = e.undo;
   let at = text.at;
   if (out.text.slice(at, at + text.del.length) !== text.del) {
@@ -631,4 +670,95 @@ export function mergeMatter(a, b) {
     passages[id] = p;
   }
   return { version: 1, passages, log: entries };
+}
+
+// ---- the Matter menu: every crossing reachable from one list on the passage ---------------------------------
+
+/** Labels name what you get (owner decision 2026-11-16). Two that read the same get " from <source>". */
+export const LABELS = {
+  1: 'Make text', 10: 'Make text', 4: 'Make quote',
+  2: 'Pencil over', 6: 'Pencil note', 12: 'Pin here',
+  3: 'Highlight', 5: 'Circle as note', 8: 'Keep as note',
+  9: 'Read aloud', 7: 'Read aloud', 11: 'Read aloud'
+};
+const SOURCE_NAME = { ink: 'pencil', type: 'text', mark: 'mark', voice: 'voice' };
+
+/**
+ * The crossings passage `pid` can take now, as a plain list for any menu (selection menu, radial, voice):
+ * [{ id: 'cross-N', n, label, from, to, run(m, opts) → m }]. A crossing is listed only if it would succeed.
+ */
+export function matterActions(m, pid, probe = {}) {
+  if (!m.side.passages[pid]) return [];
+  const seed = { device: 'probe', input: 'probe', time: 0 };
+  const list = [];
+  for (const c of CROSSINGS) {
+    try { cross(m, c.n, pid, { ...probe, seed }); } catch { continue; }
+    list.push({ id: `cross-${c.n}`, n: c.n, label: LABELS[c.n], from: c.from, to: c.to, run: (mm, opts) => cross(mm, c.n, pid, opts) });
+  }
+  const seen = new Map();
+  for (const a of list) seen.set(a.label, (seen.get(a.label) || 0) + 1);
+  for (const a of list) if (seen.get(a.label) > 1) a.label = `${a.label} from ${SOURCE_NAME[a.from]}`;
+  return list;
+}
+
+/** The passage holding body range [from, to), if a typed passage covers or overlaps it. */
+export function passageAt(m, from, to = from) {
+  let best = null;
+  for (const p of Object.values(m.side.passages)) {
+    const f = p.forms.type;
+    if (!f) continue;
+    const off = findQuote(m.text, f);
+    if (off === -1) continue;
+    const end = off + f.quote.length;
+    if (off <= Math.max(from, to - 1) && end >= Math.min(to, from + 1)) {
+      if (!best || f.quote.length < best.len) best = { id: p.id, len: f.quote.length };
+    }
+  }
+  return best ? best.id : null;
+}
+
+/**
+ * The Matter menu for a selection: its passage's actions, or, for words that are not a passage yet, the
+ * crossings typed text can take; running one first makes the selection a passage (seeded on this device).
+ */
+export function menuForSelection(m, from, to) {
+  const pid = passageAt(m, from, to);
+  if (pid) return { pid, actions: matterActions(m, pid) };
+  const quote = m.text.slice(from, to);
+  if (!wordsOf(quote).length) return { pid: null, actions: [] };
+  const newId = `p-${hashOf([from, quote])}`;
+  const probe = seedTypePassage(m, { id: newId, quote, at: from, seed: { device: 'probe', input: 'probe', time: 0 } });
+  const actions = matterActions(probe, newId).map(a => ({
+    ...a,
+    run: (mm, opts) => {
+      const id = mm.side.passages[newId] ? `${newId}-${opts.seed.time}` : newId;
+      return cross(seedTypePassage(mm, { id, quote, at: from, seed: opts.seed }), a.n, id, opts);
+    }
+  }));
+  return { pid: null, actions };
+}
+
+/**
+ * #2 freezing, second half: a stroke drawn over a frozen passage attaches to the word under it.
+ * `bodyOffset` is the body position under the stroke's start (the editor's posAtCoords). Returns new matter,
+ * or the same object when no frozen passage is there. Not a crossing (new matter, not a change of state).
+ */
+export function attachStrokeToWord(m, strokeId, bodyOffset) {
+  const stroke = m.ink.strokes.find(s => s.id === strokeId);
+  if (!stroke || typeof bodyOffset !== 'number') return m;
+  for (const p of Object.values(m.side.passages)) {
+    const surf = p.forms.ink && p.forms.ink.surface;
+    if (!surf || !p.forms.type) continue;
+    const off = findQuote(m.text, p.forms.type);
+    if (off === -1 || bodyOffset < off || bodyOffset > off + p.forms.type.quote.length) continue;
+    const w = wordAt(surf, bodyOffset - off);
+    if (!w) continue;
+    const out = createMatter(m);
+    const st = out.ink.strokes.find(s => s.id === strokeId);
+    st.word = { pid: p.id, i: surf.indexOf(w), w: w.w };
+    const ink = out.side.passages[p.id].forms.ink;
+    if (!ink.strokes.includes(strokeId)) ink.strokes.push(strokeId);
+    return out;
+  }
+  return m;
 }
