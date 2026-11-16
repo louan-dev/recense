@@ -48,7 +48,10 @@ import UIKit
         return s.isEmpty ? "Recense" : s
     }
 
+    /// Idempotent: a second call keeps the running advertiser/browser (a fresh browser would forget the peers the
+    /// first one found, and the screen's list would point at peers no running browser knows; BUG-17).
     func advertise() {
+        guard advertiser == nil else { return }
         let a = MCNearbyServiceAdvertiser(peer: myID, discoveryInfo: nil, serviceType: Self.serviceType)
         a.delegate = self
         a.startAdvertisingPeer()
@@ -56,6 +59,7 @@ import UIKit
     }
 
     func browse() {
+        guard browser == nil else { return }
         let b = MCNearbyServiceBrowser(peer: myID, serviceType: Self.serviceType)
         b.delegate = self
         b.startBrowsingForPeers()

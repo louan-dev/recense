@@ -7169,6 +7169,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @MainActor func devicesMenu() -> NSMenu {
         let m = NSMenu()
         let cm = CarryManager.shared
+        cm.reloadFromDisk()   // another Recense process may have paired since (BUG-17)
         if cm.peers.isEmpty {
             m.addItem(withTitle: "No paired devices yet", action: nil, keyEquivalent: "").isEnabled = false
         } else {
@@ -7181,7 +7182,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             match.target = self
         } else if cm.isLookingToPair {
             m.addItem(withTitle: "Looking for a device to pair…", action: nil, keyEquivalent: "").isEnabled = false
-            for peer in cm.nearby where !cm.peers.contains(where: { $0.name == peer.displayName }) {
+            for peer in cm.pairCandidates {
                 let item = m.addItem(withTitle: "Pair “\(peer.displayName)”", action: #selector(pairNearbyDevice(_:)), keyEquivalent: "")
                 item.target = self; item.representedObject = peer
             }
@@ -7199,7 +7200,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         return m
     }
     @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
-    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stop() }
+    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stopPairing() }
     @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
         guard let peer = sender.representedObject as? MCPeerID else { return }
         CarryManager.shared.invite(peer)
@@ -8137,8 +8138,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
-    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s ? 0 : 1)
+    let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), u = carrymanagerSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && u ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-06

@@ -189,9 +189,12 @@ pairs two devices once by comparing six digits on both screens, as Bluetooth doe
 radio link itself (FEAT-02, MultipeerConnectivity): finds the other device over Bluetooth or peer-to-peer Wi-Fi, no
 router, no internet, and carries both the pairing exchange and the carry log. Pairing and settling are tested without
 radios; the link itself is proven on real devices, airplane mode on. Check: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`.
-The glue is wired (`shared/carrymanager.swift`, a "Devices" screen on the Mac and on iOS): pairing works end to
-end, and "Carry Now" pushes a new or changed file straight to a paired, connected device — the full move/trash/
-restore replay across devices is the part still open. Pairing also works from a keyboard
+The glue is wired (`shared/carrymanager.swift`, `shared/carryapply.swift`, a "Devices" screen on the Mac and on
+iOS): pairing works end to end, and "Carry Now" settles for real — each device keeps its own append-only ops
+log, two paired devices exchange what the other lacks, and a move, a trash or a restore replays correctly on
+the other side, never overwriting a file. The one part still open: a real conflict always keeps both copies
+rather than merging, because no base is tracked yet for the text merge `shared/notesync.swift` already knows
+how to do. Pairing also works from a keyboard
 alone: `recense carry pair` in the Mac's Terminal (reachable from the iPhone or iPad over SSH, Library › Terminal)
 prints the same six-digit code and waits for Enter where the GUI waits for a tap on "They Match". iOS and iPadOS have no terminal
 of their own, so pairing there also runs by voice or Shortcuts (`mobile/HostApp/iOS/PairIntent.swift`): "Pair a

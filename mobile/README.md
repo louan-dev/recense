@@ -139,7 +139,9 @@ updates in place.
   overwritten, and hashed as it lands; Remove puts it in `trash/` with where it came from, and only Trash can delete
   forever. No network at any point. Moving bytes between devices by themselves (FEAT-09): pairing and a one-way
   "Carry Now" push are wired (Library › Devices, `HostApp/iOS/Devices.swift`); the full move/trash/restore replay
-  across devices is not built yet.
+  across devices is not built yet. Pairing finishes on both devices whichever taps "They Match" first (BUG-17).
+  A device paired on one side only is fixed by pairing again: Library › Devices › Pair a Device… on both, in
+  either order (the device you pick is invited again until it answers).
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new

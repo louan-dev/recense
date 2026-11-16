@@ -35,7 +35,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-04 · Exact time sync for stored transcripts (fingerprint → content clock) · `[~]` P1+P2 built, P3 parked (aligner), P4 after FEAT-02 · owner 2026-11-12 · `shared/ShowsKit/Sources/ShowsKit/{Word,ContentClock}.swift`, `mobile/HostApp/iOS/Listen.swift`, `strip/handoff.swift`
 - FEAT-06 · Homes: the folder contract on every device (+ carry C0 exit) · `[~]` P1–P3 built, device check owed · owner 2026-11-08 + 11-11 · `shared/homes.swift`, `strip/app.swift` (`recense carry`)
 - FEAT-07 · Transcript search pill + haptic zoning; P0 the Music list (play, pause, loop, rename across devices, slide to delete) · `[~]` P0–P2 built (Music list, search pill on iPhone/iPad, translation on the voice), Mac pill and device check owed · T-0045, owner 2026-11-15 · `FEAT-07-search-pill-haptic-ruler.md`; `shared/homefiles.swift`, `shared/ShowsKit/Sources/ShowsKit/Views/{ShowPage,Cards,Root}.swift`, `strip/musicshelf.swift`
-- FEAT-09 · Carry between devices: pair once, then the same homes everywhere · `[~]` pairing + "Carry Now" push built and wired (Mac + iOS Devices screens, Mac Terminal `recense carry pair`, iOS voice/Shortcuts); full P2/P3 settling replay not yet wired · owner 2026-11-11 + 11-14, T-0035, T-0047 · `shared/carrysync.swift`, `shared/carrypair.swift`, `shared/carrymanager.swift`, `mobile/HostApp/iOS/PairIntent.swift`
+- FEAT-09 · Carry between devices: pair once, then the same homes everywhere · `[~]` pairing + full ops-log settling (move/trash/restore replay, keep-both) built and wired end to end; real-device check owed; text merge against a tracked base still open · owner 2026-11-11 + 11-14, T-0035, T-0047 · `shared/carrysync.swift`, `shared/carrypair.swift`, `shared/carrymanager.swift`, `shared/carryapply.swift`, `mobile/HostApp/iOS/PairIntent.swift`
 - FEAT-10 · Translate the transcript as it plays (English, Tiếng Việt, Français), on the device · `[~]` iOS built, device check owed · T-0068 · `shared/translateplan.swift`, `mobile/HostApp/iOS/Translate.swift`
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
@@ -54,6 +54,7 @@ Row: ID · title · status · From · code pointer
 - BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 - BUG-13 · Transcript lines cut off mid-sentence (one line per breath-phrase on iOS; the Mac's sentence rule moved to ShowsKit) · `[~]` · T-0073 · `bugs/BUG-13-lines-cut-mid-sentence.md`
 - BUG-16 · A song dropped into downloads/ by another app never reaches Music (no watcher ran adopt) · `[~]` fixed, device check owed · T-0080 · `bugs/BUG-16-downloads-not-settled.md`
+- BUG-17 · Pairing finished on the Mac only: the side waiting for the group secret threw it away, and a listed peer could not re-pair · `[~]` fixed, device check owed · T-0081 · `bugs/BUG-17-pairing-one-sided.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations
