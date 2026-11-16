@@ -15,6 +15,15 @@ enum NowPlayingInfo {
         return (title.isEmpty ? "Recense" : title, album)
     }
 
+    /// FEAT-19 Gap B: whether Recense's player takes the sound (a session that does not mix). iOS makes only such an
+    /// app the Now Playing app, so only then does the Lock Screen draw our title and scrubber. It takes it while it
+    /// holds a file and either plays or no broadcast hears; while Listen hears another app and our player is paused,
+    /// Recense mixes under that app, so its sound is never stopped (BUG-10). Before, hearing alone made it mix, so a
+    /// file played while Listen ran had no Lock Screen controls.
+    static func ownsSession(holdsFile: Bool, playing: Bool, hearing: Bool) -> Bool {
+        holdsFile && (playing || !hearing)
+    }
+
     /// The dictionary for MPNowPlayingInfoCenter. No duration until it is known (no empty 0:00 bar).
     static func info(path: String, time: Double, duration: Double?, playing: Bool) -> [String: Any] {
         let n = names(for: path)

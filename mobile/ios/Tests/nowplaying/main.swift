@@ -25,5 +25,12 @@ check(c[MPMediaItemPropertyPlaybackDuration] == nil, "unknown duration → no ba
 check(c[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 0, "non-finite time → 0")
 check(NowPlayingInfo.skipBack == 15 && NowPlayingInfo.skipForward == 30, "skip steps match the in-app buttons")
 
+// FEAT-19 Gap B: our player takes the sound (so the Lock Screen shows it) while it plays, even while Listen hears
+check(NowPlayingInfo.ownsSession(holdsFile: true, playing: true, hearing: true), "playing while Listen hears → ours")
+check(NowPlayingInfo.ownsSession(holdsFile: true, playing: false, hearing: false), "holds a file, nothing hears → ours, even paused (BUG-09)")
+check(!NowPlayingInfo.ownsSession(holdsFile: true, playing: false, hearing: true), "paused while Listen hears → mix under the other app (BUG-10)")
+check(!NowPlayingInfo.ownsSession(holdsFile: false, playing: false, hearing: false), "no file → mix")
+check(!NowPlayingInfo.ownsSession(holdsFile: false, playing: false, hearing: true), "no file, hearing → mix")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

@@ -56,7 +56,7 @@ final class NativePlayer: Transport {
     }
 
     private func play() {
-        Self.session(hearing: Listener.shared.hearing)
+        Self.session(hearing: Listener.shared.hearing, playing: true)
         try? AVAudioSession.sharedInstance().setActive(true)
         RouteLatency.refresh()
         player.play()
@@ -65,14 +65,23 @@ final class NativePlayer: Transport {
     /// player holds a file and no broadcast hears, the player's (it takes the sound, as any player does, and iOS keeps
     /// its Lock Screen controls, BUG-09, even paused); otherwise mixed under other apps, so the window's silent
     /// keep-awake sound never stops another app. Before, each set its own and the last one won.
-    static func session(hearing: Bool) {
+    /// FEAT-19 Gap B: playing counts too (`NowPlayingInfo.ownsSession`), so a file played while Listen hears still
+    /// gets the Lock Screen's scrubber; paused while hearing, it mixes again under the heard app.
+    static func session(hearing: Bool, playing: Bool? = nil) {
         let s = AVAudioSession.sharedInstance()
-        if shared.path != nil && !hearing { try? s.setCategory(.playback, mode: .spokenAudio) }
-        else { try? s.setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers) }
+        if NowPlayingInfo.ownsSession(holdsFile: shared.path != nil, playing: playing ?? shared.isPlaying, hearing: hearing) {
+            if s.mode != .spokenAudio || s.categoryOptions.contains(.mixWithOthers) { try? s.setCategory(.playback, mode: .spokenAudio) }
+        } else if s.mode != .moviePlayback || !s.categoryOptions.contains(.mixWithOthers) {
+            try? s.setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers)
+        }
     }
     private func refresh() {
         let on = player.timeControlStatus != .paused
-        if on != isPlaying { isPlaying = on; publish() }
+        if on != isPlaying {
+            isPlaying = on
+            if !on { Self.session(hearing: Listener.shared.hearing) }   // paused while Listen hears: mix again (Gap B)
+            publish()
+        }
         if duration != publishedDuration { publish() }   // the duration arrives a moment after open
     }
 
