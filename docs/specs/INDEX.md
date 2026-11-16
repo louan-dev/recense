@@ -28,6 +28,7 @@ Row: ID · title · status · From · code pointer
 - UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `mobile/HostApp/iOS/Draftpad.swift`
 - UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
 - UI-06 · Draftpad page navigation, gesture-only (Antinote study): dots tap/drag/hold, slots, reopen, no ⌘ keys · `[~]` · owner 2026-11-15, T-0020/21/22/24 · D1–D4 date label added; G4 drag a dot to any place (T-0089); device check (Mac/iPhone/iPad) owed · `ui-teardowns/UI-06-antinote-navigation/UI-06.md`, `editor/src/pagemode.js`, `editor/src/index.js`
+- UI-12 · The editor at a local path: offline by default, sync on a drip (not a teardown: Recense's own surface) · `[~]` S1 built but demoted (Cloudflare route behind Access, the shape the owner rejected); S2–S5 `[ ]` · owner 2026-11-16 · `UI-12-offline-editor-local.md`; `editor/dist/`, `editor/src/webstore.js`, `editor/src/pwa/sw.js`, `library/src/editorpwa.js`, `shared/carry*.swift`
 
 ### Features
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
