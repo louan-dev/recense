@@ -29,7 +29,7 @@ Row: ID · title · status · From · code pointer
 - UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
 - UI-06 · Draftpad page navigation, gesture-only (Antinote study): dots tap/drag/hold, slots, reopen, no ⌘ keys · `[~]` · owner 2026-11-15, T-0020/21/22/24 · D1–D4 date label added; G4 drag a dot to any place (T-0089); device check (Mac/iPhone/iPad) owed · `ui-teardowns/UI-06-antinote-navigation/UI-06.md`, `editor/src/pagemode.js`, `editor/src/index.js`
 - UI-07 · Draftpad's editor box per device and orientation (iPhone 12 Pro Max, iPad Air M2 13-inch; 11-inch fallback band), not the Mac's box scaled · `[~]` · owner 2026-11-16 · built in editor; device check (iPhone/iPad) owed · `ui-teardowns/UI-07-draftpad-device-sizes/UI-07.md`, `editor/src/devicelayout.js`
-- UI-12 · The editor at a local path: offline by default, sync on a drip (not a teardown: Recense's own surface) · `[~]` S1 built but demoted (Cloudflare route behind Access, the shape the owner rejected); S2–S5 `[ ]` · owner 2026-11-16 · `UI-12-offline-editor-local.md`; `editor/dist/`, `editor/src/webstore.js`, `editor/src/pwa/sw.js`, `library/src/editorpwa.js`, `shared/carry*.swift`
+- UI-12 · The editor at a local path: offline by default, sync on a drip (not a teardown: Recense's own surface) · `[~]` S1 built but demoted (Cloudflare route behind Access, the shape the owner rejected); S2–S5 `[ ]`, P6 (browser player) `[~]` · owner 2026-11-16 · `UI-12-offline-editor-local.md`; `editor/dist/`, `editor/src/webstore.js`, `editor/src/pwa/sw.js`, `library/src/editorpwa.js`, `shared/carry*.swift`
 
 ### Features
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
@@ -44,7 +44,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-11 · iOS download engine (yt-dlp in embedded CPython + AVFoundation join, no ffmpeg) · `[ ]` spike PASS on iPhone 2026-11-14 · T-0049 · `spike/ios-ytdlp/`
 - FEAT-15 · Bose Bridge: one pair of QC SC, many sources (route, seats, two symphonies at once) · `[~]` P1–P5 built, device check owed · T-0059 · `shared/bosebridge.swift`, `strip/bosebridge.swift`, `mobile/HostApp/iOS/Headphones.swift`
 - FEAT-16 · Transcript complete before audio plays (spinner, synced autoscroll) + the search-scrubber pill on every transcript surface · `[ ]` · T-0095 · `FEAT-16-transcript-before-play.md`; builds on FEAT-07
-- FEAT-19 · Playback survives the Lock Screen and leaving the app, with a Lock Screen scrubber, on every surface · `[~]` P2 (iOS video on lock) built, device check owed; web already SPEC 69; editor browser player proposed · T-0132 · `FEAT-19-play-on-lock.md`; builds on SPEC 69, BUG-09
+- FEAT-19 · Playback survives the Lock Screen and leaving the app, with a Lock Screen scrubber, on every surface · `[~]` P2 (iOS video on lock) built, device check owed; web already SPEC 69; editor browser player `[~]` UI-12 P6 · T-0132 · `FEAT-19-play-on-lock.md`; builds on SPEC 69, BUG-09
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 
 ### Bugs

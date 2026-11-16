@@ -60,6 +60,29 @@ Lanes: `editor/` (the page), `strip/` + `mobile/HostApp/` (the local origin), `s
 - **P4 · Meet and drain.** Carry starts when two paired devices meet, with no "Carry Now" pressed (FEAT-09 P4's open half).
 - **P5 · The relay (ladder step 3).** A server we own holds ops for devices that are apart. One conditional request per
   connectivity change; no polling; no held connection. Needs its own spike before code, per `docs/law/offline.md`.
+- **P6 · The browser player (FEAT-19 S-editor P4).** `[~]` (lane editor-player, 2026-11-16) In a browser the editor plays its own
+  recording through Gallery's player rules, embedded, not re-written. Code: `editor/src/player.js` (the adapter),
+  `library/src/client/webplayer.js` (the player's rules, home `library/src/client/`, bundled into `editor.html` by esbuild).
+  - **One interface, two backends.** `load(src, title)`, `play()`, `pause()`, `toggle()`, `seek(t)`, `setRate(r)`,
+    `setLoop(a, b)` (`b <= a` clears it). Backend **host** when `webkit.messageHandlers.audio` exists, else **web**.
+  - **I1 Host wins.** With a native host the adapter only posts to `webkit.messageHandlers.audio`, as today:
+    `{action:'seek', time}` unchanged; `play`/`pause`/`rate`/`loop`/`load` are new posts the hosts pass to
+    `onAudioAction` (nothing set there today, so no behaviour changes). No `<audio>` element is made, no Media Session set.
+  - **I2 Web plays.** With no host the same calls drive one `<audio>` element with Gallery's rules: pitch kept at speed,
+    play at the end starts over, A–B loop, `audioSession.type = "playback"`, Media Session title/artwork, `play`, `pause`,
+    `seekto`, `setPositionState` (valid length, rate never 0), no ±10 s, dropped when the recording is closed (FEAT-19 S-web).
+    The transcript follows the element's time (`updateTime`), so cue highlight and cue-tap seek work as with a host.
+  - **I3 Offline plays what the device holds.** A recording plays with no network when it is a `blob:`/`data:` URL (a file
+    picked on this device), is in Cache Storage (S1's cache), or comes from the page's own origin when that origin is the
+    local hub (loopback or `.local`). Anything else, offline, is refused before play with one plain line:
+    "This recording isn't on this device. It needs a connection." Never a spinner; a load error says so the same way.
+  - **I4 One player.** No second copy of the rules in `editor/`. When Gallery's `gallery.js` adopts `webplayer.js`
+    (owed, after lane lockscreen-everywhere lands: it edits the same lines) the rules have one source in fact, not just in law.
+  - **Done checks.** E1 (node, tagged `// Regression guard: UI-12`): the host backend posts and makes no element; the web
+    backend drives the element; availability rule per source kind. E2 (Playwright, Chromium, `dist/editor.html`, no host):
+    a generated 3 s tone loads, plays (`currentTime` advances), seeks, sets `navigator.mediaSession.metadata.title` and a
+    position state; offline (`context.setOffline`) a remote URL gives the plain line and does not play.
+    E3 (device): see Handoff.
 
 ## Done checks
 - **D1 Airplane open.** Radios off, app never launched this boot: the editor opens at its local path on Mac, iPhone and

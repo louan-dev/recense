@@ -35,7 +35,7 @@ Already built (SPEC 69, notes 27). Kept as is:
 - **Fact:** the editor page plays no media in a browser. Seek and play go to the native host
   (`webkit.messageHandlers.audio`, `editor/src/audio.js:420, 926`); only pages are implemented in the library
   (`editor/src/library.js:19`). There is nothing for a Lock Screen to show.
-- **P4 (proposed, coordinator's call):** when the editor gets a browser player, it embeds Gallery's player
+- **P4 `[~]` (approved by the coordinator 2026-11-16; built as UI-12 P6):** when the editor gets a browser player, it embeds Gallery's player
   (the player's one home, `library/src/client/`), so S-web's rules come with it. No second player.
 
 ### S-ios · Recense on iPhone and iPad (`mobile/`)
