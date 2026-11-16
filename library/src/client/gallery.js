@@ -1793,6 +1793,18 @@
       // (no hover slide: the language moved into the transcript editor, SPEC 57; hovering unfolds the first slide)
       frost: kind(item) === "vid", // frosted glass for videos only (SPEC 38)
       slides: () => barSlides(item),
+      // FEAT-07 / FEAT-16 P5: the pill's Find, over this item's transcript (the lines showTranscript shows); a hit
+      // plays from its first word, and the lyrics and the whole-transcript sheet follow the voice there
+      find: {
+        lines: () => {
+          const h = globalThis.GalleryClock;
+          return h && h.media === el && typeof h.lines === "function" ? h.lines() || [] : [];
+        },
+        go: (t) => {
+          el.currentTime = t;
+          if (el.paused) toggle();
+        },
+      },
     });
 
     const hb = bar.el;
@@ -2983,6 +2995,7 @@
       // Escape folds an open tray first; returns true if it did, so the viewer stays open
       closeTools: () => {
         if (bar.close()) return true;
+        if (bar.find && bar.find.close()) return true; // Find goes back to scrubbing first
 
         if (tray.isOpen()) {
           tray.hide();
@@ -5935,6 +5948,7 @@
             e.stopPropagation();
             el.currentTime = Math.max(0, l.s - 0.05);
             el.play().catch(() => {});
+            refollow(false); // a line played from is the voice again (Swift: a tapped line follows again)
             follow(i);
           };
           body.appendChild(b);
@@ -6103,14 +6117,46 @@
       cur = Number.isInteger(at) && lines[at] ? at : heardAt;
       render();
       if (rows[cur]) rows[cur].scrollIntoView({ block: "center" });
-      // the field follows what is heard once that moves on, unless you are typing in it
+      // FEAT-16 P5, the follow reset (Apple's "reset live tracking"; ShowsKit's "Now", Transcript.swift): scrolling by
+      // hand lets go of the voice, so the list stays where the reader took it; Now brings it back to the line heard.
+      // (Only a hand moves it: a wheel, a finger, the scroll keys; the sheet's own scrolling never lets go.)
+      let following = true;
+      const nowBtn = mkEl("button", "lnk txfollow");
+      nowBtn.type = "button";
+      nowBtn.textContent = "Now";
+      nowBtn.setAttribute("aria-label", "Back to the line being heard");
+      nowBtn.hidden = true;
+      const refollow = (scroll = true) => {
+        following = true;
+        nowBtn.hidden = true;
+        if (!scroll || !backBtn.hidden) return;
+        const i = lineAt(clock(), true);
+        heardAt = i;
+        if (i !== cur) follow(i, false);
+        if (rows[cur]) rows[cur].scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      };
+      const letGo = () => {
+        if (!following || !backBtn.hidden) return;
+        following = false;
+        nowBtn.hidden = false;
+      };
+      list.addEventListener("wheel", letGo, { passive: true });
+      list.addEventListener("touchmove", letGo, { passive: true });
+      list.addEventListener("keydown", (e) => ["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(e.key) && !e.target.closest("textarea,input") && letGo());
+      nowBtn.onpointerdown = (e) => e.preventDefault();
+      nowBtn.onclick = (e) => {
+        e.stopPropagation();
+        refollow();
+      };
+      sheet.appendChild(nowBtn);
+      // the field follows what is heard once that moves on, unless you are typing in it (or reading elsewhere)
       const tick = () => {
         if (!sheet.isConnected) return;
         if (backBtn.hidden && !(field && document.activeElement === field)) {
           const i = lineAt(clock(), true);
           if (i !== heardAt) {
             heardAt = i;
-            if (i !== cur) follow(i, !el.paused);
+            if (i !== cur) follow(i, following && !el.paused);
           }
         }
         setTimeout(tick, 200);

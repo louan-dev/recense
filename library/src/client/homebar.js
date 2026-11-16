@@ -218,6 +218,200 @@ globalThis.Homebar = (() => {
     return { el: wrap, paint };
   };
 
+  // ---------- FEAT-07 the pill's Find face (Gallery's player and Recense's window, one implementation) ----------
+  //
+  // The Swift pill is ShowsKit's SearchPill (shared/ShowsKit/Sources/ShowsKit/Views/SearchPill.swift) and its rules
+  // TranscriptFind.swift; this is the same pill for the web and the Mac's strip, rule for rule: change one, change the
+  // other. The magnifier at the stroke's start opens Find (the stroke keeps its own touch for seeking, FEAT-07 rule 7);
+  // the face holds Back to Scrubbing (waveform), the field, "2 of 5" and ⌃ ⌄. A 0.35 s hold on the face, the waveform
+  // or Escape go back to scrubbing. Going to a hit plays from its first word (rule 1). What was typed stays, and its
+  // hits stay on the time ruler as marks (rule 1: search hits are places on the ruler; the web has no haptic, rule 8).
+  //   host: lines() → [{s, text, tr}]  (tr: a translation, or {lang: text}); go(t) plays from t; wake(); onOpen(on)
+
+  // folded for matching: lowercased, accents off, đ → d, full-width as narrow (TranscriptFind.fold)
+  const fold = (s) =>
+    String(s || "")
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/đ/g, "d");
+  const textsOf = (l) => {
+    const tr = l && l.tr;
+    const more = typeof tr === "string" ? [tr] : tr && typeof tr === "object" ? Object.values(tr).filter((x) => typeof x === "string") : [];
+    return [l && l.text, l && l.en, ...more].filter((x) => typeof x === "string");
+  };
+  // the lines that hold `query` (in their words or a translation), in time order; under 2 letters: none
+  const findHits = (lines, query) => {
+    const q = fold(String(query || "").trim());
+    if (Array.from(q).length < 2 || !Array.isArray(lines)) return [];
+    const out = [];
+    lines.forEach((l, i) => textsOf(l).some((x) => fold(x).includes(q)) && out.push(i));
+    return out;
+  };
+  // the hit after (or, going back, before) the one at `current`, wrapping round; the first one when none is current
+  const findStep = (hits, current, back) => {
+    if (!hits.length) return null;
+    const i = current == null ? -1 : hits.indexOf(current);
+    if (i < 0) return back ? hits[hits.length - 1] : hits[0];
+    return hits[(i + (back ? hits.length - 1 : 1)) % hits.length];
+  };
+  // "2 of 5", "5 found", "No matches", or nothing while fewer than 2 letters are typed (SearchPill.count)
+  const findCount = (hits, query, current) => {
+    if (!hits.length) return Array.from(String(query || "")).length < 2 ? "" : "No matches";
+    const i = current == null ? -1 : hits.indexOf(current);
+    return i >= 0 ? i + 1 + " of " + hits.length : hits.length + " found";
+  };
+
+  const FIND_ICONS = {
+    find: SVG('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>'),
+    wave: SVG('<path d="M3 12h1"/><path d="M7 8v8"/><path d="M11 5v14"/><path d="M15 9v6"/><path d="M19 7v10"/><path d="M22 12h-1"/>'),
+    up: SVG('<path d="m6 15 6-6 6 6"/>'),
+    down: SVG('<path d="m6 9 6 6 6-6"/>'),
+  };
+
+  const find = (host) => {
+    const lines = () => (host.lines && host.lines()) || [];
+    const btn = mkBtn("p-hfind", "Find in Transcript", FIND_ICONS.find);
+    const face = mkEl("div", "p-find");
+    face.setAttribute("role", "search");
+    face.hidden = true;
+    const back = mkBtn("p-fback", "Back to Scrubbing", FIND_ICONS.wave);
+    const field = mkEl("input", "p-ffield");
+    field.type = "search";
+    field.placeholder = "Find in transcript";
+    field.setAttribute("aria-label", "Find in transcript");
+    field.autocomplete = "off";
+    field.spellcheck = false;
+    field.setAttribute("autocapitalize", "off");
+    field.setAttribute("autocorrect", "off");
+    field.setAttribute("enterkeyhint", "search");
+    const count = mkEl("span", "p-fcount");
+    count.setAttribute("aria-live", "polite");
+    const prev = mkBtn("p-fstep", "Previous Match", FIND_ICONS.up);
+    const next = mkBtn("p-fstep", "Next Match", FIND_ICONS.down);
+    face.append(back, field, count, prev, next);
+
+    let finding = false;
+    let hit = null;
+    const hits = () => findHits(lines(), field.value);
+    const paint = () => {
+      // no transcript (yet): no magnifier (law, interaction.md: shown only when relevant; Swift disables it instead)
+      btn.hidden = !lines().length;
+      const h = finding ? hits() : [];
+      if (hit != null && !h.includes(hit)) hit = null;
+      const typed = field.value.length > 0;
+      count.textContent = typed ? findCount(h, field.value, hit) : "";
+      count.hidden = prev.hidden = next.hidden = !typed;
+      prev.disabled = next.disabled = !h.length;
+    };
+    let repaintT = 0; // recomputed as the lines arrive (a transcript still being made)
+    const open = () => {
+      if (finding || btn.hidden) return;
+      finding = true;
+      face.hidden = false;
+      host.onOpen && host.onOpen(true);
+      paint();
+      clearInterval(repaintT);
+      repaintT = setInterval(paint, 1000);
+      field.focus();
+    };
+    const close = () => {
+      if (!finding) return false;
+      finding = false;
+      hit = null;
+      face.hidden = true;
+      clearInterval(repaintT);
+      if (document.activeElement === field) field.blur();
+      host.onOpen && host.onOpen(false);
+      return true;
+    };
+    const go = (backwards) => {
+      const ls = lines();
+      const h = findStep(hits(), hit, backwards);
+      if (h == null || !ls[h]) return paint();
+      hit = h;
+      host.go && host.go(Math.max(0, Number(ls[h].s) || 0));
+      paint();
+    };
+    const tap = (b, fn) => {
+      b.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        if (b !== btn) e.preventDefault(); // the field keeps its focus (and the keyboard stays up)
+      });
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fn();
+        host.wake && host.wake();
+      });
+    };
+    tap(btn, open);
+    tap(back, close);
+    tap(prev, () => go(true));
+    tap(next, () => go(false));
+    field.addEventListener("input", () => {
+      hit = null;
+      paint();
+      host.wake && host.wake();
+    });
+    field.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // typing is never a player shortcut
+      if (e.key === "Enter") {
+        e.preventDefault();
+        go(e.shiftKey);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    });
+    // hold the face 0.35 s (not on its buttons or the field): back to scrubbing
+    let holdT = 0;
+    let at = null;
+    face.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      if (e.target.closest("button, input")) return;
+      at = { x: e.clientX, y: e.clientY };
+      clearTimeout(holdT);
+      holdT = setTimeout(close, 350);
+    });
+    face.addEventListener("pointermove", (e) => {
+      if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 8) clearTimeout(holdT);
+    });
+    const unhold = () => {
+      clearTimeout(holdT);
+      at = null;
+    };
+    face.addEventListener("pointerup", unhold);
+    face.addEventListener("pointercancel", unhold);
+    face.addEventListener("click", (e) => e.stopPropagation());
+    paint();
+    // the magnifier comes once the transcript does; checked each second until the bar leaves the page
+    let placed = false;
+    const idle = setInterval(() => {
+      if (btn.isConnected) placed = true;
+      else if (placed) return clearInterval(idle);
+      if (!finding) btn.hidden = !lines().length;
+    }, 1000);
+    return {
+      btn,
+      face,
+      field,
+      get finding() {
+        return finding;
+      },
+      get hit() {
+        return hit;
+      },
+      // the times of what is typed, for the ruler's marks (kept after Back to Scrubbing, as the field keeps its text)
+      marks: () => {
+        const ls = lines();
+        return hits().map((i) => Number(ls[i].s) || 0);
+      },
+      open,
+      close,
+      paint,
+    };
+  };
+
   // ---------- the horizontal bar ----------
 
   const horizontal = (host) => {
@@ -264,6 +458,26 @@ globalThis.Homebar = (() => {
     // the stroke goes in before the slides, so a control in a slide always sits on top of it
     box.append(holo, line, skReg, bead, tbead, mkA, mkB, sval, tval, barrel, seekL);
     hb.appendChild(box);
+
+    // FEAT-07: the pill. With a transcript to search (host.find), the magnifier sits at the stroke's start and the
+    // Find face takes the stroke's place while it is open (find(), above).
+    const fd = host.find
+      ? find({
+          lines: host.find.lines,
+          go: host.find.go,
+          wake: () => wake(),
+          onOpen: (on) => {
+            hb.classList.toggle("finding", on);
+            if (on && hbOpen) hideHb();
+            host.find.onOpen && host.find.onOpen(on);
+          },
+        })
+      : null;
+    if (fd) {
+      hb.classList.add("canfind");
+      box.appendChild(fd.btn);
+      hb.appendChild(fd.face);
+    }
 
     // ----- the built-in slides -----
 
@@ -891,6 +1105,14 @@ globalThis.Homebar = (() => {
           frag.appendChild(lb);
         }
       }
+      // FEAT-07 rule 1: what Find holds are places on the ruler (marks only on the web: no haptic, rule 8)
+      if (fd)
+        fd.marks().forEach((t) => {
+          if (t < sk.win0 - 1e-9 || t > end + 1e-9) return;
+          const m = mkEl("i", "p-skhit");
+          m.style.left = ((t - sk.win0) / sk.L) * 100 + "%";
+          frag.appendChild(m);
+        });
       skTicks.replaceChildren(frag);
     };
 
@@ -1504,6 +1726,7 @@ globalThis.Homebar = (() => {
     return {
       el: hb,
       line,
+      find: fd, // the pill's Find face (null without a transcript host)
       get open() {
         return hbOpen;
       },
@@ -3399,5 +3622,5 @@ globalThis.Homebar = (() => {
     };
   };
 
-  return { horizontal, vertical, tools, tray, prominence, snapProminence, SPEEDS, LANGS, ICONS: I, dur, mkBtn, EQ_BANDS, EQ_MAX, KEY_MAX };
+  return { horizontal, vertical, tools, tray, find, findHits, findStep, findCount, fold, prominence, snapProminence, SPEEDS, LANGS, ICONS: I, dur, mkBtn, EQ_BANDS, EQ_MAX, KEY_MAX };
 })();
