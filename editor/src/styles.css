@@ -2130,3 +2130,15 @@ html.rc-wings-page body {
 .rc-outline-header { flex-wrap: wrap; }
 .rc-panel-tabs { flex-wrap: nowrap; }
 .rc-panel-tab, #rc-newest-first-btn { white-space: nowrap; }
+
+/* Derived from Spec: UI-06 D2 · the page's date as a small muted label at its top right, never a heading. */
+.cm-page-date-label {
+  text-align: right;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--rc-muted);
+  opacity: 0.6;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}

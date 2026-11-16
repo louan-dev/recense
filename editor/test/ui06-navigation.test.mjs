@@ -44,7 +44,7 @@ test('G2/visible ＋: newPage opens an empty page at the front from any page', (
   assert.equal(newPage(view), true);
   assert.equal(pageCount(view.state), 4);
   assert.equal(currentPage(view.state), 0);
-  assert.equal(bodies(view)[0], '');
+  assert.match(bodies(view)[0], /^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, \d{4}$/, 'only today\'s date line');
   assert.equal(newPage(view), false, 'no second empty page while the front one is empty');
 });
 
@@ -114,4 +114,9 @@ test('Voice: promote, slot N and new page reach their UI-06 handlers', async () 
   assert.equal(executeVoiceMove('newer page', h).action, 'swipeLeftToRight');
   assert.equal(executeVoiceMove('older page', h).action, 'swipeRightToLeft');
   assert.deepEqual(ran, ['promote', 'slot3', 'new', 'newer', 'older']);
+});
+
+test('R1: two pages with the same first line reopen on the one you were on', () => {
+  const text = ['Sunday, November 15, 2026\n\nA', 'Sunday, November 15, 2026\n\nB'].join(PAGE_JOINER);
+  assert.equal(reopenTarget(text, { index: 1, head: 'Sunday, November 15, 2026' }), 1);
 });

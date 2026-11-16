@@ -11,7 +11,7 @@
 //   220ms ease-out snap.
 import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
-import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty, SLOT_RE, isMetaLine, CONTROL_CHARS_RE } from './pages.js';
+import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty, SLOT_RE, isMetaLine, CONTROL_CHARS_RE, formatDateLine } from './pages.js';
 import { postHaptic } from './bridge.js';
 
 export { isWindowEmpty };
@@ -285,7 +285,7 @@ export function deleteEmptyWindow(view, index = currentPage(view.state), { onSna
  * Opens a new empty window on the left (index 0) by prepending `\n\n<!-- page -->\n\n` at the top of the .md file,
  * but only when window 0 currently has text.
  */
-export function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+export function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, globalObj, now = Date.now() } = {}) {
   const docText = view.state.doc.toString();
   const pages = inspectDraftpadPages(docText);
   if (pages.length > 0 && isWindowEmpty(pages[0].rawContent)) {
@@ -297,9 +297,11 @@ export function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, glob
   const mem = getMemory(view);
   shiftWindowMemoryOnPrepend(mem, pages.length);
 
+  // UI-06 D3 · every new page opens with today's date line; the caret waits on the empty line under it.
+  const dateHead = `${formatDateLine(now)}\n\n`;
   view.dispatch({
-    changes: { from: 0, to: 0, insert: PAGE_JOINER },
-    selection: { anchor: 0 },
+    changes: { from: 0, to: 0, insert: dateHead + PAGE_JOINER },
+    selection: { anchor: dateHead.length },
     effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: 'start', yMargin: 8 })],
     userEvent: 'input.page'
   });
@@ -421,9 +423,9 @@ export function goToPage(view, index, { onSnap = null, onBounce = null, globalOb
 }
 
 /** ＋ · A new empty page at the front, from any page (the front page must have text). */
-export function newPage(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+export function newPage(view, { onSnap = null, onBounce = null, globalObj, now } = {}) {
   if (currentPage(view.state) !== 0) showPage(view, 0);
-  return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
+  return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj, now });
 }
 
 /** G4 · Move page `index` to the front. Only the order changes: each page keeps its own bytes. */
@@ -512,6 +514,9 @@ export function reopenTarget(text, saved) {
   const pages = inspectDraftpadPages(text);
   if (!saved || !pages.length) return 0;
   const head = String(saved.head || '').trim();
+  const at = Number(saved.index) || 0;
+  // The page at its saved place still starts the same way: it is the one (pages that share a date stay apart).
+  if (head && pages[at] && pageHead(pages[at]) === head.slice(0, 120)) return at;
   if (head) {
     const hit = pages.findIndex(p => pageHead(p) === head.slice(0, 120));
     if (hit !== -1) return hit;

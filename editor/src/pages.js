@@ -1,5 +1,5 @@
 import { EditorState, StateField, Transaction } from '@codemirror/state';
-import { Decoration, EditorView } from '@codemirror/view';
+import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 
 export const PAGE_MARKER = '<!-- page -->';
 export const PAGE_JOINER = `\n\n${PAGE_MARKER}\n\n`;
@@ -44,6 +44,41 @@ export function parseDateLine(line) {
     return null;
   }
   return dt.getTime();
+}
+
+// Derived from Spec: UI-06 D1 · the machine form every page opens with (English, parseable by parseDateLine).
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+  'October', 'November', 'December'];
+export function formatDateLine(ms = Date.now()) {
+  const d = new Date(ms);
+  return `${WEEKDAY_NAMES[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+/** UI-06 D2 · the discreet label: Today / Yesterday, else weekday + day (+ year when not this year), device language. */
+export function discreetDate(ms, now = Date.now(), lang = (typeof navigator !== 'undefined' && navigator.language) || 'en') {
+  const day = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const diff = Math.round((day(now) - day(ms)) / 864e5);
+  if (diff === 0 || diff === 1) {
+    const w = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' }).format(-diff, 'day');
+    return w.charAt(0).toLocaleUpperCase(lang) + w.slice(1);
+  }
+  const sameYear = new Date(ms).getFullYear() === new Date(now).getFullYear();
+  const opts = { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) };
+  return new Intl.DateTimeFormat(lang, opts).format(new Date(ms)).replace(/,/g, '');
+}
+
+class DateLabelWidget extends WidgetType {
+  constructor(ms) { super(); this.ms = ms; }
+  eq(other) { return other.ms === this.ms; }
+  toDOM() {
+    const el = document.createElement('div');
+    el.className = 'cm-page-date-label';
+    el.setAttribute('aria-label', formatDateLine(this.ms));
+    el.textContent = discreetDate(this.ms);
+    return el;
+  }
+  ignoreEvent() { return false; }
 }
 
 export function isFullDateLine(line) {
@@ -209,12 +244,6 @@ const pageDividerLineDeco = Decoration.line({
   }
 });
 
-const pageDateLineDeco = Decoration.line({
-  attributes: {
-    class: 'cm-page-date-line'
-  }
-});
-
 // A saved page's hidden line: out of sight (and out of the caret's way) in the editor.
 const metaHiddenDeco = Decoration.replace({ block: true });
 
@@ -228,8 +257,10 @@ function buildPageDecoSet(doc) {
   for (const m of markers) {
     items.push(pageDividerLineDeco.range(m.from));
   }
+  // UI-06 D2 · no heading: the date line shows as a small muted label at the page's top right.
   for (const d of dateLines) {
-    items.push(pageDateLineDeco.range(d.from));
+    const ms = parseDateLine(d.text);
+    items.push(Decoration.replace({ widget: new DateLabelWidget(ms), block: true }).range(d.from, d.to));
   }
   items.sort((a, b) => a.from - b.from);
   return Decoration.set(items, true);

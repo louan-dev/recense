@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PAGE_JOINER, PAGE_MARKER, inspectDraftpadPages } from '../src/pages.js';
+import { PAGE_JOINER, PAGE_MARKER, inspectDraftpadPages, formatDateLine } from '../src/pages.js';
 import {
   hiddenRanges,
   currentPage,
@@ -46,7 +46,9 @@ test('P1 navigation: left-to-right swipe at window 0 opens a new window on the l
   assert.equal(swipeLeftToRight(view), true);
   assert.equal(currentPage(view.state), 0);
   assert.equal(pageCount(view.state), 3);
-  assert.equal(view.state.doc.toString(), PAGE_JOINER + original);
+  // UI-06 D3: the new page opens with today's date line, and an empty line for the caret before the marker
+  // (Regression guard: UI-06 D3 — typed text must never join the <!-- page --> line).
+  assert.equal(view.state.doc.toString(), `${formatDateLine()}\n\n${PAGE_JOINER}` + original);
 
   // A second left-to-right swipe while window 0 is still empty bounces instead of piling up empty windows
   assert.equal(swipeLeftToRight(view), false);
@@ -63,9 +65,10 @@ test('P1 navigation: 100 windows make 1 .md file, each window isolated, and roun
   const view = makeFakeView('Window 1');
   for (let i = 2; i <= 100; i++) {
     assert.equal(openNewWindowOnLeft(view), true);
+    const at = view.state.selection.main.head;   // UI-06 D3: under the new page's date line
     view.dispatch({
-      changes: { from: 0, to: 0, insert: `Window ${i}` },
-      selection: { anchor: `Window ${i}`.length }
+      changes: { from: at, to: at, insert: `Window ${i}` },
+      selection: { anchor: at + `Window ${i}`.length }
     });
   }
 
@@ -73,7 +76,7 @@ test('P1 navigation: 100 windows make 1 .md file, each window isolated, and roun
   const pages = inspectDraftpadPages(fullMd);
   assert.equal(pages.length, 100, '100 windows in 1 .md file');
   assert.equal(fullMd.split(PAGE_MARKER).length - 1, 99, '99 <!-- page --> markers');
-  assert.equal(pages[0].rawContent, 'Window 100', 'newest window is at the top of the .md file');
+  assert.equal(pages[0].rawContent, `${formatDateLine()}\n\nWindow 100`, 'newest window is at the top of the .md file');
   assert.equal(pages[99].rawContent, 'Window 1', 'oldest window is at the bottom of the .md file');
 
   // Check isolation of window 0, window 49, and window 99
@@ -86,7 +89,7 @@ test('P1 navigation: 100 windows make 1 .md file, each window isolated, and roun
       pos = r.to;
     }
     visible += fullMd.slice(pos);
-    assert.equal(visible.replace(/^\n+|\n+$/g, ''), `Window ${100 - idx}`);
+    assert.equal(visible.replace(/^\n+|\n+$/g, ''), idx === 99 ? 'Window 1' : `${formatDateLine()}\n\nWindow ${100 - idx}`);
   }
 });
 
