@@ -18,7 +18,7 @@ struct GalleryFilesApp: App {
             RecenseRoot()   // the Podcasts-style shell (Shows.swift); Browser() was the root until 11-07
                 .modifier(MaybeListening(on: ProcessInfo.processInfo.environment["RECENSE_NO_LISTEN"] == nil))
                 .task { status = await setUp() }
-                .onChange(of: phase) { _, p in   // automatic carry (FEAT-09 P4): to the front → carry
+                .onChange(of: phase, initial: true) { _, p in   // automatic carry (FEAT-09 P4): launch or to the front → carry
                     guard p == .active else { return }
                     let c = CarryManager.shared
                     c.reloadFromDisk()
