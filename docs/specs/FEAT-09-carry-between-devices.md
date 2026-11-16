@@ -154,6 +154,10 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
     no paired peer connected → no run; after the last peer leaves, a change waits; Carry Now runs at once
     (it reports its own result). `Carry.verify(reuse:)` keeps an unchanged file's hash and re-hashes a changed one
     (`recense selftest`). Timing as built: connect and foreground 0.5 s, quiet 2 s.
+  - Launch counts as coming to the front: `onChange(of: phase, initial: true)`; a cold launch is already `.active`
+    (iPad 11-15: a plain `onChange` never fired, so its link never started).
+  - Device check 11-15 19:59 ✓ (connect and launch): the iPad and iPhone filled Library › Music from the Mac with no tap.
+    Owed: a song saved on the Mac while connected reaches the iPhone with no tap (the change trigger).
 - A dropped link resumes from the pieces already held (`shared/pieces`) — not yet wired into this path; today a
   dropped link's file resends from the top, acceptable for the sizes Homes carries so far.
 - iOS: while Recense is open, plus the background processing window. Never blocks playing, reading or writing.

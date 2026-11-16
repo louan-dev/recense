@@ -27,6 +27,8 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `swiftc -O shared/fingerprint.swift shared/CaptionSeek.swift mobile/ios/Tests/captionseek/main.swift -o "$TMPDIR/captionseek" && "$TMPDIR/captionseek"` (ALL OK).
 - Carry's rules (`shared/carrysync.swift`: scan diff → ops, settling, the seen vector), after any change to it or to
   `shared/notesync.swift`: `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"` (ALL OK).
+- Automatic carry starts at launch (T-0084, iPad 11-15: a cold launch is already `.active`, so a plain `onChange` never fired):
+  `grep -c 'onChange(of: phase, initial: true)' mobile/HostApp/iOS/App.swift` prints 1.
 - Carry's received files (BUG-19), after any change to `shared/p2ptransport.swift` or `CarryManager.landed`:
   `grep -n 'moveItem(at: localURL' shared/p2ptransport.swift` prints one line (moved before the callback returns) and
   `grep -n 'lastPathComponent' shared/carrymanager.swift` prints nothing (the key rides the resource name).

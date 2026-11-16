@@ -2,7 +2,7 @@
 
 From: T-0087 (owner, 2026-11-15 18:11, iPad: "theres no music library made after pressing carry now") ·
 Guards: FEAT-09 P3 (settling) · Device: iPad (00008122-0009799A026B801C), Mac ·
-Status: `[~]` (fixed and tested; device check owed)
+Status: `[x]` (device-checked 11-15 19:59)
 
 ## What the owner sees
 - iPad › Carry Now says "Up to date"; Library has no Music folder. No error on either device.
@@ -41,4 +41,6 @@ Status: `[~]` (fixed and tested; device check owed)
 - `grep -n 'lastPathComponent' shared/carrymanager.swift` prints nothing in `landed`.
 
 ## Device check
-- Owed: iPad Carry Now → `library/Music` holds the Mac's 6 songs; `applied-v2.json` = 8 only after they land.
+- 2026-11-15 19:59 ✓ (Mac work/music 0c1aa87, iPad and iPhone 3dd77d1): with no Carry Now tap, the iPad and the iPhone each
+  hold the Mac's `library/Music` (5 songs, 3 captions, one Cyrillic name); the SHA-256 of all 8 files is the same on all three.
+  iPad `applied-v2.json` = {"Chau's MacBook Pro": 57}, the Mac's whole log.
