@@ -61,6 +61,7 @@ Row: ID · title · status · From · code pointer
 - BUG-17 · Pairing finished on the Mac only: the side waiting for the group secret threw it away, and a listed peer could not re-pair · `[~]` pairing checked on all three devices 11-15; rename-carry check owed · T-0081 · `bugs/BUG-17-pairing-one-sided.md`
 - BUG-18 · Pages full of ⌧ boxes (control characters) count as text, so swipe never deletes them · `[~]` (fixed in editor; source of 0x04 open) · T-0085 · `bugs/BUG-18-control-chars-block-delete.md`
 - BUG-19 · Carried files counted settled before they arrived (bytes lost in transit, never asked for again) · `[x]` device-checked 11-15 on iPad and iPhone · T-0087 · `bugs/BUG-19-carry-applied-before-bytes.md`
+- BUG-20 · Guests can't add media to a share link: Main's "hide the old Upload pill" CSS (`#up{display:none!important}`) also swallowed the guest's reused "Add" button · `[x]` (tests pass; checks in `library/`) · T-0130 · `bugs/BUG-20-guest-add-button-css-hidden.md`
 
 ### Earlier specs (same folder, older format)
 - `cloud-lab-integrations.md` · Cloud Lab integrations

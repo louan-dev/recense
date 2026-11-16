@@ -6403,9 +6403,12 @@
     say(done === 1 ? "Added. Everyone with the link can see it." : "Added " + done + " files.");
     poll();
   };
+  // Derived from Spec: BUG-20 — the Main-only CSS rule that hides the old Upload pill (#up{display:none!important})
+  // must not swallow this same button when it is reused as the guest's visible "Add" pill (item 16).
   if (guestPost()) {
     up.textContent = "Add";
     up.hidden = false;
+    up.classList.add("guestup");
   }
   if ((G.perms && G.perms.download === false) || (G.invite && G.invite.perms && G.invite.perms.download === false)) document.body.classList.add("nodl");
 

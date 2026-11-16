@@ -1781,8 +1781,9 @@ body.comments-open #next{display:none}
 .tile.add:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 .selecting .tile.add{display:none}
 
-/* ---- the old Upload pill goes away (kept in the DOM so your upload code still works) ---- */
-#up{display:none!important}
+/* ---- the old Upload pill goes away on Main (kept in the DOM so your upload code still works); but the same
+   button is also a guest's visible "Add" pill on an upload link (item 16, BUG-20), so .guestup stays shown ---- */
+#up:not(.guestup){display:none!important}
 
 @media(prefers-reduced-motion:reduce){
   .mnu,.inv,.invc{animation:none}
