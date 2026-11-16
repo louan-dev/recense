@@ -6,9 +6,38 @@
 import Foundation
 
 enum Align {
-    /// The words of a sentence for comparing: lowercase, letters and digits, longer than one character.
+    /// Scripts written without spaces between words (T-0103): Han, kana, Thai, Lao, Myanmar, Khmer.
+    static func unspaced(_ u: Unicode.Scalar) -> Bool {
+        switch u.value {
+        case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F,
+             0x0E00...0x0EFF, 0x1000...0x109F, 0x1780...0x17FF: return true
+        default: return false
+        }
+    }
+
+    /// The words of a sentence for comparing: lowercase, letters and digits, longer than one character. A run of a script
+    /// written without spaces (Chinese, Japanese, Thai…) has no words to split on, so its units are each pair of
+    /// neighbouring characters (one character alone if that is all the run has): the same text always gives the same
+    /// units, and a sentence heard again overlaps itself as an English one does (T-0103; it was one unit per sentence).
     static func words(_ s: String) -> Set<String> {
-        Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 })
+        let low = s.lowercased()
+        guard low.unicodeScalars.contains(where: unspaced) else {
+            return Set(low.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 })
+        }
+        var out = Set<String>()
+        var spaced = "", run: [Character] = []
+        func endSpaced() { if spaced.count > 1 { out.insert(spaced) }; spaced = "" }
+        func endRun() {
+            if run.count == 1 { out.insert(String(run[0])) }
+            else if run.count > 1 { for i in 0..<(run.count - 1) { out.insert(String([run[i], run[i + 1]])) } }
+            run = []
+        }
+        for c in low {
+            guard c.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) }) else { endSpaced(); endRun(); continue }
+            if let f = c.unicodeScalars.first, unspaced(f) { endSpaced(); run.append(c) } else { endRun(); spaced.append(c) }
+        }
+        endSpaced(); endRun()
+        return out
     }
 
     /// How much of the shorter one the other contains, 0...1.

@@ -212,5 +212,32 @@ for t in clip[0..<7] { r2.hear(t) }
 for t in clip[5..<9] { r2.hear(t) }
 check(r2.s == Array(clip[0..<9]), "growing: a 2-sentence rewind that reaches the place merges, then continues")
 
+// Regression guard: T-0103. Scripts written without spaces (Chinese, Japanese, Thai, Lao, Khmer, Burmese) were one "word" per
+// sentence, so no replay ever matched and every rewind added the sentences again.
+let zh = ["我今天去了市场买东西。", "他明天要去北京开一个重要的会议。", "这个问题很复杂需要仔细想一想。",
+          "我们昨天晚上在公园里散步聊天。", "老师说下周星期三有一场考试。", "她喜欢在周末的早晨喝一杯热茶。"]
+check(Align.words(zh[0]).count >= 4, "T-0103: a Chinese sentence has several comparable units, not one")
+check(Align.match(zh[0], in: zh, place: 0) == 0, "T-0103: a Chinese sentence heard again is the one stored")
+check(Align.match("他明天要去北京开一个重要的会议。", in: [zh[0], zh[2]], place: 0) == nil, "T-0103: a different Chinese sentence is new")
+check(Align.match("我今天去了市场买东西", in: zh, place: 3) == 0, "T-0103: the same Chinese sentence without its stop still matches")
+var cz = Episode()
+for t in zh { cz.hear(t) }
+for t in zh[0..<4] { cz.hear(t) }
+check(cz.s == zh, "T-0103: a Chinese rewind of four sentences adds none twice")
+let ja = ["昨日は友達と一緒に映画を見に行きました。", "今日の天気はとても良いので散歩に出かけます。", "来週の会議には新しい資料が必要です。",
+          "私の母は毎朝早く起きて朝ごはんを作ります。"]
+var jz = Episode()
+for t in ja { jz.hear(t) }
+for t in ja[0..<3] { jz.hear(t) }
+check(jz.s == ja, "T-0103: a Japanese rewind of three sentences adds none twice")
+let th = ["วันนี้ฉันไปตลาดซื้อของที่จำเป็นหลายอย่าง", "พรุ่งนี้เขาจะเดินทางไปกรุงเทพเพื่อประชุมสำคัญ",
+          "ปัญหานี้ซับซ้อนมากต้องคิดให้รอบคอบก่อน", "เมื่อคืนเราเดินเล่นในสวนสาธารณะและคุยกันนาน"]
+var tz = Episode()
+for t in th { tz.hear(t) }
+for t in th[0..<3] { tz.hear(t) }
+check(tz.s == th, "T-0103: a Thai rewind of three sentences adds none twice")
+check(Align.words("Hello 世界你好 world").isSuperset(of: ["hello", "world"]), "T-0103: Latin words in a mixed line stay words")
+check(Align.words("a I ok") == ["ok"], "T-0103: spaced scripts are unchanged (one-letter words still dropped)")
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
