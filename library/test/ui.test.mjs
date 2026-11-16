@@ -803,6 +803,34 @@ await test("FEAT-19: the lock screen scrubber has the file's length and place, a
   await pg.waitForFunction(() => { const s = window.__pos[window.__pos.length - 1]; return s && Math.abs(s.position - 2) < 0.1; });
 });
 
+// Derived from Spec: FEAT-19 · a playing video offers Picture in Picture to the browser (automatic PiP on leaving); a song does not
+await test("FEAT-19: a playing video registers enterpictureinpicture and autopictureinpicture; a song does not", true, async (pg) => {
+  await MAIN.put("files/Pv/s.wav", wavOf(2), { httpMetadata: { contentType: "audio/wav" } });
+  await MAIN.put("files/Pv/t.webm", (await import("node:fs")).readFileSync(new URL("./fixtures/tiny.webm", import.meta.url)), { httpMetadata: { contentType: "video/webm" } });
+  await pg.addInitScript(() => {
+    const ms = navigator.mediaSession;
+    window.__h = {};
+    const set = ms.setActionHandler.bind(ms);
+    ms.setActionHandler = (a, h) => {
+      if (h) window.__h[a] = h;
+      else delete window.__h[a];
+      try { set(a, h); } catch (x) {}
+    };
+  });
+  await pg.goto(base + "/main?p=Pv");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector("audio", { state: "attached" });
+  await pg.$eval("audio", (a) => a.play());
+  await pg.waitForFunction(() => !!window.__h.seekto);
+  assert.ok(!(await pg.evaluate(() => !!window.__h.enterpictureinpicture)), "a song has no PiP action");
+  await pg.goto(base + "/main?p=Pv");
+  await pg.click('.tile[data-n="00001"]');
+  await pg.waitForSelector(".vw video", { state: "attached" });
+  assert.equal(await pg.$eval(".vw video", (v) => v.hasAttribute("autopictureinpicture")), true, "the video floats on when an installed app is left");
+  await pg.$eval(".vw video", (v) => { v.muted = true; return v.play(); });
+  await pg.waitForFunction(() => !!window.__h.enterpictureinpicture);
+});
+
 // Derived from Spec: FEAT-19 · the Shared section's viewer (/main/shared) gives a played file the Lock Screen's title and scrubber too
 await test("FEAT-19: a file played in the Shared viewer has Now Playing, a scrubber that seeks, and ⏭ plays the next file", true, async (pg) => {
   await PUBLIC.put("folders/Lk/one.wav", wavOf(3), { httpMetadata: { contentType: "audio/wav" } });

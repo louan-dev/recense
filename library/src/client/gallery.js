@@ -1661,6 +1661,7 @@
 
     if (tag === "video") {
       el.setAttribute("playsinline", "");
+      el.setAttribute("autopictureinpicture", ""); // FEAT-19: an installed web app's video floats on when left
     } else if (artUrl) {
       const im = mkEl("img");
       im.src = artUrl;
@@ -1869,6 +1870,11 @@
         } else nowTrack(-1);
       });
       nowAct("nexttrack", () => nowTrack(1));
+      // FEAT-19: a video left playing (tab hidden, app left) goes on in Picture in Picture where the browser offers
+      // it (Chromium's automatic PiP asks this action); Safari pauses a hidden video otherwise (WebKit's rule)
+      nowAct("enterpictureinpicture", tag === "video" && document.pictureInPictureEnabled && el.requestPictureInPicture
+        ? () => el.requestPictureInPicture().catch(() => {})
+        : null);
       nowPos();
     };
 
@@ -1880,7 +1886,7 @@
         ms.playbackState = "none";
         ms.setPositionState();
       } catch (x) {}
-      ["play", "pause", "seekto", "previoustrack", "nexttrack"].forEach((a) => nowAct(a, null));
+      ["play", "pause", "seekto", "previoustrack", "nexttrack", "enterpictureinpicture"].forEach((a) => nowAct(a, null));
     };
 
     el.addEventListener("play", nowClaim);

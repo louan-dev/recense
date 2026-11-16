@@ -18,7 +18,7 @@ Every place Recense plays a file. "Locked" = goes on with the screen locked or t
 
 | Surface | Locked / backgrounded | Now Playing info | Scrubber (seek) | Status | Where |
 |---|---|---|---|---|---|
-| Gallery web player (every browser; Cloudflare `/main`, offline hub) | audio: yes, `audioSession.type="playback"`, Web Audio kept alive (**assumed** iOS); video: Safari pauses it, PiP is the path | title, cover, loop line | `setPositionState` + `seekto`; ⏮/⏭; no ±10 s | **proven** Chromium (ui.test.mjs "item 11", "FEAT-19: the lock screen scrubber…") | `library/src/client/gallery.js:1808-1887`, `:1031-1059` |
+| Gallery web player (every browser; Cloudflare `/main`, offline hub) | audio: yes, `audioSession.type="playback"`, Web Audio kept alive (**assumed** iOS); video: Safari pauses it, PiP is the path; **new**: `enterpictureinpicture` action + `autopictureinpicture` so browsers with automatic PiP float it on | title, cover, loop line | `setPositionState` + `seekto`; ⏮/⏭; no ±10 s | **proven** Chromium (ui.test.mjs "item 11", "FEAT-19: the lock screen scrubber…", "FEAT-19: a playing video registers…") | `library/src/client/gallery.js:1808-1887`, `:1031-1059` |
 | Shared links `/s/<id>` (visitors) | as Gallery: the same player (`public.js` serves Gallery) | as Gallery | as Gallery | **proven** via Gallery's tests | `library/src/client/gallery.js` |
 | Shared section viewer `/main/shared` (owner; also Library › Shared in the iOS app) | audio: plain `<audio>`; video: Safari limit as above | **new**: title, cover (`f.thumb`) | **new**: `setPositionState` + `seekto`; ⏮/⏭ through the share's files (the next one plays); dropped on Done | **proven** Chromium (ui.test.mjs "FEAT-19: a file played in the Shared viewer…", red without the fix) | `library/src/client/sharedview.js:470-530` |
 | Editor (Draftpad, offline hub, `/main/editor/`) | n/a: plays no media. Seek/play post to `webkit.messageHandlers.audio`, which no host registers; read-aloud is `speechSynthesis` (no Lock Screen API) | n/a | n/a | P4 proposed: embed Gallery's player when a browser player is wanted | `editor/src/audio.js:422, 927, 1330` |
@@ -57,7 +57,7 @@ Already built (SPEC 69, notes 27). Kept as is:
 - **Fact:** the editor page plays no media in a browser. Seek and play go to the native host
   (`webkit.messageHandlers.audio`, `editor/src/audio.js:420, 926`); only pages are implemented in the library
   (`editor/src/library.js:19`). There is nothing for a Lock Screen to show.
-- **P4 (proposed, coordinator's call):** when the editor gets a browser player, it embeds Gallery's player
+- **P4 (closed 2026-11-16, see Decisions):** when the editor gets a browser player, it embeds Gallery's player
   (the player's one home, `library/src/client/`), so S-web's rules come with it. No second player.
 
 ### S-ios · Recense on iPhone and iPad (`mobile/`)
@@ -95,7 +95,9 @@ New in this feature:
 
 ## Handoff (lane lockscreen-everywhere, 2026-11-16)
 **Built, per surface**
-- Gallery web player, shared links `/s/`: already complete (SPEC 69); audited, nothing changed. Guarded by the two existing tests.
+- Gallery web player, shared links `/s/`: already complete (SPEC 69). Added for video: the Media Session
+  `enterpictureinpicture` action (Chromium's automatic PiP on leaving the tab) and the `autopictureinpicture` attribute
+  (an installed web app's video floats on when left); a song registers neither. `library/src/client/gallery.js`.
 - Shared section viewer (`/main/shared`, also the app's Library › Shared): new Media Session: title, cover, play, pause,
   `seekto` with `setPositionState` (valid length/place, rate never 0), ⏮/⏭ through the share's files (the next one
   plays), no ±10 s, `audioSession.type = "playback"`, cleared on Done. `library/src/client/sharedview.js`.
@@ -107,9 +109,10 @@ New in this feature:
 - Mac strip: plays nothing of its own (the browser page does; the backdrop video is muted): nothing to build.
 
 **Tests**
-- `library/` `npm test`: 290 ok, 2 FAIL. Both FAILs also fail on main without this branch ("Home bar: Delete Cover…",
-  "SPEC P3 12: Download bakes in EQ…" — a download-name assertion); not touched here. New: 1 test
-  ("FEAT-19: a file played in the Shared viewer…"), red on main's sharedview.js, green with the fix.
+- `library/` `npm test`: 291 ok, 2 FAIL. Both FAILs also fail on main without this branch ("Home bar: Delete Cover…",
+  "SPEC P3 12: Download bakes in EQ…" — a download-name assertion); not touched here. New: 2 tests
+  ("FEAT-19: a file played in the Shared viewer…", "FEAT-19: a playing video registers…", the latter with the
+  738-byte fixture `test/fixtures/tiny.webm`), each red on main's code, green with the fix.
   Run with `CHROMIUM=/opt/pw-browsers/chromium` in this container.
 - `editor/` `npm test`: 257 tests, 256 pass, 0 fail, 1 skipped (unchanged code).
 - `mobile/ios/Tests/nowplaying`: 5 new checks for `ownsSession`. **Not run here** (no swiftc); run on the Mac:
@@ -133,9 +136,10 @@ New in this feature:
   6. Recense › Library (Gallery's page in the app): play a song, lock → is there a scrubber? (WKWebView, untested)
 - Mac: Safari and Chrome › Gallery and `/main/shared`: play, lock the Mac (⌃⌘Q), unlock → still playing; Control Center's Now Playing shows title and scrubber; media keys pause/play; the Recense window still lights words.
 
-**Owner questions**
-1. Gap B, paused while Listen hears: Recense goes back to mixing, so its paused controls may leave the Lock Screen
-   (the heard app's take over). Keep that (never stop the heard app), or keep Recense's paused controls?
-2. Gallery video in Safari pauses on lock (WebKit). Is PiP enough, or should a locked video fall back to its sound only
-   (an audio element on the same file)?
-3. P4: does the editor need its own browser player (embedding Gallery's), or is "no media in the editor" right?
+**Decisions** (owner, 2026-11-16: "do whatever you think is best"; taken by the lane, each reversible)
+1. Gap B, paused while Listen hears: Recense mixes again. The heard app is never stopped by a paused Recense (BUG-10
+   kept); Recense's paused controls may give way to the heard app's. Play in Recense takes them back.
+2. Locked video in Safari: PiP stays the path (WebKit pauses a hidden video, no page can stop that). Browsers with
+   automatic PiP now get it (enterpictureinpicture + autopictureinpicture). No sound-only fallback: a second element on
+   the same file would be a second player and break the Web Audio graph (EQ, Key, Speed).
+3. P4 closed: the editor plays no media, so it needs no player. If it ever does, it embeds Gallery's (one player).
