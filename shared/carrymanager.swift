@@ -130,7 +130,10 @@ private enum CarryKeychain {
     /// Nearby devices the owner may pick while pairing: every one but this device itself (the Terminal's
     /// `recense carry pair` sees the running app under the same name). A listed peer stays pickable, so a pairing
     /// that finished on one side only can be redone (BUG-17).
-    var pairCandidates: [MCPeerID] { nearby.filter { $0.displayName != P2PTransport.deviceName() } }
+    /// One row per name, the newest found (owner: "it should only show mac pro once … there should not be two").
+    var pairCandidates: [MCPeerID] {
+        CarryInvites.newestPerName(nearby.filter { $0.displayName != P2PTransport.deviceName() }, name: \.displayName)
+    }
 
     /// "Pair a device": opens this device to the next stranger that connects (or that it finds and invites).
     func beginPairing() {

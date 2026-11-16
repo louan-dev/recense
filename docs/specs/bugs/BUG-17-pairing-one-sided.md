@@ -33,6 +33,13 @@ Status: `[~]` (fixed, tests green; device check owed)
   The Terminal process paired the iPhone (17:30) and the iPad (17:32) and wrote peers.json.
   The app kept its launch-time copy: its menu showed the 11-14 dates, and its next save would drop what the
   Terminal wrote. The group was the same in both (one Keychain item), so the phones hold the right group.
+- Cause 6, a lost first hello (owner's iPad, 17:4x: Pair "iPad" clicked, no code ever came).
+  Mac and iPad each listed the other, so they connected on their own before both were looking.
+  The side that started first sent its hello; the other was not looking yet and dropped it.
+  The other side started later: each now waited for a message the other had already thrown away.
+- Cause 7, the same group refused. A device re-paired while it already holds the group (the iPad from 17:32)
+  was refused as "two groups", though it is the same group.
+- Owner rule (11-15): "it should only show mac pro once each time it pairs, there should not be two".
 
 ## Green (the fix)
 - `CarryPairFlow` (`shared/carrypair.swift`): one side's whole pairing, taps included. Pure.
@@ -53,6 +60,11 @@ Status: `[~]` (fixed, tests green; device check owed)
   timeout, until it pairs or "Stop Pairing". Either device may start first.
 - `recense carry pair` says where to go on the phone, keeps trying, and says every 15 s when it has seen no device.
 - `recense carry pair` refuses (exit 2) while Recense.app runs, and names the menu to use instead.
+- Each side answers the first hello it receives with its own hello again, ahead of anything else.
+  The same hello twice is ignored; a hello from a different key is still out of order.
+- Both already in a group: each sends `.sameGroup` (an HMAC fingerprint keyed by the group, over the pairing
+  transcript; the secret never crosses). Equal → both pair and keep the group. Different → refused.
+- `pairCandidates`: one row per name, the newest found (`CarryInvites.newestPerName`).
 - `CarryManager.reloadFromDisk()`: peers.json and the Keychain group, read fresh before an invitation, a pairing,
   Carry Now, the Mac's Devices menu and the iOS Devices screen. A save keeps every other entry
   (`CarryPeer.replacing`).
@@ -68,6 +80,9 @@ Status: `[~]` (fixed, tests green; device check owed)
 - Two taps while waiting are harmless; the group still lands after them.
 - Two devices that each hold a different group are refused (`otherGroup`).
 - An older peer's `hello` without `grouped` still decodes.
+- Already connected, one side starts first and its hello is lost: both still reach one code and pair (either side first).
+- Both hold the same group, in every tap order: both pair, the group is kept. Different groups: refused.
+- Two advertisers with one name → one row, the newest.
 - A re-pair replaces only its own entry (same name or key); an entry another process wrote is kept.
 - Re-invite: nothing before 11 s; each picked device still nearby after that; never one already connected.
 - Mutation check: holding the group replaced by the old `throw` → the suite fails.
