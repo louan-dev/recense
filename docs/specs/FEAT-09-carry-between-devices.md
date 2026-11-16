@@ -70,6 +70,31 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   replaced. Two devices that already hold the same group pair by comparing fingerprints. The pair list shows
   each device once.
 - `Recense/.carry/peers.json`: name, public key, paired date (no secrets).
+
+### P1b · Pair by typing the code (passkey entry) — `[ ]` · From: T-0086 (owner 11-15: "type the code")
+- One action pairs: one device shows six digits, you type them on the other. No "They Match" on either.
+- Who shows: the device on which you picked the other's name. If both or neither picked, the greater public key shows.
+  Each `hello` carries `picked: Bool`, so both decide alone and agree.
+- The passkey $r$: 6 random digits, fresh for every attempt, never derived, never reused. $0 \le r < 10^6 < 2^{20}$.
+- 20 rounds, one per bit $r_i$ of $r$ (Bluetooth LE Secure Connections' passkey entry, described, not copied):
+  - each side picks a fresh 16-byte nonce $N$;
+  - the shower sends $C_s = \mathrm{HMAC}_{N_s}(\text{"recense.passkey.v1"} \| PK_s \| PK_t \| r_i)$, the typer sends $C_t$ likewise;
+  - the shower reveals $N_s$; the typer checks $C_s$ with its own $r_i$, then reveals $N_t$; the shower checks $C_t$;
+  - any mismatch: refuse, show "Code didn't match", and the next attempt draws a new code.
+- Why rounds: one commitment over the whole code lets a device in the middle try all $10^6$ codes offline after one
+  run. Committing bit by bit means it must guess each bit before seeing it: success $2^{-20}$ per attempt.
+- After round 20 both sides are authenticated. Transcript = SHA-256 of every round's nonces, in order. The group is
+  sealed as in P1 (HKDF salt = transcript), or compared by fingerprint when both hold one. The shower needs no tap.
+- The typer waits for the typed code before round 1; typing starts the rounds.
+- Where you type or read it:
+  - iPhone/iPad: Library › Devices shows the code large, or a 6-digit field (number pad).
+  - Mac: a small window (Recense is LSUIElement, so its menu is hidden): the code large, or a 6-digit field.
+  - Voice: "Enter pairing code 123456" (App Intent with the number as a parameter).
+  - Terminal: `recense carry pair` prints or asks (only while the app is closed, BUG-17).
+- Numeric comparison (P1) stays in code for an older peer's hello without `picked`; new builds always type.
+- **Invariants (tested, `mobile/ios/Tests/carrypair/main.swift`):** the right code pairs both, in either role; a
+  wrong code refuses both; a device in the middle with its own keys refuses (each leg's codes differ); a new attempt
+  draws a new code; the group rules of P1 hold unchanged.
 - **Invariant:** a device not in `peers.json` gets no session: its invitation carries a nonce and an HMAC of it
   under a key derived from the pairwise X25519 secret (info `recense.invite.v1`); a stranger can't make it (tested).
 
@@ -113,11 +138,24 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   a restore replays correctly on the other side — not just a plain file push (`shared/carrymanager.swift`,
   `shared/carryapply.swift`). A real conflict (both sides changed, no tracked base yet) always settles the safe
   way, keeping both as named siblings, rather than merging — the one piece of P3 still open, named honestly.
-- Starting automatically within 2 s of two paired devices seeing each other (rather than only on "Carry now")
-  is still open — a deliberate, smaller first slice, same choice the Devices-screen glue already made.
+- **Automatic — `[ ]` · From: T-0084 (owner 11-15: "i dont want to carry now, i want it to be automatic").**
+  - A paired peer connects: carry starts within 2 s.
+  - While connected, a home changes (new file, rename, trash, restore): carry after 2 s of quiet (debounce).
+    Mac: an FSEvents stream on `~/Recense` (homes only, `.carry/` ignored). iOS: Homes' own changes post
+    `Homes.changed`; Files-app changes are caught on the next foreground.
+  - iOS: Recense comes to the front: carry.
+  - One carry at a time. Triggers during a carry fold into one follow-up carry after it.
+  - The scan runs off the main thread, so playing, reading and writing never wait.
+  - A file whose size and mtime match the last manifest reuses its SHA-256; only new or changed files are hashed.
+  - Carry Now stays as the visible retry and shows its result ("Up to date", "Settled 3 changes", the error).
+  - Pure scheduler `CarrySchedule` (`shared/carrysync.swift`): events in, "run now / at t" out; tested without radios.
+  - **Invariants (tested, `mobile/ios/Tests/carrysync/main.swift`):** connect → a run within 2 s; ten changes
+    0.5 s apart → one run, 2 s after the last; a trigger during a run → exactly one follow-up; foreground → a run;
+    no paired peer connected → no run.
 - A dropped link resumes from the pieces already held (`shared/pieces`) — not yet wired into this path; today a
   dropped link's file resends from the top, acceptable for the sizes Homes carries so far.
 - iOS: while Recense is open, plus the background processing window. Never blocks playing, reading or writing.
+- Device check (owner 11-15): a Pulltube song saved on the Mac shows in the iPhone's Library › Music with no tap.
 
 ### P5 · Where you see it
 - "Devices" (Settings, menu, voice "devices"): paired devices, last carry time, what is waiting; "Pair a device";
