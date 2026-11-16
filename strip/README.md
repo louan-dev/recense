@@ -223,6 +223,10 @@ Recense menu › **Library…** opens the same Library as the iPhone; tap **Musi
 - **Rename…:** in the ··· menu. The file is renamed and its extension kept, and the next Carry sync renames it on every paired device.
 - **Delete:** slide the row **left → right**, or ··· › Delete. The track goes to `Recense/trash/` and can be restored.
 
+- **Transcript before sound (FEAT-16, T-0095).** A spoken piece whose transcript isn't whole yet is held: the player Recense follows is
+  paused (again if you press play) and the window says "Loading transcript… N%". When the transcript is whole the player starts, so words
+  and sound never drift. Songs, finished transcripts and failed ones are not held. Log line: `transcript gate`. Check: `recense selftest`.
+
 ## Layout
 
 Recense lives in `strip/` of the one repo, `~/Developer/recense` (the folders beside it are on [the front page](../README.md)).

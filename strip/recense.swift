@@ -7073,6 +7073,7 @@ final class NativeSources {
     var lastPush = Date.distantPast   // reports from before the page ran command #cmdSeq are stale
     var deliveredAt = 0.0                     // when queued commands last went to the page
     var expectPaused: Bool?                   // what the play button shows until the page confirms
+    var gateHeld: String?                     // FEAT-16: the piece whose player Recense paused until its transcript is whole
     let native = NativeSources()
     var nativeRate = 1.0                      // QuickTime's rate is 0 while paused; this is the speed to play at
 
@@ -7308,6 +7309,7 @@ final class NativeSources {
     }
     func pollLoop() {
         nativeTick()
+        transcriptGateStep()
         let on = busy
         if on != wasBusy { wasBusy = on; log("players polled \(on ? "20 times a second" : "once a second") (playing: \(!pos.paused))") }
         displayLink?.isPaused = !on
@@ -7540,6 +7542,24 @@ final class NativeSources {
     enum PlayTarget { case recense, otherApps }
     /// Who the ⏯ button drives: Recense's player when it has a piece loaded and a player it follows; else other apps.
     nonisolated static func playTarget(loaded: Bool, followed: String) -> PlayTarget { loaded && !followed.isEmpty ? .recense : .otherApps }
+    /// FEAT-16 (T-0095): a spoken piece plays only once its whole transcript is made, so the words can never drift from
+    /// the sound. hold = pause the followed player (again, if the listener presses play); release = play it, once the
+    /// transcript is whole, or once it can't be made (stopped, failed, a song): never held forever.
+    enum TranscriptGate { case hold, release, none }
+    nonisolated static func transcriptGate(playing: Bool, complete: Bool, song: Bool, giveUp: Bool, held: Bool) -> TranscriptGate {
+        if !complete && !song && !giveUp { return playing ? .hold : .none }
+        return held ? .release : .none
+    }
+    func transcriptGateStep() {
+        guard let ep = episode, !pos.url.isEmpty else { gateHeld = nil; return }
+        if let k = gateHeld, k != ep.key { gateHeld = nil }
+        let giveUp = ep.stopped || ep.failures >= 3 || episodeState == "failed"
+        switch Self.transcriptGate(playing: !(expectPaused ?? pos.paused), complete: ep.complete, song: ep.isSong, giveUp: giveUp, held: gateHeld == ep.key) {
+        case .hold: if gateHeld != ep.key { log("transcript gate: held \(ep.key.prefix(12)) at \(Int(ep.progress * 100))%") }; gateHeld = ep.key; setPlaying(false)
+        case .release: log("transcript gate: released \(ep.key.prefix(12)) (complete: \(ep.complete))"); gateHeld = nil; setPlaying(true)
+        case .none: break
+        }
+    }
     /// The system's ⏯ key, for whatever else is playing (the menu's "Play/Pause Other Apps").
     @objc @discardableResult func otherAppsPlayPause() -> Bool {
         recensePressPlayPause()
@@ -8226,7 +8246,8 @@ final class NativeSources {
                            paused: expectPaused ?? pos.paused, rate: pos.rate, loop: loop, volume: pos.vol)
             // the title bar carries progress, so it never covers the subtitles
             if Date() < statusUntil { return }
-            if episodeState == "loading" || episodeState == "need-bytes" { overlay.setStatus("Loading audio…") }
+            if gateHeld == ep.key { overlay.setStatus("Loading transcript… \(Int(ep.progress * 100))%") }
+            else if episodeState == "loading" || episodeState == "need-bytes" { overlay.setStatus("Loading audio…") }
             else if episodeState == "failed" { overlay.setStatus(ep.complete ? "" : "Audio unavailable — transcript so far") }
             else if ep.identifying { overlay.setStatus("Checking whether it was heard before…") }
             else if ep.separating { overlay.setStatus("Isolating vocals…") }
@@ -9099,4 +9120,21 @@ final class VoiceObserver: NSObject, SNResultsObserving, @unchecked Sendable {
         toRepeats?(pins)
         sameB.title = "Repeats timed"
     }
+}
+
+
+/// FEAT-16: the transcript gate decides from facts alone (see AppDelegate.transcriptGate).
+func transcriptGateSelftest() -> Bool {
+    var all = true
+    func check(_ ok: Bool, _ what: String) { all = all && ok; print("\(ok ? "ok  " : "FAIL") transcript gate, \(what)") }
+    typealias G = AppDelegate
+    check(G.transcriptGate(playing: true, complete: false, song: false, giveUp: false, held: false) == .hold, "playing before the transcript is whole: held")
+    check(G.transcriptGate(playing: true, complete: false, song: false, giveUp: false, held: true) == .hold, "the listener presses play while held: held again")
+    check(G.transcriptGate(playing: false, complete: false, song: false, giveUp: false, held: true) == .none, "paused and waiting: nothing sent")
+    check(G.transcriptGate(playing: false, complete: true, song: false, giveUp: false, held: true) == .release, "whole: released to play")
+    check(G.transcriptGate(playing: true, complete: true, song: false, giveUp: false, held: false) == .none, "a stored transcript plays at once")
+    check(G.transcriptGate(playing: true, complete: false, song: true, giveUp: false, held: false) == .none, "a song is never held")
+    check(G.transcriptGate(playing: false, complete: false, song: false, giveUp: true, held: true) == .release, "transcription failed: released, never held forever")
+    check(G.transcriptGate(playing: false, complete: false, song: false, giveUp: false, held: false) == .none, "paused by the listener, nothing held: left alone")
+    return all
 }
