@@ -90,3 +90,11 @@ test('a quick squeeze still toggles the palette (BUG-01), never the menu', () =>
   assert.deepEqual(picks, ['toggle']);
   assert.equal(menu.isOpen(), false);
 });
+
+test('the menu centre stays inside the viewport; no hover point (0, 0) centres it', async () => {
+  const { radialCentre, RADIAL_MAX } = await import('../src/radialmenu.js');
+  assert.deepEqual(radialCentre(0, 0, 1000, 800), [500, 400]);
+  assert.deepEqual(radialCentre(10, 790, 1000, 800), [RADIAL_MAX, 800 - RADIAL_MAX]);
+  assert.deepEqual(radialCentre(400, 300, 1000, 800), [400, 300]);
+  assert.deepEqual(radialCentre(5, 5, 0, 0), [5, 5], 'unknown viewport: as given');
+});

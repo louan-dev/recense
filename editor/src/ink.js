@@ -1623,7 +1623,8 @@ export function createInkLayer(view, options = {}) {
           outer: []
         },
         onPick: item => { setTool(item.id); haptic('snap'); },
-        reduceMotion: () => Boolean(globalObj?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+        reduceMotion: () => Boolean(globalObj?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches),
+        viewport: () => ({ w: Number(globalObj?.innerWidth) || 0, h: Number(globalObj?.innerHeight) || 0 })
       });
     }
     return radial;

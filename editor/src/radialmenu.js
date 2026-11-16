@@ -42,11 +42,22 @@ export function radialHitTest(dx, dy, inner, outer = 0) {
 }
 
 /**
+ * Where the menu centres for a requested point: inside the viewport by the menu's reach, and the viewport's centre
+ * when the host had no hover point (the Pencil out of range sends 0, 0). Pure.
+ */
+export function radialCentre(x, y, vw, vh, reach = RADIAL_MAX) {
+  if (!(vw > 0) || !(vh > 0)) return [x, y];
+  if (x === 0 && y === 0) return [vw / 2, vh / 2];
+  const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+  return [clamp(x, reach, vw - reach), clamp(y, reach, vh - reach)];
+}
+
+/**
  * The DOM menu. items: { inner: [{ id, label, icon }], outer: [...] }; onPick(item, ring).
  * Returns { open(x, y), move(x, y), release(x, y), close(), isOpen() } — the shape `squeezeHost` expects.
  * x, y are viewport (client) coordinates; the menu is fixed-positioned.
  */
-export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceMotion = () => false } = {}) {
+export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceMotion = () => false, viewport = () => null } = {}) {
   let el = null;
   let cx = 0, cy = 0;
   let open = false;
@@ -106,7 +117,8 @@ export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceM
   return {
     open(x, y) {
       build();
-      cx = Number(x) || 0; cy = Number(y) || 0;
+      const vp = viewport() || {};
+      [cx, cy] = radialCentre(Number(x) || 0, Number(y) || 0, vp.w, vp.h);
       open = true;
       if (!el) return;
       fill();
@@ -114,6 +126,8 @@ export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceM
       el.style.top = `${cy}px`;
       // Reduce Motion: the menu appears and closes without motion.
       if (el.classList) el.classList.toggle('rc-still', Boolean(reduceMotion()));
+      // No `::` macros yet: the disc ends at the inner ring.
+      if (el.classList) el.classList.toggle('rc-radial-inner-only', list().outer.length === 0);
       el.hidden = false;
       setHot(null);
     },

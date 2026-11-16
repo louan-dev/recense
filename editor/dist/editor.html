@@ -2180,6 +2180,7 @@ html.rc-wings-page body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   animation: rc-radial-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+.rc-radial.rc-radial-inner-only::before { left: -96px; top: -96px; width: 192px; height: 192px; }
 .rc-radial[hidden] { display: none; }
 .rc-radial.rc-still::before { animation: none; }
 .rc-radial-item {
@@ -34198,8 +34199,14 @@ ${PAGE_MARKER}
     const index = Math.floor((a + sector / 2) / sector) % n;
     return { ring, index };
   }
+  function radialCentre(x, y, vw, vh, reach = RADIAL_MAX) {
+    if (!(vw > 0) || !(vh > 0)) return [x, y];
+    if (x === 0 && y === 0) return [vw / 2, vh / 2];
+    const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
+    return [clamp(x, reach, vw - reach), clamp(y, reach, vh - reach)];
+  }
   function createRadialMenu({ doc: doc2, mount, items, onPick = () => {
-  }, reduceMotion = () => false } = {}) {
+  }, reduceMotion = () => false, viewport = () => null } = {}) {
     let el5 = null;
     let cx = 0, cy = 0;
     let open = false;
@@ -34255,14 +34262,15 @@ ${PAGE_MARKER}
     return {
       open(x, y) {
         build3();
-        cx = Number(x) || 0;
-        cy = Number(y) || 0;
+        const vp = viewport() || {};
+        [cx, cy] = radialCentre(Number(x) || 0, Number(y) || 0, vp.w, vp.h);
         open = true;
         if (!el5) return;
         fill();
         el5.style.left = `${cx}px`;
         el5.style.top = `${cy}px`;
         if (el5.classList) el5.classList.toggle("rc-still", Boolean(reduceMotion()));
+        if (el5.classList) el5.classList.toggle("rc-radial-inner-only", list().outer.length === 0);
         el5.hidden = false;
         setHot(null);
       },
@@ -36501,7 +36509,8 @@ ${clean(nextLineText)}`;
             setTool(item.id);
             haptic("snap");
           },
-          reduceMotion: () => Boolean(globalObj?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
+          reduceMotion: () => Boolean(globalObj?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches),
+          viewport: () => ({ w: Number(globalObj?.innerWidth) || 0, h: Number(globalObj?.innerHeight) || 0 })
         });
       }
       return radial;
