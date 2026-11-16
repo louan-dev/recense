@@ -8221,7 +8221,7 @@ if CommandLine.arguments.dropFirst().first == "carry" {
 // AirDrop), `--pulltube <link>` (open it in Pulltube) (mediadownload.swift). Exit 75: no connection, queued for later.
 if CommandLine.arguments.dropFirst().first == "download" {
     let a = Array(CommandLine.arguments.dropFirst(2))
-    let usage = "usage: recense download <link> [audio|av|video] [--max <height>] [--section <from-to>] [--no-subs] | --queue | --adopt | --pulltube <link>"
+    let usage = "usage: recense download <link> [audio|av|video] [--max <height>] [--section <from-to>] [--no-subs] | --queue | --adopt | --where | --pulltube <link>"
     func value(_ flag: String) -> String? { a.firstIndex(of: flag).flatMap { a.index(after: $0) < a.count ? a[a.index(after: $0)] : nil } }
     let sem = DispatchSemaphore(value: 0); var code: Int32 = 0
     Task.detached {
@@ -8229,6 +8229,7 @@ if CommandLine.arguments.dropFirst().first == "download" {
             switch a.first {
             case "--queue": print("\(await Downloads.drain()) downloaded")
             case "--adopt": for e in try await Downloads.adoptAndCheck() { print("adopted \(e.name)\t\(e.mode.label)\t\(e.codecs ?? "")") }
+            case "--where": print(await Downloads.locationReport())
             case "--pulltube":
                 if a.count < 2 || !Downloads.openInPulltube(a[1]) { fputs("Pulltube isn't installed, or no link\n", stderr); code = 1 }
             case let link? where !link.hasPrefix("-"):

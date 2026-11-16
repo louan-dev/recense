@@ -124,33 +124,70 @@ enum Downloads {
         let known = Set(manifest().map(\.name))
         var added: [DownloadEntry] = []
         // downloads/ itself and downloads/Pulltube/ (set as a destination in Pulltube; its files keep that subfolder)
-        let pull = root.appendingPathComponent(pulltubeFolder, isDirectory: true)
-        let found = ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-            + ((try? fm.contentsOfDirectory(at: pull, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-        for f in found where ready(f) {
-            let ext = f.pathExtension.lowercased()
-            let name = f.deletingLastPathComponent().standardizedFileURL == pull.standardizedFileURL
-                ? pulltubeFolder + "/" + f.lastPathComponent : f.lastPathComponent
-            guard mediaExtensions.contains(ext), !known.contains(name), !f.lastPathComponent.hasSuffix(".part") else { continue }
-            var e = try entry(for: f, source: "", mode: videoExtensions.contains(ext) ? .av : .audio, via: "adopted")
-            e.name = name
-            try record(e); added.append(e)
+        for dir in watchedDirs {
+            let inPulltube = dir.standardizedFileURL == pulltubeDir.standardizedFileURL
+            let found = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            for f in found where ready(f) {
+                let ext = f.pathExtension.lowercased()
+                let name = inPulltube ? pulltubeFolder + "/" + f.lastPathComponent : f.lastPathComponent
+                guard mediaExtensions.contains(ext), !known.contains(name), !f.lastPathComponent.hasSuffix(".part") else { continue }
+                var e = try entry(for: f, source: "", mode: videoExtensions.contains(ext) ? .av : .audio, via: "adopted")
+                e.name = name
+                try record(e); added.append(e)
+            }
         }
         return added
     }
 
     static let pulltubeFolder = "Pulltube"
+    /// downloads/ and downloads/Pulltube/: the folders `adopt()` reads and the Mac's watcher watches. One definition,
+    /// because the two used to be spelled out apart, and a folder in one list but not the other is exactly how a
+    /// download goes unnoticed (BUG-16). Neither is read recursively.
+    static var pulltubeDir: URL { root.appendingPathComponent(pulltubeFolder, isDirectory: true) }
+    static var watchedDirs: [URL] { [root, pulltubeDir] }
+
+    /// The names another app gives a file it is still writing.
+    static let partialSuffixes = [".part", ".crdownload", ".download", ".opdownload", ".tmp"]
+    /// "song.m4a.part" -> "song.m4a"; nil when the name carries no partial-download suffix.
+    static func partialBase(_ name: String) -> String? {
+        let n = name.lowercased()
+        for s in partialSuffixes where n.hasSuffix(s) { return String(name.dropLast(s.count)) }
+        return nil
+    }
 
     // Derived from Spec: BUG-16
     /// A file another app is still writing waits: one changed in the last 3 s, or a browser's partial name.
     static func ready(_ f: URL, now: Date = Date()) -> Bool {
         let n = f.lastPathComponent.lowercased()
-        if [".part", ".crdownload", ".download", ".opdownload", ".tmp"].contains(where: { n.hasSuffix($0) }) { return false }
+        if partialSuffixes.contains(where: { n.hasSuffix($0) }) { return false }
         let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
         return now.timeIntervalSince(m) >= quiet
     }
     /// How long a file must be left alone before it's taken (tests set 0 for files they just wrote).
     nonisolated(unsafe) static var quiet: TimeInterval = 3
+
+    // Derived from Spec: BUG-16 (the second pass, 2026-11-16)
+    /// Media the watcher can see but cannot take yet: a file still being written (changed under `quiet`), or one
+    /// carrying a partial name. Its existence is the only reason to look again — a download *finishing* changes no
+    /// directory entry, so it fires no folder event of its own, and nothing else would ever wake the watcher for it.
+    static func waiting() -> [URL] {
+        let fm = FileManager.default
+        let known = Set(manifest().map(\.name))
+        var out: [URL] = []
+        for dir in watchedDirs {
+            let inPulltube = dir.standardizedFileURL == pulltubeDir.standardizedFileURL
+            for f in ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []) {
+                let n = f.lastPathComponent
+                if let base = partialBase(n) {   // "talk.m4a.part": the real name is still coming
+                    if mediaExtensions.contains((base as NSString).pathExtension.lowercased()) { out.append(f) }
+                    continue
+                }
+                let name = inPulltube ? pulltubeFolder + "/" + n : n
+                if mediaExtensions.contains(f.pathExtension.lowercased()), !known.contains(name), !ready(f) { out.append(f) }
+            }
+        }
+        return out
+    }
 
     /// What lands in downloads/ by any route (Pulltube, Finder, AirDrop, a browser): recorded, and audio settled into
     /// Music, with no command run (BUG-16). The Mac's watcher runs this on every change to the folder; iOS on launch
@@ -245,6 +282,8 @@ private let connection = NWPathMonitor()
 private var draining = false
 private var watchers: [DispatchSourceFileSystemObject] = []
 private var pending: DispatchWorkItem?
+/// How long until the next pass. Grows while a download is still being written, back to the floor on a folder event.
+private var retryDelay = Downloads.retryFloor
 
 extension Downloads {
     enum Failure: Error, CustomStringConvertible {
@@ -383,12 +422,19 @@ extension Downloads {
         return out
     }
 
+    /// The debounce after a folder event, and the longest the watcher will wait while a download is still being written.
+    static let retryFloor: TimeInterval = 3.5
+    static let retryCeiling: TimeInterval = 30
+
     // Derived from Spec: BUG-16
-    /// Watches downloads/ and downloads/Pulltube/: whatever lands there is adopted and audio settles into Music, 3 s
-    /// after the folder stops changing (a file still being written waits for the next pass). Runs once at launch too.
+    /// Watches downloads/ and downloads/Pulltube/: whatever lands there is adopted and audio settles into Music,
+    /// `retryFloor` after the folder stops changing. A file still being written waits — and `waiting()` is what brings
+    /// the watcher back for it, doubling the wait to `retryCeiling`, because a download finishing fires no folder event
+    /// of its own: before this, the only passes were a folder event and app launch, so a download that took longer
+    /// than one debounce was never noticed until Recense was relaunched. Runs once at launch too.
     static func watchFolder(log: @escaping (String) -> Void = { NSLog("recense: \($0)") }) {
         let fm = FileManager.default
-        try? fm.createDirectory(at: root.appendingPathComponent(pulltubeFolder), withIntermediateDirectories: true)
+        try? fm.createDirectory(at: pulltubeDir, withIntermediateDirectories: true)
         func pass() {
             pending?.cancel()
             let w = DispatchWorkItem {
@@ -399,21 +445,62 @@ extension Downloads {
                         for e in try sweep() where !got.contains(where: { $0.sha256 == e.sha256 }) { log("settled \(e.name)") }
                         for e in got { log("adopted \(e.name) → \(e.mode == .audio ? "Music" : "downloads")") }
                     } catch { log("downloads sweep: \(error)") }
+                    let still = waiting().count
+                    DispatchQueue.main.async {
+                        guard still > 0 else { retryDelay = retryFloor; return }
+                        retryDelay = min(retryDelay * 2, retryCeiling)
+                        log("\(still) still being written; looking again in \(Int(retryDelay))s")
+                        pass()
+                    }
                 }
             }
             pending = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: w)
         }
-        for dir in [root, root.appendingPathComponent(pulltubeFolder)] {
+        for dir in watchedDirs {
             let fd = open(dir.path, O_EVTONLY)
             guard fd >= 0 else { continue }
             let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .extend], queue: .main)
-            src.setEventHandler { pass() }
+            src.setEventHandler { retryDelay = retryFloor; pass() }
             src.setCancelHandler { close(fd) }
             src.resume()
             watchers.append(src)
         }
         pass()
+    }
+
+    /// `recense download --where`: everything that decides whether a Pulltube download is ever noticed, in one place.
+    /// BUG-16 has a code half (the watcher above) and a config half: Pulltube saving somewhere Recense does not watch
+    /// looks exactly the same to the owner, and only the Mac can say which it is.
+    static func locationReport() async -> String {
+        let fm = FileManager.default
+        var out: [String] = ["Recense watches these folders, and nothing else:"]
+        for dir in watchedDirs { out.append("  \(dir.path)\(fm.fileExists(atPath: dir.path) ? "" : "   (missing)")") }
+        out.append("  neither is read recursively, so a subfolder of downloads/ is not watched")
+        out.append("manifest: \(manifest().count) entries")
+        let w = waiting()
+        out.append(w.isEmpty ? "waiting: nothing mid-download"
+                             : "waiting (a later pass will take these): " + w.map(\.lastPathComponent).joined(separator: ", "))
+        var found: [String] = []
+        if let (_, stdout, _) = try? await run("/usr/bin/defaults", ["read", "com.mymixapps.pulltube"], timeout: 5) {
+            for line in stdout.split(separator: "\n") {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.contains("/Users/") || t.contains("file://") || t.contains("~/") { found.append(t) }
+            }
+        }
+        if found.isEmpty {
+            out.append("Pulltube: no folder found in its preferences (not installed, or it stores the choice elsewhere).")
+            out.append("  Set Pulltube's download folder to \(root.path), or to \(pulltubeDir.path).")
+        } else {
+            out.append("Pulltube's preferences mention:")
+            for f in found { out.append("  \(f)") }
+            let watched = watchedDirs.map(\.path)
+            let watchedToo = found.contains { line in watched.contains { line.contains($0) } }
+            out.append(watchedToo
+                       ? "  one of these is a folder Recense watches."
+                       : "  NONE of these is a folder Recense watches — that is why nothing shows up. Set Pulltube's download folder to \(root.path).")
+        }
+        return out.joined(separator: "\n")
     }
 
     /// When the Mac (re)gains a connection, the queue is run: a request made offline, here or on another device, goes
@@ -580,6 +667,26 @@ func downloadsSelftest() -> Bool {
               && !FileManager.default.fileExists(atPath: song.path), "a dropped-in song settles into Music by itself", swept.map(\.name))
         check(FileManager.default.fileExists(atPath: fresh.path) && !swept.contains { $0.name == "fresh.m4a" },
               "a file still being written waits", swept.map(\.name))
+        // Regression guard: BUG-16, the second pass (2026-11-16). "Waits for the next pass" was only true if a next
+        // pass existed. It did not: the watcher's only triggers were a folder event and app launch, and a download
+        // *finishing* changes no directory entry, so any download slower than one debounce sat in downloads/ until
+        // Recense was relaunched. `waiting()` is now what schedules that next pass, so it must see this file.
+        check(Downloads.waiting().contains { $0.lastPathComponent == "fresh.m4a" },
+              "a file still being written is what brings the watcher back", Downloads.waiting().map(\.lastPathComponent))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-10)], ofItemAtPath: fresh.path)
+        let second = try Downloads.sweep()
+        check(second.contains { $0.name == "fresh.m4a" } && !Downloads.waiting().contains { $0.lastPathComponent == "fresh.m4a" },
+              "once it is left alone the next pass takes it, with no new folder event", second.map(\.name))
+        // a partial name is waiting too, and is never adopted while it wears one
+        let half = dir.appendingPathComponent("half.m4a.part")
+        try Data("half".utf8).write(to: half)
+        let adoptedHalf = try Downloads.adopt()
+        check(Downloads.waiting().contains { $0.lastPathComponent == "half.m4a.part" }
+              && !adoptedHalf.contains { $0.name.hasPrefix("half") },
+              "a partial download is waiting, not adopted", Downloads.waiting().map(\.lastPathComponent))
+        check(Downloads.partialBase("song.m4a.part") == "song.m4a" && Downloads.partialBase("song.m4a") == nil,
+              "partialBase strips the suffix a half-written file wears")
+        try? FileManager.default.removeItem(at: half)
         try? FileManager.default.removeItem(at: fresh)
     } catch { check(false, "BUG-16 sweep", error) }
     return ok
