@@ -21,7 +21,7 @@ const macJwt = await jwt({ common_name: CLIENT });
 const strangerJwt = await jwt({ email: "someone@example.com" });
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
-const textModules = readdirSync(BUILD).filter((f) => /\.(css|js)$/.test(f) && f !== "worker.js");
+const textModules = readdirSync(BUILD).filter((f) => /\.(css|js|html|svg|webmanifest)$/.test(f) && f !== "worker.js");
 const mf = new Miniflare({
   modules: [
     { type: "ESModule", path: BUILD + "worker.js" },
