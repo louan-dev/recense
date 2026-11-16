@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>528</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>#!/bin/bash
+#
+# Finder Quick Action: "Share link"
+#
+# Automator &gt; New &gt; Quick Action
+#   Workflow receives current: files or folders   in: Finder
+#   Add the action "Run Shell Script"
+#     Shell: /bin/bash      Pass input: as arguments
+#   Paste this whole file into the script box, set PASSWORD below, save.
+#
+# What it does
+#   - Files up to ~90 MB go up in one request.
+#   - Bigger files are split into 32 MiB parts and sent one request at a time.
+#     (Cloudflare rejects any single request over 100 MB on the Free and Pro
+#     plans, which is why a 428 MB video used to "upload" and then 404.)
+#   - Every response is checked. A link is only printed and copied after the
+#     Worker confirms the gallery exists, so you never get a dead link.
+
+BASE="${SHARE_BASE:-https://cloud.improvdiplomat.workers.dev}"
+PASSWORD="$819kCphL"
+DAYS="${SHARE_DAYS:-7}"
+
+PART_MB="${SHARE_PART_MB:-32}"        # must stay &gt;= 5 (R2 minimum part size)
+BIG="${SHARE_BIG_BYTES:-90000000}"    # above this size, upload in parts
+RETRY_SLEEP="${SHARE_RETRY_SLEEP:-3}"
+
+set -u
+
+notify() {
+  /usr/bin/osascript -e "display notification \"$1\" with title \"Share link\"" &gt;/dev/null 2&gt;&amp;1 || true
+}
+
+TMP="$(mktemp -d)"
+UPID=""
+CUR_ID=""
+CUR_I=""
+
+cleanup() { rm -rf "$TMP"; }
+trap cleanup EXIT
+
+fail() {
+  echo "Share link failed: $1" &gt;&amp;2
+  notify "Failed: $1"
+  exit 1
+}
+
+if [ "$(uname)" = "Darwin" ]; then
+  fsize()  { stat -f%z "$1"; }
+  fmtime() { stat -f%m "$1"; }
+else
+  fsize()  { stat -c%s "$1"; }
+  fmtime() { stat -c%Y "$1"; }
+fi
+
+# percent-encode every byte (portable: no jq / python needed)
+enc() { printf %s "$1" | od -An -v -tx1 | tr -d ' \n' | sed 's/../%&amp;/g'; }
+
+# call &lt;curl args...&gt;   sets CODE (HTTP status, 000 if the network failed) and RESP
+CODE=000
+RESP=""
+call() {
+  CODE=$(curl -s --connect-timeout 20 -o "$TMP/resp" -w '%{http_code}' \
+    -H "x-password: $PASSWORD" "$@" 2&gt;/dev/null) || CODE=000
+  RESP=$(cat "$TMP/resp" 2&gt;/dev/null || true)
+}
+
+# Retries one request a few times; CODE/RESP hold the last attempt.
+call_retry() {
+  local tries=1
+  while :; do
+    call "$@"
+    [ "$CODE" = "200" ] &amp;&amp; return 0
+    [ "$CODE" = "401" ] &amp;&amp; return 1          # wrong password: retrying won't help
+    [ "$tries" -ge 4 ] &amp;&amp; return 1
+    sleep $((RETRY_SLEEP * tries))
+    tries=$((tries + 1))
+  done
+}
+
+abort_upload() {
+  if [ -n "$UPID" ]; then
+    call -X POST "$BASE/api/upload?action=abort&amp;id=$CUR_ID&amp;i=$CUR_I&amp;uploadId=$(enc "$UPID")" &gt;/dev/null 2&gt;&amp;1
+    UPID=""
+  fi
+}
+
+why() {  # human-readable reason for a failed request
+  case "$CODE" in
+    401) echo "wrong password" ;;
+    413) echo "file too large for one request (HTTP 413)" ;;
+    000) echo "no connection" ;;
+    *)   echo "HTTP $CODE" ;;
+  esac
+}
+
+upload_one() {
+  local f="$1" i="$2"
+  local size name nameq mime taken
+  size=$(fsize "$f")
+  name=$(basename "$f")
+  nameq=$(enc "$name")
+  mime=$(file -b --mime-type "$f" 2&gt;/dev/null || echo application/octet-stream)
+  taken=$(( $(fmtime "$f") * 1000 ))
+  CUR_I="$i"
+
+  local qs="id=$ID&amp;i=$i&amp;name=$nameq&amp;days=$DAYS&amp;t=$taken&amp;hasArt=0"
+
+  if [ "$size" -le "$BIG" ]; then
+    call_retry -X PUT -T "$f" -H "content-type: $mime" "$BASE/api/upload?$qs" \
+      || fail "$name: $(why)"
+    return 0
+  fi
+
+  # ---- big file: multipart ----
+  call -X POST "$BASE/api/upload?action=start&amp;$qs&amp;type=$(enc "$mime")"
+  [ "$CODE" = "200" ] || fail "$name: could not start upload ($(why))"
+  UPID="$RESP"
+
+  local part_bytes=$((PART_MB * 1024 * 1024))
+  local total=$(( (size + part_bytes - 1) / part_bytes ))
+  local parts="" n=1 etag
+
+  while [ "$n" -le "$total" ]; do
+    dd if="$f" of="$TMP/chunk" bs=1048576 skip=$(( (n - 1) * PART_MB )) count="$PART_MB" 2&gt;/dev/null
+    notify "$name: part $n of $total"
+
+    if ! call_retry -X PUT -T "$TMP/chunk" -H "content-type: application/octet-stream" \
+        "$BASE/api/upload?action=part&amp;id=$ID&amp;i=$i&amp;uploadId=$(enc "$UPID")&amp;part=$n"; then
+      abort_upload
+      fail "$name: part $n of $total failed ($(why))"
+    fi
+
+    etag=$(printf %s "$RESP" | tr -d '"\r\n ')
+    parts="$parts{\"partNumber\":$n,\"etag\":\"$etag\"},"
+    n=$((n + 1))
+  done
+
+  rm -f "$TMP/chunk"
+
+  if ! call_retry -X POST -H "content-type: application/json" --data "[${parts%,}]" \
+      "$BASE/api/upload?action=complete&amp;id=$ID&amp;i=$i&amp;uploadId=$(enc "$UPID")"; then
+    abort_upload
+    fail "$name: could not finish ($(why)): $RESP"
+  fi
+
+  UPID=""
+}
+
+[ "$#" -gt 0 ] || fail "no files selected"
+
+ID="$(openssl rand -hex 6)"
+CUR_ID="$ID"
+i=0
+
+notify "Uploading $# file(s)..."
+
+for f in "$@"; do
+  [ -f "$f" ] || fail "not a file: $f (folders aren't supported)"
+  upload_one "$f" "$i"
+  i=$((i + 1))
+done
+
+LINK="$BASE/s/$ID"
+
+# Never hand out a link that doesn't work: ask the Worker for the page first.
+check=$(curl -s --connect-timeout 20 -o /dev/null -w '%{http_code}' "$LINK" 2&gt;/dev/null) || check=000
+[ "$check" = "200" ] || fail "upload finished but the link doesn't open yet (HTTP $check)"
+
+if command -v pbcopy &gt;/dev/null 2&gt;&amp;1; then
+  printf %s "$LINK" | pbcopy
+fi
+
+notify "Link copied"
+echo "$LINK"</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>1</integer>
+					<key>shell</key>
+					<string>/bin/zsh</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>EC1ADB0E-B75B-4C44-B7F4-43B4FD899F47</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+					<string>Unix</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>B3F9357B-30EE-4EBC-A2D8-127962F2B3E7</string>
+				<key>UUID</key>
+				<string>68821F35-9860-4079-BBF4-CD51D2294BB2</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<integer>1</integer>
+				<key>location</key>
+				<string>398.000000:305.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleIDsByPath</key>
+		<dict/>
+		<key>applicationPaths</key>
+		<array/>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>15</integer>
+		<key>processesInput</key>
+		<false/>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<false/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
