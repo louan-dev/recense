@@ -13,7 +13,11 @@ The spec is `docs/specs/FEAT-18-offline-hub.md`.
 - **Certificates:** our own root, which can vouch only for names under `recense.local`.
   The root's key stays in `~/.config/recense/hub-ca/`.
   The root also refuses IP addresses (2026-11-17), so it can't vouch for a router page reached by IP.
-  A root made before then must be remade before any device trusts it: move `~/.config/recense/hub-ca/` to the Trash and run `install.zsh` again.
+  A root made before then must be remade before any device trusts it (install.zsh alone keeps the old one):
+  ```bash
+  trash ~/.config/recense/hub-ca ~/.config/recense/hub/tls.p12 && zsh ~/Developer/recense/hub/scripts/hub-ca.zsh mac && launchctl kickstart -k gui/$UID/local.recense.hub
+  ```
+  Check: `openssl x509 -in ~/.config/recense/hub-ca/root.pem -noout -text | grep -A4 "Name Constraints"` shows `Excluded: IP`.
 
 ## Build and check
 `swift build` fails inside the Claude sandbox; run it in a normal terminal.
