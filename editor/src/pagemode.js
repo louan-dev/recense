@@ -8,7 +8,7 @@
 //   (and there is more than 1 window), deletes that window and removes its `<!-- page -->` block from the .md file;
 //   otherwise steps one window right toward older topics.
 // - Per-window cursor and vertical scroll memory, plus live finger-follow drag with 0.25x rubber-banding and
-//   220ms ease-out snap.
+//   a short, low-travel ease-out snap.
 import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty, SLOT_RE, isMetaLine, CONTROL_CHARS_RE, formatDateLine } from './pages.js';
@@ -555,7 +555,9 @@ export function reopenMemo(state) {
  * `dragX < 0`: fingers moving right-to-left.
  */
 // Derived from Spec: BUG-02 (A1 slop, A2 ratio). One rule for touch, Pencil, mouse and trackpad.
-export const AXIS_SLOP_PX = 12;
+// Owner 2026-11-12: "wants the slide ~40% more responsive" -> slop halved (12 -> 6) so the page starts
+// tracking the finger sooner; the 1.4 ratio is untouched since it's what keeps a slanted vertical scroll safe.
+export const AXIS_SLOP_PX = 6;
 export const AXIS_RATIO = 1.4;
 export function decideAxis(dx, dy) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
@@ -615,9 +617,17 @@ export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
   ];
 }
 
+// BUG-02 A7 · committed page-turn glide, and the plain snap-back when a drag falls short of the threshold.
+// Kept short and low-travel (owner 2026-11-12: "wants less motion") rather than the full-viewport throw this used to be.
+const SNAP_BACK_MS = 180;
+const EXIT_MS = 90;
+const ENTER_MS = 140;
+const EXIT_FRACTION = 0.5;
+const ENTER_OFFSET_FRACTION = 0.18;
+
 /**
  * Horizontal swipes (trackpad two-finger swipe, touch drag, Pencil/pointer drag) move the current window with the
- * fingers (`translateX` + 0.25x rubber-banding) and snap with a 220ms ease-out transition:
+ * fingers (`translateX` + 0.25x rubber-banding) and snap with a 180ms ease-out transition:
  * - Left-to-right (`dx > threshold`): steps left or opens a new window on the left (`<!-- page -->` at top of .md).
  * - Right-to-left (`dx < -threshold`): deletes the window if empty, else steps right.
  * Vertical scrolling stays strictly inside the current window's text.
@@ -654,25 +664,27 @@ export function attachSwipePaging(
       : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
     if (!el || !el.style) { if (turn) turn(); return; }
     if (!turn) {
-      el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      el.style.transition = `transform ${SNAP_BACK_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
       el.style.transform = '';
       return;
     }
-    // BUG-02 A7 glide: the old page leaves the way the fingers went (140 ms), the new page enters from the other side (220 ms).
+    // BUG-02 A7 glide: the old page leaves the way the fingers went, the new page enters from the other side.
+    // Owner 2026-11-12: "wants less motion" on the committed turn -> both legs travel a fraction of the
+    // viewport (not the full width) and run shorter, so the swap is masked without a big sideways throw.
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) { el.style.transition = 'none'; el.style.transform = ''; turn(); return; }
     const w = widthOf();
     const dir = dx > 0 ? 1 : -1;
-    el.style.transition = 'transform 140ms cubic-bezier(0.4, 0, 1, 1)';
-    el.style.transform = `translateX(${dir * w}px)`;
+    el.style.transition = `transform ${EXIT_MS}ms cubic-bezier(0.4, 0, 1, 1)`;
+    el.style.transform = `translateX(${dir * w * EXIT_FRACTION}px)`;
     setTimeout(() => {
       turn();
       el.style.transition = 'none';
-      el.style.transform = `translateX(${-dir * w * 0.35}px)`;
+      el.style.transform = `translateX(${-dir * w * ENTER_OFFSET_FRACTION}px)`;
       void el.offsetWidth;
-      el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      el.style.transition = `transform ${ENTER_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
       el.style.transform = '';
-    }, 140);
+    }, EXIT_MS);
   }
 
   view.scrollDOM.addEventListener('wheel', e => {
