@@ -114,7 +114,11 @@ enum Homes {
         try FileManager.default.createDirectory(at: url(home), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try e.encode(entries.sorted { $0.added > $1.added }).write(to: indexURL(home), options: .atomic)
+        NotificationCenter.default.post(name: Homes.changed, object: nil)
     }
+
+    /// Posted after any home's manifest changes (add, move, rename, forget): automatic carry listens (FEAT-09 P4).
+    static let changed = Notification.Name("local.recense.homes.changed")
 
     /// Adds, or replaces by path, one entry.
     static func record(_ entry: HomeEntry, in home: Home) throws {
@@ -324,20 +328,29 @@ enum Carry {
     static var manifestURL: URL { dir.appendingPathComponent("manifest.jsonl") }
 
     /// Every file in every home, hashed. Append-only JSON Lines: one file per line, readable by any tool, diffable.
+    /// `reuse` (automatic carry, FEAT-09 P4): a file whose size and mtime match the last manifest keeps its hash
+    /// instead of being read again. Off for `move`, which must prove every byte.
     @discardableResult
-    static func verify() throws -> [CarryLine] {
+    static func verify(reuse: Bool = false) throws -> [CarryLine] {
         let fm = FileManager.default
         var out: [CarryLine] = []
+        var last: [String: CarryLine] = [:]
+        if reuse, let text = try? String(contentsOf: manifestURL, encoding: .utf8) {
+            for l in text.split(separator: "\n") {
+                if let c = try? JSONDecoder().decode(CarryLine.self, from: Data(l.utf8)) { last[c.home + "/" + c.path] = c }
+            }
+        }
         for h in Home.allCases {
             guard let walk = fm.enumerator(at: Homes.url(h), includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
                                            options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
             for case let u as URL in walk {
                 guard let v = try? u.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
                       v.isRegularFile == true else { continue }
-                out.append(CarryLine(home: h.folder, path: Homes.relative(u, to: Homes.url(h)),
-                                     size: Int64(v.fileSize ?? 0),
-                                     mtime: Int64(v.contentModificationDate?.timeIntervalSince1970 ?? 0),
-                                     sha256: try Homes.sha256(u), device: Homes.device))
+                let path = Homes.relative(u, to: Homes.url(h))
+                let size = Int64(v.fileSize ?? 0), mtime = Int64(v.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                let was = last[h.folder + "/" + path]
+                let sha = (was?.size == size && was?.mtime == mtime) ? was!.sha256 : try Homes.sha256(u)
+                out.append(CarryLine(home: h.folder, path: path, size: size, mtime: mtime, sha256: sha, device: Homes.device))
             }
         }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -498,6 +511,16 @@ func homesSelftest() -> Bool {
         check(lines.allSatisfy { $0.sha256.count == 64 && $0.size > 0 }, "every carry line carries its sha256 and size")
         let body = (try? String(decoding: Data(contentsOf: Carry.manifestURL), as: UTF8.self)) ?? ""
         check(body.split(separator: "\n").count == lines.count, "manifest.jsonl is one line per file", body.split(separator: "\n").count)
+        // FEAT-09 P4: an unchanged file keeps its hash; a changed one is read again
+        check(try Carry.verify(reuse: true) == lines, "verify(reuse:) gives the same lines for unchanged files")
+        let w = Homes.root.appendingPathComponent("library/Music/waltz.m4a")
+        let keep = try Data(contentsOf: w)
+        try Data("changed".utf8).write(to: w)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 5)], ofItemAtPath: w.path)
+        let changed = try Carry.verify(reuse: true).first { $0.path == "waltz.m4a" }
+        check(changed?.sha256 == (try Homes.sha256(w)) && changed?.sha256 != lines.first { $0.path == "waltz.m4a" }?.sha256,
+              "verify(reuse:) hashes a changed file again")
+        try keep.write(to: w); _ = try Carry.verify()
 
         let r = try Carry.move(to: carried)
         check(r.mismatched.isEmpty && r.files == lines.count, "carry move copies and verifies every file", r.mismatched)

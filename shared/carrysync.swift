@@ -191,3 +191,48 @@ func carrysyncSelftest() -> Bool {
     check(CarrySync.decode(ops2) == [put], "the op log round-trips through JSON Lines")
     return ok
 }
+
+// Derived from Spec: FEAT-09 P4 (automatic carry, T-0084)
+/// When to carry. Pure: events in, "run now" out; the caller owns the clock and the one Task that sleeps until `due`.
+/// - A paired peer connects, or the app comes to the front: carry after `connectDelay`.
+/// - A home changes: carry after `quiet` seconds with no further change (debounced).
+/// - Carry Now: at once, connected or not (it reports its own result).
+/// - One carry at a time; triggers during a carry fold into one follow-up after it.
+/// - No paired peer connected: automatic triggers wait (Carry Now still runs).
+struct CarrySchedule {
+    static let connectDelay: Double = 0.5
+    static let quiet: Double = 2
+
+    enum Event { case connected, disconnected, changed, foreground, tapped, finished }
+
+    private(set) var connected = false
+    private(set) var running = false
+    private(set) var due: Double?
+    private var pending = false
+    private var forced = false
+
+    mutating func handle(_ e: Event, at t: Double) {
+        switch e {
+        case .connected:    connected = true; want(t + Self.connectDelay, soonest: true)
+        case .disconnected: connected = false; if !forced { due = nil; pending = false }
+        case .changed:      if connected { want(t + Self.quiet, soonest: false) }
+        case .foreground:   if connected { want(t + Self.connectDelay, soonest: true) }
+        case .tapped:       forced = true; if running { pending = true } else { due = t }
+        case .finished:
+            running = false
+            if pending { pending = false; due = t + Self.connectDelay }
+        }
+    }
+
+    /// True when a carry should start now; the caller then runs it and sends `.finished`.
+    mutating func tick(at t: Double) -> Bool {
+        guard !running, let d = due, t >= d - 1e-9, connected || forced else { return false }
+        running = true; due = nil; forced = false
+        return true
+    }
+
+    private mutating func want(_ at: Double, soonest: Bool) {
+        if running { pending = true; return }
+        if let d = due, soonest { due = min(d, at) } else { due = at }   // a change pushes the run back
+    }
+}

@@ -24,6 +24,7 @@ import CryptoKit
 import MultipeerConnectivity
 #if canImport(AppKit)
 import AppKit
+import CoreServices
 #endif
 
 /// The Keychain, this device only. The identity key never leaves it; the one group secret every paired device of
@@ -67,6 +68,13 @@ private enum CarryKeychain {
     private var flows: [MCPeerID: CarryPairFlow] = [:]   // one pairing in progress per connected peer (BUG-17)
     private var picked: [String: Date] = [:]             // devices the owner picked → last invite sent (BUG-17)
     private var reinviting = false
+    private var schedule = CarrySchedule()           // automatic carry (FEAT-09 P4, T-0084)
+    private let clock0 = Date()
+    private var wake: Task<Void, Never>?             // the one sleeper, until `schedule.due`
+    private var watching = false
+    #if os(macOS)
+    private var stream: FSEventStreamRef?
+    #endif
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
     private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
@@ -100,6 +108,7 @@ private enum CarryKeychain {
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
         appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         wire()
+        watchHomes()
     }
 
     private func wire() {
@@ -179,10 +188,69 @@ private enum CarryKeychain {
 
     private func connected(_ peer: MCPeerID, _ state: MCSessionState) {
         guard state == .connected else {
-            if state == .notConnected { flows[peer] = nil }
+            if state == .notConnected {
+                flows[peer] = nil
+                if pairedConnected.isEmpty { trigger(.disconnected) }
+            }
             return
         }
         startFlow(peer)
+        reloadFromDisk()
+        if peers.contains(where: { $0.name == peer.displayName }) { trigger(.connected) }
+    }
+
+    // MARK: Automatic carry (FEAT-09 P4, T-0084): connect, a change, the front; never on the main thread's time
+
+    private var pairedConnected: [MCPeerID] {
+        t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
+    }
+
+    /// The app came to the front (iOS scenePhase .active).
+    func cameToFront() { trigger(.foreground) }
+
+    private func trigger(_ e: CarrySchedule.Event) {
+        let now = Date().timeIntervalSince(clock0)
+        schedule.handle(e, at: now)
+        arm()
+    }
+
+    private func arm() {
+        wake?.cancel()
+        guard let due = schedule.due else { return }
+        let wait = max(0, due - Date().timeIntervalSince(clock0))
+        wake = Task { @MainActor [weak self] in
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard let self, !Task.isCancelled else { return }
+            if self.schedule.tick(at: Date().timeIntervalSince(self.clock0)) { await self.carry() } else { self.arm() }
+        }
+    }
+
+    /// Homes changed: the app's own writes (`Homes.changed`, both platforms) and, on the Mac, anything else
+    /// that writes into ~/Recense (Finder, a download) through FSEvents. Carry's own folder is ignored.
+    private func watchHomes() {
+        guard !watching else { return }
+        watching = true
+        NotificationCenter.default.addObserver(forName: Homes.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trigger(.changed) }
+        }
+        #if os(macOS)
+        var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+                                       retain: nil, release: nil, copyDescription: nil)
+        let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
+            guard let info else { return }
+            let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
+            guard list.prefix(n).contains(where: { !$0.contains("/.carry/") && !$0.hasSuffix("/.carry") }) else { return }
+            let me = Unmanaged<CarryManager>.fromOpaque(info).takeUnretainedValue()
+            DispatchQueue.main.async { MainActor.assumeIsolated { me.trigger(.changed) } }
+        }
+        if let s = FSEventStreamCreate(nil, cb, &ctx, [Homes.root.path] as CFArray,
+                                       FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
+                                       FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)) {
+            FSEventStreamSetDispatchQueue(s, .main)
+            FSEventStreamStart(s)
+            stream = s
+        }
+        #endif
     }
 
     /// Runs the exchange only while "Pair a device" is on — for a listed peer too, which re-pairs it (BUG-17).
@@ -271,13 +339,24 @@ private enum CarryKeychain {
         else { try CarrySync.encode(ops).write(to: opsLogURL(Homes.device), atomically: true, encoding: .utf8) }
     }
 
+    /// "Carry Now": the visible retry. Runs at once, or right after the carry already running.
     func carryNow() {
         reloadFromDisk()
         guard !peers.isEmpty else { lastError = "no paired device yet"; return }
-        let targets = t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
-        guard !targets.isEmpty else { lastError = "no paired device is connected right now"; return }
+        guard !pairedConnected.isEmpty else { lastError = "no paired device is connected right now"; return }
+        trigger(.tapped)
+    }
+
+    /// One carry. The scan (hashing) runs off the main thread, so playing, reading and writing never wait on it.
+    private func carry() async {
+        defer { trigger(.finished) }
+        reloadFromDisk()
+        let targets = pairedConnected
+        guard !targets.isEmpty else { return }
+        status = "Carrying"
         do {
-            let now = (try Carry.verify()).map { CarryFile(home: $0.home, path: $0.path, size: $0.size, sha256: $0.sha256) }
+            let lines = try await Task.detached(priority: .utility) { try Carry.verify(reuse: true) }.value
+            let now = lines.map { CarryFile(home: $0.home, path: $0.path, size: $0.size, sha256: $0.sha256) }
             let mine = myOps()
             let ops = CarrySync.ops(last: lastSent, now: now, trashOrigins: trashOrigins(), device: Homes.device,
                                     nextSeq: (mine.map(\.seq).max() ?? 0) + 1, at: Int64(Date().timeIntervalSince1970))
