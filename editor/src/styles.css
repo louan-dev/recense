@@ -2189,6 +2189,18 @@ html.rc-wings-page body {
   background: color-mix(in srgb, var(--rc-panel) 70%, var(--rc-text) 30%);
   font-size: 11px;
 }
+.rc-radial-item.rc-radial-outer {
+  width: auto;
+  max-width: 120px;
+  height: 28px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 14px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rc-radial-item.rc-hot { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
 .rc-radial-item svg { width: 20px; height: 20px; }
 @keyframes rc-radial-in { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -2276,3 +2288,43 @@ html.rc-wings-page body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 .rc-ink-loupe[hidden] { display: none; }
+/* FEAT-08 · the Matter menu: one plain list of crossings on a passage */
+.rc-matter-pill {
+  position: absolute;
+  z-index: 45;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--rc-muted) 45%, transparent);
+  border-radius: 999px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  font: 13px/1.2 -apple-system, system-ui, sans-serif;
+  opacity: 0.9;
+  cursor: pointer;
+}
+.rc-matter-pill[hidden], .rc-matter-menu[hidden] { display: none; }
+.rc-matter-menu {
+  position: absolute;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.rc-matter-item {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 16px/1.2 -apple-system, system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.rc-matter-item:hover, .rc-matter-item:focus-visible { background: color-mix(in srgb, var(--rc-muted) 22%, transparent); outline: none; }
+.rc-matter-note { padding: 6px 12px; color: var(--rc-muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .rc-matter-menu, .rc-matter-pill { transition: none; } }

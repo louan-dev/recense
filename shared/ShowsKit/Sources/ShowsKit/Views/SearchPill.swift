@@ -25,12 +25,14 @@ struct SearchPill<Scrub: View>: View {
 
     private var scrub: some View {
         HStack(spacing: 10) {
-            Button { state.finding = true; typing = true } label: {
-                Image(systemName: "magnifyingglass").font(.headline).frame(width: 36, height: 36)
+            // no transcript (yet): no magnifier (law, interaction.md: shown only when relevant; the web pill does the same)
+            if !lines.isEmpty {
+                Button { state.finding = true; typing = true } label: {
+                    Image(systemName: "magnifyingglass").font(.headline).frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain).foregroundStyle(.white)
+                .accessibilityLabel("Find in Transcript")
             }
-            .buttonStyle(.plain).foregroundStyle(.white)
-            .disabled(lines.isEmpty)
-            .accessibilityLabel("Find in Transcript")
             scrubber
         }
         .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 4)

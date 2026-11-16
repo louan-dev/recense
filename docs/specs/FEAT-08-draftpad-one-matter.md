@@ -60,3 +60,65 @@ Nothing ever moves a section into a new file: sections written apart stay side b
 
 ## Sources
 - The owner's note and essay, 2026-11-14, verbatim (private): `~/.claude/context/recense/research/2026-11-14-wish-order-law.md` §2–§3.
+
+## Decisions (2026-11-16; Q1 owner "keep", Q2–4 coordinator under the owner's delegation "2-4 you decide")
+1. **Keep the ink.** After #1 (ink → type) the handwriting stays visible beside its typed words; no fade.
+2. **`> ` markup is fine.** #4 may write blockquote markup into `draftpad.md`: plain Markdown, reads the same in Obsidian, the owner's words untouched.
+3. **Undo is per device.** Reverse the last crossing made on this device. Never silently undo another device's crossing;
+   if the passage changed since, refuse with a short note instead of guessing.
+4. **One Matter menu.** Every crossing is reachable from one visible "Matter" list on the passage (selection / long-press;
+   the same place on Mac, iPhone, iPad), named by what you get. Squeeze and the radial menu are shortcuts placed by lane
+   draftpad-ink from `matterActions` (`{id, label, from, to, run}`). Voice phrases = the spoken label, P2 (with VoiceEntry).
+
+## Handoff (lane draftpad-matter, 2026-11-16, round 2; branch `work/draftpad-matter`)
+**Built:**
+- `editor/src/matter.js` (P1 core):
+  - one record per passage: its seed, and its forms in the four states, linked;
+  - the sidecar `draftpad.matter.json` beside `draftpad.md` and `draftpad.ink.json`;
+  - the 12 crossings, each logged with an exact undo;
+  - `checkMatter`, the five pass conditions;
+  - `mergeMatter`, the two-device union.
+- Decisions 1–4 are in the code:
+  - Q1: #1 leaves the strokes untouched.
+  - Q3: `reverseLast(m, { device })` undoes the last crossing on that device. It refuses with a note when the passage changed since, or when the undo was compacted.
+  - Q4: `matterActions(m, pid)` returns `{id, label, from, to, run}`, labelled by destination. A label that appears twice gets " from pencil/voice/text/mark". `menuForSelection` turns plain selected words into a passage on first use.
+- **The Matter menu** (`editor/src/mattermenu.js`):
+  - a "Matter" pill appears 450 ms after a selection; tap it, or right-click / long-press the selection, to open the list;
+  - items are 44 pt high; Esc or a tap outside closes it;
+  - a refused crossing shows its short note in the list.
+- **#2 word attachment:** `attachStrokeToWord`. The ink layer reports each new stroke (`onStrokeAdded`). The editor maps the stroke's start to a body position with `posAtCoords`, and the stroke gets `word: {pid, i, w}`.
+- **Compaction:** the last 24 crossings per device stay reversible. Older ones keep their trace but not their undo. 100 crossings cost under 600 bytes each.
+- **Bridge:** `getMatter`, `setMatter`, `mergeMatter`, `seedPassage`, `cross`, `reverseCrossing` (per device), `setMatterDevice`, `matterMenu(from, to)`, `runMatterAction(id, from, to)`, `openMatterMenu`, `crossings`.
+- `editor/dist` is rebuilt.
+
+**The 12-move test: all 12 pass in code** (`editor/test/feat08-*.test.mjs`: twelve-moves, crossings, decisions, bridge).
+- One pencil-born passage goes through 1, 3, 7, 12, 5, 4, 9, 8, 6, 11, 10, 2. After every move: same page and files, nothing lost, nothing duplicated, traced to its seed. Undoing all 12 returns the start exactly, also after a save and reload.
+- Each crossing alone passes with its reverse.
+- Tests: 287 total, 286 pass, 0 fail, 1 skipped (256 from main + 30 FEAT-08). Run `npm ci` first if `node_modules` is missing.
+- Chromium smoke test of the built `dist/editor.html`:
+  - select words → the pill appears → the list shows Pencil over, Highlight, Read aloud;
+  - Highlight is logged with device Mac;
+  - per-device undo empties the log;
+  - no page errors.
+
+**Still owed (not verified, or not built):**
+- **Marks are not drawn.** A highlight, region or note lives in the sidecar but nothing paints it on the page yet. That needs a CodeMirror decoration from `forms.mark`.
+- **Read-aloud plans** (#7, #9, #11) use estimated word times. The hosts' `speak` and `willSpeakRange` are not connected yet.
+- **Spoken input** (#8, #10, #12) comes in as data. VoiceEntry, the Lock Screen and the Action button do not call it yet (P2, with the spoken labels).
+- **#2 is only half done.** Strokes are linked to words, but they still move by line (`resolveStrokeAnchor`), not with their word when a line reflows. The `posAtCoords` mapping is untested on a device.
+- **Long-press:** iOS shows its own edit menu on long-press. The pill is the dependable path there; whether `contextmenu` fires in WKWebView is unchecked.
+- **Not measured:** the baseline count (Notability + Obsidian + Voice Memos).
+- **Not started:** the P0 spikes and P3 formats.
+
+**Swift (coded, not compiled, device check owed):**
+- `strip/editorhost.swift` saves and loads the sidecar; it does not merge another device's copy while open.
+- `mobile/HostApp/iOS/Draftpad.swift` loads and saves it and merges another device's copy on poll.
+- Neither host calls `setMatterDevice` yet. The editor guesses the device from the user agent (Mac / iPad / iPhone). A host call with the device's name would be better.
+- `shared/notesync.swift` is unchanged (it already merges the body; anchors are quoted words, which survive its merges).
+
+**Device checks:**
+- Mac: build; select words → Matter → Highlight; right-click menu; the sidecar is written and reloads; undo.
+- iPhone 12 Pro Max: the pill appears on a selection; Read aloud; merge after a Mac edit; the Mac's crossing cannot be undone from the phone.
+- iPad Air M2 13-inch: Pencil → reading → Make text lands under the ink; Pencil over, then a stroke on a word gets `word`; Circle as note.
+
+**Open questions:** none. Q1–Q4 are settled above. For lane draftpad-ink: place `matterActions` in the radial and selection menus; `mattermenu.js` is the plain fallback.

@@ -2196,6 +2196,18 @@ html.rc-wings-page body {
   background: color-mix(in srgb, var(--rc-panel) 70%, var(--rc-text) 30%);
   font-size: 11px;
 }
+.rc-radial-item.rc-radial-outer {
+  width: auto;
+  max-width: 120px;
+  height: 28px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 14px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rc-radial-item.rc-hot { background: var(--rc-cyan); color: var(--rc-bg, #0d1117); }
 .rc-radial-item svg { width: 20px; height: 20px; }
 @keyframes rc-radial-in { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -2283,6 +2295,46 @@ html.rc-wings-page body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 .rc-ink-loupe[hidden] { display: none; }
+/* FEAT-08 · the Matter menu: one plain list of crossings on a passage */
+.rc-matter-pill {
+  position: absolute;
+  z-index: 45;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--rc-muted) 45%, transparent);
+  border-radius: 999px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  font: 13px/1.2 -apple-system, system-ui, sans-serif;
+  opacity: 0.9;
+  cursor: pointer;
+}
+.rc-matter-pill[hidden], .rc-matter-menu[hidden] { display: none; }
+.rc-matter-menu {
+  position: absolute;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.rc-matter-item {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 16px/1.2 -apple-system, system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.rc-matter-item:hover, .rc-matter-item:focus-visible { background: color-mix(in srgb, var(--rc-muted) 22%, transparent); outline: none; }
+.rc-matter-note { padding: 6px 12px; color: var(--rc-muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .rc-matter-menu, .rc-matter-pill { transition: none; } }
 
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -9308,8 +9360,8 @@ html.rc-wings-page body {
       let line = this.lineAt(cursor.head, cursor.assoc);
       if (!line)
         return;
-      let lineStart = line.posAtStart;
-      if (cursor.head == lineStart || cursor.head == lineStart + line.length)
+      let lineStart2 = line.posAtStart;
+      if (cursor.head == lineStart2 || cursor.head == lineStart2 + line.length)
         return;
       let before = this.coordsAt(cursor.head, -1), after = this.coordsAt(cursor.head, 1);
       if (!before || !after || before.bottom > after.top)
@@ -12420,9 +12472,9 @@ html.rc-wings-page body {
         let gap = find(current, (gap2) => gap2.from >= line.from && gap2.to <= line.to && Math.abs(gap2.from - from) < halfMargin && Math.abs(gap2.to - to) < halfMargin && !avoid.some((pos) => gap2.from < pos && gap2.to > pos));
         if (!gap) {
           if (to < line.to && mayMeasure && wrapping && mayMeasure.visibleRanges.some((r) => r.from <= to && r.to >= to)) {
-            let lineStart = mayMeasure.moveToLineBoundary(EditorSelection.cursor(to), false, true).head;
-            if (lineStart > from)
-              to = lineStart;
+            let lineStart2 = mayMeasure.moveToLineBoundary(EditorSelection.cursor(to), false, true).head;
+            if (lineStart2 > from)
+              to = lineStart2;
           }
           let size = this.gapSize(line, from, to, structure);
           let displaySize = wrapping || size < 2e6 ? size : 2e6;
@@ -19752,13 +19804,13 @@ html.rc-wings-page body {
       return null;
     let sim = context.options.simulateBreak;
     let openLine = context.state.doc.lineAt(openToken.from);
-    let lineEnd2 = sim == null || sim <= openLine.from ? openLine.to : Math.min(openLine.to, sim);
+    let lineEnd3 = sim == null || sim <= openLine.from ? openLine.to : Math.min(openLine.to, sim);
     for (let pos = openToken.to; ; ) {
       let next = tree.childAfter(pos);
       if (!next || next == last2)
         return null;
       if (!next.type.isSkipped) {
-        if (next.from >= lineEnd2)
+        if (next.from >= lineEnd3)
           return null;
         let space4 = /^ */.exec(openLine.text.slice(openToken.to - openLine.from))[0].length;
         return { from: openToken.from, to: openToken.to + space4 };
@@ -19815,13 +19867,13 @@ html.rc-wings-page body {
     let ch = node.lastChild;
     return ch && ch.to == node.to && ch.type.isError;
   }
-  function foldable(state, lineStart, lineEnd2) {
+  function foldable(state, lineStart2, lineEnd3) {
     for (let service of state.facet(foldService)) {
-      let result = service(state, lineStart, lineEnd2);
+      let result = service(state, lineStart2, lineEnd3);
       if (result)
         return result;
     }
-    return syntaxFolding(state, lineStart, lineEnd2);
+    return syntaxFolding(state, lineStart2, lineEnd3);
   }
   function mapRange(range, mapping) {
     let from = mapping.mapPos(range.from, 1), to = mapping.mapPos(range.to, -1);
@@ -21182,16 +21234,16 @@ html.rc-wings-page body {
   var deleteGroupBackward = (target) => deleteByGroup(target, false);
   var deleteGroupForward = (target) => deleteByGroup(target, true);
   var deleteToLineEnd = (view) => deleteBy(view, (range) => {
-    let lineEnd2 = view.lineBlockAt(range.head).to;
-    return range.head < lineEnd2 ? lineEnd2 : Math.min(view.state.doc.length, range.head + 1);
+    let lineEnd3 = view.lineBlockAt(range.head).to;
+    return range.head < lineEnd3 ? lineEnd3 : Math.min(view.state.doc.length, range.head + 1);
   });
   var deleteLineBoundaryBackward = (view) => deleteBy(view, (range) => {
-    let lineStart = view.moveToLineBoundary(range, false).head;
-    return range.head > lineStart ? lineStart : Math.max(0, range.head - 1);
+    let lineStart2 = view.moveToLineBoundary(range, false).head;
+    return range.head > lineStart2 ? lineStart2 : Math.max(0, range.head - 1);
   });
   var deleteLineBoundaryForward = (view) => deleteBy(view, (range) => {
-    let lineStart = view.moveToLineBoundary(range, true).head;
-    return range.head < lineStart ? lineStart : Math.min(view.state.doc.length, range.head + 1);
+    let lineStart2 = view.moveToLineBoundary(range, true).head;
+    return range.head < lineStart2 ? lineStart2 : Math.min(view.state.doc.length, range.head + 1);
   });
   var splitLine = ({ state, dispatch }) => {
     if (state.readOnly)
@@ -21760,20 +21812,20 @@ html.rc-wings-page body {
       this.fieldPositions = fieldPositions;
     }
     instantiate(state, pos) {
-      let text = [], lineStart = [pos];
+      let text = [], lineStart2 = [pos];
       let lineObj = state.doc.lineAt(pos), baseIndent = /^\s*/.exec(lineObj.text)[0];
       for (let line of this.lines) {
         if (text.length) {
           let indent = baseIndent, tabs = /^\t*/.exec(line)[0].length;
           for (let i = 0; i < tabs; i++)
             indent += state.facet(indentUnit);
-          lineStart.push(pos + indent.length - tabs);
+          lineStart2.push(pos + indent.length - tabs);
           line = indent + line.slice(tabs);
         }
         text.push(line);
         pos += line.length + 1;
       }
-      let ranges = this.fieldPositions.map((pos2) => new FieldRange(pos2.field, lineStart[pos2.line] + pos2.from, lineStart[pos2.line] + pos2.to));
+      let ranges = this.fieldPositions.map((pos2) => new FieldRange(pos2.field, lineStart2[pos2.line] + pos2.from, lineStart2[pos2.line] + pos2.to));
       return { text, ranges };
     }
     static parse(template) {
@@ -23629,7 +23681,7 @@ html.rc-wings-page body {
       this.cursor = null;
       this.fragmentEnd = -1;
     }
-    moveTo(pos, lineStart) {
+    moveTo(pos, lineStart2) {
       while (this.fragment && this.fragment.to <= pos)
         this.nextFragment();
       if (!this.fragment || this.fragment.from > (pos ? pos - 1 : 0))
@@ -23651,7 +23703,7 @@ html.rc-wings-page body {
           return false;
       for (; ; ) {
         if (c.from >= rPos)
-          return this.fragment.from <= lineStart;
+          return this.fragment.from <= lineStart2;
         if (!c.childAfter(rPos))
           return false;
       }
@@ -29308,8 +29360,8 @@ ${PAGE_MARKER}
     view.focus();
   }
   function headingFoldExtension() {
-    const service = foldService.of((state, lineStart) => {
-      return computeHeadingFoldRange(state.doc.toString(), lineStart);
+    const service = foldService.of((state, lineStart2) => {
+      return computeHeadingFoldRange(state.doc.toString(), lineStart2);
     });
     return [
       service,
@@ -30427,8 +30479,8 @@ ${PAGE_MARKER}
   var AnnounceMargin = 30;
   var Break = /[\s\.,:;?!]/;
   function announceMatch(view, { from, to }) {
-    let line = view.state.doc.lineAt(from), lineEnd2 = view.state.doc.lineAt(to).to;
-    let start = Math.max(line.from, from - AnnounceMargin), end = Math.min(lineEnd2, to + AnnounceMargin);
+    let line = view.state.doc.lineAt(from), lineEnd3 = view.state.doc.lineAt(to).to;
+    let start = Math.max(line.from, from - AnnounceMargin), end = Math.min(lineEnd3, to + AnnounceMargin);
     let text = view.state.sliceDoc(start, end);
     if (start != line.from) {
       for (let i = 0; i < AnnounceMargin; i++)
@@ -30437,7 +30489,7 @@ ${PAGE_MARKER}
           break;
         }
     }
-    if (end != lineEnd2) {
+    if (end != lineEnd3) {
       for (let i = text.length - 1; i > text.length - AnnounceMargin; i--)
         if (!Break.test(text[i - 1]) && Break.test(text[i])) {
           text = text.slice(0, i);
@@ -30937,11 +30989,11 @@ ${PAGE_MARKER}
     }
     const { counters, parsedTarget, bounds } = computeContextAtLine(lines, lineIdx);
     if (!parsedTarget || !bounds) return null;
-    const lineStart = offset;
+    const lineStart2 = offset;
     const lineText = lines[lineIdx];
     const cleanLen = lineText.length - parsedTarget.cr.length;
     const prefixLen = parsedTarget.indent.length + parsedTarget.marker.length + parsedTarget.space.length;
-    const bodyStart = lineStart + prefixLen;
+    const bodyStart = lineStart2 + prefixLen;
     if (parsedTarget.body.trim() === "") {
       const newLines2 = [...lines];
       newLines2[lineIdx] = parsedTarget.cr;
@@ -30954,13 +31006,13 @@ ${PAGE_MARKER}
       }
       return {
         text: nextDoc,
-        cursor: lineStart
+        cursor: lineStart2
       };
     }
-    const clampedPos = Math.min(pos, lineStart + cleanLen);
+    const clampedPos = Math.min(pos, lineStart2 + cleanLen);
     const splitAt = Math.max(bodyStart, clampedPos);
-    const keptOnCurrentLine = `${source.slice(lineStart, splitAt)}${parsedTarget.cr}`;
-    const movedToNextLine = source.slice(splitAt, lineStart + cleanLen);
+    const keptOnCurrentLine = `${source.slice(lineStart2, splitAt)}${parsedTarget.cr}`;
+    const movedToNextLine = source.slice(splitAt, lineStart2 + cleanLen);
     const nextCounters = [...counters];
     nextCounters[parsedTarget.level] += 1;
     for (let k = parsedTarget.level + 1; k < 4; k++) nextCounters[k] = 0;
@@ -31883,8 +31935,8 @@ ${PAGE_MARKER}
       const line = `<!-- saved ${nid} -->`;
       let at, insert2;
       if (p.dateLine) {
-        const lineStart = text.indexOf(p.dateLine, p.from);
-        at = lineStart + p.dateLine.length;
+        const lineStart2 = text.indexOf(p.dateLine, p.from);
+        at = lineStart2 + p.dateLine.length;
         const eol = text.indexOf("\n", at);
         at = eol === -1 ? text.length : eol;
         insert2 = "\n" + line;
@@ -34270,7 +34322,12 @@ ${PAGE_MARKER}
     let open = false;
     let hot = null;
     const nodes = { inner: [], outer: [] };
-    const list = () => ({ inner: items?.inner || [], outer: items?.outer || [] });
+    const read = () => {
+      const it = typeof items === "function" ? items() : items;
+      return { inner: it?.inner || [], outer: it?.outer || [] };
+    };
+    let snap = { inner: [], outer: [] };
+    const list = () => snap;
     function build3() {
       if (el5 || !doc2 || typeof doc2.createElement !== "function") return;
       el5 = doc2.createElement("div");
@@ -34320,6 +34377,7 @@ ${PAGE_MARKER}
     return {
       open(x, y) {
         build3();
+        snap = read();
         const vp = viewport() || {};
         [cx, cy] = radialCentre(Number(x) || 0, Number(y) || 0, vp.w, vp.h);
         open = true;
@@ -35886,7 +35944,11 @@ ${clean(nextLineText)}`;
       // Where the pill and palette float. Never the text's scroller: a child there joins
       // CodeMirror's flex row and squeezes the text column.
       mount = null,
-      onToolChange = null
+      onToolChange = null,
+      // UI-04 P2 outer ring: [{ id, label, pick() }] read when the radial menu opens (FEAT-08 matter actions).
+      radialOuter = null,
+      onStrokeAdded = null
+      // FEAT-08 #2: called with each new drawn stroke (word attachment)
     } = options;
     function currentLineHeight() {
       return view && typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0 ? view.defaultLineHeight : lineHeight;
@@ -36559,12 +36621,14 @@ ${clean(nextLineText)}`;
           doc: docNode,
           mount: docNode?.body || null,
           // fixed to the viewport: no transformed ancestor
-          items: {
+          items: () => ({
             inner: PALETTE_TOOLS.map((t2) => ({ id: t2, label: INK_TOOL_NAMES[t2] || t2, icon: INK_TOOL_ICONS[t2] || "" })),
-            outer: []
-          },
-          onPick: (item) => {
-            setTool(item.id);
+            outer: typeof radialOuter === "function" ? radialOuter() || [] : []
+          }),
+          onPick: (item, ring) => {
+            if (ring === "outer") {
+              if (typeof item.pick === "function") item.pick();
+            } else setTool(item.id);
             haptic("snap");
           },
           reduceMotion: () => Boolean(globalObj?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches),
@@ -36897,6 +36961,12 @@ ${clean(nextLineText)}`;
       if (finalShape && (finalShape.kind === "polygon" || finalShape.kind === "line") && currentTool !== "underline") {
         handlesFor = stroke.id;
       }
+      if (typeof onStrokeAdded === "function") {
+        try {
+          onStrokeAdded(stroke);
+        } catch {
+        }
+      }
       activePoints = [];
       if (activeGroup) activeGroup.innerHTML = "";
       render();
@@ -37110,6 +37180,12 @@ ${clean(nextLineText)}`;
       for (const st of list) {
         reanchor(st);
         inkDoc.strokes.push(st);
+      }
+      if (typeof onStrokeAdded === "function") for (const st of list) {
+        try {
+          onStrokeAdded(st);
+        } catch {
+        }
       }
       render();
       schedulePost();
@@ -41308,6 +41384,703 @@ ${clean(nextLineText)}`;
     return (phase, x, y) => sq.phase(phase, x, y);
   }
 
+  // src/matter.js
+  var STATES = ["ink", "type", "mark", "voice"];
+  var CROSSINGS = [
+    { n: 1, from: "ink", to: "type", name: "melting" },
+    { n: 2, from: "type", to: "ink", name: "freezing" },
+    { n: 3, from: "type", to: "mark", name: "vaporizing" },
+    { n: 4, from: "mark", to: "type", name: "condensing" },
+    { n: 5, from: "ink", to: "mark", name: "subliming" },
+    { n: 6, from: "mark", to: "ink", name: "deposition" },
+    { n: 7, from: "mark", to: "voice", name: "ionizing" },
+    { n: 8, from: "voice", to: "mark", name: "recombining" },
+    { n: 9, from: "type", to: "voice", name: "read aloud" },
+    { n: 10, from: "voice", to: "type", name: "dictation" },
+    { n: 11, from: "ink", to: "voice", name: "handwriting read aloud" },
+    { n: 12, from: "voice", to: "ink", name: "spoken pin" }
+  ];
+  var FILES = { text: "draftpad.md", ink: "draftpad.ink.json", side: "draftpad.matter.json" };
+  var clone = (v) => v === void 0 ? void 0 : JSON.parse(JSON.stringify(v));
+  var emptyInk = () => ({ version: 1, strokes: [], removed: [] });
+  var emptySide = () => ({ version: 1, passages: {}, log: [] });
+  function createMatter({ text = "", ink = null, side = null } = {}) {
+    return { text: String(text), ink: clone(ink) || emptyInk(), side: clone(side) || emptySide() };
+  }
+  function fromFiles(files) {
+    const j = (s, d) => typeof s === "string" && s.trim() ? JSON.parse(s) : d();
+    return createMatter({ text: files[FILES.text] || "", ink: j(files[FILES.ink], emptyInk), side: j(files[FILES.side], emptySide) });
+  }
+  function wordsOf(text) {
+    return String(text || "").match(/[\p{L}\p{N}’']+/gu) || [];
+  }
+  function guessLang(text) {
+    const s = String(text || "").toLowerCase();
+    if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/.test(s)) return "vi";
+    if (/[éèêëàçùûôîœ]|\b(le|la|les|des|est|une|du|et)\b/.test(s)) return "fr";
+    return "en";
+  }
+  function estimateWordTimes(text) {
+    let t2 = 0;
+    return wordsOf(text).map((w) => {
+      const d = Math.round((0.12 + 0.06 * w.length) * 1e3) / 1e3;
+      const out = { w, t0: Math.round(t2 * 1e3) / 1e3, t1: Math.round((t2 + d) * 1e3) / 1e3 };
+      t2 += d + 0.05;
+      return out;
+    });
+  }
+  var spokenText = (e) => (e.words || []).map((w) => w.w).join(" ");
+  var spokenKey = (e) => `${e.audio || ""}|${e.at ?? ""}|${spokenText(e)}`;
+  var CTX = 32;
+  function makeQuote(text, off, len) {
+    return { quote: text.slice(off, off + len), prefix: text.slice(Math.max(0, off - CTX), off), suffix: text.slice(off + len, off + len + CTX) };
+  }
+  function findQuote(text, a) {
+    if (!a || !a.quote) return -1;
+    let best = -1;
+    let bestScore = -1;
+    for (let i = text.indexOf(a.quote); i !== -1; i = text.indexOf(a.quote, i + 1)) {
+      let s = 0;
+      const pre = a.prefix || "";
+      while (s < pre.length && text[i - 1 - s] === pre[pre.length - 1 - s]) s++;
+      let f = 0;
+      const suf = a.suffix || "";
+      const e = i + a.quote.length;
+      while (f < suf.length && text[e + f] === suf[f]) f++;
+      if (s + f > bestScore) {
+        bestScore = s + f;
+        best = i;
+      }
+    }
+    return best;
+  }
+  var eolOf = (text) => text.includes("\r\n") ? "\r\n" : "\n";
+  function lineEnd2(text, off) {
+    let e = text.indexOf("\n", off);
+    if (e === -1) return text.length;
+    if (text[e - 1] === "\r") e--;
+    return e;
+  }
+  function lineStart(text, off) {
+    return text.lastIndexOf("\n", off - 1) + 1;
+  }
+  function placeOf(text, off) {
+    const lineNumber = text.slice(0, off).split("\n").length;
+    const pages = getDocumentPages(text);
+    const p = pages.find((pg) => lineNumber >= pg.startLine && lineNumber <= Math.max(pg.startLine, pg.endLine)) || pages[0];
+    return { pageIndex: p.index, line: Math.max(0, lineNumber - p.startLine) };
+  }
+  function offsetOfPageLine(text, pageIndex, line) {
+    const pages = getDocumentPages(text);
+    const p = pages[Math.min(pages.length - 1, Math.max(0, pageIndex))];
+    const ln = p.startLine + Math.max(0, Math.min(Math.max(0, p.lines.length - 1), line));
+    let off = 0;
+    for (let i = 1; i < ln; i++) off = text.indexOf("\n", off) + 1;
+    return lineEnd2(text, off);
+  }
+  function pageTailOffset(text, pageIndex) {
+    const pages = getDocumentPages(text);
+    const p = pages[Math.min(pages.length - 1, Math.max(0, pageIndex))];
+    let i = p.lines.length - 1;
+    while (i > 0 && !p.lines[i].trim()) i--;
+    return offsetOfPageLine(text, p.index, i);
+  }
+  function strokesOf(m, p) {
+    const ids = new Set(p.forms.ink && p.forms.ink.strokes || []);
+    return m.ink.strokes.filter((s) => ids.has(s.id));
+  }
+  function inkReading(strokes) {
+    const parts = [];
+    for (const s of strokes) {
+      const t2 = s.ocr && typeof s.ocr.t === "string" ? s.ocr.t.trim() : "";
+      if (t2 && parts[parts.length - 1] !== t2) parts.push(t2);
+    }
+    return parts.join(" ");
+  }
+  function bbox(strokes) {
+    const pts = strokes.flatMap((s) => s.points || []);
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  function inkAnchor(m, strokes) {
+    const first = strokes[0];
+    if (first.anchor) return clone(first.anchor);
+    const b = bbox(strokes);
+    return anchorStrokeToDoc({ points: [[b.x, b.y]] }, m.text, DEFAULT_LINE_HEIGHT);
+  }
+  function wordSurface(quote) {
+    const out = [];
+    const re = /[\p{L}\p{N}’']+/gu;
+    let r;
+    while (r = re.exec(quote)) out.push({ w: r[0], from: r.index, to: r.index + r[0].length });
+    return out;
+  }
+  function wordAt(surface, charIndex) {
+    let best = null;
+    let d = Infinity;
+    for (const w of surface || []) {
+      const dist2 = charIndex < w.from ? w.from - charIndex : charIndex >= w.to ? charIndex - w.to + 1 : 0;
+      if (dist2 < d) {
+        d = dist2;
+        best = w;
+      }
+    }
+    return best;
+  }
+  function validSeed(seed) {
+    return !!seed && typeof seed.device === "string" && !!seed.device && typeof seed.input === "string" && !!seed.input && typeof seed.time === "number" && Number.isFinite(seed.time);
+  }
+  var seedOf = (s) => ({ device: s.device, input: s.input, time: s.time });
+  function addPassage(m, id2, born, seed, forms) {
+    if (!validSeed(seed)) throw new Error("a passage needs its seed: device, input, time");
+    const out = createMatter(m);
+    if (out.side.passages[id2]) throw new Error(`passage ${id2} exists`);
+    const from = { cross: 0, ...seedOf(seed) };
+    for (const f of Object.values(forms)) f.from = from;
+    out.side.passages[id2] = { id: id2, born, seed: seedOf(seed), phase: born, forms };
+    return out;
+  }
+  function seedInkPassage(m, { id: id2, strokeIds, seed }) {
+    const have = new Set(m.ink.strokes.map((s) => s.id));
+    if (!strokeIds || !strokeIds.length || !strokeIds.every((i) => have.has(i))) throw new Error("no ink: strokes not on the page");
+    return addPassage(m, id2, "ink", seed, { ink: { strokes: [...strokeIds] } });
+  }
+  function seedTypePassage(m, { id: id2, quote, seed, at = null }) {
+    const off = typeof at === "number" && m.text.slice(at, at + String(quote).length) === quote ? at : m.text.indexOf(quote);
+    if (!quote || off === -1) throw new Error("no type: the words are not on the page");
+    return addPassage(m, id2, "type", seed, { type: makeQuote(m.text, off, quote.length) });
+  }
+  function seedVoicePassage(m, { id: id2, spoken, seed }) {
+    if (!spoken || !spoken.words || !spoken.words.length) throw new Error("no voice: nothing spoken");
+    return addPassage(m, id2, "voice", seed, { voice: { spoken: [clone(spoken)] } });
+  }
+  function need(p, state) {
+    const f = p.forms[state];
+    const ok = state === "ink" ? f && (f.strokes || []).length : !!f;
+    if (!ok) throw new Error(`no ${state}: passage ${p.id} holds no ${state} form for this crossing`);
+    return f;
+  }
+  function typeOffset(m, p) {
+    const off = findQuote(m.text, p.forms.type);
+    if (off === -1) throw new Error(`no type: passage ${p.id} is not found in the body`);
+    return off;
+  }
+  function insertLineAfter(m, off, words) {
+    const at = lineEnd2(m.text, off);
+    const ins = eolOf(m.text) + words;
+    m.text = m.text.slice(0, at) + ins + m.text.slice(at);
+    return makeQuote(m.text, at + ins.length - words.length, words.length);
+  }
+  function ensureVoice(p, from) {
+    if (!p.forms.voice) p.forms.voice = { spoken: [], from };
+    if (!p.forms.voice.spoken) p.forms.voice.spoken = [];
+    return p.forms.voice;
+  }
+  function ensureInk(p, from) {
+    if (!p.forms.ink) p.forms.ink = { strokes: [], from };
+    if (!p.forms.ink.strokes) p.forms.ink.strokes = [];
+    return p.forms.ink;
+  }
+  function ensureMark(p, from, kind, anchor) {
+    if (!p.forms.mark) p.forms.mark = { kind, anchor: clone(anchor) || null, from };
+    return p.forms.mark;
+  }
+  function addSpoken(voice, spoken, from) {
+    const e = { ...clone(spoken), from };
+    const k = spokenKey(e);
+    const have = voice.spoken.find((x) => spokenKey(x) === k);
+    if (have) return have;
+    voice.spoken.push(e);
+    return e;
+  }
+  function lastSpoken(p) {
+    const v = p.forms.voice;
+    return v && v.spoken && v.spoken.length ? v.spoken[v.spoken.length - 1] : null;
+  }
+  function readPlan(source, text, from) {
+    return { from: source, text, lang: guessLang(text), words: estimateWordTimes(text), by: from };
+  }
+  var STEPS = {
+    // 1 ink → type: the handwriting's reading enters the body, on the line under the ink, on its page.
+    1(m, p, o, from) {
+      const strokes = strokesOf(m, p);
+      need(p, "ink");
+      const text = (o.text || inkReading(strokes)).trim();
+      if (!text) throw new Error("the handwriting has not been read yet (no OCR text on its strokes)");
+      if (p.forms.type && findQuote(m.text, p.forms.type) !== -1) return;
+      const a = inkAnchor(m, strokes);
+      const off = offsetOfPageLine(m.text, a.pageIndex || 0, a.offsetInPage || 0);
+      p.forms.type = { ...insertLineAfter(m, off, text), from };
+    },
+    // 2 type → ink: the typed passage becomes a surface whose words strokes anchor to.
+    2(m, p, o, from) {
+      const t2 = need(p, "type");
+      typeOffset(m, p);
+      ensureInk(p, from).surface = wordSurface(t2.quote);
+    },
+    // 3 type → mark: a highlight over the words, anchored to the words (not offsets).
+    3(m, p, o, from) {
+      const t2 = need(p, "type");
+      typeOffset(m, p);
+      const anchor = { quote: t2.quote, prefix: t2.prefix, suffix: t2.suffix };
+      const mk = ensureMark(p, from, o.kind || "highlight", anchor);
+      if (!mk.anchor) mk.anchor = anchor;
+      mk.highlight = true;
+    },
+    // 4 mark → type: a highlight collapses to a quoted block; a margin note settles inline under it.
+    4(m, p, o, from) {
+      const mk = need(p, "mark");
+      const eol = eolOf(m.text);
+      if (p.forms.type && findQuote(m.text, p.forms.type) !== -1) {
+        const off = typeOffset(m, p);
+        const s = lineStart(m.text, off);
+        const e = lineEnd2(m.text, off + p.forms.type.quote.length);
+        let block = m.text.slice(s, e).split(/\r?\n/).map((l) => l.startsWith("> ") ? l : `> ${l}`).join(eol);
+        if (mk.note) block += `${eol}> ${mk.note}`;
+        m.text = m.text.slice(0, s) + block + m.text.slice(e);
+        const q = p.forms.type.quote;
+        const at = m.text.indexOf(q, s);
+        p.forms.type = { ...makeQuote(m.text, at, q.length), from: p.forms.type.from, block: "quote" };
+      } else if (mk.note) {
+        const off = pageTailOffset(m.text, o.pageIndex || 0);
+        const q = insertLineAfter(m, off, `> ${mk.note}`);
+        p.forms.type = { ...makeQuote(m.text, findQuote(m.text, q) + 2, mk.note.length), from, block: "quote" };
+      } else {
+        throw new Error("no type: nothing to condense (no words and no note)");
+      }
+    },
+    // 5 ink → mark: a circled region becomes a region-anchored comment; recognition skipped.
+    5(m, p, o, from) {
+      need(p, "ink");
+      const strokes = strokesOf(m, p);
+      const region = bbox(strokes);
+      const anchor = inkAnchor(m, strokes);
+      const mk = ensureMark(p, from, "region", anchor);
+      mk.region = region;
+      mk.regionAnchor = anchor;
+    },
+    // 6 mark → ink: the comment sets down as a hand-placed stroke in the margin beside the passage.
+    6(m, p, o, from) {
+      const mk = need(p, "mark");
+      let place;
+      if (p.forms.type && findQuote(m.text, p.forms.type) !== -1) place = placeOf(m.text, typeOffset(m, p));
+      else if (mk.regionAnchor || mk.anchor && typeof mk.anchor.pageIndex === "number") {
+        const a = mk.regionAnchor || mk.anchor;
+        place = { pageIndex: a.pageIndex, line: a.offsetInPage || 0 };
+      } else place = { pageIndex: 0, line: 0 };
+      const y = place.line * DEFAULT_LINE_HEIGHT;
+      const stroke = {
+        id: `dep-${p.id}-${from.time}`,
+        tool: "pen",
+        color: o.color || "#a78bfa",
+        width: 2,
+        points: [[4, y + 4, 0.5], [0, y + 4, 0.5], [0, y + DEFAULT_LINE_HEIGHT - 4, 0.5], [4, y + DEFAULT_LINE_HEIGHT - 4, 0.5]],
+        deposit: p.id
+      };
+      if (mk.note) stroke.ocr = { g: stroke.id, t: mk.note };
+      stroke.anchor = anchorStrokeToDoc({ points: stroke.points }, m.text, DEFAULT_LINE_HEIGHT, place.pageIndex);
+      if (m.ink.strokes.some((s) => s.id === stroke.id)) throw new Error("that comment is already set down");
+      m.ink.strokes.push(stroke);
+      ensureInk(p, from).strokes.push(stroke.id);
+    },
+    // 7 mark → voice: the marked passage, planned for read-aloud.
+    7(m, p, o, from) {
+      const mk = need(p, "mark");
+      let text = "";
+      if (mk.anchor && mk.anchor.quote && findQuote(m.text, mk.anchor) !== -1) text = mk.anchor.quote;
+      else if (mk.note) text = mk.note;
+      else text = inkReading(strokesOf(m, p));
+      if (!text) throw new Error("no words to read aloud in this mark");
+      ensureVoice(p, from).read = readPlan("mark", text, from);
+    },
+    // 8 voice → mark: a spoken aside lands as a timestamped margin note, not body text.
+    8(m, p, o, from) {
+      const v = o.spoken ? ensureVoice(p, from) : need(p, "voice");
+      const e = o.spoken ? addSpoken(v, o.spoken, from) : lastSpoken(p);
+      if (!e) throw new Error("no voice: nothing spoken to set as a note");
+      const anchor = p.forms.type ? { quote: p.forms.type.quote, prefix: p.forms.type.prefix, suffix: p.forms.type.suffix } : null;
+      const mk = ensureMark(p, from, "note", anchor);
+      mk.note = spokenText(e);
+      mk.noteAt = o.at ?? e.at ?? 0;
+      if (e.audio) mk.noteAudio = e.audio;
+    },
+    // 9 type → voice: the typed passage read aloud, in its language.
+    9(m, p, o, from) {
+      const t2 = need(p, "type");
+      typeOffset(m, p);
+      ensureVoice(p, from).read = readPlan("type", t2.quote, from);
+    },
+    // 10 voice → type: speech becomes text once; its words keep their times and point into the body.
+    10(m, p, o, from) {
+      const v = o.spoken ? ensureVoice(p, from) : need(p, "voice");
+      if (o.spoken) addSpoken(v, o.spoken, from);
+      const waiting = v.spoken.filter((e) => !e.typed || findQuote(m.text, e.typed) === -1);
+      if (!waiting.length && !v.spoken.length) throw new Error("no voice: nothing spoken to type");
+      for (const e of waiting) {
+        const words = spokenText(e);
+        const off = p.forms.type && findQuote(m.text, p.forms.type) !== -1 ? typeOffset(m, p) + p.forms.type.quote.length : pageTailOffset(m.text, o.pageIndex || 0);
+        e.typed = insertLineAfter(m, off, words);
+        if (!p.forms.type) p.forms.type = { ...e.typed, from };
+      }
+    },
+    // 11 ink → voice: handwriting read aloud from its reading, the typed state skipped.
+    11(m, p, o, from) {
+      need(p, "ink");
+      const text = inkReading(strokesOf(m, p));
+      if (!text) throw new Error("the handwriting has not been read yet (no OCR text on its strokes)");
+      ensureVoice(p, from).read = readPlan("ink", text, from);
+    },
+    // 12 voice → ink: a spoken phrase pinned to a place on the page, not a moment in a timeline.
+    12(m, p, o, from) {
+      const v = need(p, "voice");
+      const e = lastSpoken(p);
+      const phrase2 = e ? { audio: e.audio || null, text: spokenText(e) } : v.read ? { audio: null, text: v.read.text } : null;
+      if (!phrase2) throw new Error("no voice: nothing spoken to pin");
+      let anchor;
+      if (o.place) {
+        anchor = anchorStrokeToDoc({ points: [[o.place.x || 0, o.place.y || 0]] }, m.text, DEFAULT_LINE_HEIGHT, o.place.pageIndex || 0);
+      } else if (strokesOf(m, p).length) {
+        anchor = inkAnchor(m, strokesOf(m, p));
+      } else {
+        const pl = p.forms.type && findQuote(m.text, p.forms.type) !== -1 ? placeOf(m.text, typeOffset(m, p)) : { pageIndex: 0, line: 0 };
+        anchor = anchorStrokeToDoc({ points: [[0, pl.line * DEFAULT_LINE_HEIGHT + 4]] }, m.text, DEFAULT_LINE_HEIGHT, pl.pageIndex);
+      }
+      const ink = ensureInk(p, from);
+      if (!ink.pins) ink.pins = [];
+      ink.pins.push({ ...phrase2, anchor, from });
+    }
+  };
+  function textPatch(before, after) {
+    let a = 0;
+    const max = Math.min(before.length, after.length);
+    while (a < max && before[a] === after[a]) a++;
+    let b = 0;
+    while (b < max - a && before[before.length - 1 - b] === after[after.length - 1 - b]) b++;
+    return { at: a, del: after.slice(a, after.length - b), ins: before.slice(a, before.length - b) };
+  }
+  function cross(m, n, pid, opts = {}) {
+    const c = CROSSINGS.find((x) => x.n === n);
+    if (!c) throw new Error(`unknown crossing ${n}`);
+    if (!m.side.passages[pid]) throw new Error(`no passage ${pid}`);
+    if (!validSeed(opts.seed)) throw new Error("a crossing needs its seed: device, input, time");
+    const out = createMatter(m);
+    const p = out.side.passages[pid];
+    const priorPassage = clone(p);
+    const priorStrokes = new Map(out.ink.strokes.map((s) => [s.id, JSON.stringify(s)]));
+    const from = { cross: n, ...seedOf(opts.seed) };
+    STEPS[n](out, p, opts, from);
+    for (const s of STATES) {
+      if (p.forms[s] && JSON.stringify(p.forms[s]) !== JSON.stringify(priorPassage.forms[s])) p.forms[s].touched = from.time;
+    }
+    p.phase = c.to;
+    const changed = [];
+    const added = [];
+    for (const s of out.ink.strokes) {
+      if (!priorStrokes.has(s.id)) added.push(s.id);
+      else if (priorStrokes.get(s.id) !== JSON.stringify(s)) changed.push(JSON.parse(priorStrokes.get(s.id)));
+    }
+    out.side.log.push({
+      id: `${pid}:${n}:${from.time}:${from.device}`,
+      cross: n,
+      pid,
+      state: c.to,
+      seed: seedOf(opts.seed),
+      after: hashOf(p),
+      undo: { text: textPatch(m.text, out.text), passage: priorPassage, strokes: { changed, added } }
+    });
+    compactLog(out.side, from.device);
+    return out;
+  }
+  function hashOf(v) {
+    const str = JSON.stringify(v);
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  var KEEP_REVERSIBLE = 24;
+  function compactLog(side, device, keep = KEEP_REVERSIBLE) {
+    let n = 0;
+    for (let i = side.log.length - 1; i >= 0; i--) {
+      const e = side.log[i];
+      if (e.seed.device !== device || !e.undo) continue;
+      if (++n > keep) {
+        e.undo = null;
+        e.compacted = true;
+      }
+    }
+  }
+  function reverseLast(m, { device = null } = {}) {
+    let idx = m.side.log.length - 1;
+    if (device) while (idx >= 0 && m.side.log[idx].seed.device !== device) idx--;
+    if (idx < 0) throw new Error(device ? `nothing to reverse on ${device}` : "nothing to reverse");
+    const out = createMatter(m);
+    const e = out.side.log[idx];
+    if (!e.undo) throw new Error("that crossing is too old to reverse (its undo was compacted)");
+    const cur = out.side.passages[e.pid];
+    if (e.after && (!cur || hashOf(cur) !== e.after)) throw new Error("the passage changed since that crossing; not reversed");
+    if (out.side.log.slice(idx + 1).some((x) => x.pid === e.pid)) throw new Error("the passage changed since that crossing; not reversed");
+    out.side.log.splice(idx, 1);
+    const { text, passage, strokes } = e.undo;
+    let at = text.at;
+    if (out.text.slice(at, at + text.del.length) !== text.del) {
+      at = out.text.indexOf(text.del);
+      if (at === -1 || out.text.indexOf(text.del, at + 1) !== -1) throw new Error("the page changed under this crossing; cannot reverse it safely");
+    }
+    out.text = out.text.slice(0, at) + text.ins + out.text.slice(at + text.del.length);
+    out.side.passages[e.pid] = clone(passage);
+    const addedSet = new Set(strokes.added);
+    const prior = new Map(strokes.changed.map((s) => [s.id, s]));
+    out.ink.strokes = out.ink.strokes.filter((s) => !addedSet.has(s.id)).map((s) => prior.has(s.id) ? clone(prior.get(s.id)) : s);
+    return out;
+  }
+  var touchedOf = (f) => f && (f.touched ?? (f.from && f.from.time)) || 0;
+  function mergeForm(state, a, b) {
+    if (!a) return clone(b);
+    if (!b) return clone(a);
+    const later = touchedOf(b) > touchedOf(a) ? b : a;
+    const out = clone(later);
+    if (state === "voice") {
+      const seen = /* @__PURE__ */ new Map();
+      for (const e of [...a.spoken || [], ...b.spoken || []]) if (!seen.has(spokenKey(e))) seen.set(spokenKey(e), clone(e));
+      out.spoken = [...seen.values()];
+    }
+    if (state === "ink") {
+      out.strokes = [.../* @__PURE__ */ new Set([...a.strokes || [], ...b.strokes || []])];
+      const pins = /* @__PURE__ */ new Map();
+      for (const pin of [...a.pins || [], ...b.pins || []]) pins.set(JSON.stringify(pin), clone(pin));
+      if (pins.size) out.pins = [...pins.values()];
+    }
+    return out;
+  }
+  function mergeMatter(a, b) {
+    const A = a || emptySide();
+    const B = b || emptySide();
+    const log = /* @__PURE__ */ new Map();
+    for (const e of [...A.log || [], ...B.log || []]) if (!log.has(e.id)) log.set(e.id, clone(e));
+    const entries = [...log.values()].sort((x, y) => x.seed.time - y.seed.time || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    const passages = {};
+    for (const id2 of [.../* @__PURE__ */ new Set([...Object.keys(A.passages || {}), ...Object.keys(B.passages || {})])].sort()) {
+      const pa = A.passages && A.passages[id2];
+      const pb = B.passages && B.passages[id2];
+      if (!pa || !pb) {
+        passages[id2] = clone(pa || pb);
+        continue;
+      }
+      const p = clone(pa);
+      p.forms = {};
+      for (const s of STATES) {
+        const f = mergeForm(s, pa.forms[s], pb.forms[s]);
+        if (f) p.forms[s] = f;
+      }
+      const last2 = entries.filter((e) => e.pid === id2).pop();
+      p.phase = last2 ? last2.state : pa.phase;
+      passages[id2] = p;
+    }
+    return { version: 1, passages, log: entries };
+  }
+  var LABELS = {
+    1: "Make text",
+    10: "Make text",
+    4: "Make quote",
+    2: "Pencil over",
+    6: "Pencil note",
+    12: "Pin here",
+    3: "Highlight",
+    5: "Circle as note",
+    8: "Keep as note",
+    9: "Read aloud",
+    7: "Read aloud",
+    11: "Read aloud"
+  };
+  var SOURCE_NAME = { ink: "pencil", type: "text", mark: "mark", voice: "voice" };
+  function matterActions(m, pid, probe = {}) {
+    if (!m.side.passages[pid]) return [];
+    const seed = { device: "probe", input: "probe", time: 0 };
+    const list = [];
+    for (const c of CROSSINGS) {
+      try {
+        cross(m, c.n, pid, { ...probe, seed });
+      } catch {
+        continue;
+      }
+      list.push({ id: `cross-${c.n}`, n: c.n, label: LABELS[c.n], from: c.from, to: c.to, run: (mm, opts) => cross(mm, c.n, pid, opts) });
+    }
+    const seen = /* @__PURE__ */ new Map();
+    for (const a of list) seen.set(a.label, (seen.get(a.label) || 0) + 1);
+    for (const a of list) if (seen.get(a.label) > 1) a.label = `${a.label} from ${SOURCE_NAME[a.from]}`;
+    return list;
+  }
+  function passageAt(m, from, to = from) {
+    let best = null;
+    for (const p of Object.values(m.side.passages)) {
+      const f = p.forms.type;
+      if (!f) continue;
+      const off = findQuote(m.text, f);
+      if (off === -1) continue;
+      const end = off + f.quote.length;
+      if (off <= Math.max(from, to - 1) && end >= Math.min(to, from + 1)) {
+        if (!best || f.quote.length < best.len) best = { id: p.id, len: f.quote.length };
+      }
+    }
+    return best ? best.id : null;
+  }
+  function menuForSelection(m, from, to) {
+    const pid = passageAt(m, from, to);
+    if (pid) return { pid, actions: matterActions(m, pid) };
+    const quote = m.text.slice(from, to);
+    if (!wordsOf(quote).length) return { pid: null, actions: [] };
+    const newId = `p-${hashOf([from, quote])}`;
+    const probe = seedTypePassage(m, { id: newId, quote, at: from, seed: { device: "probe", input: "probe", time: 0 } });
+    const actions = matterActions(probe, newId).map((a) => ({
+      ...a,
+      run: (mm, opts) => {
+        const id2 = mm.side.passages[newId] ? `${newId}-${opts.seed.time}` : newId;
+        return cross(seedTypePassage(mm, { id: id2, quote, at: from, seed: opts.seed }), a.n, id2, opts);
+      }
+    }));
+    return { pid: null, actions };
+  }
+  function attachStrokeToWord(m, strokeId, bodyOffset) {
+    const stroke = m.ink.strokes.find((s) => s.id === strokeId);
+    if (!stroke || typeof bodyOffset !== "number") return m;
+    for (const p of Object.values(m.side.passages)) {
+      const surf = p.forms.ink && p.forms.ink.surface;
+      if (!surf || !p.forms.type) continue;
+      const off = findQuote(m.text, p.forms.type);
+      if (off === -1 || bodyOffset < off || bodyOffset > off + p.forms.type.quote.length) continue;
+      const w = wordAt(surf, bodyOffset - off);
+      if (!w) continue;
+      const out = createMatter(m);
+      const st = out.ink.strokes.find((s) => s.id === strokeId);
+      st.word = { pid: p.id, i: surf.indexOf(w), w: w.w };
+      const ink = out.side.passages[p.id].forms.ink;
+      if (!ink.strokes.includes(strokeId)) ink.strokes.push(strokeId);
+      return out;
+    }
+    return m;
+  }
+
+  // src/mattermenu.js
+  var PILL_DELAY_MS = 450;
+  function createMatterMenu({ mount, view, getMenu, onRun, doc: doc2 = typeof document !== "undefined" ? document : null }) {
+    if (!mount || !view || !doc2) return { selectionChanged() {
+    }, open() {
+    }, close() {
+    }, isOpen: () => false };
+    const pill = doc2.createElement("button");
+    pill.type = "button";
+    pill.className = "rc-matter-pill";
+    pill.textContent = "Matter";
+    pill.hidden = true;
+    pill.setAttribute("aria-label", "Matter: change this passage into another form");
+    const list = doc2.createElement("div");
+    list.className = "rc-matter-menu";
+    list.setAttribute("role", "menu");
+    list.hidden = true;
+    mount.appendChild(pill);
+    mount.appendChild(list);
+    let timer = null;
+    let range = null;
+    const sel = () => {
+      const r = view.state.selection.main;
+      return r.empty ? null : { from: r.from, to: r.to };
+    };
+    function placeAt(el5, x, y) {
+      const box = mount.getBoundingClientRect ? mount.getBoundingClientRect() : { left: 0, top: 0, width: 800 };
+      const left = Math.max(8, Math.min((box.width || 800) - 180, x - box.left));
+      el5.style.left = `${left}px`;
+      el5.style.top = `${Math.max(8, y - box.top)}px`;
+    }
+    function hidePill() {
+      clearTimeout(timer);
+      pill.hidden = true;
+    }
+    function close() {
+      list.hidden = true;
+      list.innerHTML = "";
+    }
+    function open(r = sel(), x = null, y = null) {
+      if (!r) return false;
+      const menu = getMenu(r.from, r.to);
+      if (!menu || !menu.actions.length) return false;
+      range = r;
+      list.innerHTML = "";
+      for (const a of menu.actions) {
+        const b = doc2.createElement("button");
+        b.type = "button";
+        b.className = "rc-matter-item";
+        b.setAttribute("role", "menuitem");
+        b.dataset.id = a.id;
+        b.textContent = a.label;
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const res = onRun(a, range);
+          if (res && res.ok === false) {
+            const note = doc2.createElement("div");
+            note.className = "rc-matter-note";
+            note.textContent = res.error || "Not done";
+            list.appendChild(note);
+            setTimeout(close, 2400);
+          } else close();
+        });
+        list.appendChild(b);
+      }
+      if (x == null) {
+        const c = view.coordsAtPos ? view.coordsAtPos(r.to) : null;
+        if (c) {
+          x = c.left;
+          y = c.bottom + 6;
+        }
+      }
+      if (x != null) placeAt(list, x, y);
+      hidePill();
+      list.hidden = false;
+      const first = list.querySelector("button");
+      if (first && first.focus) first.focus();
+      return true;
+    }
+    function selectionChanged() {
+      hidePill();
+      if (!list.hidden) close();
+      const r = sel();
+      if (!r) return;
+      timer = setTimeout(() => {
+        const now2 = sel();
+        if (!now2 || now2.from !== r.from || now2.to !== r.to) return;
+        const menu = getMenu(r.from, r.to);
+        if (!menu || !menu.actions.length) return;
+        const c = view.coordsAtPos ? view.coordsAtPos(r.to) : null;
+        if (!c) return;
+        placeAt(pill, c.left, c.bottom + 6);
+        pill.hidden = false;
+      }, PILL_DELAY_MS);
+    }
+    pill.addEventListener("pointerdown", (e) => e.preventDefault());
+    pill.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    });
+    view.dom.addEventListener("contextmenu", (e) => {
+      if (!sel()) return;
+      if (open(sel(), e.clientX, e.clientY)) e.preventDefault();
+    });
+    doc2.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !list.hidden) close();
+    });
+    doc2.addEventListener("pointerdown", (e) => {
+      if (!list.hidden && !list.contains(e.target)) close();
+    });
+    return { selectionChanged, open, close, isOpen: () => !list.hidden, pill, list };
+  }
+
   // src/theme.js
   var DEFAULT_FONT_SIZE = 18;
   var COLUMN_CHARS = 66;
@@ -41998,6 +42771,8 @@ ${clean(nextLineText)}`;
       if (menuOpen) setToolbarFaded(false);
     }
     let inkLayer = null;
+    let matterMenu = null;
+    let radialOuterItems = () => [];
     let pencilSqueeze = null;
     let library = null;
     let recense = null;
@@ -42055,6 +42830,7 @@ ${clean(nextLineText)}`;
           if (recense) recense.docChanged();
         }
         if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
+        if (matterMenu && update.selectionSet) matterMenu.selectionChanged();
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
           if (inkLayer) inkLayer.relayout();
@@ -42078,6 +42854,51 @@ ${clean(nextLineText)}`;
       parent: editorHost
     });
     attachSwipePaging(view);
+    let matterSide = { version: 1, passages: {}, log: [] };
+    let matterDevice = (() => {
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      if (/iPhone/.test(ua)) return "iPhone";
+      if (/iPad/.test(ua) || /Macintosh/.test(ua) && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1) return "iPad";
+      if (/Macintosh/.test(ua)) return "Mac";
+      return "web";
+    })();
+    let matterInput = "keys";
+    const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
+    function postMatter() {
+      const h = window.webkit?.messageHandlers?.matter;
+      if (h && typeof h.postMessage === "function") h.postMessage(JSON.stringify(matterSide));
+    }
+    function applyMatter(fn) {
+      if (!view) return { ok: false, error: "no editor" };
+      const before = createMatter({
+        text: view.state.doc.toString(),
+        ink: inkLayer ? inkLayer.getInk() : null,
+        side: matterSide
+      });
+      let after;
+      try {
+        after = fn(before);
+      } catch (e) {
+        return { ok: false, error: String(e && e.message || e) };
+      }
+      if (after.text !== before.text) {
+        const a = before.text, b = after.text;
+        let i = 0;
+        while (i < a.length && i < b.length && a[i] === b[i]) i++;
+        let j = 0;
+        while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+        view.dispatch({ changes: { from: i, to: a.length - j, insert: b.slice(i, b.length - j) } });
+      }
+      if (inkLayer && JSON.stringify(after.ink) !== JSON.stringify(before.ink)) {
+        inkLayer.setInk(after.ink);
+        inkLayer.relayout();
+        window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));
+      }
+      const sideChanged = JSON.stringify(after.side) !== JSON.stringify(matterSide);
+      matterSide = after.side;
+      if (sideChanged) postMatter();
+      return { ok: true };
+    }
     function insertBlock(text) {
       const line = view.state.doc.lineAt(view.state.selection.main.head);
       const insert2 = `
@@ -42093,11 +42914,41 @@ ${String(text ?? "")}`;
       getPageIndex: () => view ? currentPage(view.state) : 0,
       globalObj: typeof window !== "undefined" ? window : null,
       mount: editorHost,
+      radialOuter: () => radialOuterItems(),
       onToolChange: (tool) => {
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+      },
+      // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
+      onStrokeAdded: (stroke) => {
+        if (!Object.values(matterSide.passages).some((p) => p.forms.ink && p.forms.ink.surface)) return;
+        const p0 = stroke.points && stroke.points[0];
+        const sd = view.scrollDOM;
+        if (!p0 || !sd || !sd.getBoundingClientRect) return;
+        const r = sd.getBoundingClientRect();
+        const pos = view.posAtCoords({ x: r.left + p0[0] - sd.scrollLeft, y: r.top + p0[1] - sd.scrollTop });
+        if (pos != null) applyMatter((m) => attachStrokeToWord(m, stroke.id, pos));
       }
     });
+    view.dom.addEventListener("pointerdown", (e) => {
+      matterInput = e.pointerType === "pen" ? "pencil" : e.pointerType === "touch" ? "touch" : "keys";
+    }, true);
+    view.dom.addEventListener("keydown", () => {
+      matterInput = "keys";
+    }, true);
+    const matterMenuFor = (from, to) => menuForSelection(
+      createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }),
+      from,
+      to
+    );
+    const runMatter = (action) => applyMatter((m) => action.run(m, { seed: matterSeed() }));
+    matterMenu = createMatterMenu({ mount: editorHost, view, getMenu: matterMenuFor, onRun: runMatter });
+    radialOuterItems = () => {
+      const r = view.state.selection.main;
+      if (r.empty) return [];
+      const menu2 = matterMenuFor(r.from, r.to);
+      return (menu2 && menu2.actions ? menu2.actions : []).map((a) => ({ id: a.id, label: a.label, pick: () => runMatter(a) }));
+    };
     speaker = createSpeaker(typeof window !== "undefined" ? window : null);
     library = createLibraryUI({
       getView: () => view,
@@ -42429,6 +43280,42 @@ ${String(text ?? "")}`;
           inkLayer.relayout();
           return merged;
         },
+        // FEAT-08 · one matter: draftpad.matter.json beside draftpad.md and draftpad.ink.json (src/matter.js).
+        getMatter: () => JSON.stringify(matterSide),
+        setMatter: (data2) => {
+          matterSide = fromFiles({ [FILES.side]: typeof data2 === "string" ? data2 : JSON.stringify(data2 || {}) }).side;
+        },
+        mergeMatter: (remote) => {
+          const r = typeof remote === "string" ? JSON.parse(remote) : remote;
+          matterSide = mergeMatter(matterSide, r);
+          postMatter();
+          return JSON.stringify(matterSide);
+        },
+        seedPassage: (state2, args) => applyMatter((m) => {
+          const a = typeof args === "string" ? JSON.parse(args) : args;
+          if (state2 === "ink") return seedInkPassage(m, a);
+          if (state2 === "voice") return seedVoicePassage(m, a);
+          return seedTypePassage(m, a);
+        }),
+        cross: (n, pid, opts) => applyMatter((m) => cross(m, Number(n), String(pid), typeof opts === "string" ? JSON.parse(opts) : opts || {})),
+        reverseCrossing: () => applyMatter((m) => reverseLast(m, { device: matterDevice })),
+        // per device
+        setMatterDevice: (name2) => {
+          if (name2) matterDevice = String(name2);
+          return matterDevice;
+        },
+        // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
+        matterMenu: (from, to) => {
+          const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+          return menuForSelection(m, Number(from), Number(to)).actions.map(({ id: id2, label, from: f, to: t2 }) => ({ id: id2, label, from: f, to: t2 }));
+        },
+        runMatterAction: (id2, from, to) => {
+          const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
+          const a = menuForSelection(m, Number(from), Number(to)).actions.find((x) => x.id === id2);
+          return a ? applyMatter((mm) => a.run(mm, { seed: matterSeed() })) : { ok: false, error: "not available here" };
+        },
+        openMatterMenu: () => matterMenu ? matterMenu.open() : false,
+        crossings: () => CROSSINGS.map((c) => ({ ...c })),
         getInkTool: () => inkLayer ? inkLayer.getTool() : "select",
         setInkTool: (tool) => voiceHandlers.setInkTool(tool),
         getInkColor: () => inkLayer ? inkLayer.getColor() : INK_COLORS[0],

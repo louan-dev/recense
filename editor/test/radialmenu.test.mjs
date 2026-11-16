@@ -98,3 +98,20 @@ test('the menu centre stays inside the viewport; no hover point (0, 0) centres i
   assert.deepEqual(radialCentre(400, 300, 1000, 800), [400, 300]);
   assert.deepEqual(radialCentre(5, 5, 0, 0), [5, 5], 'unknown viewport: as given');
 });
+
+test('the outer ring places the host list (FEAT-08 matter actions), read once per open; a pick runs it', () => {
+  let reads = 0;
+  const ran = [];
+  const menu = createRadialMenu({
+    doc: null,
+    items: () => { reads++; return { inner: [{ id: 'pen' }], outer: [{ id: 'cross-1', label: 'As a list', pick: () => ran.push('cross-1') }] }; },
+    onPick: (it, ring) => { if (ring === 'outer') it.pick(); }
+  });
+  const before = reads;
+  menu.open(300, 300);
+  menu.move(300, 300 - 112);
+  menu.move(300, 300 - 111);
+  assert.equal(reads - before, 1, 'read once on open');
+  menu.release(300, 300 - 112);
+  assert.deepEqual(ran, ['cross-1']);
+});

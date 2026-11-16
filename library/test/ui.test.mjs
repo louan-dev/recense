@@ -183,9 +183,9 @@ const fpKey = async (b) => {
 const keepKey = async (p) =>
   Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("gallery:files/" + p))).toString("hex").slice(0, 24);
 
-const test = async (name, owner, fn) => {
+const test = async (name, owner, fn, opts) => {
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext(opts);
   if (owner) await ctx.addCookies([{ name: "CF_Authorization", value: ownerJwt, url: base }]);
   const pg = await ctx.newPage();
   pg.on("dialog", (d) => d.accept());
@@ -523,6 +523,108 @@ await test("a Recense transcript shows in Learn mode: original first, then its E
   // item 20: once a phrase has turned, its last word is settled white, never left faded yellow
   await pg.waitForFunction(() => [...document.querySelectorAll(".tx .txw")].every((w) => w.style.color === "rgb(255, 255, 255)" || w.style.color === "rgba(255, 255, 255, 1)"));
 });
+
+// FEAT-16 P5 / FEAT-07: the pill on the web player. The magnifier at the stroke's start opens Find; what is typed is
+// found in the words and their translations (accents ignored), "1 of 2", ⌄ plays from the hit; the hits are marks on
+// the time ruler; Escape (or the waveform) goes back to scrubbing. The whole transcript lets go of the voice on a hand
+// scroll and Now brings it back. FEAT16_SHOT=<path> saves the screenshot of the open pill for the spec.
+await test("FEAT-16 P5: the FEAT-07 pill (Find + scrubber) on the web player, and Now after a hand scroll", true, async (pg) => {
+  const KEEP = await mf.getR2Bucket("KEEP");
+  const secs = 12;
+  const wav = Buffer.alloc(44 + 16000 * 2 * secs);
+  wav.write("RIFF", 0); wav.writeUInt32LE(36 + 32000 * secs, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(32000 * secs, 40);
+  await MAIN.put("files/Pill/p.wav", wav, { httpMetadata: { contentType: "audio/wav" } });
+  const hex = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("gallery:files/Pill/p.wav"))).toString("hex").slice(0, 24);
+  const say = (id, at, text, en) => ({ id, words: text.split(" ").map((w, k) => ({ text: w, start: at + k * 0.3, end: at + k * 0.3 + 0.25 })), english: en.split(" ").map((w, k) => ({ w, s: [k] })) });
+  const ls = [
+    say(0, 0, "Xin chào các bạn", "Hello my friends"),
+    say(1, 1.5, "Hôm nay nói về Việt Nam", "Today we talk about Vietnam"),
+    say(2, 3, "Cà phê sữa đá", "Iced milk coffee"),
+    say(3, 4.5, "Đà Nẵng và Hà Nội", "Da Nang and Hanoi"),
+    say(4, 6, "Người Việt uống cà phê", "Vietnamese people drink coffee"),
+  ];
+  for (let i = 5; i < 30; i++) ls.push(say(i, 7 + i * 0.15, "Dòng số " + i, "Line number " + i));
+  await KEEP.put("keep/" + hex + ".v2.json", JSON.stringify({ complete: true, lines: ls }));
+  // (the audio is in the viewer's shadow root: Playwright's $eval reaches it, document.querySelector doesn't)
+  const near = async (t) => {
+    for (let i = 0; i < 30; i++) {
+      if (Math.abs((await pg.$eval("audio", (a) => a.currentTime)) - t) < 0.5) return;
+      await pg.waitForTimeout(100);
+    }
+    assert.fail("the audio never got to " + t);
+  };
+  await pg.goto(base + "/main?p=Pill");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForSelector(".tx.learn .txp:not([hidden])");
+  // the magnifier comes with the transcript
+  await pg.waitForSelector(".p-hb .p-hfind:not([hidden])", { timeout: 5000 });
+  await pg.click(".p-hfind");
+  await pg.waitForSelector(".p-find:not([hidden])");
+  assert.ok(await pg.$eval(".p-hb", (e) => e.classList.contains("finding")), "the Find face takes the stroke's place");
+  assert.equal(await pg.$eval(".p-hbbox", (e) => getComputedStyle(e).display), "none");
+  assert.equal(await pg.evaluate(() => document.activeElement && document.activeElement.className), "p-ffield", "the field has the keys");
+  await pg.keyboard.type("viet");
+  assert.equal(await pg.textContent(".p-fcount"), "2 found", "words, accents ignored (Việt)");
+  await pg.$eval("audio", (a) => a.pause());
+  await pg.keyboard.press("Enter");
+  assert.equal(await pg.textContent(".p-fcount"), "1 of 2");
+  await near(1.5);
+  assert.equal(await pg.$eval("audio", (a) => a.paused), false, "a hit plays from its first word (FEAT-07 rule 1)");
+  await pg.$eval("audio", (a) => a.pause());
+  await pg.click('.p-find .p-fstep[aria-label="Next Match"]');
+  assert.equal(await pg.textContent(".p-fcount"), "2 of 2");
+  await near(6);
+  await pg.$eval("audio", (a) => a.pause());
+  await pg.click('.p-find .p-fstep[aria-label="Previous Match"]');
+  assert.equal(await pg.textContent(".p-fcount"), "1 of 2", "⌃ goes back, wrapping round");
+  // the translation is searched too; a miss says so
+  await pg.fill(".p-ffield", "coffee");
+  assert.equal(await pg.textContent(".p-fcount"), "2 found");
+  await pg.fill(".p-ffield", "zzz");
+  assert.equal(await pg.textContent(".p-fcount"), "No matches");
+  assert.ok(await pg.$eval('.p-fstep[aria-label="Next Match"]', (b) => b.disabled));
+  await pg.fill(".p-ffield", "da nang");
+  assert.equal(await pg.textContent(".p-fcount"), "1 found", "đ folds to d");
+  if (process.env.FEAT16_SHOT) {
+    await pg.keyboard.press("Enter");
+    await pg.$eval("audio", (a) => a.pause());
+    await pg.waitForTimeout(400);
+    await pg.screenshot({ path: process.env.FEAT16_SHOT });
+  }
+  // Escape: back to scrubbing (the viewer stays open), the text kept
+  await pg.keyboard.press("Escape");
+  await pg.waitForSelector(".p-find", { state: "hidden" });
+  assert.ok(!(await pg.$eval(".p-hb", (e) => e.classList.contains("finding"))));
+  assert.ok(await pg.isVisible("#lb"), "Escape in the field closes Find, not the viewer");
+  assert.equal(await pg.$eval(".p-ffield", (e) => e.value), "da nang");
+  // the hit is a mark on the time ruler (hold the stroke: Time Seeking)
+  const at = await pg.$eval(".p-hline", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await pg.mouse.move(at.x, at.y);
+  await pg.mouse.down();
+  await pg.waitForSelector(".p-hb.seeking", { timeout: 3000 });
+  assert.equal(await pg.$$eval(".p-skticks .p-skhit", (a) => a.length), 1, "one mark for the one hit");
+  await pg.mouse.up();
+  await pg.waitForSelector(".p-hb.seeking", { state: "detached", timeout: 3000 }).catch(() => {});
+  // the waveform goes back to scrubbing too
+  await pg.click(".p-hfind");
+  await pg.waitForSelector(".p-find:not([hidden])");
+  await pg.click(".p-fback");
+  await pg.waitForSelector(".p-find", { state: "hidden" });
+
+  // the whole transcript: a hand scroll lets go of the voice, Now brings it back
+  await pg.click(".tx.learn .txp:not([hidden])");
+  await pg.waitForSelector(".txall .txlist .txrow");
+  assert.ok(await pg.$(".txall .txfollow[hidden]"), "no Now while the list follows the voice");
+  const box = await pg.$eval(".txall .txlist", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await pg.mouse.move(box.x, box.y);
+  await pg.mouse.wheel(0, 400);
+  await pg.waitForSelector(".txall .txfollow:not([hidden])");
+  await pg.click(".txall .txfollow");
+  await pg.waitForSelector(".txall .txfollow", { state: "hidden" });
+  await pg.click('.txall .txbtn:text("Done")');
+}, process.env.FEAT16_SHOT ? { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 } : undefined);
 
 await test("item 20: the notation toggle (beside Chords) cycles Prosody, Chords, Notes, the pairs, All Off, and is kept", true, async (pg) => {
   await pg.goto(base + "/main?p=Songs");

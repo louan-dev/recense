@@ -1159,6 +1159,9 @@ final class RecenseHomeBar: WKWebView, WKScriptMessageHandler, WKNavigationDeleg
                 r.count == 4 ? CGRect(x: r[0].doubleValue, y: r[1].doubleValue, width: r[2].doubleValue, height: r[3].doubleValue) : nil
             }
         case "open": open = b["on"] as? Bool ?? false; onOpen?(open)
+        case "find":   // FEAT-16 P5: the pill's Find face is open: its field takes the keys, as the line editor's does
+            if b["on"] as? Bool ?? false { window?.makeKey(); window?.makeFirstResponder(self) }
+            else if window?.firstResponder === self { window?.makeFirstResponder(nil) }
         case "say": if let t = b["t"] as? String { say?(t) }
         case "cmd":
             switch b["c"] as? String {
@@ -8164,8 +8167,37 @@ final class NativeSources {
         log(on ? "following \(pos.source)" : "idle")
     }
 
+    // Derived from Spec: FEAT-16 P5 (the FEAT-07 pill on the strip)
+    /// The transcript the home bar's Find searches (homebar.js find(), one implementation with Gallery's player), sent
+    /// when it changes, checked once a second. Each line's time is the player's, mapped as onPick maps a picked line,
+    /// so going to a hit seeks where picking that line would. No followed episode: no lines, and no magnifier.
+    var findLinesAt = 0.0, findLinesSig = ""
+    func pushFindLines() {
+        let now = CACurrentMediaTime()
+        guard now - findLinesAt >= 1 else { return }
+        findLinesAt = now
+        let ep = browserMode ? episode : nil
+        let lines = ep?.display ?? []
+        let off = (ep?.shift ?? 0) - 0.05 - cfg.syncOffset * pos.rate
+        var rows: [[String: Any]] = [], sig = ep?.key ?? ""
+        rows.reserveCapacity(lines.count)
+        for l in lines {
+            let text = l.words.map(\.text).joined(separator: " ")
+            let tr = l.english.map { $0.map(\.w).joined(separator: " ") } ?? ""
+            let s = max(0, l.start + off)
+            var r: [String: Any] = ["s": s, "text": text]
+            if !tr.isEmpty { r["tr"] = tr }
+            rows.append(r)
+            sig += "|\(Int(s * 100))\(text)\(tr)"
+        }
+        guard sig != findLinesSig else { return }
+        findLinesSig = sig
+        overlay.homeBar.call("lines", rows)
+    }
+
     func frame() {
         if browserActive != browserMode { setBrowserMode(!browserMode) }
+        pushFindLines()
         routeSound()
         overlay.soundNo = soundBlock
         ccTitle(paused: !browserMode || (expectPaused ?? pos.paused))

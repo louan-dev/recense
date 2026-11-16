@@ -849,7 +849,10 @@ export function createInkLayer(view, options = {}) {
     // Where the pill and palette float. Never the text's scroller: a child there joins
     // CodeMirror's flex row and squeezes the text column.
     mount = null,
-    onToolChange = null
+    onToolChange = null,
+    // UI-04 P2 outer ring: [{ id, label, pick() }] read when the radial menu opens (FEAT-08 matter actions).
+    radialOuter = null,
+    onStrokeAdded = null   // FEAT-08 #2: called with each new drawn stroke (word attachment)
   } = options;
 
   // Regression guard: BUG-07 — prefer the view's own live, measured line height over the
@@ -1618,11 +1621,15 @@ export function createInkLayer(view, options = {}) {
       radial = createRadialMenu({
         doc: docNode,
         mount: docNode?.body || null,   // fixed to the viewport: no transformed ancestor
-        items: {
+        items: () => ({
           inner: PALETTE_TOOLS.map(t => ({ id: t, label: INK_TOOL_NAMES[t] || t, icon: INK_TOOL_ICONS[t] || '' })),
-          outer: []
+          outer: typeof radialOuter === 'function' ? (radialOuter() || []) : []
+        }),
+        onPick: (item, ring) => {
+          if (ring === 'outer') { if (typeof item.pick === 'function') item.pick(); }
+          else setTool(item.id);
+          haptic('snap');
         },
-        onPick: item => { setTool(item.id); haptic('snap'); },
         reduceMotion: () => Boolean(globalObj?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches),
         viewport: () => ({ w: Number(globalObj?.innerWidth) || 0, h: Number(globalObj?.innerHeight) || 0 })
       });
@@ -1971,6 +1978,7 @@ export function createInkLayer(view, options = {}) {
     if (finalShape && (finalShape.kind === 'polygon' || finalShape.kind === 'line') && currentTool !== 'underline') {
       handlesFor = stroke.id;
     }
+    if (typeof onStrokeAdded === 'function') { try { onStrokeAdded(stroke); } catch { /* never lose the stroke */ } }
 
     activePoints = [];
     if (activeGroup) activeGroup.innerHTML = '';
@@ -2182,6 +2190,8 @@ export function createInkLayer(view, options = {}) {
   }
   function addStrokes(list) {
     for (const st of list) { reanchor(st); inkDoc.strokes.push(st); }
+    // Duplicates and pastes are new strokes, like a drawn one (FEAT-08 attaches them to a frozen passage's word).
+    if (typeof onStrokeAdded === 'function') for (const st of list) { try { onStrokeAdded(st); } catch { /* keep the stroke */ } }
     render();
     schedulePost();
   }

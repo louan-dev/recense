@@ -168,11 +168,32 @@ public struct TranscriptLineText: View {
             var a = AttributedString(line.text); a.foregroundColor = .white.opacity(0.45); return a
         }
         guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
+        if SongLight.sung(line) { return sung(line, t) }
         let cut = TranscriptLight.spoken(line, at: t)
         var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
         said.foregroundColor = .white
         rest.foregroundColor = .white.opacity(0.4)
         return said + rest
+    }
+
+    /// FEAT-20: a song's active line as the Mac lights it (Cadence): the word being sung gold up to the letter its
+    /// syllable has reached (SongLight.fill), the words sung white, a word written but not sung never lit, the rest dim.
+    static func sung(_ line: TranscriptLine, _ t: Double) -> AttributedString {
+        var a = AttributedString(line.text)
+        a.foregroundColor = .white.opacity(SongLight.ahead)
+        for (i, r) in TranscriptLight.ranges(line).enumerated() {
+            let w = line.words[i]
+            guard let r, w.un != true, t >= w.start else { continue }
+            if t >= w.end {   // sung: the gold eases into white over 0.45 s, as on the Mac and the web
+                if let ar = Range(r, in: a) { a[ar].foregroundColor = SongLight.settled((t - w.end) / SongLight.settle) }
+                continue
+            }
+            let k = SongLight.litCount(w, at: t)
+            guard k > 0, let to = line.text.index(r.lowerBound, offsetBy: k, limitedBy: r.upperBound),
+                  let ar = Range(r.lowerBound..<to, in: a) else { continue }
+            a[ar].foregroundColor = SongLight.gold
+        }
+        return a
     }
 }
 
@@ -209,8 +230,9 @@ public struct TranscriptView<Extra: View>: View {
     /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed).
     private func now() -> Double? { scrub.held ?? time().map { ticking ? $0 + FrameClock.shared.lead : $0 } }
 
-    /// The lines holding what's typed in the pill (none while it isn't searching).
-    private var hits: [Int] { state.finding ? TranscriptFind.hits(lines, state.query) : [] }
+    /// The lines holding what's typed in the pill. Kept after Back to Scrubbing (the text stays), so the hits stay marks
+    /// on the scrubber's track and strong detents under the finger (FEAT-07 rule 1; FEAT-16 P5, owner's delegation 11-16).
+    private var hits: [Int] { TranscriptFind.hits(lines, state.query) }
 
     private var hasTranslations: Bool { lines.contains { !($0.translation ?? "").isEmpty } }
 
@@ -434,3 +456,13 @@ struct SelectableText: NSViewRepresentable {
     }
 }
 #endif
+
+extension SongLight {
+    /// The light's head as the Mac and the web player draw it (gallery.js GOLD: 255, 214, 51).
+    static let gold = Color(red: 1, green: 214 / 255, blue: 51 / 255)
+    /// A sung word, `f` (0…1) of the way from gold to white (gallery.js `mix(GOLD, SPOKEN, …)`).
+    static func settled(_ f: Double) -> Color {
+        let x = max(0, min(1, f))
+        return Color(red: 1, green: (214 + 41 * x) / 255, blue: (51 + 204 * x) / 255)
+    }
+}

@@ -63,7 +63,10 @@ export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceM
   let open = false;
   let hot = null;
   const nodes = { inner: [], outer: [] };
-  const list = () => ({ inner: items?.inner || [], outer: items?.outer || [] });
+  // items may be a function: read once per open, so a costly list (FEAT-08 matter actions) isn't rebuilt per move.
+  const read = () => { const it = typeof items === 'function' ? items() : items; return { inner: it?.inner || [], outer: it?.outer || [] }; };
+  let snap = { inner: [], outer: [] };
+  const list = () => snap;
 
   function build() {
     if (el || !doc || typeof doc.createElement !== 'function') return;
@@ -117,6 +120,7 @@ export function createRadialMenu({ doc, mount, items, onPick = () => {}, reduceM
   return {
     open(x, y) {
       build();
+      snap = read();
       const vp = viewport() || {};
       [cx, cy] = radialCentre(Number(x) || 0, Number(y) || 0, vp.w, vp.h);
       open = true;
