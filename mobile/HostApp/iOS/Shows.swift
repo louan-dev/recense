@@ -12,6 +12,15 @@ struct RecenseRoot: View {
     // player P1 (11-11): the invented sample pool only for simulator checks; on the owner's devices Home holds what is
     // real (an empty catalog until the pool store, S3), so no row looks playable that isn't
     @State private var model = ShowsModel(store: RecenseRoot.store())
+    @Environment(\.scenePhase) private var phase
+
+    // Derived from Spec: BUG-16
+    static func sweepDownloads() {
+        Task.detached(priority: .utility) {
+            _ = try? Downloads.sweep()
+            await MainActor.run { Playback.rescan() }
+        }
+    }
 
     static func store() -> MemoryCatalog {
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
@@ -29,6 +38,7 @@ struct RecenseRoot: View {
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
         .onAppear {
             Playback.model = model
+            model.files = HomeFiles { Playback.rescan() }   // FEAT-07 P0: Rename and Delete on the rows
             NativePlayer.shared.saved = { [model] path in
                 Playback.rescan()
                 Playback.landed(path)
@@ -37,7 +47,9 @@ struct RecenseRoot: View {
             // FEAT-10: the owner changed Translate Into; replan with what's already heard
             model.translateIntoChanged = { [model] in PlaybackTranslator.shared.run(model, lang: Listener.shared.lang) }
         }
-        .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Playback.rescan() } }
+        .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Self.sweepDownloads() } }
+        // BUG-16: what AirDrop, Files or a browser put in downloads/ is adopted on every return; audio settles into Music
+        .onChange(of: phase) { _, p in if p == .active { Self.sweepDownloads() } }
         .onAppear {   // simulator checks: SIMCTL_CHILD_RECENSE_TAB=new|library|search opens that tab
             switch ProcessInfo.processInfo.environment["RECENSE_TAB"] {
             case "new": model.tab = .new

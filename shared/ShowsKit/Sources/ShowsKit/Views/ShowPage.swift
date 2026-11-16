@@ -1,5 +1,5 @@
 // A show's page, like a Podcasts show page: its art and title, Play, its seasons, then its episodes. Each row slides
-// (swipe) for Save and Played; the same actions are in its ··· and context menus, so none depends on a gesture alone.
+// (swipe): left → right deletes a file Recense keeps (FEAT-07 P0), right → left Save and Played; the same actions are in its ··· and context menus, so none depends on a gesture alone.
 import SwiftUI
 
 struct ShowPage: View {
@@ -31,8 +31,13 @@ struct ShowPage: View {
                     if page.episodes.isEmpty { Text("No episodes.").foregroundStyle(.secondary) }
                     ForEach(page.episodes) { e in
                         EpisodeRow(model: model, episode: e)
-                            .swipeActions(edge: .leading) { playedButton(e) }
-                            .swipeActions(edge: .trailing) { saveButton(e) }
+                            // slide left → right deletes (owner 2026-11-15, FEAT-07 P0); Played and Save on the other side
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                if model.canChange(e) {
+                                    Button(role: .destructive) { model.delete(e) } label: { Label("Delete", systemImage: "trash") }
+                                } else { playedButton(e) }
+                            }
+                            .swipeActions(edge: .trailing) { saveButton(e); if model.canChange(e) { playedButton(e) } }
                             .contextMenu { EpisodeActions(model: model, episode: e) }
                     }
                 }
@@ -96,7 +101,9 @@ struct EpisodeRow: View {
             Text(episode.title).font(.title3.weight(.semibold)).lineLimit(3)
             if let s = episode.summary { Text(s).font(.body).foregroundStyle(.secondary).lineLimit(2) }
             HStack(spacing: 10) {
-                PlayCapsule(entry: FeedEntry(episode: episode, showTitle: "", position: nil)) { model.play(episode) }
+                PlayCapsule(entry: FeedEntry(episode: episode, showTitle: "", position: nil),
+                            playing: model.isPlaying(episode),
+                            looping: model.loopOne && model.playing?.id == episode.id) { model.playOrPause(episode) }
                 if episode.transcript == .transcribing { Text("Transcribing…").font(.subheadline).foregroundStyle(.secondary) }
                 if episode.transcript == .ready { Image(systemName: "text.quote").foregroundStyle(.secondary).accessibilityLabel("Transcript") }
                 if episode.state?.isStarred == true { Image(systemName: "bookmark.fill").foregroundStyle(Theme.accent).accessibilityLabel("Saved") }

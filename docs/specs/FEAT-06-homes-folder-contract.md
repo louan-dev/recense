@@ -57,7 +57,9 @@ the iPhone and the iPad — with no network at any point.
 - `add(_:to:)` takes a file in (move by default, copy on request), gives it a free
   name rather than overwriting, records sha256 at landing time.
 - `home(for:)` picks the default home by `Kind(path:)`: audio → Music
-  (`.m4b`/`.aa`/`.aax` → Audiobooks), pdf and text → Study, anything else → Downloads.
+  (`.m4b`/`.aa`/`.aax` → Audiobooks), pdf and text → Study, anything else → `downloads/`.
+- Label (owner 2026-11-15): the app shows `downloads/` as **Inbox** (home label, Search filter, Lock Screen
+  album). The folder keeps its name. Library › Downloaded keeps its own meaning: files stored on this device.
 - `adopt(_:)` records files already in a home that the manifest does not know
   (dropped by Finder, the Files app, AirDrop, Pulltube), once each.
 - `remove(_:from:)` moves the file into `trash/` and records where it came from

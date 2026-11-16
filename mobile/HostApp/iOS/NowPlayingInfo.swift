@@ -6,12 +6,12 @@ enum NowPlayingInfo {
     static let skipBack: Double = 15     // the in-app buttons' steps, so both places do the same
     static let skipForward: Double = 30
 
-    /// "library/Music/Player check.m4a" → ("Player check", "Music"); "downloads/x.mp4" → ("x", "Downloads").
+    /// "library/Music/Player check.m4a" → ("Player check", "Music"); "downloads/x.mp4" → ("x", "Inbox"): the folder keeps its name (FEAT-06), the label says Inbox (owner 2026-11-15).
     static func names(for path: String) -> (title: String, album: String) {
         let ns = path as NSString
         let title = (ns.lastPathComponent as NSString).deletingPathExtension
         let folder = (ns.deletingLastPathComponent as NSString).lastPathComponent
-        let album = folder.isEmpty ? "Recense" : folder.prefix(1).uppercased() + folder.dropFirst()
+        let album = folder.isEmpty ? "Recense" : folder == "downloads" ? "Inbox" : folder.prefix(1).uppercased() + folder.dropFirst()
         return (title.isEmpty ? "Recense" : title, album)
     }
 

@@ -8,7 +8,7 @@ func check(_ ok: Bool, _ what: String, line: Int = #line) { if !ok { failed += 1
 
 let n = NowPlayingInfo.names(for: "library/Music/Player check.m4a")
 check(n.title == "Player check" && n.album == "Music", "names: \(n)")
-check(NowPlayingInfo.names(for: "downloads/x.mp4") == ("x", "Downloads"), "downloads album")
+check(NowPlayingInfo.names(for: "downloads/x.mp4") == ("x", "Inbox"), "downloads/ is shown as Inbox (owner 2026-11-15)")
 
 let a = NowPlayingInfo.info(path: "library/Music/a.m4a", time: 7, duration: 13, playing: false)
 check(a[MPMediaItemPropertyPlaybackDuration] as? Double == 13, "duration carried")

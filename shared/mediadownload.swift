@@ -127,7 +127,7 @@ enum Downloads {
         let pull = root.appendingPathComponent(pulltubeFolder, isDirectory: true)
         let found = ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
             + ((try? fm.contentsOfDirectory(at: pull, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
-        for f in found {
+        for f in found where ready(f) {
             let ext = f.pathExtension.lowercased()
             let name = f.deletingLastPathComponent().standardizedFileURL == pull.standardizedFileURL
                 ? pulltubeFolder + "/" + f.lastPathComponent : f.lastPathComponent
@@ -140,6 +140,31 @@ enum Downloads {
     }
 
     static let pulltubeFolder = "Pulltube"
+
+    // Derived from Spec: BUG-16
+    /// A file another app is still writing waits: one changed in the last 3 s, or a browser's partial name.
+    static func ready(_ f: URL, now: Date = Date()) -> Bool {
+        let n = f.lastPathComponent.lowercased()
+        if [".part", ".crdownload", ".download", ".opdownload", ".tmp"].contains(where: { n.hasSuffix($0) }) { return false }
+        let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        return now.timeIntervalSince(m) >= quiet
+    }
+    /// How long a file must be left alone before it's taken (tests set 0 for files they just wrote).
+    nonisolated(unsafe) static var quiet: TimeInterval = 3
+
+    /// What lands in downloads/ by any route (Pulltube, Finder, AirDrop, a browser): recorded, and audio settled into
+    /// Music, with no command run (BUG-16). The Mac's watcher runs this on every change to the folder; iOS on launch
+    /// and on return to the app. The Mac also probes codecs first (adoptAndCheck).
+    @discardableResult
+    static func sweep() throws -> [DownloadEntry] {
+        var out: [DownloadEntry] = []
+        for e in try adopt() { out.append(try settle(e)) }
+        // a file adopted before BUG-16 was fixed (recorded, never settled) settles now
+        for e in manifest() where e.mode == .audio && FileManager.default.fileExists(atPath: root.appendingPathComponent(e.name).path) {
+            if !out.contains(where: { $0.sha256 == e.sha256 }) { out.append(try settle(e)) }
+        }
+        return out
+    }
 
     /// The file an entry names (entries in Pulltube/ keep that subfolder in their name). An audio entry settles
     /// into the Music home (FEAT-12); until that move happens its bytes are still in downloads/, so this checks
@@ -218,6 +243,8 @@ import Network
 
 private let connection = NWPathMonitor()
 private var draining = false
+private var watchers: [DispatchSourceFileSystemObject] = []
+private var pending: DispatchWorkItem?
 
 extension Downloads {
     enum Failure: Error, CustomStringConvertible {
@@ -356,6 +383,39 @@ extension Downloads {
         return out
     }
 
+    // Derived from Spec: BUG-16
+    /// Watches downloads/ and downloads/Pulltube/: whatever lands there is adopted and audio settles into Music, 3 s
+    /// after the folder stops changing (a file still being written waits for the next pass). Runs once at launch too.
+    static func watchFolder(log: @escaping (String) -> Void = { NSLog("recense: \($0)") }) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: root.appendingPathComponent(pulltubeFolder), withIntermediateDirectories: true)
+        func pass() {
+            pending?.cancel()
+            let w = DispatchWorkItem {
+                Task.detached {
+                    do {
+                        let got = try await adoptAndCheck()
+                        // a file adopted before (recorded, never settled) settles too
+                        for e in try sweep() where !got.contains(where: { $0.sha256 == e.sha256 }) { log("settled \(e.name)") }
+                        for e in got { log("adopted \(e.name) → \(e.mode == .audio ? "Music" : "downloads")") }
+                    } catch { log("downloads sweep: \(error)") }
+                }
+            }
+            pending = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
+        }
+        for dir in [root, root.appendingPathComponent(pulltubeFolder)] {
+            let fd = open(dir.path, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .extend], queue: .main)
+            src.setEventHandler { pass() }
+            src.setCancelHandler { close(fd) }
+            src.resume()
+            watchers.append(src)
+        }
+        pass()
+    }
+
     /// When the Mac (re)gains a connection, the queue is run: a request made offline, here or on another device, goes
     /// without anyone pressing anything. Runs at launch too, once the first path arrives.
     static func watchConnection() {
@@ -428,6 +488,7 @@ func downloadsSelftest() -> Bool {
         unsetenv("RECENSE_HOME"); try? FileManager.default.removeItem(at: homeDir)
     }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    Downloads.quiet = 0; defer { Downloads.quiet = 3 }
 
     check(DownloadMode.audio.ytdlpArgs.contains("m4a") && DownloadMode.audio.ytdlpArgs.contains("-x"), "audio stays the m4a extraction Recense uses")
     check(DownloadMode.av.ytdlpArgs.joined(separator: " ").contains("avc1") && DownloadMode.av.ytdlpArgs.contains("mp4"), "audio+video asks for H.264 in mp4")
@@ -506,6 +567,21 @@ func downloadsSelftest() -> Bool {
     // quality: the height cap reaches yt-dlp's format choice
     check(DownloadMode.av.ytdlpArgs(maxHeight: 720).joined().contains("height<=720") &&
           !DownloadMode.av.ytdlpArgs(maxHeight: 720).joined().contains("1080"), "--max 720 caps the height")
+    // Regression guard: BUG-16 — an audio file dropped into downloads/ by another app reaches Music with no command run;
+    // one still being written (changed under 3 s ago) waits for the next pass
+    do {
+        let song = dir.appendingPathComponent("Туманы.m4a"), fresh = dir.appendingPathComponent("fresh.m4a")
+        try Data("song".utf8).write(to: song)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-10)], ofItemAtPath: song.path)
+        try Data("writing".utf8).write(to: fresh)
+        Downloads.quiet = 3; defer { Downloads.quiet = 0 }
+        let swept = try Downloads.sweep()
+        check(swept.contains { $0.name == "Туманы.m4a" } && FileManager.default.fileExists(atPath: Homes.url(.music).appendingPathComponent("Туманы.m4a").path)
+              && !FileManager.default.fileExists(atPath: song.path), "a dropped-in song settles into Music by itself", swept.map(\.name))
+        check(FileManager.default.fileExists(atPath: fresh.path) && !swept.contains { $0.name == "fresh.m4a" },
+              "a file still being written waits", swept.map(\.name))
+        try? FileManager.default.removeItem(at: fresh)
+    } catch { check(false, "BUG-16 sweep", error) }
     return ok
 }
 #endif

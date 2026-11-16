@@ -32,7 +32,7 @@ enum Home: String, Codable, CaseIterable, Sendable {
     var label: String {
         switch self {
         case .music: "Music"; case .study: "Study"; case .legal: "Legal"; case .audiobooks: "Audiobooks"
-        case .listen: "Listen"; case .downloads: "Downloads"; case .trash: "Trash"
+        case .listen: "Listen"; case .downloads: "Inbox"; case .trash: "Trash"   // downloads/ keeps its folder name (FEAT-06)
         }
     }
 }
@@ -53,6 +53,8 @@ enum Homes {
         case noOrigin(String)
         case missing(String)
         case mismatch(String)
+        case badName(String)
+        case taken(String)
 
         var description: String {
             switch self {
@@ -60,6 +62,8 @@ enum Homes {
             case .noOrigin(let p): "\(p) has no recorded origin to restore to"
             case .missing(let p): "\(p) is not on this device"
             case .mismatch(let p): "\(p) does not match the bytes that were recorded"
+            case .badName(let n): "“\(n)” can’t be used as a name"
+            case .taken(let n): "Something called “\(n)” is already here"
             }
         }
     }
@@ -110,7 +114,11 @@ enum Homes {
         try FileManager.default.createDirectory(at: url(home), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try e.encode(entries.sorted { $0.added > $1.added }).write(to: indexURL(home), options: .atomic)
+        NotificationCenter.default.post(name: Homes.changed, object: nil)
     }
+
+    /// Posted after any home's manifest changes (add, move, rename, forget): automatic carry listens (FEAT-09 P4).
+    static let changed = Notification.Name("local.recense.homes.changed")
 
     /// Adds, or replaces by path, one entry.
     static func record(_ entry: HomeEntry, in home: Home) throws {
@@ -237,6 +245,40 @@ enum Homes {
         return trashed
     }
 
+    // Derived from Spec: FEAT-07 P0
+    /// Renames a file in place (its subfolder and extension kept), so Carry sees a move: same bytes, new path.
+    /// Refuses an empty name, a "/", a leading ".", or a name already there; nothing moves then.
+    @discardableResult
+    static func rename(_ entry: HomeEntry, to raw: String, in home: Home) throws -> HomeEntry {
+        let ext = (entry.path as NSString).pathExtension
+        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !ext.isEmpty, (base as NSString).pathExtension.lowercased() == ext.lowercased() { base = (base as NSString).deletingPathExtension }
+        guard !base.isEmpty, !base.contains("/"), !base.hasPrefix(".") else { throw Failure.badName(raw) }
+        let dir = (entry.path as NSString).deletingLastPathComponent
+        let name = ext.isEmpty ? base : base + "." + ext
+        let path = dir.isEmpty ? name : dir + "/" + name
+        guard path != entry.path else { return entry }
+        let fm = FileManager.default
+        let source = file(entry, in: home), target = url(home).appendingPathComponent(path)
+        guard fm.fileExists(atPath: source.path) else { throw Failure.missing(entry.path) }
+        // a case-only change on a case-insensitive disk is the same file: allowed
+        if fm.fileExists(atPath: target.path), path.lowercased() != entry.path.lowercased() { throw Failure.taken(name) }
+        try fm.moveItem(at: source, to: target)
+        var renamed = entry
+        renamed.path = path
+        try forget(entry.path, in: home)
+        try record(renamed, in: home)
+        return renamed
+    }
+
+    /// The manifest's entry for a file in a home, recording it first if it was dropped in unrecorded.
+    static func entry(at path: String, in home: Home) throws -> HomeEntry {
+        if let e = index(home).first(where: { $0.path == path }) { return e }
+        let e = try entry(for: url(home).appendingPathComponent(path), in: home)
+        try record(e, in: home)
+        return e
+    }
+
     /// Puts a trashed file back where it came from.
     @discardableResult
     static func restore(_ entry: HomeEntry) throws -> HomeEntry {
@@ -286,20 +328,29 @@ enum Carry {
     static var manifestURL: URL { dir.appendingPathComponent("manifest.jsonl") }
 
     /// Every file in every home, hashed. Append-only JSON Lines: one file per line, readable by any tool, diffable.
+    /// `reuse` (automatic carry, FEAT-09 P4): a file whose size and mtime match the last manifest keeps its hash
+    /// instead of being read again. Off for `move`, which must prove every byte.
     @discardableResult
-    static func verify() throws -> [CarryLine] {
+    static func verify(reuse: Bool = false) throws -> [CarryLine] {
         let fm = FileManager.default
         var out: [CarryLine] = []
+        var last: [String: CarryLine] = [:]
+        if reuse, let text = try? String(contentsOf: manifestURL, encoding: .utf8) {
+            for l in text.split(separator: "\n") {
+                if let c = try? JSONDecoder().decode(CarryLine.self, from: Data(l.utf8)) { last[c.home + "/" + c.path] = c }
+            }
+        }
         for h in Home.allCases {
             guard let walk = fm.enumerator(at: Homes.url(h), includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
                                            options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
             for case let u as URL in walk {
                 guard let v = try? u.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
                       v.isRegularFile == true else { continue }
-                out.append(CarryLine(home: h.folder, path: Homes.relative(u, to: Homes.url(h)),
-                                     size: Int64(v.fileSize ?? 0),
-                                     mtime: Int64(v.contentModificationDate?.timeIntervalSince1970 ?? 0),
-                                     sha256: try Homes.sha256(u), device: Homes.device))
+                let path = Homes.relative(u, to: Homes.url(h))
+                let size = Int64(v.fileSize ?? 0), mtime = Int64(v.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                let was = last[h.folder + "/" + path]
+                let sha = (was?.size == size && was?.mtime == mtime) ? was!.sha256 : try Homes.sha256(u)
+                out.append(CarryLine(home: h.folder, path: path, size: size, mtime: mtime, sha256: sha, device: Homes.device))
             }
         }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -384,7 +435,7 @@ func homesSelftest() -> Bool {
     check(Homes.home(for: "nocturne.m4a") == .music, "audio goes to Music", Homes.home(for: "nocturne.m4a"))
     check(Homes.home(for: "book.m4b") == .audiobooks, "an audiobook goes to Audiobooks", Homes.home(for: "book.m4b"))
     check(Homes.home(for: "ch2100.pdf") == .study && Homes.home(for: "notes.md") == .study, "documents go to Study")
-    check(Homes.home(for: "clip.mp4") == .downloads, "anything else goes to Downloads", Homes.home(for: "clip.mp4"))
+    check(Homes.home(for: "clip.mp4") == .downloads, "anything else goes to the Inbox (downloads/)", Homes.home(for: "clip.mp4"))
 
     // taking a file in: moved, hashed as it landed, one entry, and a second of the same name never overwrites
     var first: HomeEntry?
@@ -434,6 +485,23 @@ func homesSelftest() -> Bool {
               "Delete forever, inside Trash, removes the named file")
     } catch { check(false, "remove / restore / delete forever", error) }
 
+    // rename: in place, same bytes, the manifest follows; a clash or a bad name moves nothing (FEAT-07 P0)
+    do {
+        try Data("aria bytes".utf8).write(to: Homes.url(.music).appendingPathComponent("aria.m4a"))
+        try Data("other".utf8).write(to: Homes.url(.music).appendingPathComponent("taken.m4a"))
+        let e = try Homes.entry(at: "aria.m4a", in: .music)
+        let r = try Homes.rename(e, to: "  Aria (live)  ", in: .music)
+        check(r.path == "Aria (live).m4a" && fm.fileExists(atPath: Homes.file(r, in: .music).path), "rename keeps the extension and trims", r.path)
+        check(!fm.fileExists(atPath: Homes.url(.music).appendingPathComponent("aria.m4a").path), "the old name is gone")
+        check(r.sha256 == e.sha256 && Homes.index(.music).contains(r) && !Homes.index(.music).contains { $0.path == "aria.m4a" },
+              "same SHA-256, the manifest follows")
+        check(try Homes.rename(r, to: "Aria (live).m4a", in: .music).path == r.path, "typing the extension adds no second one")
+        for bad in ["", " ", "a/b", ".hidden", "taken"] {
+            do { try Homes.rename(r, to: bad, in: .music); check(false, "refuses “\(bad)”", "it moved") }
+            catch { check(fm.fileExists(atPath: Homes.file(r, in: .music).path), "refuses “\(bad)”, nothing moved") }
+        }
+    } catch { check(false, "rename", error) }
+
     // carry C0: the manifest is every file in every home, and a move is verified, receipted and leaves the source
     do {
         let lines = try Carry.verify()
@@ -443,6 +511,16 @@ func homesSelftest() -> Bool {
         check(lines.allSatisfy { $0.sha256.count == 64 && $0.size > 0 }, "every carry line carries its sha256 and size")
         let body = (try? String(decoding: Data(contentsOf: Carry.manifestURL), as: UTF8.self)) ?? ""
         check(body.split(separator: "\n").count == lines.count, "manifest.jsonl is one line per file", body.split(separator: "\n").count)
+        // FEAT-09 P4: an unchanged file keeps its hash; a changed one is read again
+        check(try Carry.verify(reuse: true) == lines, "verify(reuse:) gives the same lines for unchanged files")
+        let w = Homes.root.appendingPathComponent("library/Music/waltz.m4a")
+        let keep = try Data(contentsOf: w)
+        try Data("changed".utf8).write(to: w)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 5)], ofItemAtPath: w.path)
+        let changed = try Carry.verify(reuse: true).first { $0.path == "waltz.m4a" }
+        check(changed?.sha256 == (try Homes.sha256(w)) && changed?.sha256 != lines.first { $0.path == "waltz.m4a" }?.sha256,
+              "verify(reuse:) hashes a changed file again")
+        try keep.write(to: w); _ = try Carry.verify()
 
         let r = try Carry.move(to: carried)
         check(r.mismatched.isEmpty && r.files == lines.count, "carry move copies and verifies every file", r.mismatched)

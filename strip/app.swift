@@ -6803,6 +6803,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
+        Downloads.watchFolder()              // BUG-16: whatever lands in downloads/ is adopted; audio settles into Music
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
         CarryManager.shared.start()          // advertise + browse while Recense runs (carrymanager.swift, FEAT-09)
         clockFormat.setLocalizedDateFormatFromTemplate("jmm")        // follows the 12/24-hour system setting
@@ -7085,6 +7086,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         watchPanelSwipes()
     }
 
+    @MainActor @objc func openLibrary() {
+        if #available(macOS 15, *) { MusicShelf.shared.show() }
+    }
+
     @MainActor func buildMenu() {
         let main = NSMenu()
 
@@ -7094,6 +7099,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         hider.submenu = menuBar.hider.menu(); appMenu.addItem(hider)
         let devices = NSMenuItem(title: "Devices", action: nil, keyEquivalent: "")
         devices.submenu = devicesMenu(); appMenu.addItem(devices)
+        // FEAT-07 P0: the Library (Music tile → tracks: play, pause, loop, rename, slide to delete), as on iPhone and iPad
+        let library = NSMenuItem(title: "Library…", action: #selector(openLibrary), keyEquivalent: "")
+        library.target = self; appMenu.addItem(library)
         appMenu.delegate = self                                   // rebuilds the hider's and devices' entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }
@@ -7161,6 +7169,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @MainActor func devicesMenu() -> NSMenu {
         let m = NSMenu()
         let cm = CarryManager.shared
+        cm.reloadFromDisk()   // another Recense process may have paired since (BUG-17)
         if cm.peers.isEmpty {
             m.addItem(withTitle: "No paired devices yet", action: nil, keyEquivalent: "").isEnabled = false
         } else {
@@ -7173,7 +7182,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             match.target = self
         } else if cm.isLookingToPair {
             m.addItem(withTitle: "Looking for a device to pair…", action: nil, keyEquivalent: "").isEnabled = false
-            for peer in cm.nearby where !cm.peers.contains(where: { $0.name == peer.displayName }) {
+            for peer in cm.pairCandidates {
                 let item = m.addItem(withTitle: "Pair “\(peer.displayName)”", action: #selector(pairNearbyDevice(_:)), keyEquivalent: "")
                 item.target = self; item.representedObject = peer
             }
@@ -7191,7 +7200,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         return m
     }
     @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
-    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stop() }
+    @MainActor @objc func stopPairingDevice() { CarryManager.shared.stopPairing() }
     @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
         guard let peer = sender.representedObject as? MCPeerID else { return }
         CarryManager.shared.invite(peer)

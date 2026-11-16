@@ -23,11 +23,12 @@ public struct ShowsRoot<Player: View>: View {
     public var body: some View {
         tabs
             .modifier(MiniPlayerHost(model: model))
-            .sheet(isPresented: $model.nowPlayingOpen) { NowPlaying(model: model, player: player) }
+            .sheet(isPresented: $model.nowPlayingOpen) { NowPlaying(model: model, player: player).modifier(Minimizable()) }
             .task { await model.run() }
             .alert("Couldn't do that", isPresented: Binding(get: { model.problem != nil }, set: { if !$0 { model.problem = nil } })) {
                 Button("OK") { model.problem = nil }
             } message: { Text(model.problem ?? "") }
+            .modifier(RenameAlert(model: model))
             .onChange(of: phase) { _, p in if p != .active { model.lock() } }
             .tint(Theme.accent)
     }
@@ -135,5 +136,58 @@ enum Fmt {
     }
     static func day(_ secs: Int64) -> String {
         Date(timeIntervalSince1970: TimeInterval(secs)).formatted(.dateTime.day().month(.wide))
+    }
+}
+
+// Derived from Spec: FEAT-07 P0
+/// Rename…: the track's name, its extension kept by the host. Public, so a host showing a ShowPage alone carries it too.
+public struct RenameAlert: ViewModifier {
+    @Bindable var model: ShowsModel
+    // @StateObject, not @State: the Mac builds with the Command Line Tools, which lack SwiftUI's macro plugin
+    @StateObject private var field = Field()
+    final class Field: ObservableObject { @Published var name = "" }
+    public init(model: ShowsModel) { self.model = model }
+
+    public func body(content: Content) -> some View {
+        content
+            .alert("Rename", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
+                TextField("Name", text: $field.name)
+                Button("Rename") { if let e = model.renaming { model.rename(e, to: field.name) }; model.renaming = nil }
+                Button("Cancel", role: .cancel) { model.renaming = nil }
+            } message: { Text("Every paired device gets the new name.") }
+            .onChange(of: model.renaming?.id) { _, _ in field.name = model.renaming?.title ?? "" }
+    }
+}
+
+// Derived from Spec: FEAT-07 P0
+/// Library alone (its places, its shows, the Music tile → the track list), for a host that draws its own player:
+/// the Mac's Recense window follows QuickTime for the transcript, so it needs no Now Playing sheet here.
+@available(macOS 15, *)
+public struct LibraryShelf: View {
+    @Bindable var model: ShowsModel
+    public init(model: ShowsModel) { self.model = model }
+
+    public var body: some View {
+        NavigationStack { LibraryView(model: model, places: []) }
+            .modifier(RenameAlert(model: model))
+            .alert("Couldn't do that", isPresented: Binding(get: { model.problem != nil }, set: { if !$0 { model.problem = nil } })) {
+                Button("OK") { model.problem = nil }
+            } message: { Text(model.problem ?? "") }
+            .task { await model.run() }
+            .tint(Theme.accent)
+    }
+}
+
+// Derived from Spec: FEAT-07 (the pill full screen and minimized)
+/// Now Playing at full height or at half (the transcript keeps following and the pill keeps working at either);
+/// drag the grabber, or tap it, to change.
+struct Minimizable: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        #else
+        content
+        #endif
     }
 }

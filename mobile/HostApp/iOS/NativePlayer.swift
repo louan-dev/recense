@@ -26,6 +26,13 @@ final class NativePlayer: Transport {
             MainActor.assumeIsolated { self?.refresh() }
         }
         remote()
+        // FEAT-07 P0: Loop starts the playing track again at its end
+        NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] n in
+            MainActor.assumeIsolated {
+                guard let self, (n.object as? AVPlayerItem) === self.player.currentItem, Playback.model?.loopOne == true else { return }
+                self.player.seek(to: .zero) { _ in Task { @MainActor in self.play(); self.refresh() } }
+            }
+        }
     }
 
     // MARK: Transport

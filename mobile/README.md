@@ -139,7 +139,14 @@ updates in place.
   overwritten, and hashed as it lands; Remove puts it in `trash/` with where it came from, and only Trash can delete
   forever. No network at any point. Moving bytes between devices by themselves (FEAT-09): pairing and a one-way
   "Carry Now" push are wired (Library › Devices, `HostApp/iOS/Devices.swift`); the full move/trash/restore replay
-  across devices is not built yet.
+  across devices is not built yet. Pairing finishes on both devices whichever taps "They Match" first (BUG-17).
+  A device paired on one side only is fixed by pairing again: Library › Devices › Pair a Device… on both, in
+  either order (the device you pick is invited again until it answers).
+  A carried file counts as settled only once its bytes are placed; a file still owed shows "Waiting for N files" and
+  is asked for again on the next Carry Now (BUG-19).
+  Carry runs by itself (T-0084): when a paired device connects, 2 s after a home stops changing, and when Recense
+  comes to the front; Carry Now stays as the visible retry. The scan runs off the main thread and re-hashes only
+  files whose size or date changed.
   **Automatic** language (S6, 11-10, the default): the ears follow whichever of English, French and Vietnamese is
   spoken (`SpeechAuto` in `../shared/speechcore.swift`): the last 8 s stay in memory only; on doubt (few or unsure words,
   or a minute of sound) the last 4 s are heard in each language and the surest by a clear margin (1.5x) wins; the new
@@ -186,6 +193,21 @@ updates in place.
 - **Export on iPhone/iPad**: the transcript editor's Export as MD and Export as M4B work in the app: the page hands
   the file to the app, which offers Save to Files; the M4B is made on the device (AAC, title, transcript as lyrics;
   no chapters yet).
+
+### Library › Music (FEAT-07 P0, 2026-11-15)
+Tap **Music** under Library › Recently Updated. You get every track in `Recense/library/Music`.
+- **Play / Pause:** the capsule on each row. It shows a pause sign while that track plays.
+- **Loop:** in the row's ··· menu once the track plays. The capsule shows ⟲1 while it's on.
+- **Rename…:** in the ··· menu. The file is renamed and its extension kept, and the next Carry sync renames it on every paired device.
+- **Delete:** slide the row **left → right**, or ··· › Delete. The track goes to `Recense/trash/` and can be restored.
+
+### The search pill and the translation that follows the voice (FEAT-07 P1–P2, FEAT-10; 2026-11-15)
+- **Find:** in Now Playing's transcript, tap the 🔍 at the left of the pill (or the transcript menu › Find in Transcript…).
+  Type two letters or more. Accents and case don't matter ("viet" finds "Việt"). ⌃ ⌄ go to the previous or next match and
+  play from there, and the view keeps following the voice. To scrub again, tap the waveform or hold the pill for 0.35 s.
+- **Marks and detents:** matches show as marks on the scrubber, and sliding across one gives a firm tap (lines a light one).
+- **Two sizes:** drag Now Playing down to half height (minimized); the transcript and the pill keep working.
+- **Translation:** the translated line lights word by word at the pace of the original voice, pauses included.
 
 ## Gallery for the Mac (`macos/`, `HostApp/macOS/`; retiring: Recense Mac takes over)
 - The whole site in a native window through the Mac's token, with an Assistant button (⌘K), the same … menu and

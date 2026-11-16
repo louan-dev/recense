@@ -10,6 +10,17 @@ let utc = TimeZone(identifier: "UTC")!
 let M = "library/Music", S = "library/Study", T = "trash"
 func f(_ h: String, _ p: String, _ sha: String) -> CarryFile { CarryFile(home: h, path: p, size: 1, sha256: sha) }
 
+// FEAT-07 P0 · a rename in the Music list (Homes.rename) is one move, so every paired device replays the new name
+do {
+    let ops = CarrySync.ops(last: [f(M, "Faili.m4a", "F")], now: [f(M, "Faili (live).m4a", "F")], trashOrigins: [:],
+                            device: "iphone", nextSeq: 1, at: 1)
+    check(ops.count == 1 && ops[0].op == .move && ops[0].path == "Faili.m4a" && ops[0].to == "Faili (live).m4a",
+          "a rename is one move: \(ops.map { "\($0.op) \($0.path) → \($0.to ?? "")" })")
+    let k = CarrySync.key(M, "Faili.m4a"), nk = CarrySync.key(M, "Faili (live).m4a")
+    check(CarrySync.decide(ops[0], local: [k: "F"], base: [:], deviceName: "Mac", zone: utc) == .move(from: k, to: nk),
+          "the other device renames it too")
+}
+
 // P2 · scan diff → ops
 do {
     let last = [f(M, "a.m4a", "A"), f(M, "b.m4a", "B"), f(S, "c.pdf", "C"), f(S, "d.md", "D1"), f(M, "gone.m4a", "G"),
@@ -137,6 +148,70 @@ do {
     check(conflictSiblingPath("v/lecture.m4a", d, device: "iPad", zone: utc) == "v/lecture (iPad 2024-11-05 2051).m4a", "carry name")
     let m = merge3(base: "a\nb\nc", mine: "a\nB\nc", theirs: "a\nb\nc\nd")
     check(m == "a\nB\nc\nd", "markdown merge keeps both sides' lines: \(m ?? "nil")")
+}
+
+// Regression guard: BUG-19 (ops counted applied before their bytes landed; T-0087)
+do {
+    check(CarrySync.settledThrough(received: 8, pending: []) == 8, "nothing waiting: settled through the last op")
+    check(CarrySync.settledThrough(received: 8, pending: [3, 4, 5, 6, 7, 8]) == 2,
+          "six songs waiting for bytes: settled only through op 2, so the next seen asks for 3 on")
+    check(CarrySync.settledThrough(received: 8, pending: [8]) == 7, "the last op waiting holds 8 back")
+    check(CarrySync.settledThrough(received: 0, pending: []) == 0, "nothing received")
+    check(CarrySync.settledThrough(received: 8, pending: [1]) == 0, "the first op waiting holds everything back")
+}
+
+// Derived from Spec: FEAT-09 P4 (automatic carry, T-0084) · CarrySchedule: events in, "run now" out
+do {
+    /// Steps the clock in 0.1 s ticks from `from` to `to`; returns the times a carry started (each runs `dur` s).
+    func runs(_ s: inout CarrySchedule, from: Double, to: Double, dur: Double = 0.3, events: [(Double, CarrySchedule.Event)]) -> [Double] {
+        var out: [Double] = [], ends: [Double] = [], ev = events.sorted { $0.0 < $1.0 }
+        var t = from
+        while t <= to + 1e-9 {
+            while let e = ev.first, e.0 <= t + 1e-9 { s.handle(e.1, at: e.0); ev.removeFirst() }
+            if let e = ends.first, e <= t + 1e-9 { s.handle(.finished, at: t); ends.removeFirst() }
+            if s.tick(at: t) { out.append(t); ends.append(t + dur) }
+            t = (t * 10 + 1).rounded() / 10
+        }
+        return out
+    }
+    var s = CarrySchedule()
+    var r = runs(&s, from: 0, to: 10, events: [(1, .connected)])
+    check(r.count == 1 && r[0] >= 1 && r[0] <= 3, "a paired peer connects → one carry within 2 s: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected)] + (0..<10).map { (5 + Double($0) * 0.5, .changed) })
+    check(r.count == 2 && abs(r[1] - (9.5 + CarrySchedule.quiet)) < 0.15, "ten changes 0.5 s apart → one carry, 2 s after the last: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, dur: 3, events: [(0, .connected), (1, .changed), (1.2, .changed), (1.4, .foreground)])
+    check(r.count == 2, "triggers during a carry → exactly one follow-up: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected), (8, .foreground)])
+    check(r.count == 2 && r[1] >= 8 && r[1] <= 10, "coming to the front → a carry: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(1, .changed), (2, .foreground)])
+    check(r.isEmpty, "no paired peer connected → no carry: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 20, events: [(0, .connected), (4, .disconnected), (5, .changed)])
+    check(r.count == 1, "after the last peer leaves, a change waits: \(r)")
+
+    s = CarrySchedule()
+    r = runs(&s, from: 0, to: 5, events: [(1, .tapped)])
+    check(r == [1], "Carry Now runs at once, connected or not (it shows its own result): \(r)")
+    check(CarrySchedule.connectDelay <= 2 && CarrySchedule.quiet == 2, "the spec's 2 s")
+}
+
+do {   // T-0091: keep/ writes (Gallery transcripts, every few seconds) re-ran carry every ~4 s
+    let root = "/Users/x/Recense", homes = ["library/Music", "downloads", "trash"]
+    check(CarryWatch.counts("/Users/x/Recense/library/Music/a.m4a", root: root, homes: homes), "a song in a home counts")
+    check(CarryWatch.counts("/Users/x/Recense/downloads", root: root, homes: homes), "the home folder itself counts")
+    check(!CarryWatch.counts("/Users/x/Recense/keep/be25.v2.json", root: root, homes: homes), "keep/ never starts a carry")
+    check(!CarryWatch.counts("/Users/x/Recense/.carry/last-sent.json", root: root, homes: homes), ".carry/ never starts a carry")
+    check(!CarryWatch.counts("/Users/x/Recense/library/MusicOld/a.m4a", root: root, homes: homes), "a lookalike folder is not a home")
+    check(!CarryWatch.counts("/Users/x/Recense", root: root, homes: homes), "the root alone is not a home")
 }
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")

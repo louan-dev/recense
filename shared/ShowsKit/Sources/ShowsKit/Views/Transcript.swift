@@ -121,6 +121,11 @@ final class TranscriptState: ObservableObject {
     @Published var following = true
     @Published var translations = true
     @Published var selecting = false
+    // FEAT-07 the search pill: its face, what's typed, the hit gone to, and a line to scroll to (no seek: Listen)
+    @Published var finding = false
+    @Published var query = ""
+    @Published var hit: Int?
+    @Published var jump: String?
     var lastActive: Int?
 }
 
@@ -140,11 +145,21 @@ public struct TranscriptLineText: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             if translation, let tr = line.translation, !tr.isEmpty {
-                Text(tr).font(.system(.title3, design: .serif)).foregroundStyle(.white.opacity(bold ? 0.75 : 0.4))
+                Text(Self.litTranslation(line, tr, on: on, bold: bold, t: t)).font(.system(.title3, design: .serif))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// FEAT-10: the translation lights with the voice (TranslationCadence): what's been said in the original brightens
+    /// its translated words too, at the voice's pace. Other lines: one quiet tone, as before.
+    static func litTranslation(_ line: TranscriptLine, _ tr: String, on: Bool, bold: Bool, t: Double?) -> AttributedString {
+        guard on, let t else { var a = AttributedString(tr); a.foregroundColor = .white.opacity(bold ? 0.75 : 0.4); return a }
+        let cut = TranslationCadence.spoken(tr, source: line.words, start: line.start, end: line.end, at: t)
+        var said = AttributedString(String(tr[..<cut])), rest = AttributedString(String(tr[cut...]))
+        said.foregroundColor = .white.opacity(0.95); rest.foregroundColor = .white.opacity(0.5)
+        return said + rest
     }
 
     /// The active line: what's been said bright, the rest dim. Other lines: quieter, all alike (as Podcasts).
@@ -194,6 +209,9 @@ public struct TranscriptView<Extra: View>: View {
     /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed).
     private func now() -> Double? { scrub.held ?? time().map { ticking ? $0 + FrameClock.shared.lead : $0 } }
 
+    /// The lines holding what's typed in the pill (none while it isn't searching).
+    private var hits: [Int] { state.finding ? TranscriptFind.hits(lines, state.query) : [] }
+
     private var hasTranslations: Bool { lines.contains { !($0.translation ?? "").isEmpty } }
 
     public var body: some View {
@@ -227,6 +245,12 @@ public struct TranscriptView<Extra: View>: View {
                         .onAppear { if let a { proxy.scrollTo(lines[a].id, anchor: UnitPoint(x: 0.5, y: 0.3)) } }
                         .onChange(of: ahead) { _, now in follow(proxy, now) }
                         .onChange(of: state.following) { _, on in if on { follow(proxy, a, force: true) } }
+                        .onChange(of: state.jump) { _, id in
+                            guard let id else { return }
+                            if reduceMotion { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.3)) }
+                            else { withAnimation(.easeInOut(duration: TranscriptLight.scroll)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.3)) } }
+                            state.jump = nil
+                        }
                     }
                 }
             }
@@ -241,10 +265,20 @@ public struct TranscriptView<Extra: View>: View {
             }
         }
         .overlay(alignment: .topTrailing) { menu.padding(12) }
-            if let d = duration, d > 0, let seek {
-                TimelineView(.periodic(from: .now, by: ticking ? 0.25 : 3600)) { _ in Scrubber(now: time() ?? 0, time: time, duration: d, seek: seek, state: scrub) }
-                    .padding(.horizontal, Theme.gutter).padding(.top, 6)
-                    .frame(maxWidth: Theme.readable)
+            // FEAT-07: one pill under the transcript, the scrubber and Find in it; it works as the lines arrive and
+            // while the view follows the voice
+            if !lines.isEmpty || (duration ?? 0) > 0 {
+                SearchPill(lines: lines, state: state, hits: hits, seek: seek) {
+                    if let d = duration, d > 0, let seek {
+                        TimelineView(.periodic(from: .now, by: ticking ? 0.25 : 3600)) { _ in
+                            Scrubber(now: time() ?? 0, time: time, duration: d, seek: seek, state: scrub,
+                                     marks: hits.map { lines[$0].start },
+                                     detent: { a, b in TranscriptFind.detent(lines, hits: Set(hits), duration: d, from: a, to: b) })
+                        }
+                    }
+                }
+                .padding(.horizontal, Theme.gutter).padding(.top, 6)
+                .frame(maxWidth: Theme.readable)
             }
         }
         .background(LinearGradient(colors: [deep, Color(white: 0.06)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
@@ -267,7 +301,7 @@ public struct TranscriptView<Extra: View>: View {
     /// - active: the line being heard (its words light by their times). focus: the line the view has turned to
     ///   (bold, its translation brighter): the next one just before it begins, so it doesn't re-wrap as its word lights.
     @ViewBuilder private func row(_ line: TranscriptLine, i: Int, active a: Int?, focus: Int?, t: Double?) -> some View {
-        let on = i == a, bold = i == (focus ?? a)
+        let on = i == a, bold = i == (focus ?? a), found = state.finding && i == state.hit
         let content = VStack(alignment: .leading, spacing: 8) {
             if let c = line.chapter {
                 Text(c).font(.title3.weight(.bold)).foregroundStyle(.white).padding(.top, i == 0 ? 0 : 14)
@@ -276,6 +310,8 @@ public struct TranscriptView<Extra: View>: View {
             TranscriptLineText(line, on: on, bold: bold, at: t, translation: state.translations)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(found ? 8 : 0)
+        .background(found ? RoundedRectangle(cornerRadius: 10).stroke(Theme.accent, lineWidth: 2) : nil)
         .contentShape(Rectangle())
         Group {
             if let seek {
@@ -302,6 +338,7 @@ public struct TranscriptView<Extra: View>: View {
             if let a = active ?? now().flatMap({ TranscriptLight.active(lines, at: $0) }), lines.indices.contains(a) {
                 ShareLink(item: share(lines[a])) { Label("Share from \(TranscriptLight.clock(lines[a].start))…", systemImage: "square.and.arrow.up") }
             }
+            Button { state.finding = true } label: { Label("Find in Transcript…", systemImage: "magnifyingglass") }.disabled(lines.isEmpty)
             Button { state.selecting = true } label: { Label("Select Text…", systemImage: "selection.pin.in.out") }.disabled(lines.isEmpty)
             Button { Clipboard.copy(TranscriptLight.text(lines, translations: hasTranslations && state.translations)) } label: {
                 Label("Copy Transcript", systemImage: "doc.on.doc")

@@ -22,6 +22,10 @@
 import Foundation
 import CryptoKit
 import MultipeerConnectivity
+#if canImport(AppKit)
+import AppKit
+import CoreServices
+#endif
 
 /// The Keychain, this device only. The identity key never leaves it; the one group secret every paired device of
 /// this owner's shares is stored only here too, never in a plain file.
@@ -61,15 +65,28 @@ private enum CarryKeychain {
     private let t = P2PTransport.shared
     private var identity: Curve25519.KeyAgreement.PrivateKey
     private var group: Data?
-    private var pairSessions: [MCPeerID: CarryPairSession] = [:]
+    private var flows: [MCPeerID: CarryPairFlow] = [:]   // one pairing in progress per connected peer (BUG-17)
+    private var picked: [String: Date] = [:]             // devices the owner picked → last invite sent (BUG-17)
+    private var reinviting = false
+    private var schedule = CarrySchedule()           // automatic carry (FEAT-09 P4, T-0084)
+    private let clock0 = Date()
+    private var wake: Task<Void, Never>?             // the one sleeper, until `schedule.due`
+    private var watching = false
+    #if os(macOS)
+    private var stream: FSEventStreamRef?
+    #endif
     private var lastSent: [CarryFile] = []   // this device's own scan as of the last "Carry now"
     private var appliedSeq: [String: Int] = [:]      // peer display name → highest of THEIR seq I've already settled
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
+    private var waiting: [String: (peer: String, seq: Int)] = [:]   // destination key → the op whose bytes are owed (BUG-19)
+    private var received: [String: Int] = [:]                 // peer → highest seq of its ops seen this run
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
     private var lastSentURL: URL { dir.appendingPathComponent("last-sent.json") }
-    private var appliedURL: URL { dir.appendingPathComponent("applied.json") }
+    // BUG-19: v1 (applied.json) counted ops applied before their bytes landed; a fresh name asks every peer
+    // for its whole log once more, which settles idempotently (CarrySync.decide skips what is already here).
+    private var appliedURL: URL { dir.appendingPathComponent("applied-v2.json") }
     private var opsDir: URL { dir.appendingPathComponent("ops", isDirectory: true) }
     private var stagingDir: URL { dir.appendingPathComponent("incoming", isDirectory: true) }
     private func opsLogURL(_ device: String) -> URL { opsDir.appendingPathComponent("\(device).jsonl") }
@@ -91,10 +108,15 @@ private enum CarryKeychain {
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
         appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         wire()
+        watchHomes()
     }
 
     private func wire() {
-        t.isPaired = { [weak self] peer in self?.peers.contains { $0.name == peer.displayName } ?? false }
+        t.isPaired = { [weak self] peer in
+            guard let self else { return false }
+            self.reloadFromDisk()
+            return self.peers.contains { $0.name == peer.displayName }
+        }
         t.confirmUnpaired = { [weak self] _, reply in reply(self?.isLookingToPair ?? false) }
         t.onPeerFound = { [weak self] peer in
             guard let self, !self.nearby.contains(peer) else { return }
@@ -110,66 +132,190 @@ private enum CarryKeychain {
             default: break
             }
         }
-        t.onReceive = { [weak self] url, peer in self?.landed(url, from: peer) }
+        t.onReceive = { [weak self] url, name, peer in self?.landed(url, named: name, from: peer) }
+        t.onReceiveFailed = { [weak self] name, peer, error in
+            self?.lastError = "a file from \(peer.displayName) did not arrive (\(Self.decode(name) ?? name)): \(error.localizedDescription)"
+        }
     }
 
-    func start() { t.advertise(); t.browse(); status = "Looking for devices" }
-    func stop() { t.stop(); isLookingToPair = false; status = "Off" }
+    func start() { t.advertise(); t.browse(); if !isLookingToPair { status = "Looking for devices" } }
+    func stop() { t.stop(); stopPairing(); status = "Off" }
 
-    // MARK: Pairing — tap "Pair a device" on both screens within P2PTransport's own 10 s invite timeout
+    // MARK: Pairing — tap "Pair a device" on both screens, in either order (a picked device is invited again, BUG-17)
+
+    /// Nearby devices the owner may pick while pairing: every one but this device itself (the Terminal's
+    /// `recense carry pair` sees the running app under the same name). A listed peer stays pickable, so a pairing
+    /// that finished on one side only can be redone (BUG-17).
+    /// One row per name, the newest found (owner: "it should only show mac pro once … there should not be two").
+    var pairCandidates: [MCPeerID] {
+        CarryInvites.newestPerName(nearby.filter { $0.displayName != P2PTransport.deviceName() }, name: \.displayName)
+    }
 
     /// "Pair a device": opens this device to the next stranger that connects (or that it finds and invites).
-    func beginPairing() { isLookingToPair = true; start() }
+    func beginPairing() {
+        isLookingToPair = true; lastError = nil; start(); status = "Pairing"
+        for peer in t.session.connectedPeers { startFlow(peer) }   // already connected: no `.connected` will come
+    }
 
-    /// The owner picked a nearby, not-yet-paired device by name.
-    func invite(_ peer: MCPeerID) { isLookingToPair = true; t.invite(peer) }
+    /// "Stop Pairing": ends the pairing only; the link stays on for carrying.
+    func stopPairing() {
+        isLookingToPair = false; flows = [:]; picked = [:]; pairingCode = nil; pairingWith = nil
+        if status == "Pairing" { status = "Looking for devices" }
+    }
+
+    /// The owner picked a nearby device by name.
+    func invite(_ peer: MCPeerID) {
+        isLookingToPair = true
+        if t.session.connectedPeers.contains(peer) { startFlow(peer); return }
+        picked[peer.displayName] = Date()
+        t.invite(peer)
+        guard !reinviting else { return }
+        reinviting = true
+        Task { @MainActor [weak self] in   // until paired or stopped: invite again whoever has not answered yet
+            while let self, self.isLookingToPair {
+                let connected = Set(self.t.session.connectedPeers.map(\.displayName))
+                for name in CarryInvites.due(picked: self.picked, nearby: Set(self.nearby.map(\.displayName)),
+                                             connected: connected, now: Date()) {
+                    guard let p = self.nearby.first(where: { $0.displayName == name }) else { continue }
+                    self.picked[name] = Date()
+                    self.t.invite(p)
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            self?.reinviting = false
+        }
+    }
 
     private func connected(_ peer: MCPeerID, _ state: MCSessionState) {
         guard state == .connected else {
-            if state == .notConnected { pairSessions[peer] = nil }
+            if state == .notConnected {
+                flows[peer] = nil
+                if pairedConnected.isEmpty { trigger(.disconnected) }
+            }
             return
         }
-        guard !peers.contains(where: { $0.name == peer.displayName }) else { return }   // already paired: nothing to do
-        guard isLookingToPair, pairSessions[peer] == nil else { return }
-        let s = CarryPairSession(me: identity, name: P2PTransport.deviceName())
-        pairSessions[peer] = s
-        try? t.send(s.hello(), type: "pair", to: peer)
+        startFlow(peer)
+        reloadFromDisk()
+        if peers.contains(where: { $0.name == peer.displayName }) { trigger(.connected) }
+    }
+
+    // MARK: Automatic carry (FEAT-09 P4, T-0084): connect, a change, the front; never on the main thread's time
+
+    private var pairedConnected: [MCPeerID] {
+        t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
+    }
+
+    /// The app came to the front (iOS scenePhase .active).
+    func cameToFront() { trigger(.foreground) }
+
+    private func trigger(_ e: CarrySchedule.Event) {
+        let now = Date().timeIntervalSince(clock0)
+        schedule.handle(e, at: now)
+        arm()
+    }
+
+    private func arm() {
+        wake?.cancel()
+        guard let due = schedule.due else { return }
+        let wait = max(0, due - Date().timeIntervalSince(clock0))
+        wake = Task { @MainActor [weak self] in
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard let self, !Task.isCancelled else { return }
+            if self.schedule.tick(at: Date().timeIntervalSince(self.clock0)) { await self.carry() } else { self.arm() }
+        }
+    }
+
+    /// Homes changed: the app's own writes (`Homes.changed`, both platforms) and, on the Mac, anything else
+    /// that writes into a home under ~/Recense (Finder, a download) through FSEvents. Only homes count (T-0091).
+    private func watchHomes() {
+        guard !watching else { return }
+        watching = true
+        NotificationCenter.default.addObserver(forName: Homes.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trigger(.changed) }
+        }
+        #if os(macOS)
+        var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+                                       retain: nil, release: nil, copyDescription: nil)
+        let cb: FSEventStreamCallback = { _, info, n, paths, _, _ in
+            guard let info else { return }
+            let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
+            let root = Homes.root.resolvingSymlinksInPath().path, homes = Home.allCases.map(\.folder)
+            guard list.prefix(n).contains(where: { CarryWatch.counts($0, root: root, homes: homes) }) else { return }   // T-0091
+            let me = Unmanaged<CarryManager>.fromOpaque(info).takeUnretainedValue()
+            DispatchQueue.main.async { MainActor.assumeIsolated { me.trigger(.changed) } }
+        }
+        if let s = FSEventStreamCreate(nil, cb, &ctx, [Homes.root.path] as CFArray,
+                                       FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
+                                       FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)) {
+            FSEventStreamSetDispatchQueue(s, .main)
+            FSEventStreamStart(s)
+            stream = s
+        }
+        #endif
+    }
+
+    /// Runs the exchange only while "Pair a device" is on — for a listed peer too, which re-pairs it (BUG-17).
+    /// peers.json and the Keychain's group are shared with any other Recense process on this device (the Terminal's
+    /// `recense carry pair`): read them fresh before deciding anything, never trust the copy from launch (BUG-17).
+    func reloadFromDisk() {
+        if let d = try? Data(contentsOf: peersURL), let list = try? JSONDecoder().decode([CarryPeer].self, from: d),
+           list != peers { peers = list }
+        if let g = CarryKeychain.load("group") { group = g }
+    }
+
+    private func startFlow(_ peer: MCPeerID) {
+        guard isLookingToPair, flows[peer] == nil else { return }
+        reloadFromDisk()
+        let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group)
+        flows[peer] = f
+        apply(f.start(), peer)
     }
 
     private func receivePair(_ data: Data, from peer: MCPeerID) {
-        guard var s = pairSessions[peer], let m = try? JSONDecoder().decode(PairMessage.self, from: data) else { return }
+        guard let m = try? JSONDecoder().decode(PairMessage.self, from: data) else { return }
+        if flows[peer] == nil { startFlow(peer) }   // their hello can beat our own `.connected` callback
+        guard var f = flows[peer] else { return }
         do {
-            let reply = try s.receive(m)
-            pairSessions[peer] = s
-            if let reply { try t.send(reply, type: "pair", to: peer) }
-            if let code = s.code(), pairingCode == nil { pairingCode = code; pairingWith = peer.displayName }
-            if case .group = m { try finishPairing(peer, opening: m) }
-        } catch { lastError = "pairing with \(peer.displayName) failed: \(error)" }
+            let step = try f.receive(m)
+            flows[peer] = f
+            apply(step, peer)
+        } catch { fail(peer, error) }
     }
 
     /// The owner tapped "They match" on this screen.
     func confirmMatch(for peerName: String) {
-        guard let peer = pairSessions.keys.first(where: { $0.displayName == peerName }), let s = pairSessions[peer] else { return }
+        guard let peer = flows.keys.first(where: { $0.displayName == peerName }), var f = flows[peer] else { return }
         do {
-            guard let offer = try s.offerGroup(mine: group, theirsExists: false) else { return }   // waiting for theirs
-            try t.send(offer.message, type: "pair", to: peer)
-            try finish(peer, key: s.theirKey!, group: offer.secret)
-        } catch { lastError = "could not finish pairing with \(peerName): \(error)" }
+            let step = try f.confirm()
+            flows[peer] = f
+            apply(step, peer)
+            if step.paired == nil { status = "Waiting for \(peerName) to tap They Match" }
+        } catch { fail(peer, error) }
     }
 
-    private func finishPairing(_ peer: MCPeerID, opening m: PairMessage) throws {
-        guard let s = pairSessions[peer] else { return }
-        if group != nil { lastError = "\(peer.displayName) already belongs to a different pairing; not merged"; return }
-        try finish(peer, key: s.theirKey!, group: try s.openGroup(m))
+    private func apply(_ step: CarryPairFlow.Step, _ peer: MCPeerID) {
+        do { for m in step.send { try t.send(m, type: "pair", to: peer) } } catch { fail(peer, error); return }
+        if let c = step.code { pairingCode = c; pairingWith = peer.displayName }
+        if let p = step.paired { finish(peer, p) }
     }
 
-    private func finish(_ peer: MCPeerID, key: Data, group g: Data) throws {
-        group = g
-        CarryKeychain.save(g, "group")
-        peers.append(CarryPeer(name: peer.displayName, key: key, paired: Homes.now()))
-        try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic)
-        pairSessions[peer] = nil
-        pairingCode = nil; pairingWith = nil; isLookingToPair = false
+    private func fail(_ peer: MCPeerID, _ error: Error) {
+        flows[peer] = nil; pairingCode = nil; pairingWith = nil
+        lastError = error as? PairFailure == .otherGroup
+            ? "\(peer.displayName) already belongs to a different pairing; not merged"
+            : "pairing with \(peer.displayName) failed: \(error)"
+    }
+
+    private func finish(_ peer: MCPeerID, _ p: CarryPairFlow.Paired) {
+        group = p.group
+        CarryKeychain.save(p.group, "group")
+        reloadFromDisk()   // keep what another process wrote since; replace only this device's entry
+        peers = CarryPeer.replacing(peers, with: CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now()))
+        do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
+        catch { lastError = "saving peers.json failed: \(error)" }
+        flows[peer] = nil
+        pairingCode = nil; pairingWith = nil; isLookingToPair = false; picked = [:]
+        status = "Paired with \(peer.displayName)"
     }
 
     // MARK: Carry now — scan into this device's own ops log, then settle with every paired, connected device
@@ -194,12 +340,24 @@ private enum CarryKeychain {
         else { try CarrySync.encode(ops).write(to: opsLogURL(Homes.device), atomically: true, encoding: .utf8) }
     }
 
+    /// "Carry Now": the visible retry. Runs at once, or right after the carry already running.
     func carryNow() {
+        reloadFromDisk()
         guard !peers.isEmpty else { lastError = "no paired device yet"; return }
-        let targets = t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
-        guard !targets.isEmpty else { lastError = "no paired device is connected right now"; return }
+        guard !pairedConnected.isEmpty else { lastError = "no paired device is connected right now"; return }
+        trigger(.tapped)
+    }
+
+    /// One carry. The scan (hashing) runs off the main thread, so playing, reading and writing never wait on it.
+    private func carry() async {
+        defer { trigger(.finished) }
+        reloadFromDisk()
+        let targets = pairedConnected
+        guard !targets.isEmpty else { return }
+        status = "Carrying"
         do {
-            let now = (try Carry.verify()).map { CarryFile(home: $0.home, path: $0.path, size: $0.size, sha256: $0.sha256) }
+            let lines = try await Task.detached(priority: .utility) { try Carry.verify(reuse: true) }.value
+            let now = lines.map { CarryFile(home: $0.home, path: $0.path, size: $0.size, sha256: $0.sha256) }
             let mine = myOps()
             let ops = CarrySync.ops(last: lastSent, now: now, trashOrigins: trashOrigins(), device: Homes.device,
                                     nextSeq: (mine.map(\.seq).max() ?? 0) + 1, at: Int64(Date().timeIntervalSince1970))
@@ -209,6 +367,7 @@ private enum CarryKeychain {
             for peer in targets { try t.send(appliedSeq[peer.displayName] ?? 0, type: "seen", to: peer) }
             lastCarryAt = Date(); lastError = nil
             status = ops.isEmpty ? "Up to date" : "Settling \(ops.count) change\(ops.count == 1 ? "" : "s")"
+            if !waiting.isEmpty { status += " · waiting for \(waiting.count) file\(waiting.count == 1 ? "" : "s")" }   // BUG-19
         } catch { lastError = "carry failed: \(error)" }
     }
 
@@ -237,16 +396,29 @@ private enum CarryKeychain {
             let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
             let key = resultKey(op)
             switch action {
-            case .nothing: discardStaged(key)
+            case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
-                        discardStaged(key)
-            case .fetch, .replace, .keepBoth: pendingActions[key] = action; tryPlace(key)
+                        discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
+            case .fetch, .replace, .keepBoth:
+                pendingActions[key] = action; waiting[key] = (peer.displayName, op.seq); tryPlace(key)
             case .merge: break   // unreachable with an empty base; text conflicts still settle as keepBoth
             }
         }
-        appliedSeq[peer.displayName] = max(appliedSeq[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
-        try? JSONEncoder().encode(appliedSeq).write(to: appliedURL, options: .atomic)
-        status = "Settled \(ops.count) change\(ops.count == 1 ? "" : "s") from \(peer.displayName)"
+        received[peer.displayName] = max(received[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
+        advance(peer.displayName)
+    }
+
+    /// appliedSeq moves only past ops fully settled: an op still owed its bytes is asked for again on the next
+    /// "seen" (the next carry, or the next connect). Never counted applied before it is (BUG-19).
+    private func advance(_ peer: String) {
+        guard let got = received[peer] else { return }
+        let owed = waiting.values.filter { $0.peer == peer }.map(\.seq)
+        let through = CarrySync.settledThrough(received: got, pending: owed)
+        if through > (appliedSeq[peer] ?? 0) {
+            appliedSeq[peer] = through
+            try? JSONEncoder().encode(appliedSeq).write(to: appliedURL, options: .atomic)
+        }
+        status = owed.isEmpty ? "Up to date with \(peer)" : "Waiting for \(owed.count) file\(owed.count == 1 ? "" : "s") from \(peer)"
     }
 
     private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(Self.encode(key)) }
@@ -260,14 +432,18 @@ private enum CarryKeychain {
         let staged = stagedURL(key)
         guard FileManager.default.fileExists(atPath: staged.path) else { return }
         do {
-            let placed = try CarryApply.apply(action, bytesAt: staged)
+            _ = try CarryApply.apply(action, bytesAt: staged)
             pendingActions[key] = nil
-            if let placed { status = "Settled \((placed as NSString).lastPathComponent)" }
-        } catch { lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil }
+            if let w = waiting.removeValue(forKey: key) { advance(w.peer) }
+        } catch {   // stays owed: the next "seen" asks for it again
+            lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil
+        }
     }
 
-    private func landed(_ url: URL, from peer: MCPeerID) {
-        guard let key = Self.decode(url.lastPathComponent) else { try? FileManager.default.removeItem(at: url); return }
+    private func landed(_ url: URL, named name: String, from peer: MCPeerID) {
+        guard let key = Self.decode(name) else {
+            try? FileManager.default.removeItem(at: url); lastError = "a file from \(peer.displayName) had no usable name"; return
+        }
         let staged = stagedURL(key)
         do {
             try? FileManager.default.removeItem(at: staged)
@@ -289,7 +465,7 @@ private enum CarryKeychain {
 }
 
 // `recense carry pair` (Mac CLI): the terminal equivalent of tapping "Pair a Device…" (FEAT-09 P1). Opens this
-// device to the next stranger within P2PTransport's 10 s invite window, prints the six-digit code here, and
+// device to the next stranger (re-inviting until it answers, BUG-17), prints the six-digit code here, and
 // waits for Enter in place of a tap on "They Match". The eye-compare step itself still needs the owner looking
 // at both screens — that is the whole point of the code (FEAT-09 P1's defense against a device in the middle)
 // and is not automatable here.
@@ -301,13 +477,28 @@ private enum CarryKeychain {
 @MainActor
 func runCarryPairCLI() async -> Never {
     setbuf(stdout, nil)   // flush every line immediately: the code and the Enter prompt must appear right away
+    #if canImport(AppKit)
+    // Two Recense processes on one Mac show the phone two Macs with the same name, and each keeps its own copy of
+    // the pairing state (BUG-17, the owner's 17:30 run). While the app runs, pairing belongs to its menu.
+    let me = ProcessInfo.processInfo.processIdentifier
+    if NSRunningApplication.runningApplications(withBundleIdentifier: "local.recense").contains(where: { $0.processIdentifier != me }) {
+        fputs("carry pair: Recense is running — pair from its menu instead: Recense › Devices › Pair a Device…\n", stderr)
+        exit(2)
+    }
+    #endif
     let cm = CarryManager.shared
-    print("Looking for a device to pair — start \"Pair a Device…\" on the other device now (10s window).")
+    print("Looking for a device to pair. On the other device, open Recense › Library › Devices › Pair a Device…")
+    print("(either side may start first; this keeps trying until a code appears — Ctrl-C to cancel)")
     cm.beginPairing()
     var invited: MCPeerID?
+    var waited = 0
     while cm.pairingCode == nil {
         if let e = cm.lastError { fputs("carry pair: \(e)\n", stderr); exit(1) }
-        if invited == nil, let peer = cm.nearby.first(where: { p in !cm.peers.contains { $0.name == p.displayName } }) {
+        waited += 1
+        if invited == nil, waited % 50 == 0 {   // every 15 s with nothing seen
+            print("No device seen yet. On the iPhone or iPad: unlocked, Recense open on Library › Devices, Wi-Fi or Bluetooth on.")
+        }
+        if invited == nil, let peer = cm.pairCandidates.first {
             invited = peer
             print("Found \(peer.displayName) — inviting…")
             cm.invite(peer)

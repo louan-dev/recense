@@ -60,7 +60,7 @@ struct SearchView: View {
     static func title(_ f: Filter) -> String {
         switch f {
         case .new: "New"
-        case .downloads: "Downloads"
+        case .downloads: "Inbox"                 // the downloads/ folder (FEAT-06); label by owner 2026-11-15
         case .recensed: "Recensed"
         case .screenshots: "Screenshots"
         case .videos: "Videos"
