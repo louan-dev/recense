@@ -1,5 +1,7 @@
 # CLAUDE.md · Sync (backend root, plan owner) · folder `sync/` of the one repo `~/Developer/recense` (A15). The plan files (`docs/`, `docs/PROGRESS.md`, `docs/BACKLOG.md`) sit at the repo root; `src/`, `bin/`, `tools/`, `launchd/`, `config/` are under `sync/`; the CalDAV Worker is `calendar/`
 
+Next task: on the Mac run wishrank (`node src/wishrank.mjs`); elsewhere read `docs/law/queue.md` (snapshot, may be stale; its date is at the top).
+
 This repo holds the shared plan. Every session: read `docs/PROGRESS.md` §2 (Rules) and only the section for the task named. Open only the matching section of `docs/BACKLOG.md`. Don't re-read unchanged files or re-plan. You edit only this repo unless the task names another folder.
 
 ## Where things are
@@ -8,7 +10,7 @@ This repo holds the shared plan. Every session: read `docs/PROGRESS.md` §2 (Rul
 - Git remote: `louan-dev/sync` (private); push only on the owner's go. `.gitignore`: `.env`, `rclone.conf`, ledger sinks and mirrors, `.DS_Store`, `node_modules/`. Commit before each task.
 
 ## Your items (PROGRESS §4-§5, BACKLOG §S)
-Tonight's priority is **Track A, Unclog & Mirror**. Do in order, one per session:
+Tonight's priority is **Track A, Unclog & Mirror**, one item per session. The list below is dependencies, not a queue: which item goes next follows `docs/law/order.md` (wishrank, or `docs/law/queue.md` off the Mac), never its place here:
 - **A1** locate the 5 GB of iCloud usage: ask for the storage breakdown screenshot, then add a read-only `audit` that writes `AUDIT.md` (Notability tested read-only 2026-10-14 and now allowed; no denylist entry).
 - **A2** Arq backup gate to the 1 TB SanDisk: give an exact GUI checklist (sources, excludes, schedule, retention) and add `backup-status` with a verified sample restore.
 - **A3** free the quota: propose a list only, delete nothing. Evicting a local copy does not free iCloud quota.

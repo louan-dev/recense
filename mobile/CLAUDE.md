@@ -1,5 +1,7 @@
 # CLAUDE.md · Recense mobile (`mobile/`): Recense for iPhone and iPad
 
+Next task: on the Mac run wishrank (`cd ../sync && node src/wishrank.mjs`); elsewhere read `docs/law/queue.md` (snapshot, may be stale; its date is at the top).
+
 Also read the root guide `../.claude/CLAUDE.md` (its rules apply here). Plan: `docs/PROGRESS.md` §2 Rules, then only the
 section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` (copied to `docs/` in B0).
 

@@ -1,6 +1,6 @@
 # BACKLOG.md · detail behind PROGRESS.md · 2026-10-13
 
-Open only the section you're working on. Items are in dependency order. (interp) marks the author's reading of an unclear line; correct it if the code or the owner says otherwise.
+Open only the section you're working on. Items are in dependency order (what must exist before what); which item is worked on next follows `docs/law/order.md`, never its place here. (interp) marks the author's reading of an unclear line; correct it if the code or the owner says otherwise.
 
 # S · Sync extras
 

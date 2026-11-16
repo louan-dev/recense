@@ -8,5 +8,5 @@ One law for all agents. Read it before planning work in any part of this repo:
 
 Order of authority: the owner's words > `docs/law/` > specs > design notes > code.
 
-Next task: `cd sync && node src/wishrank.mjs` prints the queue in law order.
+Next task: on the Mac run wishrank (`cd sync && node src/wishrank.mjs`); elsewhere read `docs/law/queue.md` (snapshot, may be stale; its date is at the top).
 Never pick work because it is higher on a page or was written first.

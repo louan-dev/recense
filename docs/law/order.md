@@ -52,6 +52,9 @@ The owner's full text (2026-11-14) is kept private: `~/.claude/context/recense/r
 - `cd ~/Developer/recense/sync && node src/wishrank.mjs` prints the ranked queue with its evidence.
 - `node src/wishrank.mjs order T-0001 T-0002` prints those ids in law order.
 - `node src/wishrank.mjs selftest` checks every rule above.
+- `node src/wishrank.mjs export` writes `docs/law/queue.md`, the public snapshot for agents off the Mac
+  (ids, stars, numbers, marks, date and commit; no quotes, transcript text or Keys). The Mac commits it.
+- Off the Mac the inputs are missing: wishrank says which one in one line and exits 3; read `docs/law/queue.md`.
 
 ## Amendments
 - 2026-11-14 · owner, pasted law ("text presented higher/earlier disclosed does not imply more importance");

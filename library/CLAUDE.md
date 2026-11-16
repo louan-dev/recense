@@ -1,5 +1,7 @@
 # CLAUDE.md · Gallery (Cloudflare Worker + R2) · folder `library/` of the one repo `~/Developer/recense` (A15)
 
+Next task: on the Mac run wishrank (`cd ../sync && node src/wishrank.mjs`); elsewhere read `docs/law/queue.md` (snapshot, may be stale; its date is at the top).
+
 Shared plan: `../docs/PROGRESS.md` (read §2 Rules every session, plus §6 for Track C) and `../docs/BACKLOG.md` (open only the §G section you are on). Before touching the viewer or comments read `library/src/page/ui/README.md` §1.1, §3, §4.4, §7. Don't re-read unchanged files or re-plan. Nothing has run on the owner's Mac unless §7 says so.
 
 ## Where things are
