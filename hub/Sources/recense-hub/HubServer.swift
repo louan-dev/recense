@@ -119,6 +119,8 @@ struct HubRequest {
             headers[l[..<i].lowercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces)
         }
         let need = Int(headers["content-length"] ?? "0") ?? 0
+        // A negative or huge length from any device on the Wi-Fi must not crash the hub (prefix(-1) traps; review #3).
+        guard need >= 0, need <= 8 << 20 else { return nil }
         let body = buf[end.upperBound...]
         guard body.count >= need else { return nil }
         return HubRequest(method: String(first[0]), target: String(first[1]), headers: headers, body: Data(body.prefix(need)))

@@ -106,6 +106,8 @@ func hubNoteSelftest() -> Bool {
           && (try? String(contentsOfFile: note)) == "one\ntwo (phone)\nthree"
           && (try? String(contentsOfFile: dir + "/" + (sib ?? "x"))) == "one\nTWO (mac)\nthree")
     // the token
+    // Regression guard: FEAT-18 review #3 (Content-Length -1 crashed the hub).
+    check("negative length", HubRequest.parse(Data("POST /api/note HTTP/1.1\r\nContent-Length: -1\r\n\r\n".utf8)) == nil)
     check("token ok", hubTokenOK("Bearer abc123", token: "abc123"))
     check("token wrong", !hubTokenOK("Bearer abc124", token: "abc123"))
     check("token none", !hubTokenOK(nil, token: "abc123") && !hubTokenOK("Bearer x", token: ""))
