@@ -731,6 +731,8 @@ enum SpeechLegacy {
     private(set) var problem: String?
     var playhead: () -> Double = { 0 }
     var changed: ([SpeechCore.Phrase]) -> Void = { _ in }
+    /// Called once with the reason when the hearing ends without being whole (T-0098).
+    var failed: (String) -> Void = { _ in }
     private var task: Task<Void, Never>?
 
     init(url: URL, lang: String, among: [String]? = nil, duration: Double) {
@@ -772,7 +774,9 @@ enum SpeechLegacy {
 
     private func loop() async {
         #if compiler(>=6.2)
-        if #available(macOS 26, iOS 26, *), let (m, l) = await SpeechEngine.module(lang), await SpeechEngine.prepare(m, l) {
+        // T-0099: never downloads here (offline at the moment of use); Listen fetches the model once, when the language is chosen.
+        // A model that isn't on the device falls to SFSpeechRecognizer below, which says plainly if it can't hear either.
+        if #available(macOS 26, iOS 26, *), let (m, l) = await SpeechEngine.module(lang), await SpeechEngine.prepare(m, l, download: false) {
             while !Task.isCancelled, let k = Self.next(playhead: playhead(), count: count, done: done) {
                 let a = Double(k) * Self.stretch, b = min(duration, a + Self.stretch)
                 if among.count > 1 { await check(a, b) }
@@ -780,26 +784,38 @@ enum SpeechLegacy {
                 var (mu, lu) = (m, l)
                 if use != lang {   // a candidate the check heard, so its model is on this device
                     guard let x = await SpeechEngine.module(use), await SpeechEngine.prepare(x.0, x.1, download: false) else {
-                        problem = "This device can't hear \(use) offline yet."; return
+                        fail("This device can't hear \(use) offline yet."); return
                     }
                     (mu, lu) = x
                 }
-                do {
-                    let heard = try await SpeechEngine.hear(url: url, from: a, to: b, use, module: mu, lu)
-                    guard !Task.isCancelled else { return }   // T-0097: stopped while this stretch was heard: tell no one
-                    phrases.removeAll { $0.start >= a && $0.start < b }
-                    phrases = (phrases + heard).sorted { $0.start < $1.start }
-                    done.insert(k)
-                    changed(phrases)
-                } catch { problem = error.localizedDescription; SpeechCore.note("stretch \(k) not heard: \(problem!)"); return }
+                // T-0098: a stretch that fails is tried once more (a model still warming, a read that raced the file's copy);
+                // a second failure ends the hearing and says so (`failed`), instead of leaving "Loading…" up for good
+                var heard: [SpeechCore.Phrase]?, why: Error?
+                for _ in 0..<2 where heard == nil {
+                    do { heard = try await SpeechEngine.hear(url: url, from: a, to: b, use, module: mu, lu) }
+                    catch { why = error; if Task.isCancelled { return }; try? await Task.sleep(for: .seconds(1)) }
+                }
+                guard !Task.isCancelled else { return }   // T-0097: stopped while this stretch was heard: tell no one
+                guard let heard else { fail("stretch \(k) not heard: \(why?.localizedDescription ?? "unknown error")"); return }
+                phrases.removeAll { $0.start >= a && $0.start < b }
+                phrases = (phrases + heard).sorted { $0.start < $1.start }
+                done.insert(k)
+                changed(phrases)
             }
             return
         }
         #endif
         heardIn = lang   // SFSpeechRecognizer hears one language: the fallback
-        guard SpeechLegacy.hears(lang) else { problem = "This device can't hear \(lang) offline."; return }
+        guard SpeechLegacy.hears(lang) else { fail("This device can't hear \(lang) offline."); return }
         do { phrases = try await SpeechLegacy.hear(url: url, lang); done = Set(0..<count); changed(phrases) }
-        catch { problem = error.localizedDescription }
+        catch { fail(error.localizedDescription) }
+    }
+
+    /// The hearing ends here: `problem` set, the note written, and the host told (T-0098), so its screen says so.
+    private func fail(_ why: String) {
+        problem = why
+        SpeechCore.note(why)
+        failed(why)
     }
 
     #if compiler(>=6.2)

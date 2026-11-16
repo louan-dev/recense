@@ -50,7 +50,9 @@ import ShowsKit
 
     /// A played file's copy just landed here: hear it, if nothing else gave its transcript.
     func saved(_ model: ShowsModel) {
-        guard let e = model.playing, e.id == key, model.transcript.isEmpty, ahead == nil else { return }
+        // T-0098: a hearing that gave up (problem set) is tried again once the file is here; one still running is left alone
+        guard let e = model.playing, e.id == key, model.transcript.isEmpty, ahead == nil || ahead?.problem != nil else { return }
+        ahead?.stop(); ahead = nil
         hear(model, e)
     }
 
@@ -73,6 +75,11 @@ import ShowsKit
             model?.transcriptNote = a.map { $0.finished ? nil : "Loading transcript… \(Int(Double($0.done.count) / Double($0.count) * 100))%" } ?? nil
             if let model { PlaybackTranslator.shared.run(model, lang: heardIn) }
             if a?.finished == true { Self.cache.write(path, lines) }   // the next open needs no hearing
+        }
+        // T-0098: a hearing that ends without being whole says so (the percentage would stay up for good); saved() may try again
+        a.failed = { [weak self, weak model] why in
+            guard self?.key == e.id else { return }
+            model?.transcriptNote = "Couldn't hear this on the device: \(why)"
         }
         model.transcriptNote = auto ? "Hearing on this device, finding its language…" : "Hearing \(Listener.short(lang)) on this device…"
         ahead = a

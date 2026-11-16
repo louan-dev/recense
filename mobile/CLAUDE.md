@@ -66,6 +66,9 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `grep -c 'T-0097' shared/speechcore.swift` prints 1 (the guard after `SpeechEngine.hear(url:`) and
   `grep -c 'guard self?.key == e.id' mobile/HostApp/iOS/Ears.swift` prints 1 (a stopped hearing writes nothing into the next episode).
   `grep -n 'let gen = inFlight + 1' mobile/HostApp/iOS/Translate.swift` shows it above `apply(p.fills` (every run is a new generation).
+  A hearing that fails is said and retried, and never downloads at the moment of use (T-0098, T-0099):
+  `grep -n 'prepare(m, l, download: false)' shared/speechcore.swift` prints the line in `SpeechAhead.loop`,
+  `grep -c 'fail(' shared/speechcore.swift` prints 5 or more and `grep -c 'a.failed = ' mobile/HostApp/iOS/Ears.swift` prints 1.
 - Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
   or `Listener.name`: each line prints what it says.
   `grep -c 'guard Host.owner === self' mobile/HostApp/iOS/Listen.swift` prints 1 (Home and Listen took the one layer from
