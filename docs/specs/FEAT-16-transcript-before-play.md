@@ -42,6 +42,20 @@ Model: Apple Podcasts (spinner, then audio and transcript together).
   iPhone and iPad stored shows, Listen episodes, the web player. Surface list in the spec's table is the check: each gets a screenshot.
   Design stays FEAT-07's; this phase only places it. Follow-reset control (Apple's "reset live tracking") ships with it.
 
+### P5 surfaces (code read 2026-11-16, before coding)
+The pill = FEAT-07's: Find (magnifier → find face: field, "2 of 5", ⌃ ⌄, waveform or a 0.35 s hold back) and the scrubber, one pill.
+Follow reset = Apple's "reset live tracking": a hand scroll lets go of the voice; one visible control brings it back.
+
+| Surface | Where (file:line) | Pill before P5 | Follow reset before P5 | P5 status |
+|---|---|---|---|---|
+| iPhone, stored shows (Now Playing) | `shared/ShowsKit/Sources/ShowsKit/Views/NowPlaying.swift:113` → `Views/Transcript.swift:269-280` → `Views/SearchPill.swift` | present (FEAT-07 P2) | "Now" `Transcript.swift:257-265`; ··· Follow the Playhead `:337`; hand scroll detaches `:366-372` | present, no change; device screenshot owed |
+| iPad, stored shows | same ShowsKit code as iPhone | present | present | present, no change; iPad screenshot owed |
+| Listen episodes (iOS) | `mobile/HostApp/iOS/Listen.swift:1497` (`seek: nil`, no `duration`) | Find face only; no scrubber (another app's audio cannot be moved) | present (same view) | present, no change; Open question below |
+| Mac strip window | `strip/recense.swift:997-1209` `RecenseHomeBar` (WKWebView over `strip/homebar/index.html`, which runs Gallery's `library/src/client/homebar.js`) | scrubber only (homebar Time Seeking); no Find | not needed: one line on screen; a scroll turns the drum and plays from the line picked (`recense.swift:1962-1987`), so view and voice never part | to build: Find in `homebar.js` (shared with web) + the lines sent from `recense.swift` |
+| Web player (Gallery) | `library/src/client/gallery.js:1751` `Homebar.horizontal`; transcript `showTranscript` `:5017`, whole transcript `openAll` `:5293` | scrubber only (homebar Time Seeking); no Find | none: the whole-transcript sheet re-follows every line turn (`:6107-6117`) | to build: Find in `homebar.js`, hit marks on its ruler, Now in the sheet |
+
+Not a transcript surface: the Mac's ShowsKit Library window (`LibraryShelf`, `Root.swift:162`) has no transcript view of its own.
+
 ## Hard limit: outside audio
 Recense cannot hold back another app's audio. In the recording the audio is Apple Podcasts', so "do not play until complete" cannot apply there.
 Nearest version that works now: when the piece is in Recense's own library, Recense plays it and the rule holds.
