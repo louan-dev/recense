@@ -5,22 +5,37 @@
 //
 //   node src/wishrank.mjs            ranked queue of open triage entries, with the evidence
 //   node src/wishrank.mjs order IDS  the given T-#### ids in law order, one per line (triage-watch uses this)
+//   node src/wishrank.mjs export     writes docs/law/queue.md: the public snapshot cloud agents read
+//                                    (ids, stars, numbers, marks; never quotes, transcript text or Keys)
 //   node src/wishrank.mjs selftest
 //
+// The repo is ~/Developer/recense when it exists, else the repo this script lives in.
+// A missing input prints one line naming it and exits 3 (cloud sessions read docs/law/queue.md instead).
+//
 // Env (defaults in brackets):
-//   WISHRANK_TRIAGE      [~/Developer/recense/docs/specs/triage.md]
+//   WISHRANK_TRIAGE      [<repo>/docs/specs/triage.md]   git-ignored: on the Mac only
 //   WISHRANK_ARCHIVE     [<triage dir>/triage-archive.md]   owner quotes there count as emphasis
 //   WISHRANK_WISHES      [~/.claude/context/recense/notes/WISHES.md]  PAUSED objectives
 //   WISHRANK_TRANSCRIPTS [~/.claude/projects]   *.jsonl one level down; "" = none
 //   WISHRANK_CACHE       [~/.cache/recense/wishrank-owner.json]  per-file cache (mtime+size); "" = none
+//   WISHRANK_QUEUE       [<repo>/docs/law/queue.md]   where export writes
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const HOME = os.homedir();
+const SELF_REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const MAC_REPO = path.join(HOME, 'Developer/recense');
+export const REPO = fs.existsSync(path.join(MAC_REPO, 'docs/law/order.md')) ? MAC_REPO : SELF_REPO;
+const SNAPSHOT = 'docs/law/queue.md';
+export class Missing extends Error {
+  constructor(what, p) { super(`wishrank: missing ${what} (${p}); it lives on the owner's Mac. Elsewhere read ${SNAPSHOT} (snapshot, may be stale; its date is at the top).`); }
+}
 const env = (k, d) => (process.env[k] === undefined ? d : process.env[k]);
 const CLOSED = new Set(['MERGED', 'WONTFIX', 'PARKED', 'FIXED', 'READY']);
 const STATUSES = /^(?:!\s*)?(NEW|SCOUTING|FIXING|READY|MERGED|HELD|PARKED|WONTFIX|FIXED)\b/;
@@ -180,22 +195,109 @@ function paused(wishesPath, ranked) {
   }).sort((a, b) => a.best - b.best);
 }
 
-async function load() {
-  const triage = env('WISHRANK_TRIAGE', path.join(HOME, 'Developer/recense/docs/specs/triage.md'));
-  const archive = env('WISHRANK_ARCHIVE', path.join(path.dirname(triage), 'triage-archive.md'));
+export function paths() {
+  const triage = env('WISHRANK_TRIAGE', path.join(REPO, 'docs/specs/triage.md'));
+  return {
+    triage,
+    archive: env('WISHRANK_ARCHIVE', path.join(path.dirname(triage), 'triage-archive.md')),
+    wishes: env('WISHRANK_WISHES', path.join(HOME, '.claude/context/recense/notes/WISHES.md')),
+    transcripts: env('WISHRANK_TRANSCRIPTS', path.join(HOME, '.claude/projects')),
+    cache: env('WISHRANK_CACHE', path.join(HOME, '.cache/recense/wishrank-owner.json')),
+    queue: env('WISHRANK_QUEUE', path.join(REPO, SNAPSHOT)),
+  };
+}
+
+// Required inputs: triage always; transcripts and WISHES for the full queue ("" = deliberately none).
+export function need(p, { full }) {
+  if (!fs.existsSync(p.triage)) throw new Missing('triage file', p.triage);
+  if (!full) return;
+  if (p.transcripts && !fs.existsSync(p.transcripts)) throw new Missing('transcripts folder', p.transcripts);
+  if (p.wishes && !fs.existsSync(p.wishes)) throw new Missing('WISHES file', p.wishes);
+}
+
+export async function load(p = paths()) {
+  const { triage, archive } = p;
   const entries = parseTriage(fs.readFileSync(triage, 'utf8'));
   let arch = []; try { arch = parseTriage(fs.readFileSync(archive, 'utf8'), { source: 'archive' }); } catch {}
   const all = [...entries, ...arch.filter(a => !entries.some(e => e.id === a.id))];
   const quoteTexts = all.filter(e => e.owner).flatMap(e => e.quotes.map(t => ({ d: e.day, t, f: path.basename(e.source === 'archive' ? archive : triage) })));
-  const tr = await transcriptTexts(env('WISHRANK_TRANSCRIPTS', path.join(HOME, '.claude/projects')), env('WISHRANK_CACHE', path.join(HOME, '.cache/recense/wishrank-owner.json')));
+  const tr = await transcriptTexts(p.transcripts, p.cache);
   const texts = dedupe([...tr.texts, ...quoteTexts]);
   return { all, texts, files: tr.files };
+}
+
+// ---------- export (public snapshot) ----------
+// The repo is public. Only ids, numbers, enum marks and titles that already appear in a tracked spec leave the Mac.
+export function publicCorpus(repo = REPO) {
+  try {
+    const files = execFileSync('git', ['-C', repo, 'ls-files', 'docs/specs'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n')
+      .filter(f => f.endsWith('.md') && !/(^|\/)triage[^/]*\.md$/.test(f));
+    return files.map(f => { try { return fs.readFileSync(path.join(repo, f), 'utf8'); } catch { return ''; } }).join('\n');
+  } catch { return ''; }
+}
+
+export function publicTitle(title, corpus) {
+  const t = (title || '').trim();
+  return t.length >= 4 && t.length <= 80 && corpus.includes(t) && !/[|`<>]/.test(t) ? t : '';
+}
+
+export function pausedIds(wishesText) {
+  return new Set(wishesText.split('\n').filter(l => /PAUSED:/.test(l)).flatMap(l => l.match(/T-\d{4}/g) || []));
+}
+
+export function renderQueue(ranked, { made, commit, files, texts, days, paused = new Set(), corpus = '' }) {
+  const out = [
+    '# Queue · snapshot of the wish order',
+    '',
+    `Made ${made} from commit \`${commit}\` by \`cd sync && node src/wishrank.mjs export\` on the owner's Mac.`,
+    '',
+    'Snapshot: may be stale (check the date above). On the Mac run `cd sync && node src/wishrank.mjs` instead.',
+    'Law: `docs/law/order.md`. Rank is law order: `!` fix-now first, then stars, then days, messages, files.',
+    `Evidence: ${files} transcripts · ${texts} owner messages · ${days} days. Quotes, transcript text and Keys stay on the Mac.`,
+    '',
+    '| # | Id | Stars | Days | Msgs | Files | Marks | Title |',
+    '|---:|---|---|---:|---:|---:|---|---|',
+  ];
+  ranked.forEach((e, i) => {
+    const st = e.group ? `${'*'.repeat(e.group)} (${e.group})` : 'unrated';
+    const ev = e.em.nokeys || e.em.badkeys ? ['-', '-', '-'] : [e.em.days, e.em.msgs, e.em.files];
+    const marks = [e.bang && 'fix-now', paused.has(e.id) && 'PAUSED', e.tie && 'TIE: owner decides', e.why === 'echo' && 'echo',
+      e.why === 'promoted' && 'promoted', e.em.nokeys && 'no Keys', e.em.badkeys && 'bad Keys', e.status && e.status !== 'NEW' && e.status]
+      .filter(Boolean).join(' · ');
+    out.push(`| ${i + 1} | ${e.id} | ${st} | ${ev.join(' | ')} | ${marks} | ${publicTitle(e.title, corpus)} |`);
+  });
+  if (!ranked.length) out.push('', 'No open wishes.');
+  return out.join('\n') + '\n';
+}
+
+function gitCommit(repo) {
+  try {
+    const c = execFileSync('git', ['-C', repo, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const dirty = execFileSync('git', ['-C', repo, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return dirty ? `${c}+dirty` : c;
+  } catch { return 'unknown'; }
+}
+
+const stamp = (d = new Date()) => `${dayOf(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+export async function exportQueue(p = paths(), { repo = REPO, now = new Date() } = {}) {
+  need(p, { full: true });
+  const { all, texts, files } = await load(p);
+  const ranked = rank(all, texts);
+  let w = ''; if (p.wishes) try { w = fs.readFileSync(p.wishes, 'utf8'); } catch {}
+  const md = renderQueue(ranked, { made: stamp(now), commit: gitCommit(repo), files, texts: texts.length,
+    days: new Set(texts.map(x => x.d).filter(Boolean)).size, paused: pausedIds(w), corpus: publicCorpus(repo) });
+  fs.writeFileSync(p.queue, md);
+  return { md, n: ranked.length, out: p.queue };
 }
 
 async function main(argv) {
   const cmd = argv[0] || 'list';
   if (cmd === 'selftest') return selftest();
-  const { all, texts, files } = await load();
+  const p = paths();
+  if (cmd === 'export') { const r = await exportQueue(p); console.log(`wishrank: wrote ${r.n} wishes to ${r.out}; commit it.`); return 0; }
+  need(p, { full: cmd !== 'order' });
+  const { all, texts, files } = await load(p);
   const ranked = rank(all, texts);
   if (cmd === 'order') {
     const want = new Set(argv.slice(1));
@@ -212,14 +314,14 @@ async function main(argv) {
     if (head !== g) { out.push(`${g === null ? '' : '\n'}${head}`); g = head; }
     out.push(`${String(++n).padStart(2)}. ${line(e)}`);
   }
-  const p = paused(env('WISHRANK_WISHES', path.join(HOME, '.claude/context/recense/notes/WISHES.md')), ranked);
-  if (p.length) { out.push('', 'PAUSED (resume the highest-ranked first)'); for (const x of p) out.push(`- ${x.best === Infinity ? 'no T-id' : '#' + x.best} · ${x.l}`); }
+  const ps = p.wishes ? paused(p.wishes, ranked) : [];
+  if (ps.length) { out.push('', 'PAUSED (resume the highest-ranked first)'); for (const x of ps) out.push(`- ${x.best === Infinity ? 'no T-id' : '#' + x.best} · ${x.l}`); }
   console.log(out.join('\n'));
   return 0;
 }
 
 // ---------- selftest ----------
-function selftest() {
+async function selftest() {
   let fail = 0;
   const ok = (c, m) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) fail = 1; };
   const T = (id, q, extra = '', st = 'NEW', bang = '') =>
@@ -281,10 +383,51 @@ function selftest() {
 
   const again = JSON.stringify(rank(parseTriage(doc), texts).map(e => [e.id, e.group, e.em]));
   ok(again === JSON.stringify(rank(parseTriage(doc), texts).map(e => [e.id, e.group, e.em])), 'deterministic: same input, same order');
+
+  // export: the public snapshot never carries transcript text, owner quotes, Keys or WISHES lines.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wishrank-'));
+  try {
+    const SECRET = ['zebrafjord', 'quillmarrow', 'vexpantry', 'oxbloomcide', 'privatewishtitle'];
+    fs.mkdirSync(path.join(tmp, 'proj'));
+    const jl = (ts, text) => JSON.stringify({ type: 'user', timestamp: ts, message: { content: text } });
+    fs.writeFileSync(path.join(tmp, 'proj', 's.jsonl'), [jl('2026-11-01T10:00:00Z', 'please zebrafjord the drawer now'),
+      jl('2026-11-02T10:00:00Z', 'again: zebrafjord, and quillmarrow too'), jl('2026-11-03T10:00:00Z', 'Shared Title Here please')].join('\n') + '\n');
+    fs.writeFileSync(path.join(tmp, 'triage.md'), [
+      T('T-0040', '***** vexpantry quote zebrafjord', 'Keys: zebrafjord|oxbloomcide').replace('T-0040 title', 'Shared Title Here'),
+      T('T-0041', '** quillmarrow said', 'Keys: quillmarrow').replace('T-0041 title', 'privatewishtitle about quillmarrow'),
+      T('T-0042', '! now', 'Keys: nothingmatches', 'NEW', '! '),
+      T('T-0043', '** twin a', 'Keys: twinx'), T('T-0044', '** twin b', 'Keys: twinx')].join('\n'));
+    fs.writeFileSync(path.join(tmp, 'WISHES.md'), '- PAUSED: T-0041 vexpantry objective oxbloomcide\n');
+    const p = { triage: path.join(tmp, 'triage.md'), archive: path.join(tmp, 'none.md'), wishes: path.join(tmp, 'WISHES.md'),
+      transcripts: tmp, cache: '', queue: path.join(tmp, 'queue.md') };
+    fs.renameSync(path.join(tmp, 'proj'), path.join(tmp, 'p1'));
+    const now = new Date('2026-11-16T09:05:00');
+    const { md } = await exportQueue(p, { repo: tmp, now });
+    const fileMd = fs.readFileSync(p.queue, 'utf8');
+    ok(fileMd === md && md.includes('Made 2026-11-16 09:05 from commit `unknown`'), 'export: writes the file with its date and commit at the top');
+    const rows = md.split('\n').filter(l => /^\| \d+ \| T-/.test(l));
+    ok(rows.length === 5 && rows[0].includes('T-0042') && rows[0].includes('fix-now'), 'export: one row per open wish, fix-now first');
+    ok(rows[1].includes('T-0040') && rows[1].includes('***** (5) | 3 | 3 | 2 |'), 'export: stars and emphasis numbers (days | msgs | files; the quote in triage counts too)');
+    ok(rows.find(r => r.includes('T-0041')).includes('PAUSED') && rows.filter(r => r.includes('TIE: owner decides')).length === 2, 'export: PAUSED and TIE marks');
+    const transcriptWords = ['please', 'drawer', 'again'];
+    ok(!SECRET.some(w => md.includes(w)) && !transcriptWords.some(w => md.includes(w)), 'export: no transcript text, quotes, Keys, WISHES lines or private titles');
+    ok(!md.includes('Shared Title Here'), 'export: a title not present in a tracked spec is left blank');
+    ok(publicTitle('Shared Title Here', '# FEAT · Shared Title Here') === 'Shared Title Here' && publicTitle('x|y', 'x|y') === '', 'export: a title already in a tracked spec is kept');
+    ok(renderQueue([], { made: 'd', commit: 'c', files: 0, texts: 0, days: 0 }).includes('No open wishes.'), 'export: empty queue says so');
+    let miss = ''; try { need({ ...p, transcripts: path.join(tmp, 'gone') }, { full: true }); } catch (err) { miss = err instanceof Missing ? err.message : ''; }
+    ok(miss.includes('missing transcripts folder') && miss.includes('docs/law/queue.md') && !miss.includes('\n'), 'missing input: one line naming it and pointing to the snapshot');
+    let miss2 = ''; try { need({ ...p, triage: path.join(tmp, 'gone.md') }, { full: false }); } catch (err) { miss2 = err.message; }
+    ok(miss2.startsWith('wishrank: missing triage file'), 'missing triage: named even for order');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  ok(fs.existsSync(path.join(REPO, 'docs/law/order.md')), `repo found from the script's location: ${REPO}`);
+
   console.log(fail ? 'wishrank selftest: FAIL' : 'wishrank selftest: ok');
   return fail;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main(process.argv.slice(2)).then(c => process.exit(c || 0), err => { console.error(`wishrank: ${err.message}`); process.exit(2); });
+  main(process.argv.slice(2)).then(c => process.exit(c || 0), err => {
+    if (err instanceof Missing) { console.error(err.message); process.exit(3); }
+    console.error(`wishrank: ${err.message}`); process.exit(2);
+  });
 }
