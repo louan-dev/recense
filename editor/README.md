@@ -156,6 +156,7 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - Read-aloud for playlists: `src/speech.js` (host voice with word ranges, `shared/draftpadlibrary.swift`).
 
 ## Selecting and Enter (2026-11-12)
+- **The selection is clear cyan; other copies of a selected whole word (3+ letters) get only a dotted underline**, never a fill that looks like a second selection (T-0088; `src/theme.js`, `src/search.js`; test `test/t0088-selection.test.mjs`).
 - **Cmd+A, and Edit > Select All, select the page on screen** (page mode) or the page holding the cursor, never the
   whole file (`selectPage`, `src/pagemode.js`; test `test/p14-selectpage.test.mjs`).
 - **Enter on a numbered (legal) line with text selected replaces the selection** before starting the next item

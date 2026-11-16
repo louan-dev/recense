@@ -386,7 +386,8 @@ export function searchExtension({ onOpen = null } = {}) {
     }),
     openWatcher,
     searchHighlightField,
-    highlightSelectionMatches(),
+    // T-0088 · whole words of 3+ letters only, so selecting part of a word never lights up its other halves.
+    highlightSelectionMatches({ wholeWords: true, minSelectionLength: 3 }),
     keymap.of([
       {
         key: 'Mod-f',

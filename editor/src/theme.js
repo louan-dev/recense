@@ -17,7 +17,7 @@ export const THEMES = {
     blue: '#5b9bd5',
     cyan: '#38bdf8',
     border: 'rgba(91, 155, 213, 0.22)',
-    selection: 'rgba(56, 189, 248, 0.20)',
+    selection: 'rgba(56, 189, 248, 0.40)',
     activeLine: 'rgba(91, 155, 213, 0.07)'
   },
   light: {
@@ -30,7 +30,7 @@ export const THEMES = {
     blue: '#2b6cb0',
     cyan: '#0891b2',
     border: 'rgba(43, 108, 176, 0.22)',
-    selection: 'rgba(8, 145, 178, 0.18)',
+    selection: 'rgba(8, 145, 178, 0.30)',
     activeLine: 'rgba(43, 108, 176, 0.06)'
   }
 };
@@ -74,7 +74,8 @@ export function buildThemeExtension(mode = 'dark') {
         borderLeftColor: palette.cyan,
         borderLeftWidth: '2px'
       },
-      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      // T-0088 · as specific as CodeMirror's own focused rule, or its #233 grey wins and the selection all but vanishes.
+      '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: palette.selection
       },
       '.cm-activeLine': {
@@ -98,6 +99,12 @@ export function buildThemeExtension(mode = 'dark') {
         backgroundColor: palette.panelBg,
         color: palette.text,
         borderBottom: `1px solid ${palette.border}`
+      },
+      // T-0088 · other copies of the selected word: a dotted underline, never a fill that looks like a selection.
+      '.cm-selectionMatch': {
+        backgroundColor: 'transparent',
+        textDecoration: `underline dotted ${palette.muted}`,
+        textUnderlineOffset: '4px'
       },
       '.cm-searchMatch': {
         backgroundColor: 'rgba(56, 189, 248, 0.22)',
