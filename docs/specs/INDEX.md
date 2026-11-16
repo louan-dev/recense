@@ -33,6 +33,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-01 · Clean text → chaptered audiobook (TOML rule profiles, Kokoro M4B) · `[~]` · owner 2026-11-12 · `text/`
 - FEAT-02 · P2P transport (Bluetooth + Wi-Fi, MultipeerConnectivity) · `[~]` P1–P3 built, device check owed · T-0035 · `shared/p2ptransport.swift`
 - FEAT-03 · Share: consolidated cross-device destination · `[ ]` · T-0035 · `shared/mediadownload.swift` (reused pattern), `mobile/HostApp/macOS/Window.swift`
+- FEAT-05 · Transcript modes (Transcript · Learn · Follow) + floating window as a mirror, one CaptionPainter · `[ ]` · owner 2026-11-12, T-0030/31/32 · `FEAT-05-transcript-modes-floating-mirror.md`; `shared/ShowsKit/`, `strip/recense.swift`, `mobile/HostApp/iOS/Listen.swift`
 - FEAT-04 · Exact time sync for stored transcripts (fingerprint → content clock) · `[~]` P1+P2 built, P3 parked (aligner), P4 after FEAT-02 · owner 2026-11-12 · `shared/ShowsKit/Sources/ShowsKit/{Word,ContentClock}.swift`, `mobile/HostApp/iOS/Listen.swift`, `strip/handoff.swift`
 - FEAT-06 · Homes: the folder contract on every device (+ carry C0 exit) · `[~]` P1–P3 built, device check owed · owner 2026-11-08 + 11-11 · `shared/homes.swift`, `strip/app.swift` (`recense carry`)
 - FEAT-07 · Transcript search pill + haptic zoning; P0 the Music list (play, pause, loop, rename across devices, slide to delete) · `[~]` P0–P2 built (Music list, search pill on iPhone/iPad, translation on the voice), Mac pill and device check owed · T-0045, owner 2026-11-15 · `FEAT-07-search-pill-haptic-ruler.md`; `shared/homefiles.swift`, `shared/ShowsKit/Sources/ShowsKit/Views/{ShowPage,Cards,Root}.swift`, `strip/musicshelf.swift`
@@ -49,6 +50,7 @@ Row: ID · title · status · From · code pointer
 - BUG-02 · Vertical scroll turns into a page swipe; pages jump · `[~]` · T-0025 T-0026 T-0027 · `bugs/BUG-02-scroll-locks-sideways.md`
 - BUG-03 · A Pencil tap meant to place the cursor draws a stroke instead · `[~]` (tests pass; iPad+Pencil check pending) · T-0030 · `bugs/BUG-03-pencil-tap-draws.md`
 - BUG-04 · setText put the caret back at a stale offset after a native round-trip (Enter looked reversed) · `[~]` (tests pass; owner's real-device check pending) · T-0001 · `bugs/BUG-04-settext-caret-drift.md`
+- BUG-05 · The old transcript stays when new media starts (episodes keyed by date + language; no item change read) · `[ ]` · T-0044 · `bugs/BUG-05-new-media-keeps-old-text.md`
 - BUG-06 · Draftpad ink ignores touch (iPhone has no Pencil, so annotation never worked there) · `[~]` (fixed, device check owed) · T-0023 · `bugs/BUG-06-mobile-ink-touch-blocked.md`
 - BUG-07 · Ink anchors to the wrong line (hard-coded 28px vs. the real line height) · `[~]` (fixed, device check owed) · T-0014 · `bugs/BUG-07-ink-anchor-line-height.md`
 - BUG-08 · The document moved while the owner was dragging a selection (highlight not what was dragged; caret wrong after Delete) · `[~]` (fixed, device check owed) · T-0028 · `bugs/BUG-08-drag-selection-moved.md`
