@@ -162,9 +162,12 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   whole file (`selectPage`, `src/pagemode.js`; test `test/p14-selectpage.test.mjs`).
 - **Enter on a numbered (legal) line with text selected replaces the selection** before starting the next item
   (`src/legal.js`; test `test/t0001-enter.test.mjs`, T-0003).
-- **Scroll vs page swipe** (BUG-02): a drag picks its axis only after 12 px and turns sideways only if
+- **Scroll vs page swipe** (BUG-02): a drag picks its axis only after 6 px and turns sideways only if
   `|dx| > 1.4·|dy|` (`decideAxis`, `src/pagemode.js`); once vertical it stays vertical. Same rule for touch, Pencil,
-  mouse and trackpad. Test: `test/bug02-axis.test.mjs`.
+  mouse and trackpad. The page then turns at `min(36, 0.12·width)` px (`attachSwipePaging`, same file); the Mac
+  repeats the 6 px slop natively in `strip/editorhost.swift`. Slop and commit were halved from 12 px and
+  `min(60, 0.2·width)` on 2026-11-16 (owner: move with the finger sooner, turn on a shorter stroke).
+  Test: `test/bug02-axis.test.mjs`.
 - **A Pencil tap before any tool is chosen places the cursor, never draws** (BUG-03): on a fresh page, the first
   pen touch under 3 px of movement is a tap, not a mark (`onPointerUp`, `src/ink.js`). Once a tool is explicitly
   picked, every pen touch draws normally. Test: `test/bug03-pencil-tap-draws.test.mjs`.

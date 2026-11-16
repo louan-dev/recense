@@ -555,7 +555,7 @@ export function reopenMemo(state) {
  * `dragX < 0`: fingers moving right-to-left.
  */
 // Derived from Spec: BUG-02 (A1 slop, A2 ratio). One rule for touch, Pencil, mouse and trackpad.
-export const AXIS_SLOP_PX = 12;
+export const AXIS_SLOP_PX = 6;
 export const AXIS_RATIO = 1.4;
 export function decideAxis(dx, dy) {
   const ax = Math.abs(dx), ay = Math.abs(dy);
@@ -624,7 +624,7 @@ export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
  */
 export function attachSwipePaging(
   view,
-  { threshold = 60, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}
+  { threshold = 36, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}
 ) {
   let wheelAcc = 0;
   let wheelSpent = false;
@@ -649,7 +649,7 @@ export function attachSwipePaging(
 
   function settleDrag(dx) {
     const el = targetEl();
-    const limit = Math.min(threshold, widthOf() * 0.2);
+    const limit = Math.min(threshold, widthOf() * 0.12);
     const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce })
       : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
     if (!el || !el.style) { if (turn) turn(); return; }
@@ -706,7 +706,7 @@ export function attachSwipePaging(
     wheelAcc += dx;
     renderDrag(wheelAcc);
 
-    const limit = Math.min(threshold, widthOf() * 0.2);
+    const limit = Math.min(threshold, widthOf() * 0.12);
     if (Math.abs(wheelAcc) >= limit) {
       wheelSpent = true;
       const finalDx = wheelAcc;

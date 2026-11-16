@@ -4,9 +4,12 @@ import assert from 'node:assert/strict';
 import { decideAxis } from '../src/pagemode.js';
 
 // Regression guard: BUG-02
-test('no axis until the drag passes the 12 px slop', () => {
-  assert.equal(decideAxis(5, 3), null);
-  assert.equal(decideAxis(11, -11), null);
+test('no axis until the drag passes the 6 px slop (A1, owner 2026-11-16)', () => {
+  assert.equal(decideAxis(3, 2), null);
+  assert.equal(decideAxis(5, -5), null);
+  // At the slop it locks: this is the number the owner asked to halve so the page follows the finger sooner.
+  assert.equal(decideAxis(6, 0), 'h');
+  assert.equal(decideAxis(0, 6), 'v');
 });
 
 // Regression guard: BUG-02
