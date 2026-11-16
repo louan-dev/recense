@@ -1,6 +1,6 @@
 import { isMixed } from './lenses.js';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view';
+import { EditorView, keymap, drawSelection, highlightActiveLine, highlightSpecialChars } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { pageMarkersExtension, controlCharFilter, inspectDraftpadPages, isWindowEmpty } from './pages.js';
@@ -165,6 +165,8 @@ export function createEditorExtensions({
 } = {}) {
   const extensions = [
     EditorState.lineSeparator.of('\n'),
+    // T-0090 · raw control characters (0x04 …) as measured widgets, so a click among them lands where it is aimed.
+    highlightSpecialChars({ render: renderControlChar }),
     history(),
     drawSelection(),
     highlightActiveLine(),
@@ -193,6 +195,15 @@ export function createEditorExtensions({
     compartments,
     extensions
   };
+}
+
+/** T-0090 · A control character shows as a small muted dot; the character itself stays in the file (BUG-18 A3). */
+export function renderControlChar(code, _description, _placeholder, doc = document) {
+  const el = doc.createElement('span');
+  el.className = 'cm-control-char';
+  el.textContent = '·';
+  el.setAttribute('title', `Control character U+${code.toString(16).toUpperCase().padStart(4, '0')}`);
+  return el;
 }
 
 export function createEditorState(doc = '', options = {}) {

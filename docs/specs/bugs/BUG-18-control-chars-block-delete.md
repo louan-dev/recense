@@ -21,6 +21,8 @@ A page shows a row of ⌧ boxes. Swiping off it never deletes it, though it hold
   U+000E–U+001F, U+007F) and whitespace, is empty or only a date heading, is empty.
 - A2 · Typed, pasted or dropped text never inserts those characters; tab, newline and return pass.
 - A3 · A host load (`setText`) leaves the file as it is; cleaning the live file is a separate step shown to the owner.
+- A4 (T-0090) · Control characters that are in the file render as CodeMirror widgets (a muted dot, 0.6ch, titled with
+  the code point), never as raw text WebKit draws as ⌧ boxes, so a click among them places the caret where aimed.
 
 ## Open
 - Find what types 0x04 (log keys reaching the editor on Mac and iPhone).

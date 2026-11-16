@@ -156,6 +156,7 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - Read-aloud for playlists: `src/speech.js` (host voice with word ranges, `shared/draftpadlibrary.swift`).
 
 ## Selecting and Enter (2026-11-12)
+- **Stray control characters** (e.g. 0x04) show as faint dots, not ⌧ boxes, so clicking among them puts the caret where you click (T-0090, BUG-18 A4; test `test/t0090-caret-control-chars.test.mjs`).
 - **The selection is clear cyan; other copies of a selected whole word (3+ letters) get only a dotted underline**, never a fill that looks like a second selection (T-0088; `src/theme.js`, `src/search.js`; test `test/t0088-selection.test.mjs`).
 - **Cmd+A, and Edit > Select All, select the page on screen** (page mode) or the page holding the cursor, never the
   whole file (`selectPage`, `src/pagemode.js`; test `test/p14-selectpage.test.mjs`).

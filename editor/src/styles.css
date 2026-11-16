@@ -2142,3 +2142,12 @@ html.rc-wings-page body {
   -webkit-user-select: none;
   pointer-events: none;
 }
+
+/* T-0090 · a stray control character: a faint dot the width of a letter, so clicks around it stay true. */
+.cm-control-char {
+  color: var(--rc-muted);
+  opacity: 0.5;
+  display: inline-block;
+  width: 0.6ch;
+  text-align: center;
+}
