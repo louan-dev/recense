@@ -5,6 +5,8 @@ pipeline and syllable-by-syllable display to iPhone and iPad, 1:1. Demucs can't 
 between two routes: the Mac separates the vocals and sends the timing, or a separator runs on the device."
 Status: `[~]` P1 coded, not compiled, device check owed · Builds on: FEAT-04 (one Word type), FEAT-07/16 (transcript
 view), FEAT-09 (carry), `unified-offline-first-and-redesign.md` §stems ("ship `features.json` instead of stems").
+See also: BUG-24 (2026-11-16): P1 compiles and is in the iOS build of 12:16, yet no voice measure has reached the
+iPhone (no `voices` folder), so the light is still word by word there; the iPad is an Air 13-inch (M3), not M2.
 
 Labels: **proven** = a test in this repo shows it · **documented** = a vendor or paper says so, not run here ·
 **assumed** = believed, not shown · **untested** = open.
