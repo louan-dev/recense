@@ -237,6 +237,13 @@ test('P5 Integration: mounted editor unifies navigation, ink sidecar, Pencil Pro
   assert.equal(api.onPencilAction('doubleTap'), 'asleep');
   assert.equal(mounted.inkLayer.palette.hidden, true);
   assert.equal(api.getInkTool(), 'select', 'waking the palette changes no tool');
+  // UI-04 P1: squeeze phases — a quick squeeze (began → ended, under 250 ms) toggles the palette too.
+  assert.equal(api.onPencilSqueeze('began', 100, 100), 'pressed');
+  assert.equal(api.onPencilSqueeze('ended', 100, 100), 'idle');
+  assert.equal(mounted.inkLayer.palette.hidden, false, 'a quick squeeze phase pair wakes the palette');
+  api.onPencilSqueeze('began', 100, 100);
+  api.onPencilSqueeze('ended', 100, 100);
+  assert.equal(mounted.inkLayer.palette.hidden, true, 'and the next sleeps it');
 
   // 2. Dropped-in file embed inserts ![](...) and keeps its ink on top when lines are inserted above
   const embedMd = api.dropFile('exhibits/chart 01.pdf', 'Exhibit A');

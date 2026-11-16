@@ -39691,6 +39691,96 @@ ${clean(nextLineText)}`;
     return { offer, setDismissed, isOpen: () => Boolean(current), close: later };
   }
 
+  // src/pencilstate.js
+  var SQUEEZE_HOLD_MS = 250;
+  function createSqueeze({
+    onTap = () => {
+    },
+    onHold = () => {
+    },
+    onMove = () => {
+    },
+    onRelease = () => {
+    },
+    onCancel = () => {
+    },
+    holdMs = SQUEEZE_HOLD_MS,
+    setTimer = (fn, ms) => setTimeout(fn, ms),
+    clearTimer = (id2) => clearTimeout(id2)
+  } = {}) {
+    let state = "idle";
+    let timer = null;
+    let x = 0, y = 0;
+    const stopTimer = () => {
+      if (timer !== null) {
+        clearTimer(timer);
+        timer = null;
+      }
+    };
+    const at = (nx, ny) => {
+      if (Number.isFinite(nx)) x = nx;
+      if (Number.isFinite(ny)) y = ny;
+    };
+    function phase(name2, nx, ny) {
+      at(Number(nx), Number(ny));
+      switch (name2) {
+        case "began":
+          stopTimer();
+          state = "pressed";
+          timer = setTimer(() => {
+            timer = null;
+            if (state === "pressed") {
+              state = "holding";
+              onHold(x, y);
+            }
+          }, holdMs);
+          return state;
+        case "changed":
+          if (state === "holding") onMove(x, y);
+          return state;
+        case "ended":
+          stopTimer();
+          if (state === "holding") onRelease(x, y);
+          else onTap();
+          state = "idle";
+          return state;
+        case "cancelled":
+          stopTimer();
+          if (state === "holding") onCancel();
+          state = "idle";
+          return state;
+        default:
+          return state;
+      }
+    }
+    return { phase, state: () => state };
+  }
+  function squeezeHost({ toggle, radial = () => null, setTimer, clearTimer } = {}) {
+    let menu = null;
+    const sq = createSqueeze({
+      onTap: () => toggle(),
+      onHold: (x, y) => {
+        menu = radial();
+        if (menu) menu.open(x, y);
+      },
+      onMove: (x, y) => {
+        if (menu) menu.move(x, y);
+      },
+      onRelease: (x, y) => {
+        if (menu) menu.release(x, y);
+        else toggle();
+        menu = null;
+      },
+      onCancel: () => {
+        if (menu) menu.close();
+        menu = null;
+      },
+      ...setTimer ? { setTimer } : {},
+      ...clearTimer ? { clearTimer } : {}
+    });
+    return (phase, x, y) => sq.phase(phase, x, y);
+  }
+
   // src/theme.js
   var DEFAULT_FONT_SIZE = 18;
   var COLUMN_CHARS = 66;
@@ -40381,6 +40471,7 @@ ${clean(nextLineText)}`;
       if (menuOpen) setToolbarFaded(false);
     }
     let inkLayer = null;
+    let pencilSqueeze = null;
     let library = null;
     let recense = null;
     let recenseActions = null;
@@ -40880,6 +40971,21 @@ ${String(text ?? "")}`;
           const card = recense ? recense.cardFor(Number(offset)) : null;
           if (dualWings) dualWings.setTypedLine(card);
           return card;
+        },
+        // Derived from Spec: UI-04 P1 — the host sends every squeeze phase with the hover point:
+        // released before 250 ms toggles the palette; held opens the radial menu (UI-04 P2; until then, toggles on release).
+        onPencilSqueeze: (phase, x, y) => {
+          if (!inkLayer) return "idle";
+          if (!pencilSqueeze) {
+            pencilSqueeze = squeezeHost({
+              toggle: () => {
+                postHaptic("squeeze");
+                return inkLayer.toggleMenu();
+              },
+              radial: () => null
+            });
+          }
+          return pencilSqueeze(String(phase), Number(x), Number(y));
         },
         // Pencil double-tap or squeeze wakes the palette under the pill (or puts it back to sleep).
         onPencilAction: (action) => {

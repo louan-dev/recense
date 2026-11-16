@@ -25,7 +25,7 @@ Row: ID · title · status · From · code pointer
 - UI-01 · Photos video viewer (iOS) · `[~]` · owner 2026-11-08 · `library/src/client/viewer-shell.js`, `viewer-sheet.js`
 - UI-02 · Podcasts (iOS) · `[~]` · owner 2026-11-08 · `shared/ShowsKit/`
 - UI-03 · Shared playlist (Spotify, iOS) · `[ ]` · owner 2026-11-08 · —
-- UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `editor/src/pressure.js`, `editor/src/palm.js`, `mobile/HostApp/iOS/Draftpad.swift`
+- UI-04 · Apple Pencil Pro mechanics (Notability study) · `[~]` · owner 2026-11-11 · `editor/src/ink.js`, `editor/src/pressure.js`, `editor/src/palm.js`, `editor/src/pencilstate.js`, `mobile/HostApp/iOS/Draftpad.swift`
 - UI-05 · VoiceOS (voice dictation + edit + agent patterns) · `[ ]` · owner 2026-11-12 · `strip/app.swift:6249` VoiceEntry, `strip/speech.swift`, `strip/openears.swift`
 - UI-06 · Draftpad page navigation, gesture-only (Antinote study): dots tap/drag/hold, slots, reopen, no ⌘ keys · `[~]` · owner 2026-11-15, T-0020/21/22/24 · D1–D4 date label added; G4 drag a dot to any place (T-0089); device check (Mac/iPhone/iPad) owed · `ui-teardowns/UI-06-antinote-navigation/UI-06.md`, `editor/src/pagemode.js`, `editor/src/index.js`
 - UI-07 · Draftpad's editor box per device and orientation (iPhone 12 Pro Max, iPad Air M2 13-inch; 11-inch fallback band), not the Mac's box scaled · `[~]` · owner 2026-11-16 · built in editor; device check (iPhone/iPad) owed · `ui-teardowns/UI-07-draftpad-device-sizes/UI-07.md`, `editor/src/devicelayout.js`
