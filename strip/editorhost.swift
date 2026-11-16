@@ -110,6 +110,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: EditorWebView
     let vault: URL
     var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
+    /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
+    var matterPath: String { vault.appendingPathComponent("draftpad.matter.json").path }
     var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
     var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
@@ -163,7 +165,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
         web.onSwipe = { [weak self] dx, ended in self?.sendSwipe(dx, ended) }
-        for name in ["editor", "link", "ui", "ink", "audio", "calendar", "wings"] {
+        for name in ["editor", "link", "ui", "ink", "matter", "audio", "calendar", "wings"] {
             cfg.userContentController.add(WeakHandler(self), name: name)
         }
         if let raw = coordinatedRead(eventsPath),
@@ -321,6 +323,10 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                       let json = String(data: data, encoding: .utf8) {
                 coordinatedWrite(json, to: inkPath)
             }
+            return
+        }
+        if m.name == "matter" {   // FEAT-08 · coded, not compiled; device check owed
+            if let json = m.body as? String, !json.isEmpty { coordinatedWrite(json, to: matterPath) }
             return
         }
         if m.name == "audio" {
@@ -481,6 +487,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         if nativeWings && wingSide == nil { call("setNativeWings(true)") }
         if wingSide == nil, let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
             call("setInk(\(jsString(inkJSON)))")
+        }
+        if wingSide == nil, let matterJSON = coordinatedRead(matterPath), !matterJSON.isEmpty {
+            call("setMatter(\(jsString(matterJSON)))")   // FEAT-08 · coded, not compiled
         }
         if wingSide == nil { for c in DraftpadLibrary.loadCalls(vault: vault, quote: jsString) { call(c) } }
         if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {

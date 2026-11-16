@@ -97,6 +97,7 @@ import { createLibraryUI } from './libraryui.js';
 import { createSpeaker } from './speech.js';
 import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
+import * as matterCore from './matter.js';
 import {
   DEFAULT_FONT_SIZE,
   createThemeCompartments,
@@ -772,6 +773,40 @@ export function mountEditor(root = document.body, initialDoc = '') {
   attachSwipePaging(view);
 
   /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
+  // FEAT-08 · the sidecar of the one page. A crossing runs on (body, ink, sidecar) together, then lands the body
+  // change as one ordinary edit (so the host saves it through its 3-way merge) and the ink through setInk.
+  let matterSide = { version: 1, passages: {}, log: [] };
+  function postMatter() {
+    const h = window.webkit?.messageHandlers?.matter;
+    if (h && typeof h.postMessage === 'function') h.postMessage(JSON.stringify(matterSide));
+  }
+  function applyMatter(fn) {
+    if (!view) return { ok: false, error: 'no editor' };
+    const before = matterCore.createMatter({
+      text: view.state.doc.toString(),
+      ink: inkLayer ? inkLayer.getInk() : null,
+      side: matterSide
+    });
+    let after;
+    try { after = fn(before); } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+    if (after.text !== before.text) {
+      const a = before.text, b = after.text;
+      let i = 0;
+      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      let j = 0;
+      while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+      view.dispatch({ changes: { from: i, to: a.length - j, insert: b.slice(i, b.length - j) } });
+    }
+    if (inkLayer && JSON.stringify(after.ink) !== JSON.stringify(before.ink)) {
+      inkLayer.setInk(after.ink);
+      inkLayer.relayout();
+      window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));   // setInk alone does not save
+    }
+    matterSide = after.side;
+    postMatter();
+    return { ok: true };
+  }
+
   function insertBlock(text) {
     const line = view.state.doc.lineAt(view.state.selection.main.head);
     const insert = `\n${String(text ?? '')}`;
@@ -1114,6 +1149,26 @@ export function mountEditor(root = document.body, initialDoc = '') {
         inkLayer.relayout();
         return merged;
       },
+      // FEAT-08 · one matter: draftpad.matter.json beside draftpad.md and draftpad.ink.json (src/matter.js).
+      getMatter: () => JSON.stringify(matterSide),
+      setMatter: data => {
+        matterSide = matterCore.fromFiles({ [matterCore.FILES.side]: typeof data === 'string' ? data : JSON.stringify(data || {}) }).side;
+      },
+      mergeMatter: remote => {
+        const r = typeof remote === 'string' ? JSON.parse(remote) : remote;
+        matterSide = matterCore.mergeMatter(matterSide, r);
+        postMatter();
+        return JSON.stringify(matterSide);
+      },
+      seedPassage: (state, args) => applyMatter(m => {
+        const a = typeof args === 'string' ? JSON.parse(args) : args;
+        if (state === 'ink') return matterCore.seedInkPassage(m, a);
+        if (state === 'voice') return matterCore.seedVoicePassage(m, a);
+        return matterCore.seedTypePassage(m, a);
+      }),
+      cross: (n, pid, opts) => applyMatter(m => matterCore.cross(m, Number(n), String(pid), typeof opts === 'string' ? JSON.parse(opts) : opts || {})),
+      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m)),
+      crossings: () => matterCore.CROSSINGS.map(c => ({ ...c })),
       getInkTool: () => (inkLayer ? inkLayer.getTool() : 'select'),
       setInkTool: tool => voiceHandlers.setInkTool(tool),
       getInkColor: () => (inkLayer ? inkLayer.getColor() : INK_COLORS[0]),
