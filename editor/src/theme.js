@@ -43,6 +43,12 @@ export function normalizeFontSize(px) {
   return Math.max(12, Math.min(36, Math.round(n)));
 }
 
+// Derived from Spec: UI-07 · Larger / Smaller text in the menu: 2 px a step, inside normalizeFontSize's 12–36.
+export const FONT_STEP_PX = 2;
+export function stepFontSize(px, dir) {
+  return normalizeFontSize(normalizeFontSize(px) + FONT_STEP_PX * Math.sign(Number(dir) || 0));
+}
+
 export function createThemeCompartments() {
   return {
     theme: new Compartment(),

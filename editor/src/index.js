@@ -103,7 +103,8 @@ import {
   buildThemeExtension,
   buildFontSizeExtension,
   normalizeThemeName,
-  normalizeFontSize
+  normalizeFontSize,
+  stepFontSize
 } from './theme.js';
 
 export {
@@ -308,6 +309,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'One page to the left');
   const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'One page to the right');
   const promoteMenuBtn = makeMenuItem('rc-promote-btn', 'Promote to front', 'Move this page to the front');
+  // Derived from Spec: UI-06 / UI-07 · every page action the bar offers by gesture also has a menu item
+  // (delete = the empty-page swipe, slot = holding a page dot), and the text size has one too.
+  const deletePageMenuBtn = makeMenuItem('rc-delete-page-btn', 'Delete empty page', 'Delete this page (only when it is empty)');
+  const slotMenuBtn = makeMenuItem('rc-slot-btn', 'Put in slot…', 'Put this page in slot 1–9');
+  const largerTextBtn = makeMenuItem('rc-larger-text-btn', 'Larger text', 'Make the text bigger');
+  const smallerTextBtn = makeMenuItem('rc-smaller-text-btn', 'Smaller text', 'Make the text smaller');
   const pagesBtn = makeMenuItem('rc-pages-btn', 'Pages', 'Swipe to glide between pages');
   pagesBtn.setAttribute('aria-pressed', 'true');
   const newestFirstMenuBtn = makeMenuItem('rc-newest-first-menu-btn', 'Newest first', 'Order outline newest first');
@@ -325,7 +332,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
     prevPageBtn,
     nextPageBtn,
     promoteMenuBtn,
+    deletePageMenuBtn,
+    slotMenuBtn,
     pagesBtn,
+    largerTextBtn,
+    smallerTextBtn,
     newestFirstMenuBtn,
     themeBtn
   );
@@ -542,6 +553,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
     newerNavBtn.disabled = cur <= 0;
     olderNavBtn.disabled = cur >= count - 1 && !isWindowEmpty(inspectDraftpadPages(state.doc.toString())[cur]?.rawContent);
+    deletePageMenuBtn.disabled = !isWindowEmpty(inspectDraftpadPages(state.doc.toString())[cur]?.rawContent);
     saveReopenMemo(state);
   }
 
@@ -1302,6 +1314,15 @@ export function mountEditor(root = document.body, initialDoc = '') {
   olderNavBtn.addEventListener('click', () => { setToolbarFaded(false); swipeRightToLeft(view); });
   newPageMenuBtn.addEventListener('click', () => { closeMenu(); newPage(view); });
   promoteMenuBtn.addEventListener('click', () => { closeMenu(); promotePage(view, currentPage(view.state)); });
+  deletePageMenuBtn.addEventListener('click', () => { closeMenu(); deleteEmptyWindow(view); updatePageIndicator(); });
+  slotMenuBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    closeMenu();
+    const i = currentPage(view.state);
+    openDotSheet(i, pageIndicator.querySelector(`[data-page="${i}"]`) || menuBtn);
+  });
+  largerTextBtn.addEventListener('click', () => { setFontSize(stepFontSize(currentFontSize, 1)); });
+  smallerTextBtn.addEventListener('click', () => { setFontSize(stepFontSize(currentFontSize, -1)); });
 
   outlineToggleBtn.addEventListener('click', () => {
     closeMenu();
