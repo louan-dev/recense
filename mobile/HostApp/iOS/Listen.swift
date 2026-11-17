@@ -1021,10 +1021,10 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
-        let rest = Floating.rest(front: front, open: pip.isPictureInPictureActive, reopens: reshow == .works, quiet: quiet, paused: paused, canStart: canStart)
+        let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
-            floatNote(rest ? "rest: thin strip (iOS won't reopen it behind)" : "wake: full captions")
+            floatNote(rest ? "rest: thin strip" : "wake: full captions")
             draw()
         }
         let act = Floating.decide(.init(front: front, playing: playing, paused: paused, open: pip.isPictureInPictureActive,
@@ -1146,13 +1146,13 @@ final class Listener: NSObject, ObservableObject {
     /// the host clock and shows each on the refresh its word starts on; before, a word waited for the next redraw, up to
     /// a second late behind other apps).
     func draw() {
-        if Listener.held { if !queued.isEmpty { layer.flush(); queued = [] }; return }
-        if resting {
+        if resting {   // before the hold: a held window still rests blank, never keeps the old words (T-0077)
             guard drawnKey != "rest" || Date().timeIntervalSince(drawnAt) >= 1, let sb = Self.restPicture() else { return }
             layer.flush(); queued = []; queuedShape = ""
             layer.enqueue(sb); drawnKey = "rest"; drawnAt = Date()
             return
         }
+        if Listener.held { if !queued.isEmpty { layer.flush(); queued = [] }; return }
         let wall = Date(), lagNow = clockLag(), nowL = wall.timeIntervalSince1970 - lagNow
         let (rows, note) = frame(at: wall, lag: lagNow)
         let key = Self.key(rows, note), shape = Self.key(rows.map(\.unlit), note)
@@ -1325,7 +1325,10 @@ extension Listener: AVPictureInPictureSampleBufferPlaybackDelegate {
         CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)  // live: no scrubber
     }
     nonisolated func pictureInPictureControllerIsPlaybackPaused(_ c: AVPictureInPictureController) -> Bool { Listener.held }
-    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, didTransitionToRenderSize s: CMVideoDimensions) {}
+    // T-0139: the size iOS really gave the window, logged so a rest that keeps the window's size shows in floatLog
+    nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, didTransitionToRenderSize s: CMVideoDimensions) {
+        Task { @MainActor in Listener.shared.floatNote("iOS: window \(s.width)×\(s.height)") }
+    }
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, skipByInterval i: CMTime) async {}
 }
 

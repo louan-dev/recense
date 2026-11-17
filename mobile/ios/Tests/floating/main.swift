@@ -51,10 +51,16 @@ if !Floating.awake(front: false, open: false, hearing: false, quiet: 30) { bad +
 if Floating.awake(front: false, open: false, hearing: false, quiet: 601) { bad += 1; print("FAIL asleep after 10 min quiet") }
 if !Floating.awake(front: false, open: true, hearing: false, quiet: 9999) { bad += 1; print("FAIL awake while open") }
 // iOS refuses to reopen it behind (-1001): a pause there rests it (thin strip), a sound wakes it
-if !Floating.rest(front: false, open: true, reopens: false, quiet: 0.3, paused: false) { bad += 1; print("FAIL rest on pause behind") }
-if Floating.rest(front: false, open: true, reopens: false, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
-if Floating.rest(front: true, open: true, reopens: false, quiet: 9, paused: false) { bad += 1; print("FAIL rest in front") }
-if Floating.rest(front: false, open: true, reopens: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
+if !Floating.rest(open: true, quiet: 0.3, paused: false) { bad += 1; print("FAIL rest on pause behind") }
+if Floating.rest(open: true, quiet: 0, paused: false) { bad += 1; print("FAIL rest while playing") }
+if Floating.rest(open: false, quiet: 9, paused: true) { bad += 1; print("FAIL rest with no window") }
+// Regression guard: T-0139 (iPhone + iPad 11-16: never became the strip): a window that can close (it reopened behind
+// once, or an active iPad) rests too while the close lands, so the strip shows on every device
+if !Floating.rest(open: true, quiet: 9, paused: false) { bad += 1; print("FAIL rest when it can close and reopen") }
+if !Floating.rest(open: true, quiet: Floating.stayAwake + 1, paused: false) { bad += 1; print("FAIL rest after a long quiet") }
+// Regression guard: T-0077 (11-14: frozen caption, then black, after pause): Listen's pause rests it blank at once,
+// even while the other app still plays, so no stale words stay while the hide lands or if iOS ignores it
+if !Floating.rest(open: true, quiet: 0, paused: true) { bad += 1; print("FAIL paused window keeps its caption") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }
@@ -67,7 +73,7 @@ ipad.left = 0.4
 check("iPad unfocused, just switched", Floating.decide(ipad), .none)
 var ipadQuiet = now(open: true, quiet: 0.5, reshow: .refused); ipadQuiet.canStart = true
 check("iPad unfocused, paused: hides", Floating.decide(ipadQuiet), .hide)
-if Floating.rest(front: false, open: true, reopens: false, quiet: 9, paused: false, canStart: true) { bad += 1; print("FAIL iPad rests instead of hiding") }
+if !Floating.rest(open: true, quiet: 9, paused: false) { bad += 1; print("FAIL iPad shows old words while its hide lands") }   // T-0139: blank while it hides
 // Regression guard: T-0041 (iOS keeps "other audio playing" on ~40 s after a pause; iPhone log 11-12 12:50:52-12:51:36)
 if Floating.playing(flag: true, hearing: true, soundAgo: 2) { bad += 1; print("FAIL paused behind still counts as playing") }
 if !Floating.playing(flag: true, hearing: true, soundAgo: 0.1) { bad += 1; print("FAIL sound now is not playing") }
@@ -79,6 +85,6 @@ if !Floating.playing(flag: false, hearing: false, soundAgo: nil, own: true) { ba
 if !Floating.playing(flag: true, hearing: true, soundAgo: 9, own: true) { bad += 1; print("FAIL own player loses to an old broadcast sound") }
 if Floating.playing(flag: false, hearing: false, soundAgo: nil, own: false) { bad += 1; print("FAIL own player paused still playing") }
 check("own player behind, open", Floating.decide(now(playing: Floating.playing(flag: false, hearing: false, soundAgo: nil, own: true), open: true)), .none)
-if Floating.rest(front: false, open: true, reopens: false, quiet: 0, paused: false) { bad += 1; print("FAIL own player playing rests") }
+if Floating.rest(open: true, quiet: 0, paused: false) { bad += 1; print("FAIL own player playing rests") }
 
 print(bad == 0 ? "ALL OK" : "\(bad) FAILED")
