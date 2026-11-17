@@ -472,8 +472,7 @@ private enum CarryKeychain {
 
     private func settle(_ ops: [CarryOp], local: [CarryLine], from peer: MCPeerID) {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
-        for op in ops.sorted(by: { $0.seq < $1.seq }) {
-            let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
+        for (op, action) in CarrySync.decideAll(ops, local: localShas, base: [:]) {   // T-0106: in order, on the disk as it will be
             let key = CarrySync.resultKey(op)
             switch action {
             case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
