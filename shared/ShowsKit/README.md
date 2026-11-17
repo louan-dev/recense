@@ -51,6 +51,11 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `Phrasing.swift` (BUG-13): timed words to lines by sentence (an end mark, or a pause over 1.2 s), a long one split
     at ≤ 18 words; ids by start. The Mac's `sentences` / `splitWords` call it (one copy). `regrouped` turns this
     device's old one-line-per-breath transcripts into sentences and leaves any other as it is. Tests: `PhrasingTests`.
+  - `Caption.swift` + `CaptionPainter.swift` (FEAT-05 T1): the one caption painter every app shares. `Caption` holds
+    the rules (beats per word and per translated word, progress by clock, syllables or pin, phrases cut at clauses,
+    the Learn turn after `turnTime`); `CaptionPainter.layout` / `draw` paint one line in Core Graphics for `.follow`
+    (heard part gold, spoken white, upcoming dim, translation under it) or `.learn` (each heard phrase turns into its
+    translation, the row stays centred; Reduce Motion snaps). A long line shrinks before it is cut. Tests: `CaptionTests`.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.
