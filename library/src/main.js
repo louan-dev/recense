@@ -362,6 +362,10 @@ export async function mainFolder(env, url) {
   const exOnly = !rel && url.searchParams.get("exhibits") === "1";
   // Exhibits (was Shared Albums; the header and the front card open the Activity feed), its own module under Collections as in iOS Photos: every live share link as a square
   // tile, the header to /main/shared, Activity to its feed, the chevron folds it away (notes item 16)
+  // Derived from Spec: UI-12 S1 · the offline Draftpad page has a visible way in from Main's front page,
+  // not only a typed address (recfix audit 2026-11-16).
+  const draftpadRow = `<section class="dp"><h2 class="ch">Writing</h2><a class="dpl" href="/main/editor/">Draftpad <span>works offline</span></a></section>
+<style>.mainnav .dp{margin-top:20px}.mainnav .dpl{display:block;color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px;border-radius:12px;background:#1c1c1e}.mainnav .dpl span{color:#8e8e93;font-weight:400;margin-left:6px}</style>`;
   const shareRow = `<section class="sa" id="sa"><header><h2><a href="/main/shared#activity">Exhibits</a></h2><a class="ac" href="/main/shared#activity">Activity</a></header><div class="ar" data-blur></div></section>
 <script>(function(){
   // about 3 cards in view, the next one peeking; a swipe glides card by card (scroll snap) and wraps around: the cards
@@ -441,7 +445,7 @@ body.selecting .mainnav .fd.on::after{background:#0a84ff;box-shadow:inset 0 0 0 
 .mainnav .fs.dragging{cursor:grabbing}
 .mainnav .fd{color:#fff;font:500 16px -apple-system,BlinkMacSystemFont,sans-serif;text-decoration:none;padding:14px 14px;border-radius:12px;background:#1c1c1e;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2 class="ch">Collections</h2><div class="fs${rel ? "" : " cards"}"${rel ? "" : " data-blur"}>${links}</div>` : ""}${empty}${rel ? "" : shareRow}`}</nav>${rel ? "" : `<script>${coverBlur}</script><script>coverBlur.apply(document)</script>`}
+<nav class="mainnav">${exOnly ? shareRow : `${links || !rel ? `<h2 class="ch">Collections</h2><div class="fs${rel ? "" : " cards"}"${rel ? "" : " data-blur"}>${links}</div>` : ""}${empty}${rel ? "" : shareRow + draftpadRow}`}</nav>${rel ? "" : `<script>${coverBlur}</script><script>coverBlur.apply(document)</script>`}
 <style>
 .mainnav .fs{touch-action:pan-x}
 .mainnav .fd{-webkit-touch-callout:none}

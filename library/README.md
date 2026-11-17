@@ -39,7 +39,7 @@ the common tuning, and a link carries both to someone who goes looking. The long
 | `/s/<id>` | A link: anyone who has it can view, download, comment and like | `gallery-public` |
 | `/m/<token>` | A participant link to one folder (view / download / upload / comment) | `gallery-main` |
 | `/m/<token>/feed.xml` | A show's podcast feed, for an invite to a folder made by `chau/show.mjs` | `gallery-main` |
-| `/main` | The library: browse, play, upload, rename, delete (only you) | `gallery-main` |
+| `/main` | The library: browse, play, upload, rename, delete (only you); a Writing row under Exhibits links to the offline Draftpad (`/main/editor/`) | `gallery-main` |
 | `/main/archive` | The archive's page and player, read-only | `gallery-archive` |
 | `/main/shared` | Every live share link as an album, with Activity | `gallery-public` |
 | `/main/dav-tmp/`, `/main/dav-archive/`, `/main/nc-archive/` | WebDAV for rclone mounts | `gallery-tmp`, `gallery-archive` |

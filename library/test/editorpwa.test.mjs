@@ -45,6 +45,10 @@ try {
   const sw = await mf.dispatchFetch(base + "/main/editor/sw.js", { headers: { "cf-access-jwt-assertion": ownerJwt } });
   assert.equal(sw.headers.get("service-worker-allowed"), "/main/editor/");
   console.log("ok owner-only (anonymous " + anon.status + ", owner 200)");
+  // Regression guard: recfix audit 2026-11-16 — the offline Draftpad was reachable only by typing its address.
+  const home = await mf.dispatchFetch(base + "/main", { headers: { "cf-access-jwt-assertion": ownerJwt } });
+  assert.match(await home.text(), /<a class="dpl" href="\/main\/editor\/">Draftpad/, "Main's front page links to the offline Draftpad");
+  console.log("ok Main links to /main/editor/");
 
   let browser = null;
   try { browser = await chromium.launch(); } catch (e) { console.log("skip browser steps: " + String(e.message).split("\n")[0]); }
