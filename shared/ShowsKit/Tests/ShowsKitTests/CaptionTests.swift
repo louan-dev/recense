@@ -84,6 +84,24 @@ final class CaptionTests: XCTestCase {
             let n = Double(best.count)
             return (best.map(\.0).reduce(0, +) / n, best.map(\.1).reduce(0, +) / n, best.map(\.2).reduce(0, +) / n, best.map(\.3).reduce(0, +) / n)
         }
+        /// The glyph cores: the most common colour (r, g, b, a) in a rect, ignoring empty pixels. Antialiased edges vary;
+        /// a stroke's inside is the painter's exact colour, so this is what the spec's ±3 is checked against.
+        func core(_ r: CGRect) -> [Int]? {
+            let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+            var count: [[Int]: Int] = [:]
+            for y in max(0, Int(r.minY))..<min(h, Int(r.maxY)) {
+                for x in max(0, Int(r.minX))..<min(w, Int(r.maxX)) {
+                    let i = ((h - 1 - y) * w + x) * 4, a = Int(p[i + 3])
+                    if a > 20 { count[[Int(p[i]) * 255 / a, Int(p[i + 1]) * 255 / a, Int(p[i + 2]) * 255 / a, a], default: 0] += 1 }
+                }
+            }
+            return count.max { $0.value < $1.value }?.key
+        }
+    }
+
+    private func near(_ c: [Int]?, _ want: [Int], _ tol: Int = 3) -> Bool {
+        guard let c else { return false }
+        return zip(c, want).allSatisfy { abs($0 - $1) <= tol }
     }
 
     private func isGold(_ c: (r: Double, g: Double, b: Double, a: Double)?) -> Bool {
@@ -109,9 +127,27 @@ final class CaptionTests: XCTestCase {
         XCTAssertTrue(isGold(c.ink(litPart)), "the heard part of the word is gold: \(String(describing: c.ink(litPart)))")
         XCTAssertNil(c.ink(darkPart), "the unheard part is dim (no glyph pixel near full alpha)")
         XCTAssertTrue(isWhite(c.ink(first)), "a spoken word is white")
+        // spec FEAT-05 rule 2, ±3: spoken #F2F1F1, current gold #F5E399, upcoming white at 55 %
+        XCTAssertTrue(near(c.core(first), [0xF2, 0xF1, 0xF1, 255]), "spoken core: \(String(describing: c.core(first)))")
+        XCTAssertTrue(near(c.core(litPart), [0xF5, 0xE3, 0x99, 255]), "gold core: \(String(describing: c.core(litPart)))")
+        let see = items.first { $0.text == "see" }!.rect
+        XCTAssertTrue(near(c.core(see), [255, 255, 255, 140]), "upcoming core: \(String(describing: c.core(see)))")
         // the translation sits under the original, regular weight
         let tr = items.filter { $0.kind == .translation }
         XCTAssertFalse(tr.isEmpty); XCTAssertLessThan(tr.map(\.rect.maxY).max()!, items.filter { $0.kind == .original }.map(\.rect.minY).min()! + 0.5)
+    }
+
+    func testALineChangeShowsTheNewLineWholeAndGreyAtOnce() {
+        let w = words("a new line begins here", from: 5)
+        let line = Caption.Line(words: w, translationText: "une nouvelle ligne commence ici")
+        var style = CaptionStyle(); style.shadow = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+        for mode in [CaptionMode.follow, .learn] {
+            let c = Canvas(), box = CGRect(x: 0, y: 0, width: 900, height: 240)
+            CaptionPainter.draw(line, mode: mode, at: 4.99, in: c.ctx, box: box, style: style)
+            let orig = CaptionPainter.layout(line, mode: mode, at: 4.99, in: box, style: style).items.filter { $0.kind == .original }
+            XCTAssertEqual(orig.map(\.text), w.map(\.text), "\(mode): every word laid out before the first is heard")
+            for it in orig { XCTAssertTrue(near(c.core(it.rect), [255, 255, 255, 140]), "\(mode) \(it.text) grey: \(String(describing: c.core(it.rect)))") }
+        }
     }
 
     func testLearnTurnedPhraseIsTheTranslationAndTheRowStaysCentred() {
