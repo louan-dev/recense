@@ -31,7 +31,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `grep -c 'onChange(of: phase, initial: true)' mobile/HostApp/iOS/App.swift` prints 1.
 - Carry's received files (BUG-19), after any change to `shared/p2ptransport.swift` or `CarryManager.landed`:
   `grep -n 'moveItem(at: localURL' shared/p2ptransport.swift` prints one line (moved before the callback returns) and
-  `grep -n 'lastPathComponent' shared/carrymanager.swift` prints nothing (the key rides the resource name).
+  `grep -n 'lastPathComponent' shared/carrymanager.swift` prints only the `sweepStaging` line (the key rides the resource name; BUG-25 lists staged files by name).
 - Carry's pairing (`shared/carrypair.swift`: the six-digit code, group sealing, invitation proof), after any change to it:
   `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"` (ALL OK).
 - Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place

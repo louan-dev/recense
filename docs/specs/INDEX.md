@@ -72,6 +72,7 @@ Row: ID · title · status · From · code pointer
 - BUG-20 · Guests can't add media to a share link: Main's "hide the old Upload pill" CSS (`#up{display:none!important}`) also swallowed the guest's reused "Add" button · `[x]` (tests pass; checks in `library/`) · T-0130 · `bugs/BUG-20-guest-add-button-css-hidden.md`
 - BUG-22 · A blue band follows the caret's line in Draftpad (highlightActiveLine) · `[~]` fixed in editor, device check owed · owner 2026-11-16 · `bugs/BUG-22-blue-line-guide.md`
 - BUG-23 · Adding a big video to a Gallery share link fails (the owner's add went as one 413'd PUT to Main, not in parts into the link) · `[~]` fixed, tests pass; not deployed, owner's check on the real file owed · owner 2026-11-16 · `bugs/BUG-23-share-video-upload.md`
+- BUG-25 · Carry's staging stalls (long names never stage, gone files waited on forever, stray bytes never leave) · `[~]` tests pass; device check owed · T-0111, T-0108, T-0092 · `bugs/BUG-25-carry-staging-stalls.md`
 - BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 - BUG-13 · Transcript lines cut off mid-sentence (one line per breath-phrase on iOS; the Mac's sentence rule moved to ShowsKit) · `[~]` · T-0073 · `bugs/BUG-13-lines-cut-mid-sentence.md`
 - BUG-15 · Floating window goes dead and won't close (frozen on an old caption, or a black box that never closes) · `[~]` (fixed leads; device check owed) · T-0077 · `bugs/BUG-15-floating-window-goes-dead.md`

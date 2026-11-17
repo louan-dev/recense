@@ -109,6 +109,7 @@ private enum CarryKeychain {
         peers = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
         appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
+        sweepStaging(maxAge: 0)   // T-0092: nothing waits in memory yet; unsettled ops are asked for again
         wire()
         watchHomes()
     }
@@ -131,6 +132,7 @@ private enum CarryKeychain {
             case "pair": self?.receivePair(data, from: peer)
             case "seen": self?.receiveSeen(data, from: peer)
             case "ops": self?.receiveOps(data, from: peer)
+            case "gone": self?.receiveGone(data, from: peer)
             default: break
             }
         }
@@ -379,6 +381,7 @@ private enum CarryKeychain {
         reloadFromDisk()
         let targets = pairedConnected
         guard !targets.isEmpty else { return }
+        sweepStaging(maxAge: CarrySync.orphanAge)   // T-0092
         status = "Carrying"
         do {
             let lines = try await Task.detached(priority: .utility) { try Carry.verify(reuse: true) }.value
@@ -396,20 +399,45 @@ private enum CarryKeychain {
         } catch { lastError = "carry failed: \(error)" }
     }
 
-    /// The resulting place an op settles at — where its bytes (if any) belong, on either side of the link.
-    private func resultKey(_ op: CarryOp) -> String { op.toKey ?? CarrySync.key(op.home, op.path) }
 
     private func receiveSeen(_ data: Data, from peer: MCPeerID) {
         guard let since = try? JSONDecoder().decode(Int.self, from: data) else { return }
         let mine = myOps().filter { $0.seq > since }
         guard !mine.isEmpty else { return }
         try? t.send(mine, type: "ops", to: peer)
-        for op in mine where op.op != .trash {   // trash never fetches (CarrySync.decide); nothing to send
-            let url = Homes.root.appendingPathComponent(resultKey(op))
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            t.send(fileAt: url, named: Self.encode(resultKey(op)), to: peer) { [weak self] error in
+        // Each key's bytes once; a key with no bytes left is answered "gone", so the peer stops waiting (BUG-25, T-0108)
+        let reply = CarrySync.answer(mine) { FileManager.default.fileExists(atPath: Homes.root.appendingPathComponent($0).path) }
+        if !reply.gone.isEmpty { try? t.send(reply.gone, type: "gone", to: peer) }
+        for key in reply.send {
+            t.send(fileAt: Homes.root.appendingPathComponent(key), named: Self.encode(key), to: peer) { [weak self] error in
                 if let error { self?.lastError = "sending to \(peer.displayName) failed: \(error)" }
             }
+        }
+    }
+
+    /// The peer has no bytes for these keys any more: settle them as done, after the ops sent before them (T-0108).
+    private func receiveGone(_ data: Data, from peer: MCPeerID) {
+        guard let keys = try? JSONDecoder().decode([String].self, from: data) else { return }
+        let before = settling
+        settling = Task { [weak self] in
+            await before?.value
+            guard let self else { return }
+            for k in keys where self.waiting[k]?.peer == peer.displayName {
+                self.waiting[k] = nil; self.pendingActions[k] = nil; self.discardStaged(k)
+            }
+            self.advance(peer.displayName)
+        }
+    }
+
+    /// Removes staged bytes that no op waits for (T-0092). maxAge 0 at launch, `CarrySync.orphanAge` before a carry.
+    private func sweepStaging(maxAge: TimeInterval) {
+        let fm = FileManager.default
+        let urls = (try? fm.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let staged = urls.map { (name: $0.lastPathComponent,
+                                 modified: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) }
+        let expecting = Set(pendingActions.keys.map(CarrySync.stagingName))
+        for name in CarrySync.orphans(staged, expecting: expecting, now: Date(), maxAge: maxAge) {
+            try? fm.removeItem(at: stagingDir.appendingPathComponent(name))
         }
     }
 
@@ -433,7 +461,7 @@ private enum CarryKeychain {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
         for op in ops.sorted(by: { $0.seq < $1.seq }) {
             let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
-            let key = resultKey(op)
+            let key = CarrySync.resultKey(op)
             switch action {
             case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
@@ -460,7 +488,7 @@ private enum CarryKeychain {
         status = owed.isEmpty ? "Up to date with \(peer)" : "Waiting for \(owed.count) file\(owed.count == 1 ? "" : "s") from \(peer)"
     }
 
-    private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(Self.encode(key)) }
+    private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(CarrySync.stagingName(key)) }   // T-0111
     private func discardStaged(_ key: String) { try? FileManager.default.removeItem(at: stagedURL(key)) }
 
     /// Places a staged file's bytes once its action is known — whichever of (op, bytes) arrived second.

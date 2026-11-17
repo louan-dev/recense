@@ -214,5 +214,41 @@ do {   // T-0091: keep/ writes (Gallery transcripts, every few seconds) re-ran c
     check(!CarryWatch.counts("/Users/x/Recense", root: root, homes: homes), "the root alone is not a home")
 }
 
+// Regression guard: BUG-25 (T-0111) · a long accented key stages under a short fixed-length name
+do {
+    let long = "library/Music/" + String(repeating: "Nguyễn Hữu Thoại · Đường về quê hương ", count: 6) + ".m4a"
+    let n = CarrySync.stagingName(long)
+    check(long.utf8.count > 255 && n.utf8.count == 64, "staged name is 64 bytes for a \(long.utf8.count)-byte key: \(n.utf8.count)")
+    check(n == CarrySync.stagingName(long) && n != CarrySync.stagingName(long + "x"), "same key, same name; other key, other name")
+    check(n.allSatisfy { "0123456789abcdef".contains($0) }, "hex only: no slash, no case clash")
+}
+
+// Regression guard: BUG-25 (T-0108) · each key's bytes go once; a key the sender can no longer fill is answered "gone"
+do {
+    func op(_ seq: Int, _ k: CarryOpKind, _ p: String, to: String? = nil) -> CarryOp {
+        CarryOp(seq: seq, device: "mac", at: 1, op: k, home: M, path: p, toHome: to == nil ? nil : M, to: to, sha256: "x", size: 1)
+    }
+    let ops = [op(1, .put, "a.m4a"), op(2, .put, "a.m4a"), op(3, .put, "a.m4a"),   // edited three times
+               op(4, .put, "deleted.m4a"),                                             // then deleted forever
+               op(5, .trash, "t.m4a"),                                                 // trash fetches nothing
+               op(6, .move, "b.m4a", to: "c.m4a")]
+    let have: Set<String> = [CarrySync.key(M, "a.m4a"), CarrySync.key(M, "c.m4a")]
+    let r = CarrySync.answer(ops, exists: { have.contains($0) })
+    check(r.send == [CarrySync.key(M, "a.m4a"), CarrySync.key(M, "c.m4a")], "a.m4a sent once, c.m4a once: \(r.send)")
+    check(r.gone == [CarrySync.key(M, "deleted.m4a")], "the deleted file is answered gone: \(r.gone)")
+}
+
+// Regression guard: BUG-25 (T-0092) · staged bytes no op waits for are swept: at launch all, while running after 10 min
+do {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let staged: [(name: String, modified: Date)] = [("waited", now.addingTimeInterval(-3600)),
+                                                    ("fresh", now.addingTimeInterval(-60)),
+                                                    ("stale", now.addingTimeInterval(-3600))]
+    check(CarrySync.orphans(staged, expecting: ["waited"], now: now, maxAge: CarrySync.orphanAge) == ["stale"],
+          "only the old one with no op waiting goes")
+    check(Set(CarrySync.orphans(staged, expecting: [], now: now, maxAge: 0)) == ["waited", "fresh", "stale"],
+          "at launch nothing waits in memory, so every staged file goes (its op is asked for again)")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

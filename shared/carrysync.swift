@@ -1,5 +1,6 @@
 // Derived from Spec: FEAT-09 (P2 what changed, P3 settling)
 import Foundation
+import CryptoKit
 
 // Carry's meaning layer: pure rules, no radios, no files. The glue scans (Carry.verify), keeps the op logs and
 // moves bytes (shared/pieces over the FEAT-02 link); this file only decides. Homes are their folder strings
@@ -55,6 +56,37 @@ enum CarrySync {
     /// nothing. An op still waiting for its bytes holds it back, so the next "seen" asks for that op again.
     static func settledThrough(received: Int, pending: [Int]) -> Int {
         min(received, pending.min().map { $0 - 1 } ?? received)
+    }
+
+    // Derived from Spec: BUG-25 (T-0111, T-0108, T-0092)
+    /// Where an op's bytes belong, on either side of the link.
+    static func resultKey(_ op: CarryOp) -> String { op.toKey ?? key(op.home, op.path) }
+
+    /// A staged file's name: SHA-256 of the key, 64 hex bytes. base64 of a long Vietnamese key passed the 255-byte
+    /// file-name limit, so the move into staging threw and the file stayed owed forever (T-0111).
+    static func stagingName(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The answer to a peer's "seen": each result key's bytes once (a put edited three times sent the file three
+    /// times), and the keys this device can no longer fill ("delete forever" after the put). The receiver clears
+    /// those, so one op that can never be filled no longer stalls the log and resends it all (T-0108).
+    static func answer(_ ops: [CarryOp], exists: (String) -> Bool) -> (send: [String], gone: [String]) {
+        var seen = Set<String>(), send: [String] = [], gone: [String] = []
+        for op in ops.sorted(by: { $0.seq < $1.seq }) where op.op != .trash {   // trash never fetches
+            let k = resultKey(op)
+            guard seen.insert(k).inserted else { continue }
+            if exists(k) { send.append(k) } else { gone.append(k) }
+        }
+        return (send, gone)
+    }
+
+    /// Staged bytes that no op waits for. Bytes can land before their op, so a running device keeps them
+    /// `orphanAge`; at launch nothing waits in memory and the unsettled ops are asked for again, so all go (T-0092).
+    static let orphanAge: TimeInterval = 600
+    static func orphans(_ staged: [(name: String, modified: Date)], expecting: Set<String>, now: Date,
+                        maxAge: TimeInterval) -> [String] {
+        staged.filter { !expecting.contains($0.name) && now.timeIntervalSince($0.modified) >= maxAge }.map(\.name)
     }
 
     static func split(_ key: String, homes: [String]) -> (home: String, path: String)? {
