@@ -1221,6 +1221,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
       }),
       cross: (n, pid, opts) => applyMatter(m => matterCore.cross(m, Number(n), String(pid), typeof opts === 'string' ? JSON.parse(opts) : opts || {})),
       reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice })),   // per device
+      // FEAT-08 P2 · spoken words from the host land at the end as their own voice passage; the caret stays.
+      appendVoice: (text, id) => applyMatter(m => matterCore.appendVoicePassage(m, {
+        id: String(id || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
+        text,
+        seed: { device: matterDevice, input: 'voice', time: Date.now() }
+      })),
       setMatterDevice: name => { if (name) matterDevice = String(name); return matterDevice; },
       // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
       matterMenu: (from, to) => {

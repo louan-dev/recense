@@ -219,3 +219,6 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
   Max, iPad Air M2 13-inch; an 11-inch band as fallback), again on every rotation. The Mac (fine pointer) keeps 66ch, 20px sides,
   28px top. A size picked later with `setFontSize` wins. The iOS host no longer forces 17/19pt.
   Test: `test/ui07-device-layout.test.mjs`. Spec: `docs/specs/ui-teardowns/UI-07-draftpad-device-sizes/UI-07.md`.
+- Voice continuation (FEAT-08 P2): `recenseEditor.appendVoice(text)` puts spoken words at the end as their own voice
+  passage in `draftpad.matter.json`. With no page open, `shared/voiceappend.swift` does the same; on iPhone and iPad,
+  "Add to Draftpad" (Siri, Shortcuts, the Action button) calls it.

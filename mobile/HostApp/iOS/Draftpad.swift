@@ -70,9 +70,10 @@ final class DraftpadFile: ObservableObject {
     // launch never replaces the first's (T-0114 review F1). It is joined after the note once the note reads, and each file
     // moves to recovered/ only after the write that holds its text succeeded.
     private let launch = Date()
-    private var unsavedDir: URL {
+    static var unsavedFolder: URL {   // also used by AddToDraftpadIntent (FEAT-08)
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Recense", isDirectory: true)
     }
+    private var unsavedDir: URL { Self.unsavedFolder }
     private var launchFile: URL { Unsaved.file(in: unsavedDir, launch: launch) }
     private func keepSafe(_ text: String) { if !text.isEmpty { Unsaved.keep(text, as: launchFile) } }
     private func settleLaunch() { Unsaved.settle(launchFile, in: unsavedDir) }   // its text reached the note
@@ -99,6 +100,9 @@ final class DraftpadFile: ObservableObject {
         lastMatter = s
         return s
     }
+
+    /// The file on disk was seen (handed to the page to merge); the next write of the union goes ahead.
+    func sawMatter(_ disk: String) { lastMatter = disk }
 
     func saveMatterJSON(_ json: String) {
         guard let p = matterNote?.path, !json.isEmpty, json != lastMatter else { return }
@@ -299,7 +303,11 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 file.saveInkJSON(json)
             }
         case "matter":   // FEAT-08
-            if let json = m.body as? String { file.saveMatterJSON(json) }
+            guard let json = m.body as? String else { break }
+            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: file.matterNote.flatMap { coordinatedRead($0.path) }, seen: file.lastMatter) {
+                file.sawMatter(disk)
+                call("mergeMatter(\(jsLiteral(disk)))")   // the page unions it and posts the union back here
+            } else { file.saveMatterJSON(json) }
         case "audio":
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
