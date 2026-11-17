@@ -274,5 +274,17 @@ do {
           "a batch decides each op on the disk the ones before it leave: \(plan.map(\.action))")
 }
 
+// Regression guard: T-0110 · after a reinstall the log restarts at 1; a peer that saw more renumbers it above that
+do {
+    let mine = [CarryOp(seq: 1, device: "iPhone", at: 1, op: .put, home: M, path: "n.m4a", sha256: "N", size: 1),
+                CarryOp(seq: 2, device: "iPhone", at: 1, op: .put, home: M, path: "o.m4a", sha256: "O", size: 1)]
+    let r = CarrySync.renumber(mine, peerSaw: 40)
+    check(r?.map(\.seq) == [41, 42], "ops move above what the peer saw: \(String(describing: r?.map(\.seq)))")
+    check(r.map { CarrySync.wanted($0, theySaw: ["iPhone": 40]).count } == 2, "so the peer asks for both")
+    check(CarrySync.renumber(mine, peerSaw: 2) == nil && CarrySync.renumber(mine, peerSaw: 0) == nil,
+          "a peer that saw no more than the log holds changes nothing")
+    check(CarrySync.renumber([], peerSaw: 40) == nil, "an empty log has nothing to renumber")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

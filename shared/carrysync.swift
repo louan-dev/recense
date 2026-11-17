@@ -164,6 +164,14 @@ enum CarrySync {
         }
     }
 
+    /// A peer has applied `peerSaw` of this device's ops but the log holds fewer: the log was reset (a reinstall
+    /// keeps the Keychain identity, so pairing survives, but the app folder and its log go; T-0110). Every op moves
+    /// above what the peer saw, so it asks for them again. nil: nothing to renumber.
+    static func renumber(_ mine: [CarryOp], peerSaw: Int) -> [CarryOp]? {
+        guard !mine.isEmpty, peerSaw > (mine.map(\.seq).max() ?? 0) else { return nil }
+        return mine.map { var o = $0; o.seq += peerSaw; return o }
+    }
+
     static func wanted(_ ops: [CarryOp], theySaw: [String: Int]) -> [CarryOp] {
         ops.filter { $0.seq > (theySaw[$0.device] ?? 0) }.sorted { ($0.device, $0.seq) < ($1.device, $1.seq) }
     }

@@ -415,7 +415,12 @@ private enum CarryKeychain {
 
     private func receiveSeen(_ data: Data, from peer: MCPeerID) {
         guard let since = try? JSONDecoder().decode(Int.self, from: data) else { return }
-        let mine = myOps().filter { $0.seq > since }
+        var log = myOps()
+        if let moved = CarrySync.renumber(log, peerSaw: since) {   // T-0110: this log was reset (a reinstall)
+            do { try CarrySync.encode(moved).write(to: opsLogURL(Homes.device), atomically: true, encoding: .utf8); log = moved }
+            catch { lastError = "renumbering the carry log failed: \(error)"; return }
+        }
+        let mine = log.filter { $0.seq > since }
         guard !mine.isEmpty else { return }
         try? t.send(mine, type: "ops", to: peer)
         // Each key's bytes once; a key with no bytes left is answered "gone", so the peer stops waiting (BUG-25, T-0108)

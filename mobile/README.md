@@ -154,6 +154,8 @@ updates in place.
   else asks again. One pairing prompt at a time: a second nearby device waits until the first is done.
   An edit replaces the other device's copy when that copy is the version it was edited from (BUG-27); the old version
   goes to `trash/`. Only when both devices changed the file are both kept, the copy named for the device that made it.
+  After a reinstall (pairing survives in the Keychain), the new log is renumbered above what each peer already saw,
+  so its changes reach them at the next carry (BUG-28).
   Pairing (T-0086): pick the other device's name in Library › Devices; this screen shows six digits; type them on the
   other device (number field, "Enter Pairing Code" by voice, the Mac's Pair a Device window, or `recense carry pair`).
   Carry runs by itself (T-0084): when a paired device connects, 2 s after a home stops changing, and when Recense
