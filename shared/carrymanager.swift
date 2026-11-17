@@ -269,6 +269,7 @@ private enum CarryKeychain {
 
     private func startFlow(_ peer: MCPeerID) {
         guard isLookingToPair, flows[peer] == nil else { return }
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: one prompt at a time
         reloadFromDisk()
         // P1b: the device on which the owner picked the other's name shows the code; the other asks for it
         let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group,
@@ -285,6 +286,8 @@ private enum CarryKeychain {
             let step = try f.receive(m)
             flows[peer] = f
             apply(step, peer)
+        } catch PairFailure.outOfOrder {
+            // T-0118: a stale or duplicate message (the BUG-17 echo); the flow goes on
         } catch { fail(peer, error) }
     }
 
@@ -301,10 +304,16 @@ private enum CarryKeychain {
 
     /// P1b: the owner typed the six digits shown on the other device (touch, keyboard, voice or the CLI).
     func enterCode(_ code: String) {
-        guard let peer = flows.keys.first(where: { $0.displayName == pairingWith }) ?? flows.keys.first,
+        // T-0120: the code goes only to the flow that asked for it, never to whichever flow comes first
+        guard let peer = flows.keys.first(where: { $0.displayName == pairingWith }),
               var f = flows[peer] else { lastError = "nothing is waiting for a code"; return }
+        // T-0119: spoken or any script's digits become ASCII; anything else asks again instead of ending the pairing
+        guard let digits = CarryPasskey.normalize(code) else {
+            lastError = "That wasn't six digits. Type or say the six digits shown on \(peer.displayName)."; return
+        }
+        lastError = nil
         do {
-            let step = try f.enter(code)
+            let step = try f.enter(digits)
             flows[peer] = f
             askingCode = false
             status = "Checking the code with \(peer.displayName)"
@@ -314,6 +323,7 @@ private enum CarryKeychain {
 
     private func apply(_ step: CarryPairFlow.Step, _ peer: MCPeerID) {
         do { for m in step.send { try t.send(m, type: "pair", to: peer) } } catch { fail(peer, error); return }
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120
         if let c = step.code {
             pairingCode = c; pairingWith = peer.displayName; codeIsCompare = flows[peer]?.passkey == nil
             if !codeIsCompare { status = "Type \(c) on \(peer.displayName)" }
@@ -324,8 +334,11 @@ private enum CarryKeychain {
 
     private func fail(_ peer: MCPeerID, _ error: Error) {
         let e = error as? PairFailure
-        if e != .refused { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
-        flows[peer] = nil; pairingCode = nil; pairingWith = nil; askingCode = false
+        // T-0118: tell the peer only when this side really failed; never echo its refusal back
+        if e?.tellsPeer ?? true { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
+        flows[peer] = nil
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: another flow's prompt stays
+        pairingCode = nil; pairingWith = nil; askingCode = false
         switch e {
         case .otherGroup: lastError = "\(peer.displayName) already belongs to a different pairing; not merged"
         case .badCommit, .refused: lastError = "Code didn't match. Pick \(peer.displayName) again for a new code."

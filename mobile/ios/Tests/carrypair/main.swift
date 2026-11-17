@@ -323,5 +323,34 @@ do {
     check(CarryPasskey.rounds == 20, "20 rounds, one per bit of a code below 2^20")
 }
 
+// Regression guard: BUG-26 (T-0118) · only a real failure tells the peer to stop; a stale or duplicate message is ignored
+do {
+    check(!PairFailure.outOfOrder.endsFlow && !PairFailure.outOfOrder.tellsPeer, "a duplicate hello keeps both flows")
+    check(PairFailure.badCommit.endsFlow && PairFailure.badCommit.tellsPeer, "a wrong code ends both sides")
+    check(PairFailure.otherGroup.tellsPeer, "another group ends both sides")
+    check(PairFailure.refused.endsFlow && !PairFailure.refused.tellsPeer, "a refusal is not echoed back")
+}
+
+// Regression guard: BUG-26 (T-0119) · spoken and non-ASCII digits become the six ASCII digits; anything else asks again
+do {
+    check(CarryPasskey.normalize("123456") == "123456", "plain")
+    check(CarryPasskey.normalize("123 456") == "123456", "spaced")
+    check(CarryPasskey.normalize("one two three four five six") == "123456", "spoken English")
+    check(CarryPasskey.normalize("một hai ba bốn năm sáu") == "123456", "spoken Vietnamese")
+    check(CarryPasskey.normalize("Zero oh nine 8 7 6") == "009876", "mixed words and digits")
+    check(CarryPasskey.normalize("١٢٣٤٥٦") == "123456", "Arabic-Indic digits")
+    check(CarryPasskey.normalize("１２３４５６") == "123456", "full-width digits")
+    check(CarryPasskey.normalize("12345") == nil, "five digits: ask again")
+    check(CarryPasskey.normalize("one two banana") == nil, "an unknown word: ask again")
+    check(CarryPasskey.normalize("") == nil, "empty: ask again")
+}
+
+// Regression guard: BUG-26 (T-0120) · one pairing prompt at a time, owned by one peer
+do {
+    check(PairPrompt.owns(nil, "iPad"), "a free prompt goes to the first flow")
+    check(PairPrompt.owns("iPad", "iPad"), "the owner keeps it")
+    check(!PairPrompt.owns("iPad", "iPhone"), "a second device can't take it over")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
