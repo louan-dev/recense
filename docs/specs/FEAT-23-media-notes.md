@@ -87,12 +87,74 @@ The note is a plain Markdown file per item. Draftpad opens it. The editor's tran
   - Check 2 (test, hosts): typing in the note never changes `draftpad.md`; clearing the note leaves the media file.
   - Check 3 (device, iPhone Mirroring + Mac): write a note on a song, quit, reopen: the note is there; the link plays.
   - Check 4 (Mac): Activity Monitor shows no extra WebContent process after opening five notes in a row.
+- **P0b · Arrivals open as a note** (owner 2026-11-16: "AirDrop straight into an offline editor, with the backlinks to
+  the media's location"). Section "Arrivals" below. Check list there.
 - **P1 · It breathes.** The quiet mark on note lines near the playhead; Add moment button; Reduce Motion path.
   - Check: test with a fixture note of three moment links and a clock: the marked line at t = 0, 10, 724, 9999.
 - **P2 · The notes list and Unlinked.** Check: delete a media file in a test home; its note is listed under Unlinked.
 - **P3 · "Move Media and Note to Trash…".** Check: both land in `trash/` with their origins; Restore brings both back.
 - **P4 · Ink on a note** (`keep/<key>/note.ink.json`, the format `draftpad.ink.json` already uses).
   Check: the BUG-07 anchor test passes on a note page.
+
+## Arrivals: AirDrop and "Open with Recense" (phase P0b)
+
+### Verdict
+**A file sent to the device becomes an item and its note in one step, with no internet.**
+**The note links to the media by its key, never by its folder path.**
+
+### Rules
+1. **One landing place.** Arrivals go where downloads already go and are sorted into their home by kind
+   (audio → Music, PDF and text → Study, the rest → Inbox). No second folder. FEAT-03 is revised to match.
+   - **proven** the sorting rule: `shared/homes.swift:161-163`; the watcher that sorts what lands: `strip/app.swift:6808` (BUG-16).
+2. **iPhone and iPad:** Recense declares the file types it opens (audio, video, pictures, PDF, plain text, Markdown).
+   After an AirDrop, iOS then offers "Open with Recense". The file is moved (never copied) into its home,
+   and the note opens at once, because the person chose Recense.
+3. **Mac:** Recense also looks in `~/Downloads`, and takes **only** files the system marked as arriving through
+   its sharing service (`sharingd`, the service behind AirDrop). Everything else in `~/Downloads` is left alone.
+   The note is made but not opened: the notes list shows it at the top, marked **New**. No window jumps up.
+4. **The note made on arrival** (an exception to rule 8: this note exists before anything is typed).
+   Exactly two lines:
+   - `[▶ <title>](recense://<key>)` · for a PDF or a picture: `![<title>](recense://<key>)`, so the page shows it;
+   - `Arrived by AirDrop · 2026-11-16 14:02` (or `Opened in Recense · …` for other "Open with" arrivals).
+5. **Where the media is now** is drawn by the editor under the first line and **never saved in the file**:
+   "Music › Song.m4a · on this iPhone", "on the Mac", or "not on this device" (then FEAT-22's ladder).
+   - Why: a path saved into the note goes stale the moment the file is renamed, moved or carried.
+     The key is the same on every device (**proven** `shared/ShowsKit/Sources/ShowsKit/Model.swift:19-32`).
+6. **The other direction** (media → note) is the Note dot and button (rule 7).
+7. **Audio and video are transcribed on the device** as soon as they land (FEAT-16's gate). The transcript pane
+   fills when the transcript is complete. Typing in the note is never blocked by it.
+8. **The same file again** (same key): no second note. The existing note opens and gets one more line,
+   `Arrived again by AirDrop · <date>`. Nothing in it is replaced.
+9. **The sender's name is not recorded.** **assumed:** iOS does not tell the receiving app who sent it.
+   **untested** on the Mac.
+
+### What exists (checked 2026-11-16)
+- **proven** No file types are declared: `mobile/ios/App-Info.plist` has no `CFBundleDocumentTypes`; the app's only
+  extensions are Files and screen broadcast (`mobile/ios/Ext-Info.plist`, `Broadcast-Info.plist`).
+  So "Open with Recense" does not appear today.
+- **proven** The Mac's watcher covers `~/Recense/downloads/` only (`strip/app.swift:6808`), not `~/Downloads`.
+- **proven** On the owner's Mac, 95 of 618 files in `~/Downloads` and `~/Recense/downloads/` carry the system's
+  arrival mark naming `sharingd` (counted 2026-11-16, file names not read).
+- **assumed** `sharingd` marks only AirDrop arrivals. Spike S2 checks it against files saved by Safari and Mail.
+- **assumed** (Apple's documented behavior, not run here) Declared file types are enough for AirDrop's
+  "Open with"; iOS hands the file over in `Documents/Inbox/`, which Recense must empty by moving the file out.
+- **proven** The editor shows embeds through its host's `recense-file:` scheme today (`editor/src/embeds.js:1-3`).
+  Resolving `recense://<key>` there is new work.
+
+### Outside services
+- **None, at any time.** AirDrop goes device to device over Bluetooth and peer Wi-Fi, with no router or internet
+  (Apple's documented behavior). Transcription and the note are on the device.
+
+### Checks (in order; each gates the next)
+- **Spike S1 (iPhone, 30 min, may fail):** declare the types; with the router off, AirDrop a song from the Mac:
+  Recense opens holding it. If it fails, the route is a Share Extension (FEAT-03 P1) and this phase waits for it.
+- **Spike S2 (Mac, 30 min):** AirDrop a file from the iPhone: it carries the `sharingd` mark; a file saved by Safari
+  and one saved from Mail do not.
+- **Test (shared):** a fixture file arrives → it is moved into its home, the note has exactly the two lines,
+  `draftpad.md` is untouched; the same bytes again → still one note, one more line.
+- **Test (editor):** the "where it is now" line is drawn from the host's answer and the file's text is unchanged.
+- **Device (iPhone via iPhone Mirroring, iPad, Mac):** router off, AirDrop a voice memo: the note opens (iPhone, iPad)
+  or appears as New (Mac); the transcript fills in; the ▶ link plays it. Screenshot audit: one Note control per screen.
 
 ## Risks and edge cases
 - **Two files, one recording.** A re-encoded copy has a different key, so it gets a different note. No fix proposed;

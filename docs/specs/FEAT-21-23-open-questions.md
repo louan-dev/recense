@@ -54,6 +54,8 @@ the pill and the sound curve (FEAT-07, FEAT-16).
 - Accents are ignored in search unless you type them; then exact matches come first.
 - Two devices editing one note: merged when clean, both kept when not. Never "last one wins".
 - No haptic on the iPad Air: sight carries every detent there.
+- AirDrop to the Mac makes the note quietly (marked New in the notes list); on iPhone and iPad the note opens at once.
+- A note links to its media by key; where the file sits now is shown, never saved into the note.
 
 ## Build order
 
@@ -65,6 +67,8 @@ the pill and the sound curve (FEAT-07, FEAT-16).
    - Usable alone: yes. The note is a plain file in `Recense/keep/<key>/note.md`, visible in Files.
    - Rough edge, stated: the note stays on the device it was written on until step 2.
    - Size: small. One editor rule (open `recense://` links), one host change per platform (swap the document).
+1b. **Arrivals open as a note (FEAT-23 P0b), right after step 1.** AirDrop a file → it lands in its home with its note
+   and a ▶ link back to it. Two 30-minute spikes first (iPhone "Open with Recense"; Mac AirDrop mark).
 2. **Notes and transcripts on every device, with no Cloudflare on the path (FEAT-22 P1, then P2).**
 3. **Search everything (FEAT-21 P1 → P2 → P3).**
 4. **The sound curve with its Sound button on the web and the Mac (FEAT-07 P4, P5).** The engine already exists there.
