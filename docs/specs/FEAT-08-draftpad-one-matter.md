@@ -50,6 +50,11 @@ Nothing ever moves a section into a new file: sections written apart stay side b
 - **P3** the other formats as live states (export, then import back).
 - **P4** searchable audio and ink inside the page (with T-0046).
 
+## Notes on media (added 2026-11-16)
+- A media item's note (`keep/<key>/note.md`, FEAT-23) is a Draftpad page like any other: same ink, same Matter menu.
+- It is its own file. No crossing moves text between a media note and `draftpad.md` unless the owner pastes it.
+- P4 here (searchable audio and ink inside the page) and FEAT-21 (one search) share one matcher; build FEAT-21 P1 first.
+
 ## Feasibility (labelled)
 - Proven: Markdown core, ink anchoring, timed words, on-device speech.
 - Assumed: lossless md ⇄ docx / odt round trip (formatting can drift; P0.1 decides).

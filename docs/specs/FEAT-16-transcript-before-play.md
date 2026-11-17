@@ -42,6 +42,10 @@ Model: Apple Podcasts (spinner, then audio and transcript together).
   iPhone and iPad stored shows, Listen episodes, the web player. Surface list in the spec's table is the check: each gets a screenshot.
   Design stays FEAT-07's; this phase only places it. Follow-reset control (Apple's "reset live tracking") ships with it.
 
+**Revised 2026-11-16 (owner's design review):** what the pill holds is settled in FEAT-07 § "Revision 2026-11-16", part A:
+magnifier · the stroke · Sound, and nothing else. Find's last row hands over to Search everything (FEAT-21 rule 6).
+The Note button is in Now Playing's top bar, not on the pill (FEAT-23 rule 7). This phase still only places the pill.
+
 ### P5 surfaces (code read 2026-11-16, before coding)
 The pill = FEAT-07's: Find (magnifier → find face: field, "2 of 5", ⌃ ⌄, waveform or a 0.35 s hold back) and the scrubber, one pill.
 Follow reset = Apple's "reset live tracking": a hand scroll lets go of the voice; one visible control brings it back.
