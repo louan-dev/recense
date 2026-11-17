@@ -2151,3 +2151,11 @@ html.rc-wings-page body {
   width: 0.6ch;
   text-align: center;
 }
+
+/* FEAT-19 P4 · "Play a file…": one calm strip under the toolbar, the system's own controls, closed by one button. */
+.rc-fileplayer { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--rc-border); background: var(--rc-panel); }
+.rc-fileplayer[hidden] { display: none; }
+.rc-fileplayer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rc-fileplayer-title { color: var(--rc-text); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-fileplayer audio { width: 100%; }
+.rc-fileplayer video { width: 100%; max-height: 40vh; background: #000; border-radius: 6px; }

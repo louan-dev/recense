@@ -59,6 +59,8 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 - Lock Screen and Control Center (SPEC 69, FEAT-19): the file's title, cover and a scrubber you can drag;
   play, pause, ⏮ / ⏭. A video keeps playing when the phone locks or the page is left (iOS pauses it; the
   sound is asked back once per hide); a pause from the Lock Screen or headphones holds.
+  The wiring lives in one file, `src/client/mediasession.js` (`RecenseNowPlaying.bind(el, opts)`); the editor bundles
+  the same file (FEAT-19 P4); test: `node test/mediasession.test.mjs`.
 - Grid, strip and viewer; click views or plays, never downloads. Info holds Download, Rename, Change Cover, Key, native
   language and New Window.
 - Collection search (Goal 43.32): a Search pill above the grid ("Search <collection>"). It matches notes and

@@ -24,6 +24,7 @@ import { legalNumberingExtension } from './legal.js';
 import { createRecense, recenseField, LENS_NAMES } from './recense.js';
 import { chapterEntries } from './chapters.js';
 import { createEditorBridge, externalSetTextAnnotation, postHaptic } from './bridge.js';
+import { canPlayFiles, createFilePlayer } from './fileplayer.js';
 import { removedRecordExtension, getRemoved } from './removed.js';
 import {
   pageModeExtension,
@@ -146,6 +147,7 @@ export const MENU_ACTIONS = [
   'olderPage',
   'pages',
   'newestFirst',
+  'playFile',
   'theme'
 ];
 
@@ -308,6 +310,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const pagesBtn = makeMenuItem('rc-pages-btn', 'Pages', 'Swipe to glide between pages');
   pagesBtn.setAttribute('aria-pressed', 'true');
   const newestFirstMenuBtn = makeMenuItem('rc-newest-first-menu-btn', 'Newest first', 'Order outline newest first');
+  // FEAT-19 P4 · browser only: a sound or video file from this device, on the Lock Screen (the app has its own).
+  const playFileBtn = makeMenuItem('rc-play-file-btn', 'Play a file…', 'Play a sound or video file from this device');
+  playFileBtn.hidden = !canPlayFiles();
+  const filePlayer = createFilePlayer();
   const themeBtn = makeMenuItem('rc-theme-btn', 'Light theme', 'Switch theme');
 
   menu.append(
@@ -324,6 +330,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     promoteMenuBtn,
     pagesBtn,
     newestFirstMenuBtn,
+    playFileBtn,
     themeBtn
   );
   menuWrap.append(menuBtn, menu);
@@ -363,7 +370,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   editorHost.className = 'rc-editor-Mount';
   workspace.append(outlinePanel, editorHost);
 
-  shell.append(toolbar, workspace);
+  shell.append(toolbar, filePlayer.panel, workspace);
   root.innerHTML = '';
   root.appendChild(shell);
 
@@ -1316,6 +1323,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   newestFirstMenuBtn.addEventListener('click', () => {
     closeMenu();
     setNewestFirst(!newestFirst);
+  });
+
+  playFileBtn.addEventListener('click', () => {
+    closeMenu();
+    filePlayer.pick();
   });
 
   themeBtn.addEventListener('click', () => {

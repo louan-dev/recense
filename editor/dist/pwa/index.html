@@ -2159,6 +2159,14 @@ html.rc-wings-page body {
   text-align: center;
 }
 
+/* FEAT-19 P4 · "Play a file…": one calm strip under the toolbar, the system's own controls, closed by one button. */
+.rc-fileplayer { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--rc-border); background: var(--rc-panel); }
+.rc-fileplayer[hidden] { display: none; }
+.rc-fileplayer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rc-fileplayer-title { color: var(--rc-text); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-fileplayer audio { width: 100%; }
+.rc-fileplayer video { width: 100%; max-height: 40vh; background: #000; border-radius: 6px; }
+
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -2487,7 +2495,7 @@ html.rc-wings-page body {
     return { engine: "model", why, lines, dropped };
   }
 
-  // node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2561,7 +2569,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // node_modules/@codemirror/state/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -5973,7 +5981,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // node_modules/style-mod/src/style-mod.js
+  // ../../../../editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -6109,7 +6117,7 @@ html.rc-wings-page body {
     }
   };
 
-  // node_modules/w3c-keyname/index.js
+  // ../../../../editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6215,7 +6223,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // node_modules/crelt/index.js
+  // ../../../../editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6244,7 +6252,7 @@ html.rc-wings-page body {
     }
   }
 
-  // node_modules/@codemirror/view/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -16000,7 +16008,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // node_modules/@lezer/common/dist/index.js
+  // ../../../../editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -18061,7 +18069,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // node_modules/@lezer/highlight/dist/index.js
+  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18785,7 +18793,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // node_modules/@codemirror/language/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -20271,7 +20279,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // node_modules/@codemirror/commands/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -21365,7 +21373,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -21830,7 +21838,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // node_modules/@lezer/markdown/dist/index.js
+  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -23918,7 +23926,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // node_modules/@lezer/lr/dist/index.js
+  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25696,7 +25704,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // node_modules/@lezer/html/dist/index.js
+  // ../../../../editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -26040,7 +26048,7 @@ html.rc-wings-page body {
     });
   }
 
-  // node_modules/@lezer/css/dist/index.js
+  // ../../../../editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -26220,7 +26228,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // node_modules/@codemirror/lang-css/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -27081,7 +27089,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // node_modules/@lezer/javascript/dist/index.js
+  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -27293,7 +27301,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27605,7 +27613,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-html/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -28345,7 +28353,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -29252,7 +29260,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // node_modules/@codemirror/search/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -32561,6 +32569,183 @@ ${PAGE_MARKER}
         if (playing) stopSpeaking?.();
       }
     };
+  }
+
+  // ../library/src/client/mediasession.js
+  globalThis.RecenseNowPlaying = /* @__PURE__ */ (() => {
+    let owner = null;
+    const bind = (el5, opts = {}) => {
+      const ms = navigator.mediaSession;
+      const isVideo = String(el5.tagName || "").toLowerCase() === "video";
+      let heldByPerson = false;
+      let pausedAt = 0;
+      let retried = false;
+      const offs = [];
+      const on = (t2, ev, f) => {
+        t2.addEventListener(ev, f);
+        offs.push(() => t2.removeEventListener(ev, f));
+      };
+      const act = (a, h) => {
+        try {
+          ms.setActionHandler(a, h);
+        } catch (x) {
+        }
+      };
+      const pos = () => {
+        if (!ms || owner !== el5) return;
+        try {
+          ms.playbackState = el5.paused ? "paused" : "playing";
+          const d = el5.duration;
+          if (!isFinite(d) || d <= 0) return;
+          ms.setPositionState({ duration: d, playbackRate: el5.playbackRate || 1, position: Math.min(d, Math.max(0, el5.currentTime || 0)) });
+        } catch (x) {
+        }
+      };
+      const meta2 = () => {
+        const title = String(opts.title || "").replace(/\.[^/.]+$/, "") || "Recense";
+        const m = { title, artist: opts.artist || "", album: opts.album || "" };
+        try {
+          if (opts.artwork) m.artwork = [{ src: new URL(opts.artwork, location.href).href }];
+        } catch (x) {
+        }
+        try {
+          ms.metadata = new MediaMetadata(m);
+        } catch (x) {
+        }
+      };
+      const claim = () => {
+        heldByPerson = false;
+        try {
+          if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+        } catch (x) {
+        }
+        if (!ms) return;
+        owner = el5;
+        meta2();
+        act("play", () => el5.play().catch(() => {
+        }));
+        act("pause", () => {
+          heldByPerson = true;
+          el5.pause();
+        });
+        act("seekto", (e) => {
+          if (typeof e.seekTime !== "number") return;
+          if (e.fastSeek && el5.fastSeek) el5.fastSeek(e.seekTime);
+          else el5.currentTime = e.seekTime;
+          pos();
+        });
+        act("seekbackward", null);
+        act("seekforward", null);
+        act("previoustrack", opts.onPrev ? () => opts.onPrev() : null);
+        act("nexttrack", opts.onNext ? () => opts.onNext() : null);
+        pos();
+      };
+      const again = () => {
+        if (retried || heldByPerson || el5.ended) return;
+        retried = true;
+        el5.play().catch(() => {
+        });
+      };
+      on(el5, "play", claim);
+      ["pause", "ratechange", "durationchange", "seeked", "timeupdate"].forEach((ev) => on(el5, ev, pos));
+      if (isVideo) {
+        on(el5, "pause", () => {
+          pausedAt = Date.now();
+          if (document.hidden) again();
+        });
+        on(document, "visibilitychange", () => {
+          if (!document.hidden) return void (retried = false);
+          if (el5.paused && Date.now() - pausedAt < 500) again();
+        });
+      }
+      return () => {
+        offs.forEach((f) => f());
+        if (!ms || owner !== el5) return;
+        owner = null;
+        try {
+          ms.metadata = null;
+          ms.playbackState = "none";
+          ms.setPositionState();
+        } catch (x) {
+        }
+        ["play", "pause", "seekto", "previoustrack", "nexttrack"].forEach((a) => act(a, null));
+      };
+    };
+    return { bind };
+  })();
+
+  // src/fileplayer.js
+  var PLAYABLE = "audio/*,video/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.mp4,.m4v,.mov,.webm";
+  var VIDEO_EXT = /\.(mp4|m4v|mov|webm)$/i;
+  function canPlayFiles(win = globalThis) {
+    return !win?.webkit?.messageHandlers?.audio;
+  }
+  function kindOf(file) {
+    const type = String(file?.type || "");
+    if (type.startsWith("video/")) return "video";
+    if (type.startsWith("audio/")) return "audio";
+    return VIDEO_EXT.test(String(file?.name || "")) ? "video" : "audio";
+  }
+  function createFilePlayer({ doc: doc2 = document, urls = URL, nowPlaying = globalThis.RecenseNowPlaying } = {}) {
+    const panel = doc2.createElement("div");
+    panel.className = "rc-fileplayer";
+    panel.setAttribute("aria-label", "Playing a file");
+    panel.hidden = true;
+    const title = doc2.createElement("span");
+    title.className = "rc-fileplayer-title";
+    const closeBtn = doc2.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "rc-btn rc-fileplayer-close";
+    closeBtn.textContent = "Close player";
+    const bar = doc2.createElement("div");
+    bar.className = "rc-fileplayer-bar";
+    bar.append(title, closeBtn);
+    panel.append(bar);
+    let el5 = null;
+    let url = null;
+    let unbind = null;
+    function stop() {
+      if (unbind) unbind();
+      unbind = null;
+      if (el5) {
+        el5.pause();
+        el5.removeAttribute("src");
+        el5.remove();
+      }
+      el5 = null;
+      if (url) urls.revokeObjectURL(url);
+      url = null;
+      panel.hidden = true;
+    }
+    function play(file) {
+      if (!file) return null;
+      stop();
+      el5 = doc2.createElement(kindOf(file));
+      el5.controls = true;
+      el5.setAttribute("playsinline", "");
+      el5.preload = "metadata";
+      url = urls.createObjectURL(file);
+      el5.src = url;
+      title.textContent = String(file.name || "");
+      if (nowPlaying) unbind = nowPlaying.bind(el5, { title: file.name });
+      panel.append(el5);
+      panel.hidden = false;
+      const p = el5.play();
+      if (p && p.catch) p.catch(() => {
+      });
+      return el5;
+    }
+    function pick() {
+      const input = doc2.createElement("input");
+      input.type = "file";
+      input.accept = PLAYABLE;
+      input.addEventListener("change", () => play(input.files && input.files[0]));
+      input.click();
+    }
+    closeBtn.addEventListener("click", stop);
+    return { panel, play, pick, stop, get element() {
+      return el5;
+    } };
   }
 
   // src/removed.js
@@ -39697,6 +39882,7 @@ ${clean(nextLineText)}`;
     "olderPage",
     "pages",
     "newestFirst",
+    "playFile",
     "theme"
   ];
   function formatPageIndicator(index, total) {
@@ -39840,6 +40026,9 @@ ${clean(nextLineText)}`;
     const pagesBtn = makeMenuItem("rc-pages-btn", "Pages", "Swipe to glide between pages");
     pagesBtn.setAttribute("aria-pressed", "true");
     const newestFirstMenuBtn = makeMenuItem("rc-newest-first-menu-btn", "Newest first", "Order outline newest first");
+    const playFileBtn = makeMenuItem("rc-play-file-btn", "Play a file\u2026", "Play a sound or video file from this device");
+    playFileBtn.hidden = !canPlayFiles();
+    const filePlayer = createFilePlayer();
     const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
     menu.append(
       outlineToggleBtn,
@@ -39855,6 +40044,7 @@ ${clean(nextLineText)}`;
       promoteMenuBtn,
       pagesBtn,
       newestFirstMenuBtn,
+      playFileBtn,
       themeBtn
     );
     menuWrap.append(menuBtn, menu);
@@ -39884,7 +40074,7 @@ ${clean(nextLineText)}`;
     const editorHost = document.createElement("main");
     editorHost.className = "rc-editor-Mount";
     workspace.append(outlinePanel, editorHost);
-    shell.append(toolbar, workspace);
+    shell.append(toolbar, filePlayer.panel, workspace);
     root.innerHTML = "";
     root.appendChild(shell);
     let view = null;
@@ -40910,6 +41100,10 @@ ${String(text ?? "")}`;
     newestFirstMenuBtn.addEventListener("click", () => {
       closeMenu();
       setNewestFirst(!newestFirst);
+    });
+    playFileBtn.addEventListener("click", () => {
+      closeMenu();
+      filePlayer.pick();
     });
     themeBtn.addEventListener("click", () => {
       closeMenu();
