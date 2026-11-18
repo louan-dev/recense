@@ -43,6 +43,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Each frame reads the playhead for the moment it reaches the screen, one refresh after it's drawn (`FrameClock`,
     the display link's target time; 11-10: lit for "now", every word was a frame late). The Mac's window and the web
     player add the same lead.
+    The Mac's light lands on the playhead each frame with no easing (`FrameClock.follow`, FEAT-05 rule 9): it never
+    steps back for a report's jitter, and a pause or a seek snaps (11-17: the old ease trailed by ~15 frames).
     The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
     before its first word lights, so the eye lands on a resting line. It waits for the outgoing line's last word first
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.

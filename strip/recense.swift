@@ -13,6 +13,7 @@ import Translation
 import Accelerate
 import SoundAnalysis
 import Vision
+import ShowsKit
 
 // Recense v2
 // Follows whatever QuickTime, Music, Safari/Chromium (Apple Events) or Firefox (bridge extension) is playing,
@@ -7085,15 +7086,11 @@ final class NativeSources {
         pos.paused ? pos.t : pos.t + (Date().timeIntervalSince1970 - pos.sent) * pos.rate
     }
 
-    /// mediaTime eased frame to frame: report jitter is absorbed instead of making the light twitch
-    /// backwards; seeks, pauses and big corrections snap.
-    var shownT = 0.0, lastFrame = 0.0
+    /// mediaTime as the light shows it (ShowsKit `FrameClock.follow`, FEAT-05 rule 9): on the playhead extrapolated
+    /// from the page's timestamped report, no easing; a report's jitter never steps it back; seeks and pauses snap.
+    var shownT = 0.0
     func smoothTime() -> Double {
-        let target = mediaTime, now = CACurrentMediaTime()
-        let dt = min(0.1, now - lastFrame); lastFrame = now
-        let predicted = shownT + dt * pos.rate
-        if pos.paused || abs(target - predicted) > 0.25 { shownT = target }
-        else { shownT = max(shownT, predicted + (target - predicted) * 0.15) }
+        shownT = FrameClock.follow(shown: shownT, target: mediaTime, paused: pos.paused)
         return shownT
     }
 
