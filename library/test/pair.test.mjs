@@ -107,4 +107,16 @@ assert.equal((await offOwner("/main/api/pair", { method: "POST" })).status, 503)
 assert.equal((await off.dispatchFetch(ORIGIN + "/main/api/whoami", { headers: { cookie: dev } })).status, 404); ok("no PAIR_SECRET: off");
 await off.dispose();
 
+// the main address sends phones to the device address and names it on the Mac's page
+const two = make({ PAIR_SECRET: SECRET, DEVICE_ORIGIN: "https://dev.test" });
+let t = await two.dispatchFetch(ORIGIN + "/pair", { redirect: "manual" });
+assert.equal(t.status, 302); assert.equal(t.headers.get("location"), "https://dev.test/pair");
+t = await two.dispatchFetch(ORIGIN + "/main/pair", { headers: { "cf-access-jwt-assertion": ownerJwt } });
+assert.match(await t.text(), /https:\/\/dev\.test\/pair/); ok("main address points phones at the device address");
+await two.dispose();
+// the device address serves the claim page itself
+const dv = make({ PAIR_SECRET: SECRET, DEVICE_ORIGIN: "https://dev.test", DEVICE_HOST: "1" });
+assert.equal((await dv.dispatchFetch("https://dev.test/pair")).status, 200); ok("device address serves /pair");
+await dv.dispose();
+
 console.log("pair: ALL OK");

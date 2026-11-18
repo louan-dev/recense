@@ -73,15 +73,16 @@ export async function mintCode(env) {
   return Response.json({ ok: true, code, exp });
 }
 
-export function pairPage() {
+export function pairPage(env) {
+  const where = String(env.DEVICE_ORIGIN || "") + "/pair";
   return page(shell("Pair a device", `
-<p>On your iPhone or iPad, open <b id="where"></b></p>
+<p>On your iPhone or iPad, open <b id="where">${esc(where)}</b></p>
 <p>and type this code within 5 minutes:</p>
 <p id="code" class="code">······</p>
 <p><button id="new">New Code</button></p>
 <p><a href="/main/devices">Paired Devices</a></p>
 <script>
-document.getElementById("where").textContent = location.origin + "/pair";
+if (!document.getElementById("where").textContent.startsWith("http")) document.getElementById("where").textContent = location.origin + "/pair";
 async function mint() {
   const r = await fetch("/main/api/pair", { method: "POST" });
   const j = await r.json();
@@ -94,7 +95,9 @@ mint();
 
 // ---------- the phone: claim (public, outside Access) ----------
 
-export function claimPage(msg = "", status = 200) {
+export function claimPage(msg = "", status = 200, env = {}, url = null) {
+  // the phone pairs on the device address (no Access in front); send it there
+  if (url && env.DEVICE_ORIGIN && !env.DEVICE_HOST && url.origin !== env.DEVICE_ORIGIN) return Response.redirect(env.DEVICE_ORIGIN + "/pair", 302);
   return page(shell("Pair this device", `
 ${msg ? `<p class="msg">${esc(msg)}</p>` : ""}
 <form method="post" action="/pair">

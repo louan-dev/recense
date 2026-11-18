@@ -54,7 +54,7 @@ export default {
     }
 
     // pairing a phone or tablet: the claim page lives outside /main (pair.js)
-    if (path === "/pair" && method === "GET") return claimPage();
+    if (path === "/pair" && method === "GET") return claimPage("", 200, env, url);
     if (path === "/pair" && method === "POST") return claim(req, env, url);
 
     if (path.startsWith("/m/")) return participantRoute(req, env, ctx, url, path);
@@ -112,7 +112,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
   // the File Provider's read-only feed: a native client sends no Origin (fp.js)
   if (path.startsWith("/main/api/fp/")) return fp(req, env, url, path);
 
-  if (path === "/main/pair" && read) return pairPage();
+  if (path === "/main/pair" && read) return pairPage(env);
   if (path === "/main/devices" && read) return devicesPage(env);
 
   if (path.startsWith("/main/api/")) {
