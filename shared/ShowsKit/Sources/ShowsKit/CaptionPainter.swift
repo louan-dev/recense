@@ -92,7 +92,7 @@ public enum CaptionPainter {
         return rows.count <= max ? rows : nil
     }
 
-    static func attempt(_ line: Caption.Line, mode: CaptionMode, at t: Double, in box: CGRect, style: CaptionStyle,
+    private static func attempt(_ line: Caption.Line, mode: CaptionMode, at t: Double, in box: CGRect, style: CaptionStyle,
                                 scale: CGFloat, force: Bool = false) -> Layout? {
         let bal = style.balance, en = line.translation ?? []
         let translated = !en.isEmpty, dim: CGFloat = style.guess ? 0.5 : 1
@@ -268,8 +268,8 @@ public enum CaptionPainter {
         paint(layout(line, mode: mode, at: t, in: box, style: style), at: t, in: ctx, style: style, voice: voice)
     }
 
-    /// Draws a layout as it is at `t` (the floating window picks its own: CaptionWindow.swift).
-    static func paint(_ l: Layout, at t: Double, in ctx: CGContext, style: CaptionStyle, voice: ((Caption.Beat, Double) -> Double?)? = nil) {
+    /// Draws a layout as it is at `t`.
+    private static func paint(_ l: Layout, at t: Double, in ctx: CGContext, style: CaptionStyle, voice: ((Caption.Beat, Double) -> Double?)? = nil) {
         ctx.saveGState(); defer { ctx.restoreGState() }
         ctx.textMatrix = .identity
         ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3 * l.scale, color: style.shadow)
