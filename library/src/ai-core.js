@@ -55,11 +55,11 @@ export function nameText(root, path) {
   return `${name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")} (${root === "archive" ? "Archive" : "Main"}${parts.length ? " / " + parts.join(" / ") : ""}, ${kindOf(path)})`;
 }
 
-/** Folders never indexed nor answered from: client matters stay out of Workers AI and Vectorize (spec A6, X7). A folder
- *  added here leaves the index on the next pass, when the sweep deletes its vectors and text. */
-export const SEALED = { main: ["Raven/"] };
-export function sealed(root, rel) {
-  return (SEALED[root] || []).some((p) => rel === p.slice(0, -1) || String(rel).startsWith(p));
+/** Private text never indexed nor answered from: a file with a folder (or its own name) called Raven, Matters or Sealed,
+ *  at any depth, in any root, any case, stays out of Workers AI and Vectorize (spec A6, X7). Derived from Spec: BUG-30 */
+export const SEALED_SEGMENTS = ["raven", "matters", "sealed"];
+export function sealed(_root, rel) {
+  return String(rel || "").split("/").some((seg) => SEALED_SEGMENTS.includes(seg.trim().toLowerCase()));
 }
 
 /** Whether a passage is inside what the person has open: a root and a folder (or file) path under it; "all" is everything. */

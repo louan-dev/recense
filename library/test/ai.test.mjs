@@ -180,9 +180,11 @@ await test("without bindings the assistant says so instead of failing", async ()
 await test("indexing in steps finishes, skips hidden files, and reports progress", async () => {
   let r, steps = 0;
   do { r = await (await post("/main/api/ai/index", {})).json(); steps++; } while (!r.done && steps < 50);
-  assert.ok(r.done, "indexing finished"); assert.equal(r.files, 6);
+  assert.ok(r.done, "indexing finished"); assert.equal(r.files, 5);
   const paths = new Set([...env.VECTORS.m.values()].map((v) => v.metadata.path));
-  assert.ok(paths.has("Books/MPEP.pdf") && paths.has("CV/Loza CV.docx") && paths.has("Music/Raven/song.mp3"));
+  assert.ok(paths.has("Books/MPEP.pdf") && paths.has("CV/Loza CV.docx"));
+  // Regression guard: BUG-30
+  assert.ok(!paths.has("Music/Raven/song.mp3"), "a nested Raven folder is private too");
   assert.ok(![...paths].some((p) => p.includes(".hidden")));
   const authOf = (p) => new Set([...env.VECTORS.m.values()].filter((v) => v.metadata.path === p && v.metadata.kind !== "name").map((v) => v.metadata.auth));
   assert.deepEqual([...authOf("Books/MPEP.pdf")], ["reference"]);
@@ -190,7 +192,7 @@ await test("indexing in steps finishes, skips hidden files, and reports progress
   assert.deepEqual([...authOf("Journal/broken.txt")], ["personal"], "unclear counts as personal");
   assert.ok([...env.VECTORS.m.values()].filter((v) => v.metadata.kind === "name").every((v) => v.metadata.auth === "name"));
   const s = await (await get("/main/api/ai/status")).json();
-  assert.equal(s.files, 6); assert.equal(s.pending, 0); assert.equal(s.chat, "@cf/test/chat");
+  assert.equal(s.files, 5); assert.equal(s.pending, 0); assert.equal(s.chat, "@cf/test/chat");
   const again = await (await post("/main/api/ai/index", {})).json();
   assert.ok(again.done);
 });
@@ -296,7 +298,9 @@ await test("bad requests are refused", async () => {
 
 await test("client matters (Main's Raven/) are never indexed (A6)", async () => {
   assert.ok(sealed("main", "Raven/Client A/letter.txt") && sealed("main", "Raven"));
-  assert.ok(!sealed("main", "Ravenna/notes.txt") && !sealed("archive", "Raven/x.txt") && !sealed("main", "Books/Raven/x.txt"));
+  // Regression guard: BUG-30
+  assert.ok(!sealed("main", "Ravenna/notes.txt") && !sealed("main", "Sealedness.txt"));
+  assert.ok(sealed("archive", "Raven/x.txt") && sealed("main", "Books/Raven/x.txt") && sealed("main", "a/MATTERS/b.txt") && sealed("archive", "x/sealed"));
   await env.MAIN.put("files/Raven/Client A/letter.txt", "Privileged and confidential. ".repeat(50));
   await restOver();
   await untilDone();
@@ -312,6 +316,20 @@ await test("resting runs spend none of the daily AI budget; indexing does (G20)"
   await indexRun(env, 60000, 24, 3);
   const b = JSON.parse(env.MAIN.m.get("ai/index-budget.json").text);
   assert.ok(b.steps >= 1 && b.steps <= 3, `AI steps counted, within the budget: ${b.steps}`);
+});
+
+// Regression guard: BUG-30
+await test("purge-sealed deletes vectors of any sealed-segment path, and search never returns one", async () => {
+  for (const p of ["Books/Raven/leak.txt", "Matters/a.txt", "x/Sealed/b.txt"]) {
+    await env.MAIN.put("files/" + p, "secret privileged words zebra. ".repeat(20));
+    const id = await vectorId("main", p, 0);
+    env.VECTORS.m.set(id, { id, values: vec("zebra privileged"), metadata: { root: "main", path: p, kind: "doc", auth: "reference", text: "zebra privileged" } });
+  }
+  const hits = await (await post("/main/api/ai/search", { q: "zebra privileged" })).json();
+  assert.ok(!hits.hits.some((h) => /Raven|Matters|Sealed/.test(h.path)), "query time filter");
+  const r = await (await post("/main/api/ai/purge-sealed", {})).json();
+  assert.ok(r.ok && r.files >= 3);
+  assert.ok(![...env.VECTORS.m.values()].some((v) => /(^|\/)(Raven|Matters|Sealed)(\/|$)/i.test(v.metadata.path)), "vectors purged");
 });
 
 console.log(`\n${passed} passed`);
