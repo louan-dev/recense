@@ -1,14 +1,11 @@
 // Derived from Spec: FEAT-20 (P1, the Mac's syllable light on iPhone and iPad; route A)
 // A song's words lit syllable by syllable on iPhone and iPad, as the Mac lights them. The Mac does the heavy part
 // (Demucs separates the voice, Features measures it, keep/<key>/features.json); this device reads that file and hangs
-// the words on the voice by the SAME rules (library/src/client/cadence.js, the one the web player runs and the Mac's
-// Cadence.fit mirrors rule for rule), then lights each word with `fill` (cadence.js `fill`, the Mac's Cadence.progress).
+// the words on the voice with the Mac's own Cadence (shared/ShowsKit/Cadence, one Swift copy; the web player's
+// cadence.js mirrors it rule for rule, checked by Fixtures/songlight.json), then lights each word with `fill` (cadence.js `fill`, the Mac's Cadence.progress).
 // Nothing here measures audio: that stays on the Mac (FEAT-20 §Route).
-// Status: coded, not compiled, device check owed.
+// Status: compiled (iOS + ShowsKit tests), runs the Mac's Cadence; device check owed.
 import Foundation
-#if canImport(JavaScriptCore)
-import JavaScriptCore
-#endif
 
 public enum SongLight {
 
@@ -95,89 +92,39 @@ public enum SongLight {
     /// A line the voice timed (some word has syllables, a listener's timing or is marked unsung): drawn by `fill`.
     public static func sung(_ line: TranscriptLine) -> Bool { line.words.contains { $0.syl != nil || $0.un == true || $0.tm != nil } }
 
-    // ---------- the lines, in the shape cadence.js reads (the Worker's `present`) ----------
+    // ---------- the engine: the Mac's Cadence, the one Swift copy (shared/ShowsKit/Cadence) ----------
 
-    static func present(_ lines: [TranscriptLine]) -> [[String: Any]] {
-        lines.map { l in
-            var o: [String: Any] = ["id": Int(l.id) ?? l.id, "s": l.start, "e": l.end, "text": l.text,
-                                    "words": l.words.map { w -> [String: Any] in
-                                        var x: [String: Any] = ["t": w.text, "s": w.start, "e": w.end]
-                                        if let g = w.lang { x["lang"] = g }
-                                        if let p = w.tm {
-                                            var m: [String: Any] = ["s": p.s, "e": p.e, "k": p.k]
-                                            if let c = p.c { m["c"] = c }
-                                            x["tm"] = m
-                                        }
-                                        return x
-                                    }]
-            // a line with a translation isn't English: no English spelling rules for its syllables (cadence.js langOf)
-            if let tr = l.translation, !tr.isEmpty { o["enw"] = [["w": tr, "s": [Int]()]] }
-            return o
-        }
-    }
-
-    /// The lines with what cadence.js worked out laid back on them, word for word (s, e, syl, un; a listener's timing
-    /// kept on tm). A shape that doesn't match the lines leaves them as they were.
-    static func merge(_ lines: [TranscriptLine], fitted: [[String: Any]]) -> [TranscriptLine] {
-        guard fitted.count == lines.count else { return lines }
-        func num(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
-        return zip(lines, fitted).map { l, f in
-            guard let ws = f["words"] as? [[String: Any]], ws.count == l.words.count else { return l }
-            var out = l
-            out.words = zip(l.words, ws).map { w, x in
-                var y = w
-                if let s = num(x["s"]), let e = num(x["e"]) { y.start = s; y.end = e }
-                y.syl = (x["syl"] as? [[String: Any]])?.compactMap { q in
-                    guard let c = (q["c"] as? NSNumber)?.intValue, let s = num(q["s"]), let e = num(q["e"]) else { return nil }
-                    return Syl(c: c, s: s, e: e)
-                }
-                if y.syl?.isEmpty == true { y.syl = nil }
-                y.un = (x["un"] as? Bool) == true ? true : nil
-                if let p = w.tm {   // cadence.js pin: the word's span is the listener's; k or a trace shapes it
-                    let c = (x["c"] as? [Any]).flatMap { Pin.trace($0) } ?? p.c
-                    y.tm = Pin(s: y.start, e: y.end, k: num(x["k"]) ?? p.k, c: c)
-                }
+    /// The lines timed to the voice and pinned to the listener's timing (`Cadence.pin(Cadence.fit(…))`, as on the Mac),
+    /// or nil when the voice can't be followed (the lines then light by their own times). No web view, no network;
+    /// called once per opened song, never on the clock path.
+    /// The Worker sends the lines in the file's time and the voice in the transcript's, with `shift` between them
+    /// (cadence.js `fit(lines, F, shift)`): the lines go back by it to be fitted and forward by it after, to the ms.
+    public static func fit(_ lines: [TranscriptLine], features: Data) -> [TranscriptLine]? {
+        struct Shift: Decodable { let shift: Double? }
+        guard !lines.isEmpty, usable(features), let f = try? JSONDecoder().decode(Features.self, from: features) else { return nil }
+        let d = (try? JSONDecoder().decode(Shift.self, from: features))?.shift ?? 0
+        func move(_ ls: [TranscriptLine], _ by: Double) -> [TranscriptLine] {
+            by == 0 ? ls : ls.map { $0.with(words: $0.words.map { w in
+                let ms = { (x: Double) in (x * 1000).rounded() / 1000 }
+                var y = w.shifted(by: by); y.start = ms(y.start); y.end = ms(y.end)
+                y.syl = y.syl?.map { Syl(c: $0.c, s: ms($0.s), e: ms($0.e)) }
+                y.tm = y.tm.map { Pin(s: ms($0.s), e: ms($0.e), k: $0.k, c: $0.c) }
                 return y
-            }
-            if let s = num(f["s"]), let e = num(f["e"]) { out.start = s; out.end = e }
-            return out
+            }) }
         }
+        return move(Cadence.pin(Cadence.fit(move(lines, -d), f)), d)
     }
+}
 
-    // ---------- the engine: cadence.js in JavaScriptCore ----------
-
-    #if canImport(JavaScriptCore)
-    /// Gallery's cadence.js, run as it is (no second copy of the rules to drift): no web view, no UI, no network.
-    /// One per process; `fit` is called once per opened song, never on the clock path.
-    public final class Engine {
-        private let context: JSContext
-        /// - script: cadence.js's text (the host's bundled copy; the tests read library/src/client/cadence.js).
-        public init?(script: String) {
-            guard let c = JSContext() as JSContext? else { return nil }
-            c.evaluateScript(script)
-            guard c.exception == nil, c.evaluateScript("typeof Cadence === 'object' && typeof Cadence.fit === 'function'")?.toBool() == true
-            else { return nil }
-            context = c
-        }
-
-        /// The lines timed to the voice and pinned to the listener's timing (cadence.js `pin(fit(lines, F, shift))`),
-        /// or nil when the voice can't be followed or the engine failed (the lines then light by their own times).
-        public func fit(_ lines: [TranscriptLine], features: Data) -> [TranscriptLine]? {
-            guard !lines.isEmpty, SongLight.usable(features),
-                  let l = try? JSONSerialization.data(withJSONObject: SongLight.present(lines)),
-                  let ls = String(data: l, encoding: .utf8), let fs = String(data: features, encoding: .utf8) else { return nil }
-            context.exception = nil
-            context.setObject(ls as NSString, forKeyedSubscript: "__L" as NSString)
-            context.setObject(fs as NSString, forKeyedSubscript: "__F" as NSString)
-            let r = context.evaluateScript("""
-            (() => { const F = JSON.parse(__F); return JSON.stringify(Cadence.pin(Cadence.fit(JSON.parse(__L), F, Number(F.shift) || 0))); })()
-            """)
-            context.setObject(nil, forKeyedSubscript: "__L" as NSString)
-            context.setObject(nil, forKeyedSubscript: "__F" as NSString)
-            guard context.exception == nil, let text = r?.toString(), let d = text.data(using: .utf8),
-                  let fitted = (try? JSONSerialization.jsonObject(with: d)) as? [[String: Any]] else { return nil }
-            return SongLight.merge(lines, fitted: fitted)
-        }
+extension TranscriptLine: CadenceLine {
+    public var cadenceID: Int { Int(id) ?? 0 }
+    /// The Worker shows a listener's corrected text but sends the words as heard: Cadence's rules for `fixed` don't apply.
+    public var fixed: Bool? { nil }
+    public var translated: Bool { translation?.isEmpty == false }
+    /// The same line with these words, its span theirs (cadence.js: a line runs from its first word to its last).
+    public func with(words: [Word]) -> TranscriptLine {
+        var l = self; l.words = words
+        if let a = words.first, let b = words.last { l.start = a.start; l.end = b.end }
+        return l
     }
-    #endif
 }

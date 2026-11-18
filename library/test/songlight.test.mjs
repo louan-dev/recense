@@ -1,8 +1,7 @@
-// FEAT-20 (iOS syllable light, route A): iPhone and iPad run this same cadence.js (a bundled copy) and light each word
-// with SongLight.fill, the Swift twin of Cadence.fill. This keeps the two from drifting:
-//   · the iOS bundle's copy is byte for byte library/src/client/cadence.js
+// FEAT-20 (iOS syllable light, route A): iPhone, iPad and the Mac fit with the one Swift Cadence (shared/ShowsKit/Cadence)
+// and light each word with SongLight.fill; the web player runs this cadence.js. This keeps the two from drifting:
 //   · shared/ShowsKit/Tests/ShowsKitTests/Fixtures/songlight.json holds a song fitted here and the light's fill at
-//     sample moments; ShowsKit's SongLightTests checks the Swift rule against the same numbers.
+//     sample moments; ShowsKit's SongLightTests checks the Swift engine and fill against the same numbers.
 // Regenerate the fixture after changing cadence.js: UPDATE=1 node test/songlight.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +12,6 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, "../src/client/cadence.js");
-const ios = join(here, "../../mobile/HostApp/iOS/cadence.js");
 const fixDir = join(here, "../../shared/ShowsKit/Tests/ShowsKitTests/Fixtures");
 const fix = join(fixDir, "songlight.json");
 
@@ -49,11 +47,6 @@ function build() {
     notes, lines, fitted: words.map((w) => ({ t: w.t, s: w.s, e: w.e, syl: w.syl || null, un: !!w.un })), samples,
     pinned: pinned.map((w) => ({ t: w.t, s: w.s, e: w.e, k: w.k ?? null, c: w.c ?? null })), pins };
 }
-
-test("the iOS bundle's cadence.js is Gallery's, byte for byte", () => {
-  assert.equal(readFileSync(ios, "utf8"), readFileSync(src, "utf8"),
-    "mobile/HostApp/iOS/cadence.js drifted: cp library/src/client/cadence.js mobile/HostApp/iOS/cadence.js");
-});
 
 test("the Swift fill fixture is current with cadence.js", () => {
   const now = build();
