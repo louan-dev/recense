@@ -32,7 +32,7 @@ AI_CHAT_MODEL = "@cf/openai/gpt-oss-120b"
 OWNER_TZ = "America/Los_Angeles"
 CALDAV_USER = "chau"
 CALDAV_DEFAULT_NAME = "Calendar"
-# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL must be set: unset or empty, no Access email owns /main (only service tokens and paired devices do).
+# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
 # NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
 
 # Recense's bucket: Gallery reads its transcripts (keep/<key>.v2.json) and writes only corrections
@@ -123,7 +123,7 @@ AI_CHAT_MODEL = "@cf/openai/gpt-oss-120b"
 OWNER_TZ = "America/Los_Angeles"
 CALDAV_USER = "chau"
 CALDAV_DEFAULT_NAME = "Calendar"
-# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL must be set: unset or empty, no Access email owns /main (only service tokens and paired devices do).
+# ACCESS_AUD and SERVICE_CLIENT_ID are set with `wrangler secret put`. OWNER_EMAIL is optional: unset, the Access policy decides who owns /main.
 # NOTABILITY_DAV_HASH (sha-256 hex of Notability's WebDAV password) is a secret too; unset, /dav/notability/ is a 404.
 
 # Recense's bucket: Gallery reads its transcripts (keep/<key>.v2.json) and writes only corrections

@@ -335,7 +335,7 @@ Secrets (set once with `npx wrangler secret put <NAME>`):
 | Name | Value |
 |---|---|
 | `ACCESS_AUD` | The Application Audience tag of the Access application "Gallery Main" |
-| `OWNER_EMAIL` | Your email, the only one allowed into Main (unset or empty: nobody is the owner by email, BUG-30) |
+| `OWNER_EMAIL` | Your email, the only one allowed into Main |
 | `SERVICE_CLIENT_ID` | The client IDs of the Access service tokens (one per device) |
 
 Cloudflare settings outside this folder:
