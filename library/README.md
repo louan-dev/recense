@@ -241,7 +241,7 @@ gallery/
     dav.js              WebDAV (chunked uploads past the 100 MB request cap)
     fp.js               the feed and app writes
     tmp.js              gallery-tmp
-    listen.js           Listen on iPhone/iPad
+    listen.js           Listen on iPhone/iPad; an episode save is a conditional put on the ETag (BUG-30), re-read and re-decided up to 3 tries
     transcript.js       transcripts, content keys, locks
     corrections.js      corrections, glossary, timing overrides
     layout.js           where transcripts live in R2 (keep/<key>/...)
