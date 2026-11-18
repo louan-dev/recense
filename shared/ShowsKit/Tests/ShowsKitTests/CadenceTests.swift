@@ -28,4 +28,29 @@ final class CadenceTests: XCTestCase {
         let w = Word(text: "word", start: 1, end: 2, tm: Pin(s: 1, e: 2, k: 0, c: [0, 1]))
         XCTAssertEqual(Cadence.progress(Beat(w), 1.25), 0.25, accuracy: 1e-9) // a traced pin wins
     }
+
+    func testBeatsReadWordsAsTheMacDoes() {
+        let ws = [Word(text: "held", start: 0, end: 2, syl: [Syl(c: 4, s: 0, e: 2)], tm: Pin(s: 0, e: 2, k: 0.01)),
+                  Word(text: "next", start: 1.5, end: 3, tm: Pin(s: 1.5, e: 3, k: 1)),
+                  Word(text: "traced", start: 3, end: 4, tm: Pin(s: 3, e: 4, k: 1, c: [0, 1]))]
+        let b = Cadence.beats(ws)
+        XCTAssertEqual(b[0].end, 1.5)   // lit until the next word starts
+        XCTAssertNil(b[0].k)            // k about 0 with syllables: the syllables shape it
+        XCTAssertEqual(b[1].k, 1)       // a pin's k shapes it
+        XCTAssertNil(b[2].k); XCTAssertEqual(b[2].c ?? [], [0, 1])   // a trace wins over k
+    }
+
+    // Review-1117 follow-up: the light's memo is read on the main thread and set from wherever a song is fitted.
+    func testTheLightsMemoTakesManyThreads() {
+        let f = Features(source: "vocals", floor: -40, db: Array(repeating: -200, count: 400), onset: Array(repeating: 0, count: 400),
+                         pitch: Array(repeating: 6000, count: 400), clarity: Array(repeating: 90, count: 400), voiced: Array(repeating: 1, count: 400))
+        DispatchQueue.concurrentPerform(iterations: 2000) { i in
+            if i % 50 == 0 { Cadence.track = i % 100 == 0 ? f : nil }
+            let s = Double(i % 30) / 10
+            _ = Cadence.progress(Beat(text: "word", start: s, end: s + 0.5), s + 0.25)
+        }
+        Cadence.track = f
+        XCTAssertEqual(Cadence.progress(Beat(text: "word", start: 1, end: 2), 2), 1, accuracy: 1e-9)
+        Cadence.track = nil
+    }
 }

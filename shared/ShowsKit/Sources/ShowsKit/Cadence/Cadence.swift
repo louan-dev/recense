@@ -57,11 +57,18 @@ public enum Cadence {
         return (song && !fromLyrics && (dense.map { $0 } ?? (rate < 15)), dense)
     }
 
-    /// The measured voice of what's playing (set every frame on the main thread); nil: the light runs by the clock.
-    public nonisolated(unsafe) static var track: Features? { didSet { if track !== oldValue { curves = [:]; notes = [:]; top = nil } } }
-    public nonisolated(unsafe) static var curves: [String: [Float]] = [:]
-    public nonisolated(unsafe) static var notes: [String: Double] = [:]   // a word's middle note (MIDI × 100)
-    public nonisolated(unsafe) static var top: Double? = nil              // the voice's loud end (95th percentile, dB)
+    /// The measured voice of what's playing; nil: the light runs by the clock. Set and read from any thread: the
+    /// Mac sets it every frame on the main thread, iOS when a song is fitted (review-1117: these were bare globals).
+    public static var track: Features? {
+        get { memo.withLock { $0.track } }
+        set { memo.withLock { m in if newValue !== m.track { m = Memo(track: newValue) } } }
+    }
+    static var curves: [String: [Float]] { get { memo.withLock { $0.curves } } set { memo.withLock { $0.curves = newValue } } }
+    static var notes: [String: Double] { get { memo.withLock { $0.notes } } set { memo.withLock { $0.notes = newValue } } }   // a word's middle note (MIDI × 100)
+    static var top: Double? { get { memo.withLock { $0.top } } set { memo.withLock { $0.top = newValue } } }                // the voice's loud end (95th percentile, dB)
+    /// The track and what is worked out from it, kept together: a new track drops the rest in one step.
+    struct Memo { var track: Features?; var curves: [String: [Float]] = [:]; var notes: [String: Double] = [:]; var top: Double? = nil }
+    static let memo = Locked(Memo(track: nil))
 
     /// The voice under the light at `t` (notes 33), all 0 at rest:
     ///   swell  0…1  loud and clear, more so the longer a note is held: a belt is full and bright
@@ -229,6 +236,16 @@ public enum Cadence {
         return acc.map { $0 / sum }
     }
 
+    /// A line's words as the light reads them (moved from the Mac's `sourceBeats`, FEAT-20): each lit until the next
+    /// one starts at the latest (never under 50 ms); a listener's pin shapes the light by k, unless it was traced (c
+    /// wins) or k is about 0 and the voice gave syllables (then the syllables do, inside the pinned span).
+    public static func beats(_ words: [Word]) -> [Beat] {
+        words.enumerated().map { i, w in
+            let next = i + 1 < words.count ? words[i + 1].start : .infinity
+            return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm.flatMap { $0.c != nil || abs($0.k) <= 0.05 && w.syl?.isEmpty == false ? nil : $0.k }, c: w.tm?.c)
+        }
+    }
+
     /// How far through a word the light is at t (0…1): by the voice spent, or the clock where nothing was measured.
     /// A sung word timed syllable by syllable sweeps through its letters without stopping: each syllable's letters are
     /// spread over the time it's sung, up to where the next comes in (or 0.25 s past its end, so a breath isn't swept
@@ -269,4 +286,12 @@ public enum Cadence {
         guard i + 1 < c.count else { return 1 }
         return Double(c[i] + (c[i + 1] - c[i]) * Float(x - Double(i)))
     }
+}
+
+/// A value behind a lock, for state more than one thread reads (Cadence's memo).
+final class Locked<T>: @unchecked Sendable {
+    private var value: T
+    private let lock = NSLock()
+    init(_ v: T) { value = v }
+    func withLock<R>(_ body: (inout T) -> R) -> R { lock.lock(); defer { lock.unlock() }; return body(&value) }
 }

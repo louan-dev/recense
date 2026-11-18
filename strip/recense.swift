@@ -2529,12 +2529,7 @@ func mix(_ a: NSColor, _ b: NSColor, _ f: Double) -> NSColor {
 }
 
 
-func sourceBeats(_ line: Line) -> [Beat] {
-    line.words.enumerated().map { i, w in
-        let next = i + 1 < line.words.count ? line.words[i + 1].start : .infinity
-        return Beat(text: w.text, start: w.start, end: max(w.start + 0.05, min(w.end, next)), syl: w.syl, un: w.un == true, k: w.tm.flatMap { $0.c != nil || abs($0.k) <= 0.05 && w.syl?.isEmpty == false ? nil : $0.k }, c: w.tm?.c)
-    }
-}
+func sourceBeats(_ line: Line) -> [Beat] { Cadence.beats(line.words) }   // the rule is shared (ShowsKit Cadence, FEAT-20)
 
 /// English words take the time of the original words they translate, whatever the language. Word order differs between the two,
 /// so those times are made to run forward (pool adjacent violators), and words left sharing one moment are

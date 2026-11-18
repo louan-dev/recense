@@ -4,7 +4,7 @@
 // the words on the voice with the Mac's own Cadence (shared/ShowsKit/Cadence, one Swift copy; the web player's
 // cadence.js mirrors it rule for rule, checked by Fixtures/songlight.json), then lights each word with `fill` (cadence.js `fill`, the Mac's Cadence.progress).
 // Nothing here measures audio: that stays on the Mac (FEAT-20 §Route).
-// Status: compiled (iOS + ShowsKit tests), runs the Mac's Cadence; device check owed.
+// Status: compiled (iOS + ShowsKit tests), runs the Mac's Cadence (fit, pin, progress); device check owed.
 import Foundation
 
 public enum SongLight {
@@ -40,48 +40,21 @@ public enum SongLight {
 
     // ---------- the light inside a word ----------
 
-    /// How far the light has crossed a word at t, 0…1: cadence.js `fill`, the Mac's Cadence.progress, rule for rule.
-    /// - written but not sung (`un`): 0, never lit
-    /// - timed by the listener (`tm`): its traced light (c), or one sweep shaped by k, unless k is ~0 and the voice
-    ///   gave syllables (then the syllables, inside the listener's span: cadence.js `pin`)
-    /// - syllables (`syl`): each syllable's letters spread over the time it is sung, up to where the next comes in
-    ///   (or 0.25 s past its end); the last one always reaches the word's last letter
-    /// - else even across the word
-    public static func fill(_ w: Word, at t: Double) -> Double {
-        if w.un == true { return 0 }
-        let span = max(0.05, w.end - w.start)
-        let u = max(0, min(1, (t - w.start) / span))
-        if let p = w.tm {   // the listener's own span (merge has set the word's to it; a word never fitted still has it)
-            let u = max(0, min(1, (t - p.s) / max(0.05, p.e - p.s)))
-            if let c = p.c, c.count > 1 {
-                let x = u * Double(c.count - 1), j = min(c.count - 2, Int(x))
-                return c[j] + (c[j + 1] - c[j]) * (x - Double(j))
-            }
-            if abs(p.k) > 0.05 || (w.syl ?? []).isEmpty { return pow(u, pow(2, -1.5 * p.k)) }
-        }
-        let n = w.text.unicodeScalars.count
-        guard let syl = w.syl, !syl.isEmpty, n > 0 else { return t >= w.end ? 1 : u }
-        let nn = Double(n)
-        var c0 = 0.0
-        for (k, y) in syl.enumerated() {
-            let last = k + 1 == syl.count
-            let end = last ? y.e : min(syl[k + 1].s, y.e + 0.25)
-            let c1 = last ? nn : min(nn, Double(y.c))
-            if t < y.s { return c0 / nn }
-            if t < end { return min(1, (c0 + (c1 - c0) * (t - y.s) / max(0.05, end - y.s)) / nn) }
-            c0 = c1
-        }
-        return 1
+    /// How far the light has crossed a word at t, 0…1: the Mac's `Cadence.progress` itself (no second copy), on the
+    /// word as the Mac reads it (`Cadence.beats`: lit until the next word starts, a pin's k or trace, the syllables).
+    /// Written but not sung: 0, never lit. Before it starts 0; once it has ended 1.
+    public static func fill(_ b: Beat, at t: Double) -> Double {
+        b.un ? 0 : t >= b.end ? 1 : t < b.start ? 0 : Cadence.progress(b, t)
     }
 
     /// How many of a word's characters are lit at t: `fill` counts code points (as cadence.js and the Mac do), a text
     /// draws whole characters, so the cut is the last character whose code points are all lit.
-    public static func litCount(_ w: Word, at t: Double) -> Int {
-        let n = w.text.unicodeScalars.count
+    public static func litCount(_ b: Beat, at t: Double) -> Int {
+        let n = b.text.unicodeScalars.count
         guard n > 0 else { return 0 }
-        let lit = Int((fill(w, at: t) * Double(n) + 1e-9).rounded(.down))
+        let lit = Int((fill(b, at: t) * Double(n) + 1e-9).rounded(.down))
         var scalars = 0, chars = 0
-        for ch in w.text {
+        for ch in b.text {
             scalars += ch.unicodeScalars.count
             if scalars > lit { break }
             chars += 1
@@ -99,6 +72,15 @@ public enum SongLight {
     /// called once per opened song, never on the clock path.
     /// The Worker sends the lines in the file's time and the voice in the transcript's, with `shift` between them
     /// (cadence.js `fit(lines, F, shift)`): the lines go back by it to be fitted and forward by it after, to the ms.
+    /// The voice for the light to follow inside a word with no syllables (`Cadence.track`, as the Mac sets it for
+    /// what plays): the measure, when it is a vocal stem and on the lines' own clock (no `shift`; with one, its frames
+    /// would sit `shift` seconds off the words, so the light keeps to the clock there).
+    public static func track(_ features: Data) -> Features? {
+        struct Shift: Decodable { let shift: Double? }
+        guard usable(features), (try? JSONDecoder().decode(Shift.self, from: features))?.shift ?? 0 == 0 else { return nil }
+        return try? JSONDecoder().decode(Features.self, from: features)
+    }
+
     public static func fit(_ lines: [TranscriptLine], features: Data) -> [TranscriptLine]? {
         struct Shift: Decodable { let shift: Double? }
         guard !lines.isEmpty, usable(features), let f = try? JSONDecoder().decode(Features.self, from: features) else { return nil }
