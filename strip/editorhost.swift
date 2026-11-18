@@ -346,10 +346,13 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "matter" {   // FEAT-08 · coded, not compiled; device check owed
             guard let json = m.body as? String, !json.isEmpty else { return }
-            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: coordinatedRead(matterPath), seen: lastMatter) {
+            switch MatterWrite.plan(json: json, disk: readNote(matterPath), seen: lastMatter) {
+            case .mergeFirst(let disk):
                 lastMatter = disk
                 call("mergeMatter(\(jsString(disk)))")   // the page unions it and posts the union back here
-            } else if coordinatedWrite(json, to: matterPath) { lastMatter = json }
+            case .write: if coordinatedWrite(json, to: matterPath) { lastMatter = json }
+            case .wait: log("editor: draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
             return
         }
         if m.name == "audio" {

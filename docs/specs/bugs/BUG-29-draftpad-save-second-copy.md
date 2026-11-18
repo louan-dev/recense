@@ -1,6 +1,6 @@
 # BUG-29 · Draftpad's save on the Mac is an unfixed second copy of the iPhone's
 
-From: T-0124, T-0125, T-0127 (review lane, 2026-11-16) ·
+From: T-0124, T-0125, T-0127 (review lane, 2026-11-16), T-0176 (review of this fix, 2026-11-18) ·
 Guards: A4 / A11 (Draftpad file sync), T-0114 (fixed on iOS only) ·
 Status: `[~]` (tests pass; device check owed)
 
@@ -54,6 +54,9 @@ Status: `[~]` (tests pass; device check owed)
 8. Ink: a failed write keeps the post for the retry and does not move `seen`.
 9. Ink: a merge handed to the page that does not come back (page not loaded, no ink layer, the call failed) undoes
    `seen` (`unsee()`), so the next post merges the file again instead of writing over it (review 1, 2026-11-18).
+10. Matter (T-0176): `MatterWrite.plan` reads the sidecar with `readNote`; an unreadable `draftpad.matter.json` is
+    `.wait`, never "no file": nothing is written over its seeds, links or crossings (tested:
+    `mobile/ios/Tests/voiceappend/main.swift`).
 
 ## Device check (owed)
 - Mac + iPad: draw on the iPad, then one stroke on the Mac: both strokes remain on both.

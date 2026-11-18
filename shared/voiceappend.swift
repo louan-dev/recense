@@ -106,10 +106,15 @@ enum VoiceAppend {
 /// FEAT-08 · the page's draftpad.matter.json against the file on disk. Another writer (AddToDraftpadIntent, another
 /// device) changed the file since this host last saw it: hand that file to the page first (mergeMatter unions every
 /// passage), then write the union. Otherwise write. Never writes over a passage the page has not seen.
+/// A sidecar that exists but can't be read now (iCloud-evicted, offline) is not "no file": write nothing (T-0176, BUG-29;
+/// the same rule as DraftpadInk.plan).
 enum MatterWrite: Equatable {
-    case write, mergeFirst(String)
-    static func plan(json: String, disk: String?, seen: String?) -> MatterWrite {
-        guard let disk = disk, !disk.isEmpty, disk != json, disk != seen else { return .write }
-        return .mergeFirst(disk)
+    case write, mergeFirst(String), wait
+    static func plan(json: String, disk: NoteRead, seen: String?) -> MatterWrite {
+        switch disk {
+        case .unreadable: return .wait
+        case .missing: return .write
+        case .text(let d): return d.isEmpty || d == json || d == seen ? .write : .mergeFirst(d)
+        }
     }
 }

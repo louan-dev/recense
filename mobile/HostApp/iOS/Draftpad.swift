@@ -228,10 +228,14 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             if let json = DraftpadInk.json(from: m.body) { saveInk(json) }
         case "matter":   // FEAT-08
             guard let json = m.body as? String else { break }
-            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: file.matterNote.flatMap { coordinatedRead($0.path) }, seen: file.lastMatter) {
+            guard let mp = file.matterNote?.path else { break }
+            switch MatterWrite.plan(json: json, disk: readNote(mp), seen: file.lastMatter) {
+            case .mergeFirst(let disk):
                 file.sawMatter(disk)
                 call("mergeMatter(\(jsLiteral(disk)))")   // the page unions it and posts the union back here
-            } else { file.saveMatterJSON(json) }
+            case .write: file.saveMatterJSON(json)
+            case .wait: log("draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
         case "audio":
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {

@@ -91,7 +91,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   prints 0 for all three (a conflict copy uses `freeSiblingPath`, never replacing one made in the same minute);
   `grep -n 'coordinatedRead(notePath)\|coordinatedWrite(.*notePath\|createFile(atPath: notePath' strip/app.swift` and
   `grep -n 'coordinatedRead(inkPath)\|to: inkPath' strip/editorhost.swift` print nothing (the Mac goes through the shared copy);
-  `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadMatter` (FEAT-08's sidecar, not yet guarded);
+  `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadMatter` (FEAT-08's sidecar; its writes go through `MatterWrite.plan` on `readNote`, T-0176);
   `grep -c 'beginBackgroundTask' mobile/HostApp/iOS/Draftpad.swift` prints 1 (`keepAlive`: leaving the app never cuts a save short)
   and `grep -c 'pollQueue.async' mobile/HostApp/iOS/Draftpad.swift` prints 1 (the poll reads off the main thread).
 - Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
