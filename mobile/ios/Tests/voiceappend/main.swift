@@ -67,6 +67,15 @@ if case .kept(let f) = VoiceAppend.append("kept safe", vault: v2, device: "iphon
     check(!FileManager.default.fileExists(atPath: v2.appendingPathComponent("draftpad.md").path), "the note was not created over the placeholder")
 } else { check(false, "kept in the unsaved folder") }
 
+// A sidecar that exists but does not parse (truncated, or half-synced) is left byte-identical; the words still reach the note.
+let v3 = dir.appendingPathComponent("v3"); try? FileManager.default.createDirectory(at: v3, withIntermediateDirectories: true)
+try? "n\n".write(to: v3.appendingPathComponent("draftpad.md"), atomically: true, encoding: .utf8)
+let broken = #"{"version":1,"passages":{"t1":{"born":"ty"#
+try? broken.write(to: v3.appendingPathComponent("draftpad.matter.json"), atomically: true, encoding: .utf8)
+_ = VoiceAppend.append("said", vault: v3, device: "iphone", unsavedDir: unsaved)
+check((try? String(contentsOf: v3.appendingPathComponent("draftpad.matter.json"), encoding: .utf8)) == broken, "a broken sidecar stays byte-identical")
+check((try? String(contentsOf: v3.appendingPathComponent("draftpad.md"), encoding: .utf8)) == "n\n\nsaid", "and the words still reach the note")
+
 // The page's sidecar never writes over one another writer changed: the host hands it to the page to merge first.
 check(MatterWrite.plan(json: "P", disk: nil, seen: nil) == .write, "no file yet: write")
 check(MatterWrite.plan(json: "P2", disk: "P1", seen: "P1") == .write, "the file is ours: write")

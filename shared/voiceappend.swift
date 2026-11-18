@@ -63,6 +63,13 @@ enum VoiceAppend {
         return ["quote": words, "prefix": pre, "suffix": ""]
     }
 
+    /// True when `json` is a matter sidecar this code can add a passage to (an object with a `passages` object).
+    static func sidecarParses(_ json: String?) -> Bool {
+        guard let json = json, let d = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
+        return obj["passages"] is [String: Any]
+    }
+
     enum Outcome: Equatable { case added(String), kept(URL), nothing }
 
     /// Adds the spoken `text` to the note in `vault`. If the note cannot be read now (iCloud mid-sync, evicted offline),
@@ -86,7 +93,11 @@ enum VoiceAppend {
                 return .kept(f)
             }
             let side = vault.appendingPathComponent("draftpad.matter.json").path   // beside draftpad.md (FEAT-08)
-            _ = coordinatedWrite(addPassage(to: coordinatedRead(side), text: text, body: joined, device: device, at: now), to: side)
+            let prior = coordinatedRead(side)
+            // A sidecar that exists but cannot be read or parsed right now (iCloud evicted, truncated) is never replaced by a
+            // one-passage file: it holds every passage's seed and the crossings log. The words are already in the note.
+            if FileManager.default.fileExists(atPath: side) && !sidecarParses(prior) { return .added(joined) }
+            _ = coordinatedWrite(addPassage(to: prior, text: text, body: joined, device: device, at: now), to: side)
             return .added(joined)
         }
     }
