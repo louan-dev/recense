@@ -69,9 +69,11 @@ enum Floating {
     /// iOS won't open the window from behind (iPhone 11-10 19:19:42: AVKitErrorDomain -1001 with Recense awake and the
     /// window possible), so once it's up behind it stays up, and a pause there rests it instead of closing it: a thin
     /// dark strip, back to full captions on the next sound.
-    /// `reopens`: iOS was seen reopening it from behind (Reshow.works); until then it rests instead of closing.
-    static func rest(front: Bool, open: Bool, reopens: Bool, quiet: Double, paused: Bool, canStart: Bool = false) -> Bool {
-        !front && open && !reopens && !canStart && !paused && quiet >= hideAfter && quiet < stayAwake
+    /// T-0077/T-0139 (11-16): any open window with nothing to caption rests, whatever closes it later. Before, a window
+    /// that could close (Reshow.works, an active iPad) or a Listen pause kept the last caption on screen until the
+    /// close landed, and when iOS ignored the close, for good: frozen text, or black once its content was detached.
+    static func rest(open: Bool, quiet: Double, paused: Bool) -> Bool {
+        open && (paused || quiet >= hideAfter)
     }
 
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12

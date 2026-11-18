@@ -171,7 +171,8 @@ updates in place.
   quiet (`Floating.awake`), so a play there shows it, 1 s after leaving at the earliest (`Floating.settle`);
   iOS opens it only as Recense is left, never from behind (11-10 19:19:42, AVKitErrorDomain -1001), so it opens on every
   leave unless Listen is paused, even before any sound plays (`Floating.autoOpen`; T-0002: YouTube starts after you leave):
-  quiet, it rests as a thin dark strip; the next sound brings back full captions (`Floating.rest`). It closes behind only
+  quiet or paused, any open window rests as a thin dark strip, front or behind, held or not, so no old caption stays on
+  screen (T-0077, T-0139); the next sound brings back full captions (`Floating.rest`). iOS's real window size is logged (`iOS: window W×H`). It closes behind only
   where iOS was seen to reopen it, or after 10 minutes of quiet (battery). Behind other apps iOS ignores a plain
   stop, so hiding detaches the window's content; the next tick gives it back once it's closed (`Floating.reattach`),
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
