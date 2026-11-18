@@ -283,14 +283,23 @@ var hotKeyRef: EventHotKeyRef?
 func registerHotKey(_ action: @escaping () -> Void) {
     hotKeyAction = action
     var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-    InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-        hotKeyAction?()
+    InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+        var hk = EventHotKeyID()
+        GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                          MemoryLayout<EventHotKeyID>.size, nil, &hk)
+        if hk.id == 2 { PasteText.pasteFromClipboard() } else { hotKeyAction?() }   // 2: FEAT-26 Paste as Text
         return noErr
     }, 1, &spec, nil, nil)
     let id = EventHotKeyID(signature: OSType(0x53494C4C), id: 1)   // 'RECENSE'
     let err = RegisterEventHotKey(hotKeyCode, hotKeyMods, id, GetApplicationEventTarget(), 0, &hotKeyRef)
     if err != noErr { NSLog("recense: Ctrl+Option+Space is taken (is draftpad still running?), error \(err)") }
+    // FEAT-26: ⌘⌥V pastes a copied file as text, from any app.
+    let pasteID = EventHotKeyID(signature: OSType(0x53494C4C), id: 2)
+    if RegisterEventHotKey(UInt32(kVK_ANSI_V), UInt32(cmdKey | optionKey), pasteID, GetApplicationEventTarget(), 0, &pasteHotKeyRef) != noErr {
+        NSLog("recense: Cmd+Option+V is taken; Paste as Text stays in the Recense menu")
+    }
 }
+var pasteHotKeyRef: EventHotKeyRef?
 
 // MARK: - Native gestures (EXPERIMENTAL)
 //
@@ -7575,6 +7584,12 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         watchPanelSwipes()
     }
 
+    /// FEAT-26: the menu closes first, so the paste lands in the app that was in front.
+    @objc func pasteAsText() {
+        NSApp.hide(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { PasteText.pasteFromClipboard() }
+    }
+
     @MainActor @objc func openLibrary() {
         if #available(macOS 15, *) { MusicShelf.shared.show() }
     }
@@ -7591,6 +7606,9 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // FEAT-07 P0: the Library (Music tile → tracks: play, pause, loop, rename, slide to delete), as on iPhone and iPad
         let library = NSMenuItem(title: "Library…", action: #selector(openLibrary), keyEquivalent: "")
         library.target = self; appMenu.addItem(library)
+        // FEAT-26: also ⌘⌥V from any app (global hotkey) and here, so it never depends on the shortcut alone
+        let pasteText = NSMenuItem(title: "Paste as Text", action: #selector(pasteAsText), keyEquivalent: "")
+        pasteText.target = self; appMenu.addItem(pasteText)
         let bridge = NSMenuItem(title: "Bose Bridge", action: nil, keyEquivalent: "")   // FEAT-15
         bridge.submenu = bose.menu(); appMenu.addItem(bridge)
         let hapticsItem = NSMenuItem(title: "Haptics", action: nil, keyEquivalent: "")

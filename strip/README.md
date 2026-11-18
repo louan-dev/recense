@@ -87,6 +87,8 @@ did, and the icons took the strip's place). They tuck away
 app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers.
 
 ## Features
+
+**Paste as Text** (FEAT-26): copy a file in Finder, then press ⌘⌥V in any app, or choose Recense → Paste as Text. Text and code paste as a fenced block (up to 50 KB). PDFs paste their text, and scanned PDFs are read with on-device OCR. Images are also read with on-device OCR. A zip pastes the list of files inside it and is never unpacked or deleted. Your clipboard is put back afterwards. Everything runs offline.
 The app icon is Gallery's petal cloud (the iOS app's icon, `mobile/ios/Assets.xcassets/AppIcon.appiconset`),
 drawn in macOS's rounded-square shape into `AppIcon.icns`, so Recense looks the same on the Mac, iPhone and iPad.
 

@@ -100,3 +100,4 @@ Row: ID · title · status · From · code pointer
 - `sync.md` · Sync foundation
 - `translation-pipeline.md` · Translation pipeline
 - `unified-offline-first-and-redesign.md` · Offline-first + redesign
+- FEAT-26 · Paste as Text: copied file → editable text (Vision OCR, PDFKit, CGEvent paste) · `[~]` P1 built (Mac) · owner 2026-11-18 · `shared/pastetext.swift`, `FEAT-26-paste-as-text.md`

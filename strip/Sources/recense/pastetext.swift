@@ -1,0 +1,1 @@
+../../../shared/pastetext.swift
