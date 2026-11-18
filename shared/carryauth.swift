@@ -168,3 +168,22 @@ enum CarryStored: Equatable {
         }
     }
 }
+
+// Derived from Spec: SEC-02 invariant 15
+/// The 10 s proof deadline belongs to one handshake session, not to a peer: `begin` on every new session, and a
+/// timer armed for an earlier session of the same peer finds its token dead.
+struct CarryDeadlines<P: Hashable> {
+    private var tokens: [P: UUID] = [:]
+    mutating func begin(_ p: P) -> UUID { let t = UUID(); tokens[p] = t; return t }
+    func token(_ p: P) -> UUID? { tokens[p] }
+    func live(_ p: P, _ t: UUID) -> Bool { tokens[p] == t }
+}
+
+enum CarryAuthTimeout: Equatable {
+    case badProof, unknownKey, noAnswer
+    /// What a due deadline does (§2.6): nothing while pairing, once proven, or after the link went.
+    static func verdict(authenticated: Bool, gotHello: Bool, held: Bool, pairing: Bool, connected: Bool) -> CarryAuthTimeout? {
+        guard !authenticated, !pairing, connected else { return nil }
+        return gotHello ? .badProof : held ? .unknownKey : .noAnswer
+    }
+}

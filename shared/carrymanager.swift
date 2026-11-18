@@ -87,6 +87,7 @@ private enum CarryKeychain {
     // Derived from Spec: SEC-02 · every per-peer state above is keyed by the trust-store name, never displayName
     private var mirror: [CarryPeer] = []                        // peers.json: a readable copy, never read for trust
     private var auth: [MCPeerID: CarryAuthSession] = [:]        // one handshake per connection (§2.3)
+    private var authDeadline = CarryDeadlines<MCPeerID>()       // its 10 s token, one per session (invariant 15)
     private var pendingAuth: [MCPeerID: [CarryAuthMessage]] = [:]   // a not-yet-trusted key's hello (and what follows it), while pairing
     private var refusedNames: Set<String> = []                  // a known name that sent an unknown key or no proof
     private var stagedFrom: [String: String] = [:]              // staged key → the authenticated peer that sent the bytes
@@ -191,6 +192,7 @@ private enum CarryKeychain {
     func stopPairing() {
         isLookingToPair = false; flows = [:]; picked = [:]; pairingCode = nil; pairingWith = nil; askingCode = false
         if status == "Pairing" { status = "Looking for devices" }
+        for peer in pendingAuth.keys { armAuthTimeout(peer) }   // invariant 15: a held stranger is judged, not kept
     }
 
     /// The owner picked a nearby device by name.
@@ -238,19 +240,25 @@ private enum CarryKeychain {
         guard auth[peer] == nil else { return }
         let s = CarryAuthSession(me: identity)
         auth[peer] = s
+        _ = authDeadline.begin(peer)   // invariant 15: earlier sessions' timers go dead
         try? t.send(s.hello, type: "auth", to: peer)
         armAuthTimeout(peer)
     }
 
     /// §2.6: no valid proof within 10 s (outside pairing): this device is listed to pair again; an older build is named.
+    /// Invariant 15: the timer belongs to the session it was armed for; a reconnect's session is not judged by it.
     private func armAuthTimeout(_ peer: MCPeerID) {
+        guard let token = authDeadline.token(peer) else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard let self, let s = self.auth[peer], !s.authenticated, !self.isLookingToPair,
-                  self.t.session.connectedPeers.contains(peer) else { return }
-            if s.gotHello { self.refuse(peer, CarryAuthFailure.badProof) }
-            else if self.pendingAuth[peer] != nil { self.refuse(peer, CarryAuthFailure.unknownKey) }   // pairing ended unpaired
-            else { self.t.drop(peer); self.lastError = "\(peer.displayName) did not answer securely: update Recense on \(peer.displayName)" }
+            guard let self, self.authDeadline.live(peer, token), let s = self.auth[peer] else { return }
+            switch CarryAuthTimeout.verdict(authenticated: s.authenticated, gotHello: s.gotHello, held: self.pendingAuth[peer] != nil,
+                                            pairing: self.isLookingToPair, connected: self.t.session.connectedPeers.contains(peer)) {
+            case .badProof: self.refuse(peer, CarryAuthFailure.badProof)
+            case .unknownKey: self.refuse(peer, CarryAuthFailure.unknownKey)   // pairing ended unpaired
+            case .noAnswer: self.t.drop(peer); self.lastError = "\(peer.displayName) did not answer securely: update Recense on \(peer.displayName)"
+            case nil: break
+            }
         }
     }
 

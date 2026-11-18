@@ -137,6 +137,10 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     `identity` never makes and saves a new key. Only "not found" starts empty.
 14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
     No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
+15. **The 10 s proof deadline is per session:** each handshake session gets its own token (`CarryDeadlines`).
+    A timer acts only if the peer's current session still carries its token, so a timer from an earlier
+    connection never judges a reconnect early. While pairing, a timer does nothing; "Stop Pairing" re-arms
+    10 s for every hello still held, so a stranger left unpaired is refused (unknown key) instead of waiting forever.
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -189,3 +193,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   failed pick cleared on both sides (`PairPrompt.failed`), or both sides stay "picked" and the greater key keeps showing.
 - 2026-11-18 · follow-ups (A3-fix, review of 80ad4c0): 13 Keychain read error keeps pairings and refuses writes.
   14 Keychain save updates in place, adds only when not found.
+  15 the proof deadline is per session (token); Stop Pairing re-arms held hellos.

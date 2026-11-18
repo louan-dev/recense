@@ -228,6 +228,26 @@ do {
     check(!run(errSecItemNotFound, errSecDuplicateItem), "a failed add is reported")
 }
 
+// 15 · The 10 s proof deadline is per session: an earlier connection's timer never judges a reconnect
+// Regression guard: SEC-02
+do {
+    var d = CarryDeadlines<String>()
+    let first = d.begin("iPad")
+    check(d.live("iPad", first), "the session's own timer is live")
+    let second = d.begin("iPad")   // dropped and reconnected within 10 s: a new session
+    check(!d.live("iPad", first), "the first session's timer finds its token dead")
+    check(d.live("iPad", second) && d.token("iPad") == second, "the reconnect's own timer stays live")
+    check(!d.live("iPhone", second), "a token belongs to one peer")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: true, pairing: true, connected: true) == nil,
+          "while pairing, a held hello is left alone")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: true, pairing: false, connected: true) == .unknownKey,
+          "after Stop Pairing (re-armed), a held stranger is refused: unknown key")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: true, held: false, pairing: false, connected: true) == .badProof, "hello, no proof")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: false, pairing: false, connected: true) == .noAnswer, "no hello")
+    check(CarryAuthTimeout.verdict(authenticated: true, gotHello: true, held: false, pairing: false, connected: true) == nil, "proven: nothing")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: true, held: false, pairing: false, connected: false) == nil, "gone: nothing")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])
