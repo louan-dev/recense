@@ -1062,11 +1062,12 @@ enum TextHaptics {
         }
     }
 
-    /// Steps the Cadence light's clock from `fromTime` to `toTime`, firing all matching haptic cues.
+    /// Steps the Cadence light's clock from `fromTime` to `toTime`, firing all matching haptic cues (and C2 audio textures).
     @discardableResult
     static func stepClock(
         score: TextHapticScore,
         mode: TextHapticMode = TextHaptics.mode,
+        soundEngine: SoundEngine? = nil,
         from fromTime: Double,
         to toTime: Double
     ) -> [TextHapticEvent] {
@@ -1074,6 +1075,9 @@ enum TextHaptics {
         for ev in due {
             if let cue = HapticCue(rawValue: ev.cue) {
                 Haptics.perform(cue)
+            }
+            if let tier = ev.obligationTier {
+                soundEngine?.pulseObligationTexture(tier, duration: ev.duration)
             }
         }
         return due
@@ -1387,5 +1391,26 @@ func hapticsSelftest() -> Bool {
     let b5OK = cachedOnceOK && closedListOK && clockRemapOK && modesHierarchyOK
     print("\(b5OK ? "ok  " : "FAIL") haptics, B5 text-to-haptics modes (Off · Emphasis · Words · Rhythm), closed obligation list, and episode cache")
 
-    return vocabOK && modesOK && spikeOK && b2OK && b3OK && b4OK && b5OK
+    // 8. C1 & C2: Core Haptics 4-cue + strength-tier + swell spec and SoundEngine obligation audio textures (presence lift, slight widening, low thump; no binaural beats).
+    let baseSound: [String: Any] = ["eq": ["low": 0.0, "mid": 0.0, "high": 0.0], "mix": 0.0, "room": "room"]
+    let mustShaped = SoundEngine.texturedSound(base: baseSound, for: .mustShall)
+    let mayShaped = SoundEngine.texturedSound(base: baseSound, for: .may)
+    let mustNotShaped = SoundEngine.texturedSound(base: baseSound, for: .mustNotShallNot)
+
+    let mustEq = mustShaped["eq"] as? [String: Double] ?? [:]
+    let mustNotEq = mustNotShaped["eq"] as? [String: Double] ?? [:]
+    let presenceLiftOK = (mustShaped["texture"] as? String) == "presence_lift"
+        && (mustEq["mid"] ?? 0) > 0 && (mustEq["high"] ?? 0) > 0
+    let slightWideningOK = (mayShaped["texture"] as? String) == "slight_widening"
+        && ((mayShaped["mix"] as? Double) ?? 0) == 18.0
+    let lowThumpOK = (mustNotShaped["texture"] as? String) == "low_thump"
+        && (mustNotEq["low"] ?? 0) > 0 && (mustNotEq["high"] ?? 0) < 0
+    let noBinauralOK = !SoundEngine.usesBinauralBeats
+        && (mustShaped["binauralBeatsHz"] as? Double) == 0.0
+        && (mayShaped["binauralBeatsHz"] as? Double) == 0.0
+        && (mustNotShaped["binauralBeatsHz"] as? Double) == 0.0
+    let c2OK = presenceLiftOK && slightWideningOK && lowThumpOK && noBinauralOK
+    print("\(c2OK ? "ok  " : "FAIL") haptics, C2 obligation audio textures (presence lift, slight widening, low thump; no binaural beats)")
+
+    return vocabOK && modesOK && spikeOK && b2OK && b3OK && b4OK && b5OK && c2OK
 }
