@@ -1445,13 +1445,14 @@ export async function getGalleryData(env, id) {
   const now = Date.now();
   const niceName = (s) => s.replace(/\.[^/.]+$/, (x) => x.toUpperCase());
   const items = [];
+  const kept = !!(manifest && manifest.keep && Number(manifest.exp) > now); // FEAT-29 P0: its items outlive their stamps
 
   for (const n of Object.keys(ready).sort()) {
     const o = ready[n];
     const meta = o.customMetadata || {};
     const exp = Number(meta.expires) || 0;
 
-    if (exp && exp <= now) continue;
+    if (exp && exp <= now && !kept) continue;
 
     let rawName = "file";
     try {

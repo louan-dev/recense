@@ -382,6 +382,7 @@ await test("FEAT-29 Keep: a kept link lasts a year and its expired-stamped items
   assert.ok(await PUBLIC.head(`links/${id}/000`), "a kept link's item is never swept");
   assert.equal(await PUBLIC.head("links/Expired67890/000"), null, "an unkept expired item still goes");
   assert.equal((await call(`/f/${id}/000`)).status, 200, "a kept item still serves");
+  assert.ok((await (await call("/api/gallery?id=" + id)).json()).ready >= 1, "a kept item is still listed on the page (review ae87dd62 item 8)");
   assert.equal((await call("/main/api/link?action=keep&id=nope!", { as: "owner", method: "POST" })).status, 404);
 });
 

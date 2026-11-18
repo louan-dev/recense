@@ -13,6 +13,7 @@ From: owner 2026-11-18 (PLAN-1118 §5h: "all app uploads and Cloudflare location
 - While `keep` is set and `exp` is in the future, the nightly cleanup never deletes the link's objects, and `/f/<id>/<n>`
   and its cover art never answer "Link expired", even when an item's own `expires` stamp has passed.
 - Invariant (test `FEAT-29 Keep`, `library/test/routes.test.mjs`): a kept link's expired-stamped item survives cleanup
-  and still serves; an unkept expired item still goes; non-owners get no Keep.
+  and still serves and is still listed by `/api/gallery`; an unkept expired item still goes; non-owners get no Keep.
+- Keep reads upload-link manifests only; a folder link answers 404 (P1).
 - First use: the bug intake link (PLAN-1118 §0), which would otherwise expire 2026-12-16.
 - Not yet: a Keep button in the Gallery UI (P1); un-keep; the Trash step; Mac and phone copies obeying the same date.
