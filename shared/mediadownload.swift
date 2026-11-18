@@ -273,7 +273,9 @@ enum Downloads {
 
     /// Would retrying later help? (no connection, DNS, timeouts: yes; a removed video or a bad link: no)
     static func isOffline(_ error: Error) -> Bool {
+        #if os(macOS)
         if case Failure.noSpace = error { return true }       // not enough room is a wait, like no connection (BUG-33 D4)
+        #endif
         if let u = error as? URLError {
             return [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
                     .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff].contains(u.code)
