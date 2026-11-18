@@ -273,7 +273,12 @@ async function report(env, user, cal, body, href) {
 // differs from the record's `from`, so the next login migrates again. Failed logins: 10 per 15 min per IP, counted in
 // R2 (caldav/auth/fail/<ip>.json); beyond that the answer is 429 until the window ends.
 const PBKDF2_ITER = 100000, FAIL_MAX = 10, FAIL_WINDOW = 15 * 60 * 1000;
+// A successful check is remembered 5 min per isolate, keyed by sha256(Authorization + secret hash), so a sync burst does
+// not run PBKDF2 (CPU-heavy) on every request. A failed check is never cached; a rotated secret changes the key.
+const OK_TTL = 5 * 60 * 1000, okCache = new Map();
+export const authStats = { pbkdf2: 0 };
 const pbkdf2 = async (pw, saltHex, iter) => {
+  authStats.pbkdf2++;
   const salt = Uint8Array.from(saltHex.match(/../g) || [], h => parseInt(h, 16));
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
   return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: iter }, key, 256));
@@ -286,6 +291,8 @@ async function authorize(req, env, user) {
   if (!/^[0-9a-f]{64}$/.test(want)) return text(503, "Not configured");
   const h = req.headers.get("Authorization") || "";
   if (!h.startsWith("Basic ")) return deny();
+  const ck = await sha(h + "\n" + want + "\n" + user), nowMs = Date.now();
+  if ((okCache.get(ck) || 0) > nowMs) return null;
   const ip = (req.headers.get("CF-Connecting-IP") || "unknown").replace(/[^0-9a-fA-F:.]/g, "_").slice(0, 45);
   const failKey = `caldav/auth/fail/${ip}.json`, now = Date.now();
   const failed = await (await env.STORE.get(failKey).catch(() => null))?.json().catch(() => null);
@@ -314,5 +321,7 @@ async function authorize(req, env, user) {
     return deny();
   }
   if (live) await env.STORE.delete(failKey).catch(() => null);
+  if (okCache.size > 50) okCache.clear();
+  okCache.set(ck, nowMs + OK_TTL);
   return null;
 }

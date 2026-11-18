@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import worker from "../src/index.js";
+import { authStats } from "../src/caldav.js";
 
 class Mem {
   m = new Map(); n = 0;
@@ -96,30 +97,49 @@ test("MKCALENDAR, PROPPATCH, soft DELETE", async () => {
 });
 
 // Regression guard: BUG-30 (salted PBKDF2 record, migration from the legacy sha256 secret, failed-login limit)
+const envFor = (pw) => ({ ...env(), CALDAV_PASS_HASH: createHash("sha256").update(pw).digest("hex") });
+let P = "pw-one";
 const login = (e, pw, ip = "1.2.3.4") => worker.fetch(new Request("https://x/dav/", { method: "PROPFIND", headers: { Authorization: "Basic " + Buffer.from("chau:" + pw).toString("base64"), "CF-Connecting-IP": ip } }), e);
+const P1 = "pw-one";
 test("first correct login rewrites the legacy hash as a salted PBKDF2 record", async () => {
-  const e = env();
+  const e = envFor(P);
   assert.equal(e.STORE.m.get("caldav/auth/chau.json"), undefined);
-  assert.notEqual((await login(e, PASS)).status, 401);
+  assert.notEqual((await login(e, P)).status, 401);
   const rec = JSON.parse(e.STORE.m.get("caldav/auth/chau.json").body);
   assert.equal(rec.v, 2); assert.ok(rec.iter >= 100000); assert.match(rec.salt, /^[0-9a-f]{32}$/); assert.match(rec.hash, /^[0-9a-f]{64}$/);
   assert.notEqual(rec.hash, e.CALDAV_PASS_HASH, "not the unsalted sha256");
-  assert.notEqual((await login(e, PASS)).status, 401, "the record verifies the same password");
+  assert.notEqual((await login(e, P)).status, 401, "the record verifies the same password");
   assert.equal((await login(e, "nope")).status, 401);
   // a rotated secret (new password) migrates again with a new salt
   const e2 = { ...e, CALDAV_PASS_HASH: createHash("sha256").update("new-pass").digest("hex") };
-  assert.equal((await login(e2, PASS)).status, 401);
+  assert.equal((await login(e2, P)).status, 401);
   assert.notEqual((await login(e2, "new-pass")).status, 401);
   assert.notEqual(JSON.parse(e.STORE.m.get("caldav/auth/chau.json").body).salt, rec.salt);
 });
 test("10 failed logins per IP in 15 minutes block that IP, not others", async () => {
-  const e = env();
+  P = "pw-two";
+  const e = envFor(P);
   for (let k = 0; k < 10; k++) assert.equal((await login(e, "wrong" + k)).status, 401);
-  const blocked = await login(e, PASS);
+  const blocked = await login(e, P);
   assert.equal(blocked.status, 429); assert.ok(+blocked.headers.get("Retry-After") > 0);
-  assert.notEqual((await login(e, PASS, "9.9.9.9")).status, 429);
+  assert.notEqual((await login(e, P, "9.9.9.9")).status, 429);
   // window over: allowed again
   const k = "caldav/auth/fail/1.2.3.4.json", f = JSON.parse(e.STORE.m.get(k).body);
   e.STORE.m.set(k, { ...e.STORE.m.get(k), body: JSON.stringify({ ...f, since: Date.now() - 16 * 60 * 1000 }) });
-  assert.notEqual((await login(e, PASS)).status, 429);
+  assert.notEqual((await login(e, P)).status, 429);
+});
+
+test("a successful check is cached per isolate; two requests with the same header run PBKDF2 once", async () => {
+  P = "pw-three";
+  const e = envFor(P);
+  const before = authStats.pbkdf2;
+  assert.notEqual((await login(e, P)).status, 401);   // migration: one derive to store the record
+  const mid = authStats.pbkdf2;
+  assert.notEqual((await login(e, P)).status, 401);
+  assert.notEqual((await login(e, P)).status, 401);
+  assert.equal(authStats.pbkdf2, mid, "cached: no further PBKDF2 for the same header");
+  assert.ok(mid > before);
+  assert.equal((await login(e, "wrong-three")).status, 401);
+  assert.equal((await login(e, "wrong-three")).status, 401);
+  assert.ok(authStats.pbkdf2 > mid, "a failed check is never cached");
 });
