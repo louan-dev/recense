@@ -163,12 +163,72 @@ public final class Feed {
     public func put(_ path: String, file: URL, mtime: Date? = nil) async throws {
         var q = ["path": path]
         if let mtime { q["mtime"] = String(Int(mtime.timeIntervalSince1970)) }
+        let size = ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? 0
+        if size > Self.partMax { return try await putParts(q, file: file, size: size) }
         var r = try request("file", q)
         r.httpMethod = "PUT"
         r.timeoutInterval = 600
         r.setValue("1", forHTTPHeaderField: "x-gallery")
         let (_, response) = try await session.upload(for: r, fromFile: file)
         try check(response, nil)
+    }
+
+    // A file over one request's cap goes up in parts (src/fp.js parts): 16-90 MiB each, at most 10,000 (~879 GiB).
+    // Each part is tried 4 times, waiting 2/4/6 s; a failure aborts the upload so R2 keeps no stray parts.
+    static let partMax: Int64 = 90 * 1024 * 1024
+    func putParts(_ q: [String: String], file: URL, size: Int64) async throws {
+        let mb: Int64 = 1024 * 1024
+        let part = min(90, max(16, (size + 10000 * mb - 1) / (10000 * mb))) * mb
+        let total = Int((size + part - 1) / part)
+        guard total <= 10000 else { throw FeedError.server(413) }
+        func call(_ extra: [String: String], method: String, body: Data? = nil, from: URL? = nil) async throws -> Data {
+            var r = try request("file", q.merging(extra) { $1 })
+            r.httpMethod = method
+            r.timeoutInterval = 600
+            r.setValue("1", forHTTPHeaderField: "x-gallery")
+            let (data, response) = if let from { try await session.upload(for: r, fromFile: from) }
+                else if let body { try await session.upload(for: r, from: body) } else { try await session.data(for: r) }
+            try check(response, nil)
+            return data
+        }
+        let uploadId = String(decoding: try await call(["action": "start"], method: "POST"), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let ids = ["uploadId": uploadId]
+        do {
+            let h = try FileHandle(forReadingFrom: file)
+            // each part is copied to a file and sent from disk: the File Provider extension can't hold 90 MiB in memory
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("part-" + UUID().uuidString)
+            defer { try? h.close(); try? FileManager.default.removeItem(at: tmp) }
+            var parts: [[String: Any]] = []
+            for k in 0..<total {
+                try h.seek(toOffset: UInt64(Int64(k) * part))
+                FileManager.default.createFile(atPath: tmp.path, contents: nil)
+                let out = try FileHandle(forWritingTo: tmp)
+                var left = part
+                while left > 0, let block = try autoreleasepool(invoking: { try h.read(upToCount: Int(min(left, 4 * mb))) }), !block.isEmpty {
+                    try out.write(contentsOf: block)
+                    left -= Int64(block.count)
+                }
+                try out.close()
+                var etag = ""
+                for t in 1... {
+                    do {
+                        etag = String(decoding: try await call(ids.merging(["action": "part", "part": String(k + 1)]) { $1 }, method: "PUT", from: tmp), as: UTF8.self)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if etag.isEmpty { throw FeedError.server(-1) }
+                        break
+                    } catch {
+                        if t >= 4 || error as? FeedError == .notSignedIn { throw error }
+                        try await Task.sleep(nanoseconds: UInt64(t) * 2_000_000_000)
+                    }
+                }
+                parts.append(["partNumber": k + 1, "etag": etag])
+            }
+            _ = try await call(ids.merging(["action": "complete"]) { $1 }, method: "POST", body: try JSONSerialization.data(withJSONObject: parts))
+        } catch {
+            _ = try? await call(ids.merging(["action": "abort"]) { $1 }, method: "POST")
+            throw error
+        }
     }
 
     public func folder(_ path: String) async throws {

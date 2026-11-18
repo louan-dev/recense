@@ -6558,14 +6558,15 @@
       x.send(file);
     });
 
-  // A big file into Main in parts (main.js mainMultipart): 16-90 MB each, at most 10,000. Each part is tried 4 times
+  // A big file into Main, or an invite's folder (invite.js), in parts (main.js mainMultipart): 16-90 MB each, at most 10,000. Each part is tried 4 times
   // and cut off after 5 min without an answer. This device remembers the upload id and each part's etag, so after
   // Safari suspends the tab, a reload or a locked screen, adding the same file again carries on from the next part.
   const MB = 1024 * 1024;
   const PARTS_MAX = 10000 * 90 * MB;
-  const putParts = async (key, mtime, file, onp) => {
+  // where: { base: the API's /file, id: { key } for Main or { name } for an invite }
+  const putParts = async (where, mtime, file, onp) => {
     const call = async (o, init) => {
-      const r = await fetch(MAIN_API + "/file?" + new URLSearchParams({ key, ...o }), {
+      const r = await fetch(where.base + "?" + new URLSearchParams({ ...where.id, ...o }), {
         method: "POST",
         ...init,
         headers: { "x-gallery": "1", ...((init && init.headers) || {}) },
@@ -6575,7 +6576,7 @@
     };
     const size = Math.min(90, Math.max(16, Math.ceil(file.size / 10000 / MB))) * MB;
     const total = Math.ceil(file.size / size);
-    const mem = "main-up:" + key + ":" + file.size + ":" + file.lastModified;
+    const mem = "main-up:" + (where.id.key || where.base + ":" + where.id.name) + ":" + file.size + ":" + file.lastModified;
     const save = (v) => {
       try {
         v ? localStorage.setItem(mem, JSON.stringify(v)) : localStorage.removeItem(mem);
@@ -6639,13 +6640,13 @@
     if (!files.length) return;
     if (linkPost()) return guestAdd(files);
 
-    // Main goes up in parts past one request's cap (iPhone/iPad have no Gallery folder); an invite still takes one request
-    const big = files.filter((f) => f.size > (G.invite ? G.uploadMax : PARTS_MAX));
+    // past one request's cap a file goes up in parts, on Main and on an invite alike (iPhone/iPad have no Gallery folder)
+    const big = files.filter((f) => f.size > PARTS_MAX);
 
     if (big.length) {
       say(
         (big.length === 1 ? big[0].name + " is" : big.length + " files are") +
-          (G.invite ? " too big for the browser." : " over 879 GB, the most one upload can carry."),
+          " over 879 GB, the most one upload can carry.",
         true
       );
       return;
@@ -6697,7 +6698,10 @@
           const b = tileOf(it);
           if (b) paintPending(b, it);
         };
-        if (!G.invite && file.size > G.uploadMax) await putParts(keyOf(file), mtime, file, onp);
+        if (file.size > G.uploadMax) {
+          const where = G.invite ? { base: API + "/file", id: { name: file.name } } : { base: MAIN_API + "/file", id: { key: keyOf(file) } };
+          await putParts(where, mtime, file, onp);
+        }
         else await putFile(to, file, onp);
       } catch (e) {
         failed++;

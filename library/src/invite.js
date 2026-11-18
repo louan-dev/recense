@@ -492,6 +492,40 @@ export async function participantRoute(req, env, ctx, url, path) {
       return jsonResponse({ items: inBounds(g.items, url.searchParams).map((i) => ({ ...i, path: i.name })), pending: g.pending });
     }
 
+    // A big file in parts, as the owner's (main.js mainMultipart), each part under 90 MB, at most 10,000:
+    //   POST ?action=start&name=…&mtime=…&type=…  -> uploadId     PUT ?action=part&name=…&uploadId=…&part=N -> etag
+    //   POST ?action=complete&name=…&uploadId=…  body: [{partNumber, etag}]     POST ?action=abort&name=…&uploadId=…
+    // A new file only: start refuses a taken name, and so does complete if one arrived meanwhile.
+    const action = url.searchParams.get("action");
+    if (rest === "/api/file" && action) {
+      if (!P(null).upload) return new Response("Not allowed", { status: 403 });
+      if (method !== (action === "part" ? "PUT" : "POST")) return new Response("Bad request", { status: 405 });
+      const name = cleanPath(url.searchParams.get("name") || "");
+      if (!name || name.includes("/") || name.startsWith(".")) return new Response("Bad file name", { status: 400 });
+      const key = inFolder(name);
+      if ((action === "start" || action === "complete") && (await env.MAIN.head("files/" + key))) {
+        return new Response("A file with that name is already here", { status: 409 });
+      }
+
+      // the first start accepts the invitation; every later call comes from its guest
+      let setCookie = "";
+      if (!me) {
+        if (action !== "start") return new Response("Sign in first", { status: 401 });
+        const c = await claim(env, invKey, base);
+        if (!c) return new Response("This invitation has already been accepted. Sign in instead.", { status: 401 });
+        setCookie = c.cookie;
+      }
+
+      const q = new URLSearchParams({ key, action });
+      for (const k of ["mtime", "type", "uploadId", "part"]) if (url.searchParams.has(k)) q.set(k, url.searchParams.get(k));
+      const u = new URL(url);
+      u.search = q.toString();
+      const res = await mainUpload(req, env, u);
+      if (res.ok && action === "complete") await logActivity(env, { type: "upload", by: inv.name, kind: "main", ref: key }).catch(() => {});
+      if (setCookie) res.headers.append("set-cookie", setCookie);
+      return res;
+    }
+
     // PUT /m/<token>/api/file?name=<file>&mtime=<ms>   a new file only; nothing is ever replaced
     if (rest === "/api/file" && method === "PUT") {
       if (!P(null).upload) return new Response("Not allowed", { status: 403 });

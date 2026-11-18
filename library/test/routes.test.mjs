@@ -525,6 +525,21 @@ await test("invites: owner-only API, one folder, expiry, revoke, no deletes, own
   assert.equal((await w("/api/file?name=..%2Fx.jpg", { method: "PUT", body: "X", headers: { "content-length": "1" } })).status, 400);
   assert.equal((await w("/api/file?key=Party/a.jpg", { method: "DELETE" })).status, 404);
   assert.equal(await (await MAIN.get("files/Party/a.jpg")).text(), "A");
+  // a big file in parts, as the owner's: new names only, upload permission checked on every step
+  const mp = (q, init) => w("/api/file?name=big.mov&" + q, init);
+  assert.equal((await w("/api/file?name=a.jpg&action=start", { method: "POST" })).status, 409);
+  assert.equal((await w("/api/file?name=..%2Fx.mov&action=start", { method: "POST" })).status, 400);
+  assert.equal((await mp("action=start", { method: "PUT" })).status, 405);
+  const st = await mp("action=start&type=video%2Fquicktime&mtime=1700000000000", { method: "POST" });
+  assert.equal(st.status, 200, await st.clone().text());
+  const up = "uploadId=" + encodeURIComponent(await st.text());
+  assert.equal((await call(at + "/api/file?name=big.mov&action=part&part=1&" + up, { method: "PUT", body: "Z", headers: { "x-gallery": "1", "content-length": "1" } })).status, 401, "a part without the guest's session");
+  const p1 = await (await mp("action=part&part=1&" + up, { method: "PUT", body: new Uint8Array(5 * 1024 * 1024).fill(3), headers: { "content-length": String(5 * 1024 * 1024) } })).text();
+  const p2 = await (await mp("action=part&part=2&" + up, { method: "PUT", body: "Z", headers: { "content-length": "1" } })).text();
+  const fin = await mp("action=complete&" + up, { method: "POST", body: JSON.stringify([{ partNumber: 1, etag: p1 }, { partNumber: 2, etag: p2 }]) });
+  assert.equal(fin.status, 200, await fin.clone().text());
+  assert.equal((await MAIN.head("files/Party/big.mov")).size, 5 * 1024 * 1024 + 1);
+  assert.equal((await mp("action=start", { method: "POST" })).status, 409, "never over the file it made");
 
   // comments: add, delete own, not the owner's, not outside the folder, no wholesale replace
   const c = (b) => w("/api/caption", { method: "PUT", body: JSON.stringify({ kind: "main", ...b }) });
@@ -1536,6 +1551,42 @@ await test("fp: the owner's devices add files and folders (Add Media, New Folder
   assert.equal(await (await AR.get("archive/Adds/New/a.jpg")).text(), "JPEG");
   assert.equal((await api("file" + at("archive/Nowhere/a.jpg"), { method: "PUT", body: "J", headers: { "content-length": "1" } })).status, 404);
   await AR.delete((await AR.list({ prefix: "archive/Adds/" })).objects.map((o) => o.key));
+});
+
+await test("fp: a file over 90 MB goes up in parts (start, part, complete), never over anything", async () => {
+  const AR = await mf.getR2Bucket("ARCHIVE");
+  const api = (p, init = {}) => call("/main/api/fp/archive/" + p, { as: "mac", ...init });
+  const at = (p) => "?path=" + encodeURIComponent(p);
+  await AR.put("archive/Big/x.txt", "X");
+  const p = at("archive/Big/big.mov");
+  // a stranger, the wrong method, a missing folder, a taken name
+  assert.equal((await call("/main/api/fp/archive/file" + p + "&action=start", { as: "stranger", method: "POST" })).status, 404);
+  assert.equal((await api("file" + p + "&action=start")).status, 405);
+  assert.equal((await api("file" + at("archive/Nowhere/b.mov") + "&action=start", { method: "POST" })).status, 404);
+  assert.equal((await api("file" + at("archive/Big/x.txt") + "&action=start", { method: "POST" })).status, 409);
+  const started = await api("file" + p + "&action=start&mtime=1700000000", { method: "POST" });
+  assert.equal(started.status, 200, await started.clone().text());
+  const u = "&uploadId=" + encodeURIComponent(await started.text());
+  const part = (n, bytes) => api("file" + p + u + "&action=part&part=" + n, { method: "PUT", body: bytes, headers: { "content-length": String(bytes.length) } });
+  assert.equal((await part(10001, new Uint8Array(1))).status, 400);
+  const e1 = await (await part(1, new Uint8Array(5 * 1024 * 1024).fill(1))).text();
+  const e2 = await (await part(2, new Uint8Array(7).fill(2))).text();
+  const done = await api("file" + p + u + "&action=complete", { method: "POST", body: JSON.stringify([{ partNumber: 2, etag: e2 }, { partNumber: 1, etag: e1 }]) });
+  assert.equal(done.status, 200, await done.clone().text());
+  assert.equal((await done.json()).size, 5 * 1024 * 1024 + 7);
+  const o = await AR.head("archive/Big/big.mov");
+  assert.equal(o.size, 5 * 1024 * 1024 + 7);
+  assert.equal(o.customMetadata.mtime, "1700000000");
+  assert.equal(o.httpMetadata.contentType, "video/quicktime");
+  // a second upload of the same name that started before the first finished can't complete over it
+  await AR.delete("archive/Big/big.mov");
+  const s2 = "&uploadId=" + encodeURIComponent(await (await api("file" + p + "&action=start", { method: "POST" })).text());
+  const e3 = await (await api("file" + p + s2 + "&action=part&part=1", { method: "PUT", body: "Y", headers: { "content-length": "1" } })).text();
+  await AR.put("archive/Big/big.mov", "FIRST");
+  assert.equal((await api("file" + p + s2 + "&action=complete", { method: "POST", body: JSON.stringify([{ partNumber: 1, etag: e3 }]) })).status, 409);
+  assert.equal(await (await AR.get("archive/Big/big.mov")).text(), "FIRST");
+  assert.equal((await api("file" + p + s2 + "&action=abort", { method: "POST" })).status, 200);
+  await AR.delete((await AR.list({ prefix: "archive/Big/" })).objects.map((o) => o.key));
 });
 
 await test("fp: a file deleted in Finder or Files goes to the trash, never for good (item 41)", async () => {
