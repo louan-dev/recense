@@ -75,6 +75,15 @@ do {
     let mk = "library/Study/notes.md"
     check(CarrySync.decide(md, local: [mk: "MINE"], base: [mk: "B"], zone: utc)
           == .merge(key: mk, base: "B", mine: "MINE", theirs: "NEW"), "both changed, text → 3-way merge")
+    var mdp = md; mdp.parent = "P"
+    check(CarrySync.decide(mdp, local: [mk: "MINE"], base: [:], zone: utc)
+          == .merge(key: mk, base: "P", mine: "MINE", theirs: "NEW"), "FEAT-22 P2: no landed base, the peer's parent is the common ancestor")
+    check(CarrySync.decide(mdp, local: [mk: "MINE"], base: [mk: "B"], zone: utc)
+          == .merge(key: mk, base: "P", mine: "MINE", theirs: "NEW"), "the parent beats an older landed base")
+    check(CarrySync.decide(mdp, local: [mk: "P"], base: [:], zone: utc) == .replace(key: mk, old: "P", new: "NEW"), "mine is still the parent → replace")
+    var au = put; au.parent = "P"
+    check({ if case .keepBoth = CarrySync.decide(au, local: [k: "MINE"], base: [:], zone: utc) { return true } else { return false } }(),
+          "a non-text file with a parent never merges")
 
     let mv = CarryOp(seq: 2, device: "ipad", at: 1, op: .move, home: M, path: "a.m4a", toHome: M, to: "x/a.m4a", sha256: "A", size: 1)
     let dk = "library/Music/x/a.m4a"

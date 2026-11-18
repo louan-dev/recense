@@ -616,6 +616,7 @@ private enum CarryKeychain {
         let targets = pairedConnected
         guard !targets.isEmpty else { return }
         sweepStaging(maxAge: CarrySync.orphanAge)   // T-0092
+        CarryBase.prune()   // FEAT-22 P2: snapshots nobody names any more, older than 30 days
         status = "Carrying"
         do {
             let lines = try await Task.detached(priority: .utility) { try Carry.verify(reuse: true) }.value
@@ -624,6 +625,9 @@ private enum CarryKeychain {
             let ops = CarrySync.ops(last: lastSent, now: now, trashOrigins: trashOrigins(), device: Homes.device,
                                     nextSeq: (mine.map(\.seq).max() ?? 0) + 1, at: Int64(Date().timeIntervalSince1970))
             try appendOps(ops)
+            for op in ops where op.op == .put {   // keep this version's text: a peer's later edit names it as its parent (FEAT-22 P2)
+                CarryBase.snapshot(sha: op.sha256, fileAt: Homes.root.appendingPathComponent(resultKey(op)))
+            }
             lastSent = now
             try JSONEncoder().encode(now).write(to: lastSentURL, options: .atomic)
             for peer in targets {
@@ -701,15 +705,16 @@ private enum CarryKeychain {
 
     private func settle(_ ops: [CarryOp], local: [CarryLine], as name: String) {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
-        for (op, action) in CarrySync.decideAll(ops, local: localShas, base: [:]) {   // T-0106: in order, on the disk as it will be
+        let base = CarryBase.load()   // the versions both sides had landed; read once per batch
+        for (op, action) in CarrySync.decideAll(ops, local: localShas, base: base) {   // T-0106: in order, on the disk as it will be
             let key = CarrySync.resultKey(op)
             switch action {
             case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
                         discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
-            case .fetch, .replace, .keepBoth:
+            // fetch, replace, keepBoth and merge all need the incoming bytes before anything can be placed
+            case .fetch, .replace, .keepBoth, .merge:
                 pendingActions[key] = action; waiting[key] = (name, op.seq); tryPlace(key)
-            case .merge: break   // unreachable with an empty base; text conflicts still settle as keepBoth
             }
         }
         received[name] = max(received[name] ?? 0, ops.map(\.seq).max() ?? 0)

@@ -1,8 +1,8 @@
 # FEAT-09 · Carry between devices: pair once, then the same homes everywhere
 
 From: owner 2026-11-11 (carry, `.handoff/places/INBOX.md` L29–47) · owner 2026-11-14 (stable core for music and
-self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing + P2/P3/P4 settling built and wired end to
-end, real-device check owed; conflict text-merge against a tracked base is the one piece of P3 still open)
+self-study, Phase 1) · T-0035 · T-0047 · Status: `[~]` (P1 pairing + P2/P3/P4 settling, base-tracked text merge,
+all built and wired end to end; the real-device check is the one thing left)
 
 ## Glue, built 2026-11-14/15 (`shared/carrymanager.swift`, `shared/carryapply.swift`)
 - Pairing (P1) is wired end to end: "Pair a Device…" (Mac menu, iOS Devices screen, `recense carry pair` in
@@ -13,14 +13,13 @@ end, real-device check owed; conflict text-merge against a tracked base is the o
 - "Carry Now" (P2–P4) scans into this device's own append-only ops log and settles the real way: it exchanges
   "how much of yours have I applied" with every paired, connected device, sends the ops the other lacks plus
   the bytes those ops need, and the receiving side decides each one with `CarrySync.decide` and carries it out
-  with `CarryApply.apply` — fetch, replace (old to `trash/`, origin recorded), keep both as a named sibling, or
-  a plain local move for a replayed move/trash/restore. Never overwrites. `CarryApply.apply` is the one place
-  that touches the file system for a settled action, tested without any radio (`carrymanagerSelftest`).
-- **Still open, said plainly rather than hidden:** a real conflict (both sides changed since the last common
-  point) always keeps both, because no base is tracked yet for the 3-way text merge `shared/notesync.swift`
-  already knows how to do — a merge would be strictly better for Draftpad's own pages, but keep-both never
-  loses a line either way. Starting automatically when two paired devices meet (rather than only on "Carry
-  Now") is also still open, the same deliberate choice the first glue slice already made.
+  with `CarryApply.apply` — fetch, replace (old to `trash/`, origin recorded), a 3-way text merge against a
+  tracked base (`CarryBase`, `shared/carryapply.swift`) when both sides changed since it, keep both as a named
+  sibling when the edits truly overlap (or the base went missing), or a plain local move for a replayed
+  move/trash/restore. Never overwrites. `CarryApply.apply` is the one place that touches the file system for a
+  settled action, tested without any radio (`carrymanagerSelftest`).
+- **Still open, said plainly rather than hidden:** starting automatically when two paired devices meet (rather
+  than only on "Carry Now") — a deliberate, smaller first slice, same choice the first glue slice already made.
 - Files move over `P2PTransport.send(fileAt:)` directly, not through `shared/pieces`'s resumable chunks — fine
   for Homes' sizes today; swapping it in later changes nothing public in `carrymanager.swift`.
 - If two devices are each already in a *different* group, pairing refuses rather than merging them (no wire
@@ -126,12 +125,11 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
       the device's name and the file's own extension; Draftpad's own name is unchanged).
   - `move` / `trash` / `restore` → replayed only if the local file still has the op's sha; else nothing moves and
     the difference shows as a conflict sibling.
-- The base is the last version both sides agreed on: `Recense/.carry/base/<sha256>` for text files only.
-- **Built (P4, 2026-11-15) stands on the rules above but doesn't yet track a base:** `CarryManager`/`CarryApply`
-  call `CarrySync.decide(..., base: [:], ...)`, so "unchanged since the base" and the text 3-way merge never
-  fire yet — every real conflict settles as keep-both today, always safe, sometimes a sibling where tracking a
-  base would later let a clean edit land without one. Base-tracking is the next slice, not a rewrite: `decide`
-  already does the right thing the moment a real `base` dictionary is passed in.
+- The base is the last version both sides agreed on: `Recense/.carry/base/<sha256>` for text files only — built
+  as `CarryBase` (`shared/carryapply.swift`, 2026-11-15): one small index (every key's sha, `base-sha.json`) plus
+  the text itself, content-addressed, for the one key the merge actually reads back. Recorded whenever a key's
+  bytes are freshly settled — a device's own new `put`, or a clean `fetch`/`replace`/merge landing from a peer —
+  never for `keepBoth`, since there is no single agreed version yet for an unresolved conflict's key.
 - Replaying the same ops twice changes nothing (idempotent): ops at or below the seen vector's seq are skipped, and
   each decision is "nothing" once its result is in place. The vector is the guard: without it, a put replayed after
   its own move and trash would bring the file back (tested).
@@ -141,8 +139,10 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   `CarrySync.ops`), then settles with every paired, connected device: "how much of yours have I applied"
   (`seen`) → the ops the other lacks (`ops`) → the bytes those ops need, over FEAT-02's link. A move, a trash or
   a restore replays correctly on the other side — not just a plain file push (`shared/carrymanager.swift`,
-  `shared/carryapply.swift`). A real conflict (both sides changed, no tracked base yet) always settles the safe
-  way, keeping both as named siblings, rather than merging — the one piece of P3 still open, named honestly.
+  `shared/carryapply.swift`). A text conflict merges 3-way (`merge3`) against the version the peer edited from
+  (`CarryOp.parent`, its text kept under `.carry/base/<sha>`), or the last version that landed from a peer (`CarryBase`);
+  different lines merge clean, the same line or a missing base keeps both as named siblings, and this device's version
+  goes to `trash/` before the merge lands (FEAT-22 P2; tests: `mobile/ios/Tests/carrysync`, `recense selftest`).
 - **Automatic — `[~]` (built and tested; device check owed) · From: T-0084 (owner 11-15: "i dont want to carry now, i want it to be automatic").**
   - A paired peer connects: carry starts within 2 s.
   - While connected, a home changes (new file, rename, trash, restore): carry after 2 s of quiet (debounce).
@@ -188,16 +188,19 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   (`strip/app.swift`) and the iOS Devices screen + voice intents (`mobile/HostApp/iOS/Devices.swift`,
   `mobile/HostApp/iOS/PairIntent.swift`).
 - `shared/carryapply.swift`: carries out one already-`decide`d action against this device's homes (fetch,
-  replace, keep-both, or a plain move) — the only place that touches the file system for a settled change,
-  tested without any radio (`carrymanagerSelftest`).
+  replace, a 3-way text merge, keep-both, or a plain move) — the only place that touches the file system for a
+  settled change, tested without any radio (`carrymanagerSelftest`). `CarryBase` (same file): the tracked base
+  the merge reads, recorded whenever a key's bytes are freshly agreed.
 
 ## Done checks
 - `swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"`
   (ALL OK); `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"`
   (ALL OK: same code on both, a device in the middle never matches in 300 runs, forged nonce and stranger refused) — 2026-11-14 ✓.
 - `strip/recense selftest`, exit 0 (includes homesSelftest, carrysyncSelftest, carrypairSelftest, and
-  `carrymanagerSelftest` — fetch, replace with the old version landing in `trash/`, keep-both, and a move that
-  carries its index across homes, all exercised with no radio) — 2026-11-15 ✓.
+  `carrymanagerSelftest`'s 22 checks — fetch, replace with the old version landing in `trash/`, keep-both, a
+  move that carries its index across homes, a clean merge of two non-overlapping edits that becomes the new
+  base, an overlapping edit and a missing base both falling back to keep-both, and `decide` itself returning a
+  clean replace once a base is on hand, all exercised with no radio) — 2026-11-15 ✓.
 - `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest), both BUILD SUCCEEDED — 2026-11-15 ✓.
 - SEC-02 (peer auth guards P1/P1b/P4): `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/carryauth/main.swift
   -o "$TMPDIR/carryauth" && "$TMPDIR/carryauth"` (ALL OK); safe keys in the carrysync test, the bytes check in `recense selftest`.
