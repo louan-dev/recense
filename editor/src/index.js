@@ -103,6 +103,7 @@ import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
 import * as matterCore from './matter.js';
 import { createMatterMenu } from './mattermenu.js';
+import { logEvent } from './logevent.js';
 import { passageOfStrokes } from './inkselection.js';
 import {
   DEFAULT_FONT_SIZE,
@@ -808,7 +809,21 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const matterDevice = matterCore.createMatterDevice(typeof navigator !== 'undefined'
     ? { userAgent: navigator.userAgent || '', maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
   let matterInput = 'keys';
-  const matterSeed = () => ({ device: matterDevice.get(), input: matterInput, time: Date.now() });
+  // Derived from Spec: FEAT-08 P6 — a passage born in a media note keeps that item's second (its playhead, when the
+  // host has given one for the same key). Never on draftpad.md in this phase (Q-B1).
+  let noteKeyNow = () => null;     // set by the media note (FEAT-23)
+  let playheadKey = '';            // the key whose playhead updateAudioTime reports
+  const mediaOf = () => {
+    const key = noteKeyNow();
+    if (!key || !audioSidecar || playheadKey !== key) return null;
+    const t = matterCore.noteTime(audioSidecar.getState().currentTime);
+    return t === null ? null : { key, t };
+  };
+  const matterSeed = () => {
+    const media = mediaOf();
+    return media ? { device: matterDevice.get(), input: matterInput, time: Date.now(), media: { key: media.key, t: matterCore.noteTime(media.t) } }
+      : { device: matterDevice.get(), input: matterInput, time: Date.now() };
+  };
   function postMatter() {
     const h = window.webkit?.messageHandlers?.matter;
     if (h && typeof h.postMessage === 'function') h.postMessage(JSON.stringify(matterSide));
@@ -839,6 +854,16 @@ export function mountEditor(root = document.body, initialDoc = '') {
     matterSide = after.side;
     if (sideChanged) postMatter();
     return { ok: true };
+  }
+
+  // FEAT-23 rule 5 / A1 rule 7 · one way to ask the host to play an item from a second (a moment link, a passage,
+  // a stroke, a backlink). The host pauses another item first.
+  function playMedia(key, t, from) {
+    const h = window.webkit?.messageHandlers?.audio;
+    const sec = Math.max(0, Number(t) || 0);
+    logEvent('media-notes.play', { key, t: sec, from, found: h ? 'here' : 'missing' });
+    if (h && typeof h.postMessage === 'function') { h.postMessage({ action: 'play', key, t: sec, from }); return { ok: true }; }
+    return { ok: false, error: 'no player here' };
   }
 
   function insertBlock(text) {
@@ -884,7 +909,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   view.dom.addEventListener('keydown', () => { matterInput = 'keys'; }, true);
   const matterMenuFor = (from, to) => matterCore.menuForSelection(
     matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }), from, to);
-  const runMatter = action => applyMatter(m => action.run(m, { seed: matterSeed() }));
+  const runMatter = action => {
+    // FEAT-08 P6 · "Play from mm:ss": the host plays the item from there; the matter is unchanged.
+    if (action && action.play) return playMedia(action.key, action.t, 'passage');
+    return applyMatter(m => action.run(m, { seed: matterSeed() }));
+  };
   matterMenu = createMatterMenu({ mount: editorHost, view, getMenu: matterMenuFor, onRun: runMatter });
   // UI-04 P2 · the radial menu's outer ring places the same matter actions for the text selection (one list).
   radialOuterItems = () => {
@@ -1245,7 +1274,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       appendVoice: (text, id) => applyMatter(m => matterCore.appendVoicePassage(m, {
         id: String(id || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
         text,
-        seed: { device: matterDevice.get(), input: 'voice', time: Date.now() }
+        seed: { ...matterSeed(), input: 'voice' }   // FEAT-08 P6: in a media note, with the item's second
       })),
       setMatterDevice: name => matterDevice.set(name),
       // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
@@ -1360,7 +1389,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
       },
       // A widget only this host can run (the Mac: 'iphone').
       enableWidget: id => (dualWings ? dualWings.enableHostWidget(id) : null),
-      updateAudioTime: sec => audioSidecar.updateTime(sec),
+      updateAudioTime: sec => {
+        playheadKey = audioSidecar.getState().sourceKey;   // FEAT-08 P6: whose second this is
+        return audioSidecar.updateTime(sec);
+      },
       bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
       annotateAudioCue: (idx, text) => {
         const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());

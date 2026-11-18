@@ -10,6 +10,7 @@
 // call them (index.js `cross`, `reverseCrossing`, `getMatter`, `setMatter`, `mergeMatter`).
 import { anchorStrokeToDoc, getDocumentPages, DEFAULT_LINE_HEIGHT } from './ink.js';
 import { PAGE_MARKER } from './pages.js';
+import { formatTimestamp } from './audio.js';
 
 export const STATES = ['ink', 'type', 'mark', 'voice'];
 
@@ -253,13 +254,31 @@ function validSeed(seed) {
 }
 const seedOf = s => ({ device: s.device, input: s.input, time: s.time });
 
+// Derived from Spec: FEAT-08 P6
+/** A media item's second, rounded down to 0.1 s (FEAT-23 A1 rule 6); null for no time. */
+export function noteTime(sec) {
+  const s = Number(sec);
+  if (!Number.isFinite(s) || s < 0) return null;
+  return Math.floor(s * 10 + 1e-6) / 10;
+}
+const MEDIA_KEY = /^[0-9a-f]{24}$/;
+const validMedia = md => !!md && typeof md.key === 'string' && MEDIA_KEY.test(md.key) && noteTime(md.t) !== null;
+
+// Derived from Spec: FEAT-08 P6 — the passage's seed may carry `media: { key, t }`, beside the text, never in it.
+// Only the passage's own seed keeps it; a crossing's log seed stays { device, input, time }.
+function passageSeed(seed) {
+  const s = seedOf(seed);
+  if (validMedia(seed.media)) s.media = { key: seed.media.key, t: noteTime(seed.media.t) };
+  return s;
+}
+
 function addPassage(m, id, born, seed, forms) {
   if (!validSeed(seed)) throw new Error('a passage needs its seed: device, input, time');
   const out = createMatter(m);
   if (out.side.passages[id]) throw new Error(`passage ${id} exists`);
   const from = { cross: 0, ...seedOf(seed) };
   for (const f of Object.values(forms)) f.from = from;
-  out.side.passages[id] = { id, born, seed: seedOf(seed), phase: born, forms };
+  out.side.passages[id] = { id, born, seed: passageSeed(seed), phase: born, forms };
   return out;
 }
 
@@ -717,6 +736,7 @@ export function mergeMatter(a, b) {
     const pb = B.passages && B.passages[id];
     if (!pa || !pb) { passages[id] = clone(pa || pb); continue; }
     const p = clone(pa);
+    if (!p.seed.media && pb.seed && pb.seed.media) p.seed.media = clone(pb.seed.media);   // FEAT-08 P6: either side's
     p.forms = {};
     for (const s of STATES) {
       const f = mergeForm(s, pa.forms[s], pb.forms[s]);
@@ -755,7 +775,24 @@ export function matterActions(m, pid, probe = {}) {
   const seen = new Map();
   for (const a of list) seen.set(a.label, (seen.get(a.label) || 0) + 1);
   for (const a of list) if (seen.get(a.label) > 1) a.label = `${a.label} from ${SOURCE_NAME[a.from]}`;
+  const play = playFromAction(m, pid);
+  if (play) list.push(play);
   return list;
+}
+
+// Derived from Spec: FEAT-08 P6 (FEAT-23 A1 rule 7) — you write after you hear, so it plays a little before.
+export const REPLAY_LEAD_S = 2.0;
+
+/**
+ * "Play from mm:ss" for a passage whose seed has media: { id: 'play-from', label, key, t, play: true, run }.
+ * `t` = the note time − 2.0 s, never below 0. `run` changes no matter; the editor posts the play to its host.
+ */
+export function playFromAction(m, pid) {
+  const p = m.side.passages[pid];
+  const md = p && p.seed && p.seed.media;
+  if (!validMedia(md)) return null;
+  const t = Math.max(0, Math.round((md.t - REPLAY_LEAD_S) * 10) / 10);
+  return { id: 'play-from', label: `Play from ${formatTimestamp(md.t)}`, key: md.key, t, play: true, run: mm => mm };
 }
 
 /** The passage holding body range [from, to), if a typed passage covers or overlaps it. */
