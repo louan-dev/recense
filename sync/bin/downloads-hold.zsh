@@ -32,8 +32,7 @@ LANE_SINCE_ISO=${LANE_SINCE_ISO:-}      # empty = the moment the lanes first ran
 SHOT_HOLD=120                          # a screenshot: long enough to paste or drag it
 REC_HOLD=600                           # a recording: 10 min after it stops changing
 SHOTS_DIR=${SHOTS_DIR:-$HOME/Documents/Screenshots}   # `defaults read com.apple.screencapture location`
-RECS_DIR=${RECS_DIR:-$HOME/Recordings}                # where movies-to-recordings.sh routes video and audio
-LANES_ON=${LANES_ON:-1}
+LANES_ON=${LANES_ON:-0}                # OFF until the owner decides the R2 expiry for these prefixes; LANES_ON=1 turns the lanes on
 
 # The pure lane rule. Args: now mtime hold since used(epoch|0) renamed tagged open  → ignore | keep | wait | move
 lane_rule() {
@@ -117,6 +116,7 @@ lane_due() {
     b=${f:t}
     [[ $b == ${~glob} ]] || continue
     read -r ino mtime < <(stat -f '%i %m' "$f") || continue
+    (( mtime < since )) && continue                     # cheapest test first: the old catalogue pays only this stat
     prev=$(awk -F'\t' -v i="$ino" '$1==i{print $2; exit}' "$st")
     renamed=0; [[ $prev == KEEP ]] && renamed=1; [[ -n $prev && $prev != KEEP && $prev != $b ]] && renamed=1
     tagged=0; xattr -p com.apple.metadata:_kMDItemUserTags "$f" >/dev/null 2>&1 && tagged=1
@@ -128,7 +128,7 @@ lane_due() {
     if [[ $verdict == keep ]]; then printf '%s\tKEEP\n' "$ino" >> "$ns"; else printf '%s\t%s\n' "$ino" "$b" >> "$ns"; fi
     [[ $verdict == move ]] && print -r -- "$b"
   done
-  mv "$ns" "$st"
+  if [[ $mode == plan ]]; then rm -f "$ns"; else mv "$ns" "$st"; fi   # a plan never writes state
 }
 
 # move_dir SRC DESTPATH LISTFILE
@@ -155,7 +155,6 @@ lanes() {
   [[ $LANES_ON == 1 ]] || return 0
   run_lane screenshots "$SHOTS_DIR" $SHOT_HOLD screenshots 'Screenshot *.(png|jpg|jpeg|heic)' "$1"
   run_lane screenrec   "$SHOTS_DIR" $REC_HOLD  recordings  'Screen Recording *.mov' "$1"
-  run_lane recordings  "$RECS_DIR"  $REC_HOLD  recordings  '*.(mov|mp4|m4v|m4a|mp3|wav|aif|aiff|caf|flac|ogg|opus|webm|mkv)' "$1"
 }
 
 move_due() {
@@ -201,7 +200,7 @@ selftest() {
   # real run: temp Downloads, local destination, real rclone
   local T; T=$(mktemp -d "${TMPDIR:-/tmp}/hold-real.XXXX")
   mkdir -p "$T/dl" "$T/dest"; : > "$T/none.conf"
-  mkdir -p "$T/shots" "$T/recs"; export SHOTS_DIR="$T/shots" RECS_DIR="$T/recs" LANE_SINCE_ISO=2020-01-01T00:00:00Z
+  mkdir -p "$T/shots" "$T/recs"; export SHOTS_DIR="$T/shots" LANE_SINCE_ISO=2020-01-01T00:00:00Z
   export DOWNLOADS="$T/dl" HOLD_DEST="$T/dest" HOLD_STATE="$T/state.tsv" HOLD_LOG="$T/log" HOLD_RCONF="$T/none.conf"
   local Q; Q=$(printf '0083;%x;sharingd;3238FECF-F0EA-486F-8DCD-A461CFF76411' $(date +%s))   # arrival = now, as sharingd stamps it
   echo air > "$T/dl/air.txt";  xattr -w com.apple.quarantine "$Q" "$T/dl/air.txt"; touch -t 202001010000 "$T/dl/air.txt"   # old sender mtime
@@ -228,12 +227,16 @@ selftest() {
   echo p > "$T/shots/Drafting-Page_01.png"; touch -t $old "$T/shots/Drafting-Page_01.png"
   echo o > "$T/shots/Screenshot 2019.png"; touch -t 201901010000 "$T/shots/Screenshot 2019.png"
   echo v > "$T/recs/talk.m4a"; touch -t $old "$T/recs/talk.m4a"
+  NOW=$(( $(date +%s) + 0 )) zsh "$SELF" >/dev/null 2>&1      # LANES_ON unset: the lanes are off
+  [[ -f "$T/shots/Screenshot 2026-11-17 at 10.00.00.png" ]] || { echo "FAIL lane: lanes ran with LANES_ON unset"; fail=1 }
+  export LANES_ON=1
   NOW=$(( $(date +%s) + 0 )) zsh "$SELF" >/dev/null 2>&1
   [[ ! -e "$T/shots/Screenshot 2026-11-17 at 10.00.00.png" && -f "$T/dest/screenshots/Screenshot 2026-11-17 at 10.00.00.png" ]] || { echo "FAIL lane: 200 s old screenshot not moved"; fail=1 }
-  [[ -f "$T/shots/Screen Recording 2026-11-17 at 10.01.00.mov" && -f $T/recs/talk.m4a ]] || { echo "FAIL lane: recording left before its 10 min"; fail=1 }
+  [[ -f "$T/shots/Screen Recording 2026-11-17 at 10.01.00.mov" ]] || { echo "FAIL lane: recording left before its 10 min"; fail=1 }
   NOW=$(( $(date +%s) + REC_HOLD )) zsh "$SELF" >/dev/null 2>&1
-  [[ -f "$T/dest/recordings/Screen Recording 2026-11-17 at 10.01.00.mov" && -f "$T/dest/recordings/talk.m4a" ]] || { echo "FAIL lane: recordings not moved after 10 min"; fail=1 }
+  [[ -f "$T/dest/recordings/Screen Recording 2026-11-17 at 10.01.00.mov" ]] || { echo "FAIL lane: recordings not moved after 10 min"; fail=1 }
   [[ -f "$T/shots/Screenshot tagged.png" && -f "$T/shots/Drafting-Page_01.png" && -f "$T/shots/Screenshot 2019.png" ]] || { echo "FAIL lane: tagged / owner's / old file moved"; fail=1 }
+  [[ -f $T/recs/talk.m4a && ! -e $T/dest/recordings/talk.m4a ]] || { echo "FAIL lane: audio in ~/Recordings was moved"; fail=1 }
   rm -rf "$T"
   (( fail )) && { echo "downloads-hold selftest FAILED"; exit 1 }
   echo "downloads-hold selftest OK"

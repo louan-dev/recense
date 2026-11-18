@@ -16,12 +16,13 @@ From: owner 2026-11-17 ("apply the tmp move rule to screenshots and screen recor
 - **assumed** Screenshots will not fill 6.5 GB: today's whole folder is 273 MB. Recordings are the heavy kind. Say so to the owner.
 
 ## Rules
-1. **Lanes.** A lane = folder · name pattern · hold · clock. Three lanes: Downloads/AirDrop (built), Screenshots, Recordings.
+1. **Lanes.** A lane = folder · name pattern · hold · clock. Three lanes: Downloads/AirDrop (built), Screenshots, Screen recordings. **`~/Recordings` is not a lane** (it holds audio and video the owner keeps).
+   **The lanes ship OFF (`LANES_ON=0`)** until the owner answers rule 6.
    - Screenshots: `~/Documents/Screenshots/Screenshot *.{png,jpg,heic}` · hold **2 min** (enough to paste or drag it).
-   - Recordings: `~/Documents/Screenshots/Screen Recording *.mov` and `~/Recordings/*` video/audio · hold **10 min after the
+   - Screen recordings: `~/Documents/Screenshots/Screen Recording *.mov` · hold **10 min after the
      file stops changing** (clock = last modified; a file still open or still growing never moves).
 2. **Hands off:** a file opened, renamed or tagged during its hold is the owner's: it stays for good (same rule as AirDrop).
-3. **Only new files.** Each lane has a start date (`LANE_SINCE`, the day this ships). **The 504 old screenshots are never moved.**
+3. **Only new files.** Each lane starts the moment it first runs (a stamp file; `LANE_SINCE_ISO` overrides). **The 504 old screenshots are never moved.**
 4. **Catch-up, never first.** The move is `rclone move` to R2 (verifies, then deletes the local copy). Offline: the file stays.
    Name clash: both kept (`.replaced-<time>`).
 5. **Where in the bucket:** `screenshots/` and `recordings/` prefixes, so the owner can see and restore them.

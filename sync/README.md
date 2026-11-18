@@ -130,11 +130,11 @@ to the `gallery-tmp` bucket.
   (renamed `.replaced-<time>`), never overwritten. Everything else keeps the old rule (modified 2 minutes ago).
 - No state to lose: quit, reboot or a missed run changes nothing; a file past its time moves on the next run.
 - **Screenshots and screen recordings (FEAT-24)** are lanes of the same script, moved to `gallery-tmp:gallery-tmp/screenshots/`
-  and `/recordings/`: `Screenshot *` in `~/Documents/Screenshots` after 2 min (`SHOT_HOLD`), `Screen Recording *.mov` there and
-  video/audio in `~/Recordings` after 10 min without change (`REC_HOLD`; a file still open waits). Clock = last modified.
+  and `/recordings/`: `Screenshot *` in `~/Documents/Screenshots` after 2 min (`SHOT_HOLD`), `Screen Recording *.mov` there
+  after 10 min without change (`REC_HOLD`; a file still open waits). Clock = last modified.
   Opened, renamed or tagged = left alone. Only files modified after the lanes first ran (stamp in
   `~/Library/Application Support/Recense/airdrop-hold-since`) are touched: the old screenshots never move. Names that don't
-  match (your own pages in that folder) are never touched. Bucket-wide R2 expiry stays 14 days; `LANES_ON=0` turns the lanes off.
+  match (your own pages in that folder) are never touched. Bucket-wide R2 expiry stays 14 days; **The lanes are OFF by default** (`LANES_ON=0`): turn them on with `LANES_ON=1` (in the plist's EnvironmentVariables) together with the R2 expiry decision. `~/Recordings` (audio and video routed by `movies-to-recordings.sh`) is never touched.
 - `zsh bin/downloads-hold.zsh plan` prints what is due and moves nothing; `selftest` runs the rule and a real move.
 - Install the agent (once, after the branch is merged). It builds the file in /tmp first, so a failed step can never empty the live plist:
       sed "s#__HOME__#$HOME#g" launchd/com.chauphan.downloads-to-r2.plist > /tmp/dl-r2.plist && plutil -lint /tmp/dl-r2.plist &&
