@@ -3,6 +3,7 @@ One row per feature. Shared = the one source; the rest are glue. Gaps = an embod
 
 | Feature | Shared source | Mac | iPhone + iPad | Web | Gaps |
 |---|---|---|---|---|---|
+| Languages: list, Follow in, Heard in (FEAT-10 amendment) | Swift `shared/ShowsKit/.../Langs.swift`; browser `Homebar.LANGS` (`library/src/client/homebar.js`); editor `editor/src/langs.js`; Worker `library/src/layout.js` | ShowsKit menu (stored); `NativeLang`, `speech.swift` read `Langs` | ShowsKit menu + `Translate.swift`, `Shows.swift` (Heard in = Listen's Hear in) | `gallery.js` reads `Homebar.LANGS` | T-0178: `speechcore.swift` + `inkocr.swift` keep own lists (Broadcast has no ShowsKit; Vision codes); Listen "Show in" is a second Follow in; Draftpad "Translate into: Auto"; Mac translates nothing yet (Phase 3) |
 | Speech / live captions | `shared/speechcore.swift` | `strip/appear.swift` (LiveEar) | `mobile/ios/Broadcast/SampleHandler.swift` | — | "Show words sooner" Mac only (T-0004) |
 | Draftpad editor | `editor/src/` | `strip/editorhost.swift` | `mobile/HostApp/iOS/Draftpad.swift` | — | Enter key on iOS (T-0001) |
 | Draftpad page bar + slots (UI-06) | `editor/src/pagemode.js`, `index.js` | dist only (editor reopens on first text) | `Draftpad.swift` calls `reopen()` | — | device checks owed (Mac, iPhone, iPad) |

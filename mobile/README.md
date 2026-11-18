@@ -64,9 +64,11 @@ updates in place.
 - **Lines are whole sentences** (BUG-13, 11-14): a heard file's lines follow sentence ends, as the Mac's (ShowsKit
   `Phrasing`, ≤ 18 words a line); before, one line per breath ("This is the" / "resent player"). Transcripts this
   device saved the old way are regrouped on open.
-- **Translate Into** (FEAT-10, 11-14, `translateplan.swift` + `Translate.swift`): a file playing in our player shows
-  each line's translation under it, chosen per line (English, Tiếng Việt, Français) and switched from the transcript's
-  ··· menu; Apple's on-device Translation does the work, once a language pair is installed.
+- **Follow in · Heard in** (FEAT-10, 11-14, amended 11-18; `translateplan.swift` + `Translate.swift`): a file playing
+  in our player shows each line's translation under it. The transcript's ··· menu › Languages has two sections:
+  Follow in (English · Français · Tiếng Việt · Off; default Français) and Heard in (Auto-detect, or one language for
+  every line; the same setting as Listen's Hear in). The playhead's line is translated first, then the lines after it
+  8 at a time, then those before it. Apple's on-device Translation does the work, once a language pair is installed.
 - **Our player** (player P1 S2, 11-13, `NativePlayer.swift`): an audio or video file tapped in the Archive plays
   here, in Now Playing, opened on its transcript; other files keep the page viewer. Bytes come from this device first
   (`Recense/<path>`, else `Recense/downloads/<path>`); else the Worker streams them (`/main/api/fp/archive/content`,

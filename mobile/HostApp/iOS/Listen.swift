@@ -304,7 +304,7 @@ final class Listener: NSObject, ObservableObject {
         SFSpeechRecognizer(locale: Locale(identifier: id))?.supportsOnDeviceRecognition == true
             ? "Heard on this device by SFSpeechRecognizer (no word times)." : "This device can't hear \(name(id)) offline."
     }
-    static let into = ["en", "vi", "fr"]  // Recense's tr/en|vi|fr
+    static let into = Langs.codes  // Recense's tr/en|fr|vi (ShowsKit Langs, FEAT-10 amendment)
     /// A language's name for a picker row: "English (United States)", or "Automatic". The three languages Automatic
     /// follows are said under the picker: in the row they wrapped after "English," on the iPhone (11-10).
     static func name(_ id: String) -> String {

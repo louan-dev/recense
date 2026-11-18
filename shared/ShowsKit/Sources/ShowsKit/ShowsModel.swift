@@ -72,7 +72,7 @@ public final class ShowsModel {
     public var transcriptSource: String?
     /// Now Playing shows the transcript (Podcasts' quote button) rather than the player.
     public var showsTranscript = false
-    /// FEAT-10: "auto" (English↔Tiếng Việt by the line, else English), "en", "vi", "fr", or "off". Kept on this
+    /// FEAT-10 Follow in (amended 11-18): "en", "fr", "vi", or "off"; default "fr" (Langs.follow). Kept on this
     /// device; the host (PlaybackTranslator on iOS today, Phase 3 on the Mac) replans the transcript on change.
     public var translateInto: String {
         didSet {
@@ -83,13 +83,25 @@ public final class ShowsModel {
     }
     /// Set by the host once, at startup, to re-run its translator when `translateInto` changes.
     public var translateIntoChanged: (() -> Void)?
+    /// FEAT-10 Heard in: "auto" (Auto-detect, each line its own) or "en" / "fr" / "vi" (every line that language).
+    /// Kept on this device; on iOS the host mirrors it into Listen's "Hear in".
+    public var heardIn: String {
+        didSet {
+            guard oldValue != heardIn else { return }
+            UserDefaults.standard.set(heardIn, forKey: "recense.heardIn")
+            heardInChanged?()
+        }
+    }
+    /// Set by the host once, at startup: Heard in changed (re-hear and replan).
+    public var heardInChanged: (() -> Void)?
     private var clock: HLCClock
 
     public init(store: any CatalogStore, gate: Gate? = nil) {
         self.store = store
         self.gate = gate ?? Gate()
         self.clock = HLCClock(node: store.device)
-        self.translateInto = UserDefaults.standard.string(forKey: "recense.translateInto") ?? "auto"
+        self.translateInto = Langs.follow(kept: UserDefaults.standard.string(forKey: "recense.translateInto"))
+        self.heardIn = Langs.heard(kept: UserDefaults.standard.string(forKey: "recense.heardIn"))
     }
 
     /// Loads, then reloads on every change, until the view goes away.

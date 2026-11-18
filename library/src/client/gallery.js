@@ -809,11 +809,7 @@
 
   // the native language (spec §1)
   const NATIVE_LANG = "gallery.nativeLang";
-  const NATIVE_LANGS = [
-    ["en", "English"],
-    ["vi", "Vietnamese"],
-    ["fr", "French"],
-  ];
+  const NATIVE_LANGS = Homebar.LANGS; // the browser's one language list (homebar.js loads first; FEAT-10 amendment)
   const isLang = (l) => NATIVE_LANGS.some((x) => x[0] === l);
   const isNotation = (n) => Number.isInteger(n) && n >= 0 && n < GalleryKey.STATES;
 

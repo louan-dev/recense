@@ -4,6 +4,7 @@ import NaturalLanguage
 #if compiler(>=6.2)
 import Speech
 #endif
+import ShowsKit   // Langs: the one language list (FEAT-10)
 
 // ---------- Recense's ears: on this Mac ----------
 // Apple's SpeechAnalyzer (the macOS 26 generation) hears what Recense plays in place of Groq's Whisper: offline, with
@@ -383,7 +384,7 @@ import Speech
             let a = max(0, w.start - 0.6), b = w.end + 0.6
             if let l = spans.last, a <= l.b { spans[spans.count - 1].b = max(l.b, b) } else { spans.append((a, b)) }
         }
-        let want = Locale(identifier: ["en": "en-US", "fr": "fr-FR", "vi": "vi-VN"][h.lang] ?? h.lang)
+        let want = Locale(identifier: Langs.locale(h.lang))
         guard let loc = await DictationTranscriber.supportedLocale(equivalentTo: want), await prepare(.dictation, loc) else { return h }
         var out = h
         for s in spans.prefix(6) {
@@ -483,7 +484,7 @@ import Speech
     static func rebuild() async {
         guard !refused else { return }
         for lang in Lexicon.languages where built[lang] != Lexicon.version {
-            let want = Locale(identifier: ["en": "en-US", "fr": "fr-FR", "vi": "vi-VN"][lang] ?? lang)
+            let want = Locale(identifier: Langs.locale(lang))
             guard let loc = await DictationTranscriber.supportedLocale(equivalentTo: want) else { continue }
             if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
                 _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in

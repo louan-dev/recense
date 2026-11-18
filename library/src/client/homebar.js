@@ -104,6 +104,7 @@ globalThis.Homebar = (() => {
   };
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  // The browser's one language list (FEAT-10 amendment 2026-11-18; gallery.js reads it as Homebar.LANGS).
   // left → middle → right, above Loop · A · B
   const LANGS = [
     ["vi", "Vietnamese"],

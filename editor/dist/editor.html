@@ -2643,6 +2643,10 @@ html.rc-wings-page body {
     return { engine: "model", why, lines, dropped };
   }
 
+  // src/langs.js
+  var LANGS = ["en", "fr", "vi"];
+  var LANG_NAMES = { en: "English", fr: "French", vi: "Vietnamese" };
+
   // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
@@ -41569,10 +41573,13 @@ ${clean(nextLineText)}`;
   function wordsOf(text) {
     return String(text || "").match(/[\p{L}\p{N}’']+/gu) || [];
   }
+  var VI_ONLY2 = /[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộớờởỡợụủũứừửữựỳỵỷỹáíóúýìòãõ]/;
+  var VI_WORDS = /(^|[^\p{L}])(và|không|tôi|ông|bà|cô|bên|lên|tên|nên)(?=[^\p{L}]|$)/u;
+  var FR = /[éèêëàâçùûüôîïœæÿ]|\b(le|la|les|des|est|une|du|et)\b/;
   function guessLang(text) {
-    const s = String(text || "").toLowerCase();
-    if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/.test(s)) return "vi";
-    if (/[éèêëàçùûôîœ]|\b(le|la|les|des|est|une|du|et)\b/.test(s)) return "fr";
+    const s = String(text || "").normalize("NFC").toLowerCase();
+    if (VI_ONLY2.test(s) || VI_WORDS.test(s)) return "vi";
+    if (FR.test(s)) return "fr";
     return "en";
   }
   function estimateWordTimes(text) {
@@ -43190,8 +43197,8 @@ ${String(text ?? "")}`;
     recenseBtn.title = "Recense layer";
     recenseBtn.setAttribute("aria-label", "Recense layer");
     toolbar.insertBefore(recenseBtn, menuWrap);
-    const INTO = ["", "en", "vi", "fr"];
-    const INTO_NAMES = { "": "Auto", en: "English", vi: "Vietnamese", fr: "French" };
+    const INTO = ["", ...LANGS];
+    const INTO_NAMES = { "": "Auto", ...LANG_NAMES };
     function syncRecenseControls() {
       const on = recense.isEnabled();
       recenseBtn.setAttribute("aria-pressed", String(on));
