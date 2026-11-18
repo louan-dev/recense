@@ -2173,6 +2173,24 @@ final class RecorderView: NSView {
     var files: [URL] = []
     var filesAtStart = 0                      // where this recording's files begin in `files`
     var captureProblem: String?               // T-0149: a stream that didn't start, shown instead of the timer
+    var onState: ((CaptureState) -> Void)?    // the strip shows the controls while recording; the panel folds up
+    private var notice: (text: String, until: Date)?   // "Nothing saved" / "Canceled", shown on the strip for a while
+
+    /// What the strip shows in its recorder slot: the running time, a problem (orange), or a short notice after stop.
+    var stripStatus: (live: Bool, paused: Bool, text: String, warn: Bool)? {
+        let live = state == .recording || state == .paused
+        guard live else {
+            guard let n = notice, n.until > Date() else { return nil }
+            return (false, false, n.text, true)
+        }
+        let p = pausedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let s = max(0, Int(Date().timeIntervalSince(sessionStart) - pausedTotal - p))
+        if let problem = liveProblem(elapsed: s) {
+            return (true, state == .paused, problem.hasPrefix("Screen") ? "No screen" : "No audio", true)
+        }
+        let t = s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%02d:%02d", s / 60, s % 60)
+        return (true, state == .paused, t, false)
+    }
     var lastFile: URL? { files.last }
     var sessionStart = Date()
     var pausedTotal: TimeInterval = 0
@@ -2226,6 +2244,7 @@ final class RecorderView: NSView {
 
     func render(animated: Bool) {
         let rec = state == .recording, paused = state == .paused
+        onState?(state)
         cancelButton.isHidden = !(rec || paused)
         toolTip = rec ? "Tap to pause · hold to stop and save" : paused ? "Tap to go on · hold to stop and save" : "Record"
         let size: CGFloat = rec ? 12 : (paused ? 14 : 18)
@@ -2477,6 +2496,7 @@ final class RecorderView: NSView {
         }
         files = []
         timer.stringValue = "Canceled"
+        notice = ("Canceled", Date().addingTimeInterval(3))
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             if self?.state == .ready { self?.timer.stringValue = "Ready" }
         }
@@ -2501,6 +2521,7 @@ final class RecorderView: NSView {
             // T-0149: nothing reached the disk; say so instead of going quietly back to Ready
             guard finished == nil, let self else { return }
             self.timer.textColor = .systemOrange; self.timer.stringValue = "Nothing was saved"
+            self.notice = ("Nothing saved", Date().addingTimeInterval(8))
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
                 guard let self, self.state == .ready else { return }
                 self.timer.textColor = .white; self.timer.stringValue = "Ready"
@@ -4269,6 +4290,7 @@ final class GlassPauseButton: NSButton {
     var showsPlay = false { didSet { needsDisplay = true } }
     var symbol: String?                 // a round glass button with an SF Symbol instead of play/pause
     var mark: NSImage?                  // or with a template image (drawn white), such as Recense's mark
+    var tint: NSColor? { didSet { needsDisplay = true } }   // the recorder's strip controls are red, never lookalikes
     var glyphSymbol: String { symbol ?? (showsPlay ? "play.circle" : "pause.circle") }
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
@@ -4290,7 +4312,7 @@ final class GlassPauseButton: NSButton {
         // Just the icon, no circle: its own shape is its border. It lights up (full white, a soft glow) under the pointer.
         let d = min(bounds.width, bounds.height) - 1
         let c = NSRect(x: (bounds.width - d) / 2, y: (bounds.height - d) / 2, width: d, height: d)
-        let tone = NSColor.white.withAlphaComponent(hover ? 1 : 0.72)
+        let tone = (tint ?? .white).withAlphaComponent(hover ? 1 : 0.72)
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         if hover {
@@ -5147,6 +5169,15 @@ final class RestStrip: NSObject {
     let spaceBack = GlassPauseButton()
     let record = GlassPauseButton()            // the recorder's menu, second from the left
     var onRecord: (() -> Void)?
+    // While recording, the recorder's controls live here, not in a panel hanging down (owner, 2026-11-17):
+    // a red time where the date was, then pause / go on, end (stop and save), cancel (to the Trash).
+    let recTime = NSTextField(labelWithString: "")
+    let recPause = GlassPauseButton()
+    let recStop = GlassPauseButton()
+    let recCancel = GlassPauseButton()
+    var recordingStatus: (() -> (live: Bool, paused: Bool, text: String, warn: Bool)?)?
+    var onRecPause: (() -> Void)?, onRecStop: (() -> Void)?, onRecCancel: (() -> Void)?
+    private var recKey = 0                    // what the row was last laid out for
     let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
     let chevron = GlassPauseButton()           // the hidden menu-bar icons (hider.swift): click, or hover 0.5 s (D23)
@@ -5204,6 +5235,16 @@ final class RestStrip: NSObject {
         record.symbol = "mic.fill"; record.isBordered = false; record.title = ""
         record.toolTip = "Recorder"
         record.target = self; record.action = #selector(openRecord)
+        let red = NSColor(srgbRed: 1, green: 0.27, blue: 0.23, alpha: 1)
+        for (b, sym, tip, sel) in [(recPause, "pause.fill", "Pause recording", #selector(recPauseTapped)),
+                                   (recStop, "stop.fill", "End recording and save", #selector(recStopTapped)),
+                                   (recCancel, "xmark", "Cancel recording (files go to the Trash)", #selector(recCancelTapped))] {
+            b.symbol = sym; b.isBordered = false; b.title = ""; b.toolTip = tip; b.tint = red
+            b.target = self; b.action = sel; b.isHidden = true
+            b.setAccessibilityLabel(tip)
+        }
+        recTime.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        recTime.textColor = red; recTime.isHidden = true
         recense.mark = recenseIcon(); recense.isBordered = false; recense.title = ""
         recense.toolTip = "Recense: open or close the subtitle card"
         recense.target = self; recense.action = #selector(toggleRecense)
@@ -5224,7 +5265,8 @@ final class RestStrip: NSObject {
         }
         eventLine.alignment = .right
         // Everything the strip carries lives in `content`, so at rest (asleep) nothing shows in the menu bar.
-        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense, chevron].forEach(content.addSubview)
+        [weather, eventLine, icon, countdown, time, date, battery, sideQuest, record, pause, recense, chevron,
+         recTime, recPause, recStop, recCancel].forEach(content.addSubview)
         [band, content].forEach(root.addSubview)
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             self?.checkedAt = .distantPast
@@ -5265,6 +5307,30 @@ final class RestStrip: NSObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
     }
     @objc func openRecord() { record.bounce(); onRecord?() }
+    @objc func recPauseTapped() { recPause.bounce(); onRecPause?(); applyRecording() }
+    @objc func recStopTapped() { recStop.bounce(); onRecStop?(); applyRecording() }
+    @objc func recCancelTapped() { recCancel.bounce(); onRecCancel?(); applyRecording() }
+
+    /// Shows or hides the recorder's strip controls and updates the time; re-lays the row when that changes.
+    func applyRecording() {
+        let st = recordingStatus?()
+        let live = st?.live ?? false, show = st != nil
+        recTime.isHidden = !show
+        date.isHidden = show
+        [recPause, recStop, recCancel].forEach { $0.isHidden = !live }
+        record.isHidden = live
+        if let st {
+            let red = NSColor(srgbRed: 1, green: 0.27, blue: 0.23, alpha: 1)
+            recTime.textColor = st.warn ? .systemOrange : (st.paused ? NSColor.white.withAlphaComponent(0.6) : red)
+            recTime.stringValue = live && !st.warn ? (st.paused ? "❙❙ " : "● ") + st.text : st.text
+            recPause.symbol = st.paused ? "record.circle" : "pause.fill"
+            recPause.toolTip = st.paused ? "Go on recording" : "Pause recording"
+            recPause.setAccessibilityLabel(recPause.toolTip)
+            recPause.needsDisplay = true
+        }
+        let key = (show ? 1 : 0) + (live ? 2 : 0)
+        if key != recKey { recKey = key; layoutStatic() }
+    }
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
 
 
@@ -5316,8 +5382,20 @@ final class RestStrip: NSObject {
         date.frame = NSRect(x: time.frame.maxX + 10, y: y, width: wide("Wed, 00 May"), height: 15)
         // The four icons sit between the date and the batteries, left to right: Side Quest, recorder, play / pause,
         // Recense (notes 37): fixed places, so however long the batteries' text runs, no icon reaches the event's name.
-        let x0 = date.frame.maxX + 12
-        for (i, v) in [sideQuest, record, pause, recense].enumerated() {
+        var x0 = date.frame.maxX + 12
+        if !recTime.isHidden {
+            // the recorder's slot: its time over the date, then its three controls, then the usual icons
+            recTime.frame = NSRect(x: date.frame.minX, y: y, width: wide("❙❙ 0:00:00"), height: 15)
+            x0 = recTime.frame.maxX + 8
+            if !recPause.isHidden {
+                for (i, v) in [recPause, recStop, recCancel].enumerated() {
+                    v.frame = NSRect(x: x0 + CGFloat(i) * 26, y: (b.height - 20) / 2, width: 20, height: 20)
+                }
+                x0 = recCancel.frame.maxX + 14
+            }
+        }
+        let icons = record.isHidden ? [sideQuest, pause, recense] : [sideQuest, record, pause, recense]
+        for (i, v) in icons.enumerated() {
             v.frame = NSRect(x: x0 + CGFloat(i) * 30, y: (b.height - 20) / 2, width: 20, height: 20)
         }
         let bx = recense.frame.maxX + 12
@@ -5382,6 +5460,7 @@ final class RestStrip: NSObject {
             return
         }
         weather.stringValue = ""
+        applyRecording()
         time.stringValue = stripTimeFormat.string(from: now)
         date.stringValue = stripDateFormat.string(from: now)
         if now.timeIntervalSince(batteryAt) > 120 {
@@ -7029,6 +7108,16 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         timeView.onClick = { [weak self] in self?.present(.pad) }
         // Recense opens as its own strip hanging from the top of the screen; Recense's card steps aside.
         rest.onRecord = { [weak self] in self?.toggleRecorder() }
+        // Recording runs from the strip: the presets panel is for before, and folds up the moment it starts.
+        let rec = timeView.recorder
+        rest.recordingStatus = { [weak rec] in rec?.stripStatus }
+        rest.onRecPause = { [weak rec] in rec?.togglePause() }
+        rest.onRecStop = { [weak rec] in rec?.stop() }
+        rest.onRecCancel = { [weak rec] in rec?.cancelRecording() }
+        rec.onState = { [weak self] st in
+            guard let self, st == .recording || st == .paused, self.recordPanel.isVisible else { return }
+            self.timeView.showAudio(false); self.recordPanel.orderOut(nil)
+        }
         rest.onShowIcons = { [weak self] in self?.menuBar.hider.showIcons() }
         timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
         timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
@@ -7382,6 +7471,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }()
     func toggleRecorder() {
         if recordPanel.isVisible { timeView.showAudio(false); recordPanel.orderOut(nil); return }
+        let st = timeView.recorder.state
+        guard st != .recording && st != .paused else { return }   // while recording, the strip holds the controls
         guard let sc = NSScreen.main else { return }
         let w = timeSize.width, h: CGFloat = 260
         recordPanel.setFrame(NSRect(x: (sc.frame.midX - w / 2).rounded(), y: sc.frame.maxY - h, width: w, height: h), display: false)
