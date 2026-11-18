@@ -384,6 +384,11 @@ update could break it). Turn macOS's own three-finger swipes off in System Setti
 `RECENSE_GESTURES=0 ./recense &` disables them. Swipes are logged to `~/Library/Logs/recense.log` when Recense runs
 from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/strip/scripts/gesture.sh up` (or `down`, `hide`, `quit`).
 
+### Recorder: no silent recordings (T-0149, 2026-11-17)
+- If the microphone, computer audio or screen stream fails to start, stops mid-way, or writes nothing for 5 s,
+  the timer turns orange and reads **Audio not recording** or **Screen not recording** instead of counting on.
+- If stopping finds nothing on disk, the strip says **Nothing was saved** rather than going quietly back to Ready.
+
 ## Roadmap
 Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
 (Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.

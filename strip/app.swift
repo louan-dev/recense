@@ -1409,6 +1409,7 @@ enum CaptureExcluded { static var ids = Set<CGWindowID>() }
 @available(macOS 15.0, *)
 final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
     private var stream: SCStream?
+    private(set) var failed = false              // T-0149: the strip says so instead of counting on silently
     private var finished: ((Bool) -> Void)?
 
     func start(to url: URL, screen: NSScreen?, area: CGRect? = nil, micID: String? = nil, _ done: @escaping (Bool) -> Void) {
@@ -1464,6 +1465,7 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
     }
     func recordingOutput(_ o: SCRecordingOutput, didFailWithError error: Error) {
         NSLog("recense: screen capture failed: \(error.localizedDescription)")
+        failed = true
         DispatchQueue.main.async { self.finished?(false); self.finished = nil }
     }
 }
@@ -1475,8 +1477,11 @@ final class ScreenCapture: NSObject, SCRecordingOutputDelegate {
 /// computer played nothing), so every audio recording simply includes whatever the Mac was playing. Pausing drops
 /// the samples and closes the gap, so the file has no dead air.
 @available(macOS 15.0, *)
-final class MixedAudioRecorder: NSObject, SCStreamOutput {
+final class MixedAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
+    private(set) var failed = false              // T-0149: the stream stopped or the writer failed mid-recording
+    /// True once a sample has reached the file; false while nothing has been written yet.
+    var writing: Bool { queue.sync { started && writer?.status != .failed } }
     private var writer: AVAssetWriter?
     private var systemIn: AVAssetWriterInput?
     private var micIn: AVAssetWriterInput?
@@ -1520,7 +1525,7 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
                 [sys, mic].forEach { $0.expectsMediaDataInRealTime = true; w.add($0) }
                 writer = w; systemIn = sys; micIn = mic
 
-                let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
+                let s = SCStream(filter: filter, configuration: cfg, delegate: self)
                 try s.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
                 try s.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
                 try await s.startCapture()
@@ -1531,6 +1536,11 @@ final class MixedAudioRecorder: NSObject, SCStreamOutput {
                 done(false)
             }
         }
+    }
+
+    func stream(_ s: SCStream, didStopWithError error: Error) {
+        NSLog("recense: audio stream stopped: \(error.localizedDescription)")
+        failed = true
     }
 
     func stream(_ s: SCStream, didOutputSampleBuffer b: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -2162,6 +2172,7 @@ final class RecorderView: NSView {
     var outline: AreaOutline?                 // the drawn area's frame, while it records
     var files: [URL] = []
     var filesAtStart = 0                      // where this recording's files begin in `files`
+    var captureProblem: String?               // T-0149: a stream that didn't start, shown instead of the timer
     var lastFile: URL? { files.last }
     var sessionStart = Date()
     var pausedTotal: TimeInterval = 0
@@ -2238,7 +2249,7 @@ final class RecorderView: NSView {
         pauseBars.path = bars
         pauseBars.opacity = paused ? 1 : 0
         let live = rec || paused
-        if !live { timer.stringValue = "Ready" } else { tick() }
+        if !live { timer.textColor = .white; timer.stringValue = "Ready" } else { tick() }
         badge.isHidden = !(live && choice.mic)
         streams.attributedStringValue = live ? sourceSymbols() : NSAttributedString()
         // Words like "Canceled" or "Camera unavailable" need more room than a running time.
@@ -2280,7 +2291,24 @@ final class RecorderView: NSView {
         guard state == .recording || state == .paused else { return }
         let paused = pausedAt.map { Date().timeIntervalSince($0) } ?? 0
         let s = Int(Date().timeIntervalSince(sessionStart) - pausedTotal - paused)
+        if let problem = liveProblem(elapsed: s) {
+            timer.textColor = .systemOrange; timer.stringValue = problem; return
+        }
+        timer.textColor = .white
         timer.stringValue = String(format: "%02d:%02d", s / 60, s % 60)
+    }
+
+    /// T-0149: what's wrong with this recording right now, if anything, so the timer never counts over nothing.
+    func liveProblem(elapsed: Int) -> String? {
+        if let p = captureProblem { return p }
+        if #available(macOS 15.0, *) {
+            if choice.mic, mixed == nil, elapsed >= 5 { return "Audio not recording" }   // start never answered
+            if let rec = mixed as? MixedAudioRecorder, rec.failed || (elapsed >= 5 && state == .recording && !rec.writing) {
+                return "Audio not recording"
+            }
+            if let cap = screenCapture as? ScreenCapture, cap.failed { return "Screen not recording" }
+        }
+        return nil
     }
 
     func runMeter(_ on: Bool) {
@@ -2370,7 +2398,7 @@ final class RecorderView: NSView {
     /// Starts every selected stream together.
     func begin(_ c: CaptureChoice) {
         choice = c
-        files = []; filesAtStart = 0
+        files = []; filesAtStart = 0; captureProblem = nil
         sessionStart = Date(); pausedTotal = 0; pausedAt = nil
         // Audio: the microphone and whatever the Mac is playing, together in one .m4a. (Fallback on older macOS:
         // the microphone alone.)
@@ -2382,7 +2410,8 @@ final class RecorderView: NSView {
                 rec.start(to: url, micID: c.micID) { ok in
                     DispatchQueue.main.async {
                         if ok { self.mixed = rec; self.files.append(url) }
-                        else { NSLog("recense: mixed audio didn't start (check Screen Recording / Microphone permission)") }
+                        else { NSLog("recense: mixed audio didn't start (check Screen Recording / Microphone permission)")
+                               self.captureProblem = "Audio not recording"; self.tick() }
                     }
                 }
             } else { micByCaptureSession = true }
@@ -2407,7 +2436,8 @@ final class RecorderView: NSView {
                 cap.start(to: url, screen: screen, area: c.area, micID: c.micID) { ok in
                     DispatchQueue.main.async {
                         if ok { self.screenCapture = cap; self.files.append(url) }
-                        else { NSLog("recense: screen stream didn't start (check Screen Recording permission)") }
+                        else { NSLog("recense: screen stream didn't start (check Screen Recording permission)")
+                               self.captureProblem = "Screen not recording"; self.tick() }
                     }
                 }
             }
@@ -2465,7 +2495,17 @@ final class RecorderView: NSView {
         group.enter(); DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { group.leave() }
         if let f = finished { group.notify(queue: .main, execute: f) }
         let saved = Array(files.dropFirst(filesAtStart))
-        group.notify(queue: .main) { if !saved.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(saved) } }
+        group.notify(queue: .main) { [weak self] in
+            let kept = saved.filter { FileManager.default.fileExists(atPath: $0.path) }
+            if !kept.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(kept); return }
+            // T-0149: nothing reached the disk; say so instead of going quietly back to Ready
+            guard finished == nil, let self else { return }
+            self.timer.textColor = .systemOrange; self.timer.stringValue = "Nothing was saved"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let self, self.state == .ready else { return }
+                self.timer.textColor = .white; self.timer.stringValue = "Ready"
+            }
+        }
         screenCapture = nil; mixed = nil
         outline?.close(); outline = nil
         runMeter(false)
