@@ -375,10 +375,10 @@ Builds on: FEAT-01 (rules, voices, `shared/m4b/`). Uses, never edits: `cadence.j
 - **Cloudflare, the Worker, R2, Groq:** none.
 
 ## Open questions
-- Q1 (coordinator): the setting lives in `library/Audiobooks/rhythm-<series>.jsonl`, not in FEAT-08's `draftpad.matter.json` (see D). Fold it into the matter sidecar once `mergeMatter` keeps unknown keys?
-- Q2 (owner, taste): the default level, 40 (24 dB under the voice). Or 0 until first turned on?
-- Q3 (owner): a global "quiet day" switch that silences every narration without changing any item's setting?
-- Q4 (coordinator): does carry carry `library/Audiobooks/` to iPhone and iPad? Assumed from PLAN-1118 §5k step 6 and FEAT-22.
+- Q1 (decided 2026-11-18: accepted as written) (coordinator): the setting lives in `library/Audiobooks/rhythm-<series>.jsonl`, not in FEAT-08's `draftpad.matter.json` (see D). Fold it into the matter sidecar once `mergeMatter` keeps unknown keys?
+- Q2 (decided 2026-11-18 by coordinator 821ba9ec, owner may overrule: default 40, level 0 one tap away) (owner, taste): the default level, 40 (24 dB under the voice). Or 0 until first turned on?
+- Q3 (decided 2026-11-18 by coordinator 821ba9ec: YES, a quiet-day switch) (owner): a global "quiet day" switch that silences every narration without changing any item's setting?
+- Q4 (decided 2026-11-18: yes; request to Stream B, owner of shared/carry/) (coordinator): does carry carry `library/Audiobooks/` to iPhone and iPad? Assumed from PLAN-1118 §5k step 6 and FEAT-22.
 
 ## Registry block (for PARITY.md)
 ```
