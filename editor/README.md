@@ -52,6 +52,8 @@ Offline-first Draftpad whiteboard and Markdown editor core built on CodeMirror 6
 - **Find, Outline, Legal Numbering & Deletions Record (M2–M6):**
   - Instant case-insensitive Find/Replace (`⌘F`), slide-over Outline with heading folding and view-only **Newest first**, scoped legal list continuation and renumbering (`1.` → `1.1` → `(a)` → `(i)`), and transaction-filtered deletion history (`getRemoved()`).
 
+- **Menu reach (UI-06/UI-07, recfix 2026-11-17):** the ··· menu also offers Delete empty page, Put in slot…, Larger text and Smaller text (2 px a step, 12–36 px), so no page action needs a gesture.
+
 ## Native Shell Bridge (`window.recenseEditor`)
 
 - **Document & State:** `setText(s)`, `getText()`, `getRemoved()`, `focus()`, `setCursor(offset)`, `insertBlock(text)`, `dropFile(path, caption)`, `setTheme('dark' | 'light')`, `setFontSize(px)`.
