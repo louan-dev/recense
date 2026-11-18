@@ -2271,7 +2271,7 @@ await test("T-0148: a video tile shows a still and holds no stream open", false,
 
 await test("T-0148: a part with no answer is cut off and sent again; Retry carries on from the next part, in the same slot", false, async (pg) => {
   const up = await bug24Link(1);
-  await pg.addInitScript(() => { window.__lupPartMs = 5000; /* was 1500: under CPU load a 13 MB part took longer and its resend was cut off too (full-suite flake 11-17) */ });
+  await pg.addInitScript(() => { window.__lupPartMs = 5000; }); // short, yet long enough for a real part under a loaded test run
   await pg.goto(base + "/s/" + up.id);
   await pg.waitForTimeout(500);
   pg.removeAllListeners("dialog");
@@ -2288,7 +2288,8 @@ await test("T-0148: a part with no answer is cut off and sent again; Retry carri
   });
   await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000)); // 3 parts
   await pg.waitForSelector(".lup .r.bad button", { timeout: 60000 });
-  assert.deepEqual(sent.slice(0, 3), [1, 1, 2], "part 1 cut off after no answer and sent again");
+  assert.deepEqual(sent.slice(0, 2), [1, 1], "part 1 cut off after no answer and sent again");
+  assert.ok(sent.includes(2) && sent.includes(3), "then the rest: " + JSON.stringify(sent));
   assert.ok(!(await PUBLIC.head("links/" + up.id + "/001")), "not there yet");
   refuse3 = false;
   sent.length = 0;
@@ -2426,9 +2427,9 @@ await test("T-0148: a lost answer to `complete` doesn't leave a Retry that can n
   await pg.waitForSelector(".lup .r.bad button[aria-label^='Retry']", { timeout: 30000 });
   assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "the file is in");
   await pg.click(".lup .r.bad button[aria-label^='Retry']");
-  // wait for the note itself: the red row also goes the moment Retry starts, so waiting for it read the text too early (solo run: 3/3 red)
-  await pg.waitForFunction(() => /May already be added/.test((document.querySelector(".lup") || {}).textContent || ""), null, { timeout: 15000 });
-  assert.match(await pg.textContent(".lup"), /May already be added/);
+  await pg.waitForFunction(() => /May already be added/.test((document.querySelector(".lup") || {}).textContent || ""), null, { timeout: 15000 })
+    .catch(async () => assert.fail("no note; panel: " + JSON.stringify(await pg.evaluate(() => { const l = document.querySelector(".lup"); return l && { hidden: l.hidden, text: l.textContent }; }))));
+  assert.equal(await pg.$(".lup .r.bad"), null, "not red");
   assert.equal(completes, 2);
   assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0, "forgotten");
 });
