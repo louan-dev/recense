@@ -1,0 +1,16 @@
+{
+  "Version": 1.0,
+  "Metadata": { "Project": "Recense", "Cue": "tick" },
+  "Pattern": [
+    {
+      "Event": {
+        "EventType": "HapticTransient",
+        "Time": 0.0,
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 0.55 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.75 }
+        ]
+      }
+    }
+  ]
+}

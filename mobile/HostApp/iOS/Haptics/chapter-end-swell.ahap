@@ -1,0 +1,43 @@
+{
+  "Version": 1.0,
+  "Metadata": {
+    "Project": "Recense",
+    "Created": "2026-11-17",
+    "Description": "Chapter-end orientation swell (spec B10b, C1)"
+  },
+  "Pattern": [
+    {
+      "Event": {
+        "EventType": "HapticContinuous",
+        "Time": 0.0,
+        "EventDuration": 1.8,
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 0.2 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.35 }
+        ]
+      }
+    },
+    {
+      "ParameterCurve": {
+        "ParameterID": "HapticIntensityControl",
+        "Time": 0.0,
+        "ParameterCurveControlPoints": [
+          { "Time": 0.0, "ParameterValue": 0.15 },
+          { "Time": 0.9, "ParameterValue": 0.45 },
+          { "Time": 1.6, "ParameterValue": 0.85 },
+          { "Time": 1.8, "ParameterValue": 0.0 }
+        ]
+      }
+    },
+    {
+      "Event": {
+        "EventType": "HapticTransient",
+        "Time": 1.75,
+        "EventParameters": [
+          { "ParameterID": "HapticIntensity", "ParameterValue": 0.9 },
+          { "ParameterID": "HapticSharpness", "ParameterValue": 0.7 }
+        ]
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import SwiftUI
 import ShowsKit
 import WebKit
 import AVFoundation
+import CoreHaptics
 import EventKit
 import NaturalLanguage
 import UniformTypeIdentifiers
@@ -186,7 +187,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 UIApplication.shared.open(u)
             }
         case "ui":
-            if (m.body as? String) == "bounce" { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); return }
+            if (m.body as? String) == "bounce" { DraftpadCoreHaptics.shared.play(cue: "thud", tier: 3); return }
             // Recense what you typed (shared/recensetext.swift): lenses, translations, Recensed/<id>.json, power.
             if let d = m.body as? [String: Any],
                RecenseText.handle(d, vault: file.vault, js: { [weak self] in self?.call($0) }, quote: jsLiteral) { return }
@@ -202,14 +203,9 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             // The ink palette's eyedropper: the system colour picker (its eyedropper samples anything on screen).
             if let d = m.body as? [String: Any], d["sampleColor"] as? Bool == true { pickColor(); return }
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
-                switch kind {
-                case "snap": UISelectionFeedbackGenerator().selectionChanged()
-                case "shapeSnap": UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                case "edge": UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                case "open", "squeeze": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                case "erase": UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                default: break
-                }
+                let tier = (d["tier"] as? Int) ?? (d["strength"] as? Int) ?? 2
+                let obligation = d["obligation"] as? String
+                DraftpadCoreHaptics.shared.play(cue: kind, tier: tier, obligation: obligation)
             }
         case "ink":
             if let json = m.body as? String {
@@ -549,4 +545,148 @@ struct DraftpadEditor: View {
 final class DraftpadWebBox: ObservableObject {
     let web: DraftpadWeb
     init(file: DraftpadFile) { web = DraftpadWeb(file: file) }
+}
+
+// MARK: - C1: Core Haptics bridge (tick, thud, edge, open + strength tiers + chapter-end swell AHAP)
+
+final class DraftpadCoreHaptics {
+    static let shared = DraftpadCoreHaptics()
+
+    static let chapterEndSwellAHAP: String = """
+    {"Version":1.0,"Pattern":[{"Event":{"EventType":"HapticContinuous","Time":0.0,"EventDuration":1.8,"EventParameters":[{"ParameterID":"HapticIntensity","ParameterValue":0.2},{"ParameterID":"HapticSharpness","ParameterValue":0.35}]}},{"ParameterCurve":{"ParameterID":"HapticIntensityControl","Time":0.0,"ParameterCurveControlPoints":[{"Time":0.0,"ParameterValue":0.15},{"Time":0.9,"ParameterValue":0.45},{"Time":1.6,"ParameterValue":0.85},{"Time":1.8,"ParameterValue":0.0}]}},{"Event":{"EventType":"HapticTransient","Time":1.75,"EventParameters":[{"ParameterID":"HapticIntensity","ParameterValue":0.9},{"ParameterID":"HapticSharpness","ParameterValue":0.7}]}}]}
+    """
+
+    private var engine: CHHapticEngine?
+    private let supportsCoreHaptics: Bool
+
+    private init() {
+        supportsCoreHaptics = CHHapticEngine.capabilitiesForHardware().supportsHaptics
+        guard supportsCoreHaptics else { return }
+        prepareEngine()
+    }
+
+    private func prepareEngine() {
+        guard supportsCoreHaptics else { return }
+        do {
+            let eng = try CHHapticEngine()
+            eng.isAutoShutdownEnabled = true
+            eng.resetHandler = { [weak self] in
+                try? self?.engine?.start()
+            }
+            try eng.start()
+            engine = eng
+        } catch {
+            engine = nil
+        }
+    }
+
+    /// Maps legacy bridge names onto the 4-cue vocabulary (`tick`, `thud`, `edge`, `open`) + `"swell"`.
+    static func canonicalCue(_ raw: String) -> String {
+        switch raw {
+        case "tick", "snap", "erase": return "tick"
+        case "thud", "bounce":        return "thud"
+        case "edge", "shapeSnap":     return "edge"
+        case "open", "squeeze":       return "open"
+        case "swell", "chapterEnd":   return "swell"
+        default:                      return "tick"
+        }
+    }
+
+    /// Strength tiers 1 (light), 2 (medium), 3 (firm) -> `(intensity, sharpness)` per cue.
+    static func parameters(for cue: String, tier: Int) -> (intensity: Float, sharpness: Float) {
+        let clampedTier = max(1, min(3, tier))
+        let scale: Float = clampedTier == 1 ? 0.55 : (clampedTier == 2 ? 0.78 : 1.0)
+        switch canonicalCue(cue) {
+        case "tick": return (0.55 * scale, 0.75)
+        case "thud": return (0.95 * scale, 0.25)
+        case "edge": return (0.85 * scale, 0.85)
+        case "open": return (0.65 * scale, 0.40)
+        default:     return (0.60 * scale, 0.50)
+        }
+    }
+
+    func play(cue rawCue: String, tier: Int = 2, obligation: String? = nil) {
+        let cue = Self.canonicalCue(rawCue)
+        if supportsCoreHaptics {
+            if engine == nil { prepareEngine() }
+            if let eng = engine {
+                try? eng.start()
+                if cue == "swell" {
+                    if let url = Bundle.main.url(forResource: "chapter-end-swell", withExtension: "ahap"),
+                       (try? eng.playPattern(from: url)) != nil {
+                        return
+                    }
+                    if let data = Self.chapterEndSwellAHAP.data(using: .utf8),
+                       (try? eng.playPattern(from: data)) != nil {
+                        return
+                    }
+                }
+                if let ob = obligation, let pattern = try? Self.obligationPattern(for: ob) {
+                    if let player = try? eng.makePlayer(with: pattern) {
+                        try? player.start(atTime: CHHapticTimeImmediate)
+                        return
+                    }
+                }
+                let (intensity, sharpness) = Self.parameters(for: cue, tier: tier)
+                let ev = CHHapticEvent(
+                    eventType: .hapticTransient,
+                    parameters: [
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                        CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                    ],
+                    relativeTime: 0
+                )
+                if let pattern = try? CHHapticPattern(events: [ev], parameters: []),
+                   let player = try? eng.makePlayer(with: pattern) {
+                    try? player.start(atTime: CHHapticTimeImmediate)
+                    return
+                }
+            }
+        }
+        // Fallback when Core Haptics is unavailable (e.g. iPad)
+        switch cue {
+        case "tick": UISelectionFeedbackGenerator().selectionChanged()
+        case "thud": UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        case "edge": UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        case "open": UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        default:     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+
+    /// Spec B10b obligation patterns on iPhone: firm double (must/shall), single soft (may), sharp triple (must not/shall not).
+    private static func obligationPattern(for obligation: String) throws -> CHHapticPattern {
+        switch obligation {
+        case "must_shall":
+            let e1 = CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.65)
+            ], relativeTime: 0)
+            let e2 = CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.95),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.70)
+            ], relativeTime: 0.075)
+            return try CHHapticPattern(events: [e1, e2], parameters: [])
+        case "may":
+            let e1 = CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.50),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.30)
+            ], relativeTime: 0)
+            return try CHHapticPattern(events: [e1], parameters: [])
+        case "must_not_shall_not":
+            let times: [TimeInterval] = [0.0, 0.065, 0.130]
+            let events = times.map { t in
+                CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.92)
+                ], relativeTime: t)
+            }
+            return try CHHapticPattern(events: events, parameters: [])
+        default:
+            let e1 = CHHapticEvent(eventType: .hapticTransient, parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.55)
+            ], relativeTime: 0)
+            return try CHHapticPattern(events: [e1], parameters: [])
+        }
+    }
 }
