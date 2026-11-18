@@ -84,6 +84,7 @@ Row: ID · title · status · From · code pointer
 - BUG-26 · Pairing breaks on a duplicate message, a spoken code, or a second device nearby · `[~]` tests pass; device check owed · T-0118, T-0119, T-0120 · `bugs/BUG-26-pairing-prompt-fragile.md`
 - BUG-27 · Carry turns every edit into a copy beside the original (no parent known; rescued base not ported: it loses concurrent edits) · `[~]` tests pass; device check owed · T-0106 · `bugs/BUG-27-carry-every-edit-a-copy.md`
 - BUG-28 · After a reinstall a device's new changes are invisible to its peers (log restarts at 1) · `[~]` tests pass; device check owed · T-0110 · `bugs/BUG-28-carry-reinstall-invisible.md`
+- BUG-29 · Draftpad's Mac save is an unfixed second copy of the iPhone's (unreadable note or ink written over, failed write moves the base, Mac ink over iPad strokes, same-minute conflict copy replaced) · `[~]` tests pass; device check owed · T-0124, T-0125, T-0127 · `bugs/BUG-29-draftpad-save-second-copy.md`; `shared/draftpadfile.swift`
 - BUG-12 · Words light ahead of the voice through Bluetooth headphones (the player's position, not what is heard) · `[~]` · T-0072 · `bugs/BUG-12-words-ahead-in-headphones.md`
 - BUG-13 · Transcript lines cut off mid-sentence (one line per breath-phrase on iOS; the Mac's sentence rule moved to ShowsKit) · `[~]` · T-0073 · `bugs/BUG-13-lines-cut-mid-sentence.md`
 - BUG-15 · Floating window goes dead and won't close (frozen on an old caption, or a black box that never closes) · `[~]` (fixed leads; device check owed) · T-0077 · `bugs/BUG-15-floating-window-goes-dead.md`
