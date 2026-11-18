@@ -144,10 +144,15 @@ final class DirectTrackpadActuator {
 enum Haptics {
     static let modeKey = "recense.haptics.mode"
     static let actuatorKey = "recense.haptics.directActuator"
+    static let cueTimingOffsetMsKey = "recense.haptics.cueTimingOffsetMs"
+    static let defaultCueTimingOffsetMs: Int = 50
+    static let cueTimingRangeMs: ClosedRange<Int> = -100...260
     static let changedNotification = Notification.Name("recense.haptics.changed")
 
     /// Optional test observer receiving `(cue, backend)` where backend is `"public"` or `"actuator"`.
     static var testObserver: ((HapticCue, String) -> Void)?
+    /// Records the `cueTimingOffsetMs` read by the most recent `perform(_:)` call (B4).
+    private(set) static var lastReadCueTimingOffsetMs: Int = defaultCueTimingOffsetMs
     /// When set in tests, overrides hardware actuator return value.
     static var actuatorOverride: ((HapticCue) -> Bool)?
 
@@ -171,10 +176,45 @@ enum Haptics {
         }
     }
 
+    /// B4: Visual-delay remap (Settings › Cue timing). Offset between the karaoke light and its haptic/audio cue,
+    /// clamped to `-100…+260 ms`. Default is `+50 ms` (the light leads and the cue follows at +50 ms).
+    static var cueTimingOffsetMs: Int {
+        get {
+            guard UserDefaults.standard.object(forKey: cueTimingOffsetMsKey) != nil else {
+                return defaultCueTimingOffsetMs
+            }
+            let raw = UserDefaults.standard.integer(forKey: cueTimingOffsetMsKey)
+            return min(cueTimingRangeMs.upperBound, max(cueTimingRangeMs.lowerBound, raw))
+        }
+        set {
+            let clamped = min(cueTimingRangeMs.upperBound, max(cueTimingRangeMs.lowerBound, newValue))
+            UserDefaults.standard.set(clamped, forKey: cueTimingOffsetMsKey)
+            NotificationCenter.default.post(name: changedNotification, object: nil)
+        }
+    }
+
+    static var cueTimingOffsetSeconds: TimeInterval {
+        Double(cueTimingOffsetMs) / 1000.0
+    }
+
+    /// Maps a karaoke light timestamp (seconds) to the timestamp when its haptic/audio cue fires.
+    static func effectiveCueTimestamp(forLightTimestamp lightTime: Double) -> Double {
+        lastReadCueTimingOffsetMs = cueTimingOffsetMs
+        return lightTime + Double(lastReadCueTimingOffsetMs) / 1000.0
+    }
+
+    static func cueTimingSummary(_ ms: Int = cueTimingOffsetMs) -> String {
+        if ms > 0 { return "+\(ms) ms (light leads, cue follows)" }
+        if ms < 0 { return "\(ms) ms (cue leads light)" }
+        return "0 ms (simultaneous)"
+    }
+
     /// Fires a named haptic cue according to Settings › Haptics (`Off · Calm · Full`).
+    /// Every cue reads `cueTimingOffsetMs` (`lastReadCueTimingOffsetMs`).
     /// Returns true if the cue was allowed and dispatched, false if filtered out by `Off` or `Calm`.
     @discardableResult
     static func perform(_ cue: HapticCue) -> Bool {
+        lastReadCueTimingOffsetMs = cueTimingOffsetMs
         let currentMode = mode
         guard currentMode.allows(cue) else { return false }
         if useDirectActuator {
@@ -242,6 +282,19 @@ enum Haptics {
             m.addItem(zi)
         }
         m.addItem(.separator())
+        let timingItem = NSMenuItem(title: "Cue Timing (\(cueTimingSummary()))", action: nil, keyEquivalent: "")
+        let timingMenu = NSMenu(title: "Cue Timing")
+        for preset in [-100, -50, 0, 50, 100, 180, 260] {
+            let label = preset == 50 ? "+50 ms (Default — Light Leads)" : (preset > 0 ? "+\(preset) ms" : "\(preset) ms")
+            let pi = NSMenuItem(title: label, action: #selector(HapticsMenuTarget.shared.selectCueTimingMenu(_:)), keyEquivalent: "")
+            pi.target = HapticsMenuTarget.shared
+            pi.representedObject = preset
+            pi.state = (cueTimingOffsetMs == preset) ? .on : .off
+            timingMenu.addItem(pi)
+        }
+        timingItem.submenu = timingMenu
+        m.addItem(timingItem)
+        m.addItem(.separator())
         let openPanel = NSMenuItem(
             title: "Haptics Settings…",
             action: #selector(HapticsMenuTarget.shared.openSettingsPanel(_:)),
@@ -260,6 +313,8 @@ final class HapticsMenuTarget: NSObject {
     private var actuatorCheck: NSButton?
     private var zoneChecks: [ConsoleZone: NSButton] = [:]
     private var speedSeg: NSSegmentedControl?
+    private var timingLabel: NSTextField?
+    private var timingSlider: NSSlider?
 
     @objc func selectMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let m = HapticMode(rawValue: raw) else { return }
@@ -280,6 +335,13 @@ final class HapticsMenuTarget: NSObject {
         RestHoldConsole.shared.setZone(z, unlocked: unlocked)
         syncPanel()
         Haptics.perform(.edge)
+    }
+
+    @objc func selectCueTimingMenu(_ sender: NSMenuItem) {
+        guard let ms = sender.representedObject as? Int else { return }
+        Haptics.cueTimingOffsetMs = ms
+        syncPanel()
+        Haptics.perform(ms == Haptics.defaultCueTimingOffsetMs ? .thud : .tick)
     }
 
     @objc func segChanged(_ sender: NSSegmentedControl) {
@@ -307,6 +369,22 @@ final class HapticsMenuTarget: NSObject {
         RestHoldConsole.shared.setValue(v, for: .speed, fireHaptics: true)
     }
 
+    @objc func timingSliderChanged(_ sender: NSSlider) {
+        let stepped = Int((sender.doubleValue / 10.0).rounded()) * 10
+        let prev = Haptics.cueTimingOffsetMs
+        Haptics.cueTimingOffsetMs = stepped
+        syncPanel()
+        if stepped != prev {
+            Haptics.perform(stepped == Haptics.defaultCueTimingOffsetMs ? .thud : .tick)
+        }
+    }
+
+    @objc func resetCueTiming(_ sender: Any?) {
+        Haptics.cueTimingOffsetMs = Haptics.defaultCueTimingOffsetMs
+        syncPanel()
+        Haptics.perform(.thud)
+    }
+
     @objc func closePanel(_ sender: Any?) {
         panel?.orderOut(nil)
     }
@@ -330,11 +408,14 @@ final class HapticsMenuTarget: NSObject {
                 sseg.selectedSegment = idx
             }
         }
+        let ms = Haptics.cueTimingOffsetMs
+        timingSlider?.integerValue = ms
+        timingLabel?.stringValue = "Cue Timing · \(Haptics.cueTimingSummary(ms))"
     }
 
     func showSettingsPanel() {
         if panel == nil {
-            let w: CGFloat = 380, h: CGFloat = 268
+            let w: CGFloat = 380, h: CGFloat = 332
             let p = NSPanel(
                 contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                 styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
@@ -396,7 +477,7 @@ final class HapticsMenuTarget: NSObject {
             let speedLabel = NSTextField(labelWithString: "Global Speed")
             speedLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
             speedLabel.textColor = NSColor(white: 1.0, alpha: 0.88)
-            speedLabel.frame = NSRect(x: 20, y: 46, width: w - 40, height: 16)
+            speedLabel.frame = NSRect(x: 20, y: h - 226, width: w - 40, height: 16)
             root.addSubview(speedLabel)
 
             let sseg = NSSegmentedControl(
@@ -406,9 +487,41 @@ final class HapticsMenuTarget: NSObject {
                 action: #selector(speedSegChanged(_:))
             )
             sseg.segmentStyle = .rounded
-            sseg.frame = NSRect(x: 20, y: 16, width: w - 40, height: 24)
+            sseg.frame = NSRect(x: 20, y: h - 254, width: w - 40, height: 24)
             root.addSubview(sseg)
             self.speedSeg = sseg
+
+            let tLabel = NSTextField(labelWithString: "Cue Timing · +50 ms (light leads, cue follows)")
+            tLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
+            tLabel.textColor = NSColor(white: 1.0, alpha: 0.88)
+            tLabel.frame = NSRect(x: 20, y: 44, width: w - 104, height: 16)
+            root.addSubview(tLabel)
+            self.timingLabel = tLabel
+
+            let resetBtn = NSButton(title: "+50 ms", target: self, action: #selector(resetCueTiming(_:)))
+            resetBtn.bezelStyle = .inline
+            resetBtn.font = .systemFont(ofSize: 10.5, weight: .medium)
+            resetBtn.frame = NSRect(x: w - 78, y: 43, width: 58, height: 18)
+            root.addSubview(resetBtn)
+
+            let minLbl = NSTextField(labelWithString: "−100 ms")
+            minLbl.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+            minLbl.textColor = NSColor(white: 1.0, alpha: 0.55)
+            minLbl.frame = NSRect(x: 20, y: 16, width: 48, height: 14)
+            root.addSubview(minLbl)
+
+            let slider = NSSlider(value: 50, minValue: -100, maxValue: 260, target: self, action: #selector(timingSliderChanged(_:)))
+            slider.isContinuous = true
+            slider.frame = NSRect(x: 72, y: 14, width: w - 144, height: 20)
+            root.addSubview(slider)
+            self.timingSlider = slider
+
+            let maxLbl = NSTextField(labelWithString: "+260 ms")
+            maxLbl.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+            maxLbl.textColor = NSColor(white: 1.0, alpha: 0.55)
+            maxLbl.alignment = .right
+            maxLbl.frame = NSRect(x: w - 68, y: 16, width: 48, height: 14)
+            root.addSubview(maxLbl)
 
             self.panel = p
         }
@@ -838,5 +951,32 @@ func hapticsSelftest() -> Bool {
     let b3OK = defaultTwoZonesOK && clampLockedOK && toneTicksOK && at075 && at100 && at125Persisted && detentCuesOK && musicNoticeOK
     print("\(b3OK ? "ok  " : "FAIL") haptics, B3 rest-hold console zones, progressive unlock, home thud, and global speed persist")
 
-    return vocabOK && modesOK && spikeOK && b2OK && b3OK
+    // 6. B4: Visual-delay remap (Settings › Cue timing, -100…+260 ms, default +50 ms where light leads and cue follows).
+    let hadTimingObj = UserDefaults.standard.object(forKey: Haptics.cueTimingOffsetMsKey)
+    defer {
+        if let old = hadTimingObj {
+            UserDefaults.standard.set(old, forKey: Haptics.cueTimingOffsetMsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Haptics.cueTimingOffsetMsKey)
+        }
+    }
+    UserDefaults.standard.removeObject(forKey: Haptics.cueTimingOffsetMsKey)
+    let default50OK = Haptics.cueTimingOffsetMs == 50
+        && abs(Haptics.effectiveCueTimestamp(forLightTimestamp: 2.0) - 2.050) < 1e-6
+
+    Haptics.cueTimingOffsetMs = -250
+    let clampLowOK = Haptics.cueTimingOffsetMs == -100
+        && abs(Haptics.effectiveCueTimestamp(forLightTimestamp: 2.0) - 1.900) < 1e-6
+
+    Haptics.cueTimingOffsetMs = 400
+    let clampHighOK = Haptics.cueTimingOffsetMs == 260
+        && abs(Haptics.effectiveCueTimestamp(forLightTimestamp: 2.0) - 2.260) < 1e-6
+
+    Haptics.cueTimingOffsetMs = 120
+    _ = Haptics.perform(.tick)
+    let readByCueOK = Haptics.lastReadCueTimingOffsetMs == 120
+    let b4OK = default50OK && clampLowOK && clampHighOK && readByCueOK
+    print("\(b4OK ? "ok  " : "FAIL") haptics, B4 cue timing defaults to +50 ms, clamps to -100…+260 ms, persists, and every cue reads it")
+
+    return vocabOK && modesOK && spikeOK && b2OK && b3OK && b4OK
 }
