@@ -33,6 +33,7 @@ import { listenApi } from "./listen.js";
 import { archive, diskSweep } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexRun } from "./ai.js";
+import { mintCode, pairPage, claimPage, claim, devicesPage, revoke } from "./pair.js";
 import { inviteIcs, warmCalendar } from "./calendar.js";
 
 export default {
@@ -51,6 +52,10 @@ export default {
       }
       return mainRoute(req, env, ctx, url, path, method);
     }
+
+    // pairing a phone or tablet: the claim page lives outside /main (pair.js)
+    if (path === "/pair" && method === "GET") return claimPage();
+    if (path === "/pair" && method === "POST") return claim(req, env, url);
 
     if (path.startsWith("/m/")) return participantRoute(req, env, ctx, url, path);
 
@@ -107,9 +112,14 @@ async function mainRoute(req, env, ctx, url, path, method) {
   // the File Provider's read-only feed: a native client sends no Origin (fp.js)
   if (path.startsWith("/main/api/fp/")) return fp(req, env, url, path);
 
+  if (path === "/main/pair" && read) return pairPage();
+  if (path === "/main/devices" && read) return devicesPage(env);
+
   if (path.startsWith("/main/api/")) {
     if (path === "/main/api/whoami" && read) return jsonResponse({ ok: true });
     if (!sameSite(req, url)) return new Response("Forbidden", { status: 403 });
+    if (path === "/main/api/pair" && method === "POST") return mintCode(env);
+    { const d = path.match(/^\/main\/api\/devices\/([0-9a-f]{32})\/revoke$/); if (d && method === "POST") return revoke(env, d[1]); }
     if (path.startsWith("/main/api/ai/")) return aiRoute(req, env, ctx, url, path, method);
     if (path === "/main/api/listen" || path.startsWith("/main/api/listen/")) return listenApi(req, env, path, method);
 

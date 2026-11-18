@@ -8,6 +8,8 @@
 // The token arrives as the Cf-Access-Jwt-Assertion header on paths Access protects, or as the
 // CF_Authorization cookie anywhere on this host once the owner has signed in.
 
+import { deviceOwner } from "./pair.js";
+
 const b64url = (s) =>
   Uint8Array.from(
     atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")),
@@ -106,10 +108,11 @@ export async function isOwner(req, env) {
   try {
     claims = await accessClaims(req, env);
   } catch (e) {
-    return false;
+    claims = null;
   }
 
-  if (!claims) return false;
+  // a phone or tablet the signed-in Mac paired (pair.js)
+  if (!claims) return deviceOwner(req, env).catch(() => false);
   if (claims.email && !emails.length) return true;
   if (emails.includes(String(claims.email || "").trim().toLowerCase())) return true;
   if (!claims.email && clients.includes(String(claims.common_name || ""))) return true;
