@@ -188,7 +188,7 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 
 ### Shows (private podcasts, `chau/show.mjs`)
 - A Markdown outline becomes a show: one episode per `## ` section, spoken by a macOS voice, AAC `.m4a`.
-- Publish (renders, then syncs to Main's `Shows/<show>/` over the rclone remote `gallery-main`; a section you drop goes to `trash/<date>/`):
+- Publish (renders, then syncs to Main's `Shows/<show>/` over the rclone remote `gallery-main`; a section you drop goes to `trash/<date>/` (each trashed file keeps an `@<ms>` suffix, BUG-30)):
   `node chau/show.mjs publish <outline.md>` (show name = the `# ` title; `--show <name>` to choose).
 - Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.

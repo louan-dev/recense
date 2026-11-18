@@ -3,7 +3,7 @@
 // Files live under files/<path>, exactly as they are in Gallery/Main on the Mac. rclone puts
 // most of them there straight into R2; the page can add and delete files too. Artwork found in
 // a file is cached under art/<path>, outside files/, so an rclone sync never sees it or deletes
-// it. Deleting moves a file to trash/<date>/<path>, which the bucket empties after 30 days.
+// it. Deleting moves a file to trash/<date>/<path>@<ms> (BUG-30: same-name files never overwrite), which the bucket empties after 30 days.
 //
 // The router lets a request in here only when it comes from the owner (see access.js).
 
@@ -904,7 +904,7 @@ export async function mainDelete(env, url) {
   return jsonResponse({ ok: true, key: rel });
 }
 
-// files/<rel> to trash/<date>/<rel>, with its artwork, comment and key gone; false if there is no such file
+// files/<rel> to trash/<date>/<rel>@<ms>, with its artwork, comment and key gone; false if there is no such file
 export async function trashFile(env, rel) {
   const obj = await env.MAIN.get(FILES + rel);
   if (!obj) return false;
@@ -913,7 +913,8 @@ export async function trashFile(env, rel) {
   const { readable, writable } = new FixedLengthStream(obj.size);
   const copied = obj.body.pipeTo(writable);
 
-  await env.MAIN.put(TRASH + day + "/" + rel, readable, {
+  // @<ms>: two files of one name trashed on one day never overwrite each other (Derived from Spec: BUG-30)
+  await env.MAIN.put(TRASH + day + "/" + rel + "@" + Date.now(), readable, {
     httpMetadata: obj.httpMetadata,
     customMetadata: obj.customMetadata,
   });

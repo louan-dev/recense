@@ -104,7 +104,7 @@ await test("rclone nextcloud: rename and delete (to the trash)", async () => {
   assert.equal(await (await MAIN.get("files/R/b.txt")).text(), "two!");
   await rc("deletefile", "G:R/b.txt");
   assert.equal(await MAIN.head("files/R/b.txt"), null);
-  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.endsWith("/R/b.txt")));
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.includes("/R/b.txt@")));
 });
 
 rmSync(dir, { recursive: true, force: true });
