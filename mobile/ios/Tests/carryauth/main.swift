@@ -281,6 +281,9 @@ do {
     check(!CarryKeychainGate(trustWritable: false).canPair, "an unreadable peers.v2 never pairs")
     check(!CarryKeychainGate(groupUnread: true).canPair, "an unreadable group secret never pairs (it would be overwritten)")
     check(CarryKeychainGate(groupUnread: true).canAuth, "an unreadable group still lets paired devices prove their keys")
+    check(!CarryKeychainGate(trustWritable: false).canForget, "forget sends nothing when peers.v2 can't be written")
+    check(!CarryKeychainGate(identityUnread: true).canForget, "forget sends nothing on a stand-in key")
+    check(CarryKeychainGate(groupUnread: true).canForget && fine.canForget, "forget needs no group")
 }
 
 // A duplicate hello in one session is out of order, never a second channel

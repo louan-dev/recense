@@ -345,6 +345,7 @@ private enum CarryKeychain {
         reloadFromDisk()
         let keys = Set((peers + mirror).filter { $0.name == name }.map(\.key))
         guard !keys.isEmpty || refusedNames.contains(name) else { lastError = "\(name) is not paired"; return false }
+        guard gate.canForget else { lastError = Self.unreadable; return false }   // invariant 19: before telling the peer
         var told = false
         for (peer, s) in auth where s.peer.map({ keys.contains($0.key) }) ?? false {
             if s.authenticated, (try? sendSealed(Data(), type: "forget", to: peer)) != nil { told = true }

@@ -155,6 +155,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     - an unread identity (a stand-in key) never pairs, advertises or starts a handshake, so no peer ever stores it;
     - an unread `group` secret never pairs (a pairing would save a peer's or a new group over it), and a pairing
       saves the group only after `peers.v2` was saved;
+    - Forget checks it can write `peers.v2` before it sends the sealed `forget`: otherwise it sends nothing, keeps
+      the peer, returns false and sets `lastError`, and every surface (voice included) shows that error;
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
