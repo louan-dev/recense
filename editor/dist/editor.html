@@ -2647,7 +2647,7 @@ html.rc-wings-page body {
   var LANGS = ["en", "fr", "vi"];
   var LANG_NAMES = { en: "English", fr: "French", vi: "Vietnamese" };
 
-  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2721,7 +2721,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
+  // node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -6133,7 +6133,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../editor/node_modules/style-mod/src/style-mod.js
+  // node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -6269,7 +6269,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../editor/node_modules/w3c-keyname/index.js
+  // node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6375,7 +6375,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../editor/node_modules/crelt/index.js
+  // node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6404,7 +6404,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
+  // node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -16134,7 +16134,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../editor/node_modules/@lezer/common/dist/index.js
+  // node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -17785,9 +17785,9 @@ html.rc-wings-page body {
     Run a full parse, returning the resulting tree.
     */
     parse(input, fragments, ranges) {
-      let parse = this.startParse(input, fragments, ranges);
+      let parse2 = this.startParse(input, fragments, ranges);
       for (; ; ) {
-        let done = parse.advance();
+        let done = parse2.advance();
         if (done)
           return done;
       }
@@ -17811,12 +17811,12 @@ html.rc-wings-page body {
     }
   };
   function parseMixed(nest) {
-    return (parse, input, fragments, ranges) => new MixedParse(parse, nest, input, fragments, ranges);
+    return (parse2, input, fragments, ranges) => new MixedParse(parse2, nest, input, fragments, ranges);
   }
   var InnerParse = class {
-    constructor(parser5, parse, overlay, bracketed, target, from) {
+    constructor(parser5, parse2, overlay, bracketed, target, from) {
       this.parser = parser5;
-      this.parse = parse;
+      this.parse = parse2;
       this.overlay = overlay;
       this.bracketed = bracketed;
       this.target = target;
@@ -18195,7 +18195,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
+  // node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18919,7 +18919,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
+  // node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -20405,7 +20405,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
+  // node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -21499,7 +21499,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -21964,7 +21964,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
+  // node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -22658,9 +22658,9 @@ html.rc-wings-page body {
       if (line.pos == line.text.length)
         return this.nextLine() ? null : this.finish();
       let leaf = new LeafBlock(this.lineStart + line.pos, line.text.slice(line.pos));
-      for (let parse of this.parser.leafBlockParsers)
-        if (parse) {
-          let parser5 = parse(this, leaf);
+      for (let parse2 of this.parser.leafBlockParsers)
+        if (parse2) {
+          let parser5 = parse2(this, leaf);
           if (parser5)
             leaf.parsers.push(parser5);
         }
@@ -22944,10 +22944,10 @@ html.rc-wings-page body {
         this.nodeTypes[t2.name] = t2.id;
     }
     createParse(input, fragments, ranges) {
-      let parse = new BlockContext(this, input, fragments, ranges);
+      let parse2 = new BlockContext(this, input, fragments, ranges);
       for (let w of this.wrappers)
-        parse = w(parse, input, fragments, ranges);
-      return parse;
+        parse2 = w(parse2, input, fragments, ranges);
+      return parse2;
     }
     /**
     Reconfigure the parser.
@@ -24052,7 +24052,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
+  // node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25579,10 +25579,10 @@ html.rc-wings-page body {
       this.top = this.topRules[Object.keys(this.topRules)[0]];
     }
     createParse(input, fragments, ranges) {
-      let parse = new Parse(this, input, fragments, ranges);
+      let parse2 = new Parse(this, input, fragments, ranges);
       for (let w of this.wrappers)
-        parse = w(parse, input, fragments, ranges);
-      return parse;
+        parse2 = w(parse2, input, fragments, ranges);
+      return parse2;
     }
     /**
     Get a goto table entry @internal
@@ -25830,7 +25830,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // ../../../../editor/node_modules/@lezer/html/dist/index.js
+  // node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -26174,7 +26174,7 @@ html.rc-wings-page body {
     });
   }
 
-  // ../../../../editor/node_modules/@lezer/css/dist/index.js
+  // node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -26354,7 +26354,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
+  // node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -27215,7 +27215,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
+  // node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -27427,7 +27427,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27739,7 +27739,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
+  // node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -28479,7 +28479,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -29386,7 +29386,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
+  // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -31225,6 +31225,11 @@ ${PAGE_MARKER}
     getRemoved: getRemoved2 = () => [],
     // Derived from Spec: BUG-08 — true while the owner is dragging a selection (pointer down in the text).
     isSelecting = () => false,
+    // Derived from Spec: FEAT-23 rule 2 — while a media note is shown: its saves go to the note (true = taken), the
+    // host's flush still reads draftpad.md, and the host's draftpad text waits beside the note.
+    routeText = null,
+    hostText = null,
+    absorbText = null,
     extra = {},
     globalObj = typeof window !== "undefined" ? window : {},
     debounceMs = DEBOUNCE_MS
@@ -31237,6 +31242,7 @@ ${PAGE_MARKER}
       }
     }
     function postToNative(text) {
+      if (typeof routeText === "function" && routeText(text)) return;
       const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.editor;
       if (handler && typeof handler.postMessage === "function") {
         handler.postMessage(text);
@@ -31267,6 +31273,7 @@ ${PAGE_MARKER}
       }
     }
     function getText() {
+      if (typeof hostText === "function") return hostText();
       const state = getState();
       return state ? state.doc.toString() : "";
     }
@@ -31279,6 +31286,7 @@ ${PAGE_MARKER}
     }
     function setText(nextText) {
       const s = typeof nextText === "string" ? nextText : String(nextText ?? "");
+      if (typeof absorbText === "function" && absorbText(s)) return;
       if (typeof isSelecting === "function" && isSelecting()) {
         deferredText = s;
         return;
@@ -31331,6 +31339,7 @@ ${PAGE_MARKER}
       api,
       notifyDocChanged,
       clearPendingPost,
+      flushPendingPost,
       // Derived from Spec: BUG-08 — the host called while the owner was dragging; this lands it once, after.
       applyDeferredText
     };
@@ -33734,10 +33743,1280 @@ ${PAGE_MARKER}
     return [embedField, embedDropHandler];
   }
 
+  // src/audio.js
+  function formatTimestamp(seconds) {
+    const s = Math.max(0, Number(seconds) || 0);
+    const totalSecs = Math.floor(s);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor(totalSecs % 3600 / 60);
+    const secs = totalSecs % 60;
+    if (hours > 0) {
+      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function normalizeCues(cues) {
+    if (!Array.isArray(cues)) return [];
+    return cues.map((c, i) => ({
+      id: c.id ? String(c.id) : `cue-${i}-${Math.round((Number(c.start) || 0) * 1e3)}`,
+      start: Math.max(0, Number(c.start) || 0),
+      end: Math.max(0, Number(c.end) || 0),
+      text: String(c.text ?? "").trim(),
+      speaker: String(c.speaker ?? "").trim(),
+      bookmarked: Boolean(c.bookmarked),
+      annotation: String(c.annotation ?? "").trim(),
+      inkStrokes: Array.isArray(c.inkStrokes) ? c.inkStrokes : []
+    }));
+  }
+  function activeCueIndexAt(cues, timeSec) {
+    if (!Array.isArray(cues) || cues.length === 0) return -1;
+    const t2 = Number(timeSec) || 0;
+    if (t2 < cues[0].start) return -1;
+    for (let i = 0; i < cues.length; i++) {
+      const cue = cues[i];
+      if (t2 >= cue.start && t2 <= cue.end) {
+        return i;
+      }
+    }
+    let latestIdx = -1;
+    for (let i = 0; i < cues.length; i++) {
+      if (cues[i].start <= t2) {
+        latestIdx = i;
+      } else {
+        break;
+      }
+    }
+    return latestIdx;
+  }
+  function bookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    cue.bookmarked = true;
+    if (!Array.isArray(state.bookmarks)) {
+      state.bookmarks = [];
+    }
+    const noteStr = String(note ?? "").trim();
+    let bookmark = state.bookmarks.find((b) => b.cueId === cue.id);
+    if (bookmark) {
+      bookmark.note = noteStr;
+      bookmark.time = cue.start;
+      bookmark.text = cue.text;
+    } else {
+      bookmark = {
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr,
+        createdAt: Date.now()
+      };
+      state.bookmarks.push(bookmark);
+    }
+    if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+      globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "bookmark",
+        cueId: cue.id,
+        time: cue.start,
+        text: cue.text,
+        note: noteStr
+      });
+    }
+    return bookmark;
+  }
+  function toggleBookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    if (cue.bookmarked) {
+      cue.bookmarked = false;
+      if (Array.isArray(state.bookmarks)) {
+        state.bookmarks = state.bookmarks.filter((b) => b.cueId !== cue.id);
+      }
+      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
+        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
+      }
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({
+          action: "unbookmark",
+          cueId: cue.id,
+          time: cue.start
+        });
+      }
+      return null;
+    }
+    return bookmarkCue(state, cueIndex, note, { globalObj });
+  }
+  function annotateCue(state, cueIndex, annotationText, { onInsertToPage = null, globalObj = typeof window !== "undefined" ? window : null } = {}) {
+    if (!state || !Array.isArray(state.cues)) return null;
+    const idx = Number(cueIndex);
+    if (idx < 0 || idx >= state.cues.length) return null;
+    const cue = state.cues[idx];
+    const textStr = String(annotationText ?? "").trim();
+    cue.annotation = textStr;
+    const timestamp = formatTimestamp(cue.start);
+    const reference = textStr.length > 0 ? `[@${timestamp}] ${cue.text} \u2014 ${textStr}` : `[@${timestamp}] ${cue.text}`;
+    if (typeof onInsertToPage === "function") {
+      onInsertToPage(reference);
+    }
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "annotate",
+        cueId: cue.id,
+        time: cue.start,
+        annotation: textStr
+      });
+    }
+    return { cue, reference };
+  }
+  function createMockElement(tag) {
+    const listeners = {};
+    const attributes = {};
+    const classListSet = /* @__PURE__ */ new Set();
+    const el5 = {
+      tagName: tag.toUpperCase(),
+      hidden: false,
+      value: "",
+      textContent: "",
+      innerHTML: "",
+      children: [],
+      style: {},
+      classList: {
+        add(...classes) {
+          for (const c of classes) if (c) classListSet.add(c);
+        },
+        remove(...classes) {
+          for (const c of classes) classListSet.delete(c);
+        },
+        contains(c) {
+          return classListSet.has(c);
+        },
+        toggle(c, force) {
+          if (force === true) classListSet.add(c);
+          else if (force === false) classListSet.delete(c);
+          else if (classListSet.has(c)) classListSet.delete(c);
+          else classListSet.add(c);
+          return classListSet.has(c);
+        }
+      },
+      setAttribute(k, v) {
+        attributes[k] = String(v);
+        if (k === "hidden") el5.hidden = true;
+        if (k === "class") {
+          classListSet.clear();
+          String(v).split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      },
+      getAttribute(k) {
+        return attributes[k] ?? null;
+      },
+      removeAttribute(k) {
+        delete attributes[k];
+        if (k === "hidden") el5.hidden = false;
+      },
+      hasAttribute(k) {
+        return k in attributes;
+      },
+      appendChild(child) {
+        el5.children.push(child);
+        child.parentElement = el5;
+        return child;
+      },
+      removeChild(child) {
+        const idx = el5.children.indexOf(child);
+        if (idx !== -1) {
+          el5.children.splice(idx, 1);
+          child.parentElement = null;
+        }
+        return child;
+      },
+      replaceChildren(...newChildren) {
+        el5.children = [];
+        for (const c of newChildren) {
+          el5.appendChild(c);
+        }
+      },
+      addEventListener(type, fn) {
+        if (!listeners[type]) listeners[type] = [];
+        listeners[type].push(fn);
+      },
+      removeEventListener(type, fn) {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      dispatchEvent(event) {
+        const type = event?.type || "click";
+        const fns = [...listeners[type] || []];
+        for (const fn of fns) {
+          fn(event);
+        }
+      },
+      scrollIntoView() {
+      },
+      focus() {
+      }
+    };
+    Object.defineProperty(el5, "className", {
+      get() {
+        return Array.from(classListSet).join(" ");
+      },
+      set(v) {
+        classListSet.clear();
+        if (typeof v === "string") {
+          v.split(/\s+/).forEach((c) => {
+            if (c) classListSet.add(c);
+          });
+        }
+      }
+    });
+    return el5;
+  }
+  function makeDomElement(doc2, tag, props = {}, attrs = {}) {
+    const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
+    let el5;
+    if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
+      el5 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
+    } else if (doc2 && typeof doc2.createElement === "function") {
+      el5 = doc2.createElement(tag);
+    } else {
+      el5 = createMockElement(tag);
+    }
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "style" && typeof v === "object") {
+        if (el5.style) Object.assign(el5.style, v);
+      } else {
+        el5[k] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v !== void 0 && v !== null) {
+        if (typeof el5.setAttribute === "function") {
+          el5.setAttribute(k, String(v));
+        } else {
+          el5[k] = String(v);
+        }
+      }
+    }
+    return el5;
+  }
+  function strokeToPathData(stroke) {
+    if (stroke?.d) return stroke.d;
+    const pts = stroke?.points || [];
+    if (pts.length === 0) return "";
+    const getX = (p) => Array.isArray(p) ? p[0] : p?.x ?? 0;
+    const getY = (p) => Array.isArray(p) ? p[1] : p?.y ?? 0;
+    let d = `M ${getX(pts[0])} ${getY(pts[0])}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${getX(pts[i])} ${getY(pts[i])}`;
+    }
+    return d;
+  }
+  function renderCueInkStroke(doc2, stroke) {
+    const d = strokeToPathData(stroke);
+    if (!d) return null;
+    const path = makeDomElement(doc2, "path", {}, {
+      d,
+      fill: "none",
+      stroke: stroke.color || "#38bdf8",
+      "stroke-width": String(stroke.width || 2),
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round"
+    });
+    return path;
+  }
+  function createTranscriptPane(container, options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const doc2 = options.doc ?? container?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const onSeek = options.onSeek ?? null;
+    const onClose = options.onClose ?? null;
+    const sidecar = options.sidecar ?? null;
+    const onLineTap = options.onLineTap ?? null;
+    const pane = makeDomElement(doc2, "aside", { className: "rc-transcript-pane", hidden: true }, {
+      "aria-label": "Live audio transcript",
+      role: "complementary"
+    });
+    const header = makeDomElement(doc2, "header", { className: "rc-transcript-header" });
+    const titleEl = makeDomElement(doc2, "h3", {
+      className: "rc-transcript-title",
+      textContent: "Live Transcript"
+    });
+    const closeControl = makeDomElement(doc2, "span", {
+      className: "rc-transcript-close",
+      textContent: ""
+    }, {
+      "aria-label": "Close transcript",
+      role: "button",
+      tabindex: "0"
+    });
+    header.appendChild(titleEl);
+    header.appendChild(closeControl);
+    pane.appendChild(header);
+    const cuesContainer = makeDomElement(doc2, "div", { className: "rc-transcript-cues" }, {
+      role: "feed",
+      "aria-label": "Transcript cues"
+    });
+    pane.appendChild(cuesContainer);
+    let activeIndex = -1;
+    let currentCues = [];
+    let cueElements = [];
+    function handleSeek(timeSec) {
+      if (typeof onSeek === "function") {
+        onSeek(timeSec);
+      }
+      if (sidecar && typeof sidecar.seek === "function") {
+        sidecar.seek(timeSec);
+      } else if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time: timeSec });
+      }
+    }
+    function handleBookmarkToggle(cueIndex, note = "") {
+      if (sidecar && typeof sidecar.toggleBookmarkCue === "function") {
+        sidecar.toggleBookmarkCue(cueIndex, note);
+      } else if (sidecar && typeof sidecar.bookmarkCue === "function") {
+        const st = sidecar.getState();
+        toggleBookmarkCue(st, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      } else if (options.state) {
+        toggleBookmarkCue(options.state, cueIndex, note, { globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function handleAnnotate(cueIndex, text, insert2 = false) {
+      const insertFn = insert2 ? onInsertToPage : null;
+      if (sidecar && typeof sidecar.annotateCue === "function") {
+        sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn, lineNote: insert2 });
+      } else if (options.state) {
+        annotateCue(options.state, cueIndex, text, { onInsertToPage: insertFn, globalObj });
+        updateCue(cueIndex);
+      }
+    }
+    function buildCueElement(cue, index) {
+      const cueEl = makeDomElement(doc2, "article", {
+        className: `rc-transcript-cue${cue.bookmarked ? " is-bookmarked" : ""}`
+      }, {
+        "data-cue-index": index,
+        "data-cue-id": cue.id,
+        tabindex: "0"
+      });
+      const timeEl = makeDomElement(doc2, "time", {
+        className: "rc-transcript-cue-time",
+        textContent: formatTimestamp(cue.start)
+      }, {
+        "data-start": cue.start
+      });
+      cueEl.appendChild(timeEl);
+      if (cue.speaker) {
+        const speakerEl = makeDomElement(doc2, "span", {
+          className: "rc-transcript-cue-speaker",
+          textContent: `${cue.speaker}: `
+        });
+        cueEl.appendChild(speakerEl);
+      }
+      const textEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-text",
+        textContent: cue.text
+      });
+      cueEl.appendChild(textEl);
+      const dotEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-dot",
+        textContent: cue.bookmarked ? "\u25CF" : ""
+      }, {
+        "aria-hidden": "true"
+      });
+      cueEl.appendChild(dotEl);
+      const noteEl = makeDomElement(doc2, "span", {
+        className: "rc-transcript-cue-note",
+        textContent: cue.annotation || "",
+        hidden: !cue.annotation
+      }, {
+        ...cue.annotation ? {} : { hidden: "true" }
+      });
+      cueEl.appendChild(noteEl);
+      const inkSvg = makeDomElement(doc2, "svg", {
+        className: "rc-cue-ink-svg"
+      });
+      if (Array.isArray(cue.inkStrokes)) {
+        for (const stroke of cue.inkStrokes) {
+          const path = renderCueInkStroke(doc2, stroke);
+          if (path) inkSvg.appendChild(path);
+        }
+      }
+      cueEl.appendChild(inkSvg);
+      const annotInput = makeDomElement(doc2, "input", {
+        className: "rc-transcript-annot-input",
+        type: "text",
+        value: cue.annotation || "",
+        hidden: true
+      }, {
+        hidden: "true",
+        "aria-label": "Cue annotation"
+      });
+      cueEl.appendChild(annotInput);
+      function revealInput() {
+        annotInput.hidden = false;
+        annotInput.removeAttribute("hidden");
+        annotInput.focus();
+      }
+      function commitAnnotation() {
+        const val = annotInput.value.trim();
+        annotInput.hidden = true;
+        annotInput.setAttribute("hidden", "true");
+        handleAnnotate(index, val, true);
+        noteEl.textContent = val;
+        if (val) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+      let activePenPoints = null;
+      let activePathEl = null;
+      cueEl.addEventListener("pointerdown", (e) => {
+        if (e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints = [[x, y, p, Date.now()]];
+          activePathEl = makeDomElement(doc2, "path", {}, {
+            d: `M ${x} ${y}`,
+            fill: "none",
+            stroke: "#38bdf8",
+            "stroke-width": "2",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round"
+          });
+          inkSvg.appendChild(activePathEl);
+          return;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("pointermove", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const x = e.clientX ?? 0;
+          const y = e.clientY ?? 0;
+          const p = e.pressure ?? 0.5;
+          activePenPoints.push([x, y, p, Date.now()]);
+          let d = `M ${activePenPoints[0][0]} ${activePenPoints[0][1]}`;
+          for (let i = 1; i < activePenPoints.length; i++) {
+            d += ` L ${activePenPoints[i][0]} ${activePenPoints[i][1]}`;
+          }
+          activePathEl?.setAttribute("d", d);
+          return;
+        }
+      });
+      cueEl.addEventListener("pointerup", (e) => {
+        if (activePenPoints && e?.pointerType === "pen") {
+          const stroke = {
+            id: `cue-ink-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            points: activePenPoints,
+            tool: "pen",
+            color: "#38bdf8",
+            width: 2,
+            device: "pen",
+            at: Date.now()
+          };
+          if (!Array.isArray(cue.inkStrokes)) {
+            cue.inkStrokes = [];
+          }
+          cue.inkStrokes.push(stroke);
+          activePenPoints = null;
+          activePathEl = null;
+          if (!cue.annotation) {
+            cue.annotation = "[ink annotation]";
+            noteEl.textContent = cue.annotation;
+            noteEl.hidden = false;
+            noteEl.removeAttribute("hidden");
+          }
+          handleAnnotate(index, cue.annotation, false);
+          return;
+        }
+        clearDwellTimer();
+      });
+      cueEl.addEventListener("pointercancel", () => {
+        activePenPoints = null;
+        activePathEl = null;
+        clearDwellTimer();
+      });
+      let dwellTimer = null;
+      let didDwell = false;
+      function startDwellTimer() {
+        didDwell = false;
+        if (dwellTimer !== null) clearTimeout(dwellTimer);
+        dwellTimer = setTimeout(() => {
+          didDwell = true;
+          revealInput();
+        }, 280);
+      }
+      function clearDwellTimer() {
+        if (dwellTimer !== null) {
+          clearTimeout(dwellTimer);
+          dwellTimer = null;
+        }
+      }
+      cueEl.addEventListener("contextmenu", (e) => {
+        e?.preventDefault?.();
+        revealInput();
+      });
+      cueEl.addEventListener("keydown", (e) => {
+        if (e?.key === "Enter") {
+          if (e.target === annotInput) {
+            e.preventDefault?.();
+            commitAnnotation();
+          } else {
+            e.preventDefault?.();
+            revealInput();
+          }
+        }
+      });
+      annotInput.addEventListener("blur", () => {
+        commitAnnotation();
+      });
+      cueEl.addEventListener("click", (e) => {
+        if (e?.target === annotInput || didDwell) {
+          didDwell = false;
+          return;
+        }
+        if (typeof onLineTap === "function") onLineTap(cue);
+        handleSeek(cue.start);
+      });
+      cueEl.addEventListener("dblclick", () => {
+        handleBookmarkToggle(index);
+      });
+      let touchStartX = null;
+      let touchStartY = null;
+      let lastTap = 0;
+      cueEl.addEventListener("touchstart", (e) => {
+        const t2 = e.touches && e.touches[0];
+        if (t2) {
+          touchStartX = t2.clientX;
+          touchStartY = t2.clientY;
+        }
+        startDwellTimer();
+      });
+      cueEl.addEventListener("touchend", (e) => {
+        clearDwellTimer();
+        const now2 = Date.now();
+        if (now2 - lastTap < 350) {
+          handleBookmarkToggle(index);
+          lastTap = 0;
+          return;
+        }
+        lastTap = now2;
+        if (touchStartX !== null) {
+          const t2 = e.changedTouches && e.changedTouches[0];
+          if (t2) {
+            const dx = t2.clientX - touchStartX;
+            const dy = t2.clientY - (touchStartY ?? t2.clientY);
+            if (dx >= 36 && Math.abs(dy) < 30) {
+              handleBookmarkToggle(index);
+            }
+          }
+        }
+        touchStartX = null;
+        touchStartY = null;
+      });
+      cueEl.addEventListener("touchcancel", () => {
+        clearDwellTimer();
+        touchStartX = null;
+        touchStartY = null;
+      });
+      return cueEl;
+    }
+    function updateCue(index) {
+      if (index < 0 || index >= currentCues.length) return;
+      const cue = currentCues[index];
+      const el5 = cueElements[index];
+      if (!el5) return;
+      if (cue.bookmarked) {
+        el5.classList.add("is-bookmarked");
+      } else {
+        el5.classList.remove("is-bookmarked");
+      }
+      const dotEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-dot") : null);
+      if (dotEl) {
+        dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
+      }
+      const noteEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-note") : null);
+      if (noteEl) {
+        noteEl.textContent = cue.annotation || "";
+        if (cue.annotation) {
+          noteEl.hidden = false;
+          noteEl.removeAttribute("hidden");
+        } else {
+          noteEl.hidden = true;
+          noteEl.setAttribute("hidden", "true");
+        }
+      }
+    }
+    function highlightCue(index) {
+      if (index === activeIndex) return;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.remove("rc-transcript-cue-active");
+        cueElements[activeIndex].removeAttribute("aria-current");
+      }
+      activeIndex = index;
+      if (activeIndex >= 0 && cueElements[activeIndex]) {
+        cueElements[activeIndex].classList.add("rc-transcript-cue-active");
+        cueElements[activeIndex].setAttribute("aria-current", "true");
+        if (typeof cueElements[activeIndex].scrollIntoView === "function") {
+          cueElements[activeIndex].scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      }
+    }
+    function update(state) {
+      if (!state) return;
+      if (state.title && titleEl) {
+        titleEl.textContent = state.title;
+      }
+      currentCues = Array.isArray(state.cues) ? state.cues : [];
+      if (state.playing && currentCues.length > 0) {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      } else if (currentCues.length === 0) {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      }
+      if (typeof cuesContainer.replaceChildren === "function") {
+        cueElements = currentCues.map((c, i) => buildCueElement(c, i));
+        cuesContainer.replaceChildren(...cueElements);
+      } else {
+        cuesContainer.children = [];
+        cueElements = currentCues.map((c, i) => {
+          const el5 = buildCueElement(c, i);
+          cuesContainer.appendChild(el5);
+          return el5;
+        });
+      }
+      const active = activeCueIndexAt(currentCues, state.currentTime || 0);
+      highlightCue(active);
+    }
+    closeControl.addEventListener("click", () => {
+      pane.hidden = true;
+      pane.setAttribute("hidden", "true");
+      if (typeof onClose === "function") {
+        onClose();
+      }
+    });
+    if (container && typeof container.appendChild === "function") {
+      container.appendChild(pane);
+    }
+    return {
+      element: pane,
+      update,
+      updateCue,
+      highlightCue,
+      show() {
+        pane.hidden = false;
+        pane.removeAttribute("hidden");
+      },
+      hide() {
+        pane.hidden = true;
+        pane.setAttribute("hidden", "true");
+      },
+      destroy() {
+        if (pane.parentElement && typeof pane.parentElement.removeChild === "function") {
+          pane.parentElement.removeChild(pane);
+        }
+      }
+    };
+  }
+  function createAudioSidecar(options = {}) {
+    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
+    const onInsertToPage = options.onInsertToPage ?? null;
+    const onLineTap = options.onLineTap ?? null;
+    const onLineNote = options.onLineNote ?? null;
+    const lineNote = (cueIndex, text) => {
+      const cue = state.cues[Number(cueIndex)];
+      return cue && typeof onLineNote === "function" ? Boolean(onLineNote({ start: cue.start, text })) : false;
+    };
+    const state = {
+      playing: false,
+      currentTime: 0,
+      title: String(options.title || ""),
+      sourceKey: String(options.sourceKey || ""),
+      cues: normalizeCues(options.cues),
+      bookmarks: Array.isArray(options.bookmarks) ? [...options.bookmarks] : []
+    };
+    let pane = null;
+    function setAudioTranscript(data2 = {}) {
+      if (typeof data2.playing === "boolean") {
+        state.playing = data2.playing;
+      }
+      if (typeof data2.currentTime === "number") {
+        state.currentTime = data2.currentTime;
+      }
+      if (typeof data2.title === "string") {
+        state.title = data2.title;
+      }
+      if (typeof data2.sourceKey === "string") {
+        state.sourceKey = data2.sourceKey;
+      }
+      if (Array.isArray(data2.cues)) {
+        state.cues = normalizeCues(data2.cues);
+      }
+      if (Array.isArray(data2.bookmarks)) {
+        state.bookmarks = [...data2.bookmarks];
+      }
+      if (pane) {
+        pane.update(state);
+      }
+    }
+    function updateTime(timeSec) {
+      state.currentTime = Number(timeSec) || 0;
+      const activeIdx = activeCueIndexAt(state.cues, state.currentTime);
+      if (pane) {
+        pane.highlightCue(activeIdx);
+      }
+      return activeIdx;
+    }
+    function bookmark(cueIndex, note = "") {
+      const was = Boolean(state.cues[Number(cueIndex)]?.bookmarked);
+      const res = bookmarkCue(state, cueIndex, note, { globalObj });
+      if (res && !was) lineNote(cueIndex, "");
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function toggleBookmark(cueIndex, note = "") {
+      const was = Boolean(state.cues[Number(cueIndex)]?.bookmarked);
+      const res = toggleBookmarkCue(state, cueIndex, note, { globalObj });
+      if (res && !was) lineNote(cueIndex, "");
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function annotate(cueIndex, annotationText, opts = {}) {
+      let insertFn = opts.onInsertToPage !== void 0 ? opts.onInsertToPage : onInsertToPage;
+      const before = String(state.cues[Number(cueIndex)]?.annotation ?? "");
+      const text = String(annotationText ?? "").trim();
+      if (opts.lineNote && text && text !== before && lineNote(cueIndex, text)) insertFn = null;
+      else if (opts.lineNote && text === before) insertFn = null;
+      const res = annotateCue(state, cueIndex, annotationText, {
+        onInsertToPage: insertFn,
+        globalObj
+      });
+      if (pane) {
+        pane.updateCue(cueIndex);
+      }
+      return res;
+    }
+    function seek(time) {
+      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time });
+      }
+      updateTime(time);
+    }
+    const sidecarApi = {
+      getState: () => state,
+      setAudioTranscript,
+      updateTime,
+      bookmarkCue: bookmark,
+      toggleBookmarkCue: toggleBookmark,
+      annotateCue: annotate,
+      seek,
+      activeCueIndexAt: (t2) => activeCueIndexAt(state.cues, t2 !== void 0 ? t2 : state.currentTime),
+      getActiveCueIndex: () => activeCueIndexAt(state.cues, state.currentTime),
+      get pane() {
+        return pane;
+      },
+      createTranscriptPane(container) {
+        pane = createTranscriptPane(container, {
+          sidecar: sidecarApi,
+          globalObj,
+          onInsertToPage,
+          onLineTap
+        });
+        pane.update(state);
+        return pane;
+      }
+    };
+    if (options.container) {
+      sidecarApi.createTranscriptPane(options.container);
+    }
+    return sidecarApi;
+  }
+  function extractDocumentSections(docText, pageIndex = null) {
+    const source = typeof docText === "string" ? docText : "";
+    if (!source.trim()) return [];
+    if (pageIndex !== null) {
+      const pages = inspectDraftpadPages(source);
+      const targetPage = pages.find((p) => p.index === pageIndex);
+      if (!targetPage) return [];
+      return extractSectionsFromText(targetPage.rawContent, targetPage.index);
+    }
+    if (source.includes(PAGE_MARKER)) {
+      const pages = inspectDraftpadPages(source);
+      const allSections = [];
+      for (const page of pages) {
+        const pageSections2 = extractSectionsFromText(page.rawContent, page.index);
+        allSections.push(...pageSections2);
+      }
+      return allSections;
+    }
+    return extractSectionsFromText(source, 0);
+  }
+  function extractSectionsFromText(rawText, pageIndex) {
+    const lines = rawText.split("\n");
+    const headings = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
+      const parsed = parseHeadingLine(line);
+      if (parsed) {
+        headings.push({
+          lineIndex: i,
+          ...parsed
+        });
+      }
+    }
+    if (headings.length > 0) {
+      const sections2 = [];
+      if (headings[0].lineIndex > 0) {
+        const preambleLines = lines.slice(0, headings[0].lineIndex).filter((l) => !isFullDateLine(l.trim()));
+        const preambleText = preambleLines.join("\n").trim();
+        if (preambleText.length > 0) {
+          sections2.push({
+            id: `sec-${pageIndex}-preamble`,
+            title: "Introduction",
+            level: 1,
+            kind: "preamble",
+            text: preambleText,
+            pageIndex
+          });
+        }
+      }
+      for (let k = 0; k < headings.length; k++) {
+        const h = headings[k];
+        const nextLineIdx = k + 1 < headings.length ? headings[k + 1].lineIndex : lines.length;
+        const bodyLines = lines.slice(h.lineIndex + 1, nextLineIdx);
+        const sectionText = bodyLines.join("\n").trim();
+        sections2.push({
+          id: `sec-${pageIndex}-${k}`,
+          title: h.title,
+          level: h.level,
+          kind: h.kind,
+          marker: h.marker,
+          text: sectionText,
+          pageIndex
+        });
+      }
+      return sections2;
+    }
+    const paragraphs = rawText.split(/\n\s*\n+/).map((p) => p.trim()).filter((p) => p.length > 0 && !isFullDateLine(p));
+    const sections = [];
+    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+      const p = paragraphs[pIdx];
+      const firstSentenceMatch = p.match(/^([^.!?…\n]+[.!?…])/);
+      const firstSentence = firstSentenceMatch ? firstSentenceMatch[1].trim() : p.slice(0, 50).trim();
+      const title = firstSentence.length > 60 ? `${firstSentence.slice(0, 57)}\u2026` : firstSentence;
+      sections.push({
+        id: `sec-${pageIndex}-p${pIdx}`,
+        title,
+        level: 1,
+        kind: "paragraph",
+        text: p,
+        pageIndex
+      });
+    }
+    return sections;
+  }
+  var LEGAL_RULE_MARKERS = [
+    // English holding, obligation, conclusion
+    /\bheld\b/i,
+    /\bhold\b/i,
+    /\bholds\b/i,
+    /\bholding\b/i,
+    /\brule\b/i,
+    /\brules\b/i,
+    /\bmust\b/i,
+    /\bshall\b/i,
+    /\brequired\b/i,
+    /\bprohibited\b/i,
+    /\bbecause\b/i,
+    /\btherefore\b/i,
+    /\bthus\b/i,
+    /\bconcludes\b/i,
+    /\bconcluded\b/i,
+    /\bconclusion\b/i,
+    /\bfinding\b/i,
+    /\bfinds\b/i,
+    /\bfound\b/i,
+    /\bliable\b/i,
+    /\bliability\b/i,
+    /\baffirmed\b/i,
+    /\breversed\b/i,
+    /\bstatute\b/i,
+    /§/,
+    /\bsection\b/i,
+    // French obligation and judicial rulings
+    /\btenu\b/i,
+    /\bjugé\b/i,
+    /\brègle\b/i,
+    /\bdoit\b/i,
+    /\bdoivent\b/i,
+    /\bobligatoire\b/i,
+    /\bparce que\b/i,
+    /\bdonc\b/i,
+    /\ben conséquence\b/i,
+    /\bil résulte\b/i,
+    /\bconclut\b/i,
+    /\bconsidérant\b/i,
+    /\bstipule\b/i,
+    /\bresponsabilité\b/i,
+    /\bpréjudice\b/i,
+    // Vietnamese statutory obligations and judicial conclusions
+    /\bquy định\b/i,
+    /\bphải\b/i,
+    /\bbắt buộc\b/i,
+    /\bkhông được\b/i,
+    /\bkết luận\b/i,
+    /\bdo đó\b/i,
+    /\bvì vậy\b/i,
+    /\bcho nên\b/i,
+    /\bnguyên tắc\b/i,
+    /\btrách nhiệm\b/i,
+    /\btòa án\b/i,
+    /\bbồi thường\b/i,
+    /\bvi phạm\b/i,
+    /\btheo đó\b/i,
+    /\báp dụng\b/i,
+    /\bkhoản\b/i,
+    /\bđiều\b/i
+  ];
+  var STOP_WORDS = /* @__PURE__ */ new Set([
+    // EN
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "is",
+    "was",
+    "are",
+    "were",
+    "been",
+    "be",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "should",
+    "can",
+    "could",
+    "may",
+    "might",
+    "that",
+    "this",
+    "these",
+    "those",
+    "it",
+    "its",
+    "they",
+    "their",
+    "we",
+    "our",
+    "you",
+    "your",
+    // FR
+    "le",
+    "la",
+    "les",
+    "un",
+    "une",
+    "des",
+    "et",
+    "ou",
+    "mais",
+    "dans",
+    "en",
+    "sur",
+    "\xE0",
+    "pour",
+    "avec",
+    "par",
+    "de",
+    "du",
+    "ce",
+    "cette",
+    "ces",
+    "est",
+    "sont",
+    "\xE9t\xE9",
+    "\xEAtre",
+    "qui",
+    "que",
+    "il",
+    "ils",
+    "elle",
+    "elles",
+    // VI
+    "v\xE0",
+    "ho\u1EB7c",
+    "nh\u01B0ng",
+    "trong",
+    "tr\xEAn",
+    "t\u1EA1i",
+    "cho",
+    "c\u1EE7a",
+    "v\u1EDBi",
+    "b\u1EDFi",
+    "t\u1EEB",
+    "l\xE0",
+    "\u0111\xE3",
+    "\u0111ang",
+    "s\u1EBD",
+    "c\xF3",
+    "\u0111\u01B0\u1EE3c",
+    "b\u1ECB",
+    "n\xE0y",
+    "\u0111\xF3",
+    "nh\u1EEFng",
+    "c\xE1c",
+    "m\u1ED9t",
+    "khi",
+    "\u0111\u1EC3"
+  ]);
+  function tokenizeWords(text) {
+    if (!text) return [];
+    const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s§]/gu, " ").split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+    return words;
+  }
+  function cleanSpokenSentence(raw) {
+    let s = raw.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/!\[([^\]]*)\]\([^)]+\)/g, "").replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/^(\s*[-*•]\s+|\s*\d+\.\s+|\s*\([a-zA-Z0-9]+\)\s+)/, "").replace(/^#+\s+/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+    if (s.length > 0 && !/[.!?…]$/.test(s)) {
+      s += ".";
+    }
+    return s;
+  }
+  function summarizeSectionOffline(sectionInput, { maxSentences = 2 } = {}) {
+    let title = "";
+    let text = "";
+    if (typeof sectionInput === "string") {
+      text = sectionInput.trim();
+      const firstLineEnd = text.indexOf("\n");
+      const firstLine = firstLineEnd !== -1 ? text.slice(0, firstLineEnd).trim() : text;
+      const parsedHeading = parseHeadingLine(firstLine);
+      if (parsedHeading) {
+        title = parsedHeading.title;
+        text = firstLineEnd !== -1 ? text.slice(firstLineEnd).trim() : "";
+      }
+    } else if (sectionInput && typeof sectionInput === "object") {
+      title = String(sectionInput.title || "").trim();
+      text = String(sectionInput.text ?? sectionInput.content ?? sectionInput.body ?? "").trim();
+    }
+    if (!text && !title) {
+      return { summary: "", bullets: [] };
+    }
+    const rawParagraphs = text.split(/\n\s*\n+/);
+    const candidateSentences = [];
+    for (const para of rawParagraphs) {
+      const trimmedPara = para.trim();
+      if (!trimmedPara) continue;
+      const tokens = trimmedPara.replace(/([.!?…])\s+(?=[A-ZÀ-ỸÁ-Ỵ\d"“'§])/g, "$1\n").split("\n");
+      for (const t2 of tokens) {
+        const s = t2.trim();
+        if (s.length > 0) {
+          candidateSentences.push(s);
+        }
+      }
+    }
+    if (candidateSentences.length === 0) {
+      const single = cleanSpokenSentence(title);
+      return {
+        summary: single,
+        bullets: single ? [single.replace(/[.!?…]$/, "")] : []
+      };
+    }
+    const allWords = tokenizeWords(`${title} ${text}`);
+    const wordFreq = /* @__PURE__ */ new Map();
+    for (const w of allWords) {
+      wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
+    }
+    const titleWords = new Set(tokenizeWords(title));
+    const totalSentences = candidateSentences.length;
+    const scored = candidateSentences.map((rawSentence, index) => {
+      const cleaned = cleanSpokenSentence(rawSentence);
+      const sentWords = tokenizeWords(cleaned);
+      let tfScore = 0;
+      for (const w of sentWords) {
+        tfScore += (wordFreq.get(w) || 0) / (allWords.length || 1);
+      }
+      const normalizedTf = sentWords.length > 0 ? tfScore / Math.sqrt(sentWords.length) : 0;
+      let headingMatches = 0;
+      for (const w of sentWords) {
+        if (titleWords.has(w)) headingMatches++;
+      }
+      const headingScore = headingMatches * 1.2;
+      let markerMatches = 0;
+      for (const marker of LEGAL_RULE_MARKERS) {
+        if (marker.test(cleaned)) markerMatches++;
+      }
+      const markerScore = markerMatches * 1.8;
+      let positionScore = 0.5;
+      if (index === 0) {
+        positionScore = 1.4;
+      } else if (index === totalSentences - 1 && totalSentences > 1) {
+        positionScore = 1.2;
+      } else {
+        positionScore = 1 / (1 + 0.15 * index);
+      }
+      const totalScore = normalizedTf + headingScore + markerScore + positionScore;
+      return {
+        index,
+        raw: rawSentence,
+        cleaned,
+        score: totalScore
+      };
+    });
+    const limit = Math.max(1, Number(maxSentences) || 2);
+    const topScored = [...scored].sort((a, b) => b.score - a.score).slice(0, limit);
+    topScored.sort((a, b) => a.index - b.index);
+    const summary = topScored.map((s) => s.cleaned).join(" ");
+    const bullets = topScored.map((s) => s.cleaned.replace(/[.!?…]$/, ""));
+    return {
+      summary,
+      bullets
+    };
+  }
+  function summarizeAllSections(docText, options = {}) {
+    const sections = extractDocumentSections(docText, options.pageIndex ?? null);
+    return sections.map((sec) => {
+      const res = summarizeSectionOffline(sec, options);
+      return {
+        ...sec,
+        summary: res.summary,
+        bullets: res.bullets
+      };
+    });
+  }
+  function speakSectionSummary(section, { globalObj = typeof window !== "undefined" ? window : null, lang = "en-US" } = {}) {
+    if (!section) return null;
+    let summaryText = section.summary;
+    let titleText = section.title || "";
+    let sectionId = section.id || "sec-0";
+    if (!summaryText) {
+      const rawBody = section.text ?? section.content ?? section.body;
+      const res = summarizeSectionOffline(
+        rawBody !== void 0 ? { ...section, text: rawBody } : section
+      );
+      summaryText = res.summary;
+    }
+    if (!summaryText) return null;
+    let spokenVia = "none";
+    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
+      globalObj.webkit.messageHandlers.audio.postMessage({
+        action: "speakSummary",
+        sectionId,
+        title: titleText,
+        text: summaryText
+      });
+      spokenVia = "native";
+    } else if (globalObj?.speechSynthesis && typeof globalObj.SpeechSynthesisUtterance === "function") {
+      try {
+        const utterance = new globalObj.SpeechSynthesisUtterance(summaryText);
+        utterance.lang = lang;
+        const voices = globalObj.speechSynthesis.getVoices?.() || [];
+        const localVoice = voices.find((v) => v.localService === true && (!lang || v.lang?.startsWith(lang.slice(0, 2)))) || voices.find((v) => v.localService === true) || voices[0];
+        if (localVoice) {
+          utterance.voice = localVoice;
+        }
+        globalObj.speechSynthesis.speak(utterance);
+        spokenVia = "speechSynthesis";
+      } catch {
+        spokenVia = "none";
+      }
+    }
+    return {
+      sectionId,
+      title: titleText,
+      text: summaryText,
+      spokenVia
+    };
+  }
+
   // src/links.js
   var URL_RE = /\bhttps?:\/\/[^\s<>()\]]+[^\s<>()\].,;:!?'"]/g;
   var MD_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
   var BULLET_RE = /^(\s*)([-*+]) (?!\[[ xX]\] )/;
+  var MOMENT_URL = /^recense:\/\/([0-9a-f]{24})(?:\?t=(\d+))?$/;
+  var MOMENT_MD = /(!?)\[([^\]]*)\]\((recense:\/\/[^)\s]*)\)/g;
+  var MOMENT_BARE = /recense:\/\/[^\s()<>\]]*/g;
+  function momentLinks(text) {
+    const s = String(text ?? "");
+    const out = [];
+    const taken = [];
+    const lineOf = (pos) => {
+      let n = 1;
+      for (let i = s.indexOf("\n"); i !== -1 && i < pos; i = s.indexOf("\n", i + 1)) n++;
+      return n;
+    };
+    for (const m of s.matchAll(MOMENT_MD)) {
+      taken.push([m.index, m.index + m[0].length]);
+      const u = MOMENT_URL.exec(m[3]);
+      if (!u) continue;
+      out.push({
+        key: u[1],
+        t: u[2] === void 0 ? null : Number(u[2]),
+        label: m[2],
+        image: m[1] === "!",
+        from: m.index,
+        to: m.index + m[0].length,
+        line: lineOf(m.index)
+      });
+    }
+    for (const m of s.matchAll(MOMENT_BARE)) {
+      if (taken.some(([a, b]) => m.index >= a && m.index < b)) continue;
+      const u = MOMENT_URL.exec(m[0]);
+      if (!u) continue;
+      out.push({
+        key: u[1],
+        t: u[2] === void 0 ? null : Number(u[2]),
+        label: null,
+        image: false,
+        from: m.index,
+        to: m.index + m[0].length,
+        line: lineOf(m.index)
+      });
+    }
+    return out.sort((a, b) => a.from - b.from);
+  }
+  function momentLink(key, seconds) {
+    const t2 = Math.max(0, Math.floor(Number(seconds) || 0));
+    return `[${formatTimestamp(t2)}](recense://${key}?t=${t2})`;
+  }
+  function momentAt(line, col) {
+    for (const m of momentLinks(line)) if (col >= m.from && col < m.to) return { key: m.key, t: m.t };
+    return null;
+  }
+  var onMoment = null;
+  function setMomentHandler(fn) {
+    onMoment = typeof fn === "function" ? fn : null;
+  }
   function urlAt(line, col) {
     for (const m of line.matchAll(MD_LINK_RE)) {
       if (col >= m.index && col <= m.index + m[0].length) return m[2];
@@ -33784,6 +35063,7 @@ ${PAGE_MARKER}
         for (const u of line.text.matchAll(URL_RE)) {
           items.push([line.from + u.index, line.from + u.index + u[0].length, linkMark]);
         }
+        for (const u of momentLinks(line.text)) items.push([line.from + u.from, line.from + u.to, linkMark]);
         items.sort((a, c) => a[0] - c[0]);
         for (const [f, t2, d] of items) b.add(f, t2, d);
         pos = line.to + 1;
@@ -33800,6 +35080,18 @@ ${PAGE_MARKER}
     }
   }, { decorations: (v) => v.decorations });
   var clicks = EditorView.domEventHandlers({
+    // FEAT-23 rule 5: a tap or click on a moment link plays that item from that second. The caret still lands,
+    // so the label stays editable; ⌘-click on a web link is unchanged.
+    click(e, view) {
+      if (!onMoment || e.metaKey || e.ctrlKey || e.button !== 0) return false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos == null) return false;
+      const line = view.state.doc.lineAt(pos);
+      const m = momentAt(line.text, pos - line.from);
+      if (!m) return false;
+      onMoment(m);
+      return false;
+    },
     mousedown(e, view) {
       if (!(e.metaKey || e.ctrlKey) || e.button !== 0) return false;
       const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
@@ -33814,6 +35106,212 @@ ${PAGE_MARKER}
   });
   function linksExtension() {
     return [decorations2, clicks];
+  }
+
+  // src/logevent.js
+  function logEvent(name2, fields = {}, globalObj = typeof window !== "undefined" ? window : null) {
+    const h = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.debug;
+    if (!h || typeof h.postMessage !== "function") return false;
+    try {
+      h.postMessage({ event: String(name2), ...fields, at: Date.now() });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // src/medianote.js
+  var KEY_RE = /^[0-9a-f]{24}$/;
+  var emptyInk = () => ({ version: 1, strokes: [], removed: [] });
+  var emptySide = () => ({ version: 1, passages: {}, log: [] });
+  var isBlank = (t2) => !/\S/.test(String(t2 ?? ""));
+  var strokesOf = (ink) => ink && Array.isArray(ink.strokes) ? ink.strokes.length : 0;
+  var parse = (v, d) => {
+    if (v && typeof v === "object") return v;
+    if (typeof v === "string" && v.trim()) {
+      try {
+        return JSON.parse(v);
+      } catch {
+        return d();
+      }
+    }
+    return d();
+  };
+  function createMediaNotes(deps) {
+    const now2 = deps.now || (() => Date.now());
+    const log = deps.log || logEvent;
+    let note = null;
+    let stash = null;
+    function post(action, body) {
+      deps.post("note", { action, key: note.key, ...body });
+    }
+    function show(text, ink, matter) {
+      deps.setText(text);
+      deps.setInk(ink);
+      deps.setMatter(matter);
+      if (deps.resetHistory) deps.resetHistory();
+    }
+    function open(key, payload = {}) {
+      if (typeof key !== "string" || !KEY_RE.test(key)) return false;
+      if (deps.flush) deps.flush();
+      if (note) closeQuietly();
+      else stash = { text: deps.getText(), ink: deps.getInk(), matter: deps.getMatter() };
+      const text = typeof payload.text === "string" ? payload.text : "";
+      const ink = parse(payload.ink, emptyInk);
+      note = {
+        key,
+        title: String(payload.title || ""),
+        openedAt: now2(),
+        written: !isBlank(text) || strokesOf(ink) > 0,
+        input: "type",
+        dictating: false,
+        layout: String(payload.layout || "note")
+      };
+      show(text, ink, parse(payload.matter, emptySide));
+      log("media-notes.underlay.open", { key, trigger: String(payload.trigger || "note-button"), hasNote: /\S/.test(text) ? 1 : 0 });
+      return true;
+    }
+    const isEmpty = () => isBlank(deps.getText()) && strokesOf(deps.getInk()) === 0 && !note.dictating;
+    function blur() {
+      if (!note) return "none";
+      if (deps.flush) deps.flush();
+      if (!isEmpty()) return "kept";
+      if (!note.written) return "none";
+      note.written = false;
+      deps.post("note", { action: "trash", key: note.key });
+      log("media-notes.underlay.empty", { key: note.key, outcome: "trashed" });
+      return "trashed";
+    }
+    function closeQuietly() {
+      blur();
+      note = null;
+    }
+    function close() {
+      if (!note) return false;
+      if (deps.unlockPages) deps.unlockPages();
+      closeQuietly();
+      const s = stash;
+      stash = null;
+      show(s.text, s.ink, s.matter);
+      return true;
+    }
+    return {
+      open,
+      close,
+      isOpen: () => !!note,
+      key: () => note ? note.key : null,
+      title: () => note ? note.title : "",
+      /** What the host's flush of draftpad.md reads: draftpad's text, also while a note is shown. */
+      hostText: () => note ? stash.text : deps.getText(),
+      /** The host handed draftpad.md new text (a save's merge, a poll): kept beside the note. True = taken. */
+      absorbHostText(text) {
+        if (!note) return false;
+        stash.text = String(text ?? "");
+        return true;
+      },
+      absorbHostInk(ink) {
+        if (!note) return false;
+        stash.ink = parse(ink, emptyInk);
+        return true;
+      },
+      absorbHostMatter(side) {
+        if (!note) return false;
+        stash.matter = parse(side, emptySide);
+        return true;
+      },
+      stash: () => stash,
+      /**
+       * The page's debounced save. True = it was the note's, so draftpad.md gets nothing. A1 rule 2: note.md is first
+       * written by the first save holding a character that is not whitespace; whitespace alone writes nothing.
+       */
+      routeText(text) {
+        if (!note) return false;
+        const s = String(text ?? "");
+        if (!note.written) {
+          if (isBlank(s)) return true;
+          note.written = true;
+          log("media-notes.underlay.first", { key: note.key, input: note.input, ms: now2() - note.openedAt });
+        }
+        post("save", { text: s });
+        log("media-notes.save", {
+          key: note.key,
+          bytes: s.length,
+          strokes: strokesOf(deps.getInk()),
+          links: momentLinks(s).filter((m) => m.key === note.key).length,
+          ms: 0
+        });
+        return true;
+      },
+      routeInk(json) {
+        if (!note) return false;
+        if (!note.written && strokesOf(parse(json, emptyInk)) === 0) return true;
+        post("ink", { json: String(json) });
+        return true;
+      },
+      routeMatter(json) {
+        if (!note) return false;
+        if (note.written || strokesOf(deps.getInk()) > 0) post("matter", { json: String(json) });
+        return true;
+      },
+      blur,
+      /** What made the next first note: 'type', 'ink' or 'dictate' (for the log). */
+      setInput(kind) {
+        if (note) note.input = String(kind);
+      },
+      /** A1 rule 2: a partial result writes nothing (null); a final one is the text to write at the caret. */
+      dictation(text, final) {
+        if (!note || !final) return null;
+        const s = String(text ?? "");
+        if (isBlank(s)) return null;
+        note.input = "dictate";
+        return s;
+      },
+      dictationRunning(on) {
+        if (note) note.dictating = Boolean(on);
+      },
+      layout: () => note ? note.layout : "",
+      /** Every second this note ties to this item: its moment links, its passages' and strokes' note times (sorted). */
+      noteTimes() {
+        if (!note) return [];
+        const times = momentLinks(deps.getText()).filter((m) => m.key === note.key && m.t !== null).map((m) => m.t);
+        for (const st of (deps.getInk() || {}).strokes || []) if (Number.isFinite(st.t)) times.push(st.t);
+        for (const p of Object.values((deps.getMatter() || {}).passages || {})) {
+          const md = p && p.seed && p.seed.media;
+          if (md && md.key === note.key && Number.isFinite(md.t)) times.push(md.t);
+        }
+        return times.sort((a, b) => a - b);
+      },
+      /**
+       * A1 rule 8 · new lines from the host: the line each note time sits beside, recomputed. Every tie is a time in
+       * seconds, so nothing is written: [{ t, line }]. Ticks and quiet marks (P1) read the same list.
+       */
+      reweave(cues, reason = "load") {
+        if (!note) return [];
+        const t0 = now2();
+        const lines = normalizeCues(cues);
+        const out = this.noteTimes().map((t2) => ({ t: t2, line: activeCueIndexAt(lines, t2) }));
+        log("media-notes.reweave", { key: note.key, lines: lines.length, times: out.length, ms: now2() - t0, reason });
+        return out;
+      },
+      /**
+       * A1 rule 9 · a transcript line's note (or a bookmark: no text) joins item `key`'s note as
+       * `[mm:ss](recense://<key>?t=<s>) <text>`. Open: { insert } for the page to write; else the host appends it
+       * ({ append }). null with no item key. Nothing is keyed by cueId.
+       */
+      lineNote(key, start, text) {
+        if (typeof key !== "string" || !KEY_RE.test(key)) return null;
+        const t2 = String(text ?? "").trim();
+        const line = t2 ? `${momentLink(key, start)} ${t2}` : momentLink(key, start);
+        if (note && note.key === key) return { insert: line };
+        deps.post("note", { action: "append", key, line });
+        return { append: line };
+      },
+      /** Rule 5: a tapped transcript line's moment link, written at the caret then a space; null with no note. */
+      linkForLine(cue) {
+        if (!note || !cue) return null;
+        return `${momentLink(note.key, cue.start)} `;
+      }
+    };
   }
 
   // src/gestures.js
@@ -36105,8 +37603,10 @@ ${clean(nextLineText)}`;
       radialOuter = null,
       // UI-04 P11: extra lasso-menu items for the selected stroke ids: [{ id, label, pick() }] (FEAT-08 matter actions).
       selectionExtras = null,
-      onStrokeAdded = null
+      onStrokeAdded = null,
       // FEAT-08 #2: called with each new drawn stroke (word attachment)
+      // FEAT-23 P0: the page's save goes here first; true = taken (a media note's strokes, not draftpad.ink.json).
+      routeInk = null
     } = options;
     function currentLineHeight() {
       return view && typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0 ? view.defaultLineHeight : lineHeight;
@@ -36515,17 +38015,26 @@ ${clean(nextLineText)}`;
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
       }
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        const data2 = getInk();
-        const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ink;
-        if (handler && typeof handler.postMessage === "function") {
-          handler.postMessage(JSON.stringify(data2));
-        }
-        if (typeof onInkChange === "function") {
-          onInkChange(data2);
-        }
-      }, debounceMs);
+      debounceTimer = setTimeout(postNow, debounceMs);
+    }
+    function postNow() {
+      debounceTimer = null;
+      const data2 = getInk();
+      const json = JSON.stringify(data2);
+      const handler = globalObj && globalObj.webkit && globalObj.webkit.messageHandlers && globalObj.webkit.messageHandlers.ink;
+      if (typeof routeInk === "function" && routeInk(json)) {
+      } else if (handler && typeof handler.postMessage === "function") {
+        handler.postMessage(json);
+      }
+      if (typeof onInkChange === "function") {
+        onInkChange(data2);
+      }
+    }
+    function flushPost() {
+      if (debounceTimer === null) return false;
+      clearTimeout(debounceTimer);
+      postNow();
+      return true;
     }
     function renderStrokeElement(stroke, targetGroup) {
       if (!docNode || !targetGroup || typeof docNode.createElementNS !== "function") return;
@@ -37378,6 +38887,7 @@ ${clean(nextLineText)}`;
     updateLassoModes();
     render();
     return {
+      flushPost,
       getInk,
       setInk,
       addStroke,
@@ -37410,1205 +38920,6 @@ ${clean(nextLineText)}`;
       radialMenu,
       selection: () => selection,
       handlesFor: () => handlesFor
-    };
-  }
-
-  // src/audio.js
-  function formatTimestamp(seconds) {
-    const s = Math.max(0, Number(seconds) || 0);
-    const totalSecs = Math.floor(s);
-    const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor(totalSecs % 3600 / 60);
-    const secs = totalSecs % 60;
-    if (hours > 0) {
-      return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-    }
-    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }
-  function normalizeCues(cues) {
-    if (!Array.isArray(cues)) return [];
-    return cues.map((c, i) => ({
-      id: c.id ? String(c.id) : `cue-${i}-${Math.round((Number(c.start) || 0) * 1e3)}`,
-      start: Math.max(0, Number(c.start) || 0),
-      end: Math.max(0, Number(c.end) || 0),
-      text: String(c.text ?? "").trim(),
-      speaker: String(c.speaker ?? "").trim(),
-      bookmarked: Boolean(c.bookmarked),
-      annotation: String(c.annotation ?? "").trim(),
-      inkStrokes: Array.isArray(c.inkStrokes) ? c.inkStrokes : []
-    }));
-  }
-  function activeCueIndexAt(cues, timeSec) {
-    if (!Array.isArray(cues) || cues.length === 0) return -1;
-    const t2 = Number(timeSec) || 0;
-    if (t2 < cues[0].start) return -1;
-    for (let i = 0; i < cues.length; i++) {
-      const cue = cues[i];
-      if (t2 >= cue.start && t2 <= cue.end) {
-        return i;
-      }
-    }
-    let latestIdx = -1;
-    for (let i = 0; i < cues.length; i++) {
-      if (cues[i].start <= t2) {
-        latestIdx = i;
-      } else {
-        break;
-      }
-    }
-    return latestIdx;
-  }
-  function bookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
-    if (!state || !Array.isArray(state.cues)) return null;
-    const idx = Number(cueIndex);
-    if (idx < 0 || idx >= state.cues.length) return null;
-    const cue = state.cues[idx];
-    cue.bookmarked = true;
-    if (!Array.isArray(state.bookmarks)) {
-      state.bookmarks = [];
-    }
-    const noteStr = String(note ?? "").trim();
-    let bookmark = state.bookmarks.find((b) => b.cueId === cue.id);
-    if (bookmark) {
-      bookmark.note = noteStr;
-      bookmark.time = cue.start;
-      bookmark.text = cue.text;
-    } else {
-      bookmark = {
-        cueId: cue.id,
-        time: cue.start,
-        text: cue.text,
-        note: noteStr,
-        createdAt: Date.now()
-      };
-      state.bookmarks.push(bookmark);
-    }
-    if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
-      globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
-    }
-    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-      globalObj.webkit.messageHandlers.audio.postMessage({
-        action: "bookmark",
-        cueId: cue.id,
-        time: cue.start,
-        text: cue.text,
-        note: noteStr
-      });
-    }
-    return bookmark;
-  }
-  function toggleBookmarkCue(state, cueIndex, note = "", { globalObj = typeof window !== "undefined" ? window : null } = {}) {
-    if (!state || !Array.isArray(state.cues)) return null;
-    const idx = Number(cueIndex);
-    if (idx < 0 || idx >= state.cues.length) return null;
-    const cue = state.cues[idx];
-    if (cue.bookmarked) {
-      cue.bookmarked = false;
-      if (Array.isArray(state.bookmarks)) {
-        state.bookmarks = state.bookmarks.filter((b) => b.cueId !== cue.id);
-      }
-      if (globalObj?.webkit?.messageHandlers?.ui?.postMessage) {
-        globalObj.webkit.messageHandlers.ui.postMessage({ haptic: "snap" });
-      }
-      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-        globalObj.webkit.messageHandlers.audio.postMessage({
-          action: "unbookmark",
-          cueId: cue.id,
-          time: cue.start
-        });
-      }
-      return null;
-    }
-    return bookmarkCue(state, cueIndex, note, { globalObj });
-  }
-  function annotateCue(state, cueIndex, annotationText, { onInsertToPage = null, globalObj = typeof window !== "undefined" ? window : null } = {}) {
-    if (!state || !Array.isArray(state.cues)) return null;
-    const idx = Number(cueIndex);
-    if (idx < 0 || idx >= state.cues.length) return null;
-    const cue = state.cues[idx];
-    const textStr = String(annotationText ?? "").trim();
-    cue.annotation = textStr;
-    const timestamp = formatTimestamp(cue.start);
-    const reference = textStr.length > 0 ? `[@${timestamp}] ${cue.text} \u2014 ${textStr}` : `[@${timestamp}] ${cue.text}`;
-    if (typeof onInsertToPage === "function") {
-      onInsertToPage(reference);
-    }
-    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-      globalObj.webkit.messageHandlers.audio.postMessage({
-        action: "annotate",
-        cueId: cue.id,
-        time: cue.start,
-        annotation: textStr
-      });
-    }
-    return { cue, reference };
-  }
-  function createMockElement(tag) {
-    const listeners = {};
-    const attributes = {};
-    const classListSet = /* @__PURE__ */ new Set();
-    const el5 = {
-      tagName: tag.toUpperCase(),
-      hidden: false,
-      value: "",
-      textContent: "",
-      innerHTML: "",
-      children: [],
-      style: {},
-      classList: {
-        add(...classes) {
-          for (const c of classes) if (c) classListSet.add(c);
-        },
-        remove(...classes) {
-          for (const c of classes) classListSet.delete(c);
-        },
-        contains(c) {
-          return classListSet.has(c);
-        },
-        toggle(c, force) {
-          if (force === true) classListSet.add(c);
-          else if (force === false) classListSet.delete(c);
-          else if (classListSet.has(c)) classListSet.delete(c);
-          else classListSet.add(c);
-          return classListSet.has(c);
-        }
-      },
-      setAttribute(k, v) {
-        attributes[k] = String(v);
-        if (k === "hidden") el5.hidden = true;
-        if (k === "class") {
-          classListSet.clear();
-          String(v).split(/\s+/).forEach((c) => {
-            if (c) classListSet.add(c);
-          });
-        }
-      },
-      getAttribute(k) {
-        return attributes[k] ?? null;
-      },
-      removeAttribute(k) {
-        delete attributes[k];
-        if (k === "hidden") el5.hidden = false;
-      },
-      hasAttribute(k) {
-        return k in attributes;
-      },
-      appendChild(child) {
-        el5.children.push(child);
-        child.parentElement = el5;
-        return child;
-      },
-      removeChild(child) {
-        const idx = el5.children.indexOf(child);
-        if (idx !== -1) {
-          el5.children.splice(idx, 1);
-          child.parentElement = null;
-        }
-        return child;
-      },
-      replaceChildren(...newChildren) {
-        el5.children = [];
-        for (const c of newChildren) {
-          el5.appendChild(c);
-        }
-      },
-      addEventListener(type, fn) {
-        if (!listeners[type]) listeners[type] = [];
-        listeners[type].push(fn);
-      },
-      removeEventListener(type, fn) {
-        if (!listeners[type]) return;
-        listeners[type] = listeners[type].filter((f) => f !== fn);
-      },
-      dispatchEvent(event) {
-        const type = event?.type || "click";
-        const fns = [...listeners[type] || []];
-        for (const fn of fns) {
-          fn(event);
-        }
-      },
-      scrollIntoView() {
-      },
-      focus() {
-      }
-    };
-    Object.defineProperty(el5, "className", {
-      get() {
-        return Array.from(classListSet).join(" ");
-      },
-      set(v) {
-        classListSet.clear();
-        if (typeof v === "string") {
-          v.split(/\s+/).forEach((c) => {
-            if (c) classListSet.add(c);
-          });
-        }
-      }
-    });
-    return el5;
-  }
-  function makeDomElement(doc2, tag, props = {}, attrs = {}) {
-    const isSvg = tag === "svg" || tag === "path" || tag === "circle" || tag === "line" || tag === "ellipse";
-    let el5;
-    if (doc2 && typeof doc2.createElementNS === "function" && isSvg) {
-      el5 = doc2.createElementNS("http://www.w3.org/2000/svg", tag);
-    } else if (doc2 && typeof doc2.createElement === "function") {
-      el5 = doc2.createElement(tag);
-    } else {
-      el5 = createMockElement(tag);
-    }
-    for (const [k, v] of Object.entries(props)) {
-      if (k === "style" && typeof v === "object") {
-        if (el5.style) Object.assign(el5.style, v);
-      } else {
-        el5[k] = v;
-      }
-    }
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v !== void 0 && v !== null) {
-        if (typeof el5.setAttribute === "function") {
-          el5.setAttribute(k, String(v));
-        } else {
-          el5[k] = String(v);
-        }
-      }
-    }
-    return el5;
-  }
-  function strokeToPathData(stroke) {
-    if (stroke?.d) return stroke.d;
-    const pts = stroke?.points || [];
-    if (pts.length === 0) return "";
-    const getX = (p) => Array.isArray(p) ? p[0] : p?.x ?? 0;
-    const getY = (p) => Array.isArray(p) ? p[1] : p?.y ?? 0;
-    let d = `M ${getX(pts[0])} ${getY(pts[0])}`;
-    for (let i = 1; i < pts.length; i++) {
-      d += ` L ${getX(pts[i])} ${getY(pts[i])}`;
-    }
-    return d;
-  }
-  function renderCueInkStroke(doc2, stroke) {
-    const d = strokeToPathData(stroke);
-    if (!d) return null;
-    const path = makeDomElement(doc2, "path", {}, {
-      d,
-      fill: "none",
-      stroke: stroke.color || "#38bdf8",
-      "stroke-width": String(stroke.width || 2),
-      "stroke-linecap": "round",
-      "stroke-linejoin": "round"
-    });
-    return path;
-  }
-  function createTranscriptPane(container, options = {}) {
-    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
-    const doc2 = options.doc ?? container?.ownerDocument ?? (typeof document !== "undefined" ? document : null);
-    const onInsertToPage = options.onInsertToPage ?? null;
-    const onSeek = options.onSeek ?? null;
-    const onClose = options.onClose ?? null;
-    const sidecar = options.sidecar ?? null;
-    const pane = makeDomElement(doc2, "aside", { className: "rc-transcript-pane", hidden: true }, {
-      "aria-label": "Live audio transcript",
-      role: "complementary"
-    });
-    const header = makeDomElement(doc2, "header", { className: "rc-transcript-header" });
-    const titleEl = makeDomElement(doc2, "h3", {
-      className: "rc-transcript-title",
-      textContent: "Live Transcript"
-    });
-    const closeControl = makeDomElement(doc2, "span", {
-      className: "rc-transcript-close",
-      textContent: ""
-    }, {
-      "aria-label": "Close transcript",
-      role: "button",
-      tabindex: "0"
-    });
-    header.appendChild(titleEl);
-    header.appendChild(closeControl);
-    pane.appendChild(header);
-    const cuesContainer = makeDomElement(doc2, "div", { className: "rc-transcript-cues" }, {
-      role: "feed",
-      "aria-label": "Transcript cues"
-    });
-    pane.appendChild(cuesContainer);
-    let activeIndex = -1;
-    let currentCues = [];
-    let cueElements = [];
-    function handleSeek(timeSec) {
-      if (typeof onSeek === "function") {
-        onSeek(timeSec);
-      }
-      if (sidecar && typeof sidecar.seek === "function") {
-        sidecar.seek(timeSec);
-      } else if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time: timeSec });
-      }
-    }
-    function handleBookmarkToggle(cueIndex, note = "") {
-      if (sidecar && typeof sidecar.toggleBookmarkCue === "function") {
-        sidecar.toggleBookmarkCue(cueIndex, note);
-      } else if (sidecar && typeof sidecar.bookmarkCue === "function") {
-        const st = sidecar.getState();
-        toggleBookmarkCue(st, cueIndex, note, { globalObj });
-        updateCue(cueIndex);
-      } else if (options.state) {
-        toggleBookmarkCue(options.state, cueIndex, note, { globalObj });
-        updateCue(cueIndex);
-      }
-    }
-    function handleAnnotate(cueIndex, text, insert2 = false) {
-      const insertFn = insert2 ? onInsertToPage : null;
-      if (sidecar && typeof sidecar.annotateCue === "function") {
-        sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn });
-      } else if (options.state) {
-        annotateCue(options.state, cueIndex, text, { onInsertToPage: insertFn, globalObj });
-        updateCue(cueIndex);
-      }
-    }
-    function buildCueElement(cue, index) {
-      const cueEl = makeDomElement(doc2, "article", {
-        className: `rc-transcript-cue${cue.bookmarked ? " is-bookmarked" : ""}`
-      }, {
-        "data-cue-index": index,
-        "data-cue-id": cue.id,
-        tabindex: "0"
-      });
-      const timeEl = makeDomElement(doc2, "time", {
-        className: "rc-transcript-cue-time",
-        textContent: formatTimestamp(cue.start)
-      }, {
-        "data-start": cue.start
-      });
-      cueEl.appendChild(timeEl);
-      if (cue.speaker) {
-        const speakerEl = makeDomElement(doc2, "span", {
-          className: "rc-transcript-cue-speaker",
-          textContent: `${cue.speaker}: `
-        });
-        cueEl.appendChild(speakerEl);
-      }
-      const textEl = makeDomElement(doc2, "span", {
-        className: "rc-transcript-cue-text",
-        textContent: cue.text
-      });
-      cueEl.appendChild(textEl);
-      const dotEl = makeDomElement(doc2, "span", {
-        className: "rc-transcript-cue-dot",
-        textContent: cue.bookmarked ? "\u25CF" : ""
-      }, {
-        "aria-hidden": "true"
-      });
-      cueEl.appendChild(dotEl);
-      const noteEl = makeDomElement(doc2, "span", {
-        className: "rc-transcript-cue-note",
-        textContent: cue.annotation || "",
-        hidden: !cue.annotation
-      }, {
-        ...cue.annotation ? {} : { hidden: "true" }
-      });
-      cueEl.appendChild(noteEl);
-      const inkSvg = makeDomElement(doc2, "svg", {
-        className: "rc-cue-ink-svg"
-      });
-      if (Array.isArray(cue.inkStrokes)) {
-        for (const stroke of cue.inkStrokes) {
-          const path = renderCueInkStroke(doc2, stroke);
-          if (path) inkSvg.appendChild(path);
-        }
-      }
-      cueEl.appendChild(inkSvg);
-      const annotInput = makeDomElement(doc2, "input", {
-        className: "rc-transcript-annot-input",
-        type: "text",
-        value: cue.annotation || "",
-        hidden: true
-      }, {
-        hidden: "true",
-        "aria-label": "Cue annotation"
-      });
-      cueEl.appendChild(annotInput);
-      function revealInput() {
-        annotInput.hidden = false;
-        annotInput.removeAttribute("hidden");
-        annotInput.focus();
-      }
-      function commitAnnotation() {
-        const val = annotInput.value.trim();
-        annotInput.hidden = true;
-        annotInput.setAttribute("hidden", "true");
-        handleAnnotate(index, val, true);
-        noteEl.textContent = val;
-        if (val) {
-          noteEl.hidden = false;
-          noteEl.removeAttribute("hidden");
-        } else {
-          noteEl.hidden = true;
-          noteEl.setAttribute("hidden", "true");
-        }
-      }
-      let activePenPoints = null;
-      let activePathEl = null;
-      cueEl.addEventListener("pointerdown", (e) => {
-        if (e?.pointerType === "pen") {
-          const x = e.clientX ?? 0;
-          const y = e.clientY ?? 0;
-          const p = e.pressure ?? 0.5;
-          activePenPoints = [[x, y, p, Date.now()]];
-          activePathEl = makeDomElement(doc2, "path", {}, {
-            d: `M ${x} ${y}`,
-            fill: "none",
-            stroke: "#38bdf8",
-            "stroke-width": "2",
-            "stroke-linecap": "round",
-            "stroke-linejoin": "round"
-          });
-          inkSvg.appendChild(activePathEl);
-          return;
-        }
-        startDwellTimer();
-      });
-      cueEl.addEventListener("pointermove", (e) => {
-        if (activePenPoints && e?.pointerType === "pen") {
-          const x = e.clientX ?? 0;
-          const y = e.clientY ?? 0;
-          const p = e.pressure ?? 0.5;
-          activePenPoints.push([x, y, p, Date.now()]);
-          let d = `M ${activePenPoints[0][0]} ${activePenPoints[0][1]}`;
-          for (let i = 1; i < activePenPoints.length; i++) {
-            d += ` L ${activePenPoints[i][0]} ${activePenPoints[i][1]}`;
-          }
-          activePathEl?.setAttribute("d", d);
-          return;
-        }
-      });
-      cueEl.addEventListener("pointerup", (e) => {
-        if (activePenPoints && e?.pointerType === "pen") {
-          const stroke = {
-            id: `cue-ink-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            points: activePenPoints,
-            tool: "pen",
-            color: "#38bdf8",
-            width: 2,
-            device: "pen",
-            at: Date.now()
-          };
-          if (!Array.isArray(cue.inkStrokes)) {
-            cue.inkStrokes = [];
-          }
-          cue.inkStrokes.push(stroke);
-          activePenPoints = null;
-          activePathEl = null;
-          if (!cue.annotation) {
-            cue.annotation = "[ink annotation]";
-            noteEl.textContent = cue.annotation;
-            noteEl.hidden = false;
-            noteEl.removeAttribute("hidden");
-          }
-          handleAnnotate(index, cue.annotation, false);
-          return;
-        }
-        clearDwellTimer();
-      });
-      cueEl.addEventListener("pointercancel", () => {
-        activePenPoints = null;
-        activePathEl = null;
-        clearDwellTimer();
-      });
-      let dwellTimer = null;
-      let didDwell = false;
-      function startDwellTimer() {
-        didDwell = false;
-        if (dwellTimer !== null) clearTimeout(dwellTimer);
-        dwellTimer = setTimeout(() => {
-          didDwell = true;
-          revealInput();
-        }, 280);
-      }
-      function clearDwellTimer() {
-        if (dwellTimer !== null) {
-          clearTimeout(dwellTimer);
-          dwellTimer = null;
-        }
-      }
-      cueEl.addEventListener("contextmenu", (e) => {
-        e?.preventDefault?.();
-        revealInput();
-      });
-      cueEl.addEventListener("keydown", (e) => {
-        if (e?.key === "Enter") {
-          if (e.target === annotInput) {
-            e.preventDefault?.();
-            commitAnnotation();
-          } else {
-            e.preventDefault?.();
-            revealInput();
-          }
-        }
-      });
-      annotInput.addEventListener("blur", () => {
-        commitAnnotation();
-      });
-      cueEl.addEventListener("click", (e) => {
-        if (e?.target === annotInput || didDwell) {
-          didDwell = false;
-          return;
-        }
-        handleSeek(cue.start);
-      });
-      cueEl.addEventListener("dblclick", () => {
-        handleBookmarkToggle(index);
-      });
-      let touchStartX = null;
-      let touchStartY = null;
-      let lastTap = 0;
-      cueEl.addEventListener("touchstart", (e) => {
-        const t2 = e.touches && e.touches[0];
-        if (t2) {
-          touchStartX = t2.clientX;
-          touchStartY = t2.clientY;
-        }
-        startDwellTimer();
-      });
-      cueEl.addEventListener("touchend", (e) => {
-        clearDwellTimer();
-        const now2 = Date.now();
-        if (now2 - lastTap < 350) {
-          handleBookmarkToggle(index);
-          lastTap = 0;
-          return;
-        }
-        lastTap = now2;
-        if (touchStartX !== null) {
-          const t2 = e.changedTouches && e.changedTouches[0];
-          if (t2) {
-            const dx = t2.clientX - touchStartX;
-            const dy = t2.clientY - (touchStartY ?? t2.clientY);
-            if (dx >= 36 && Math.abs(dy) < 30) {
-              handleBookmarkToggle(index);
-            }
-          }
-        }
-        touchStartX = null;
-        touchStartY = null;
-      });
-      cueEl.addEventListener("touchcancel", () => {
-        clearDwellTimer();
-        touchStartX = null;
-        touchStartY = null;
-      });
-      return cueEl;
-    }
-    function updateCue(index) {
-      if (index < 0 || index >= currentCues.length) return;
-      const cue = currentCues[index];
-      const el5 = cueElements[index];
-      if (!el5) return;
-      if (cue.bookmarked) {
-        el5.classList.add("is-bookmarked");
-      } else {
-        el5.classList.remove("is-bookmarked");
-      }
-      const dotEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-dot")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-dot") : null);
-      if (dotEl) {
-        dotEl.textContent = cue.bookmarked ? "\u25CF" : "";
-      }
-      const noteEl = el5.children?.find?.((c) => c.classList?.contains("rc-transcript-cue-note")) || (el5.querySelector ? el5.querySelector(".rc-transcript-cue-note") : null);
-      if (noteEl) {
-        noteEl.textContent = cue.annotation || "";
-        if (cue.annotation) {
-          noteEl.hidden = false;
-          noteEl.removeAttribute("hidden");
-        } else {
-          noteEl.hidden = true;
-          noteEl.setAttribute("hidden", "true");
-        }
-      }
-    }
-    function highlightCue(index) {
-      if (index === activeIndex) return;
-      if (activeIndex >= 0 && cueElements[activeIndex]) {
-        cueElements[activeIndex].classList.remove("rc-transcript-cue-active");
-        cueElements[activeIndex].removeAttribute("aria-current");
-      }
-      activeIndex = index;
-      if (activeIndex >= 0 && cueElements[activeIndex]) {
-        cueElements[activeIndex].classList.add("rc-transcript-cue-active");
-        cueElements[activeIndex].setAttribute("aria-current", "true");
-        if (typeof cueElements[activeIndex].scrollIntoView === "function") {
-          cueElements[activeIndex].scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }
-      }
-    }
-    function update(state) {
-      if (!state) return;
-      if (state.title && titleEl) {
-        titleEl.textContent = state.title;
-      }
-      currentCues = Array.isArray(state.cues) ? state.cues : [];
-      if (state.playing && currentCues.length > 0) {
-        pane.hidden = false;
-        pane.removeAttribute("hidden");
-      } else if (currentCues.length === 0) {
-        pane.hidden = true;
-        pane.setAttribute("hidden", "true");
-      }
-      if (typeof cuesContainer.replaceChildren === "function") {
-        cueElements = currentCues.map((c, i) => buildCueElement(c, i));
-        cuesContainer.replaceChildren(...cueElements);
-      } else {
-        cuesContainer.children = [];
-        cueElements = currentCues.map((c, i) => {
-          const el5 = buildCueElement(c, i);
-          cuesContainer.appendChild(el5);
-          return el5;
-        });
-      }
-      const active = activeCueIndexAt(currentCues, state.currentTime || 0);
-      highlightCue(active);
-    }
-    closeControl.addEventListener("click", () => {
-      pane.hidden = true;
-      pane.setAttribute("hidden", "true");
-      if (typeof onClose === "function") {
-        onClose();
-      }
-    });
-    if (container && typeof container.appendChild === "function") {
-      container.appendChild(pane);
-    }
-    return {
-      element: pane,
-      update,
-      updateCue,
-      highlightCue,
-      show() {
-        pane.hidden = false;
-        pane.removeAttribute("hidden");
-      },
-      hide() {
-        pane.hidden = true;
-        pane.setAttribute("hidden", "true");
-      },
-      destroy() {
-        if (pane.parentElement && typeof pane.parentElement.removeChild === "function") {
-          pane.parentElement.removeChild(pane);
-        }
-      }
-    };
-  }
-  function createAudioSidecar(options = {}) {
-    const globalObj = options.globalObj ?? (typeof window !== "undefined" ? window : null);
-    const onInsertToPage = options.onInsertToPage ?? null;
-    const state = {
-      playing: false,
-      currentTime: 0,
-      title: String(options.title || ""),
-      sourceKey: String(options.sourceKey || ""),
-      cues: normalizeCues(options.cues),
-      bookmarks: Array.isArray(options.bookmarks) ? [...options.bookmarks] : []
-    };
-    let pane = null;
-    function setAudioTranscript(data2 = {}) {
-      if (typeof data2.playing === "boolean") {
-        state.playing = data2.playing;
-      }
-      if (typeof data2.currentTime === "number") {
-        state.currentTime = data2.currentTime;
-      }
-      if (typeof data2.title === "string") {
-        state.title = data2.title;
-      }
-      if (typeof data2.sourceKey === "string") {
-        state.sourceKey = data2.sourceKey;
-      }
-      if (Array.isArray(data2.cues)) {
-        state.cues = normalizeCues(data2.cues);
-      }
-      if (Array.isArray(data2.bookmarks)) {
-        state.bookmarks = [...data2.bookmarks];
-      }
-      if (pane) {
-        pane.update(state);
-      }
-    }
-    function updateTime(timeSec) {
-      state.currentTime = Number(timeSec) || 0;
-      const activeIdx = activeCueIndexAt(state.cues, state.currentTime);
-      if (pane) {
-        pane.highlightCue(activeIdx);
-      }
-      return activeIdx;
-    }
-    function bookmark(cueIndex, note = "") {
-      const res = bookmarkCue(state, cueIndex, note, { globalObj });
-      if (pane) {
-        pane.updateCue(cueIndex);
-      }
-      return res;
-    }
-    function toggleBookmark(cueIndex, note = "") {
-      const res = toggleBookmarkCue(state, cueIndex, note, { globalObj });
-      if (pane) {
-        pane.updateCue(cueIndex);
-      }
-      return res;
-    }
-    function annotate(cueIndex, annotationText, opts = {}) {
-      const insertFn = opts.onInsertToPage !== void 0 ? opts.onInsertToPage : onInsertToPage;
-      const res = annotateCue(state, cueIndex, annotationText, {
-        onInsertToPage: insertFn,
-        globalObj
-      });
-      if (pane) {
-        pane.updateCue(cueIndex);
-      }
-      return res;
-    }
-    function seek(time) {
-      if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-        globalObj.webkit.messageHandlers.audio.postMessage({ action: "seek", time });
-      }
-      updateTime(time);
-    }
-    const sidecarApi = {
-      getState: () => state,
-      setAudioTranscript,
-      updateTime,
-      bookmarkCue: bookmark,
-      toggleBookmarkCue: toggleBookmark,
-      annotateCue: annotate,
-      seek,
-      activeCueIndexAt: (t2) => activeCueIndexAt(state.cues, t2 !== void 0 ? t2 : state.currentTime),
-      getActiveCueIndex: () => activeCueIndexAt(state.cues, state.currentTime),
-      get pane() {
-        return pane;
-      },
-      createTranscriptPane(container) {
-        pane = createTranscriptPane(container, {
-          sidecar: sidecarApi,
-          globalObj,
-          onInsertToPage
-        });
-        pane.update(state);
-        return pane;
-      }
-    };
-    if (options.container) {
-      sidecarApi.createTranscriptPane(options.container);
-    }
-    return sidecarApi;
-  }
-  function extractDocumentSections(docText, pageIndex = null) {
-    const source = typeof docText === "string" ? docText : "";
-    if (!source.trim()) return [];
-    if (pageIndex !== null) {
-      const pages = inspectDraftpadPages(source);
-      const targetPage = pages.find((p) => p.index === pageIndex);
-      if (!targetPage) return [];
-      return extractSectionsFromText(targetPage.rawContent, targetPage.index);
-    }
-    if (source.includes(PAGE_MARKER)) {
-      const pages = inspectDraftpadPages(source);
-      const allSections = [];
-      for (const page of pages) {
-        const pageSections2 = extractSectionsFromText(page.rawContent, page.index);
-        allSections.push(...pageSections2);
-      }
-      return allSections;
-    }
-    return extractSectionsFromText(source, 0);
-  }
-  function extractSectionsFromText(rawText, pageIndex) {
-    const lines = rawText.split("\n");
-    const headings = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trimEnd();
-      const parsed = parseHeadingLine(line);
-      if (parsed) {
-        headings.push({
-          lineIndex: i,
-          ...parsed
-        });
-      }
-    }
-    if (headings.length > 0) {
-      const sections2 = [];
-      if (headings[0].lineIndex > 0) {
-        const preambleLines = lines.slice(0, headings[0].lineIndex).filter((l) => !isFullDateLine(l.trim()));
-        const preambleText = preambleLines.join("\n").trim();
-        if (preambleText.length > 0) {
-          sections2.push({
-            id: `sec-${pageIndex}-preamble`,
-            title: "Introduction",
-            level: 1,
-            kind: "preamble",
-            text: preambleText,
-            pageIndex
-          });
-        }
-      }
-      for (let k = 0; k < headings.length; k++) {
-        const h = headings[k];
-        const nextLineIdx = k + 1 < headings.length ? headings[k + 1].lineIndex : lines.length;
-        const bodyLines = lines.slice(h.lineIndex + 1, nextLineIdx);
-        const sectionText = bodyLines.join("\n").trim();
-        sections2.push({
-          id: `sec-${pageIndex}-${k}`,
-          title: h.title,
-          level: h.level,
-          kind: h.kind,
-          marker: h.marker,
-          text: sectionText,
-          pageIndex
-        });
-      }
-      return sections2;
-    }
-    const paragraphs = rawText.split(/\n\s*\n+/).map((p) => p.trim()).filter((p) => p.length > 0 && !isFullDateLine(p));
-    const sections = [];
-    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
-      const p = paragraphs[pIdx];
-      const firstSentenceMatch = p.match(/^([^.!?…\n]+[.!?…])/);
-      const firstSentence = firstSentenceMatch ? firstSentenceMatch[1].trim() : p.slice(0, 50).trim();
-      const title = firstSentence.length > 60 ? `${firstSentence.slice(0, 57)}\u2026` : firstSentence;
-      sections.push({
-        id: `sec-${pageIndex}-p${pIdx}`,
-        title,
-        level: 1,
-        kind: "paragraph",
-        text: p,
-        pageIndex
-      });
-    }
-    return sections;
-  }
-  var LEGAL_RULE_MARKERS = [
-    // English holding, obligation, conclusion
-    /\bheld\b/i,
-    /\bhold\b/i,
-    /\bholds\b/i,
-    /\bholding\b/i,
-    /\brule\b/i,
-    /\brules\b/i,
-    /\bmust\b/i,
-    /\bshall\b/i,
-    /\brequired\b/i,
-    /\bprohibited\b/i,
-    /\bbecause\b/i,
-    /\btherefore\b/i,
-    /\bthus\b/i,
-    /\bconcludes\b/i,
-    /\bconcluded\b/i,
-    /\bconclusion\b/i,
-    /\bfinding\b/i,
-    /\bfinds\b/i,
-    /\bfound\b/i,
-    /\bliable\b/i,
-    /\bliability\b/i,
-    /\baffirmed\b/i,
-    /\breversed\b/i,
-    /\bstatute\b/i,
-    /§/,
-    /\bsection\b/i,
-    // French obligation and judicial rulings
-    /\btenu\b/i,
-    /\bjugé\b/i,
-    /\brègle\b/i,
-    /\bdoit\b/i,
-    /\bdoivent\b/i,
-    /\bobligatoire\b/i,
-    /\bparce que\b/i,
-    /\bdonc\b/i,
-    /\ben conséquence\b/i,
-    /\bil résulte\b/i,
-    /\bconclut\b/i,
-    /\bconsidérant\b/i,
-    /\bstipule\b/i,
-    /\bresponsabilité\b/i,
-    /\bpréjudice\b/i,
-    // Vietnamese statutory obligations and judicial conclusions
-    /\bquy định\b/i,
-    /\bphải\b/i,
-    /\bbắt buộc\b/i,
-    /\bkhông được\b/i,
-    /\bkết luận\b/i,
-    /\bdo đó\b/i,
-    /\bvì vậy\b/i,
-    /\bcho nên\b/i,
-    /\bnguyên tắc\b/i,
-    /\btrách nhiệm\b/i,
-    /\btòa án\b/i,
-    /\bbồi thường\b/i,
-    /\bvi phạm\b/i,
-    /\btheo đó\b/i,
-    /\báp dụng\b/i,
-    /\bkhoản\b/i,
-    /\bđiều\b/i
-  ];
-  var STOP_WORDS = /* @__PURE__ */ new Set([
-    // EN
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "but",
-    "in",
-    "on",
-    "at",
-    "to",
-    "for",
-    "of",
-    "with",
-    "by",
-    "from",
-    "as",
-    "is",
-    "was",
-    "are",
-    "were",
-    "been",
-    "be",
-    "have",
-    "has",
-    "had",
-    "do",
-    "does",
-    "did",
-    "will",
-    "would",
-    "should",
-    "can",
-    "could",
-    "may",
-    "might",
-    "that",
-    "this",
-    "these",
-    "those",
-    "it",
-    "its",
-    "they",
-    "their",
-    "we",
-    "our",
-    "you",
-    "your",
-    // FR
-    "le",
-    "la",
-    "les",
-    "un",
-    "une",
-    "des",
-    "et",
-    "ou",
-    "mais",
-    "dans",
-    "en",
-    "sur",
-    "\xE0",
-    "pour",
-    "avec",
-    "par",
-    "de",
-    "du",
-    "ce",
-    "cette",
-    "ces",
-    "est",
-    "sont",
-    "\xE9t\xE9",
-    "\xEAtre",
-    "qui",
-    "que",
-    "il",
-    "ils",
-    "elle",
-    "elles",
-    // VI
-    "v\xE0",
-    "ho\u1EB7c",
-    "nh\u01B0ng",
-    "trong",
-    "tr\xEAn",
-    "t\u1EA1i",
-    "cho",
-    "c\u1EE7a",
-    "v\u1EDBi",
-    "b\u1EDFi",
-    "t\u1EEB",
-    "l\xE0",
-    "\u0111\xE3",
-    "\u0111ang",
-    "s\u1EBD",
-    "c\xF3",
-    "\u0111\u01B0\u1EE3c",
-    "b\u1ECB",
-    "n\xE0y",
-    "\u0111\xF3",
-    "nh\u1EEFng",
-    "c\xE1c",
-    "m\u1ED9t",
-    "khi",
-    "\u0111\u1EC3"
-  ]);
-  function tokenizeWords(text) {
-    if (!text) return [];
-    const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s§]/gu, " ").split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w));
-    return words;
-  }
-  function cleanSpokenSentence(raw) {
-    let s = raw.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/!\[([^\]]*)\]\([^)]+\)/g, "").replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/^(\s*[-*•]\s+|\s*\d+\.\s+|\s*\([a-zA-Z0-9]+\)\s+)/, "").replace(/^#+\s+/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
-    if (s.length > 0 && !/[.!?…]$/.test(s)) {
-      s += ".";
-    }
-    return s;
-  }
-  function summarizeSectionOffline(sectionInput, { maxSentences = 2 } = {}) {
-    let title = "";
-    let text = "";
-    if (typeof sectionInput === "string") {
-      text = sectionInput.trim();
-      const firstLineEnd = text.indexOf("\n");
-      const firstLine = firstLineEnd !== -1 ? text.slice(0, firstLineEnd).trim() : text;
-      const parsedHeading = parseHeadingLine(firstLine);
-      if (parsedHeading) {
-        title = parsedHeading.title;
-        text = firstLineEnd !== -1 ? text.slice(firstLineEnd).trim() : "";
-      }
-    } else if (sectionInput && typeof sectionInput === "object") {
-      title = String(sectionInput.title || "").trim();
-      text = String(sectionInput.text ?? sectionInput.content ?? sectionInput.body ?? "").trim();
-    }
-    if (!text && !title) {
-      return { summary: "", bullets: [] };
-    }
-    const rawParagraphs = text.split(/\n\s*\n+/);
-    const candidateSentences = [];
-    for (const para of rawParagraphs) {
-      const trimmedPara = para.trim();
-      if (!trimmedPara) continue;
-      const tokens = trimmedPara.replace(/([.!?…])\s+(?=[A-ZÀ-ỸÁ-Ỵ\d"“'§])/g, "$1\n").split("\n");
-      for (const t2 of tokens) {
-        const s = t2.trim();
-        if (s.length > 0) {
-          candidateSentences.push(s);
-        }
-      }
-    }
-    if (candidateSentences.length === 0) {
-      const single = cleanSpokenSentence(title);
-      return {
-        summary: single,
-        bullets: single ? [single.replace(/[.!?…]$/, "")] : []
-      };
-    }
-    const allWords = tokenizeWords(`${title} ${text}`);
-    const wordFreq = /* @__PURE__ */ new Map();
-    for (const w of allWords) {
-      wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
-    }
-    const titleWords = new Set(tokenizeWords(title));
-    const totalSentences = candidateSentences.length;
-    const scored = candidateSentences.map((rawSentence, index) => {
-      const cleaned = cleanSpokenSentence(rawSentence);
-      const sentWords = tokenizeWords(cleaned);
-      let tfScore = 0;
-      for (const w of sentWords) {
-        tfScore += (wordFreq.get(w) || 0) / (allWords.length || 1);
-      }
-      const normalizedTf = sentWords.length > 0 ? tfScore / Math.sqrt(sentWords.length) : 0;
-      let headingMatches = 0;
-      for (const w of sentWords) {
-        if (titleWords.has(w)) headingMatches++;
-      }
-      const headingScore = headingMatches * 1.2;
-      let markerMatches = 0;
-      for (const marker of LEGAL_RULE_MARKERS) {
-        if (marker.test(cleaned)) markerMatches++;
-      }
-      const markerScore = markerMatches * 1.8;
-      let positionScore = 0.5;
-      if (index === 0) {
-        positionScore = 1.4;
-      } else if (index === totalSentences - 1 && totalSentences > 1) {
-        positionScore = 1.2;
-      } else {
-        positionScore = 1 / (1 + 0.15 * index);
-      }
-      const totalScore = normalizedTf + headingScore + markerScore + positionScore;
-      return {
-        index,
-        raw: rawSentence,
-        cleaned,
-        score: totalScore
-      };
-    });
-    const limit = Math.max(1, Number(maxSentences) || 2);
-    const topScored = [...scored].sort((a, b) => b.score - a.score).slice(0, limit);
-    topScored.sort((a, b) => a.index - b.index);
-    const summary = topScored.map((s) => s.cleaned).join(" ");
-    const bullets = topScored.map((s) => s.cleaned.replace(/[.!?…]$/, ""));
-    return {
-      summary,
-      bullets
-    };
-  }
-  function summarizeAllSections(docText, options = {}) {
-    const sections = extractDocumentSections(docText, options.pageIndex ?? null);
-    return sections.map((sec) => {
-      const res = summarizeSectionOffline(sec, options);
-      return {
-        ...sec,
-        summary: res.summary,
-        bullets: res.bullets
-      };
-    });
-  }
-  function speakSectionSummary(section, { globalObj = typeof window !== "undefined" ? window : null, lang = "en-US" } = {}) {
-    if (!section) return null;
-    let summaryText = section.summary;
-    let titleText = section.title || "";
-    let sectionId = section.id || "sec-0";
-    if (!summaryText) {
-      const rawBody = section.text ?? section.content ?? section.body;
-      const res = summarizeSectionOffline(
-        rawBody !== void 0 ? { ...section, text: rawBody } : section
-      );
-      summaryText = res.summary;
-    }
-    if (!summaryText) return null;
-    let spokenVia = "none";
-    if (globalObj?.webkit?.messageHandlers?.audio?.postMessage) {
-      globalObj.webkit.messageHandlers.audio.postMessage({
-        action: "speakSummary",
-        sectionId,
-        title: titleText,
-        text: summaryText
-      });
-      spokenVia = "native";
-    } else if (globalObj?.speechSynthesis && typeof globalObj.SpeechSynthesisUtterance === "function") {
-      try {
-        const utterance = new globalObj.SpeechSynthesisUtterance(summaryText);
-        utterance.lang = lang;
-        const voices = globalObj.speechSynthesis.getVoices?.() || [];
-        const localVoice = voices.find((v) => v.localService === true && (!lang || v.lang?.startsWith(lang.slice(0, 2)))) || voices.find((v) => v.localService === true) || voices[0];
-        if (localVoice) {
-          utterance.voice = localVoice;
-        }
-        globalObj.speechSynthesis.speak(utterance);
-        spokenVia = "speechSynthesis";
-      } catch {
-        spokenVia = "none";
-      }
-    }
-    return {
-      sectionId,
-      title: titleText,
-      text: summaryText,
-      spokenVia
     };
   }
 
@@ -41561,14 +41872,40 @@ ${clean(nextLineText)}`;
   ];
   var FILES = { text: "draftpad.md", ink: "draftpad.ink.json", side: "draftpad.matter.json" };
   var clone = (v) => v === void 0 ? void 0 : JSON.parse(JSON.stringify(v));
-  var emptyInk = () => ({ version: 1, strokes: [], removed: [] });
-  var emptySide = () => ({ version: 1, passages: {}, log: [] });
+  var emptyInk2 = () => ({ version: 1, strokes: [], removed: [] });
+  var emptySide2 = () => ({ version: 1, passages: {}, log: [] });
   function createMatter({ text = "", ink = null, side = null } = {}) {
-    return { text: String(text), ink: clone(ink) || emptyInk(), side: clone(side) || emptySide() };
+    return { text: String(text), ink: clone(ink) || emptyInk2(), side: clone(side) || emptySide2() };
   }
   function fromFiles(files) {
     const j = (s, d) => typeof s === "string" && s.trim() ? JSON.parse(s) : d();
-    return createMatter({ text: files[FILES.text] || "", ink: j(files[FILES.ink], emptyInk), side: j(files[FILES.side], emptySide) });
+    return createMatter({ text: files[FILES.text] || "", ink: j(files[FILES.ink], emptyInk2), side: j(files[FILES.side], emptySide2) });
+  }
+  function guessDevice({ userAgent = "", maxTouchPoints = 0 } = {}) {
+    const ua = String(userAgent || "");
+    if (/iPhone/.test(ua)) return "iPhone";
+    if (/iPad/.test(ua) || /Macintosh/.test(ua) && maxTouchPoints > 1) return "iPad";
+    if (/Macintosh/.test(ua)) return "Mac";
+    return "web";
+  }
+  function createMatterDevice(nav2 = {}) {
+    let name2 = guessDevice(nav2);
+    let named = false;
+    return {
+      get: () => name2,
+      set(next) {
+        const s = typeof next === "string" ? next.trim() : "";
+        if (s) {
+          name2 = s;
+          named = true;
+        }
+        return name2;
+      },
+      guess(n = {}) {
+        if (!named) name2 = guessDevice(n);
+        return name2;
+      }
+    };
   }
   function wordsOf(text) {
     return String(text || "").match(/[\p{L}\p{N}’']+/gu) || [];
@@ -41647,7 +41984,7 @@ ${clean(nextLineText)}`;
     while (i > 0 && !p.lines[i].trim()) i--;
     return offsetOfPageLine(text, p.index, i);
   }
-  function strokesOf(m, p) {
+  function strokesOf2(m, p) {
     const ids = new Set(p.forms.ink && p.forms.ink.strokes || []);
     return m.ink.strokes.filter((s) => ids.has(s.id));
   }
@@ -41696,13 +42033,25 @@ ${clean(nextLineText)}`;
     return !!seed && typeof seed.device === "string" && !!seed.device && typeof seed.input === "string" && !!seed.input && typeof seed.time === "number" && Number.isFinite(seed.time);
   }
   var seedOf = (s) => ({ device: s.device, input: s.input, time: s.time });
+  function noteTime(sec) {
+    const s = Number(sec);
+    if (!Number.isFinite(s) || s < 0) return null;
+    return Math.floor(s * 10 + 1e-6) / 10;
+  }
+  var MEDIA_KEY = /^[0-9a-f]{24}$/;
+  var validMedia = (md) => !!md && typeof md.key === "string" && MEDIA_KEY.test(md.key) && noteTime(md.t) !== null;
+  function passageSeed(seed) {
+    const s = seedOf(seed);
+    if (validMedia(seed.media)) s.media = { key: seed.media.key, t: noteTime(seed.media.t) };
+    return s;
+  }
   function addPassage(m, id2, born, seed, forms) {
     if (!validSeed(seed)) throw new Error("a passage needs its seed: device, input, time");
     const out = createMatter(m);
     if (out.side.passages[id2]) throw new Error(`passage ${id2} exists`);
     const from = { cross: 0, ...seedOf(seed) };
     for (const f of Object.values(forms)) f.from = from;
-    out.side.passages[id2] = { id: id2, born, seed: seedOf(seed), phase: born, forms };
+    out.side.passages[id2] = { id: id2, born, seed: passageSeed(seed), phase: born, forms };
     return out;
   }
   function seedInkPassage(m, { id: id2, strokeIds, seed }) {
@@ -41780,7 +42129,7 @@ ${clean(nextLineText)}`;
   var STEPS = {
     // 1 ink → type: the handwriting's reading enters the body, on the line under the ink, on its page.
     1(m, p, o, from) {
-      const strokes = strokesOf(m, p);
+      const strokes = strokesOf2(m, p);
       need(p, "ink");
       const text = (o.text || inkReading(strokes)).trim();
       if (!text) throw new Error("the handwriting has not been read yet (no OCR text on its strokes)");
@@ -41829,7 +42178,7 @@ ${clean(nextLineText)}`;
     // 5 ink → mark: a circled region becomes a region-anchored comment; recognition skipped.
     5(m, p, o, from) {
       need(p, "ink");
-      const strokes = strokesOf(m, p);
+      const strokes = strokesOf2(m, p);
       const region = bbox(strokes);
       const anchor = inkAnchor(m, strokes);
       const mk = ensureMark(p, from, "region", anchor);
@@ -41866,7 +42215,7 @@ ${clean(nextLineText)}`;
       let text = "";
       if (mk.anchor && mk.anchor.quote && findQuote(m.text, mk.anchor) !== -1) text = mk.anchor.quote;
       else if (mk.note) text = mk.note;
-      else text = inkReading(strokesOf(m, p));
+      else text = inkReading(strokesOf2(m, p));
       if (!text) throw new Error("no words to read aloud in this mark");
       ensureVoice(p, from).read = readPlan("mark", text, from);
     },
@@ -41903,7 +42252,7 @@ ${clean(nextLineText)}`;
     // 11 ink → voice: handwriting read aloud from its reading, the typed state skipped.
     11(m, p, o, from) {
       need(p, "ink");
-      const text = inkReading(strokesOf(m, p));
+      const text = inkReading(strokesOf2(m, p));
       if (!text) throw new Error("the handwriting has not been read yet (no OCR text on its strokes)");
       ensureVoice(p, from).read = readPlan("ink", text, from);
     },
@@ -41916,8 +42265,8 @@ ${clean(nextLineText)}`;
       let anchor;
       if (o.place) {
         anchor = anchorStrokeToDoc({ points: [[o.place.x || 0, o.place.y || 0]] }, m.text, DEFAULT_LINE_HEIGHT, o.place.pageIndex || 0);
-      } else if (strokesOf(m, p).length) {
-        anchor = inkAnchor(m, strokesOf(m, p));
+      } else if (strokesOf2(m, p).length) {
+        anchor = inkAnchor(m, strokesOf2(m, p));
       } else {
         const pl = p.forms.type && findQuote(m.text, p.forms.type) !== -1 ? placeOf(m.text, typeOffset(m, p)) : { pageIndex: 0, line: 0 };
         anchor = anchorStrokeToDoc({ points: [[0, pl.line * DEFAULT_LINE_HEIGHT + 4]] }, m.text, DEFAULT_LINE_HEIGHT, pl.pageIndex);
@@ -42033,8 +42382,8 @@ ${clean(nextLineText)}`;
     return out;
   }
   function mergeMatter(a, b) {
-    const A = a || emptySide();
-    const B = b || emptySide();
+    const A = a || emptySide2();
+    const B = b || emptySide2();
     const log = /* @__PURE__ */ new Map();
     for (const e of [...A.log || [], ...B.log || []]) if (!log.has(e.id)) log.set(e.id, clone(e));
     const entries = [...log.values()].sort((x, y) => x.seed.time - y.seed.time || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
@@ -42047,6 +42396,7 @@ ${clean(nextLineText)}`;
         continue;
       }
       const p = clone(pa);
+      if (!p.seed.media && pb.seed && pb.seed.media) p.seed.media = clone(pb.seed.media);
       p.forms = {};
       for (const s of STATES) {
         const f = mergeForm(s, pa.forms[s], pb.forms[s]);
@@ -42088,7 +42438,17 @@ ${clean(nextLineText)}`;
     const seen = /* @__PURE__ */ new Map();
     for (const a of list) seen.set(a.label, (seen.get(a.label) || 0) + 1);
     for (const a of list) if (seen.get(a.label) > 1) a.label = `${a.label} from ${SOURCE_NAME[a.from]}`;
+    const play = playFromAction(m, pid);
+    if (play) list.push(play);
     return list;
+  }
+  var REPLAY_LEAD_S = 2;
+  function playFromAction(m, pid) {
+    const p = m.side.passages[pid];
+    const md = p && p.seed && p.seed.media;
+    if (!validMedia(md)) return null;
+    const t2 = Math.max(0, Math.round((md.t - REPLAY_LEAD_S) * 10) / 10);
+    return { id: "play-from", label: `Play from ${formatTimestamp(md.t)}`, key: md.key, t: t2, play: true, run: (mm) => mm };
   }
   function passageAt(m, from, to = from) {
     let best = null;
@@ -42299,7 +42659,9 @@ ${clean(nextLineText)}`;
   function createThemeCompartments() {
     return {
       theme: new Compartment(),
-      fontSize: new Compartment()
+      fontSize: new Compartment(),
+      history: new Compartment()
+      // FEAT-23 rule 3: emptied when the document swaps, so undo never crosses documents
     };
   }
   function buildThemeExtension(mode = "dark") {
@@ -42414,7 +42776,7 @@ ${clean(nextLineText)}`;
       EditorState.lineSeparator.of("\n"),
       // T-0090 · raw control characters (0x04 …) as measured widgets, so a click among them lands where it is aimed.
       highlightSpecialChars({ render: renderControlChar }),
-      history(),
+      compartments.history ? compartments.history.of(history()) : history(),
       drawSelection(),
       // BUG-22 · no band behind the caret's line (owner 2026-11-16: "remove the blue line guide").
       EditorView.lineWrapping,
@@ -43048,18 +43410,26 @@ ${clean(nextLineText)}`;
     });
     attachSwipePaging(view);
     let matterSide = { version: 1, passages: {}, log: [] };
-    let matterDevice = (() => {
-      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-      if (/iPhone/.test(ua)) return "iPhone";
-      if (/iPad/.test(ua) || /Macintosh/.test(ua) && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1) return "iPad";
-      if (/Macintosh/.test(ua)) return "Mac";
-      return "web";
-    })();
+    const matterDevice = createMatterDevice(typeof navigator !== "undefined" ? { userAgent: navigator.userAgent || "", maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
     let matterInput = "keys";
-    const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
+    let noteKeyNow = () => null;
+    let mediaNotes = null;
+    let playheadKey = "";
+    const mediaOf = () => {
+      const key = noteKeyNow();
+      if (!key || !audioSidecar || playheadKey !== key) return null;
+      const t2 = noteTime(audioSidecar.getState().currentTime);
+      return t2 === null ? null : { key, t: t2 };
+    };
+    const matterSeed = () => {
+      const media = mediaOf();
+      return media ? { device: matterDevice.get(), input: matterInput, time: Date.now(), media: { key: media.key, t: noteTime(media.t) } } : { device: matterDevice.get(), input: matterInput, time: Date.now() };
+    };
     function postMatter() {
+      const json = JSON.stringify(matterSide);
+      if (mediaNotes && mediaNotes.routeMatter(json)) return;
       const h = window.webkit?.messageHandlers?.matter;
-      if (h && typeof h.postMessage === "function") h.postMessage(JSON.stringify(matterSide));
+      if (h && typeof h.postMessage === "function") h.postMessage(json);
     }
     function applyMatter(fn) {
       if (!view) return { ok: false, error: "no editor" };
@@ -43085,12 +43455,23 @@ ${clean(nextLineText)}`;
       if (inkLayer && JSON.stringify(after.ink) !== JSON.stringify(before.ink)) {
         inkLayer.setInk(after.ink);
         inkLayer.relayout();
-        window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));
+        const inkJSON = JSON.stringify(after.ink);
+        if (!(mediaNotes && mediaNotes.routeInk(inkJSON))) window.webkit?.messageHandlers?.ink?.postMessage?.(inkJSON);
       }
       const sideChanged = JSON.stringify(after.side) !== JSON.stringify(matterSide);
       matterSide = after.side;
       if (sideChanged) postMatter();
       return { ok: true };
+    }
+    function playMedia(key, t2, from) {
+      const h = window.webkit?.messageHandlers?.audio;
+      const sec = Math.max(0, Number(t2) || 0);
+      logEvent("media-notes.play", { key, t: sec, from, found: h ? "here" : "missing" });
+      if (h && typeof h.postMessage === "function") {
+        h.postMessage({ action: "play", key, t: sec, from });
+        return { ok: true };
+      }
+      return { ok: false, error: "no player here" };
     }
     function insertBlock(text) {
       const line = view.state.doc.lineAt(view.state.selection.main.head);
@@ -43109,11 +43490,14 @@ ${String(text ?? "")}`;
       mount: editorHost,
       radialOuter: () => radialOuterItems(),
       selectionExtras: (ids) => selectionMatterItems(ids),
+      routeInk: (json) => mediaNotes ? mediaNotes.routeInk(json) : false,
+      // FEAT-23: a note's strokes, its own file
       onToolChange: (tool) => {
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
         const locked = setPagesLocked(view, toolLocksPages(tool));
         if (h && typeof h.postMessage === "function") h.postMessage({ pagesLocked: locked });
+        if (mediaNotes && mediaNotes.isOpen()) logEvent("media-notes.lock", { key: mediaNotes.key(), locked: locked ? 1 : 0, tool });
       },
       // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
       onStrokeAdded: (stroke) => {
@@ -43126,6 +43510,61 @@ ${String(text ?? "")}`;
         if (pos != null) applyMatter((m) => attachStrokeToWord(m, stroke.id, pos));
       }
     });
+    const swapText = (text) => view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: String(text ?? "") },
+      selection: { anchor: 0 },
+      annotations: [externalSetTextAnnotation.of(true), Transaction.addToHistory.of(false)]
+    });
+    mediaNotes = createMediaNotes({
+      getText: () => view.state.doc.toString(),
+      setText: swapText,
+      getInk: () => inkLayer ? inkLayer.getInk() : { version: 1, strokes: [], removed: [] },
+      setInk: (ink) => {
+        if (inkLayer) {
+          inkLayer.setInk(ink);
+          inkLayer.relayout();
+        }
+      },
+      getMatter: () => matterSide,
+      setMatter: (side) => {
+        matterSide = side;
+      },
+      flush: () => {
+        if (bridge) bridge.flushPendingPost();
+        if (inkLayer) inkLayer.flushPost();
+      },
+      resetHistory: () => {
+        view.dispatch({ effects: compartments.history.reconfigure([]) });
+        view.dispatch({ effects: compartments.history.reconfigure(history()) });
+      },
+      // A1 rule 10: when the region hides, { pagesLocked: false } goes first, so no recognizer stays off anywhere.
+      unlockPages: () => {
+        setPagesLocked(view, false);
+        window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: false });
+      },
+      post: (channel, body) => window.webkit?.messageHandlers?.[channel]?.postMessage?.(body)
+    });
+    noteKeyNow = () => mediaNotes.key();
+    shell.addEventListener("focusout", (e) => {
+      if (mediaNotes.isOpen() && !(e.relatedTarget && shell.contains(e.relatedTarget))) mediaNotes.blur();
+    });
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && mediaNotes.isOpen()) mediaNotes.blur();
+      });
+    }
+    view.dom.addEventListener("keydown", () => mediaNotes.setInput("type"), true);
+    function appendLine(line) {
+      const doc2 = view.state.doc;
+      const lead = doc2.length && !doc2.toString().endsWith("\n") ? "\n" : "";
+      view.dispatch({ changes: { from: doc2.length, insert: `${lead}${line}
+` }, userEvent: "input" });
+    }
+    setMomentHandler((m) => playMedia(m.key, m.t, "link"));
+    function insertAtCaret(text) {
+      const head = view.state.selection.main.head;
+      view.dispatch({ changes: { from: head, insert: text }, selection: { anchor: head + text.length }, scrollIntoView: true, userEvent: "input" });
+    }
     view.dom.addEventListener("pointerdown", (e) => {
       matterInput = e.pointerType === "pen" ? "pencil" : e.pointerType === "touch" ? "touch" : "keys";
     }, true);
@@ -43137,7 +43576,10 @@ ${String(text ?? "")}`;
       from,
       to
     );
-    const runMatter = (action) => applyMatter((m) => action.run(m, { seed: matterSeed() }));
+    const runMatter = (action) => {
+      if (action && action.play) return playMedia(action.key, action.t, "passage");
+      return applyMatter((m) => action.run(m, { seed: matterSeed() }));
+    };
     matterMenu = createMatterMenu({ mount: editorHost, view, getMenu: matterMenuFor, onRun: runMatter });
     radialOuterItems = () => {
       const r = view.state.selection.main;
@@ -43291,6 +43733,20 @@ ${String(text ?? "")}`;
     audioSidecar = createAudioSidecar({
       container: workspace,
       onInsertToPage: insertBlock,
+      // FEAT-23 A1 rule 9 (T-0181): a pane line note or bookmark joins the item's note, never stored nowhere.
+      onLineNote: ({ start, text }) => {
+        const r = mediaNotes ? mediaNotes.lineNote(audioSidecar.getState().sourceKey, start, text) : null;
+        if (!r) return false;
+        if (r.insert) appendLine(r.insert);
+        return true;
+      },
+      // FEAT-23 rule 5: in a media note, a tapped line writes its moment link at the caret (and still seeks).
+      onLineTap: (cue) => {
+        const link = mediaNotes ? mediaNotes.linkForLine(cue) : null;
+        if (!link) return false;
+        insertAtCaret(link);
+        return true;
+      },
       globalObj: typeof window !== "undefined" ? window : null
     });
     dualWings = createDualWings(workspace, {
@@ -43439,7 +43895,37 @@ ${String(text ?? "")}`;
       setFontSize,
       getRemoved: () => view ? getRemoved(view.state) : [],
       isSelecting: () => dragSelecting,
+      // FEAT-23 rule 2: a media note's saves go to the note; the host's draftpad.md is never handed the note.
+      routeText: (text) => mediaNotes ? mediaNotes.routeText(text) : false,
+      hostText: () => mediaNotes ? mediaNotes.hostText() : view.state.doc.toString(),
+      absorbText: (text) => mediaNotes ? mediaNotes.absorbHostText(text) : false,
       extra: {
+        // Derived from Spec: FEAT-23 P0 · the host opens an item's note ({ text, ink, matter, title, trigger, layout })
+        // in this editor, and puts draftpad.md back. One document at a time (rule 3).
+        openNote: (key, payload) => {
+          const p = typeof payload === "string" ? JSON.parse(payload || "{}") : payload || {};
+          const ok = mediaNotes.open(String(key || ""), p);
+          if (ok && p.layout !== "underlay" && audioSidecar && audioSidecar.pane && audioSidecar.getState().cues.length) audioSidecar.pane.show();
+          if (ok && view) view.focus();
+          return ok;
+        },
+        closeNote: () => {
+          const layout = mediaNotes.layout();
+          const ok = mediaNotes.close();
+          if (ok && layout !== "underlay" && inkLayer) {
+            const locked = setPagesLocked(view, toolLocksPages(inkLayer.getTool()));
+            window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: locked });
+          }
+          return ok;
+        },
+        noteKey: () => mediaNotes.key(),
+        // A1 rule 2 · dictation into the note: a partial result writes nothing; a final one lands at the caret.
+        noteDictation: (text, final) => {
+          const s = mediaNotes.dictation(text, Boolean(final));
+          if (s) insertAtCaret(`${s} `);
+          return Boolean(s);
+        },
+        noteDictating: (on) => mediaNotes.dictationRunning(Boolean(on)),
         step: (delta) => stepPage(view, Number(delta) || 0, { allowCreate: true }) ? "ok" : "bounce",
         swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
         swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
@@ -43471,24 +43957,39 @@ ${String(text ?? "")}`;
         setInk: (data2) => {
           if (!inkLayer) return;
           const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
+          if (mediaNotes && mediaNotes.absorbHostInk(parsed)) return;
           inkLayer.setInk(parsed);
           inkLayer.relayout();
         },
         mergeInk: (remote) => {
           if (!inkLayer) return null;
           const parsed = typeof remote === "string" ? JSON.parse(remote) : remote;
+          if (mediaNotes && mediaNotes.isOpen()) {
+            const union = mergeInkDocuments(mediaNotes.stash().ink, parsed);
+            mediaNotes.absorbHostInk(union);
+            return union;
+          }
           const merged = mergeInkDocuments(inkLayer.getInk(), parsed);
           inkLayer.setInk(merged);
           inkLayer.relayout();
           return merged;
         },
         // FEAT-08 · one matter: draftpad.matter.json beside draftpad.md and draftpad.ink.json (src/matter.js).
-        getMatter: () => JSON.stringify(matterSide),
+        getMatter: () => JSON.stringify(mediaNotes && mediaNotes.isOpen() ? mediaNotes.stash().matter : matterSide),
         setMatter: (data2) => {
-          matterSide = fromFiles({ [FILES.side]: typeof data2 === "string" ? data2 : JSON.stringify(data2 || {}) }).side;
+          const side = fromFiles({ [FILES.side]: typeof data2 === "string" ? data2 : JSON.stringify(data2 || {}) }).side;
+          if (mediaNotes && mediaNotes.absorbHostMatter(side)) return;
+          matterSide = side;
         },
         mergeMatter: (remote) => {
           const r = typeof remote === "string" ? JSON.parse(remote) : remote;
+          if (mediaNotes && mediaNotes.isOpen()) {
+            const union = mergeMatter(mediaNotes.stash().matter, r);
+            mediaNotes.absorbHostMatter(union);
+            const json = JSON.stringify(union);
+            window.webkit?.messageHandlers?.matter?.postMessage?.(json);
+            return json;
+          }
           matterSide = mergeMatter(matterSide, r);
           postMatter();
           return JSON.stringify(matterSide);
@@ -43500,18 +44001,16 @@ ${String(text ?? "")}`;
           return seedTypePassage(m, a);
         }),
         cross: (n, pid, opts) => applyMatter((m) => cross(m, Number(n), String(pid), typeof opts === "string" ? JSON.parse(opts) : opts || {})),
-        reverseCrossing: () => applyMatter((m) => reverseLast(m, { device: matterDevice })),
+        reverseCrossing: () => applyMatter((m) => reverseLast(m, { device: matterDevice.get() })),
         // per device
         // FEAT-08 P2 · spoken words from the host land at the end as their own voice passage; the caret stays.
         appendVoice: (text, id2) => applyMatter((m) => appendVoicePassage(m, {
           id: String(id2 || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
           text,
-          seed: { device: matterDevice, input: "voice", time: Date.now() }
+          seed: { ...matterSeed(), input: "voice" }
+          // FEAT-08 P6: in a media note, with the item's second
         })),
-        setMatterDevice: (name2) => {
-          if (name2) matterDevice = String(name2);
-          return matterDevice;
-        },
+        setMatterDevice: (name2) => matterDevice.set(name2),
         // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
         matterMenu: (from, to) => {
           const m = createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
@@ -43620,6 +44119,7 @@ ${String(text ?? "")}`;
         setAudioTranscript: (data2) => {
           const parsed = typeof data2 === "string" ? JSON.parse(data2) : data2;
           audioSidecar.setAudioTranscript(parsed);
+          if (mediaNotes && mediaNotes.isOpen() && parsed && Array.isArray(parsed.cues)) mediaNotes.reweave(parsed.cues, parsed.reason || "load");
         },
         // The host's report on one calendar add: saved, or the reason it wasn't.
         calendarResult: (id2, ok, message) => {
@@ -43642,7 +44142,10 @@ ${String(text ?? "")}`;
         },
         // A widget only this host can run (the Mac: 'iphone').
         enableWidget: (id2) => dualWings ? dualWings.enableHostWidget(id2) : null,
-        updateAudioTime: (sec) => audioSidecar.updateTime(sec),
+        updateAudioTime: (sec) => {
+          playheadKey = audioSidecar.getState().sourceKey;
+          return audioSidecar.updateTime(sec);
+        },
         bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
         annotateAudioCue: (idx, text) => {
           const targetIdx = typeof idx === "number" ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
