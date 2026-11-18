@@ -82,7 +82,7 @@ Binding law it serves: `docs/law/interaction.md:31`: "A gesture only speeds an a
 - **iPhone and iPad:** Recense runs the owner's named shortcuts (Wi-Fi, Bluetooth, Low Power, Focus) through Shortcuts. The deck lists them by name. Recense never claims to do what only iOS can.
 - **The hub and other Macs:** wake by Wake-on-LAN (own code, local network) once the hub machine exists (FEAT-18 H3); sleep through the hub's own endpoint.
 - **Recense's own device roles:** pause or forget a paired device (SEC-02 "Forget <device>") as a deck action.
-- **Lights and plugs (HomeKit / Matter, local network, Apple framework):** only if the owner has any (owner decision below).
+- **Lights (owner has an Aqara light, Matter + HomeKit):** controlled through Apple's HomeKit framework, which reaches Matter accessories added to the Home app. It works on the local network with no Aqara account at the moment of use (**assumed**; checked on the iPhone in P3). Mac: through the same Home data on macOS (**untested**).
 
 ## Outside services
 - **At the moment of use:** none. Switch Control, Shortcuts, App Intents, IOBluetooth and Wake-on-LAN are on the device or the local network.
@@ -93,5 +93,5 @@ Binding law it serves: `docs/law/interaction.md:31`: "A gesture only speeds an a
 - **Gestures as the only route to an action:** forbidden by the law. P0 fixes what exists.
 
 ## Owner decisions (defaults hold until answered)
-- **Which devices to switch:** default = Mac display, Mac audio and headphones, the iPhone/iPad shortcuts the owner names. HomeKit only if the owner owns HomeKit or Matter devices.
+- **Which devices to switch (answered 2026-11-18):** Mac display, Mac audio and headphones, the owner's iPhone/iPad shortcuts, and the Aqara light (Matter + HomeKit).
 - **The deck's default step time:** 1.5 s.
