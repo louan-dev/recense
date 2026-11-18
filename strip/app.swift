@@ -362,11 +362,11 @@ func trackThree(_ touching: [(id: Int32, p: MTPoint)]) {
         gThreeMoving = false
         return
     }
-    var dys: [Float] = [], dxs: [Float] = []
-    for t in touching {
-        let s0 = gStarts[t.id]!
-        dys.append(t.p.y - s0.y); dxs.append(t.p.x - s0.x)
-    }
+    guard let deltas = GestureNavHaptics.relativeDisplacements(
+        starts: gStarts.mapValues { (x: $0.x, y: $0.y) },
+        current: touching.map { (id: $0.id, x: $0.p.x, y: $0.p.y) }
+    ) else { return }
+    let dys = deltas.map(\.dy), dxs = deltas.map(\.dx)
     let allUp = dys.allSatisfy { $0 > 0.01 }, allDown = dys.allSatisfy { $0 < -0.01 }
     let allRight = dxs.allSatisfy { $0 > 0.01 }, allLeft = dxs.allSatisfy { $0 < -0.01 }
     gThreeMoving = allUp || allDown || allRight || allLeft
@@ -7601,16 +7601,24 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         run((n.object as? String) ?? "show")
     }
 
+    func currentLayerIndex() -> Int {
+        (!panel.isVisible || retracting) ? 0 : (mode == .pad ? 2 : 1)
+    }
+
     func run(_ cmd: String) {
         switch cmd {
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up; down closes the
         // panel from any layer, Draftpad included (owner, 11-06).
         case "up":     guard settled() else { return }
+                       let fromL = currentLayerIndex()
                        // Recense comes up and the Recense card steps aside at the same time.
                        MainActor.assumeIsolated { if Recense.overlay?.panel.isVisible == true { Recense.overlay?.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
+                       GestureNavHaptics.performLayer(fromLayer: fromL, toLayer: currentLayerIndex(), attemptedDirection: 1)
         case "down":   guard settled() else { return }
+                       let fromL = currentLayerIndex()
                        if panel.isVisible { hide() }
+                       GestureNavHaptics.performLayer(fromLayer: fromL, toLayer: 0, attemptedDirection: -1)
         case "pad":    present(.pad)
         case "time":   present(.time)
         case "show":   present(mode)
@@ -7756,6 +7764,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         var j = i
         if rowDX > threshold, i + 1 < rowOrder.count { j = i + 1 }
         else if rowDX < -threshold, i > 0 { j = i - 1 }
+        GestureNavHaptics.performPage(from: i, to: j, count: rowOrder.count, pullDelta: rowDX)
         let target = rowOrder[j]
         let h = cur.superview!.bounds.height
         rowSettling = true

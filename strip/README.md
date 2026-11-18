@@ -99,6 +99,8 @@ One cue vocabulary of at most 4 named cues across Recense (B1):
 - **Settings › Haptics (`Off · Calm · Full`):** reachable in `Recense ▸ Settings ▸ Haptics`, `Recense ▸ Haptics`, or `./recense haptics-off | haptics-calm | haptics-full | haptics-settings`. `Calm` fires only zone and edge cues (`thud`, `edge`, `open`) and silences step `tick`s for sensory load.
 - **Direct trackpad actuator spike (`MTActuatorActuate`):** opt-in (`Direct Trackpad Actuator (Experimental)`), with public `NSHapticFeedbackManager` as default and automatic fallback. Proven: `MTDeviceGetMTActuator` + `MTActuatorOpen` + `MTActuatorActuate` resolve in `MultitouchSupport.framework` on macOS 27.2 and return `0` (`kIOReturnSuccess`) on the Force Touch trackpad for actuation IDs `[1, 3, 5, 15, 16]`; subjective tactile difference vs. `NSHapticFeedbackManager` is untested pending owner trackpad feel.
 
+- **Global gesture navigation feel (B2):** three-finger vertical swipes emit a `tick` per layer stepped (`hidden → Essentials → Drafting`) and a `thud` at the first and last layer boundaries; two-finger horizontal paging across the Essentials row (`Essentials → DEVONthink hub → Notebook → Media`) emits a `tick` per page stepped and a `thud` when landing on or pulling past the first or last page. Every finger displacement is measured strictly from where the fingers land (`GestureNavHaptics.relativeDisplacements`), never from the screen side or hand (ambidextrous).
+
 ### Layers
 Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
 the panel from any layer. Moving the pointer off the panel never closes it: once down, it waits for the swipe.

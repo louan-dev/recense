@@ -331,6 +331,68 @@ final class HapticsMenuTarget: NSObject {
     var settingsWindow: NSPanel? { panel }
 }
 
+// MARK: - B2: Global gesture navigation feel & ambidextrous finger-origin measurement
+
+enum GestureNavHaptics {
+    /// Ambidextrous displacement: every finger's movement is measured strictly from where it landed (`starts[id]`),
+    /// never from the screen side (left/right edge) or hand.
+    static func relativeDisplacements(
+        starts: [Int32: (x: Float, y: Float)],
+        current: [(id: Int32, x: Float, y: Float)]
+    ) -> [(dx: Float, dy: Float)]? {
+        guard !current.isEmpty, current.count == starts.count else { return nil }
+        var out: [(dx: Float, dy: Float)] = []
+        out.reserveCapacity(current.count)
+        for t in current {
+            guard let s0 = starts[t.id] else { return nil }
+            out.append((dx: t.x - s0.x, dy: t.y - s0.y))
+        }
+        return out
+    }
+
+    /// Three-finger layer navigation cue (`0 = hidden`, `1 = essentials`, `2 = draftpad`):
+    /// - A `tick` per layer stepped (`0 -> 1` or `1 -> 2`).
+    /// - A `thud` at the first (`0`, closing or already closed) and last (`2` when swiping up at the top layer).
+    static func layerCue(fromLayer: Int, toLayer: Int, attemptedDirection: Int) -> HapticCue? {
+        guard attemptedDirection != 0 else { return nil }
+        if fromLayer != toLayer {
+            if toLayer <= 0 { return .thud }
+            return .tick
+        }
+        if attemptedDirection > 0 && fromLayer >= 2 { return .thud }
+        if attemptedDirection < 0 && fromLayer <= 0 { return .thud }
+        return nil
+    }
+
+    /// Two-finger paging cue across `count` pages (`0 ..< count`):
+    /// - A `tick` per page stepped (`to != from` on interior pages).
+    /// - A `thud` when landing on or pulling past the first (`0`) or last (`count - 1`) page.
+    static func pageCue(from: Int, to: Int, count: Int, pullDelta: CGFloat) -> HapticCue? {
+        guard count > 0 else { return nil }
+        if to != from {
+            if to <= 0 || to >= count - 1 { return .thud }
+            return .tick
+        }
+        if from <= 0 && pullDelta < -10 { return .thud }
+        if from >= count - 1 && pullDelta > 10 { return .thud }
+        return nil
+    }
+
+    @discardableResult
+    static func performLayer(fromLayer: Int, toLayer: Int, attemptedDirection: Int) -> HapticCue? {
+        guard let cue = layerCue(fromLayer: fromLayer, toLayer: toLayer, attemptedDirection: attemptedDirection) else { return nil }
+        Haptics.perform(cue)
+        return cue
+    }
+
+    @discardableResult
+    static func performPage(from: Int, to: Int, count: Int, pullDelta: CGFloat) -> HapticCue? {
+        guard let cue = pageCue(from: from, to: to, count: count, pullDelta: pullDelta) else { return nil }
+        Haptics.perform(cue)
+        return cue
+    }
+}
+
 func hapticsSelftest() -> Bool {
     let savedMode = Haptics.mode
     let savedActuator = Haptics.useDirectActuator
@@ -387,5 +449,36 @@ func hapticsSelftest() -> Bool {
     let spikeOK = optInOK && fallbackOK && symbolOK
     print("\(spikeOK ? "ok  " : "FAIL") haptics, opt-in MTActuatorActuate spike resolves and falls back to NSHapticFeedbackManager")
 
-    return vocabOK && modesOK && spikeOK
+    // 4. B2: Global gesture nav haptics (tick per layer/page, thud at first and last) and ambidextrous finger-origin measurement.
+    Haptics.useDirectActuator = false
+    Haptics.mode = .full
+    fired.removeAll()
+    _ = GestureNavHaptics.performLayer(fromLayer: 0, toLayer: 1, attemptedDirection: 1)
+    _ = GestureNavHaptics.performLayer(fromLayer: 1, toLayer: 2, attemptedDirection: 1)
+    _ = GestureNavHaptics.performLayer(fromLayer: 2, toLayer: 2, attemptedDirection: 1)
+    _ = GestureNavHaptics.performLayer(fromLayer: 2, toLayer: 0, attemptedDirection: -1)
+    let layerSeqOK = fired.map(\.0) == [.tick, .tick, .thud, .thud]
+
+    fired.removeAll()
+    _ = GestureNavHaptics.performPage(from: 0, to: 1, count: 4, pullDelta: 80)
+    _ = GestureNavHaptics.performPage(from: 1, to: 2, count: 4, pullDelta: 80)
+    _ = GestureNavHaptics.performPage(from: 2, to: 3, count: 4, pullDelta: 80)
+    _ = GestureNavHaptics.performPage(from: 3, to: 3, count: 4, pullDelta: 80)
+    _ = GestureNavHaptics.performPage(from: 1, to: 0, count: 4, pullDelta: -80)
+    _ = GestureNavHaptics.performPage(from: 0, to: 0, count: 4, pullDelta: -80)
+    let pageSeqOK = fired.map(\.0) == [.tick, .tick, .thud, .thud, .thud, .thud]
+
+    let leftStarts: [Int32: (x: Float, y: Float)] = [1: (0.12, 0.20), 2: (0.18, 0.22), 3: (0.24, 0.21)]
+    let leftCurr: [(id: Int32, x: Float, y: Float)] = [(1, 0.12, 0.34), (2, 0.18, 0.36), (3, 0.24, 0.35)]
+    let rightStarts: [Int32: (x: Float, y: Float)] = [1: (0.72, 0.60), 2: (0.78, 0.62), 3: (0.84, 0.61)]
+    let rightCurr: [(id: Int32, x: Float, y: Float)] = [(1, 0.72, 0.74), (2, 0.78, 0.76), (3, 0.84, 0.75)]
+    let dLeft = GestureNavHaptics.relativeDisplacements(starts: leftStarts, current: leftCurr) ?? []
+    let dRight = GestureNavHaptics.relativeDisplacements(starts: rightStarts, current: rightCurr) ?? []
+    let ambidextrousOK = dLeft.count == 3 && dRight.count == 3 && zip(dLeft, dRight).allSatisfy {
+        abs($0.dx - $1.dx) < 1e-5 && abs($0.dy - $1.dy) < 1e-5
+    }
+    let b2OK = layerSeqOK && pageSeqOK && ambidextrousOK
+    print("\(b2OK ? "ok  " : "FAIL") haptics, B2 gesture nav fires tick per layer/page, thud at first/last, and measures from finger landing")
+
+    return vocabOK && modesOK && spikeOK && b2OK
 }
