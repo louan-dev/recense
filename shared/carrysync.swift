@@ -89,7 +89,11 @@ enum CarrySync {
     static let orphanAge: TimeInterval = 600
     static func orphans(_ staged: [(name: String, modified: Date)], expecting: Set<String>, now: Date,
                         maxAge: TimeInterval) -> [String] {
-        staged.filter { !expecting.contains($0.name) && now.timeIntervalSince($0.modified) >= maxAge }.map(\.name)
+        // SEC-02 invariant 17: `<name>.check` is the copy being hashed; it is expected whenever `<name>` is
+        staged.filter { f in
+            let base = f.name.hasSuffix(".check") ? String(f.name.dropLast(".check".count)) : f.name
+            return !expecting.contains(base) && now.timeIntervalSince(f.modified) >= maxAge
+        }.map(\.name)
     }
 
     // Derived from Spec: SEC-02 §2.4 (key safety)

@@ -642,7 +642,7 @@ private enum CarryKeychain {
         let urls = (try? fm.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         let staged = urls.map { (name: $0.lastPathComponent,
                                  modified: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) }
-        let expecting = Set(pendingActions.keys.map(CarrySync.stagingName))
+        let expecting = Set((Array(pendingActions.keys) + placing).map(CarrySync.stagingName))   // invariant 17
         for name in CarrySync.orphans(staged, expecting: expecting, now: Date(), maxAge: maxAge) {
             try? fm.removeItem(at: stagingDir.appendingPathComponent(name))
         }
