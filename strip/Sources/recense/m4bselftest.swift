@@ -1,0 +1,1 @@
+../../../shared/m4b/m4bselftest.swift
