@@ -43,6 +43,10 @@ struct RecenseRoot: View {
         }), extras: extras) { e in NativePlayerView(episode: e) }
         // owner 11-10: the newest listening is Now Playing; a newer one bumps it down to Recently Played
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
+        // Listen's "Hear in" changed there: Now Playing's Heard in follows (Langs.heard keeps a language or Auto-detect)
+        .onChange(of: listen.heard, initial: true) { _, h in
+            model.heardIn = h == Captions.automatic ? Langs.auto : Langs.heard(kept: SpeechCore.code(h))
+        }
         .onAppear {
             Playback.model = model
             model.files = Self.homeFiles()
@@ -51,8 +55,15 @@ struct RecenseRoot: View {
                 Playback.landed(path)
                 if model.playing?.item.path == path { PlaybackEars.shared.saved(model) }
             }
-            // FEAT-10: the owner changed Translate Into; replan with what's already heard
+            // FEAT-10: the owner changed Follow in; replan with what's already heard
             model.translateIntoChanged = { [model] in PlaybackTranslator.shared.run(model, lang: Listener.shared.lang) }
+            // FEAT-10 Heard in = Listen's "Hear in" (one setting): set it there, then replan
+            model.heardInChanged = { [model] in
+                let l = Listener.shared, want = model.heardIn
+                let now = l.heard == Captions.automatic ? Langs.auto : SpeechCore.code(l.heard)
+                if now != want { l.heard = want == Langs.auto ? Captions.automatic : Langs.locale(want) }
+                PlaybackTranslator.shared.run(model, lang: l.lang)
+            }
         }
         .task { if ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] != "sample" { Self.sweepDownloads() } }
         // BUG-16: what AirDrop, Files or a browser put in downloads/ is adopted on every return; audio settles into Music

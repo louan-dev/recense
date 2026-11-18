@@ -118,18 +118,35 @@ extension NowPlaying {
         }
     }
 
-    /// FEAT-10: one control, five choices. Names here must agree with TranslatePlan.name (the engine, built per
-    /// platform — iOS today) since that's where the choice is actually used; this file only shows and stores it.
+    /// FEAT-10 (amended 11-18): two sections, never mixed. Follow in = where translations go (always listed);
+    /// Heard in = what the lines are in (Auto-detect or an override). Words and VoiceOver from Langs (en/fr/vi).
     private var translateIntoMenu: some View {
         Menu {
-            ForEach([("auto", "Automatic"), ("en", "English"), ("vi", "Tiếng Việt"), ("fr", "Français"), ("off", "Off")], id: \.0) { id, name in
-                Button { model.translateInto = id } label: {
-                    if model.translateInto == id { Label(name, systemImage: "checkmark") } else { Text(name) }
+            Section(Langs.say(.followIn)) {
+                ForEach(Langs.codes + [Langs.off], id: \.self) { id in
+                    item(.followIn, id == Langs.off ? Langs.say(.off) : Langs.name(id), chosen: model.translateInto == id) {
+                        model.translateInto = id
+                    }
+                }
+            }
+            Section(Langs.say(.heardIn)) {
+                ForEach([Langs.auto] + Langs.codes, id: \.self) { id in
+                    item(.heardIn, id == Langs.auto ? Langs.say(.autoDetect) : Langs.name(id), chosen: model.heardIn == id) {
+                        model.heardIn = id
+                    }
                 }
             }
         } label: {
-            Label("Translate Into", systemImage: "character.bubble")
+            Label(Langs.say(.languages), systemImage: "character.bubble")
         }
+        .accessibilityLabel(Langs.say(.languages))
+    }
+
+    private func item(_ section: Langs.Word, _ name: String, chosen: Bool, _ pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            if chosen { Label(name, systemImage: "checkmark") } else { Text(name) }
+        }
+        .accessibilityLabel(Langs.spoken(section, name, chosen: chosen))
     }
 }
 

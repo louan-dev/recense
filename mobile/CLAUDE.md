@@ -48,7 +48,7 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
 - A video's sound on the Lock Screen (`HostApp/iOS/BackgroundVideo.swift`, FEAT-19 P2), after any change to it or to `VideoLayer`:
   `swiftc -O mobile/HostApp/iOS/BackgroundVideo.swift mobile/ios/Tests/backgroundvideo/main.swift -o "$TMPDIR/bgvideo" && "$TMPDIR/bgvideo"` (ALL OK).
 - Translate Into's plan (`shared/translateplan.swift`, FEAT-10), after any change to it:
-  `swiftc -O shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
+  `swiftc -O shared/ShowsKit/Sources/ShowsKit/Langs.swift shared/translateplan.swift mobile/ios/Tests/translateplan/main.swift -o "$TMPDIR/translateplan" && "$TMPDIR/translateplan"` (ALL OK).
 - A played file's language (`shared/speechcore.swift` SpeechAhead, BUG-11), after any change to SpeechAhead or to
   `SpeechCore.sureness`/`pick`: `zsh mobile/ios/Tests/aheadlang/run.zsh` (outside the sandbox; French, Vietnamese and
   English recordings each print ALL OK, heard in their own language).

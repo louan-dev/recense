@@ -361,7 +361,7 @@ let edited = Cadence.edited, cutShort = Cadence.cutShort
 /// set. A line shows a correction in it (tr.<lang>), else its translation into it (Episode.native, tr/<lang>.json),
 /// else its English. Kept until changed.
 enum NativeLang {   // read and set on the main thread (the window, and the lines it shows)
-    static let all: [(code: String, name: String)] = [("en", "English"), ("vi", "Vietnamese"), ("fr", "French")]
+    static let all: [(code: String, name: String)] = Langs.codes.map { ($0, Langs.name($0)) }   // ShowsKit Langs (FEAT-10)
     nonisolated(unsafe) private(set) static var current: String = {
         let v = UserDefaults.standard.string(forKey: "nativeLang") ?? "en"
         return all.contains { $0.code == v } ? v : "en"
@@ -5428,7 +5428,7 @@ struct TrFile: Codable { var lang: String; var complete: Bool? = nil; var update
     }
     struct ASR: Codable { var format = 1; var complete: Bool?; var duration: Double; var segments: [Segment]; var recense: Meta? }
 
-    static let others = ["vi", "fr"]          // translated after the English (NativeLang.all)
+    static let others = Langs.codes.filter { $0 != "en" }   // translated after the English (ShowsKit Langs)
     static func asr(_ key: String) -> String { "\(key)/asr.json" }
     static func tr(_ key: String, _ lang: String) -> String { "\(key)/tr/\(lang).json" }
     static func corrections(_ key: String) -> String { "\(key)/corrections.json" }
