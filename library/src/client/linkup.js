@@ -53,7 +53,7 @@
     rows.forEach(function (r) {
       var row = mk("div", "r" + (r.state === "bad" ? " bad" : ""));
       row.append(mk("span", "n", r.file.name));
-      var right = mk("span", "s", r.state === "wait" ? "Waiting" : r.state === "go" ? Math.round(r.frac * 100) + "%" : r.state === "done" ? "Added" : "");
+      var right = mk("span", "s", r.state === "wait" ? "Waiting" : r.state === "go" ? Math.round(r.frac * 100) + "%" : r.state === "done" ? r.note || "Added" : "");
       if (r.state === "bad") {
         var b = mk("button", "", "Retry"); b.type = "button"; b.setAttribute("aria-label", "Retry " + r.file.name);
         b.onclick = function () { r.state = "wait"; r.err = ""; r.frac = 0; waiting.push(r); paint(); pump(); };
@@ -172,7 +172,17 @@
         r.frac = (k + 1) / total;
         paint();
       }
-      await o.call({ action: "complete", i: i, uploadId: uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
+      try {
+        await o.call({ action: "complete", i: i, uploadId: uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
+      } catch (e) {
+        // review 11-17: a resumed upload whose earlier `complete` landed but whose answer was lost gets a 400 here
+        // forever; forget it and say so instead of a Retry that can never pass
+        if (!saved || lost(e)) throw e;
+        store(key, null);
+        var maybe = new Error("May already be added: check the album");
+        maybe.mayBeDone = true;
+        throw maybe;
+      }
       store(key, null);
     } catch (e) {
       // nothing sent yet: the reservation goes, so nobody sees a tile "uploading" for a file that never comes.
@@ -226,7 +236,7 @@
         running++;
         wake(true);
         r.state = "go"; r.frac = 0; r.lost = false; paint();
-        send(r, r.o).then(function () { r.state = "done"; r.frac = 1; }, function (e) { if (r.removed) return; r.state = "bad"; r.lost = lost(e); r.err = String((e && e.message) || e); })
+        send(r, r.o).then(function () { r.state = "done"; r.frac = 1; r.note = ""; }, function (e) { if (r.removed) return; if (e && e.mayBeDone) { r.state = "done"; r.frac = 1; r.note = e.message; return; } r.state = "bad"; r.lost = lost(e); r.err = String((e && e.message) || e); })
           .then(function () { running--; if (!running) wake(false); paint(); if (r.state === "done" && r.o.done) r.o.done(r.file); pump(); });
       })(waiting.shift());
     }

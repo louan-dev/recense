@@ -2360,5 +2360,28 @@ await test("T-0148: a page with a stalled upload looks less and less often (not 
   assert.ok(looks >= 2 && looks <= 4, "2–4 looks in 16 s (every 2 s would be 8): " + looks);
 });
 
+// Regression guard: review 11-17 item 1 (coordinator 7ea7abca) — a `complete` that landed but whose answer was lost
+await test("T-0148: a lost answer to `complete` doesn't leave a Retry that can never pass", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  let completes = 0;
+  await pg.route(/\/api\/upload\?.*action=complete/, async (rt) => {
+    completes++;
+    if (completes === 1) { await rt.fetch(); return rt.abort("failed"); } // it landed; the answer didn't
+    return rt.continue();
+  });
+  await pg.setInputFiles("#upin", bug23Video(20 * 1000 * 1000));
+  await pg.waitForSelector(".lup .r.bad button[aria-label^='Retry']", { timeout: 30000 });
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "the file is in");
+  await pg.click(".lup .r.bad button[aria-label^='Retry']");
+  await pg.waitForSelector(".lup .r.bad", { state: "detached", timeout: 15000 });
+  assert.match(await pg.textContent(".lup"), /May already be added/);
+  assert.equal(completes, 2);
+  assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0, "forgotten");
+});
+
 await browser.close();
 await mf.dispose();
