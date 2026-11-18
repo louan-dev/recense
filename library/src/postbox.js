@@ -19,13 +19,13 @@ function same(a, b) {
   return r === 0;
 }
 
-// the token's name, or null. The token comes from `Authorization: Bearer` or, for a fetch-only web session, from ?t=
+// the token's name, or null. The token comes from the `Authorization: Bearer` header only (a URL token reaches logs and history; BUG-30)
 export async function postboxWho(req, env, url) {
   let table;
   try { table = JSON.parse(env.POSTBOX_TOKENS || ""); } catch (e) { return null; }
   if (!table || typeof table !== "object") return null;
   const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S+)$/i);
-  const given = m ? m[1] : url.searchParams.get("t");
+  const given = m ? m[1] : null;   // Derived from Spec: BUG-30
   if (!given) return null;
   const h = await sha256Hex(given);
   let who = null;

@@ -32,14 +32,16 @@ try {
   assert.equal((await mf.dispatchFetch(base + "/postbox")).status, 401);
   assert.equal((await mf.dispatchFetch(base + "/postbox", { headers: bearer("nope") })).status, 401);
   assert.equal((await mf.dispatchFetch(base + "/postbox?t=nope")).status, 401);
+  // Regression guard: BUG-30 (a token in the URL reaches logs and history: refused even when right)
+  assert.equal((await mf.dispatchFetch(base + "/postbox?t=tok-web-a")).status, 401);
   console.log("ok no token and wrong token: 401");
 
   const p1 = await mf.dispatchFetch(base + "/postbox", { method: "POST", headers: bearer("tok-web-a"), body: "hello from web\n— Agent: claude · Session: s1" });
   assert.equal(p1.status, 200);
   await new Promise((r) => setTimeout(r, 5));
-  const p2 = await mf.dispatchFetch(base + "/postbox/send?t=tok-cli-b&text=" + encodeURIComponent("hello from cli (GET)"));
+  const p2 = await mf.dispatchFetch(base + "/postbox/send?text=" + encodeURIComponent("hello from cli (GET)"), { headers: bearer("tok-cli-b") });
   assert.equal(p2.status, 200);
-  assert.equal((await mf.dispatchFetch(base + "/postbox/send?t=tok-cli-b&text=%20")).status, 400);
+  assert.equal((await mf.dispatchFetch(base + "/postbox/send?text=%20", { headers: bearer("tok-cli-b") })).status, 400);
   console.log("ok POST and GET-send both store; empty refused");
 
   const all = await mf.dispatchFetch(base + "/postbox", { headers: bearer("tok-cli-b") });
@@ -48,10 +50,10 @@ try {
   assert.ok(body.includes("· web-a\nhello from web") && body.includes("· cli-b\nhello from cli (GET)"), body);
   assert.ok(body.indexOf("web-a") < body.indexOf("cli-b"), "oldest first");
   const first = body.match(/^#(\S+) /)[1];
-  const since = await (await mf.dispatchFetch(base + "/postbox?since=" + first + "&t=tok-web-a")).text();
+  const since = await (await mf.dispatchFetch(base + "/postbox?since=" + first, { headers: bearer("tok-web-a") })).text();
   assert.ok(!since.includes("hello from web") && since.includes("hello from cli"), since);
   const last = all.headers.get("x-postbox-last");
-  assert.equal(await (await mf.dispatchFetch(base + "/postbox?since=" + last + "&t=tok-web-a")).text(), "(nothing new)\n");
+  assert.equal(await (await mf.dispatchFetch(base + "/postbox?since=" + last, { headers: bearer("tok-web-a") })).text(), "(nothing new)\n");
   console.log("ok since= returns only newer; sender comes from the token");
 
   assert.equal((await mf.dispatchFetch(base + "/postbox/rules", { headers: bearer("tok-web-a") })).status, 404);

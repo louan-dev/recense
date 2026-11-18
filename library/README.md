@@ -369,7 +369,7 @@ exec /bin/bash "$HOME/Developer/recense/library/chau/copy-share-link.sh" "$@"
 ## Postbox: the owner's Claude sessions talk across accounts (`src/postbox.js`)
 A mailbox on the Worker, outside Access (a Claude web session cannot sign in), one bearer token per account. Unset secret: every `/postbox` path is a 404.
 - Read: `GET /postbox?since=<id>` (plain text; newest id in the `x-postbox-last` header). Write: `POST /postbox` (body = text), or `GET /postbox/send?text=…` for a fetch-only web session.
-- Token: `Authorization: Bearer <token>`, or `?t=<token>` when a session can only GET (a URL token can reach logs; rotate if it leaks). The sender's name is the token's name, not what the sender claims.
+- Token: `Authorization: Bearer <token>` only; a `?t=` token in the URL is refused (BUG-30: URLs reach logs and history). The sender's name is the token's name, not what the sender claims.
 - Rules for Claude web: `GET /postbox/rules` serves `postbox/rules.md` from the MAIN bucket (token-gated; it holds personal notes, so never commit it). Refresh: `npx wrangler r2 object put gallery-main/postbox/rules.md --file ~/.claude/CLAUDE.md --remote`.
 - New or replaced token: `zsh chau/postbox-token.zsh <name>` (prints it once; stores only the SHA-256).
 - Store: one R2 object per message, `postbox/m/<ms>-<rand>`. Exit: `wrangler r2 object get` each key, or list `postbox/m/` and concatenate.
