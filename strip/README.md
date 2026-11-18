@@ -75,29 +75,46 @@ what it's for. Each project meets a different kind of friction, so each carries 
   files), calendar and a right-edge widget panel inside Recense, so the tools come to the work instead of the reverse.
 
 ## Menu-bar hider
-`recense/hider.swift`. Recense adds one divider to the menu bar: `[ hidden icons ] │ [ visible icons ] [ system icons ]`.
-⌘-drag icons left of │ to hide them (macOS has no API to move other apps' icons). Three ways show │ and the hidden icons:
-- the chevron (‹‹) in the strip, right of the batteries: click it, or rest the pointer on it for 0.5 s;
-- Recense's app menu ▸ Menu-Bar Hider ▸ Show Hidden Icons;
-- `./recense show-icons`.
+`strip/hider.swift`. Recense adds two dividers to the menu bar: `[ always-hidden icons ] ┆ [ hidden icons ] │ [ visible icons ] [ system icons ]`.
+⌘-drag icons left of `│` (`┃`) to hide them, or left of `┆` to always hide them (macOS has no API to move other apps' icons).
+- **Peek (hidden tier only, in the free space right of the strip):** click the chevron (`‹‹`) in the strip or rest the pointer on it for 0.5 s; rest the pointer on the divider's spot in the menu bar for 0.5 s (`Peek on Hover (0.5 s)`); choose Recense's app menu ▸ Menu-Bar Hider ▸ Show Hidden Icons; or run `./recense show-icons`.
+- **Always-hidden tier:** ⌥-click the strip's chevron (`‹‹`), choose Recense's app menu ▸ Menu-Bar Hider ▸ Reveal Always-Hidden Icons, or run `./recense show-all-icons`.
+- **No strip overlap (A2):** when collapsed, the divider's width is refined by bracket + binary search to within 2 pt of macOS's left menu-bar cutoff (and re-fitted on app switch), leaving less than one icon's width so hidden icons are pushed completely off-screen and never drift into the center under the strip's controls. During peek, `┆` stays collapsed so shown icons appear only in the free space right of the strip (`strip.maxX .. screen.maxX`).
 
 No key or modifier reveals them: ⌘-Tab, ⌘C and ⌘-drag leave the menu bar as it is (D23; until 2026-11-06 a held ⌘
-did, and the icons took the strip's place). Hovering the divider's spot also shows the hidden icons. They tuck away
+did, and the icons took the strip's place). They tuck away
 3 s after the pointer leaves the menu bar, or 8 s after Show Hidden Icons if the pointer never comes up. Recense's
-app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers. The earlier two-tier
-version (an always-hidden tier, per-app Rules) is in the history: commit 93e5cb3, and tag `archive/nook-fix-1f871c` for
-its macOS 27.2 placement fix.
+app menu ▸ Menu-Bar Hider ▸ Hide Menu-Bar Icons turns it off: no status item, monitors or timers.
 
 ## Features
 The app icon is Gallery's petal cloud (the iOS app's icon, `mobile/ios/Assets.xcassets/AppIcon.appiconset`),
 drawn in macOS's rounded-square shape into `AppIcon.icns`, so Recense looks the same on the Mac, iPhone and iPad.
 
+### Haptics (`strip/haptics.swift`)
+One cue vocabulary of at most 4 named cues across Recense (B1):
+- `tick`: step, detent, layer step, page step, or word onset (`.alignment` / actuator ID `15`).
+- `thud`: home value, first/last boundary, or pin (`.levelChange` / actuator ID `5`).
+- `edge`: zone boundary or edge crossing (`.levelChange` / actuator ID `3`).
+- `open`: rest-hold console or surface open (`.generic` / actuator ID `16`).
+- **Settings › Haptics (`Off · Calm · Full`):** reachable in `Recense ▸ Settings ▸ Haptics`, `Recense ▸ Haptics`, or `./recense haptics-off | haptics-calm | haptics-full | haptics-settings`. `Calm` fires only zone and edge cues (`thud`, `edge`, `open`) and silences step `tick`s for sensory load.
+- **Direct trackpad actuator spike (`MTActuatorActuate`):** opt-in (`Direct Trackpad Actuator (Experimental)`), with public `NSHapticFeedbackManager` as default and automatic fallback. Proven: `MTDeviceGetMTActuator` + `MTActuatorOpen` + `MTActuatorActuate` resolve in `MultitouchSupport.framework` on macOS 27.2 and return `0` (`kIOReturnSuccess`) on the Force Touch trackpad for actuation IDs `[1, 3, 5, 15, 16]`; subjective tactile difference vs. `NSHapticFeedbackManager` is untested pending owner trackpad feel.
+
+- **Global gesture navigation feel (B2):** three-finger vertical swipes emit a `tick` per layer stepped (`hidden → Essentials → Drafting`) and a `thud` at the first and last layer boundaries; two-finger horizontal paging across the Essentials row (`Essentials → DEVONthink hub → Notebook → Media`) emits a `tick` per page stepped and a `thud` when landing on or pulling past the first or last page. Every finger displacement is measured strictly from where the fingers land (`GestureNavHaptics.relativeDisplacements`), never from the screen side or hand (ambidextrous).
+- **The console without home bars & one global speed (B3, spec B9c–d):** holding two fingers still for 0.5 s opens the invisible console (`open` cue). Moving up or down steps through invisible zones measured from where the fingers landed; each boundary ticks (`tick` in Full, `edge` in Calm), and the tick count tells you where you are. Moving sideways changes the value through detents (`tick`), with a `thud` at the home value (`1×` speed, `100 %` level, `0` flat/semitones/off/neutral). Lifting the fingers keeps the value. Progressive disclosure starts with 2 zones (`Speed`, `Level`); `Tone`, `Key`, `Space`, and `Voice` unlock in `Settings › Haptics`. Speed is one global setting across Recense (`0.5×, 0.75×, 1×, 1.25×, 1.5×, 2×`), with an explicit notice when `Music.app` (which cannot change rate) is active; existing home-bar controls stay as the visible twins.
+- **Visual-delay remap (`Settings › Cue timing`, B4):** adjusts the offset between the karaoke light and its haptic/audio cue over `−100…+260 ms`. Defaults to `+50 ms` (the light leads and the cue follows at `+50 ms`), persists in `UserDefaults`, and every cue reads it (`Haptics.cueTimingOffsetMs` / `Haptics.effectiveCueTimestamp(forLightTimestamp:)`).
+- **Text to haptics on the Cadence light's clock (B5, spec B10b):** modes `Off · Emphasis · Words · Rhythm` sit in a `Text Haptics` menu right beside `Show Captions for This Track` (and in `Settings › Haptics`), with the plain note `"felt only while a finger rests on the trackpad"`. `Emphasis` fires only on the closed obligation word list (`must`/`shall` · `may` · `must not`/`shall not`). The haptic score (`TextHapticScore`) is computed once per episode and cached beside `features.json` as `<key>.haptics.json`.
+- **Over-the-ear obligation audio textures (C2, spec B10d):** `SoundEngine` (`strip/soundengine.swift`) shapes each obligation word's duration with one of three textures: a **presence lift** (`+3.5 dB` @ 1 kHz, `+2.5 dB` @ 5 kHz) on `must`/`shall`, a **slight stereo widening** (`+18 %` room mix) on `may`, and a **low thump** (`+4.5 dB` @ 160 Hz, `−1.0 dB` @ 5 kHz) on `must not`/`shall not`. No binaural beats (`SoundEngine.usesBinauralBeats == false`).
+
 ### Layers
 Three fingers up move through the strip's layers: hidden → **Essentials** → **Drafting**. Three fingers down close
 the panel from any layer. Moving the pointer off the panel never closes it: once down, it waits for the swipe.
 - **Essentials:** time and date (it doesn't take keyboard focus), batteries (a bolt while charging), and four icons
-  between them; recorder, Recense and others, glowing on hover. Two fingers page through essentials → DEVONthink hub →
-  notebook (Obsidian).
+  between them; recorder, Recense and others, glowing on hover. The upcoming event name in both the resting strip
+  (`RestStrip.eventLine`) and the Essentials agenda (`CalendarView.nextTitle`) shares one marquee view
+  (`MarqueeTextView`, A3): when a title doesn't fit, it pauses 1.5 s at the start and loops seamlessly at 30 pt/s with
+  softly faded edges and no `"…"`, without restarting on the 1 s refresh; short names stay still. With Reduce Motion on,
+  it stays still and exposes the full title in its tooltip, VoiceOver, and on hover or click (popover). Two fingers page
+  through essentials → DEVONthink hub → notebook (Obsidian).
 - **Drafting:** the layer where Draftpad runs; one endless `draftpad.md` in the Obsidian vault, paged by topic, with
   cursor memory. An edit from the iPhone or iPad that lands while you type here is merged in, never overwritten:
   each save merges the last version, yours and the file's by line; if both changed the same lines, yours stays in

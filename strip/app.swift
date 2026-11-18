@@ -336,17 +336,40 @@ let holdDelay = 0.5, holdSlack: Float = 0.015
 var gHoldStarts: [Int32: MTPoint] = [:], gHoldSince = 0.0, gHoldMoved = false, gHolding = false
 
 func trackHold(_ touching: [(id: Int32, p: MTPoint)], at now: Double) {
-    func end() { if gHolding { gHolding = false; DispatchQueue.main.async { holdHandler?(false) } } }
+    func end() {
+        if gHolding {
+            gHolding = false
+            DispatchQueue.main.async {
+                RestHoldConsole.shared.endHold()
+                holdHandler?(false)
+            }
+        }
+    }
     guard touching.count == 2 else { gHoldStarts = [:]; gHoldMoved = false; end(); return }
     if Set(touching.map { $0.id }) != Set(gHoldStarts.keys) {
         gHoldStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) }); gHoldSince = now; gHoldMoved = false
         end(); return
     }
-    if !gHoldMoved, touching.contains(where: { t in let s = gHoldStarts[t.id]!; return hypot(t.p.x - s.x, t.p.y - s.y) > holdSlack }) {
-        gHoldMoved = true; end()
+    if !gHolding && !gHoldMoved && touching.contains(where: { t in let s = gHoldStarts[t.id]!; return hypot(t.p.x - s.x, t.p.y - s.y) > holdSlack }) {
+        gHoldMoved = true; end(); return
     }
     if !gHoldMoved, !gHolding, now - gHoldSince >= holdDelay {
-        gHolding = true; DispatchQueue.main.async { holdHandler?(true) }
+        gHolding = true
+        DispatchQueue.main.async {
+            RestHoldConsole.shared.beginHold()
+            holdHandler?(true)
+        }
+        return
+    }
+    if gHolding, let deltas = GestureNavHaptics.relativeDisplacements(
+        starts: gHoldStarts.mapValues { (x: $0.x, y: $0.y) },
+        current: touching.map { (id: $0.id, x: $0.p.x, y: $0.p.y) }
+    ) {
+        let dx = deltas.map(\.dx).reduce(0, +) / Float(deltas.count)
+        let dy = deltas.map(\.dy).reduce(0, +) / Float(deltas.count)
+        DispatchQueue.main.async {
+            RestHoldConsole.shared.update(dx: dx, dy: dy)
+        }
     }
 }
 
@@ -363,11 +386,11 @@ func trackThree(_ touching: [(id: Int32, p: MTPoint)]) {
         gThreeMoving = false
         return
     }
-    var dys: [Float] = [], dxs: [Float] = []
-    for t in touching {
-        let s0 = gStarts[t.id]!
-        dys.append(t.p.y - s0.y); dxs.append(t.p.x - s0.x)
-    }
+    guard let deltas = GestureNavHaptics.relativeDisplacements(
+        starts: gStarts.mapValues { (x: $0.x, y: $0.y) },
+        current: touching.map { (id: $0.id, x: $0.p.x, y: $0.p.y) }
+    ) else { return }
+    let dys = deltas.map(\.dy), dxs = deltas.map(\.dx)
     let allUp = dys.allSatisfy { $0 > 0.01 }, allDown = dys.allSatisfy { $0 < -0.01 }
     let allRight = dxs.allSatisfy { $0 > 0.01 }, allLeft = dxs.allSatisfy { $0 < -0.01 }
     gThreeMoving = allUp || allDown || allRight || allLeft
@@ -421,7 +444,7 @@ let scrollFilter: CGEventTapCallBack = { _, type, event, _ in
     guard type == .scrollWheel, event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 else {
         return Unmanaged.passUnretained(event)
     }
-    if gThreeMoving { return nil }
+    if gThreeMoving || gHolding { return nil }
     let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
     if !gWasDown && momentum != 0 && gLastTouchWasSwipe { return nil }
     return Unmanaged.passUnretained(event)
@@ -894,7 +917,7 @@ final class DayStrip: NSView {
         let x = convert(event.locationInWindow, from: nil).x
         let day = Int(((x - bounds.midX) / cellWidth + pos).rounded())
         guard day != landed else { return }
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         glide(toOffset: day)
     }
 
@@ -902,7 +925,7 @@ final class DayStrip: NSView {
     private func land(_ day: Int) {
         guard day != landed else { return }
         landed = day
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         onSelect?(selected)
     }
 
@@ -985,6 +1008,298 @@ final class DayStrip: NSView {
 
 }
 
+/// Shared seamless-loop marquee for `RestStrip.eventLine` and `CalendarView.nextTitle` (A3).
+/// Scrolls at ~30 pt/s after a 1.5 s pause at the start with faded edges and no "…" when the title doesn't fit.
+/// Short names stay still. Re-setting the same `stringValue` on the 1 s refresh never restarts the loop.
+/// With Reduce Motion on, stays still and exposes the full title in `toolTip`, VoiceOver, and on hover/click.
+final class MarqueeTextView: NSView {
+    static let speed: CGFloat = 30.0
+    static let startPause: TimeInterval = 1.5
+    static let loopGap: CGFloat = 36.0
+    static let fadeWidth: CGFloat = 12.0
+
+    var font: NSFont = .systemFont(ofSize: 12, weight: .semibold) { didSet { invalidateMetrics() } }
+    var textColor: NSColor = .white { didSet { needsDisplay = true } }
+    var alignment: NSTextAlignment = .left { didSet { needsDisplay = true } }
+    var lineBreakMode: NSLineBreakMode = .byClipping
+    var reduceMotionOverride: Bool? { didSet { syncTimer(); needsDisplay = true } }
+
+    private(set) var cycleStart = Date()
+    private(set) var cachedTextWidth: CGFloat = 0
+    private(set) var cachedTextHeight: CGFloat = 15
+    private var timer: Timer?
+    private var hostActive = true
+    private var tracking: NSTrackingArea?
+    private var hoverWork: DispatchWorkItem?
+    private var fullTitlePopover: NSPopover?
+    private var a11yObserver: NSObjectProtocol?
+
+    var stringValue: String = "" {
+        didSet {
+            guard stringValue != oldValue else {
+                syncTimer()
+                return
+            }
+            cycleStart = Date()
+            toolTip = stringValue.isEmpty ? nil : stringValue
+            setAccessibilityElement(!stringValue.isEmpty)
+            setAccessibilityRole(.staticText)
+            setAccessibilityLabel(stringValue)
+            setAccessibilityValue(stringValue)
+            fullTitlePopover?.performClose(nil)
+            invalidateMetrics()
+        }
+    }
+
+    var shouldReduceMotion: Bool {
+        if let o = reduceMotionOverride { return o }
+        if let pref = UserDefaults.standard.object(forKey: "recense.reduceMotion") as? Bool { return pref }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return true }
+        CFPreferencesAppSynchronize("com.apple.universalaccess" as CFString)
+        if let num = CFPreferencesCopyAppValue("reduceMotion" as CFString, "com.apple.universalaccess" as CFString) as? NSNumber {
+            return num.boolValue
+        }
+        return false
+    }
+
+    var needsScroll: Bool {
+        !stringValue.isEmpty && bounds.width > 4 && cachedTextWidth > bounds.width
+    }
+
+    var isTimerRunning: Bool { timer != nil }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(false)
+        setAccessibilityRole(.staticText)
+        a11yObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.syncTimer()
+            self?.needsDisplay = true
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit {
+        timer?.invalidate()
+        hoverWork?.cancel()
+        if let o = a11yObserver { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+    }
+
+    static func scrollOffset(elapsed: TimeInterval, textWidth: CGFloat, viewWidth: CGFloat, reduceMotion: Bool = false) -> CGFloat {
+        guard !reduceMotion, viewWidth > 0, textWidth > viewWidth else { return 0 }
+        let span = textWidth + loopGap
+        let scrollDuration = TimeInterval(span / speed)
+        let cycleDuration = startPause + scrollDuration
+        guard cycleDuration > 0 else { return 0 }
+        let t = max(0, elapsed).truncatingRemainder(dividingBy: cycleDuration)
+        guard t > startPause else { return 0 }
+        return CGFloat(t - startPause) * speed
+    }
+
+    func currentOffset(at now: Date = Date()) -> CGFloat {
+        Self.scrollOffset(
+            elapsed: now.timeIntervalSince(cycleStart),
+            textWidth: cachedTextWidth,
+            viewWidth: bounds.width,
+            reduceMotion: shouldReduceMotion
+        )
+    }
+
+    func setHostActive(_ active: Bool) {
+        guard hostActive != active else {
+            if active { needsDisplay = true }
+            return
+        }
+        hostActive = active
+        if !active {
+            hoverWork?.cancel(); hoverWork = nil
+            fullTitlePopover?.performClose(nil)
+        }
+        syncTimer()
+        if active { needsDisplay = true }
+    }
+
+    private func invalidateMetrics() {
+        if stringValue.isEmpty {
+            cachedTextWidth = 0
+            cachedTextHeight = ceil(font.ascender - font.descender)
+        } else {
+            let sz = NSAttributedString(string: stringValue, attributes: [.font: font]).size()
+            cachedTextWidth = ceil(sz.width)
+            cachedTextHeight = ceil(sz.height)
+        }
+        syncTimer()
+        needsDisplay = true
+    }
+
+    private func shouldTickTimer() -> Bool {
+        guard hostActive, needsScroll, !shouldReduceMotion else { return false }
+        guard let w = window, w.isVisible, !isHiddenOrHasHiddenAncestor, alphaValue > 0 else { return false }
+        return true
+    }
+
+    func syncTimer() {
+        if shouldTickTimer() {
+            guard timer == nil else { return }
+            let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                if !self.shouldTickTimer() {
+                    self.timer?.invalidate()
+                    self.timer = nil
+                    return
+                }
+                self.needsDisplay = true
+            }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncTimer()
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncTimer()
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        syncTimer()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        syncTimer()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hoverWork?.cancel()
+        guard needsScroll else { return }
+        let w = DispatchWorkItem { [weak self] in _ = self?.revealFullTitleNow() }
+        hoverWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: w)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverWork?.cancel(); hoverWork = nil
+        fullTitlePopover?.performClose(nil)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        hoverWork?.cancel(); hoverWork = nil
+        if let pop = fullTitlePopover, pop.isShown {
+            pop.performClose(nil)
+        } else {
+            _ = revealFullTitleNow()
+        }
+    }
+
+    @discardableResult
+    func revealFullTitleNow() -> String {
+        guard !stringValue.isEmpty else { return "" }
+        guard let w = window, w.isVisible, bounds.width > 0 else { return stringValue }
+        if let existing = fullTitlePopover, existing.isShown { return stringValue }
+        let label = NSTextField(wrappingLabelWithString: stringValue)
+        label.font = roundedFont(12.5, .semibold)
+        label.textColor = .white
+        label.maximumNumberOfLines = 4
+        label.preferredMaxLayoutWidth = 280
+        let pad: CGFloat = 10
+        let sz = label.fittingSize
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: min(300, ceil(sz.width) + pad * 2), height: ceil(sz.height) + pad * 2))
+        label.frame = NSRect(x: pad, y: pad, width: box.bounds.width - pad * 2, height: ceil(sz.height))
+        box.addSubview(label)
+        let vc = NSViewController()
+        vc.view = box
+        let pop = NSPopover()
+        pop.contentViewController = vc
+        pop.behavior = .transient
+        pop.appearance = NSAppearance(named: .darkAqua)
+        pop.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        fullTitlePopover = pop
+        return stringValue
+    }
+
+    override func isAccessibilityElement() -> Bool { !stringValue.isEmpty }
+    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
+    override func accessibilityLabel() -> String? { stringValue }
+    override func accessibilityValue() -> Any? { stringValue }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !stringValue.isEmpty, bounds.width > 1, bounds.height > 1,
+              let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let attrStr = NSAttributedString(string: stringValue, attributes: attrs)
+        let y = floor((bounds.height - cachedTextHeight) / 2)
+
+        ctx.saveGState()
+        ctx.clip(to: bounds)
+
+        if cachedTextWidth <= bounds.width {
+            let x: CGFloat
+            switch alignment {
+            case .right:  x = bounds.width - cachedTextWidth
+            case .center: x = floor((bounds.width - cachedTextWidth) / 2)
+            default:      x = 0
+            }
+            attrStr.draw(at: NSPoint(x: x, y: y))
+            ctx.restoreGState()
+            return
+        }
+
+        let reduce = shouldReduceMotion
+        let offset = currentOffset()
+        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        attrStr.draw(at: NSPoint(x: -offset, y: y))
+        if !reduce && offset > 0 {
+            attrStr.draw(at: NSPoint(x: -offset + cachedTextWidth + Self.loopGap, y: y))
+        }
+
+        let fw = min(Self.fadeWidth, bounds.width * 0.25)
+        if fw > 1, let space = CGColorSpace(name: CGColorSpace.sRGB) {
+            let leftFadeAlpha: CGFloat = (!reduce && offset > 0.5) ? 0.0 : 1.0
+            let comps: [CGFloat] = [
+                1, 1, 1, leftFadeAlpha,
+                1, 1, 1, 1.0,
+                1, 1, 1, 1.0,
+                1, 1, 1, 0.0
+            ]
+            let locs: [CGFloat] = [
+                0.0,
+                min(0.45, fw / bounds.width),
+                max(0.55, (bounds.width - fw) / bounds.width),
+                1.0
+            ]
+            if let grad = CGGradient(colorSpace: space, colorComponents: comps, locations: locs, count: 4) {
+                ctx.saveGState()
+                ctx.setBlendMode(.destinationIn)
+                ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: bounds.width, y: 0), options: [])
+                ctx.restoreGState()
+            }
+        }
+        ctx.endTransparencyLayer()
+        ctx.restoreGState()
+    }
+}
+
 final class CalendarView: NSView {
     let store: EKEventStore
     let month = NSTextField(labelWithString: "")
@@ -1008,7 +1323,7 @@ final class CalendarView: NSView {
     // The NEXT line: the most pressing event, how far it is from NOW. Pinned; the lanes scroll under it.
     let nextBox = NSView()
     let nextTag = NSTextField(labelWithString: "NEXT")
-    let nextTitle = NSTextField(labelWithString: "")
+    let nextTitle = MarqueeTextView()
     let nextWhen = NSTextField(labelWithString: "")
     let moreCue = NSTextField(labelWithString: "↓")
     private var shownSignature = ""
@@ -1063,7 +1378,8 @@ final class CalendarView: NSView {
         nextBox.layer?.borderColor = bioCyan.withAlphaComponent(0.25).cgColor
         nextBox.layer?.borderWidth = 1
         nextTag.attributedStringValue = NSAttributedString(string: "NEXT", attributes: [.font: roundedFont(10, .heavy), .foregroundColor: bioCyan, .kern: 1.4])
-        for l in [nextTitle, nextWhen] { l.font = roundedFont(12.5, .semibold); l.textColor = .white; l.lineBreakMode = .byTruncatingTail }
+        nextTitle.font = roundedFont(12.5, .semibold); nextTitle.textColor = .white
+        nextWhen.font = roundedFont(12.5, .semibold); nextWhen.textColor = .white; nextWhen.lineBreakMode = .byTruncatingTail
         nextWhen.alignment = .right
         [nextTag, nextTitle, nextWhen].forEach(nextBox.addSubview)
         moreCue.font = roundedFont(12, .bold); moreCue.textColor = bioCyan; moreCue.alignment = .right
@@ -3003,7 +3319,7 @@ final class VaultWheel: NSView {
         let target = Int(pos.rounded())
         if target != landed, items.indices.contains(target) {
             landed = target
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            Haptics.perform(.tick)
         }
         layoutRows()
         if event.phase == .ended || event.phase == .cancelled { settle() }
@@ -3023,7 +3339,7 @@ final class VaultWheel: NSView {
     func focus(_ i: Int) {
         guard items.indices.contains(i), i != landed else { return }
         landed = i
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Haptics.perform(.tick)
         settle()
     }
 
@@ -3773,7 +4089,7 @@ final class HorizonView: NSView {
                 let w = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
                     self.pinned = true
-                    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                    Haptics.perform(.thud)
                     self.needsDisplay = true
                 }
                 holdWork = w
@@ -3821,7 +4137,7 @@ final class HorizonView: NSView {
         // A click under the fingers each time the reach passes a whole unit (hour, day, week, month).
         let unit: TimeInterval = r < 86400 ? 3600 : r < 7 * 86400 ? 86400 : r < 30 * 86400 ? 7 * 86400 : 30.44 * 86400
         let step = Int(r / unit) + (unit == 3600 ? 0 : unit == 86400 ? 1000 : unit == 7 * 86400 ? 2000 : 3000)
-        if step != lastUnitStep { lastUnitStep = step; if r > 0 { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) } }
+        if step != lastUnitStep { lastUnitStep = step; if r > 0 { Haptics.perform(.tick) } }
         guard anim == nil else { return }
         anim = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
@@ -5157,7 +5473,7 @@ final class RestStrip: NSObject {
     let band = ContouredBand(frame: .zero)    // the hover extension: a shade darker than the menu bar, its exact height
     let content = NSView()                    // what the band reveals (blurred while it grows, sharp once it lands)
     let weather = NSTextField(labelWithString: "")
-    let eventLine = NSTextField(labelWithString: "")
+    let eventLine = MarqueeTextView()
     let icon = NSImageView(image: NSImage(systemSymbolName: "calendar", accessibilityDescription: nil)!)
     let countdown = NSTextField(labelWithString: "")
     let time = NSTextField(labelWithString: "")
@@ -5183,6 +5499,7 @@ final class RestStrip: NSObject {
     let spaceNext = GlassPauseButton()
     let chevron = GlassPauseButton()           // the hidden menu-bar icons (hider.swift): click, or hover 0.5 s (D23)
     var onShowIcons: (() -> Void)?
+    var onShowAllIcons: (() -> Void)?
     private var chevronHold: DispatchWorkItem?
     private var batteryText = ""
     private var batteryAt = Date.distantPast
@@ -5213,9 +5530,10 @@ final class RestStrip: NSObject {
         band.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         content.wantsLayer = true
         content.layerUsesCoreImageFilters = true
-        for l in [weather, eventLine, countdown] {
+        for l in [weather, countdown] {
             l.font = .systemFont(ofSize: 12, weight: .semibold); l.textColor = .white; l.lineBreakMode = .byTruncatingTail
         }
+        eventLine.font = .systemFont(ofSize: 12, weight: .semibold); eventLine.textColor = .white
         eventLine.alignment = .left
         countdown.alignment = .right
         countdown.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
@@ -5340,7 +5658,10 @@ final class RestStrip: NSObject {
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
 
 
-    @objc func showIcons() { chevron.bounce(); chevronHold?.cancel(); onShowIcons?() }
+    @objc func showIcons() {
+        chevron.bounce(); chevronHold?.cancel()
+        if NSApp.currentEvent?.modifierFlags.contains(.option) == true { onShowAllIcons?() } else { onShowIcons?() }
+    }
     @objc func prevSpace() { spaceBack.bounce(); switchSpace(-1) }
     @objc func nextSpace() { spaceNext.bounce(); switchSpace(1) }
 
@@ -5422,6 +5743,7 @@ final class RestStrip: NSObject {
     /// always the menu bar's). What it carries starts blurred and comes into focus as the band lands.
     func setBand(open: Bool, animated: Bool) {
         guard let b = window.contentView?.bounds else { return }
+        eventLine.setHostActive(open)
         let w = open ? b.width - 2 * bandInset : 0     // the calendar mark and countdown stay just outside its ends
         let target = NSRect(x: ((b.width - w) / 2).rounded(), y: 0, width: w, height: b.height)
         if !animated {
@@ -6996,6 +7318,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // The wings' Recense card follows the line on Recense's screen.
         MainActor.assumeIsolated { Recense.onLine = { [weak self] o, t in self?.wingPanels.setRecenseLine(o, t) } }
         Recense.start()            // last, once Recense's own strip, hover and gestures are set up (start() runs once)
+        MainActor.assumeIsolated { TextHaptics.attachBesideShowCaptions() }
+        NotificationCenter.default.addObserver(forName: Haptics.changedNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { TextHaptics.attachBesideShowCaptions() }
+        }
         run(initialCommand)
     }
 
@@ -7011,6 +7337,25 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         holdHandler = { on in
             NSLog("recense: two-finger hold \(on ? "down" : "up")")
             MainActor.assumeIsolated { Recense.hold(on) }
+        }
+        RestHoldConsole.shared.onValueChanged = { zone, val in
+            MainActor.assumeIsolated {
+                switch zone {
+                case .speed:
+                    Recense.overlay?.homeBar.call("setSpeed", val)
+                    if let notice = RestHoldConsole.speedCapabilityNotice(
+                        forBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    ) {
+                        NSLog("recense: \(notice)")
+                        Recense.overlay?.setStatus(notice)
+                    }
+                case .level:
+                    if let cur = Volume.get() { Volume.nudge(Float(val / 100.0) - cur) }
+                    Recense.overlay?.homeBar.call("setConsoleValue", ["zone": zone.rawValue, "value": val])
+                case .tone, .key, .space, .voice:
+                    Recense.overlay?.homeBar.call("setConsoleValue", ["zone": zone.rawValue, "value": val])
+                }
+            }
         }
         wingSwipeHandler = { [weak self] dir, x in
             NSLog("recense: three-finger swipe \(dir < 0 ? "leftward" : "rightward") from \(x)")
@@ -7128,6 +7473,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             self.timeView.showAudio(false); self.recordPanel.orderOut(nil)
         }
         rest.onShowIcons = { [weak self] in self?.menuBar.hider.showIcons() }
+        rest.onShowAllIcons = { [weak self] in self?.menuBar.hider.showAllIcons() }
         timeView.onAudioClosed = { [weak self] in self?.recordPanel.orderOut(nil) }
         timeView.onRecense = { [weak self] in self?.hide(); MainActor.assumeIsolated { Recense.overlay?.showStrip() } }
         // The vault search needs typing; the rest of the essentials panel never takes the keyboard.
@@ -7247,7 +7593,16 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         library.target = self; appMenu.addItem(library)
         let bridge = NSMenuItem(title: "Bose Bridge", action: nil, keyEquivalent: "")   // FEAT-15
         bridge.submenu = bose.menu(); appMenu.addItem(bridge)
-        appMenu.delegate = self                                   // rebuilds the hider's and devices' entries each time it opens
+        let hapticsItem = NSMenuItem(title: "Haptics", action: nil, keyEquivalent: "")
+        hapticsItem.submenu = Haptics.menu(); appMenu.addItem(hapticsItem)
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: ",")
+        let settingsMenu = NSMenu(title: "Settings")
+        let settingsHaptics = NSMenuItem(title: "Haptics", action: nil, keyEquivalent: "")
+        settingsHaptics.submenu = Haptics.menu()
+        settingsMenu.addItem(settingsHaptics)
+        settingsItem.submenu = settingsMenu
+        appMenu.addItem(settingsItem)
+        appMenu.delegate = self                                   // rebuilds the hider's, devices' and haptics entries each time it opens
         appMenu.addItem(.separator())
         wingMenuItems().forEach { appMenu.addItem($0) }
         appMenu.addItem(.separator())
@@ -7509,16 +7864,24 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         run((n.object as? String) ?? "show")
     }
 
+    func currentLayerIndex() -> Int {
+        (!panel.isVisible || retracting) ? 0 : (mode == .pad ? 2 : 1)
+    }
+
     func run(_ cmd: String) {
         switch cmd {
         // Layers: hidden → essentials (and its panels) → Draftpad. Three fingers up go one layer up; down closes the
         // panel from any layer, Draftpad included (owner, 11-06).
         case "up":     guard settled() else { return }
+                       let fromL = currentLayerIndex()
                        // Recense comes up and the Recense card steps aside at the same time.
                        MainActor.assumeIsolated { if Recense.overlay?.panel.isVisible == true { Recense.overlay?.hideStrip() } }
                        if !panel.isVisible { present(.time) } else if mode != .pad { present(.pad) }
+                       GestureNavHaptics.performLayer(fromLayer: fromL, toLayer: currentLayerIndex(), attemptedDirection: 1)
         case "down":   guard settled() else { return }
+                       let fromL = currentLayerIndex()
                        if panel.isVisible { hide() }
+                       GestureNavHaptics.performLayer(fromLayer: fromL, toLayer: 0, attemptedDirection: -1)
         case "pad":    present(.pad)
         case "time":   present(.time)
         case "show":   present(mode)
@@ -7530,6 +7893,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "editor-new": setEditor(.new)
         case "editor-classic": setEditor(.classic)
         case "show-icons": menuBar.hider.showIcons()
+        case "show-all-icons": menuBar.hider.showAllIcons()
         case "draftpad-flip": flipDraftpad(go: false)
         case "draftpad-flip-go": flipDraftpad(go: true)
         case "wing-left":  wingPanels.show(.left)
@@ -7537,12 +7901,21 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         case "wing-close": wingPanels.hideAll()
         case "words-sooner-on":  EarMode.set(sooner: true)
         case "words-sooner-off": EarMode.set(sooner: false)
+        case "haptics-off":      Haptics.mode = .off; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-calm":     Haptics.mode = .calm; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-full":     Haptics.mode = .full; HapticsMenuTarget.shared.syncPanel()
+        case "haptics-settings": HapticsMenuTarget.shared.showSettingsPanel()
         default:       present(.time)
         }
     }
 
     /// Writes what the card currently shows to /tmp/recense-snapshot.png (for checking layouts without a screenshot).
     func snapshot() {
+        if let hp = HapticsMenuTarget.shared.settingsWindow, hp.isVisible,
+           let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(hp.windowNumber), [.boundsIgnoreFraming, .bestResolution]) {
+            try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: "/tmp/recense-haptics-settings.png"))
+        }
         // Also the top of the screen around the strip, exactly as it looks (menu bar included).
         if let scr = NSScreen.main {
             let wasOpen = rest.expanded
@@ -7556,6 +7929,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
             if let cg = CGWindowListCreateImage(r, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
                 try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
                     .write(to: URL(fileURLWithPath: "/tmp/recense-menubar.png"))
+            }
+            let fullR = CGRect(x: scr.frame.minX, y: 0, width: scr.frame.width, height: 60)
+            if let cg = CGWindowListCreateImage(fullR, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) {
+                try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: "/tmp/recense-menubar-full.png"))
             }
             rest.pause.showsPlay.toggle()
             rest.pause.displayIfNeeded(); rest.window.displayIfNeeded()
@@ -7649,6 +8027,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         var j = i
         if rowDX > threshold, i + 1 < rowOrder.count { j = i + 1 }
         else if rowDX < -threshold, i > 0 { j = i - 1 }
+        GestureNavHaptics.performPage(from: i, to: j, count: rowOrder.count, pullDelta: rowDX)
         let target = rowOrder[j]
         let h = cur.superview!.bounds.height
         rowSettling = true
@@ -8277,17 +8656,50 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
 // MARK: - Entry point
 
 let commands = ["up", "down", "pad", "time", "show", "hide", "toggle", "quit", "status", "background", "snapshot",
-                "editor-new", "editor-classic", "show-icons", "draftpad-flip", "draftpad-flip-go",
-                "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off"]
+                "editor-new", "editor-classic", "show-icons", "show-all-icons", "draftpad-flip", "draftpad-flip-go",
+                "wing-left", "wing-right", "wing-close", "words-sooner-on", "words-sooner-off",
+                "haptics-off", "haptics-calm", "haptics-full", "haptics-settings"]
 
 func stripSelftest() -> Bool {
     let b = GlassPauseButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
     let p0 = b.glyphSymbol == "pause.circle"
     b.showsPlay = true
     let p1 = b.glyphSymbol == "play.circle"
-    let ok = p0 && p1
-    print("\(ok ? "ok  " : "FAIL") strip, play/pause button draws pause.circle and play.circle")
-    return ok
+    let okPause = p0 && p1
+    print("\(okPause ? "ok  " : "FAIL") strip, play/pause button draws pause.circle and play.circle")
+
+    // A3: Shared MarqueeTextView behaviour (short still, ~30 pt/s after 1.5 s pause, 1 s refresh idempotent, Reduce Motion + VoiceOver/tooltip/click).
+    let m = MarqueeTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 15))
+    m.reduceMotionOverride = false
+    m.stringValue = "Short"
+    let shortStill = !m.needsScroll
+        && MarqueeTextView.scrollOffset(elapsed: 0, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+        && MarqueeTextView.scrollOffset(elapsed: 3.5, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+    print("\(shortStill ? "ok  " : "FAIL") strip, marquee keeps short event names still")
+
+    let longTitle = "[REMINDER] LAST DAY TO PAY LOAN — International Constitutional Law Seminar"
+    m.stringValue = longTitle
+    let t0 = m.cycleStart
+    m.stringValue = longTitle   // 1 s refresh with same title must not reset cycleStart
+    let refreshIdempotent = m.cycleStart == t0 && m.needsScroll && !m.stringValue.contains("…")
+    let pauseHold = MarqueeTextView.scrollOffset(elapsed: 0.0, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+        && MarqueeTextView.scrollOffset(elapsed: 1.49, textWidth: m.cachedTextWidth, viewWidth: 100) == 0
+    let step1 = MarqueeTextView.scrollOffset(elapsed: 2.5, textWidth: m.cachedTextWidth, viewWidth: 100)
+    let step2 = MarqueeTextView.scrollOffset(elapsed: 4.5, textWidth: m.cachedTextWidth, viewWidth: 100)
+    let rateOk = abs(step1 - 30.0) < 0.05 && abs((step2 - step1) - 60.0) < 0.05
+    let loopOk = refreshIdempotent && pauseHold && rateOk
+    print("\(loopOk ? "ok  " : "FAIL") strip, marquee pauses 1.5 s, scrolls at 30 pt/s, and does not restart on 1 s refresh")
+
+    m.reduceMotionOverride = true
+    let reduceStill = MarqueeTextView.scrollOffset(elapsed: 3.5, textWidth: m.cachedTextWidth, viewWidth: 100, reduceMotion: true) == 0
+        && m.currentOffset(at: Date().addingTimeInterval(4.0)) == 0
+        && !m.isTimerRunning
+        && m.toolTip == longTitle
+        && m.accessibilityLabel() == longTitle
+        && m.revealFullTitleNow() == longTitle
+    print("\(reduceStill ? "ok  " : "FAIL") strip, marquee stays still under Reduce Motion with full title in tooltip, VoiceOver, and hover/click")
+
+    return okPause && shortStill && loopOk && reduceStill
 }
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
@@ -8298,7 +8710,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), t = boseBridgeSelftest(), u = carrymanagerSelftest(), v = transcriptGateSelftest()
     let w = MainActor.assumeIsolated { carrymanagerOrderingSelftest() }   // top-level code runs on the main thread
     let x = MainActor.assumeIsolated { homeFilesSelftest() }
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w && x ? 0 : 1)
+    let y = hapticsSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w && x && y ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-15
@@ -8471,6 +8884,10 @@ extension App: NSMenuDelegate {
         menu.items.first { $0.title == "Menu-Bar Hider" }?.submenu = menuBar.hider.menu()
         menu.items.first { $0.title == "Devices" }?.submenu = devicesMenu()
         menu.items.first { $0.title == "Bose Bridge" }?.submenu = { bose.symphonies.tick(); return bose.menu() }()
+        menu.items.first { $0.title == "Haptics" }?.submenu = Haptics.menu()
+        if let settings = menu.items.first(where: { $0.title == "Settings" })?.submenu {
+            settings.items.first { $0.title == "Haptics" }?.submenu = Haptics.menu()
+        }
         menu.items.first { $0.title == "Connect To" }?.submenu = sshMenu()
         // The wing entries say Show or Hide as the wings are now.
         if let i = menu.items.firstIndex(where: { $0.action == #selector(toggleLeftWing) }) {

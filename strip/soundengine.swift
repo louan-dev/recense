@@ -18,6 +18,58 @@ final class SoundEngine {
     private var pid: pid_t?
     private var sound: [String: Any] = [:]
     private var impl: AnyObject?   // SoundTap on 14.2+
+    private var textureResetWork: DispatchWorkItem?
+    private(set) var activeTexture: ObligationTier?
+
+    /// C2 (spec B10d): Over-the-ear audio textures, one per obligation tier, with no binaural beats.
+    ///   • mustShall (`must` / `shall`)       → presence lift (+3.5 dB @ 1 kHz, +2.5 dB @ 5 kHz)
+    ///   • may (`may`)                        → slight stereo widening (+18 % room wet/dry mix)
+    ///   • mustNotShallNot (`must not` / ...) → low thump (+4.5 dB @ 160 Hz, −1.0 dB @ 5 kHz)
+    static let usesBinauralBeats = false
+
+    static func texturedSound(base: [String: Any], for tier: ObligationTier?) -> [String: Any] {
+        guard let tier else { return base }
+        var out = base
+        var eq = (base["eq"] as? [String: Any]) ?? [:]
+        let n = { (x: Any?) in (x as? NSNumber)?.doubleValue ?? 0.0 }
+        switch tier {
+        case .mustShall:
+            eq["mid"] = n(eq["mid"]) + 3.5
+            eq["high"] = n(eq["high"]) + 2.5
+            out["eq"] = eq
+            out["texture"] = "presence_lift"
+        case .may:
+            out["room"] = (base["room"] as? String) ?? "room"
+            out["mix"] = min(100.0, n(base["mix"]) + 18.0)
+            out["texture"] = "slight_widening"
+        case .mustNotShallNot:
+            eq["low"] = n(eq["low"]) + 4.5
+            eq["high"] = n(eq["high"]) - 1.0
+            out["eq"] = eq
+            out["texture"] = "low_thump"
+        }
+        out["binauralBeatsHz"] = 0.0
+        return out
+    }
+
+    /// Pulses a word-length obligation audio texture through the live SoundTap chain (if active) and restores `sound` after `duration`.
+    func pulseObligationTexture(_ tier: ObligationTier, duration: TimeInterval = 0.22) {
+        textureResetWork?.cancel()
+        activeTexture = tier
+        let shaped = SoundEngine.texturedSound(base: sound, for: tier)
+        if #available(macOS 14.2, *), let t = impl as? SoundTap, t.alive {
+            t.apply(shaped)
+        }
+        let w = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.activeTexture = nil
+            if #available(macOS 14.2, *), let t = self.impl as? SoundTap, t.alive {
+                t.apply(self.sound)
+            }
+        }
+        textureResetWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.06, duration), execute: w)
+    }
 
     static var available: Bool { if #available(macOS 14.2, *) { return true } else { return false } }
 
