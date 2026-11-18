@@ -30,9 +30,9 @@ The light's position must match the Mac's to the frame (the owner's allowance ag
 | 1 | Vocal separation: Demucs `htdemucs --two-stems=vocals`, MPS then CPU, ≈45 s a 4-min song; stem kept at 16 kHz mono (`strip/recense.swift:4115-4159`) | `<key>-vocals.wav` (this Mac, R2 `offsite` while it lasts) | **Route A: none on the device**; the Mac does it. Route B: an on-device separator (ladder step, below) | A: built on Mac already |
 | 2 | Song transcription: Whisper on the stem, lyric prompt only on a mix (`strip/recense.swift:3907-3983`) | lines + words (keep/<key>/, the Worker's `present`) | the Mac's transcript through `TranscriptSource.load` (device copy, then the Worker) — unchanged; on-device ears only when there is none (`mobile/HostApp/iOS/Ears.swift`) | exists |
 | 3 | Voice measure: `Features.measure` on the stem, 100 frames/s: db, onset, pitch (YIN), clarity, voiced (`strip/recense.swift:5160-5300`, `measureVoice` 4067-4089) | `keep/<key>/features.json`, pushed by `Keep.pushFeatures` | **read, not made**: `SongLight.voice` — this device's copy, else the Worker's `?f=features` (`library/src/transcript.js:242-251`), saved here at once | **P1 built** |
-| 4 | Words hung on the voice: `Cadence.fit` (onsets, entries, rises; `strip/recense.swift:5394-5508`) and `Cadence.align` on the voice's own syllables (`strip/cadence.swift:120`) | each word's s/e, `syl` [{c, s, e}], `un` | **the same rules, the one JS copy**: Gallery's `cadence.js` `fit` (kept rule for rule with the Mac's, its header) run in JavaScriptCore by `SongLight.Engine` | **P1 built** |
-| 5 | The listener's timing: `Cadence.pin` (`strip/cadence.swift:267`) | words retimed to `tm` | `cadence.js` `pin`, same call; `tm` now decoded from the Worker (`TranscriptSource.decode`) | **P1 built** |
-| 6 | The light inside a word: `Cadence.progress` (`strip/recense.swift:5512`) | 0…1 per frame | `SongLight.fill` (Swift, cadence.js `fill` rule for rule), `litCount` cut on whole letters | **P1 built** |
+| 4 | Words hung on the voice: `Cadence.fit` (onsets, entries, rises; `strip/recense.swift:5394-5508`) and `Cadence.align` on the voice's own syllables (`strip/cadence.swift:120`) | each word's s/e, `syl` [{c, s, e}], `un` | **the Mac's own code**: `Cadence.fit` + `Cadence.align`, moved unchanged to `shared/ShowsKit/Cadence` (T-0132), called by `SongLight.fit` | **P1 built** |
+| 5 | The listener's timing: `Cadence.pin` (`strip/cadence.swift:267`) | words retimed to `tm` | `Cadence.pin`, the same shared Swift; `tm` now decoded from the Worker (`TranscriptSource.decode`) | **P1 built** |
+| 6 | The light inside a word: `Cadence.progress` (`strip/recense.swift:5512`) | 0…1 per frame | `SongLight.fill` = the Mac's `Cadence.progress` on `Cadence.beats` (shared Swift; held to cadence.js `fill` at 344 moments), `Cadence.track` set to the song's voice when its `shift` is 0, `litCount` cut on whole letters | **P1 built** |
 | 7 | The display: gold head, sung white, ghost ahead, unsung never lit (`strip/recense.swift:2046-2100, 2464`; web `gallery.js:4890-4947`) | the overlay | `TranscriptLineText.sung` in ShowsKit's transcript view (Now Playing, Listen's window) | **P1 built** |
 | 8 | Prosody ribbon, ties, chords, notes: `prosody.js` + `prosogram.js` in a hidden WKWebView (`strip/prosody.swift`), drawn under the row (`strip/recense.swift:2175-2270`) | `<key>.prosody.json`, row pictures | the same two files in a hidden WKWebView on iOS (prosogram draws on a canvas, so JavaScriptCore alone can't), pictures laid under the line | P2 |
 | 9 | Speech measured too (`measureSpeech`, source `speech`): notation only, never the light | features.json (speech) | same file, read; the light ignores it (`SongLight.usable`) | P1 (read rule) / P2 (draw) |
@@ -47,10 +47,10 @@ then `Features.measure` ported to iOS (vDSP exists there).
 
 Evidence:
 - **Size.** HT-Demucs weights are ≈ 80 MB fp32 per model (**documented**, facebookresearch/demucs); a Core ML
-  build adds the app's largest asset by far. Route A ships nothing: `cadence.js` is 565 lines (**proven**, repo).
+  build adds the app's largest asset by far. Route A ships no model: the rules are the shared Swift `Cadence` (**proven**, repo).
 - **Speed.** Demucs takes ≈ 45 s for 4 minutes on an M-series GPU (**proven** in the Mac's own log line,
   `strip/recense.swift:4114`); an A14 (iPhone 12 Pro Max) is several times slower and iOS stops long background
-  work (**assumed**). Route A does a `fit` of a song in JavaScriptCore once per open (**assumed** tens of ms).
+  work (**assumed**). Route A does a `fit` of a song in Swift once per open (**assumed** tens of ms).
 - **Offline law** (`docs/law/offline.md`): "work lands on the device first"; "models … may be downloaded once".
   Route A after the first open: the measure is on the device, no network (**proven** by `SongLight.voice` test).
   Route B: fully on the device, also allowed (a one-time model download).
@@ -68,24 +68,24 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
 3. (P4) separated and measured on this device (model downloaded once; replaced by the Mac's measure when it comes);
 4. the words' own times (today's light), never nothing.
 
-## P1 (built: coded, not compiled, device check owed)
+## P1 (built: compiled, device check owed)
 - `shared/ShowsKit/Sources/ShowsKit/SongLight.swift`: `featuresPath`, `usable` (vocal stem only, > 20 frames),
   `voice` (device copy → Worker → saved), `fill` / `litCount` (the light), `sung` (a line the voice timed),
-  `Engine` (JavaScriptCore, `pin(fit(lines, F, shift))`), `present` / `merge` (to and from the Worker's shape).
+  `fit` (`Cadence.pin(Cadence.fit(lines, F))` around the Worker's `shift`; the Mac's own Swift, `shared/ShowsKit/Cadence`).
 - `TranscriptSource.decode` reads `syl`, `un` and `tm` when the Worker sends them.
 - `Views/Transcript.swift` `TranscriptLineText.sung`: gold up to the letter reached, sung words white, unsung dim.
 - `mobile/HostApp/iOS/SongVoice.swift` + `Ears.swift`: a transcript from the Mac or this device is fitted before it's
-  shown; `mobile/HostApp/iOS/cadence.js` is a checked copy (the synced folder bundles it).
-- One logic, no second copy of the timing rules: iOS runs Gallery's `cadence.js`; the only Swift twin is `fill`
-  (≈ 20 lines, as the Mac already has), held to cadence.js by a shared fixture.
+  shown.
+- One logic per kind of surface (PLAYBOOK §2: JS for web, Swift for native, never a second copy): the Mac, iPhone
+  and iPad run the one Swift `Cadence`; the web runs `cadence.js`. Amended 2026-11-17 (T-0132): iOS first ran a bundled
+  `cadence.js` in JavaScriptCore, a second copy on a native surface; the shared Swift is proven identical to the Mac's
+  code on 381/381 measured songs and gives cadence.js's own numbers on the shared fixture (`SongLightTests`).
 
 ## Done checks
-1. `cd library && npm test` passes, including `test/songlight.test.mjs` (the iOS copy is cadence.js byte for byte;
-   the fixture is current). **proven** (this lane).
+1. `cd library && npm test` passes, including `test/songlight.test.mjs` (the fixture is current with cadence.js). **proven** (this lane).
 2. `cd shared/ShowsKit && swift test` passes `SongLightTests` (Swift `fill` = cadence.js `fill` at 344 moments; the
-   engine fits the fixture song to cadence.js's own numbers; decode reads syl/un/tm). **untested** (no toolchain here;
-   a Python port of the Swift rule matched all 344 samples).
-3. Both iOS apps build (`mobile/ios/build.sh`) and `cadence.js` is in `Recense.app` (bundle root). **untested**.
+   Swift engine fits the fixture song to cadence.js's own numbers; decode reads syl/un/tm). **proven** (85/85, 2026-11-17).
+3. The iOS app builds (`xcodebuild … generic/platform=iOS`). **proven** (BUILD SUCCEEDED, 2026-11-17).
 4. Device, against the baseline: the same song with a measure, played on the Mac and on the phone side by side:
    the gold head reaches each syllable at the same moment (≤ 50 ms by eye/video), held words held, an unsung word
    never lit. iPhone 12 Pro Max and iPad Air M2 13-inch. **untested**.
@@ -120,11 +120,11 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
 
 **Built (P1, Route A):** the Mac keeps separating (Demucs) and measuring the voice; iPhone/iPad read its
 `features.json` (device copy first, then the Worker's `?f=features`, saved for offline), hang the words on the voice
-with Gallery's own `cadence.js` run in JavaScriptCore (`fit` + `pin`, the rules the Mac mirrors), and light each word
+with the Mac's own `Cadence` (`fit` + `pin`, shared Swift, `shared/ShowsKit/Cadence`), and light each word
 syllable by syllable in gold with `SongLight.fill` (cadence.js `fill`, the Mac's `Cadence.progress`). Unsung words
 are never lit; a listener's timing wins. Files: `shared/ShowsKit/Sources/ShowsKit/SongLight.swift`,
 `TranscriptSource.swift` (decode syl/un/tm), `Views/Transcript.swift` (`sung`), `mobile/HostApp/iOS/SongVoice.swift`,
-`Ears.swift`, `mobile/HostApp/iOS/cadence.js` (checked copy), `library/test/songlight.test.mjs`,
+`Ears.swift`, `shared/ShowsKit/Cadence/*` (T-0132), `library/test/songlight.test.mjs`,
 `shared/ShowsKit/Tests/ShowsKitTests/SongLightTests.swift` + `Fixtures/songlight.json`.
 
 **Tests run (this lane, Linux, no Swift):**
@@ -143,7 +143,7 @@ are never lit; a listener's timing wins. Files: `shared/ShowsKit/Sources/ShowsKi
 1. Mac: `cd library && npm install && npm test` (expect all pass, incl. songlight 2/2).
 2. Mac: `cd shared/ShowsKit && swift test --filter SongLightTests` (6–7 tests), then `swift test`.
 3. Mac: `cd strip && ./build.sh` (ShowsKit changed: the Mac app must still build; nothing in strip/ changed).
-4. Mac: `cd mobile/ios && ./build.sh`; confirm `cadence.js` is inside `Recense.app`; install on the
+4. Mac: `cd mobile/ios && ./build.sh`; install on the
    iPhone 12 Pro Max and the iPad Air M2 13-inch.
 5. Pick a song the Mac has measured (`~/…/keep/<key>.features.json` exists, source `vocals`). Play it on the Mac
    overlay and on each device: Done check 4. Then airplane mode on the device, reopen: Done check 5. Then a

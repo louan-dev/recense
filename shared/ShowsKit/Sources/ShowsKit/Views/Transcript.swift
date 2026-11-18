@@ -181,9 +181,10 @@ public struct TranscriptLineText: View {
     static func sung(_ line: TranscriptLine, _ t: Double) -> AttributedString {
         var a = AttributedString(line.text)
         a.foregroundColor = .white.opacity(SongLight.ahead)
+        let beats = Cadence.beats(line.words)   // the words as the Mac's light reads them
         for (i, r) in TranscriptLight.ranges(line).enumerated() {
-            let w = line.words[i]
-            guard let r, w.un != true, t >= w.start else { continue }
+            let w = beats[i]
+            guard let r, !w.un, t >= w.start else { continue }
             if t >= w.end {   // sung: the gold eases into white over 0.45 s, as on the Mac and the web
                 if let ar = Range(r, in: a) { a[ar].foregroundColor = SongLight.settled((t - w.end) / SongLight.settle) }
                 continue

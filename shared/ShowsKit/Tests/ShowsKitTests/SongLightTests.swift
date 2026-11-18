@@ -1,5 +1,5 @@
-// FEAT-20 (iOS syllable light, route A): SongLight.fill is cadence.js `fill` (and the Mac's Cadence.progress) rule for
-// rule; the engine runs Gallery's own cadence.js. Fixtures/songlight.json is made by library/test/songlight.test.mjs
+// FEAT-20 (iOS syllable light, route A): SongLight.fill is the Mac's Cadence.progress itself, held to cadence.js `fill` rule for
+// rule; the engine (the Mac's Swift Cadence) gives cadence.js's answer. Fixtures/songlight.json is made by library/test/songlight.test.mjs
 // from cadence.js itself, so a drift on either side fails one of the two suites.
 // Status: coded, not compiled (no Swift toolchain where it was written); run `swift test` in shared/ShowsKit.
 import XCTest
@@ -28,11 +28,11 @@ final class SongLightTests: XCTestCase {
     }
 
     func testFillMatchesCadenceJsSyllableBySyllable() throws {
-        let f = try fixture(), ws = f.fitted.map(word)
+        let f = try fixture(), ws = f.fitted.map(word), bs = Cadence.beats(ws)
         XCTAssertEqual(ws[0].syl?.count, 4)   // Va-ri-a-tions
         for s in f.samples {
             let i = Int(s[0]), t = s[1]
-            XCTAssertEqual(SongLight.fill(ws[i], at: t), s[2], accuracy: 1e-5, "\(ws[i].text) at \(t)")
+            XCTAssertEqual(SongLight.fill(bs[i], at: t), s[2], accuracy: 1e-5, "\(ws[i].text) at \(t)")
         }
     }
 
@@ -42,18 +42,19 @@ final class SongLightTests: XCTestCase {
         let ws = f.pinned.map { p in
             Word(text: p.t, start: p.s, end: p.e, tm: Pin(s: p.s, e: p.e, k: p.k ?? 0, c: p.c))
         }
+        let bs = Cadence.beats(ws)
         for s in f.pins {
             let i = Int(s[0]), t = s[1]
-            XCTAssertEqual(SongLight.fill(ws[i], at: t), s[2], accuracy: 1e-5, "\(ws[i].text) at \(t)")
+            XCTAssertEqual(SongLight.fill(bs[i], at: t), s[2], accuracy: 1e-5, "\(ws[i].text) at \(t)")
         }
     }
 
     func testAWordNotSungIsNeverLitAndCutsFallOnWholeLetters() {
-        let un = Word(text: "dream", start: 1, end: 2, un: true)
+        let un = Beat(Word(text: "dream", start: 1, end: 2, un: true))
         XCTAssertEqual(SongLight.fill(un, at: 1.5), 0)
         XCTAssertEqual(SongLight.litCount(un, at: 3), 0)
         // "Tòa" decomposed: o + combining grave is one letter of two code points, never cut in half
-        let w = Word(text: "To\u{0300}a", start: 0, end: 1, syl: [Syl(c: 3, s: 0, e: 0.5), Syl(c: 4, s: 0.5, e: 1)])
+        let w = Beat(Word(text: "To\u{0300}a", start: 0, end: 1, syl: [Syl(c: 3, s: 0, e: 0.5), Syl(c: 4, s: 0.5, e: 1)]))
         XCTAssertEqual(SongLight.litCount(w, at: 0.25), 1)   // 1.5 of 3 code points: "T" only
         XCTAssertEqual(SongLight.litCount(w, at: 0.5), 2)    // "Tò"
         XCTAssertEqual(SongLight.litCount(w, at: 1), 3)
@@ -82,11 +83,8 @@ final class SongLightTests: XCTestCase {
         XCTAssertNil(none)
     }
 
-    #if canImport(JavaScriptCore)
-    func testTheEngineRunsGalleryCadenceAndHangsTheWordsOnTheVoice() throws {
+    func testTheSwiftEngineHangsTheWordsOnTheVoiceAsCadenceJsDoes() throws {
         let f = try fixture()
-        let script = try String(contentsOf: Self.repo.appendingPathComponent("library/src/client/cadence.js"), encoding: .utf8)
-        let engine = try XCTUnwrap(SongLight.Engine(script: script))
         // the cadence.test.mjs voice, built here as there
         let n = 600
         var pitch = Array(repeating: 0, count: n)
@@ -98,7 +96,7 @@ final class SongLightTests: XCTestCase {
         let line = TranscriptLine(id: "2000001", start: 1.2, end: 4.2, text: "Variations on a dream", words: [
             Word(text: "Variations", start: 1.2, end: 1.6), Word(text: "on", start: 1.6, end: 2.1),
             Word(text: "a", start: 3.6, end: 3.7), Word(text: "dream", start: 3.9, end: 4.2)])
-        let out = try XCTUnwrap(engine.fit([line], features: features))
+        let out = try XCTUnwrap(SongLight.fit([line], features: features))
         XCTAssertEqual(out.count, 1)
         for (w, x) in zip(out[0].words, f.fitted) {
             XCTAssertEqual(w.start, x.s, accuracy: 1e-6, w.text)
@@ -107,10 +105,19 @@ final class SongLightTests: XCTestCase {
         }
         XCTAssertTrue(SongLight.sung(out[0]))
         // no voice to follow: nothing changes hands
-        XCTAssertNil(engine.fit([line], features: Data(#"{"none":true}"#.utf8)))
-        XCTAssertNil(SongLight.Engine(script: "this is not cadence"))
+        XCTAssertNil(SongLight.fit([line], features: Data(#"{"none":true}"#.utf8)))
+        // the Worker's lines are in the file's time, the voice in the transcript's: `shift` between them changes nothing
+        var moved = features
+        var o = try XCTUnwrap(JSONSerialization.jsonObject(with: moved) as? [String: Any]); o["shift"] = 2.5
+        moved = try JSONSerialization.data(withJSONObject: o)
+        let later = TranscriptLine(id: line.id, start: line.start + 2.5, end: line.end + 2.5, text: line.text,
+                                   words: line.words.map { $0.shifted(by: 2.5) })
+        let out2 = try XCTUnwrap(SongLight.fit([later], features: moved))
+        for (w, x) in zip(out2[0].words, f.fitted) {
+            XCTAssertEqual(w.start, x.s + 2.5, accuracy: 1e-6, w.text)
+            XCTAssertEqual(w.end, x.e + 2.5, accuracy: 1e-6, w.text)
+        }
     }
-    #endif
 
     func testTheWorkersSyllablesAndTimingAreRead() throws {
         let d = Data("""
