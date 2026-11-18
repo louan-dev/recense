@@ -119,6 +119,8 @@
     } catch (e) {
       if (!saved || r.removed || lost(e) || !e.partFailed) throw e;
       store(key, null); // the server no longer knows that upload: once, from the start
+      // review 11-17 item 2: the old slot is taken back first, so it doesn't stay an "uploading" tile
+      await o.call({ action: "abort", i: saved.i, uploadId: saved.uploadId || "none" }).catch(function () {});
       return await sendFrom(r, o, key, total, null);
     }
   }

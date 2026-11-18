@@ -2383,5 +2383,33 @@ await test("T-0148: a lost answer to `complete` doesn't leave a Retry that can n
   assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0, "forgotten");
 });
 
+// Regression guard: review 11-17 item 2 (coordinator 7ea7abca) — restarting a resumed upload left its old slot behind
+await test("T-0148: when the server no longer takes a resumed upload's parts, the old slot is aborted before starting over", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  let refuse = true, lostId = "";
+  const aborts = [];
+  await pg.route(/\/api\/upload\?.*action=(part|abort)/, (rt) => {
+    const u = new URL(rt.request().url());
+    const id = u.searchParams.get("uploadId");
+    if (u.searchParams.get("action") === "abort") { aborts.push(id); return rt.continue(); }
+    if (Number(u.searchParams.get("part")) === 2 && refuse) { lostId = id; return rt.abort("failed"); }
+    if (!refuse && id === lostId) return rt.fulfill({ status: 404, body: "No such upload" });
+    return rt.continue();
+  });
+  await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000));
+  await pg.waitForSelector(".lup .r.bad button[aria-label^='Retry']", { timeout: 60000 });
+  refuse = false; // the server has lost that upload
+  await pg.click(".lup .r.bad button[aria-label^='Retry']");
+  await pg.waitForSelector(".lup .r.bad", { state: "detached", timeout: 60000 });
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/001")); t++) await pg.waitForTimeout(250);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "started over and finished");
+  assert.deepEqual(aborts, [lostId], "one abort, for the lost upload");
+  assert.equal((JSON.parse(await (await PUBLIC.get("links/" + up.id + "/.manifest")).text()).items || []).length, 2, "no orphan slot: the picture and the video");
+});
+
 await browser.close();
 await mf.dispose();
