@@ -55,6 +55,39 @@ export function fromFiles(files) {
   return createMatter({ text: files[FILES.text] || '', ink: j(files[FILES.ink], emptyInk), side: j(files[FILES.side], emptySide) });
 }
 
+// ---- this device's name ------------------------------------------------------------------------------------
+
+/** The user agent's guess: "iPhone", "iPad", "Mac" or "web". */
+function guessDevice({ userAgent = '', maxTouchPoints = 0 } = {}) {
+  const ua = String(userAgent || '');
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1)) return 'iPad';
+  if (/Macintosh/.test(ua)) return 'Mac';
+  return 'web';
+}
+
+// Derived from Spec: FEAT-08 P5
+/**
+ * This device's name for seeds and per-device undo. The user agent guesses until the host names it
+ * (`setMatterDevice`, the carry name); from then on no guess replaces the host's name, and an empty name is refused.
+ */
+export function createMatterDevice(nav = {}) {
+  let name = guessDevice(nav);
+  let named = false;
+  return {
+    get: () => name,
+    set(next) {
+      const s = typeof next === 'string' ? next.trim() : '';
+      if (s) { name = s; named = true; }
+      return name;
+    },
+    guess(n = {}) {
+      if (!named) name = guessDevice(n);
+      return name;
+    }
+  };
+}
+
 // ---- words, language, timing -------------------------------------------------------------------------------
 
 export function wordsOf(text) {

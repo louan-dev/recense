@@ -116,6 +116,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
     var matterPath: String { vault.appendingPathComponent("draftpad.matter.json").path }
     private var lastMatter = ""   // what this host last read or wrote for draftpad.matter.json
+    /// FEAT-23 · the media note the page shows instead of draftpad.md, or nil (openNote / closeNote).
+    private(set) var openNoteKey: String?
+    private var lastMatterMTime: Date?   // FEAT-08 P5: draftpad.matter.json's time when pollMatter last looked
     var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
     var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
@@ -255,6 +258,20 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             guard let self = self else { return }
             if let merged = DraftpadInk.json(from: v) { self.saveInk(merged) } else { self.ink.unsee() }
         }
+    }
+
+    // Derived from Spec: FEAT-08 P5
+    /// draftpad.matter.json changed on disk while the page is open (another device's crossing, carried in): the page
+    /// unions it (`mergeMatter`, editor/src/matter.js) and posts the union back, as iOS does on its poll (App.pollExternal).
+    func pollMatter() {
+        guard loaded, wingSide == nil, openNoteKey == nil else { return }   // a media note's sidecar is its own file
+        // a cheap stat first (SL1: this runs on the 1 Hz poll); the file is read only when its time moved
+        let t = (try? FileManager.default.attributesOfItem(atPath: matterPath)[.modificationDate]) as? Date
+        guard let t, t != lastMatterMTime else { return }
+        lastMatterMTime = t
+        guard case .text(let disk) = readNote(matterPath), !disk.isEmpty, disk != lastMatter else { return }
+        lastMatter = disk
+        call("mergeMatter(\(jsString(disk)))")
     }
 
     /// An ink post the sidecar couldn't take yet (unreadable, a failed write), tried again (App.pollExternal).
@@ -519,6 +536,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             lastMatter = matterJSON
             call("setMatter(\(jsString(matterJSON)))")   // FEAT-08 · coded, not compiled
         }
+        // Derived from Spec: FEAT-08 P5 — a crossing's device is this Mac's carry name, not the user agent's guess.
+        if wingSide == nil { call("setMatterDevice(\(jsString(P2PTransport.deviceName())))") }
         if wingSide == nil { for c in DraftpadLibrary.loadCalls(vault: vault, quote: jsString) { call(c) } }
         if let wingsJSON = coordinatedRead(wingsPath), !wingsJSON.isEmpty {
             call("setWingsState(\(jsString(wingsJSON)))")

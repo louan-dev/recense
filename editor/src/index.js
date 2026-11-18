@@ -804,16 +804,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   // FEAT-08 · the sidecar of the one page. A crossing runs on (body, ink, sidecar) together, then lands the body
   // change as one ordinary edit (so the host saves it through its 3-way merge) and the ink through setInk.
   let matterSide = { version: 1, passages: {}, log: [] };
-  // This device's name for seeds and per-device undo; the host may set a better one (setMatterDevice).
-  let matterDevice = (() => {
-    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-    if (/iPhone/.test(ua)) return 'iPhone';
-    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)) return 'iPad';
-    if (/Macintosh/.test(ua)) return 'Mac';
-    return 'web';
-  })();
+  // This device's name for seeds and per-device undo; the host names it at load (setMatterDevice, FEAT-08 P5).
+  const matterDevice = matterCore.createMatterDevice(typeof navigator !== 'undefined'
+    ? { userAgent: navigator.userAgent || '', maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
   let matterInput = 'keys';
-  const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
+  const matterSeed = () => ({ device: matterDevice.get(), input: matterInput, time: Date.now() });
   function postMatter() {
     const h = window.webkit?.messageHandlers?.matter;
     if (h && typeof h.postMessage === 'function') h.postMessage(JSON.stringify(matterSide));
@@ -1245,14 +1240,14 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return matterCore.seedTypePassage(m, a);
       }),
       cross: (n, pid, opts) => applyMatter(m => matterCore.cross(m, Number(n), String(pid), typeof opts === 'string' ? JSON.parse(opts) : opts || {})),
-      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice })),   // per device
+      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice.get() })),   // per device
       // FEAT-08 P2 · spoken words from the host land at the end as their own voice passage; the caret stays.
       appendVoice: (text, id) => applyMatter(m => matterCore.appendVoicePassage(m, {
         id: String(id || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
         text,
-        seed: { device: matterDevice, input: 'voice', time: Date.now() }
+        seed: { device: matterDevice.get(), input: 'voice', time: Date.now() }
       })),
-      setMatterDevice: name => { if (name) matterDevice = String(name); return matterDevice; },
+      setMatterDevice: name => matterDevice.set(name),
       // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
       matterMenu: (from, to) => {
         const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });

@@ -168,6 +168,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         let initialMatter = file.loadMatter()
         if !initialMatter.isEmpty { call("setMatter(\(jsLiteral(initialMatter)))") }   // FEAT-08
+        // Derived from Spec: FEAT-08 P5 — a crossing's device is the carry name ("iPhone", "iPad" without the entitlement).
+        call("setMatterDevice(\(jsLiteral(P2PTransport.deviceName())))")
         if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
             call("setWingsState(\(jsLiteral(wingsJSON)))")
         }

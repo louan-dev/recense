@@ -8654,6 +8654,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     func pollExternal() {
         guard saveTimer == nil, !dragging, !settling else { return }
         editor?.retryInk()   // T-0125: an ink post the sidecar couldn't take yet
+        editor?.pollMatter()   // FEAT-08 P5: another device's crossing reaches the open page, no reopen
         // A save that couldn't reach the file, or a note that couldn't be read at load, is owed: tried again at most every
         // 10 s (reading an evicted note offline can keep the coordinator waiting). Otherwise only a changed file (its
         // mtime, a cheap stat) is read.
