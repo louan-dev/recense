@@ -106,6 +106,7 @@ updates in place.
 - Gallery as a location in the Files app (File Provider extension), with the app's icon and a shared Keychain token.
 - Folders have the site's header, a … menu and Select: Download (Save to Files), AirDrop, Create Share Link, Invite,
   Add Media (Photos or Files), New Folder. Writes never overwrite.
+  A file over 90 MiB goes up in parts (16–90 MiB, at most 10,000: ~879 GiB), each sent from a temp file, 4 tries each.
 - **Listen**: Recense on the iPhone and iPad, first on **Home** as the "Now Playing" card (`HostApp/iOS/ListeningCard.swift`,
   11-10): which ear hears and in which language, the live transcript of what plays (ShowsKit's `TranscriptView`),
   and one button that says what it does now (`Listener.control`, the same on Listen): **Start listening** when nothing hears,
