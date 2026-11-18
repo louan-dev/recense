@@ -146,7 +146,10 @@ extension NowPlaying {
         Button(action: pick) {
             if chosen { Label(name, systemImage: "checkmark") } else { Text(name) }
         }
-        .accessibilityLabel(Langs.spoken(section, name, chosen: chosen))
+        // "Follow in: Français"; VoiceOver adds "selected" from the trait, in the device's own words
+        .accessibilityLabel(Langs.spoken(section, name, chosen: false))
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityInputLabels([name])
     }
 }
 

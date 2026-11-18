@@ -54,8 +54,8 @@ This section supersedes "What it does" bullets 1 and 3 above.
 - Names are the endonyms (English, Français, Tiếng Việt), in the order Follow in lists them.
 - The section titles, Auto-detect, Off and each item's VoiceOver label are said in the device's language among
   en / fr / vi (else English): "Follow in · Suivre en · Theo dõi bằng", "Heard in · Entendu en · Nghe bằng",
-  "Auto-detect · Détection auto · Tự nhận diện", "Off · Désactivé · Tắt". VoiceOver reads "Follow in: Français,
-  selected". The menu's own label: "Languages · Langues · Ngôn ngữ".
+  "Auto-detect · Détection auto · Tự nhận diện", "Off · Désactivé · Tắt". VoiceOver reads "Follow in: Français" and
+  "selected" from the item's selected trait (not baked into the label); Voice Control answers to the name alone. The menu's own label: "Languages · Langues · Ngôn ngữ".
 - **One language list per runtime:** Swift = `shared/ShowsKit/Sources/ShowsKit/Langs.swift` (`Langs`: codes,
   names, locales, the UI words); browser = `Homebar.LANGS` (`library/src/client/homebar.js`); editor =
   `editor/src/langs.js`; Worker = `library/src/layout.js` `LANGS`. Copies that cannot reach their runtime's list
