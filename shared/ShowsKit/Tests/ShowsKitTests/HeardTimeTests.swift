@@ -36,4 +36,11 @@ final class HeardTimeTests: XCTestCase {
         XCTAssertEqual(TranscriptLight.heard(position: pos, rate: rate, latency: chain, ahead: offset + lead, playing: true),
                        pos + (offset - chain + lead) * rate, accuracy: 1e-9)
     }
+    func testTheMacsOverlayPausedKeepsItsOffsetButNotTheChainsLatency() {
+        // BUG-24 review 8: paused (expectPaused or pos.paused), nothing is in flight through EQ/Key/Space, so the chain's
+        // latency is not subtracted; the sync offset and frame lead still read ahead, at speed 1 (the rate reads 0)
+        let pos = 42.0, chain = 0.03, offset = -0.1, lead = 0.012
+        XCTAssertEqual(TranscriptLight.heard(position: pos, rate: 0, latency: chain, ahead: offset + lead, playing: false),
+                       pos + offset + lead, accuracy: 1e-9)
+    }
 }

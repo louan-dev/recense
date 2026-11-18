@@ -62,6 +62,37 @@ if !Floating.rest(open: true, quiet: 0, paused: true) { bad += 1; print("FAIL pa
 // button held the old words on a full window; it rests as the thin strip at once, and wakes on play
 if !Floating.rest(open: true, quiet: 0, paused: false, held: true) { bad += 1; print("FAIL the window's pause doesn't collapse it") }
 if Floating.rest(open: true, quiet: 0, paused: false, held: false) { bad += 1; print("FAIL play after the window's pause stays collapsed") }
+// Regression guard: BUG-24 review 1 (11-18): with the ear on, our player stops counting as "own" once paused, so the
+// window's play didn't resume the podcast it had paused. Play resumes exactly what the window's pause stopped.
+func holdCheck(_ name: String, _ got: (toggle: Bool, pausedOurs: Bool), _ want: (Bool, Bool)) {
+    if got.toggle != want.0 || got.pausedOurs != want.1 { bad += 1; print("FAIL hold \(name): got \(got), want \(want)") }
+}
+holdCheck("pause ours", Floating.hold(on: true, own: true, playing: true, pausedOurs: false), (true, true))
+holdCheck("play after, ear on (own false)", Floating.hold(on: false, own: false, playing: false, pausedOurs: true), (true, false))
+holdCheck("play after, already playing", Floating.hold(on: false, own: true, playing: true, pausedOurs: true), (false, false))
+holdCheck("pause, ours not playing", Floating.hold(on: true, own: true, playing: false, pausedOurs: false), (false, false))
+holdCheck("pause, the broadcast's", Floating.hold(on: true, own: false, playing: true, pausedOurs: false), (false, false))
+holdCheck("play, we never paused it", Floating.hold(on: false, own: true, playing: false, pausedOurs: false), (false, false))
+// Regression guard: BUG-24 review 2 (11-18): paused from the window, then played from the app, Control Center or the
+// headphones, the window stayed a thin strip saying paused. Our player playing again lets the window's pause go.
+if !Floating.release(held: true, own: true, playing: true) { bad += 1; print("FAIL our player resumed elsewhere, the window stays paused") }
+if Floating.release(held: true, own: true, playing: false) { bad += 1; print("FAIL released while still paused") }
+if Floating.release(held: true, own: false, playing: true) { bad += 1; print("FAIL another app's sound released the window's pause") }
+if Floating.release(held: false, own: true, playing: true) { bad += 1; print("FAIL released a window that isn't paused") }
+// Regression guard: BUG-24 review 3 (11-18): 12 pictures cover only 0.5-1 s of speech (4 to a long word, more at 2x),
+// and behind other apps the queue was refilled only on the 1 s tick, so the sweep froze. The 0.1 s tick refills it
+// once it is half spent; the 1 s keep-alive never flushes a queue that is still good.
+if !Floating.refill(open: true, queued: Floating.queueCap / 2 - 1) { bad += 1; print("FAIL a half-spent queue isn't refilled") }
+if Floating.refill(open: true, queued: Floating.queueCap / 2) { bad += 1; print("FAIL refilled a queue more than half full") }
+if Floating.refill(open: false, queued: 0) { bad += 1; print("FAIL refilled with no window") }
+if Floating.keepAlive(since: 1.2, queued: 3) { bad += 1; print("FAIL the keep-alive flushed a good queue") }
+if !Floating.keepAlive(since: 1.2, queued: 0) { bad += 1; print("FAIL no keep-alive with nothing queued (PiP goes stale)") }
+if Floating.keepAlive(since: 0.5, queued: 0) { bad += 1; print("FAIL keep-alive before a second") }
+// Regression guard: BUG-24 review 5 (11-18): pictures were stamped ahead on the main thread every tick with no window
+// open; only an open window is drawn ahead, and never past the cap
+if Floating.stampAhead(open: false, queued: 0) { bad += 1; print("FAIL stamped ahead with no window") }
+if !Floating.stampAhead(open: true, queued: 0) { bad += 1; print("FAIL an open window isn't stamped ahead") }
+if Floating.stampAhead(open: true, queued: Floating.queueCap) { bad += 1; print("FAIL stamped past the cap") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

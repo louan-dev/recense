@@ -30,18 +30,22 @@ public enum FloatingFrames {
     }
 
     /// Follow on our player: the current line's and the next one's word moments, and the moment the transcript turns to
-    /// the next line (it shows whole and grey then, FEAT-05).
-    public static func followStamps(_ tls: [TranscriptLine], _ lines: [Caption.Line], after now: Double, ahead: Double) -> [Double] {
+    /// the next line (it shows whole and grey then, FEAT-05; with Reduce Motion, when it starts, among its words' moments).
+    public static func followStamps(_ tls: [TranscriptLine], _ lines: [Caption.Line], after now: Double, ahead: Double,
+                                    jump: Bool = false) -> [Double] {
         guard !tls.isEmpty, tls.count == lines.count else { return [] }
-        let c = current(tls, at: now) ?? -1
+        let c = current(tls, at: now, jump: jump) ?? -1
         var out = Set<Double>()
         for j in [c, c + 1] where lines.indices.contains(j) { out.formUnion(stamps(lines[j], after: now, ahead: ahead)) }
-        if c + 1 < tls.count { let at = TranscriptLight.turn(tls, to: c + 1).at; if at > now, at <= now + ahead { out.insert(at) } }
+        if c + 1 < tls.count, !jump { let at = TranscriptLight.turn(tls, to: c + 1).at; if at > now, at <= now + ahead { out.insert(at) } }
         return out.sorted()
     }
 
-    /// The line Follow shows at t: the one the transcript view turns to, so the window and the app show the same line.
-    public static func current(_ lines: [TranscriptLine], at t: Double) -> Int? { TranscriptLight.following(lines, at: t) }
+    /// The line Follow shows at t: the one the transcript view turns to, so the window and the app show the same line
+    /// (`jump`: Reduce Motion, where the view jumps to the active line; BUG-24 review 7).
+    public static func current(_ lines: [TranscriptLine], at t: Double, jump: Bool = false) -> Int? {
+        TranscriptLight.following(lines, at: t, jump: jump)
+    }
 
     private static func beats(_ l: Caption.Line) -> [Caption.Beat] { Caption.sourceBeats(l.words) + Caption.translationBeats(l) }
     private static func pieces(_ b: Caption.Beat) -> Int { b.end - b.start >= shortWord ? perWord : 1 }

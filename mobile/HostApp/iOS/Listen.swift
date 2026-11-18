@@ -1022,6 +1022,11 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
+        if !resting, !Listener.held, Floating.refill(open: pip.isPictureInPictureActive, queued: queued.count) { draw() }
+        if Floating.release(held: Listener.held, own: own, playing: NativePlayer.shared.isPlaying) {
+            Listener.held = false; pausedOurs = false; pip.invalidatePlaybackState()
+            floatNote("window pause let go: our player plays again")
+        }
         let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused, held: Listener.held)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
@@ -1101,10 +1106,12 @@ final class Listener: NSObject, ObservableObject {
     // the floating window's middle button (T-0036, T-0038): pause collapses it to the resting strip at once (Listen keeps
     // hearing; our player pauses too), play brings back the newest words
     nonisolated(unsafe) static var held = false
+    private var pausedOurs = false   // the window's pause stopped our player (Floating.hold)
     func hold(_ on: Bool) {
         Listener.held = on
-        let p = NativePlayer.shared
-        if own, p.isPlaying == on { p.toggle() }
+        let p = NativePlayer.shared, h = Floating.hold(on: on, own: own, playing: p.isPlaying, pausedOurs: pausedOurs)
+        pausedOurs = h.pausedOurs
+        if h.toggle { p.toggle() }
         pip?.invalidatePlaybackState()
         floatTick()
         if !on { draw() }
@@ -1139,7 +1146,7 @@ final class Listener: NSObject, ObservableObject {
         queued.removeAll { $0.at <= now }
         let stale = shape != queuedShape || !Self.same(queuedClock, clock)
         let since = wall.timeIntervalSince(drawnAt)
-        if key != drawnKey || since >= 1 || stale {
+        if key != drawnKey || stale || Floating.keepAlive(since: since, queued: queued.count) {
             if since < 0.1 {
                 guard !drawSoon else { return }
                 drawSoon = true
@@ -1152,23 +1159,32 @@ final class Listener: NSObject, ObservableObject {
             drawnKey = key; drawnAt = wall
             layer.enqueue(sb)
         }
+        logRate(wall)
         // every moment the picture changes in the next `Floating.ahead` seconds of the wall, each in its own picture
         let from = queued.last?.at ?? now, until = clock.content(atWall: w + Floating.ahead)
-        guard clock.rate > 0, until > from, queued.count < Self.queueCap else { return }
+        guard clock.rate > 0, until > from, Floating.stampAhead(open: pip?.isPictureInPictureActive == true, queued: queued.count) else { return }
         let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
         for s in FloatingFrames.schedule(f.stamps(after: from, ahead: until - from), on: clock) where s.at - now > 0.004 {
-            guard queued.count < Self.queueCap, let sb = picture(f, at: s.at, stamp: host + (s.wall - w)) else { break }
+            guard queued.count < Floating.queueCap, let sb = picture(f, at: s.at, stamp: host + (s.wall - w)) else { break }
             layer.enqueue(sb)
             queued.append((s.at, f.key(s.at)))
+            stamped += 1
         }
+    }
+    /// Pictures stamped ahead since `rateFrom`, written to the float log every 10 s while any were (BUG-24 review 3).
+    private var stamped = 0
+    private var rateFrom = Date()
+    private func logRate(_ now: Date) {
+        let d = now.timeIntervalSince(rateFrom)
+        guard d >= 10 else { return }
+        if stamped > 0 { floatNote(String(format: "stamped %.1f pictures/s (%d in %.0f s), %d waiting", Double(stamped) / d, stamped, d, queued.count)) }
+        stamped = 0; rateFrom = now
     }
     /// Pictures stamped ahead, in the light's time, with what each shows; the shape (the lines, without their light)
     /// and the clock they were drawn for: either changing makes them wrong, so they're dropped and drawn again.
     private var queued: [(at: Double, key: String)] = []
     private var queuedShape = ""
     private var queuedClock: ContentClock.Anchor?
-    /// At most this many pictures wait in the layer (each 1200 × 564 BGRA, 2.7 MB: about 32 MB).
-    static let queueCap = 12
     /// The canvas's pixels per point.
     static let scale: CGFloat = 3
 
@@ -1187,14 +1203,16 @@ final class Listener: NSObject, ObservableObject {
         var learn = false
         var note: String? = nil
         var shape = ""
-        func current(_ t: Double) -> Int? { transcript.map { FloatingFrames.current($0, at: t) } ?? place }
+        /// Reduce Motion: the line changes as it starts, as the app's transcript jumps (BUG-24 review 7)
+        var jump = false
+        func current(_ t: Double) -> Int? { transcript.map { FloatingFrames.current($0, at: t, jump: jump) } ?? place }
         func key(_ t: Double) -> String {
             note.map { "note:" + $0 } ?? FloatingFrames.signature(lines, current: current(t), mode: learn ? .learn : .follow, at: t)
         }
         func stamps(after a: Double, ahead: Double) -> [Double] {
             guard note == nil else { return [] }
             if learn { return FloatingFrames.learnStamps(lines, after: a, ahead: ahead) }
-            if let tl = transcript { return FloatingFrames.followStamps(tl, lines, after: a, ahead: ahead) }
+            if let tl = transcript { return FloatingFrames.followStamps(tl, lines, after: a, ahead: ahead, jump: jump) }
             guard let p = place, lines.indices.contains(p) else { return [] }
             return FloatingFrames.stamps(lines[p], after: a, ahead: ahead)
         }
@@ -1220,7 +1238,8 @@ final class Listener: NSObject, ObservableObject {
             }
             let k = "\(tl.count)|\(a.id)|\(b.id)|\(tl.reduce(0) { $0 + $1.text.count + ($1.translation?.count ?? 0) })"
             if k != ownLines.key { ownLines = (k, tl.map(FloatingFrames.line)) }
-            return Frame(lines: ownLines.all, transcript: tl, learn: learn, note: saved, shape: "own|" + k + (saved ?? ""))
+            let jump = UIAccessibility.isReduceMotionEnabled
+            return Frame(lines: ownLines.all, transcript: tl, learn: learn, note: saved, shape: "own|" + k + (saved ?? "") + (jump ? "|still" : ""), jump: jump)
         }
         guard let p = episode?.place, p < sentences.count else {
             let n = hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off"
@@ -1254,7 +1273,7 @@ final class Listener: NSObject, ObservableObject {
     /// Our player's line, as the window shows it (Learn's places and Follow's line follow it; a change redraws).
     private func ownLine() -> Int? {
         guard let lines = Playback.model?.transcript, !lines.isEmpty else { return nil }
-        return FloatingFrames.current(lines, at: NativePlayer.shared.time)
+        return FloatingFrames.current(lines, at: NativePlayer.shared.time, jump: UIAccessibility.isReduceMotionEnabled)
     }
     /// The window's light clock at wall time `w` (BUG-24: one heard() and the player's speed): our player's heard time,
     /// moving at its rate (0 paused: nothing is stamped ahead, and a seek, pause or speed change makes the pictures stale);

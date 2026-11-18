@@ -71,6 +71,29 @@ enum Floating {
         open && (paused || held || quiet >= hideAfter)
     }
 
+    /// At most this many pictures wait in the layer (each 1200 x 564 BGRA, 2.7 MB: about 32 MB).
+    static let queueCap = 12
+    /// The 0.1 s tick draws again once the stamped pictures are half spent (BUG-24 review 3): 12 cover only 0.5-1 s of
+    /// speech, and the 1 s tick alone let the sweep freeze behind other apps.
+    static func refill(open: Bool, queued: Int) -> Bool { open && queued < queueCap / 2 }
+    /// Pictures are stamped ahead only for an open window, and never past the cap (BUG-24 review 5: they were drawn on
+    /// the main thread every tick with no window at all).
+    static func stampAhead(open: Bool, queued: Int) -> Bool { open && queued < queueCap }
+    /// The picture shown again each second so PiP never goes stale, only when nothing is stamped ahead: redrawing it
+    /// flushed a queue that was still good.
+    static func keepAlive(since: Double, queued: Int) -> Bool { since >= 1 && queued == 0 }
+
+    /// The window's pause lets go once our player plays again from anywhere else (the app, Control Center, headphones;
+    /// BUG-24 review 2): else the window stayed a thin strip saying paused while the podcast played.
+    static func release(held: Bool, own: Bool, playing: Bool) -> Bool { held && own && playing }
+
+    /// The window's pause and play on our player (BUG-24 review 1): pause stops ours if it plays and remembers that;
+    /// play resumes only what that pause stopped, even if our player no longer counts as `own` (the ear on, paused).
+    static func hold(on: Bool, own: Bool, playing: Bool, pausedOurs: Bool) -> (toggle: Bool, pausedOurs: Bool) {
+        if on { let ours = own && playing; return (ours, ours) }
+        return (pausedOurs && !playing, false)
+    }
+
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12
     /// 12:50:52-12:51:36, T-0041: the window never rested), so while the broadcast hears, its last real sound decides.
     static let soundGone = 0.4

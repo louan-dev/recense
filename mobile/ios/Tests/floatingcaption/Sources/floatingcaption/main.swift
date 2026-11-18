@@ -68,6 +68,21 @@ do {
     if right > 180 { bad += 1; print("FAIL half-lit: the unheard part is lit (\(right)); a word lights whole at its start") }
 }
 
+// Regression guard: BUG-24 review 4: a line too long even at 60 % keeps the word being said on screen, its row at the
+// foot of the caption box (centred, it fell off the bottom); only its start is cut, at the top
+do {
+    let text = (1...6).map { _ in "The sun goes down and the light turns cold over the water," }.joined(separator: " ")
+    let ws = words(text, step: 0.2), k = 50, t = ws[k].start + 0.1
+    let line = Caption.Line(words: ws, translationText: text)
+    let r = render([line], current: 0, at: t, name: "follow-forced")
+    var style = CaptionStyle(); style.size = FloatingCaption.size
+    let it = CaptionPainter.layout(line, mode: .follow, at: t, in: FloatingCaption.box(size), style: style).items.filter { $0.kind == .original }[k]
+    let y0 = Int((size.height - it.rect.maxY) * scale), y1 = Int((size.height - it.rect.minY) * scale)
+    if y0 < 0 || y1 > r.2 { bad += 1; print("FAIL follow-forced: the word being said is off the picture (rows \(y0)..<\(y1))") }
+    else if brightest(r, rows: y0..<y1, cols: Int(it.rect.minX * scale)..<Int(it.rect.minX * scale) + 4) < 200 { bad += 1; print("FAIL follow-forced: the word being said isn't lit") }
+    if brightest(r, rows: (r.2 - band)..<r.2) > background { bad += 1; print("FAIL follow-forced: cut at the bottom") }
+}
+
 // a note shows, dim, in the middle
 do {
     let r = render([], current: nil, note: "Listening…", at: 0, name: "note")
