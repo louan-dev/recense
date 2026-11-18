@@ -577,8 +577,8 @@ private enum CarryKeychain {
         status = saved ? "Paired with \(peer.displayName)" : "Pairing with \(peer.displayName) not saved"
         // SEC-02 §2.3: its hello, held while it was a stranger, is answered now; then the 10 s for its proof
         for h in pendingAuth.removeValue(forKey: peer) ?? [] { if let d = try? JSONEncoder().encode(h) { receiveAuth(d, from: peer) } }
-        startAuth(peer)
-        armAuthTimeout(peer)
+        if auth[peer] == nil { startAuth(peer) } else { armAuthTimeout(peer) }   // startAuth arms its own timer
+        for p in pendingAuth.keys where p != peer { armAuthTimeout(p) }   // invariant 15: pairing ended for them too
     }
 
     // MARK: Carry now — scan into this device's own ops log, then settle with every paired, connected device
