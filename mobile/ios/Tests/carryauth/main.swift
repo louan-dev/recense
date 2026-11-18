@@ -279,6 +279,8 @@ do {
     check(!standIn.canPair, "a stand-in identity never pairs (the peer would store it over our real key)")
     check(!standIn.canAuth, "a stand-in identity never starts a handshake")
     check(!CarryKeychainGate(trustWritable: false).canPair, "an unreadable peers.v2 never pairs")
+    check(!CarryKeychainGate(groupUnread: true).canPair, "an unreadable group secret never pairs (it would be overwritten)")
+    check(CarryKeychainGate(groupUnread: true).canAuth, "an unreadable group still lets paired devices prove their keys")
 }
 
 // A duplicate hello in one session is out of order, never a second channel

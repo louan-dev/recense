@@ -153,6 +153,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     told = false: the CLI, or the peer not connected), the reply names the device and says "Forget it on <name> too".
 19. **Nothing runs on a Keychain this launch could not read** (`CarryKeychainGate`, review of d730ee6):
     - an unread identity (a stand-in key) never pairs, advertises or starts a handshake, so no peer ever stores it;
+    - an unread `group` secret never pairs (a pairing would save a peer's or a new group over it), and a pairing
+      saves the group only after `peers.v2` was saved;
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 

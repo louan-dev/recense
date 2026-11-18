@@ -212,7 +212,7 @@ enum CarryForget {
 struct CarryKeychainGate: Equatable {
     var identityUnread = false, groupUnread = false, trustWritable = true
     /// Pairing hands our key to the peer and writes peers.v2.
-    var canPair: Bool { !identityUnread && trustWritable }
+    var canPair: Bool { !identityUnread && !groupUnread && trustWritable }
     /// The handshake proves our key: never a stand-in.
     var canAuth: Bool { !identityUnread }
 }

@@ -94,8 +94,9 @@ private enum CarryKeychain {
     private var placing: Set<String> = []                       // keys whose staged bytes are being hashed (§2.4)
     private var trustWritable = true                            // false while peers.v2 can't be read (invariant 13)
     private var identityUnread = false                          // this launch's key is a stand-in: pair nothing with it
+    private var groupUnread = false                             // the group secret could not be read: pair nothing
     private var gate: CarryKeychainGate {                       // invariant 19
-        CarryKeychainGate(identityUnread: identityUnread, trustWritable: trustWritable)
+        CarryKeychainGate(identityUnread: identityUnread, groupUnread: groupUnread, trustWritable: trustWritable)
     }
 
     private var dir: URL { Carry.dir }
@@ -121,7 +122,9 @@ private enum CarryKeychain {
             CarryKeychain.save(k.rawRepresentation, "identity")
             identity = k
         }
-        group = CarryKeychain.load("group").data
+        let g = CarryKeychain.load("group")
+        group = g.data
+        groupUnread = g.failed   // invariant 19: a pairing must not save over a secret it could not read
         super.init()
         if let keychainError { lastError = keychainError }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -449,7 +452,9 @@ private enum CarryKeychain {
         if trust.trusted != peers { peers = trust.trusted }
         let names = CarryTrust.listed(needsPairing: trust.needsPairing, refused: refusedNames, trusted: trust.trusted)   // invariant 16
         if names != needsPairing { needsPairing = names }
-        if let g = CarryKeychain.load("group").data { group = g }
+        let g = CarryKeychain.load("group")
+        if let d = g.data { group = d }
+        if g.failed != groupUnread { groupUnread = g.failed }   // a failed read keeps the last group, refuses pairing
     }
 
     private func startFlow(_ peer: MCPeerID) {
@@ -535,13 +540,14 @@ private enum CarryKeychain {
     }
 
     private func finish(_ peer: MCPeerID, _ p: CarryPairFlow.Paired) {
-        group = p.group
-        CarryKeychain.save(p.group, "group")
         reloadFromDisk()   // keep what another process wrote since; replace only this device's entry
         let entry = CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now())
         // SEC-02 §2.1: the trust store first (the Keychain, this device only), then its readable mirror
-        let saved = saveTrust(CarryPeer.replacing(peers, with: entry))
-        if saved {   // invariant 13: no write over unread pairings
+        var saved = false
+        if gate.canPair { saved = saveTrust(CarryPeer.replacing(peers, with: entry)) } else { lastError = Self.unreadable }
+        if saved {   // invariants 13, 19: no write over unread pairings; the group only after peers.v2
+            group = p.group
+            CarryKeychain.save(p.group, "group")
             do { try JSONEncoder().encode(CarryPeer.replacing(mirror, with: entry)).write(to: peersURL, options: .atomic) }
             catch { lastError = "saving peers.json failed: \(error)" }
         }
