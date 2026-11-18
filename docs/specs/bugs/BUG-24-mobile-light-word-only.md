@@ -1,6 +1,6 @@
 # BUG-24 · On iPhone and iPad the light steps word by word: no sweep inside a word, no prosody, and no number for lag or drift
 
-From: T-0141 (owner, 2026-11-16, relayed by session 6d8dbabe; the same wish as T-0132) ·
+From: T-0141 (owner, 2026-11-16, relayed by session 6d8dbabe; the same wish as T-0132); T-0031 (the floating window's animations match Learn: P1b) ·
 Device: iPhone 12 Pro Max, iPad Air 13-inch (M3) · Status: `[ ]` written, not built ·
 Builds on: FEAT-20 (the Mac's song light on iOS), FEAT-04 (one clock), BUG-12 (headphone latency), FEAT-09 (carry).
 
@@ -151,6 +151,17 @@ One phase at a time. Each ends at its check. Bugs before features.
 - Risk, **untested**: more pictures cost memory in the picture-in-picture pipeline. Measure before and after
   (pictures per minute, app memory) and write both numbers in this spec.
 - Waits on: the float-rest lane (it is editing `Floating.swift` and `Listen.swift` now). Do not start before it merges.
+- **Built 2026-11-18 (B1), after float-rest merged:** the window is drawn by the one painter (ShowsKit `CaptionPainter`
+  through `FloatingFrames`, FEAT-05 rules 1, 6, 7), straight into each frame's pixel buffer (no SwiftUI `ImageRenderer`).
+  Follow shows the line the transcript turns to (`TranscriptLight.following`), Learn the two places (`drawPlaces`).
+  Moments (`stamps`, `followStamps`, `learnStamps`): a word's start, each quarter of a word of 0.25 s or more, its end, a
+  line's turn, and every 1/15 s while a Learn place fades or a phrase turns. Stamped on the wall at the player's speed
+  (`FloatingFrames.schedule` on a `ContentClock.Anchor`; paused, nothing is stamped ahead). At most 12 pictures wait in
+  the layer (1200 × 564 BGRA each, about 32 MB). Invariants (FloatingFramesTests, floatingcaption): half way through a
+  1 s word the window's picture is lit left of the middle and dim right of it; a word under 0.25 s is one picture; the
+  picture changes exactly at the stamps; at 1.5× a stamp 1.5 s of file ahead is 1 s of wall ahead.
+  Known limit: a line still too long at 60 % size is cut at both ends (FEAT-05 rule 8); before, its start faded.
+  Not measured: pictures per minute and app memory on the device (the risk above).
 
 ### P2 · The voice measured on the phone, for speech in the Player · effort: high
 - Move `Features.measure` from `strip/recense.swift:5164-5300` into `shared/` (one source; the Mac compiles the same
