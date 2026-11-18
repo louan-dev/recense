@@ -17,7 +17,7 @@ do {
     check(ops.count == 1 && ops[0].op == .move && ops[0].path == "Faili.m4a" && ops[0].to == "Faili (live).m4a",
           "a rename is one move: \(ops.map { "\($0.op) \($0.path) → \($0.to ?? "")" })")
     let k = CarrySync.key(M, "Faili.m4a"), nk = CarrySync.key(M, "Faili (live).m4a")
-    check(CarrySync.decide(ops[0], local: [k: "F"], base: [:], deviceName: "Mac", zone: utc) == .move(from: k, to: nk),
+    check(CarrySync.decide(ops[0], local: [k: "F"], base: [:], zone: utc) == .move(from: k, to: nk),
           "the other device renames it too")
 }
 
@@ -60,36 +60,36 @@ check(CarryOpKind.allCases.map(\.rawValue) == ["put", "move", "trash", "restore"
 do {
     let put = CarryOp(seq: 1, device: "ipad", at: 1_731_600_300, op: .put, home: M, path: "a.m4a", sha256: "NEW", size: 1)
     let k = "library/Music/a.m4a"
-    check(CarrySync.decide(put, local: [:], base: [:], deviceName: "iPad", zone: utc) == .fetch(key: k, sha256: "NEW"), "missing → fetch")
-    check(CarrySync.decide(put, local: [k: "NEW"], base: [:], deviceName: "iPad", zone: utc) == .nothing, "same bytes → nothing")
-    check(CarrySync.decide(put, local: [k: "OLD"], base: [k: "OLD"], deviceName: "iPad", zone: utc)
+    check(CarrySync.decide(put, local: [:], base: [:], zone: utc) == .fetch(key: k, sha256: "NEW"), "missing → fetch")
+    check(CarrySync.decide(put, local: [k: "NEW"], base: [:], zone: utc) == .nothing, "same bytes → nothing")
+    check(CarrySync.decide(put, local: [k: "OLD"], base: [k: "OLD"], zone: utc)
           == .replace(key: k, old: "OLD", new: "NEW"), "unchanged since base → old to trash, new lands")
-    let sib = "library/Music/a (iPad 2024-11-14 1605).m4a"
-    check(CarrySync.decide(put, local: [k: "MINE"], base: [k: "OLD"], deviceName: "iPad", zone: utc)
+    let sib = "library/Music/a (ipad 2024-11-14 1605).m4a"
+    check(CarrySync.decide(put, local: [k: "MINE"], base: [k: "OLD"], zone: utc)
           == .keepBoth(key: k, sibling: sib, sha256: "NEW"), "both changed, audio → keep both")
-    check(CarrySync.decide(put, local: [k: "MINE"], base: [:], deviceName: "iPad", zone: utc)
+    check(CarrySync.decide(put, local: [k: "MINE"], base: [:], zone: utc)
           == .keepBoth(key: k, sibling: sib, sha256: "NEW"), "both new, no base → keep both")
-    check(CarrySync.decide(put, local: [k: "MINE", sib: "NEW"], base: [k: "OLD"], deviceName: "iPad", zone: utc) == .nothing,
+    check(CarrySync.decide(put, local: [k: "MINE", sib: "NEW"], base: [k: "OLD"], zone: utc) == .nothing,
           "keep both replayed → nothing")
     var md = put; md.home = S; md.path = "notes.md"
     let mk = "library/Study/notes.md"
-    check(CarrySync.decide(md, local: [mk: "MINE"], base: [mk: "B"], deviceName: "iPad", zone: utc)
+    check(CarrySync.decide(md, local: [mk: "MINE"], base: [mk: "B"], zone: utc)
           == .merge(key: mk, base: "B", mine: "MINE", theirs: "NEW"), "both changed, text → 3-way merge")
 
     let mv = CarryOp(seq: 2, device: "ipad", at: 1, op: .move, home: M, path: "a.m4a", toHome: M, to: "x/a.m4a", sha256: "A", size: 1)
     let dk = "library/Music/x/a.m4a"
-    check(CarrySync.decide(mv, local: [k: "A"], base: [:], deviceName: "iPad", zone: utc) == .move(from: k, to: dk), "move replayed")
-    check(CarrySync.decide(mv, local: [dk: "A"], base: [:], deviceName: "iPad", zone: utc) == .nothing, "move done → nothing")
-    check(CarrySync.decide(mv, local: [k: "EDITED"], base: [:], deviceName: "iPad", zone: utc) == .fetch(key: dk, sha256: "A"),
+    check(CarrySync.decide(mv, local: [k: "A"], base: [:], zone: utc) == .move(from: k, to: dk), "move replayed")
+    check(CarrySync.decide(mv, local: [dk: "A"], base: [:], zone: utc) == .nothing, "move done → nothing")
+    check(CarrySync.decide(mv, local: [k: "EDITED"], base: [:], zone: utc) == .fetch(key: dk, sha256: "A"),
           "mine edited → mine stays, theirs lands at the new place")
-    if case .keepBoth(let key, _, _) = CarrySync.decide(mv, local: [k: "A", dk: "OTHER"], base: [:], deviceName: "iPad", zone: utc) {
+    if case .keepBoth(let key, _, _) = CarrySync.decide(mv, local: [k: "A", dk: "OTHER"], base: [:], zone: utc) {
         check(key == dk, "occupied destination → sibling beside it")
     } else { check(false, "occupied destination → keep both") }
 
     let tr = CarryOp(seq: 3, device: "ipad", at: 1, op: .trash, home: M, path: "a.m4a", toHome: T, to: "a.m4a", sha256: "A", size: 1)
-    check(CarrySync.decide(tr, local: [k: "A"], base: [:], deviceName: "iPad", zone: utc) == .move(from: k, to: "trash/a.m4a"), "trash replayed")
-    check(CarrySync.decide(tr, local: [k: "EDITED"], base: [:], deviceName: "iPad", zone: utc) == .nothing, "mine edited → not trashed")
-    check(CarrySync.decide(tr, local: [:], base: [:], deviceName: "iPad", zone: utc) == .nothing, "trash never fetches")
+    check(CarrySync.decide(tr, local: [k: "A"], base: [:], zone: utc) == .move(from: k, to: "trash/a.m4a"), "trash replayed")
+    check(CarrySync.decide(tr, local: [k: "EDITED"], base: [:], zone: utc) == .nothing, "mine edited → not trashed")
+    check(CarrySync.decide(tr, local: [:], base: [:], zone: utc) == .nothing, "trash never fetches")
 }
 
 // what to send: only what the other side hasn't seen
@@ -122,7 +122,7 @@ do {
     func apply() {
         for op in CarrySync.wanted(ops, theySaw: seen) {
             defer { seen[op.device] = max(seen[op.device] ?? 0, op.seq) }
-            switch CarrySync.decide(op, local: disk, base: base, deviceName: "iPad", zone: utc) {
+            switch CarrySync.decide(op, local: disk, base: base, zone: utc) {
             case .nothing, .merge: break
             case .fetch(let k, let s): disk[k] = s
             case .replace(let k, let old, let new): disk["trash/" + (k as NSString).lastPathComponent + "~" + old] = old; disk[k] = new
@@ -137,7 +137,7 @@ do {
     seen = [:]; apply()
     check(disk != once, "replay without the seen vector brings a trashed file back (why the vector is kept)")
     check(once["trash/b.m4a"] == "B" && once["library/Music/s/b.m4a"] == nil, "put → move → trash lands in trash")
-    check(once["library/Music/a.m4a"] == "A" && once["library/Music/a (iPad 2024-11-14 1605).m4a"] == "A2",
+    check(once["library/Music/a.m4a"] == "A" && once["library/Music/a (ipad 2024-11-14 1605).m4a"] == "A2",
           "a put over a file with no agreed base keeps both, mine untouched")
 }
 
@@ -212,6 +212,78 @@ do {   // T-0091: keep/ writes (Gallery transcripts, every few seconds) re-ran c
     check(!CarryWatch.counts("/Users/x/Recense/.carry/last-sent.json", root: root, homes: homes), ".carry/ never starts a carry")
     check(!CarryWatch.counts("/Users/x/Recense/library/MusicOld/a.m4a", root: root, homes: homes), "a lookalike folder is not a home")
     check(!CarryWatch.counts("/Users/x/Recense", root: root, homes: homes), "the root alone is not a home")
+}
+
+// Regression guard: BUG-25 (T-0111) · a long accented key stages under a short fixed-length name
+do {
+    let long = "library/Music/" + String(repeating: "Nguyễn Hữu Thoại · Đường về quê hương ", count: 6) + ".m4a"
+    let n = CarrySync.stagingName(long)
+    check(long.utf8.count > 255 && n.utf8.count == 64, "staged name is 64 bytes for a \(long.utf8.count)-byte key: \(n.utf8.count)")
+    check(n == CarrySync.stagingName(long) && n != CarrySync.stagingName(long + "x"), "same key, same name; other key, other name")
+    check(n.allSatisfy { "0123456789abcdef".contains($0) }, "hex only: no slash, no case clash")
+}
+
+// Regression guard: BUG-25 (T-0108) · each key's bytes go once; a key the sender can no longer fill is answered "gone"
+do {
+    func op(_ seq: Int, _ k: CarryOpKind, _ p: String, to: String? = nil) -> CarryOp {
+        CarryOp(seq: seq, device: "mac", at: 1, op: k, home: M, path: p, toHome: to == nil ? nil : M, to: to, sha256: "x", size: 1)
+    }
+    let ops = [op(1, .put, "a.m4a"), op(2, .put, "a.m4a"), op(3, .put, "a.m4a"),   // edited three times
+               op(4, .put, "deleted.m4a"),                                             // then deleted forever
+               op(5, .trash, "t.m4a"),                                                 // trash fetches nothing
+               op(6, .move, "b.m4a", to: "c.m4a")]
+    let have: Set<String> = [CarrySync.key(M, "a.m4a"), CarrySync.key(M, "c.m4a")]
+    let r = CarrySync.answer(ops, exists: { have.contains($0) })
+    check(r.send == [CarrySync.key(M, "a.m4a"), CarrySync.key(M, "c.m4a")], "a.m4a sent once, c.m4a once: \(r.send)")
+    check(r.gone == [CarrySync.key(M, "deleted.m4a")], "the deleted file is answered gone: \(r.gone)")
+}
+
+// Regression guard: BUG-25 (T-0092) · staged bytes no op waits for are swept: at launch all, while running after 10 min
+do {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let staged: [(name: String, modified: Date)] = [("waited", now.addingTimeInterval(-3600)),
+                                                    ("fresh", now.addingTimeInterval(-60)),
+                                                    ("stale", now.addingTimeInterval(-3600))]
+    check(CarrySync.orphans(staged, expecting: ["waited"], now: now, maxAge: CarrySync.orphanAge) == ["stale"],
+          "only the old one with no op waiting goes")
+    check(Set(CarrySync.orphans(staged, expecting: [], now: now, maxAge: 0)) == ["waited", "fresh", "stale"],
+          "at launch nothing waits in memory, so every staged file goes (its op is asked for again)")
+}
+
+// Regression guard: T-0106 · an edit made from my version replaces it; only a real conflict keeps both
+do {
+    let k = CarrySync.key(M, "a.m4a")
+    let edits = CarrySync.ops(last: [CarryFile(home: M, path: "a.m4a", size: 1, sha256: "A")],
+                              now: [CarryFile(home: M, path: "a.m4a", size: 1, sha256: "B")],
+                              trashOrigins: [:], device: "Mac", nextSeq: 1, at: 1_731_600_300)
+    check(edits.count == 1 && edits[0].parent == "A", "a changed file's put names the version it was edited from")
+    check(CarrySync.decide(edits[0], local: [k: "A"], base: [:], zone: utc) == .replace(key: k, old: "A", new: "B"),
+          "my copy is their parent → replace, no copy beside it")
+    check(CarrySync.decide(edits[0], local: [k: "C"], base: [:], zone: utc)
+          == .keepBoth(key: k, sibling: "library/Music/a (Mac 2024-11-14 1605).m4a", sha256: "B"),
+          "both edited → keep both; the copy is named for the device that made it")
+    var old = edits[0]; old.parent = nil
+    check((try? JSONDecoder().decode(CarryOp.self, from: JSONEncoder().encode(old)))?.parent == nil,
+          "an op without a parent (an older device) still decodes")
+    check(CarrySync.decide(old, local: [k: "A"], base: [:], zone: utc) != .replace(key: k, old: "A", new: "B"),
+          "no parent → never replaced blind")
+    // two edits in one batch: A→B, then B→C
+    var second = edits[0]; second.seq = 2; second.parent = "B"; second.sha256 = "C"
+    let plan = CarrySync.decideAll([second, edits[0]], local: [k: "A"], base: [:], zone: utc)
+    check(plan.map(\.action) == [.replace(key: k, old: "A", new: "B"), .replace(key: k, old: "B", new: "C")],
+          "a batch decides each op on the disk the ones before it leave: \(plan.map(\.action))")
+}
+
+// Regression guard: T-0110 · after a reinstall the log restarts at 1; a peer that saw more renumbers it above that
+do {
+    let mine = [CarryOp(seq: 1, device: "iPhone", at: 1, op: .put, home: M, path: "n.m4a", sha256: "N", size: 1),
+                CarryOp(seq: 2, device: "iPhone", at: 1, op: .put, home: M, path: "o.m4a", sha256: "O", size: 1)]
+    let r = CarrySync.renumber(mine, peerSaw: 40)
+    check(r?.map(\.seq) == [41, 42], "ops move above what the peer saw: \(String(describing: r?.map(\.seq)))")
+    check(r.map { CarrySync.wanted($0, theySaw: ["iPhone": 40]).count } == 2, "so the peer asks for both")
+    check(CarrySync.renumber(mine, peerSaw: 2) == nil && CarrySync.renumber(mine, peerSaw: 0) == nil,
+          "a peer that saw no more than the log holds changes nothing")
+    check(CarrySync.renumber([], peerSaw: 40) == nil, "an empty log has nothing to renumber")
 }
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")

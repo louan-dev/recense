@@ -426,3 +426,46 @@ func carrypairSelftest() -> Bool {
     } catch { check(false, "the pairing exchange ran without error (\(error))") }
     return ok
 }
+
+// Derived from Spec: BUG-26 (T-0118, T-0119, T-0120)
+extension PairFailure {
+    /// A stale or duplicate message (the BUG-17 echo) is ignored: the flow goes on. Everything else ends it.
+    var endsFlow: Bool { self != .outOfOrder }
+    /// The peer is told to stop only when this side really failed; a refusal is never echoed back (T-0118).
+    var tellsPeer: Bool { self != .outOfOrder && self != .refused }
+}
+
+extension CarryPasskey {
+    /// Spoken digits (English, Vietnamese, French, Spanish) and any script's decimal digits, compared without marks.
+    private static let words: [String: Character] = {
+        let lists: [[String]] = [
+            ["zero", "oh", "khong", "cero"], ["one", "mot", "un", "une", "uno"], ["two", "hai", "deux", "dos"],
+            ["three", "ba", "trois", "tres"], ["four", "bon", "tu", "quatre", "cuatro"], ["five", "nam", "lam", "cinq", "cinco"],
+            ["six", "sau", "seis"], ["seven", "bay", "bay", "sept", "siete"], ["eight", "tam", "huit", "ocho"],
+            ["nine", "chin", "neuf", "nueve"]]
+        var m: [String: Character] = [:]
+        for (d, ws) in lists.enumerated() { for w in ws { m[w] = Character(String(d)) } }
+        return m
+    }()
+
+    /// The six ASCII digits a person meant, or nil when it isn't six digits: the glue then asks again instead of
+    /// failing the pairing (T-0119). "one two three four five six", "một hai ba bốn năm sáu", "١٢٣٤٥٦" → "123456".
+    static func normalize(_ text: String) -> String? {
+        var out = ""
+        for token in text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            let digits = token.compactMap { c -> Character? in c.wholeNumberValue.flatMap { (0...9).contains($0) ? Character(String($0)) : nil } }
+            if digits.count == token.count { out.append(contentsOf: digits); continue }
+            let folded = String(token).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+                .replacingOccurrences(of: "đ", with: "d")
+            guard let d = words[folded] else { return nil }
+            out.append(d)
+        }
+        return out.count == 6 ? out : nil
+    }
+}
+
+/// One pairing prompt (code shown, or code asked for) at a time, owned by one peer; a second device that connects
+/// meanwhile can neither take it over nor receive the code typed for the first (T-0120).
+enum PairPrompt {
+    static func owns(_ holder: String?, _ peer: String) -> Bool { holder == nil || holder == peer }
+}

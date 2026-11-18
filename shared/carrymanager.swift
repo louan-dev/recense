@@ -109,6 +109,7 @@ private enum CarryKeychain {
         peers = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
         appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
+        sweepStaging(maxAge: 0)   // T-0092: nothing waits in memory yet; unsettled ops are asked for again
         wire()
         watchHomes()
     }
@@ -131,6 +132,7 @@ private enum CarryKeychain {
             case "pair": self?.receivePair(data, from: peer)
             case "seen": self?.receiveSeen(data, from: peer)
             case "ops": self?.receiveOps(data, from: peer)
+            case "gone": self?.receiveGone(data, from: peer)
             default: break
             }
         }
@@ -267,6 +269,7 @@ private enum CarryKeychain {
 
     private func startFlow(_ peer: MCPeerID) {
         guard isLookingToPair, flows[peer] == nil else { return }
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: one prompt at a time
         reloadFromDisk()
         // P1b: the device on which the owner picked the other's name shows the code; the other asks for it
         let f = CarryPairFlow(me: identity, name: P2PTransport.deviceName(), group: group,
@@ -283,6 +286,8 @@ private enum CarryKeychain {
             let step = try f.receive(m)
             flows[peer] = f
             apply(step, peer)
+        } catch PairFailure.outOfOrder {
+            // T-0118: a stale or duplicate message (the BUG-17 echo); the flow goes on
         } catch { fail(peer, error) }
     }
 
@@ -299,10 +304,16 @@ private enum CarryKeychain {
 
     /// P1b: the owner typed the six digits shown on the other device (touch, keyboard, voice or the CLI).
     func enterCode(_ code: String) {
-        guard let peer = flows.keys.first(where: { $0.displayName == pairingWith }) ?? flows.keys.first,
+        // T-0120: the code goes only to the flow that asked for it, never to whichever flow comes first
+        guard let peer = flows.keys.first(where: { $0.displayName == pairingWith }),
               var f = flows[peer] else { lastError = "nothing is waiting for a code"; return }
+        // T-0119: spoken or any script's digits become ASCII; anything else asks again instead of ending the pairing
+        guard let digits = CarryPasskey.normalize(code) else {
+            lastError = "That wasn't six digits. Type or say the six digits shown on \(peer.displayName)."; return
+        }
+        lastError = nil
         do {
-            let step = try f.enter(code)
+            let step = try f.enter(digits)
             flows[peer] = f
             askingCode = false
             status = "Checking the code with \(peer.displayName)"
@@ -312,6 +323,7 @@ private enum CarryKeychain {
 
     private func apply(_ step: CarryPairFlow.Step, _ peer: MCPeerID) {
         do { for m in step.send { try t.send(m, type: "pair", to: peer) } } catch { fail(peer, error); return }
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120
         if let c = step.code {
             pairingCode = c; pairingWith = peer.displayName; codeIsCompare = flows[peer]?.passkey == nil
             if !codeIsCompare { status = "Type \(c) on \(peer.displayName)" }
@@ -322,8 +334,11 @@ private enum CarryKeychain {
 
     private func fail(_ peer: MCPeerID, _ error: Error) {
         let e = error as? PairFailure
-        if e != .refused { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
-        flows[peer] = nil; pairingCode = nil; pairingWith = nil; askingCode = false
+        // T-0118: tell the peer only when this side really failed; never echo its refusal back
+        if e?.tellsPeer ?? true { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
+        flows[peer] = nil
+        guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: another flow's prompt stays
+        pairingCode = nil; pairingWith = nil; askingCode = false
         switch e {
         case .otherGroup: lastError = "\(peer.displayName) already belongs to a different pairing; not merged"
         case .badCommit, .refused: lastError = "Code didn't match. Pick \(peer.displayName) again for a new code."
@@ -379,6 +394,7 @@ private enum CarryKeychain {
         reloadFromDisk()
         let targets = pairedConnected
         guard !targets.isEmpty else { return }
+        sweepStaging(maxAge: CarrySync.orphanAge)   // T-0092
         status = "Carrying"
         do {
             let lines = try await Task.detached(priority: .utility) { try Carry.verify(reuse: true) }.value
@@ -396,20 +412,50 @@ private enum CarryKeychain {
         } catch { lastError = "carry failed: \(error)" }
     }
 
-    /// The resulting place an op settles at — where its bytes (if any) belong, on either side of the link.
-    private func resultKey(_ op: CarryOp) -> String { op.toKey ?? CarrySync.key(op.home, op.path) }
 
     private func receiveSeen(_ data: Data, from peer: MCPeerID) {
         guard let since = try? JSONDecoder().decode(Int.self, from: data) else { return }
-        let mine = myOps().filter { $0.seq > since }
+        var log = myOps()
+        if let moved = CarrySync.renumber(log, peerSaw: since) {   // T-0110: this log was reset (a reinstall)
+            do { try CarrySync.encode(moved).write(to: opsLogURL(Homes.device), atomically: true, encoding: .utf8); log = moved }
+            catch { lastError = "renumbering the carry log failed: \(error)"; return }
+        }
+        let mine = log.filter { $0.seq > since }
         guard !mine.isEmpty else { return }
         try? t.send(mine, type: "ops", to: peer)
-        for op in mine where op.op != .trash {   // trash never fetches (CarrySync.decide); nothing to send
-            let url = Homes.root.appendingPathComponent(resultKey(op))
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            t.send(fileAt: url, named: Self.encode(resultKey(op)), to: peer) { [weak self] error in
+        // Each key's bytes once; a key with no bytes left is answered "gone", so the peer stops waiting (BUG-25, T-0108)
+        let reply = CarrySync.answer(mine) { FileManager.default.fileExists(atPath: Homes.root.appendingPathComponent($0).path) }
+        if !reply.gone.isEmpty { try? t.send(reply.gone, type: "gone", to: peer) }
+        for key in reply.send {
+            t.send(fileAt: Homes.root.appendingPathComponent(key), named: Self.encode(key), to: peer) { [weak self] error in
                 if let error { self?.lastError = "sending to \(peer.displayName) failed: \(error)" }
             }
+        }
+    }
+
+    /// The peer has no bytes for these keys any more: settle them as done, after the ops sent before them (T-0108).
+    private func receiveGone(_ data: Data, from peer: MCPeerID) {
+        guard let keys = try? JSONDecoder().decode([String].self, from: data) else { return }
+        let before = settling
+        settling = Task { [weak self] in
+            await before?.value
+            guard let self else { return }
+            for k in keys where self.waiting[k]?.peer == peer.displayName {
+                self.waiting[k] = nil; self.pendingActions[k] = nil; self.discardStaged(k)
+            }
+            self.advance(peer.displayName)
+        }
+    }
+
+    /// Removes staged bytes that no op waits for (T-0092). maxAge 0 at launch, `CarrySync.orphanAge` before a carry.
+    private func sweepStaging(maxAge: TimeInterval) {
+        let fm = FileManager.default
+        let urls = (try? fm.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let staged = urls.map { (name: $0.lastPathComponent,
+                                 modified: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast) }
+        let expecting = Set(pendingActions.keys.map(CarrySync.stagingName))
+        for name in CarrySync.orphans(staged, expecting: expecting, now: Date(), maxAge: maxAge) {
+            try? fm.removeItem(at: stagingDir.appendingPathComponent(name))
         }
     }
 
@@ -431,9 +477,8 @@ private enum CarryKeychain {
 
     private func settle(_ ops: [CarryOp], local: [CarryLine], from peer: MCPeerID) {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
-        for op in ops.sorted(by: { $0.seq < $1.seq }) {
-            let action = CarrySync.decide(op, local: localShas, base: [:], deviceName: Homes.device)
-            let key = resultKey(op)
+        for (op, action) in CarrySync.decideAll(ops, local: localShas, base: [:]) {   // T-0106: in order, on the disk as it will be
+            let key = CarrySync.resultKey(op)
             switch action {
             case .nothing: discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
@@ -460,7 +505,7 @@ private enum CarryKeychain {
         status = owed.isEmpty ? "Up to date with \(peer)" : "Waiting for \(owed.count) file\(owed.count == 1 ? "" : "s") from \(peer)"
     }
 
-    private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(Self.encode(key)) }
+    private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(CarrySync.stagingName(key)) }   // T-0111
     private func discardStaged(_ key: String) { try? FileManager.default.removeItem(at: stagedURL(key)) }
 
     /// Places a staged file's bytes once its action is known — whichever of (op, bytes) arrived second.

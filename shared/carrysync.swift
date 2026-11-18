@@ -1,5 +1,6 @@
 // Derived from Spec: FEAT-09 (P2 what changed, P3 settling)
 import Foundation
+import CryptoKit
 
 // Carry's meaning layer: pure rules, no radios, no files. The glue scans (Carry.verify), keeps the op logs and
 // moves bytes (shared/pieces over the FEAT-02 link); this file only decides. Homes are their folder strings
@@ -29,6 +30,9 @@ struct CarryOp: Codable, Equatable, Sendable {
     var to: String? = nil
     var sha256: String
     var size: Int64
+    /// A put's previous sha at this key on the sending device (the version it was edited from). nil: a new file,
+    /// or an op from a device older than T-0106 (then a differing copy is kept beside, as before).
+    var parent: String? = nil
     var toKey: String? { toHome.flatMap { h in to.map { CarrySync.key(h, $0) } } }
 }
 
@@ -55,6 +59,37 @@ enum CarrySync {
     /// nothing. An op still waiting for its bytes holds it back, so the next "seen" asks for that op again.
     static func settledThrough(received: Int, pending: [Int]) -> Int {
         min(received, pending.min().map { $0 - 1 } ?? received)
+    }
+
+    // Derived from Spec: BUG-25 (T-0111, T-0108, T-0092)
+    /// Where an op's bytes belong, on either side of the link.
+    static func resultKey(_ op: CarryOp) -> String { op.toKey ?? key(op.home, op.path) }
+
+    /// A staged file's name: SHA-256 of the key, 64 hex bytes. base64 of a long Vietnamese key passed the 255-byte
+    /// file-name limit, so the move into staging threw and the file stayed owed forever (T-0111).
+    static func stagingName(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The answer to a peer's "seen": each result key's bytes once (a put edited three times sent the file three
+    /// times), and the keys this device can no longer fill ("delete forever" after the put). The receiver clears
+    /// those, so one op that can never be filled no longer stalls the log and resends it all (T-0108).
+    static func answer(_ ops: [CarryOp], exists: (String) -> Bool) -> (send: [String], gone: [String]) {
+        var seen = Set<String>(), send: [String] = [], gone: [String] = []
+        for op in ops.sorted(by: { $0.seq < $1.seq }) where op.op != .trash {   // trash never fetches
+            let k = resultKey(op)
+            guard seen.insert(k).inserted else { continue }
+            if exists(k) { send.append(k) } else { gone.append(k) }
+        }
+        return (send, gone)
+    }
+
+    /// Staged bytes that no op waits for. Bytes can land before their op, so a running device keeps them
+    /// `orphanAge`; at launch nothing waits in memory and the unsettled ops are asked for again, so all go (T-0092).
+    static let orphanAge: TimeInterval = 600
+    static func orphans(_ staged: [(name: String, modified: Date)], expecting: Set<String>, now: Date,
+                        maxAge: TimeInterval) -> [String] {
+        staged.filter { !expecting.contains($0.name) && now.timeIntervalSince($0.modified) >= maxAge }.map(\.name)
     }
 
     static func split(_ key: String, homes: [String]) -> (home: String, path: String)? {
@@ -102,7 +137,7 @@ enum CarrySync {
         // put: new places, and places whose bytes changed. trash/ only changes by trash and restore.
         for k in made.sorted() where after[k]!.home != trashHome { emit(.put, after[k]!, nil) }
         for (k, f) in after.sorted(by: { $0.key < $1.key }) where f.home != trashHome {
-            if let b = before[k], b.sha256 != f.sha256 { emit(.put, f, nil) }
+            if let b = before[k], b.sha256 != f.sha256 { emit(.put, f, nil); out[out.count - 1].parent = b.sha256 }
         }
         // whatever is left in `gone` was deleted forever (or outside Recense): no op, by design
         for i in out.indices { out[i].seq = nextSeq + i }
@@ -112,6 +147,31 @@ enum CarrySync {
     // MARK: P3 · settling
 
     /// Ops the other side lacks, given what it has seen ({device: last seq}).
+    /// One batch, in seq order, each op decided against the disk as the ops before it leave it (T-0106):
+    /// put A→B then B→C replaces twice instead of keeping the second as a copy beside B.
+    static func decideAll(_ ops: [CarryOp], local: [String: String], base: [String: String],
+                          zone: TimeZone = .current) -> [(op: CarryOp, action: CarryAction)] {
+        var disk = local
+        return ops.sorted { $0.seq < $1.seq }.map { op in
+            let a = decide(op, local: disk, base: base, zone: zone)
+            switch a {
+            case .fetch(let k, let sha), .replace(let k, _, let sha): disk[k] = sha
+            case .keepBoth(_, let sib, let sha): disk[sib] = sha
+            case .move(let from, let to): disk[to] = disk.removeValue(forKey: from)
+            case .nothing, .merge: break
+            }
+            return (op, a)
+        }
+    }
+
+    /// A peer has applied `peerSaw` of this device's ops but the log holds fewer: the log was reset (a reinstall
+    /// keeps the Keychain identity, so pairing survives, but the app folder and its log go; T-0110). Every op moves
+    /// above what the peer saw, so it asks for them again. nil: nothing to renumber.
+    static func renumber(_ mine: [CarryOp], peerSaw: Int) -> [CarryOp]? {
+        guard !mine.isEmpty, peerSaw > (mine.map(\.seq).max() ?? 0) else { return nil }
+        return mine.map { var o = $0; o.seq += peerSaw; return o }
+    }
+
     static func wanted(_ ops: [CarryOp], theySaw: [String: Int]) -> [CarryOp] {
         ops.filter { $0.seq > (theySaw[$0.device] ?? 0) }.sorted { ($0.device, $0.seq) < ($1.device, $1.seq) }
     }
@@ -125,29 +185,30 @@ enum CarrySync {
 
     /// One op against this device. `local`: "home/path" → sha256 now; `base`: the last sha both sides agreed on.
     static func decide(_ op: CarryOp, local: [String: String], base: [String: String],
-                       deviceName: String, zone: TimeZone = .current) -> CarryAction {
+                       zone: TimeZone = .current) -> CarryAction {
         let here = key(op.home, op.path)
         switch op.op {
         case .put:
             guard let mine = local[here] else { return .fetch(key: here, sha256: op.sha256) }
             if mine == op.sha256 { return .nothing }
             if let b = base[here], b == mine { return .replace(key: here, old: mine, new: op.sha256) }
+            if let p = op.parent, p == mine { return .replace(key: here, old: mine, new: op.sha256) }   // T-0106: they edited my version
             if isText(op.path), let b = base[here] { return .merge(key: here, base: b, mine: mine, theirs: op.sha256) }
-            let s = sibling(here, device: deviceName, at: op.at, zone: zone)
+            let s = sibling(here, device: op.device, at: op.at, zone: zone)
             return local[s] == op.sha256 ? .nothing : .keepBoth(key: here, sibling: s, sha256: op.sha256)
         case .move, .trash, .restore:
             guard let dest = op.toKey else { return .nothing }
             if local[dest] == op.sha256 { return .nothing }                        // already there
             if local[here] == op.sha256 {
                 if local[dest] == nil { return .move(from: here, to: dest) }
-                let s = sibling(dest, device: deviceName, at: op.at, zone: zone)   // a different file sits there
+                let s = sibling(dest, device: op.device, at: op.at, zone: zone)   // a different file sits there
                 return local[s] == op.sha256 ? .nothing : .keepBoth(key: dest, sibling: s, sha256: op.sha256)
             }
             // mine changed (or isn't here): nothing of mine moves. A trash never fetches; move/restore bring
             // their bytes to the new place, so nothing on either side is lost.
             if op.op == .trash { return .nothing }
             if local[dest] == nil { return .fetch(key: dest, sha256: op.sha256) }
-            let s = sibling(dest, device: deviceName, at: op.at, zone: zone)
+            let s = sibling(dest, device: op.device, at: op.at, zone: zone)
             return local[s] == op.sha256 ? .nothing : .keepBoth(key: dest, sibling: s, sha256: op.sha256)
         }
     }
@@ -180,11 +241,11 @@ func carrysyncSelftest() -> Bool {
 
     let put = CarryOp(seq: 1, device: "ipad", at: 1, op: .put, home: M, path: "a.m4a", sha256: "NEW", size: 1)
     let k = "library/Music/a.m4a"
-    switch CarrySync.decide(put, local: [:], base: [:], deviceName: "iPad", zone: utc) {
+    switch CarrySync.decide(put, local: [:], base: [:], zone: utc) {
     case .fetch(let key, let sha): check(key == k && sha == "NEW", "a file this device lacks is fetched")
     default: check(false, "a file this device lacks is fetched")
     }
-    switch CarrySync.decide(put, local: [k: "MINE"], base: [k: "OLD"], deviceName: "iPad", zone: utc) {
+    switch CarrySync.decide(put, local: [k: "MINE"], base: [k: "OLD"], zone: utc) {
     case .keepBoth: check(true, "both sides changed a non-text file → both are kept")
     default: check(false, "both sides changed a non-text file → both are kept")
     }
