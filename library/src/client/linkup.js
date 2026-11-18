@@ -1,7 +1,8 @@
 // Adding files to a share link, one home (T-0142–44): the owner's album page (sharedview.js) and the link page itself
 // (gallery.js, guest or owner) both send files through here, so a fix lands once.
 //   linkUp.add(files, { call, who, done })   queue files; each shows a row with its own progress, error and Retry
-// A file is reserved in the manifest, sent in 16 MB parts (each part tried 4 times), then completed. Two files go up
+// A file is reserved in the manifest, sent in 16 MB parts (each part tried 4 times, cut off after 5 min without an answer),
+// then completed; what was sent is remembered on this device, so a Retry or the same file added again carries on (T-0148). Two files go up
 // at once. One file failing never stops the others, and a failed file stays on screen with its reason and a Retry.
 //   call(params, init) -> Response   throws on a non-2xx answer (the caller knows the address and headers)
 // Needs the Worker and R2 only at the moment of sending, as a share link always did.
@@ -67,45 +68,121 @@
     });
   }
 
-  // one file, start to finish; throws with the reason
+  // one file, start to finish; throws with the reason.
+  // T-0148: a part that gets no answer is cut off after PART_MS and tried again (before, a fetch on a stuck connection
+  // waited forever and the tile sat "paused"). Progress is kept on this device (localStorage: the reservation, the
+  // multipart id, each part's etag), so Retry, a reload or adding the same file again continues from the next part
+  // instead of reserving a second copy (026 and 027 were one 863 MB recording, twice). A file that fails keeps its
+  // reservation for that reason; only an answer from the server that the upload is gone starts it over.
+  var PART_MS = window.__lupPartMs || 5 * 60 * 1000; // 16 MB at 0.5 Mbit/s is ~4.5 min (the tests shorten it)
+  var store = function (key, v) {
+    try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch (e) {}
+  };
+  var load = function (key) {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+  };
+  var keyOf = function (f, o) {
+    return "lup|" + (o.id || location.pathname) + "|" + f.name + "|" + f.size + "|" + f.lastModified;
+  };
+  // the network or the timer, not the server: keep what was sent
+  var lost = function (e) { return !!e && (e instanceof TypeError || e.name === "AbortError"); };
+
   async function send(r, o) {
-    var f = r.file, i = null, uploadId = "";
+    var f = r.file, key = keyOf(f, o), saved = load(key);
+    var total = Math.max(1, Math.ceil(f.size / PART));
+    if (saved && saved.total !== total) saved = null;
     try {
-      var res = await (await o.call({ action: "reserve" }, { body: JSON.stringify({ name: f.name, size: f.size, type: f.type, taken: f.lastModified, who: o.who }), headers: { "content-type": "application/json" } })).json();
-      i = res.i;
-      if (o.reserved) o.reserved(res);
-      var total = Math.max(1, Math.ceil(f.size / PART));
-      uploadId = await (await o.call({ action: "start", i: i, total: total })).text();
-      var parts = [];
-      for (var k = 0; k < total; k++) {
+      return await sendFrom(r, o, key, total, saved);
+    } catch (e) {
+      if (!saved || lost(e) || !e.partFailed) throw e;
+      store(key, null); // the server no longer knows that upload: once, from the start
+      return await sendFrom(r, o, key, total, null);
+    }
+  }
+
+  async function sendFrom(r, o, key, total, saved) {
+    var f = r.file, i = null, uploadId = "", parts = [];
+    try {
+      if (saved) {
+        i = saved.i; uploadId = saved.uploadId; parts = saved.parts.slice();
+      } else {
+        var res = await (await o.call({ action: "reserve" }, { body: JSON.stringify({ name: f.name, size: f.size, type: f.type, taken: f.lastModified, who: o.who }), headers: { "content-type": "application/json" } })).json();
+        i = res.i;
+        if (o.reserved) o.reserved(res);
+        uploadId = await (await o.call({ action: "start", i: i, total: total })).text();
+        store(key, { i: i, uploadId: uploadId, total: total, parts: [] });
+      }
+      r.frac = parts.length / total;
+      paint();
+      for (var k = parts.length; k < total; k++) {
         var etag = "";
         for (var tries = 1; !etag; tries++) {
+          var ac = typeof AbortController === "function" ? new AbortController() : null;
+          var timer = ac ? setTimeout(function () { ac.abort(); }, PART_MS) : 0;
           try {
-            etag = (await (await o.call({ action: "part", i: i, uploadId: uploadId, part: k + 1, total: total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text()).trim();
+            var init = { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) };
+            if (ac) init.signal = ac.signal;
+            etag = (await (await o.call({ action: "part", i: i, uploadId: uploadId, part: k + 1, total: total }, init)).text()).trim();
           } catch (e) {
-            if (tries >= TRIES) throw new Error("part " + (k + 1) + " of " + total + " failed: " + (e.message || e));
+            if (tries >= TRIES) {
+              var msg = "part " + (k + 1) + " of " + total + " failed: " + (lost(e) ? "no answer" : (e && e.message) || e);
+              var err = lost(e) ? new TypeError(msg) : new Error(msg); // a TypeError: Retry by itself when back online
+              err.partFailed = !lost(e);
+              throw err;
+            }
             await sleep(1500 * tries);
+          } finally {
+            clearTimeout(timer);
           }
         }
         parts.push({ partNumber: k + 1, etag: etag });
+        store(key, { i: i, uploadId: uploadId, total: total, parts: parts });
         r.frac = (k + 1) / total;
         paint();
       }
       await o.call({ action: "complete", i: i, uploadId: uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
+      store(key, null);
     } catch (e) {
-      // the reservation goes, so nobody sees a tile "uploading" for a file that will never come
-      if (i != null) o.call({ action: "abort", i: i, uploadId: uploadId }).catch(function () {});
+      // nothing sent yet: the reservation goes, so nobody sees a tile "uploading" for a file that never comes.
+      // Some parts sent: it stays, so Retry continues (the tile shows paused meanwhile)
+      if (i != null && !parts.length) {
+        store(key, null);
+        o.call({ action: "abort", i: i, uploadId: uploadId }).catch(function () {});
+      }
       throw e;
     }
   }
+
+  // the screen stays on while files go up (a phone that locks drops the upload); released when the last one ends
+  var lock = null;
+  async function wake(on) {
+    try {
+      if (on && !lock && navigator.wakeLock && document.visibilityState === "visible") {
+        lock = await navigator.wakeLock.request("screen");
+        lock.addEventListener("release", function () { lock = null; });
+      } else if (!on && lock) { var l = lock; lock = null; await l.release(); }
+    } catch (e) {}
+  }
+  // back on screen or back online: files that failed for want of a network carry on by themselves
+  function again() {
+    if (document.visibilityState !== "visible") return;
+    if (running) wake(true);
+    rows.forEach(function (r) {
+      if (r.state === "bad" && r.lost && waiting.indexOf(r) < 0) { r.state = "wait"; r.err = ""; waiting.push(r); }
+    });
+    pump();
+  }
+  document.addEventListener("visibilitychange", again);
+  window.addEventListener("online", again);
 
   function pump() {
     while (running < AT_ONCE && waiting.length) {
       (function (r) {
         running++;
-        r.state = "go"; r.frac = 0; paint();
-        send(r, r.o).then(function () { r.state = "done"; r.frac = 1; }, function (e) { r.state = "bad"; r.err = String((e && e.message) || e); })
-          .then(function () { running--; paint(); if (r.state === "done" && r.o.done) r.o.done(r.file); pump(); });
+        wake(true);
+        r.state = "go"; r.frac = 0; r.lost = false; paint();
+        send(r, r.o).then(function () { r.state = "done"; r.frac = 1; }, function (e) { r.state = "bad"; r.lost = lost(e); r.err = String((e && e.message) || e); })
+          .then(function () { running--; if (!running) wake(false); paint(); if (r.state === "done" && r.o.done) r.o.done(r.file); pump(); });
       })(waiting.shift());
     }
   }

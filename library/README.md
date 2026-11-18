@@ -172,6 +172,7 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 - Guests comment and like under a name given once (random HttpOnly cookie, stored hashed), editing only their own.
 - `/main/shared`: Personal | Shared | Activity (participant uploads, likes, comments); Delete expires a link now.
 - Adding files to a link (T-0142–44, `src/client/linkup.js`, one loop for the owner's album page and the link page): drop files from the Finder anywhere on the page (the page shows a dashed highlight) or tap Add Files. Each file is reserved, sent in 16 MiB parts (each part tried 4 times), two files at a time. A failed file never stops the others: it keeps a row with its reason and a Retry. The Create Share Link page (`upload.js`) no longer cancels the whole link when one file fails; it lists the failures with Retry or Leave them (their empty slots are removed). Only needs the Worker and R2 at the moment of sending.
+- Big uploads don't stall, and a page never wedges the connection (T-0148): a part with no answer in 5 min is cut off and sent again; this device remembers how far each file got (localStorage), so Retry, a reload or adding the same file again continues from the next part in the same slot instead of a second copy; the screen stays awake while files go up, and a file that failed for want of a network carries on when the page is back on screen or online. Video tiles (`src/client/stills.js`) load only near the screen, two at a time, keep their first frame as a poster and then let go of the file, so no tile holds a stream open (in Firefox those held streams stalled every later request to the host: a new tab sat on "Waiting for…", an upload part never answered).
 - Edit Cover (owner's album page): a Name field (type, or Clear), the blur level and the cover pick, then Save changes or Cancel. The name is `title` in the link's manifest (`POST /main/api/link?action=arrange&id=ID {title}`, 60 letters; empty goes back to the automatic name). Video tiles in the picker load their first frame only when scrolled into view.
 - Participant links (`/m/<token>`, `src/invite.js`): one folder each; tokens are 32 random bytes, stored as SHA-256 only. Permissions view, download, upload, comment, react, annotate (defaults: all but annotate; a room never uploads); per-file overrides; a view-only lock per invitation and per folder (`PUT /main/api/invites/locks {dir, locked}`); no expiry unless set; revoke. Every check is in the Worker; an unknown, expired or revoked link is one 404, and no request through a link can delete or replace the owner's files, comments or annotations. Download off still plays media inline but refuses `?dl=1` and non-playable files.
 - Annotations (`src/annotations.js`): notes pinned to a time or a spot of a Main file; owner at `/main/api/annotations`, invitees at `/m/<token>/api/annotations` with the annotate permission, deleting only their own.
@@ -221,7 +222,8 @@ gallery/
   src/                  the Worker
     worker.js           routes
     access.js           checks it is you (Cloudflare Access token, verified here)
-    client/linkup.js    the shared add-files loop (queue, parts, retry, drop highlight)
+    client/linkup.js    the shared add-files loop (queue, parts, retry, resume, drop highlight)
+    client/stills.js    video tiles: a poster from the first frame, no stream held open
     public.js           links, uploads, comments, preview cards, the nightly cleanup
     main.js             the library
     invite.js           participant links (/m/<token>)

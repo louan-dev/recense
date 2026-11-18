@@ -2198,5 +2198,58 @@ await test("T-0142–44: a recording that fails shows an error with Retry, the o
   assert.ok(await PUBLIC.head("links/" + up.id + "/003"), "Retry sent it (a fresh slot)");
 }, { });
 
+// T-0148: a share link stalled the whole host in Firefox (every video tile held an open stream), and an 863 MB
+// recording sat "paused" at 4 % and 12 % (a part that never answered was never retried; Retry reserved a second copy)
+await test("T-0148: a video tile shows a still and holds no stream open", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  await pg.setInputFiles("#upin", bug23Video(2 * 1000 * 1000));
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/001")); t++) await pg.waitForTimeout(250);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForSelector(".tile video");
+  let held = null;
+  for (let t = 0; t < 120; t++) {
+    held = await pg.$$eval(".tile video", (vs) => vs.map((v) => ({ src: v.getAttribute("src"), poster: !!v.poster })));
+    if (held.length && held.every((v) => !v.src)) break;
+    await pg.waitForTimeout(250);
+  }
+  assert.ok(held.length, "a video tile");
+  assert.ok(held.every((v) => !v.src), "every tile let go of its file: " + JSON.stringify(held));
+});
+
+await test("T-0148: a part with no answer is cut off and sent again; Retry carries on from the next part, in the same slot", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.addInitScript(() => { window.__lupPartMs = 1500; });
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  const sent = [];
+  let hung = false;
+  let refuse3 = true;
+  await pg.route(/\/api\/upload\?.*action=part/, (rt) => {
+    const n = Number(new URL(rt.request().url()).searchParams.get("part"));
+    sent.push(n);
+    if (n === 1 && !hung) { hung = true; return; } // the stuck connection: no answer, ever
+    if (n === 3 && refuse3) return rt.abort("failed");
+    return rt.continue();
+  });
+  await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000)); // 3 parts
+  await pg.waitForSelector(".lup .r.bad button", { timeout: 60000 });
+  assert.deepEqual(sent.slice(0, 3), [1, 1, 2], "part 1 cut off after no answer and sent again");
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/001")), "not there yet");
+  refuse3 = false;
+  sent.length = 0;
+  await pg.click(".lup .r.bad button");
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/001")); t++) await pg.waitForTimeout(250);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "the same slot finished");
+  assert.deepEqual(sent, [3], "only the missing part went again");
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/002")), "no second copy");
+  assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0, "nothing left remembered");
+});
+
 await browser.close();
 await mf.dispose();

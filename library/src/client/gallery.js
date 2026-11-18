@@ -3090,13 +3090,8 @@
     }
 
     if (k === "vid") {
-      const v = document.createElement("video");
-      v.muted = true;
-      v.setAttribute("muted", "");
-      v.setAttribute("playsinline", "");
-      v.preload = "metadata";
-      v.src = src(f) + "#t=0.1";
-      return v;
+      // a still, not an open stream: stills.js (T-0148, a held stream stalled the whole host in Firefox)
+      return window.videoStill(document.createElement("video"), src(f));
     }
 
     const ph = () => {
@@ -6422,6 +6417,7 @@
     if (!who) return;
     const q = (o) => (mine ? MAIN_API + "/linkadd?" : "/api/upload?") + new URLSearchParams({ id: G.id, ...o });
     linkUp.add(files, {
+      id: G.id, // where this device remembers how far each file got (linkup.js, T-0148)
       who,
       call: async (o, init) => {
         const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
