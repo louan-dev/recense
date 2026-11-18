@@ -1068,18 +1068,32 @@ export async function upload(req, env, url) {
 
 // Progress lives in a tiny side object so the gallery can show a ring without
 // any extra reads: the list call that finds the files already returns it.
-function setProgress(env, t, done, total) {
+// T-0148: its body also keeps how to carry on ({uploadId, parts: {n: etag}}), so any device holding the same file
+// can continue a stalled upload from the next part (action=resume); written on the same put, no extra request.
+function setProgress(env, t, done, total, rec) {
   if (t.key.endsWith(".art") || !(total >= 1 && total <= 10000)) {
     return Promise.resolve();
   }
 
-  return env.PUBLIC.put(t.key + ".progress", new Uint8Array(0), {
+  return env.PUBLIC.put(t.key + ".progress", rec ? JSON.stringify(rec) : new Uint8Array(0), {
     customMetadata: {
       done: String(done),
       total: String(total),
       expires: String(Date.now() + 2 * 864e5),
     },
   }).catch(() => {});
+}
+
+async function readProgress(env, t) {
+  try {
+    const o = await env.PUBLIC.get(t.key + ".progress");
+    if (!o) return null;
+    const rec = JSON.parse((await o.text()) || "null");
+    if (rec && o.customMetadata) rec.total = Number(o.customMetadata.total) || 0;
+    return rec;
+  } catch (e) {
+    return null;
+  }
 }
 
 // best-effort: tidying up must never turn a finished upload into an error
@@ -1105,9 +1119,17 @@ async function multipart(req, env, q, action, t = target(q, q.get("type"))) {
       customMetadata: t.metadata,
     });
 
-    await setProgress(env, t, 0, total);
+    await setProgress(env, t, 0, total, { uploadId: mp.uploadId, parts: {} });
 
     return new Response(mp.uploadId);
+  }
+
+  // action=resume  GET-ish POST -> {uploadId, total, parts: [{partNumber, etag}]} or 404 (T-0148)
+  if (action === "resume") {
+    const rec = await readProgress(env, t);
+    if (!rec || !rec.uploadId) return new Response("Nothing to resume", { status: 404 });
+    const parts = Object.keys(rec.parts || {}).map(Number).sort((a, b) => a - b).map((n) => ({ partNumber: n, etag: rec.parts[n] }));
+    return jsonResponse({ uploadId: rec.uploadId, total: rec.total, parts });
   }
 
   const uploadId = q.get("uploadId") || "";
@@ -1130,7 +1152,10 @@ async function multipart(req, env, q, action, t = target(q, q.get("type"))) {
       // instead of failing (BUG-23 hardening; a part is 16-32 MB, and Cloudflare caps a body at 100 MB anyway)
       const known = /^\d+$/.test(req.headers.get("content-length") || "");
       const part = await mp.uploadPart(n, known ? req.body : await req.arrayBuffer());
-      await setProgress(env, t, n, total);
+      const rec = (await readProgress(env, t)) || {};
+      const parts = rec.uploadId === uploadId ? rec.parts || {} : {};
+      parts[n] = part.etag;
+      await setProgress(env, t, Object.keys(parts).length, total, { uploadId, parts });
       return new Response(part.etag);
     } catch (e) {
       return new Response("Part failed: " + (e && e.message), { status: 500 });
@@ -1714,7 +1739,7 @@ export async function guestUploadApi(req, env, url, owner = false) {
     return new Response("Busy, try again", { status: 503 });
   }
 
-  if (!["start", "part", "complete", "abort"].includes(action)) return new Response("Bad request", { status: 400 });
+  if (!["start", "part", "complete", "abort", "resume"].includes(action)) return new Response("Bad request", { status: 400 });
   const i = parseInt(q.get("i") || "", 10);
   const it = (manifest.items || []).find((x) => Number(x.i) === i);
   if (!it || it.vid !== g.vid || g.fresh) return new Response("Not your file", { status: 403 });

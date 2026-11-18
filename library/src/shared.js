@@ -23,6 +23,7 @@ import { listFolder } from "./main.js";
 import js from "./client/sharedview.js";
 import coverBlur from "./client/coverblur.js";
 import linkUp from "./client/linkup.js";
+import stills from "./client/stills.js";
 import css from "./client/sharedview.css";
 
 const ACTIVITY = "activity/";
@@ -223,6 +224,7 @@ export function sharedPage(url) {
 <main id="app" aria-live="polite"></main>
 <script>window.SHARED=${data};</script>
 <script>${coverBlur}</script>
+<script>${stills}</script>
 <script>${linkUp}</script>
 <script>${js}</script>
 </body>

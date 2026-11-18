@@ -3090,13 +3090,8 @@
     }
 
     if (k === "vid") {
-      const v = document.createElement("video");
-      v.muted = true;
-      v.setAttribute("muted", "");
-      v.setAttribute("playsinline", "");
-      v.preload = "metadata";
-      v.src = src(f) + "#t=0.1";
-      return v;
+      // a still, not an open stream: stills.js (T-0148, a held stream stalled the whole host in Firefox)
+      return window.videoStill(document.createElement("video"), src(f));
     }
 
     const ph = () => {
@@ -3223,7 +3218,7 @@
     b.setAttribute("aria-label", f.name);
 
     if (f.pending) {
-      b.innerHTML = '<span class="shim"></span>' + ringHTML(f) + '<span class="dur" hidden></span>';
+      b.innerHTML = '<span class="shim"></span>' + ringHTML(f) + '<span class="dur" hidden></span><span class="chk"></span>';
       paintPending(b, f);
       return;
     }
@@ -3234,6 +3229,8 @@
     if (kind(f) === "vid") {
       const d = mkEl("span", "dur");
 
+      // stills.js keeps the length with the poster, so a tile drawn again shows it without loading the file
+      if (m.dataset.dur) d.textContent = dur(Number(m.dataset.dur));
       m.addEventListener("loadedmetadata", () => {
         if (isFinite(m.duration)) d.textContent = dur(m.duration);
       });
@@ -3244,6 +3241,9 @@
     b.appendChild(mkEl("span", "chk"));
   };
 
+  // T-0148: on their own share link the owner can pick an upload that is stuck (or any not yet in) and Delete it,
+  // after the usual confirm; the server drops its reservation (public.js deleteFromLink)
+  const removable = (f) => !!f.pending && !G.main && ownsLink();
   const picked = new Set();
   let selecting = false;
   let footBase = "";
@@ -3282,7 +3282,7 @@
 
   const tapTile = (f, b) => {
     if (!selecting) return openAt(items.indexOf(f));
-    if (f.pending) return;
+    if (f.pending && !removable(f)) return;
 
     if (picked.has(f.n)) picked.delete(f.n);
     else picked.add(f.n);
@@ -3404,6 +3404,21 @@
     const d = mkEl("div", "pw");
     d.innerHTML = "<b></b><span></span><small></small>";
     paintPendingView(d, f);
+    if (mineToFix(f)) {
+      const row = mkEl("div", "pwact");
+      const c = mkEl("button", "lnk");
+      c.type = "button";
+      c.textContent = "Continue…";
+      c.setAttribute("aria-label", "Continue uploading " + f.name);
+      c.onclick = () => continueUpload(f);
+      const x = mkEl("button", "lnk");
+      x.type = "button";
+      x.textContent = "Remove";
+      x.setAttribute("aria-label", "Remove " + f.name);
+      x.onclick = () => removeUpload(f);
+      row.append(c, x);
+      d.appendChild(row);
+    }
     return d;
   };
 
@@ -6368,7 +6383,7 @@
   del.onclick = async () => {
     if (!selecting) return $("sel").onclick();
 
-    const list = readyItems().filter((f) => picked.has(f.n));
+    const list = items.filter((f) => picked.has(f.n) && (!f.pending || removable(f)));
     if (!list.length) return;
 
     const what = list.length === 1 ? "“" + list[0].name + "”" : list.length + " items";
@@ -6416,12 +6431,13 @@
   // T-0142–44: the loop is client/linkup.js, shared with the owner's album page: two files at once, one failing never
   // stops the rest, and a failed file keeps its row with the reason and a Retry (before, the first failure ended the
   // whole batch and the rest were never sent).
-  const guestAdd = (files) => {
+  const linkOpts = () => {
     const mine = ownsLink();
     const who = mine ? G.owner || "Owner" : guestName() || askName();
-    if (!who) return;
+    if (!who) return null;
     const q = (o) => (mine ? MAIN_API + "/linkadd?" : "/api/upload?") + new URLSearchParams({ id: G.id, ...o });
-    linkUp.add(files, {
+    return {
+      id: G.id, // where this device remembers how far each file got (linkup.js, T-0148)
       who,
       call: async (o, init) => {
         const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
@@ -6430,11 +6446,47 @@
       },
       reserved: (res) => {
         if (res.you) G.you = res.you;
-        if (!timer) timer = setInterval(poll, 2000);
-        poll();
+        pollSoon();
       },
-      done: () => poll(),
-    });
+      done: () => pollSoon(),
+    };
+  };
+  const guestAdd = (files, extra) => {
+    const o = linkOpts();
+    if (o) linkUp.add(files, { ...o, ...(extra || {}) });
+  };
+  // T-0148: a stalled tile, from any visit or device: Continue (pick the same file; it carries on from the parts the
+  // server kept) or Remove (its reservation goes). The owner on their link, or the guest who added it.
+  const mineToFix = (f) => !!f && !!f.pending && !G.main && !!window.linkUp && (ownsLink() || (guest() && !!G.you && f.vid === G.you));
+  const contIn = document.createElement("input");
+  contIn.type = "file";
+  contIn.hidden = true;
+  contIn.id = "contin";
+  document.body.appendChild(contIn);
+  const continueUpload = (f) => {
+    contIn.value = "";
+    contIn.onchange = () => {
+      const file = contIn.files && contIn.files[0];
+      if (!file) return;
+      if (f.size && file.size !== f.size) return say("That isn’t " + f.name + " (a different size). Pick the same file to continue.", true);
+      guestAdd([file], { resume: Number(f.n) });
+    };
+    contIn.click();
+  };
+  const removeUpload = async (f) => {
+    if (!confirm("Remove “" + f.name + "”? What was sent so far goes too.")) return;
+    try {
+      if (ownsLink()) {
+        const r = await fetch(MAIN_API + "/link?" + new URLSearchParams({ id: G.id, item: f.n }), { method: "DELETE" });
+        if (!r.ok) throw new Error((await r.text()) || "Remove failed");
+      } else {
+        const o = linkOpts();
+        if (o) await linkUp.drop(o, Number(f.n));
+      }
+      dropItem(f);
+    } catch (e) {
+      say("Couldn’t remove " + f.name + ": " + (e.message || e), true);
+    }
   };
   // Derived from Spec: BUG-20 — the Main-only CSS rule that hides the old Upload pill (#up{display:none!important})
   // must not swallow this same button when it is reused as the guest's visible "Add" pill (item 16).
@@ -7689,10 +7741,27 @@
       if (!lb.hidden) build();
     }
   };
+  // a pending item gone from the server (removed here, elsewhere, or by its sender): its tile goes (T-0148)
+  const dropItem = (f) => {
+    const k = items.indexOf(f);
+    if (k < 0) return;
+    if (!lb.hidden && items[cur] === f) history.back(); // popstate hides the viewer
+    items.splice(k, 1);
+    picked.delete(f.n);
+    rebuildGrid();
+    ensureHero();
+    refreshInfo();
+  };
+  let lastSig = "";
   const merge = (d) => {
     if (d.exp) G.exp = d.exp;
 
     let structural = false;
+    const sig = JSON.stringify((d.items || []).map((x) => [x.n, x.pending ? x.progress : 1]));
+    const moved = sig !== lastSig;
+    lastSig = sig;
+    const there = new Set((d.items || []).map((x) => x.n));
+    items.filter((f) => f.pending && !there.has(f.n)).forEach(dropItem);
 
     (d.items || []).forEach((di) => {
       const it = items.find((f) => f.n === di.n);
@@ -7739,13 +7808,22 @@
 
     const open = items.filter((f) => f.pending);
     if (complete || (open.length && open.every((f) => f.failed))) stopPolling();
+    return moved;
   };
 
+  // T-0148: the page looked every 2 s for as long as anything was pending, so one tab left open on a stalled
+  // upload made ~43,000 requests a day (the Workers free plan allows 100,000). Now: every 2 s while something moves,
+  // twice as long after each look that finds nothing new, up to a minute; nothing while the tab is hidden; back to
+  // 2 s when this page sends a file, the tab comes back, or Continue/Remove is used.
+  const POLL_MIN = 2000;
+  const POLL_MAX = 60000;
   let timer = null;
   let busy = false;
+  let polling = false;
+  let gap = POLL_MIN;
 
   const poll = async () => {
-    if (busy || document.hidden) return;
+    if (busy || document.hidden) return false;
 
     busy = true;
 
@@ -7754,24 +7832,41 @@
 
       if (r.status === 404 || r.status === 410) {
         stopPolling();
-        return;
+        return false;
       }
 
-      if (r.ok) merge(await r.json());
+      if (r.ok) return merge(await r.json());
     } catch (e) {
       // offline for a moment: keep the page, try again next tick
     } finally {
       busy = false;
     }
+    return false;
+  };
+
+  const tick = async () => {
+    timer = null;
+    const moved = await poll();
+    if (!polling || document.hidden) return;
+    gap = moved ? POLL_MIN : Math.min(POLL_MAX, gap * 2);
+    timer = setTimeout(tick, gap);
+  };
+
+  const pollSoon = () => {
+    polling = true;
+    gap = POLL_MIN;
+    clearTimeout(timer);
+    timer = setTimeout(tick, 0);
   };
 
   const stopPolling = () => {
-    clearInterval(timer);
+    polling = false;
+    clearTimeout(timer);
     timer = null;
   };
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && timer) poll();
+    if (!document.hidden && polling) pollSoon();
   });
 
   // ---------- Phase 4: collection search bar (Goal 43.32) & year-grouped results ----------
@@ -8071,7 +8166,10 @@
   refreshInfo();
   if (csearch) csearch.hidden = !items.length;
 
-  if (!complete) timer = setInterval(poll, 2000);
+  if (!complete) {
+    polling = true;
+    timer = setTimeout(tick, POLL_MIN);
+  }
 
   // a room of one item opens straight onto it
   if (typeof G.start === "number" && items[G.start]) openAt(G.start);

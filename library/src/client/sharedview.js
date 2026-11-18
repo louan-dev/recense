@@ -74,12 +74,7 @@
       return i;
     }
     if (f && f.video && f.src) {
-      const v = el("video");
-      v.muted = true;
-      v.playsInline = true;
-      v.preload = "metadata";
-      v.src = f.src + "#t=0.1";
-      return v;
+      return window.videoStill(el("video"), f.src); // stills.js (T-0148)
     }
     const g = el("div", cls || "g");
     const t = f ? f.type || "" : "";
@@ -237,6 +232,7 @@
   const addTo = (s, files) => {
     if (!files.length || !window.linkUp) return;
     linkUp.add(files, {
+      id: s.id,
       who: "",
       call: async (o, init) => {
         const r = await fetch("/main/api/linkadd?" + new URLSearchParams({ id: s.id, ...o }), { method: "POST", ...init, headers: { ...H, ...((init && init.headers) || {}) } });

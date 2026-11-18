@@ -6,6 +6,7 @@ import homebarCss from "../client/homebar.css";
 import homebar from "../client/homebar.js";
 import js from "../client/gallery.js";
 import linkUp from "../client/linkup.js";
+import stills from "../client/stills.js";
 import viewerShell from "../client/viewer-shell.js";
 import viewerShellCss from "../client/viewer-shell.css";
 import viewerSheet from "../client/viewer-sheet.js";
@@ -249,6 +250,9 @@ ${live.main ? `<aside id="aip" aria-label="Ask" hidden>
   <div class="aifoot"><button class="lnk" id="aimems" type="button">Memories</button></div>
 </aside>` : ""}
 
+<script>
+${stills}
+</script>
 <script>
 ${linkUp}
 </script>

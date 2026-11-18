@@ -109,8 +109,9 @@
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function media(f) {
     var m = mk(f.video ? "video" : "img");
-    m.src = f.video ? f.src + "#t=0.1" : f.src;
-    if (f.video) { m.muted = true; m.playsInline = true; m.preload = "metadata"; } else m.loading = "lazy";
+    if (f.video && window.videoStill) window.videoStill(m, f.src); // stills.js (T-0148): no held stream
+    else if (f.video) { m.src = f.src + "#t=0.1"; m.muted = true; m.playsInline = true; m.preload = "metadata"; }
+    else { m.src = f.src; m.loading = "lazy"; }
     m.alt = "";
     return m;
   }
