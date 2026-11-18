@@ -6180,7 +6180,9 @@ final class NotebookPanel: SwipePanel {
             }
             return
         }
-        synth.speak(AVSpeechUtterance(string: text))
+        let u = AVSpeechUtterance(string: text)
+        u.voice = bestVoice(lang: nil, text: text)   // FEAT-01 A4: the one voice choice
+        synth.speak(u)
     }
 }
 
@@ -8761,8 +8763,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), t = boseBridgeSelftest(), u = carrymanagerSelftest(), v = transcriptGateSelftest()
     let w = MainActor.assumeIsolated { carrymanagerOrderingSelftest() }   // top-level code runs on the main thread
     let x = MainActor.assumeIsolated { homeFilesSelftest() }
-    let y = hapticsSelftest(), z = exportJobsSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w && x && y && z ? 0 : 1)
+    let y = hapticsSelftest(), z = exportJobsSelftest(), vo = voiceSelftest()
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w && x && y && z && vo ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-15

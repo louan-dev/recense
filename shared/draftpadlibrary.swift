@@ -90,7 +90,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
         for (k, p) in parts.enumerated() where !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let u = AVSpeechUtterance(string: p)
             u.rate = AVSpeechUtteranceDefaultSpeechRate
-            u.voice = ReadAloud.bestVoice(for: p, lang: lang)
+            u.voice = bestVoice(lang: lang, text: p)
             u.volume = ReadAloud.volume
             index[ObjectIdentifier(u)] = k
             remaining += 1
@@ -121,17 +121,5 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
         guard id != nil, index.removeValue(forKey: ObjectIdentifier(u)) != nil else { return }
         remaining -= 1
         if remaining <= 0 { finish() }
-    }
-
-    static func bestVoice(for text: String, lang: String?) -> AVSpeechSynthesisVoice? {
-        var code = lang
-        if code == nil {
-            let r = NLLanguageRecognizer()
-            r.processString(text)
-            code = r.dominantLanguage?.rawValue
-        }
-        guard let code = code else { return nil }
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(code) }
-        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: code)
     }
 }
