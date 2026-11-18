@@ -189,6 +189,17 @@ enum Haptics {
         return true
     }
 
+    /// Fires a zone-boundary cue: `.tick` in `.full` mode (so the tick count tells you which zone you reached)
+    /// and `.edge` in `.calm` mode (so zone boundaries remain felt when step ticks are silenced).
+    @discardableResult
+    static func performZoneBoundary() -> Bool {
+        switch mode {
+        case .off: return false
+        case .calm: return perform(.edge)
+        case .full: return perform(.tick)
+        }
+    }
+
     // MARK: Settings › Haptics menu & window
 
     static func menu() -> NSMenu {
@@ -216,6 +227,21 @@ enum Haptics {
         direct.state = useDirectActuator ? .on : .off
         m.addItem(direct)
         m.addItem(.separator())
+        let zonesHeader = NSMenuItem(title: "Console Zones (Speed & Level always on)", action: nil, keyEquivalent: "")
+        zonesHeader.isEnabled = false
+        m.addItem(zonesHeader)
+        for z in ConsoleZone.unlockableZones {
+            let zi = NSMenuItem(
+                title: "Unlock \(z.label)",
+                action: #selector(HapticsMenuTarget.shared.toggleZoneMenu(_:)),
+                keyEquivalent: ""
+            )
+            zi.target = HapticsMenuTarget.shared
+            zi.representedObject = z.rawValue
+            zi.state = RestHoldConsole.shared.isZoneUnlocked(z) ? .on : .off
+            m.addItem(zi)
+        }
+        m.addItem(.separator())
         let openPanel = NSMenuItem(
             title: "Haptics Settings…",
             action: #selector(HapticsMenuTarget.shared.openSettingsPanel(_:)),
@@ -232,6 +258,8 @@ final class HapticsMenuTarget: NSObject {
     private var panel: NSPanel?
     private var segControl: NSSegmentedControl?
     private var actuatorCheck: NSButton?
+    private var zoneChecks: [ConsoleZone: NSButton] = [:]
+    private var speedSeg: NSSegmentedControl?
 
     @objc func selectMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let m = HapticMode(rawValue: raw) else { return }
@@ -246,6 +274,14 @@ final class HapticsMenuTarget: NSObject {
         Haptics.perform(.tick)
     }
 
+    @objc func toggleZoneMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let z = ConsoleZone(rawValue: raw) else { return }
+        let unlocked = !RestHoldConsole.shared.isZoneUnlocked(z)
+        RestHoldConsole.shared.setZone(z, unlocked: unlocked)
+        syncPanel()
+        Haptics.perform(.edge)
+    }
+
     @objc func segChanged(_ sender: NSSegmentedControl) {
         let modes = HapticMode.allCases
         guard modes.indices.contains(sender.selectedSegment) else { return }
@@ -256,6 +292,19 @@ final class HapticsMenuTarget: NSObject {
     @objc func checkChanged(_ sender: NSButton) {
         Haptics.useDirectActuator = (sender.state == .on)
         Haptics.perform(.tick)
+    }
+
+    @objc func zoneCheckChanged(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue, let z = ConsoleZone(rawValue: raw) else { return }
+        RestHoldConsole.shared.setZone(z, unlocked: sender.state == .on)
+        Haptics.perform(.edge)
+    }
+
+    @objc func speedSegChanged(_ sender: NSSegmentedControl) {
+        let detents = ConsoleZone.speed.detents
+        guard detents.indices.contains(sender.selectedSegment) else { return }
+        let v = detents[sender.selectedSegment]
+        RestHoldConsole.shared.setValue(v, for: .speed, fireHaptics: true)
     }
 
     @objc func closePanel(_ sender: Any?) {
@@ -271,11 +320,21 @@ final class HapticsMenuTarget: NSObject {
             seg.selectedSegment = idx
         }
         actuatorCheck?.state = Haptics.useDirectActuator ? .on : .off
+        for (z, btn) in zoneChecks {
+            btn.state = RestHoldConsole.shared.isZoneUnlocked(z) ? .on : .off
+        }
+        if let sseg = speedSeg {
+            let detents = ConsoleZone.speed.detents
+            let cur = RestHoldConsole.shared.globalSpeed
+            if let idx = detents.enumerated().min(by: { abs($0.element - cur) < abs($1.element - cur) })?.offset {
+                sseg.selectedSegment = idx
+            }
+        }
     }
 
     func showSettingsPanel() {
         if panel == nil {
-            let w: CGFloat = 360, h: CGFloat = 168
+            let w: CGFloat = 380, h: CGFloat = 268
             let p = NSPanel(
                 contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                 styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
@@ -296,12 +355,12 @@ final class HapticsMenuTarget: NSObject {
             let heading = NSTextField(labelWithString: "Settings › Haptics")
             heading.font = .systemFont(ofSize: 13.5, weight: .semibold)
             heading.textColor = .white
-            heading.frame = NSRect(x: 20, y: h - 52, width: w - 40, height: 18)
+            heading.frame = NSRect(x: 20, y: h - 50, width: w - 40, height: 18)
             root.addSubview(heading)
 
             let seg = NSSegmentedControl(labels: ["Off", "Calm", "Full"], trackingMode: .selectOne, target: self, action: #selector(segChanged(_:)))
             seg.segmentStyle = .rounded
-            seg.frame = NSRect(x: 20, y: h - 86, width: w - 40, height: 26)
+            seg.frame = NSRect(x: 20, y: h - 82, width: w - 40, height: 26)
             root.addSubview(seg)
             self.segControl = seg
 
@@ -309,14 +368,47 @@ final class HapticsMenuTarget: NSObject {
             note.font = .systemFont(ofSize: 11, weight: .regular)
             note.textColor = NSColor(white: 1.0, alpha: 0.68)
             note.maximumNumberOfLines = 2
-            note.frame = NSRect(x: 20, y: h - 124, width: w - 40, height: 32)
+            note.frame = NSRect(x: 20, y: h - 118, width: w - 40, height: 30)
             root.addSubview(note)
 
             let chk = NSButton(checkboxWithTitle: "Direct trackpad actuator (experimental)", target: self, action: #selector(checkChanged(_:)))
             chk.font = .systemFont(ofSize: 11.5, weight: .medium)
-            chk.frame = NSRect(x: 20, y: 18, width: w - 40, height: 20)
+            chk.frame = NSRect(x: 20, y: h - 144, width: w - 40, height: 20)
             root.addSubview(chk)
             self.actuatorCheck = chk
+
+            let consoleHeading = NSTextField(labelWithString: "Two-Finger Hold Console · Speed & Level active")
+            consoleHeading.font = .systemFont(ofSize: 11.5, weight: .semibold)
+            consoleHeading.textColor = NSColor(white: 1.0, alpha: 0.88)
+            consoleHeading.frame = NSRect(x: 20, y: h - 174, width: w - 40, height: 16)
+            root.addSubview(consoleHeading)
+
+            let colW: CGFloat = (w - 40) / 4
+            for (i, z) in ConsoleZone.unlockableZones.enumerated() {
+                let zc = NSButton(checkboxWithTitle: z.label, target: self, action: #selector(zoneCheckChanged(_:)))
+                zc.identifier = NSUserInterfaceItemIdentifier(z.rawValue)
+                zc.font = .systemFont(ofSize: 11, weight: .regular)
+                zc.frame = NSRect(x: 20 + CGFloat(i) * colW, y: h - 198, width: colW, height: 20)
+                root.addSubview(zc)
+                zoneChecks[z] = zc
+            }
+
+            let speedLabel = NSTextField(labelWithString: "Global Speed")
+            speedLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
+            speedLabel.textColor = NSColor(white: 1.0, alpha: 0.88)
+            speedLabel.frame = NSRect(x: 20, y: 46, width: w - 40, height: 16)
+            root.addSubview(speedLabel)
+
+            let sseg = NSSegmentedControl(
+                labels: ["0.5×", "0.75×", "1×", "1.25×", "1.5×", "2×"],
+                trackingMode: .selectOne,
+                target: self,
+                action: #selector(speedSegChanged(_:))
+            )
+            sseg.segmentStyle = .rounded
+            sseg.frame = NSRect(x: 20, y: 16, width: w - 40, height: 24)
+            root.addSubview(sseg)
+            self.speedSeg = sseg
 
             self.panel = p
         }
@@ -329,6 +421,232 @@ final class HapticsMenuTarget: NSObject {
     }
 
     var settingsWindow: NSPanel? { panel }
+}
+
+// MARK: - B3: The console without home bars (spec B9c) & one global speed (spec B9d)
+
+enum ConsoleZone: String, CaseIterable {
+    case space = "space"   // slot -2 (↓↓ 2 ticks)
+    case key   = "key"     // slot -1 (↓  1 tick)
+    case speed = "speed"   // slot  0 (●  hold origin)
+    case level = "level"   // slot +1 (↑  1 tick)
+    case tone  = "tone"    // slot +2 (↑↑ 2 ticks)
+    case voice = "voice"   // slot +3 (↑↑↑ 3 ticks)
+
+    static let unlockableZones: [ConsoleZone] = [.tone, .key, .space, .voice]
+
+    var slotOffset: Int {
+        switch self {
+        case .space: return -2
+        case .key:   return -1
+        case .speed: return 0
+        case .level: return 1
+        case .tone:  return 2
+        case .voice: return 3
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .speed: return "Speed"
+        case .level: return "Level"
+        case .tone:  return "Tone"
+        case .key:   return "Key"
+        case .space: return "Space"
+        case .voice: return "Voice"
+        }
+    }
+
+    var detents: [Double] {
+        switch self {
+        case .speed: return [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+        case .level: return [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        case .tone:  return [-2, -1, 0, 1, 2]
+        case .key:   return [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
+        case .space: return [0, 1, 2, 3, 4]
+        case .voice: return [-2, -1, 0, 1, 2]
+        }
+    }
+
+    var homeValue: Double {
+        switch self {
+        case .speed: return 1.0
+        case .level: return 100.0
+        case .tone, .key, .space, .voice: return 0.0
+        }
+    }
+
+    func isHome(_ value: Double) -> Bool {
+        abs(value - homeValue) < 1e-4
+    }
+}
+
+final class RestHoldConsole {
+    static let shared = RestHoldConsole()
+
+    static let unlockedZonesKey = "recense.console.unlockedZones"
+    static let globalSpeedKey = "recense.globalSpeed"
+    static let valuesPrefix = "recense.console.value."
+    static let speedChangedNotification = Notification.Name("recense.globalSpeed.changed")
+
+    /// Vertical trackpad fraction per zone step (measured from where the two fingers landed).
+    static let zoneStepHeight: Float = 0.08
+    /// Horizontal trackpad fraction per value detent step.
+    static let detentStepWidth: Float = 0.06
+
+    private(set) var isHolding = false
+    private(set) var activeZone: ConsoleZone = .speed
+    private var horizontalAnchor: Float = 0
+    private var baseDetentIndex: Int = 2
+
+    var onZoneChanged: ((ConsoleZone, Double) -> Void)?
+    var onValueChanged: ((ConsoleZone, Double) -> Void)?
+
+    private init() {}
+
+    // MARK: Progressive disclosure (2 zones at first: speed & level; tone, key, space, voice unlock in Settings)
+
+    var unlockedZones: Set<ConsoleZone> {
+        get {
+            var set: Set<ConsoleZone> = [.speed, .level]
+            if let saved = UserDefaults.standard.stringArray(forKey: Self.unlockedZonesKey) {
+                for r in saved {
+                    if let z = ConsoleZone(rawValue: r) { set.insert(z) }
+                }
+            }
+            return set
+        }
+        set {
+            let extra = newValue.intersection(Set(ConsoleZone.unlockableZones)).map(\.rawValue).sorted()
+            UserDefaults.standard.set(extra, forKey: Self.unlockedZonesKey)
+        }
+    }
+
+    func isZoneUnlocked(_ zone: ConsoleZone) -> Bool {
+        zone == .speed || zone == .level || unlockedZones.contains(zone)
+    }
+
+    func setZone(_ zone: ConsoleZone, unlocked: Bool) {
+        var cur = unlockedZones
+        if unlocked { cur.insert(zone) } else if zone != .speed && zone != .level { cur.remove(zone) }
+        unlockedZones = cur
+    }
+
+    func unlockAllZones(_ unlock: Bool) {
+        unlockedZones = unlock ? Set(ConsoleZone.allCases) : [.speed, .level]
+    }
+
+    /// Ordered unlocked zones by vertical slot offset (`-2 ... +3`).
+    var orderedActiveZones: [ConsoleZone] {
+        ConsoleZone.allCases.filter { isZoneUnlocked($0) }.sorted { $0.slotOffset < $1.slotOffset }
+    }
+
+    // MARK: One global speed (B9d) & zone values
+
+    var globalSpeed: Double {
+        get {
+            let v = UserDefaults.standard.object(forKey: Self.globalSpeedKey) as? Double ?? 1.0
+            return nearestDetent(v, for: .speed)
+        }
+        set {
+            setValue(newValue, for: .speed, fireHaptics: false)
+        }
+    }
+
+    func value(for zone: ConsoleZone) -> Double {
+        if zone == .speed { return globalSpeed }
+        let key = Self.valuesPrefix + zone.rawValue
+        guard let v = UserDefaults.standard.object(forKey: key) as? Double else { return zone.homeValue }
+        return nearestDetent(v, for: zone)
+    }
+
+    func nearestDetent(_ raw: Double, for zone: ConsoleZone) -> Double {
+        zone.detents.min(by: { abs($0 - raw) < abs($1 - raw) }) ?? zone.homeValue
+    }
+
+    func detentIndex(for zone: ConsoleZone) -> Int {
+        let cur = value(for: zone)
+        return zone.detents.enumerated().min(by: { abs($0.element - cur) < abs($1.element - cur) })?.offset ?? 0
+    }
+
+    @discardableResult
+    func setValue(_ raw: Double, for zone: ConsoleZone, fireHaptics: Bool = true) -> Double {
+        let snapped = nearestDetent(raw, for: zone)
+        let prev = value(for: zone)
+        if zone == .speed {
+            UserDefaults.standard.set(snapped, forKey: Self.globalSpeedKey)
+            NotificationCenter.default.post(name: Self.speedChangedNotification, object: nil, userInfo: ["speed": snapped])
+        } else {
+            UserDefaults.standard.set(snapped, forKey: Self.valuesPrefix + zone.rawValue)
+        }
+        if fireHaptics && abs(snapped - prev) > 1e-5 {
+            Haptics.perform(zone.isHome(snapped) ? .thud : .tick)
+        }
+        if abs(snapped - prev) > 1e-5 {
+            onValueChanged?(zone, snapped)
+            HapticsMenuTarget.shared.syncPanel()
+        }
+        return snapped
+    }
+
+    /// B9d: Where a player can't change speed (Music.app), report plainly instead of failing silently.
+    static func speedCapabilityNotice(forBundleIdentifier bundleID: String?) -> String? {
+        guard let id = bundleID?.lowercased() else { return nil }
+        if id == "com.apple.music" {
+            return "Music.app does not support playback speed changes; global speed saved for Recense, QuickTime, and web players."
+        }
+        return nil
+    }
+
+    // MARK: Two-finger rest-hold lifecycle (Hold → vertical zone → horizontal detent → Lift keeps value)
+
+    func beginHold() {
+        isHolding = true
+        activeZone = .speed
+        horizontalAnchor = 0
+        baseDetentIndex = detentIndex(for: .speed)
+        Haptics.perform(.open)
+    }
+
+    /// Updates the console from two-finger centroid displacement `(dx, dy)` relative to where the fingers landed.
+    func update(dx: Float, dy: Float) {
+        guard isHolding else { return }
+        let desiredSlot = Int((dy / Self.zoneStepHeight).rounded())
+        let available = orderedActiveZones
+        let targetZone = available
+            .filter { desiredSlot >= 0 ? $0.slotOffset <= desiredSlot : $0.slotOffset >= desiredSlot }
+            .min(by: { abs($0.slotOffset - desiredSlot) < abs($1.slotOffset - desiredSlot) })
+            ?? .speed
+
+        if targetZone != activeZone {
+            let steps = max(1, abs(targetZone.slotOffset - activeZone.slotOffset))
+            activeZone = targetZone
+            horizontalAnchor = dx
+            baseDetentIndex = detentIndex(for: targetZone)
+            for _ in 0..<steps {
+                Haptics.performZoneBoundary()
+            }
+            onZoneChanged?(targetZone, value(for: targetZone))
+            return
+        }
+
+        let detents = activeZone.detents
+        let stepDelta = Int(((dx - horizontalAnchor) / Self.detentStepWidth).rounded())
+        let targetIdx = max(0, min(detents.count - 1, baseDetentIndex + stepDelta))
+        let targetVal = detents[targetIdx]
+        if abs(targetVal - value(for: activeZone)) > 1e-5 {
+            _ = setValue(targetVal, for: activeZone, fireHaptics: true)
+        }
+    }
+
+    /// Two-finger double-tap resets the active control to its home value with a `thud`.
+    func resetActiveZoneToHome() {
+        _ = setValue(activeZone.homeValue, for: activeZone, fireHaptics: true)
+    }
+
+    func endHold() {
+        isHolding = false
+    }
 }
 
 // MARK: - B2: Global gesture navigation feel & ambidextrous finger-origin measurement
@@ -480,5 +798,45 @@ func hapticsSelftest() -> Bool {
     let b2OK = layerSeqOK && pageSeqOK && ambidextrousOK
     print("\(b2OK ? "ok  " : "FAIL") haptics, B2 gesture nav fires tick per layer/page, thud at first/last, and measures from finger landing")
 
-    return vocabOK && modesOK && spikeOK && b2OK
+    // 5. B3: Rest-hold console (2 zones at first, progressive unlock in Settings, boundary ticks, sideways detents + home thud, global speed B9d).
+    let savedZones = RestHoldConsole.shared.unlockedZones
+    let savedSpeed = RestHoldConsole.shared.globalSpeed
+    defer {
+        RestHoldConsole.shared.unlockedZones = savedZones
+        RestHoldConsole.shared.globalSpeed = savedSpeed
+        RestHoldConsole.shared.endHold()
+    }
+    RestHoldConsole.shared.unlockAllZones(false)
+    _ = RestHoldConsole.shared.setValue(1.0, for: .speed, fireHaptics: false)
+    let defaultTwoZonesOK = RestHoldConsole.shared.orderedActiveZones == [.speed, .level]
+
+    fired.removeAll()
+    RestHoldConsole.shared.beginHold()
+    // Move +2 slots up while only speed & level are unlocked -> clamps to .level (1 boundary tick).
+    RestHoldConsole.shared.update(dx: 0, dy: RestHoldConsole.zoneStepHeight * 2)
+    let clampLockedOK = RestHoldConsole.shared.activeZone == .level && fired.map(\.0) == [.open, .tick]
+
+    // Unlock tone, key, space, voice in Settings and verify 2-tick jump to .tone and sideways speed detents + home thud.
+    RestHoldConsole.shared.unlockAllZones(true)
+    fired.removeAll()
+    RestHoldConsole.shared.beginHold()
+    RestHoldConsole.shared.update(dx: 0, dy: RestHoldConsole.zoneStepHeight * 2) // 0 -> +2 (.tone): 2 ticks
+    let toneTicksOK = RestHoldConsole.shared.activeZone == .tone && fired.map(\.0) == [.open, .tick, .tick]
+
+    // Return to .speed (slot 0), step left to 0.75x (.tick), step right back to home 1.0x (.thud), step right to 1.25x (.tick), and lift.
+    RestHoldConsole.shared.update(dx: 0, dy: 0)
+    fired.removeAll()
+    RestHoldConsole.shared.update(dx: -RestHoldConsole.detentStepWidth, dy: 0) // 0.75x -> .tick
+    let at075 = abs(RestHoldConsole.shared.globalSpeed - 0.75) < 1e-4
+    RestHoldConsole.shared.update(dx: 0, dy: 0)                                // 1.0x (home) -> .thud
+    let at100 = abs(RestHoldConsole.shared.globalSpeed - 1.0) < 1e-4
+    RestHoldConsole.shared.update(dx: RestHoldConsole.detentStepWidth, dy: 0)  // 1.25x -> .tick
+    RestHoldConsole.shared.endHold()
+    let at125Persisted = abs(RestHoldConsole.shared.globalSpeed - 1.25) < 1e-4
+    let detentCuesOK = fired.map(\.0) == [.tick, .thud, .tick]
+    let musicNoticeOK = RestHoldConsole.speedCapabilityNotice(forBundleIdentifier: "com.apple.Music") != nil
+    let b3OK = defaultTwoZonesOK && clampLockedOK && toneTicksOK && at075 && at100 && at125Persisted && detentCuesOK && musicNoticeOK
+    print("\(b3OK ? "ok  " : "FAIL") haptics, B3 rest-hold console zones, progressive unlock, home thud, and global speed persist")
+
+    return vocabOK && modesOK && spikeOK && b2OK && b3OK
 }

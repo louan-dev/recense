@@ -335,17 +335,40 @@ let holdDelay = 0.5, holdSlack: Float = 0.015
 var gHoldStarts: [Int32: MTPoint] = [:], gHoldSince = 0.0, gHoldMoved = false, gHolding = false
 
 func trackHold(_ touching: [(id: Int32, p: MTPoint)], at now: Double) {
-    func end() { if gHolding { gHolding = false; DispatchQueue.main.async { holdHandler?(false) } } }
+    func end() {
+        if gHolding {
+            gHolding = false
+            DispatchQueue.main.async {
+                RestHoldConsole.shared.endHold()
+                holdHandler?(false)
+            }
+        }
+    }
     guard touching.count == 2 else { gHoldStarts = [:]; gHoldMoved = false; end(); return }
     if Set(touching.map { $0.id }) != Set(gHoldStarts.keys) {
         gHoldStarts = Dictionary(uniqueKeysWithValues: touching.map { ($0.id, $0.p) }); gHoldSince = now; gHoldMoved = false
         end(); return
     }
-    if !gHoldMoved, touching.contains(where: { t in let s = gHoldStarts[t.id]!; return hypot(t.p.x - s.x, t.p.y - s.y) > holdSlack }) {
-        gHoldMoved = true; end()
+    if !gHolding && !gHoldMoved && touching.contains(where: { t in let s = gHoldStarts[t.id]!; return hypot(t.p.x - s.x, t.p.y - s.y) > holdSlack }) {
+        gHoldMoved = true; end(); return
     }
     if !gHoldMoved, !gHolding, now - gHoldSince >= holdDelay {
-        gHolding = true; DispatchQueue.main.async { holdHandler?(true) }
+        gHolding = true
+        DispatchQueue.main.async {
+            RestHoldConsole.shared.beginHold()
+            holdHandler?(true)
+        }
+        return
+    }
+    if gHolding, let deltas = GestureNavHaptics.relativeDisplacements(
+        starts: gHoldStarts.mapValues { (x: $0.x, y: $0.y) },
+        current: touching.map { (id: $0.id, x: $0.p.x, y: $0.p.y) }
+    ) {
+        let dx = deltas.map(\.dx).reduce(0, +) / Float(deltas.count)
+        let dy = deltas.map(\.dy).reduce(0, +) / Float(deltas.count)
+        DispatchQueue.main.async {
+            RestHoldConsole.shared.update(dx: dx, dy: dy)
+        }
     }
 }
 
@@ -420,7 +443,7 @@ let scrollFilter: CGEventTapCallBack = { _, type, event, _ in
     guard type == .scrollWheel, event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 else {
         return Unmanaged.passUnretained(event)
     }
-    if gThreeMoving { return nil }
+    if gThreeMoving || gHolding { return nil }
     let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
     if !gWasDown && momentum != 0 && gLastTouchWasSwipe { return nil }
     return Unmanaged.passUnretained(event)
@@ -7174,6 +7197,25 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         holdHandler = { on in
             NSLog("recense: two-finger hold \(on ? "down" : "up")")
             MainActor.assumeIsolated { Recense.hold(on) }
+        }
+        RestHoldConsole.shared.onValueChanged = { zone, val in
+            MainActor.assumeIsolated {
+                switch zone {
+                case .speed:
+                    Recense.overlay?.homeBar.call("setSpeed", val)
+                    if let notice = RestHoldConsole.speedCapabilityNotice(
+                        forBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    ) {
+                        NSLog("recense: \(notice)")
+                        Recense.overlay?.setStatus(notice)
+                    }
+                case .level:
+                    if let cur = Volume.get() { Volume.nudge(Float(val / 100.0) - cur) }
+                    Recense.overlay?.homeBar.call("setConsoleValue", ["zone": zone.rawValue, "value": val])
+                case .tone, .key, .space, .voice:
+                    Recense.overlay?.homeBar.call("setConsoleValue", ["zone": zone.rawValue, "value": val])
+                }
+            }
         }
         wingSwipeHandler = { [weak self] dir, x in
             NSLog("recense: three-finger swipe \(dir < 0 ? "leftward" : "rightward") from \(x)")
