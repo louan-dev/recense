@@ -332,4 +332,18 @@ await test("purge-sealed deletes vectors of any sealed-segment path, and search 
   assert.ok(![...env.VECTORS.m.values()].some((v) => /(^|\/)(Raven|Matters|Sealed)(\/|$)/i.test(v.metadata.path)), "vectors purged");
 });
 
+// Regression guard: BUG-30
+await test("sealed matches the last segment without its extension, never a prefix; purge clears a sealed active file's text", async () => {
+  assert.ok(sealed("main", "x/Raven.pdf") && sealed("main", "Matters.docx"));
+  assert.ok(!sealed("main", "x/Ravenclaw.pdf") && !sealed("main", "x/Matters-old.txt"));
+  const id = (await vectorId("main", "Books/Raven/live.txt", 0)).replace(/-0$/, "");
+  const s = JSON.parse(env.MAIN.m.get("ai/index.json").text);
+  s.active = { key: "main:Books/Raven/live.txt", etag: "x", id, slices: 2, slice: 0, at: 0, total: 5, had: 0 };
+  await env.MAIN.put("ai/index.json", JSON.stringify(s));
+  await env.MAIN.put(`ai/text/${id}/0.json`, "[]"); await env.MAIN.put(`ai/text/${id}/1.json`, "[]");
+  assert.ok((await (await post("/main/api/ai/purge-sealed", {})).json()).ok);
+  assert.ok(![...env.MAIN.m.keys()].some((k) => k.startsWith(`ai/text/${id}/`)), "no text slices left");
+  assert.equal(JSON.parse(env.MAIN.m.get("ai/index.json").text).active, null);
+});
+
 console.log(`\n${passed} passed`);

@@ -455,6 +455,7 @@ async function finishActive(env, s) {
  *  segment, found in R2 and in the index state, then drops them from the state. Idempotent. Derived from Spec: BUG-30 */
 export async function purgeSealed(env) {
   const s = await readState(env), keys = new Set(Object.keys(s.files || {}).filter((k) => sealed("", k.slice(k.indexOf(":") + 1))));
+  if (s.active && sealed("", s.active.key.slice(s.active.key.indexOf(":") + 1))) keys.add(s.active.key);
   for (const root of Object.keys(ROOTS)) {
     const { bucket, prefix } = hostOf(root), b = env[bucket];
     let cursor;
@@ -473,7 +474,10 @@ export async function purgeSealed(env) {
     for (let n = 0; n < (f ? f[3] || 0 : 0); n++) await env.MAIN.delete(`${TEXT}${id}/${n}.json`);
     delete s.files[key];
   }
-  if (s.active && keys.has(s.active.key)) s.active = null;
+  if (s.active && keys.has(s.active.key)) {   // the mid-index file's stored text slices go too
+    for (let n = 0; n < (s.active.slices || 0); n++) await env.MAIN.delete(`${TEXT}${s.active.id}/${n}.json`);
+    s.active = null;
+  }
   s.todo = (s.todo || []).filter(([k]) => !keys.has(k)); s.names = (s.names || []).filter(([k]) => !keys.has(k));
   await writeState(env, s);
   return { ok: true, files: keys.size, vectorIds };
