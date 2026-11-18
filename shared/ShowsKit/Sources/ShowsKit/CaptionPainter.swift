@@ -197,6 +197,17 @@ public enum CaptionPainter {
             }
             y -= gap
         }
+        // Derived from Spec: BUG-24 review 4 · too long even at 60 % (forced): the row with the newest word begun ends at
+        // the box's foot, its start cut at the top, as the 11-10 floating window did (centred, the word being said fell
+        // off the bottom); before any word is begun, the line's start is at the top. Rows below the box are dropped.
+        if force, total > box.height {
+            let top = out.items.map(\.rect.maxY).max() ?? box.maxY
+            let said = out.items.filter { $0.kind == .original && ($0.beat?.start ?? .infinity) <= t }.max { $0.beat!.start < $1.beat!.start }
+            let d = max(said.map { box.minY - $0.rect.minY } ?? -.infinity, box.maxY - top)
+            // what then falls below the box (the rows still to come, the translation) isn't drawn: the foot stays whole
+            out.items = out.items.map { Item(kind: $0.kind, text: $0.text, rect: $0.rect.offsetBy(dx: 0, dy: d), font: $0.font, beat: $0.beat, alpha: $0.alpha, placeholder: $0.placeholder) }
+                .filter { $0.rect.minY >= box.minY - 0.5 }
+        }
         return out
     }
 

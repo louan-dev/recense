@@ -185,6 +185,21 @@ final class CaptionTests: XCTestCase {
         XCTAssertEqual(l.items.count, 40)
     }
 
+    // Regression guard: BUG-24 review 4 (11-18): a line too long even at 60 % was centred, so the word being said could
+    // fall off the bottom of the floating window (the 11-10 fix kept the newest words at the bottom)
+    func testAForcedLineKeepsTheWordBeingSaidInTheBox() {
+        let text = (1...6).map { _ in "The sun goes down and the light turns cold over the water," }.joined(separator: " ")
+        let w = words(text, step: 0.2), box = CGRect(x: 18, y: 12, width: 364, height: 164)
+        var style = CaptionStyle(); style.size = 24
+        for k in [3, 40, w.count - 2] {
+            let t = w[k].start + 0.05
+            let l = CaptionPainter.layout(Caption.Line(words: w, translationText: text), mode: .follow, at: t, in: box, style: style)
+            let said = l.items.filter { $0.kind == .original }[k].rect
+            XCTAssertTrue(said.minY >= box.minY - 0.5 && said.maxY <= box.maxY + 0.5, "word \(k) at \(said) is outside \(box)")
+            XCTAssertTrue(l.items.allSatisfy { $0.rect.minY >= box.minY - 0.5 }, "nothing is cut at the foot")
+        }
+    }
+
     // ---------- option A (11-17): what the Mac's renderer carried, now in the one painter ----------
 
     func testRightToLeftScriptAndVisualOrderKeepALatinRunInItsOwnOrder() {

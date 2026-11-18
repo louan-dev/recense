@@ -72,7 +72,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     the rules (beats per word and per translated word, progress by clock, syllables or pin, phrases cut at clauses,
     the Learn turn after `turnTime`); `CaptionPainter.layout` / `draw` paint one line in Core Graphics for `.follow`
     (heard part gold, spoken white, upcoming dim, translation under it) or `.learn` (each heard phrase turns into its
-    translation, the row stays centred; Reduce Motion snaps). A long line shrinks before it is cut. Tests: `CaptionTests`.
+    translation, the row stays centred; Reduce Motion snaps). A long line shrinks before it is cut;
+    one too long even at 60 % keeps the word being said in the box (its row at the foot at most, rows below dropped). Tests: `CaptionTests`.
     From the Mac's renderer (FEAT-05 option A, 11-17): `CaptionStyle.balance` (each language its own size and opacity;
     a hidden side takes no room), `guess` (the original at half), `translating` (a dim placeholder while the translation
     is pending); right-to-left lines run right to left (`Caption.rtl`, `Caption.visual`, in `CaptionPlaces.swift`); and

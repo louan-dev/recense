@@ -165,7 +165,8 @@ One phase at a time. Each ends at its check. Bugs before features.
   the layer (1200 × 564 BGRA each, about 32 MB). Invariants (FloatingFramesTests, floatingcaption): half way through a
   1 s word the window's picture is lit left of the middle and dim right of it; a word under 0.25 s is one picture; the
   picture changes exactly at the stamps; at 1.5× a stamp 1.5 s of file ahead is 1 s of wall ahead.
-  Known limit: a line still too long at 60 % size is cut at both ends (FEAT-05 rule 8); before, its start faded.
+  A line still too long at 60 % size keeps the word being said in the box: its row at the foot at most, the start cut
+  at the top, rows below it dropped (review 4, 11-18; `testAForcedLineKeepsTheWordBeingSaidInTheBox`).
   Not measured: pictures per minute and app memory on the device (the risk above).
 - **Also (T-0036, T-0038):** the window's own pause button rests it as the thin strip at once (`Floating.rest(held:)`),
   and pauses our player when it is the one captioned; play wakes it with the newest words. Check: `mobile/ios/Tests/floating`.
