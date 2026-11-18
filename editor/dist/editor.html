@@ -31282,6 +31282,7 @@ ${PAGE_MARKER}
       if (deferredText === null) return false;
       const text = deferredText;
       deferredText = null;
+      if (typeof absorbText === "function" && absorbText(text)) return true;
       return applyText(text);
     }
     function setText(nextText) {
@@ -34501,7 +34502,7 @@ ${PAGE_MARKER}
       const before = String(state.cues[Number(cueIndex)]?.annotation ?? "");
       const text = String(annotationText ?? "").trim();
       if (opts.lineNote && text && text !== before && lineNote(cueIndex, text)) insertFn = null;
-      else if (opts.lineNote && text === before) insertFn = null;
+      else if (opts.lineNote && text && text === before) insertFn = null;
       const res = annotateCue(state, cueIndex, annotationText, {
         onInsertToPage: insertFn,
         globalObj
@@ -35143,7 +35144,7 @@ ${PAGE_MARKER}
     let note = null;
     let stash = null;
     function post(action, body) {
-      deps.post("note", { action, key: note.key, ...body });
+      return deps.post("note", { action, key: note.key, ...body }) !== false;
     }
     function show(text, ink, matter) {
       deps.setText(text);
@@ -35202,7 +35203,11 @@ ${PAGE_MARKER}
       key: () => note ? note.key : null,
       title: () => note ? note.title : "",
       /** What the host's flush of draftpad.md reads: draftpad's text, also while a note is shown. */
-      hostText: () => note ? stash.text : deps.getText(),
+      hostText: () => {
+        if (!note) return deps.getText();
+        if (deps.flush) deps.flush();
+        return stash.text;
+      },
       /** The host handed draftpad.md new text (a save's merge, a poll): kept beside the note. True = taken. */
       absorbHostText(text) {
         if (!note) return false;
@@ -35244,7 +35249,12 @@ ${PAGE_MARKER}
       },
       routeInk(json) {
         if (!note) return false;
-        if (!note.written && strokesOf(parse(json, emptyInk)) === 0) return true;
+        const strokes = strokesOf(parse(json, emptyInk));
+        if (!note.written && strokes === 0) return true;
+        if (!note.written) {
+          note.written = true;
+          log("media-notes.underlay.first", { key: note.key, input: "ink", ms: now2() - note.openedAt });
+        }
         post("ink", { json: String(json) });
         return true;
       },
@@ -35303,7 +35313,7 @@ ${PAGE_MARKER}
         const t2 = String(text ?? "").trim();
         const line = t2 ? `${momentLink(key, start)} ${t2}` : momentLink(key, start);
         if (note && note.key === key) return { insert: line };
-        deps.post("note", { action: "append", key, line });
+        if (deps.post("note", { action: "append", key, line }) === false) return null;
         return { append: line };
       },
       /** Rule 5: a tapped transcript line's moment link, written at the caret then a space; null with no note. */
@@ -43334,6 +43344,7 @@ ${clean(nextLineText)}`;
     let recenseActions = null;
     let speaker = null;
     let audioSidecar = null;
+    let mediaNotes = null;
     let dualWings = null;
     let calendarScanner = null;
     let calendarScanTimer = null;
@@ -43379,8 +43390,10 @@ ${clean(nextLineText)}`;
             setToolbarFaded(true);
           }
           if (bridge) bridge.notifyDocChanged(update.transactions);
-          if (calendarScanner && dualWings) scheduleCalendarScan();
-          if (isExternal) scheduleExpiry();
+          const inNote = Boolean(mediaNotes && mediaNotes.isOpen());
+          if (!inNote && calendarScanner && dualWings) scheduleCalendarScan();
+          if (inNote) {
+          } else if (isExternal) scheduleExpiry();
           else if (library) library.noteEdit();
           if (recense) recense.docChanged();
         }
@@ -43413,7 +43426,6 @@ ${clean(nextLineText)}`;
     const matterDevice = createMatterDevice(typeof navigator !== "undefined" ? { userAgent: navigator.userAgent || "", maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
     let matterInput = "keys";
     let noteKeyNow = () => null;
-    let mediaNotes = null;
     let playheadKey = "";
     const mediaOf = () => {
       const key = noteKeyNow();
@@ -43542,7 +43554,12 @@ ${String(text ?? "")}`;
         setPagesLocked(view, false);
         window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: false });
       },
-      post: (channel, body) => window.webkit?.messageHandlers?.[channel]?.postMessage?.(body)
+      post: (channel, body) => {
+        const h = window.webkit?.messageHandlers?.[channel];
+        if (!h || typeof h.postMessage !== "function") return false;
+        h.postMessage(body);
+        return true;
+      }
     });
     noteKeyNow = () => mediaNotes.key();
     shell.addEventListener("focusout", (e) => {
