@@ -85,6 +85,22 @@ public enum TranscriptLight {
 
     /// How much of the line's text has been said at `t`: up to the end of the last word begun. Without word times,
     /// in proportion to the line's time, at the end of a whole word.
+    /// Derived from Spec: BUG-24 P1 · `spoken`, but the word being said is lit up to the letter the clock has reached
+    /// (the Mac's no-data rule: `SongLight.litCount` on the word as `Cadence.beats` reads it). No word times: `spoken`.
+    public static func swept(_ line: TranscriptLine, at t: Double) -> String.Index {
+        guard !line.words.isEmpty else { return spoken(line, at: t) }
+        let rs = ranges(line), beats = Cadence.beats(line.words)
+        var to = line.text.startIndex
+        for (i, w) in line.words.enumerated() where w.start <= t {
+            guard let r = rs[i] else { continue }
+            if t >= w.end || i >= beats.count { to = r.upperBound; continue }
+            let k = SongLight.litCount(beats[i], at: t)
+            guard k > 0 else { continue }   // begun, nothing lit yet: the cut stays after the last lit word
+            to = line.text.index(r.lowerBound, offsetBy: k, limitedBy: r.upperBound) ?? r.upperBound
+        }
+        return to
+    }
+
     public static func spoken(_ line: TranscriptLine, at t: Double, ranges: [Range<String.Index>?]? = nil) -> String.Index {
         let text = line.text
         if !line.words.isEmpty {
@@ -174,7 +190,7 @@ public struct TranscriptLineText: View {
         }
         guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
         if SongLight.sung(line) { return sung(line, t) }
-        let cut = TranscriptLight.spoken(line, at: t)
+        let cut = TranscriptLight.swept(line, at: t)
         var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
         said.foregroundColor = .white
         rest.foregroundColor = .white.opacity(0.4)

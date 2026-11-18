@@ -154,3 +154,26 @@ final class TranscriptTests: XCTestCase {
         XCTAssertEqual(FrameClock.follow(shown: 10, target: 9.99, paused: true), 9.99)          // paused: the report
     }
 }
+
+// Regression guard: BUG-24 P1 · the light sweeps inside the word being said (the Mac's no-data rule, SongLight.litCount)
+final class SweepTests: XCTestCase {
+    private func lit(_ l: TranscriptLine, _ t: Double) -> String { String(l.text[..<TranscriptLight.swept(l, at: t)]) }
+    private let line = TranscriptLine(id: "s", start: 0, end: 2, text: "Bonjour monde", words: [
+        .init(text: "Bonjour", start: 0, end: 1), .init(text: "monde", start: 1, end: 2)])
+
+    func testMiddleOfAOneSecondWordCutsInsideIt() {
+        let s = lit(line, 0.5)
+        XCTAssertTrue(s.count > 0 && s.count < "Bonjour".count, "cut inside the word: \(s)")
+    }
+    func testStartIsBeforeTheWordAndEndIsWhole() {
+        XCTAssertEqual(lit(line, 0), "")
+        XCTAssertEqual(lit(line, 1), "Bonjour")
+        XCTAssertEqual(lit(line, 2.5), "Bonjour monde")
+    }
+    func testALineWithNoWordTimesIsUnchanged() {
+        let bare = TranscriptLine(id: "b", start: 0, end: 2, text: "người Việt Nam", words: [])
+        for t in [0.0, 0.7, 1.3, 2.0] {
+            XCTAssertEqual(TranscriptLight.swept(bare, at: t), TranscriptLight.spoken(bare, at: t))
+        }
+    }
+}

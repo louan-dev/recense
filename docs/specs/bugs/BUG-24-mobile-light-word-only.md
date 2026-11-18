@@ -136,6 +136,7 @@ One phase at a time. Each ends at its check. Bugs before features.
   Gold stays for a fitted song only (FEAT-20).
 - Reach: Now Playing and Listen's in-app transcript, on iPhone, iPad and the Mac's ShowsKit views. One source.
 - Not in P1: the floating window (P1b).
+- **Built 2026-11-18 (B1):** `TranscriptLight.swept` (Transcript.swift), used by `TranscriptLineText.lit`. Invariant (SweepTests): mid-word the cut is inside the word; at its start nothing of it is lit; at its end it is whole; a line with no word times lights exactly as `spoken`. `spoken` itself stays whole-word (the floating window, P1b, still steps). Device shot owed.
 - Checks:
   1. `swift test` in `shared/ShowsKit/`: a new test, "at the middle of a 1-second word the cut is inside the word";
      at its start the cut is before it; at its end the word is whole. A line with no word times is unchanged.
