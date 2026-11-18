@@ -6604,8 +6604,14 @@
           try {
             const body = file.slice(k * size, (k + 1) * size);
             etag = (await (await call({ action: "part", uploadId: s.uploadId, part: k + 1 }, { method: "PUT", body, signal: ac.signal })).text()).trim();
+            if (!etag) throw new Error("no etag");
           } catch (e) {
-            if (t >= 4) throw new Error("part " + (k + 1) + " of " + total + " failed: " + (e.message || e));
+            if (t >= 4) {
+              // an id R2 no longer knows (expired or completed): forget it, so adding the file again starts fresh
+              if (/does not exist|NoSuchUpload|10024/i.test(e.message || "")) save(null);
+              throw new Error("part " + (k + 1) + " of " + total + " failed: " + (e.message || e));
+            }
+            await new Promise((r) => setTimeout(r, 2000 * t)); // a dropped network gets time to come back
           } finally {
             clearTimeout(timer);
           }
