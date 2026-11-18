@@ -135,6 +135,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     A failed read of `peers.v2` keeps the trust store this process last had, and `writable` is false:
     pair, forget and re-pair refuse to write `peers.v2` (and its mirror) and set `lastError`. A failed read of
     `identity` never makes and saves a new key. Only "not found" starts empty.
+14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
+    No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -186,3 +188,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   in order, and answered once the pairing finishes (a proof that came first was otherwise lost). T-0123 also needed the
   failed pick cleared on both sides (`PairPrompt.failed`), or both sides stay "picked" and the greater key keeps showing.
 - 2026-11-18 · follow-ups (A3-fix, review of 80ad4c0): 13 Keychain read error keeps pairings and refuses writes.
+  14 Keychain save updates in place, adds only when not found.

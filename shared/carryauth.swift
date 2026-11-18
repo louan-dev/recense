@@ -158,4 +158,13 @@ enum CarryStored: Equatable {
     }
     var data: Data? { if case .found(let d) = self { return d }; return nil }
     var failed: Bool { if case .failed = self { return true }; return false }
+
+    /// Invariant 14: update in place; add only when the item is not there yet. Never delete first.
+    static func save(update: () -> OSStatus, add: () -> OSStatus) -> Bool {
+        switch update() {
+        case errSecSuccess: return true
+        case errSecItemNotFound: return add() == errSecSuccess
+        default: return false
+        }
+    }
 }

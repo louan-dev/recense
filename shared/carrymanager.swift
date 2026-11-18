@@ -44,11 +44,10 @@ private enum CarryKeychain {
     static func save(_ data: Data, _ account: String) -> Bool {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: account]
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        let attrs: [String: Any] = [kSecValueData as String: data,
+                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        return CarryStored.save(update: { SecItemUpdate(base as CFDictionary, attrs as CFDictionary) },   // invariant 14
+                                add: { SecItemAdd(base.merging(attrs) { $1 } as CFDictionary, nil) })
     }
 }
 

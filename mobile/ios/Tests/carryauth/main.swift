@@ -214,6 +214,20 @@ do {
     check(ok.trusted.map(\.name) == ["iPad"] && ok.writable, "found: read as before")
 } catch { check(false, "13 setup threw \(error)") }
 
+// 14 · A Keychain save updates in place: no delete-then-add window that can leave peers.v2 empty
+// Regression guard: SEC-02
+do {
+    var calls: [String] = []
+    func run(_ u: OSStatus, _ a: OSStatus) -> Bool {
+        calls = []
+        return CarryStored.save(update: { calls.append("update"); return u }, add: { calls.append("add"); return a })
+    }
+    check(run(errSecSuccess, errSecDuplicateItem) && calls == ["update"], "an existing item is updated, nothing added: \(calls)")
+    check(run(errSecItemNotFound, errSecSuccess) && calls == ["update", "add"], "a missing item is added: \(calls)")
+    check(!run(errSecInteractionNotAllowed, errSecSuccess) && calls == ["update"], "any other update error saves nothing: \(calls)")
+    check(!run(errSecItemNotFound, errSecDuplicateItem), "a failed add is reported")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])
