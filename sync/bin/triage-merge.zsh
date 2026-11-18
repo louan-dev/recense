@@ -184,8 +184,12 @@ cmd_checks() {
     [[ $spec == "lock "* ]] && { lock=1; spec=${spec#lock }; }
     dir=${spec%% :: *}; cmd=${spec#* :: }
     if (( lock )) && ! take_build_lock "checks:$feat"; then print "FAIL lock    $dir :: $cmd (build.lock busy: $(cat $BLOCK_LOCK/who 2>/dev/null))"; fail=1; continue; fi
-    if (cd "$ROOT/$dir" && ROOT=$ROOT eval "$cmd") >/dev/null 2>&1; then print "ok   $dir :: ${cmd[1,70]}"; else print "FAIL $dir :: ${cmd[1,70]}"; fail=1; fi
-    (( lock )) && release_build_lock
+    {
+      (( lock )) && trap 'release_build_lock; exit 130' INT TERM   # a Ctrl-C or kill never leaves the lock behind (review 5ee2110)
+      if (cd "$ROOT/$dir" && ROOT=$ROOT eval "$cmd") >/dev/null 2>&1; then print "ok   $dir :: ${cmd[1,70]}"; else print "FAIL $dir :: ${cmd[1,70]}"; fail=1; fi
+    } always {
+      (( lock )) && { release_build_lock; trap - INT TERM; }
+    }
   done
   (( n )) || { print "FAIL $feat has no check: line"; fail=1; }
   print "Embodiments: $(block_keys "$blk" embodiments)"
@@ -194,7 +198,7 @@ cmd_checks() {
 }
 
 # sweep <feature>: textual search (not an AST) for a definition of one of the block's `symbols:` outside its `home:`.
-# Looks at func/class/struct/enum/actor/protocol/typealias (Swift) and function/class (JS) and def (Python); skips tests.
+# Looks at func/class/struct/enum/actor/protocol/typealias/extension (Swift), function/class/const/let/var (JS) and def (Python); skips tests.
 cmd_sweep() {
   local feat=${1:-} blk sym h f hit found=0 inhome
   [[ -n $feat ]] || { print "usage: triage-merge.zsh sweep <feature>"; return 2; }
@@ -208,7 +212,7 @@ cmd_sweep() {
         --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.build-sdk27 --exclude-dir=dist --exclude-dir=.git \
         --exclude-dir=.claude --exclude-dir=.toolchain --exclude-dir=.test-build --exclude-dir=backups --exclude-dir=.scratch \
         --exclude-dir=test --exclude-dir=tests --exclude-dir=Tests --exclude-dir=docs \
-        "(^|[^[:alnum:]_])(func|class|struct|enum|actor|protocol|typealias|function|def)[[:space:]]+$sym([^[:alnum:]_]|$)" . 2>/dev/null | sed 's#^\./##')"}; do
+        "(^|[^[:alnum:]_])((func|class|struct|enum|actor|protocol|typealias|extension|function|def)[[:space:]]+|(const|let|var)[[:space:]]+)$sym([^[:alnum:]_]|$)" . 2>/dev/null | sed 's#^\./##')"}; do
       f=${hit%%:*}; inhome=0
       for h in $homes; do [[ $f == ${~h}* ]] && inhome=1; done
       (( inhome )) || { print "SECOND COPY $sym at $hit"; found=1; }
@@ -303,6 +307,18 @@ PEOF
   print 'func bestVoice() {}' > $RT/shared/other/b.swift; print 'func bestVoice() {}' > $RT/shared/other/test/t.swift
   out=$(zsh $SELF sweep demo 2>&1); local rc2=$?
   (( rc2 == 1 )) && print -r -- $out | grep -q 'SECOND COPY bestVoice at shared/other/b.swift:1' && ! print -r -- $out | grep -q 'test/t.swift' && ok "sweep finds a second copy outside the home and skips tests" || bad "sweep copy ($out)"
+  print 'const bestVoice = () => {}' > $RT/shared/other/c.js
+  out=$(zsh $SELF sweep demo 2>&1); print -r -- $out | grep -q 'SECOND COPY bestVoice at shared/other/c.js:1' && ok "sweep finds a const-style second copy" || bad "sweep const ($out)"
+  rm -f $RT/shared/other/c.js
+  zsh $SELF checks demo >/dev/null 2>&1   # warm: the lock line must not leave build.lock behind when killed
+  cat >> $RT/docs/specs/PARITY.md <<'PEOF'
+<!-- parity:begin killme -->
+feature: killme
+check: lock . :: kill -TERM $$; sleep 5
+<!-- parity:end -->
+PEOF
+  zsh $SELF checks killme >/dev/null 2>&1; [[ ! -d $d/build.lock ]] && ok "a killed checks run releases build.lock" || bad "build.lock leaked after kill"
+  rm -rf $d/build.lock
   unset TRIAGE_ROOT TRIAGE_BUILD_LOCK TRIAGE_FREE_PCT TRIAGE_LOCK_POLL TRIAGE_LOCK_WAIT
 
   rm -rf $d $TRIAGE_STATE
