@@ -41763,10 +41763,12 @@ ${clean(nextLineText)}`;
   function wordsOf(text) {
     return String(text || "").match(/[\p{L}\p{N}’']+/gu) || [];
   }
+  var VI_ONLY2 = /[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộớờởỡợụủũứừửữựỳỵỷỹáíóúýìòãõ]/;
+  var FR = /[éèêëàâçùûüôîïœæÿ]|\b(le|la|les|des|est|une|du|et)\b/;
   function guessLang(text) {
-    const s = String(text || "").toLowerCase();
-    if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/.test(s)) return "vi";
-    if (/[éèêëàçùûôîœ]|\b(le|la|les|des|est|une|du|et)\b/.test(s)) return "fr";
+    const s = String(text || "").normalize("NFC").toLowerCase();
+    if (VI_ONLY2.test(s)) return "vi";
+    if (FR.test(s)) return "fr";
     return "en";
   }
   function estimateWordTimes(text) {

@@ -232,6 +232,8 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - Voice continuation (FEAT-08 P2): `recenseEditor.appendVoice(text)` puts spoken words at the end as their own voice
   passage in `draftpad.matter.json`. With no page open, `shared/voiceappend.swift` does the same; on iPhone and iPad,
   "Add to Draftpad" (Siri, Shortcuts, the Action button) calls it.
+- A passage's language (`guessLang`, BUG-32): the text is composed (NFC) first; only letters French never writes
+  (ă đ ơ ư, the tone marks) say Vietnamese, so `fête`, `château`, `hôtel` stay French.
 
 ## Page lock while annotating (BUG-31, 2026-11-18)
 
