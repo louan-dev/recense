@@ -71,6 +71,15 @@ enum Floating {
         open && (paused || held || quiet >= hideAfter)
     }
 
+    /// At most this many pictures wait in the layer (each 1200 x 564 BGRA, 2.7 MB: about 32 MB).
+    static let queueCap = 12
+    /// The 0.1 s tick draws again once the stamped pictures are half spent (BUG-24 review 3): 12 cover only 0.5-1 s of
+    /// speech, and the 1 s tick alone let the sweep freeze behind other apps.
+    static func refill(open: Bool, queued: Int) -> Bool { open && queued < queueCap / 2 }
+    /// The picture shown again each second so PiP never goes stale, only when nothing is stamped ahead: redrawing it
+    /// flushed a queue that was still good.
+    static func keepAlive(since: Double, queued: Int) -> Bool { since >= 1 && queued == 0 }
+
     /// The window's pause lets go once our player plays again from anywhere else (the app, Control Center, headphones;
     /// BUG-24 review 2): else the window stayed a thin strip saying paused while the podcast played.
     static func release(held: Bool, own: Bool, playing: Bool) -> Bool { held && own && playing }

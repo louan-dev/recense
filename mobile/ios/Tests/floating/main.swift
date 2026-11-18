@@ -79,6 +79,15 @@ if !Floating.release(held: true, own: true, playing: true) { bad += 1; print("FA
 if Floating.release(held: true, own: true, playing: false) { bad += 1; print("FAIL released while still paused") }
 if Floating.release(held: true, own: false, playing: true) { bad += 1; print("FAIL another app's sound released the window's pause") }
 if Floating.release(held: false, own: true, playing: true) { bad += 1; print("FAIL released a window that isn't paused") }
+// Regression guard: BUG-24 review 3 (11-18): 12 pictures cover only 0.5-1 s of speech (4 to a long word, more at 2x),
+// and behind other apps the queue was refilled only on the 1 s tick, so the sweep froze. The 0.1 s tick refills it
+// once it is half spent; the 1 s keep-alive never flushes a queue that is still good.
+if !Floating.refill(open: true, queued: Floating.queueCap / 2 - 1) { bad += 1; print("FAIL a half-spent queue isn't refilled") }
+if Floating.refill(open: true, queued: Floating.queueCap / 2) { bad += 1; print("FAIL refilled a queue more than half full") }
+if Floating.refill(open: false, queued: 0) { bad += 1; print("FAIL refilled with no window") }
+if Floating.keepAlive(since: 1.2, queued: 3) { bad += 1; print("FAIL the keep-alive flushed a good queue") }
+if !Floating.keepAlive(since: 1.2, queued: 0) { bad += 1; print("FAIL no keep-alive with nothing queued (PiP goes stale)") }
+if Floating.keepAlive(since: 0.5, queued: 0) { bad += 1; print("FAIL keep-alive before a second") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

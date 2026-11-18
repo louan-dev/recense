@@ -217,7 +217,8 @@ updates in place.
   Its words light on the refresh they start on, and sweep inside a word (BUG-24 P1b, 11-18): every moment the picture
   changes (a word's start, each quarter of a word of 0.25 s or more, a line's turn, a Learn fade) is drawn up to 1.5 s
   ahead and stamped for that moment at the player's speed (ShowsKit `FloatingFrames`); the layer runs on the host clock
-  and shows it then. At most 12 pictures wait. Before (11-10), a word waited for the next redraw, at most 10 a second
+  and shows it then. At most 12 pictures wait; the 0.1 s tick draws more once half are spent, and the 1 s keep-alive
+  redraws only when none wait (the float log says how many were stamped a second). Before (11-10), a word waited for the next redraw, at most 10 a second
   and up to a second behind other apps; until 11-18 a word lit whole at its start, and at 1.5× each lit late.
   Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
