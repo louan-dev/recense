@@ -30,6 +30,7 @@ import { removedRecordExtension, getRemoved } from './removed.js';
 import {
   pageModeExtension,
   attachSwipePaging,
+  setPagesLocked,
   stepPage,
   showPage,
   currentPage,
@@ -71,7 +72,8 @@ import {
   detectAndSnapShape,
   eraseWholeStrokes,
   erasePartialStrokes,
-  createInkLayer
+  createInkLayer,
+  toolLocksPages
 } from './ink.js';
 import {
   activeCueIndexAt,
@@ -863,6 +865,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
     onToolChange: tool => {
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
+      // Derived from Spec: BUG-31 — pages hold still while annotating; the host turns its edge swipes off too.
+      const locked = setPagesLocked(view, toolLocksPages(tool));
+      if (h && typeof h.postMessage === 'function') h.postMessage({ pagesLocked: locked });
     },
     // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
     onStrokeAdded: stroke => {

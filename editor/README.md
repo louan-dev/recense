@@ -232,3 +232,10 @@ Brief: `.handoff/coordinator/recense-the-text-brief.md`. Recense writes new text
 - Voice continuation (FEAT-08 P2): `recenseEditor.appendVoice(text)` puts spoken words at the end as their own voice
   passage in `draftpad.matter.json`. With no page open, `shared/voiceappend.swift` does the same; on iPhone and iPad,
   "Add to Draftpad" (Siri, Shortcuts, the Action button) calls it.
+
+## Page lock while annotating (BUG-31, 2026-11-18)
+
+- With any ink tool chosen (pen, highlighter, lasso, eraser) the pages hold still: wheel, touch drag, Pencil edge drag and the Mac trackpad swipe (`nativeSwipe` answers `'off'`) turn nothing. Choosing the text tool (`select`) unlocks them. `setPagesLocked(view, bool)` in `src/pagemode.js`; `toolLocksPages(tool)` in `src/ink.js`.
+- The page bar (`‹` `›` `＋`, dots) and the menu still turn pages while locked; only gestures are held.
+- The page posts `{ pagesLocked: bool }` on every tool change; `mobile/HostApp/iOS/Draftpad.swift` switches its screen-edge (wing) recognizers off while locked.
+- Test: `npm test` runs `test/bug31-pages-turn-while-inking.test.mjs`.
