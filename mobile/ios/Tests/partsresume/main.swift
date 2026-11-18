@@ -9,6 +9,7 @@ final class Fake: @unchecked Sendable {
     var calls: [String] = []            // "start", "part 3", "complete", "abort"
     var failPart: Int? = nil            // every attempt at this part fails
     var gone = false                    // R2 doesn't know the upload id
+    var completeCode: Int? = nil        // the Worker refuses `complete` with this status
     var startCount = 0
     func call(_ extra: [String: String], _ method: String, _ body: Data?, _ from: URL?) async throws -> Data {
         let a = extra["action"] ?? ""
@@ -18,6 +19,7 @@ final class Fake: @unchecked Sendable {
             if n == failPart { throw FeedError.server(500) }
             calls.append("part \(n)"); return Data("etag\(n)".utf8)
         }
+        if a == "complete", let c = completeCode { calls.append("complete"); throw FeedError.server(c) }
         calls.append(a); return Data("{}".utf8)
     }
 }
@@ -63,6 +65,19 @@ Task {
     let g = Fake(); g.failPart = 2; _ = await run(g)
     if var r = store.load(key) { r.started = Date().addingTimeInterval(-7 * 86_400); store.save(key, r) }
     check(store.load(key) == nil, "a record older than 6 days is dropped")
+    // review 1: the file is rewritten (same size, same modification date) between attempts: the old parts are not reused
+    let h1 = Fake(); h1.failPart = 3; _ = await run(h1)
+    let when = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate]) as? Date ?? Date()
+    var bytes = Data(count: 40 << 20); bytes[0] = 7
+    try? bytes.write(to: file)
+    try? FileManager.default.setAttributes([.modificationDate: when], ofItemAtPath: file.path)
+    let h2 = Fake()
+    let e5 = await run(h2)
+    check(e5 == nil && h2.calls.first == "abort" && h2.calls.contains("start") && h2.calls.contains("part 1"), "a rewritten file with the same size and date restarts, it never reuses old parts", h2.calls)
+    // review 7: the Worker refuses `complete` (400): the parts are given back (abort) and the record dropped
+    let i1 = Fake(); i1.completeCode = 400
+    let e6 = await run(i1)
+    check(e6 as? FeedError == .server(400) && i1.calls.contains("abort") && store.load(key) == nil, "a refused complete aborts and drops the record", i1.calls)
     sem.signal()
 }
 sem.wait()
