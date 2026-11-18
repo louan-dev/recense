@@ -7831,7 +7831,9 @@ final class NativeSources {
             // ... and read for the moment this frame reaches the screen, one refresh after it's drawn (owner 11-10: the light
             // was a frame late; FrameClock.lead, ShowsKit, the same rule the iPhone and iPad use)
             let shown = displayLink.map(frameLead) ?? 0
-            let t = smoothTime() + (cfg.syncOffset - soundEngine.latency + shown) * pos.rate - ep.shift
+            // (TranscriptLight.heard, BUG-24: the one heard-time rule the iPhone, iPad and floating window read too)
+            let t = TranscriptLight.heard(position: smoothTime(), rate: pos.rate, latency: soundEngine.latency,
+                                          ahead: cfg.syncOffset + shown, playing: !(expectPaused ?? pos.paused)) - ep.shift
             // a dense track (a choir): its words start Off, with Show in the Recense menu (item 22)
             let quiet = !ep.instrumental && lyricsOff(ep)
             lyricsItem?.title = quiet ? "Show Captions for This Track" : "Hide Captions for This Track"

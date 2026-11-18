@@ -92,7 +92,7 @@ public enum CaptionPainter {
         return rows.count <= max ? rows : nil
     }
 
-    private static func attempt(_ line: Caption.Line, mode: CaptionMode, at t: Double, in box: CGRect, style: CaptionStyle,
+    static func attempt(_ line: Caption.Line, mode: CaptionMode, at t: Double, in box: CGRect, style: CaptionStyle,
                                 scale: CGFloat, force: Bool = false) -> Layout? {
         let bal = style.balance, en = line.translation ?? []
         let translated = !en.isEmpty, dim: CGFloat = style.guess ? 0.5 : 1
@@ -254,7 +254,11 @@ public enum CaptionPainter {
     /// Draws the line as it is at `t`. `voice`: the Mac's prosody curve for a word's light, when it has one.
     public static func draw(_ line: Caption.Line, mode: CaptionMode, at t: Double, in ctx: CGContext, box: CGRect,
                             style: CaptionStyle = .init(), voice: ((Caption.Beat, Double) -> Double?)? = nil) {
-        let l = layout(line, mode: mode, at: t, in: box, style: style)
+        paint(layout(line, mode: mode, at: t, in: box, style: style), at: t, in: ctx, style: style, voice: voice)
+    }
+
+    /// Draws a layout as it is at `t` (the floating window picks its own: CaptionWindow.swift).
+    static func paint(_ l: Layout, at t: Double, in ctx: CGContext, style: CaptionStyle, voice: ((Caption.Beat, Double) -> Double?)? = nil) {
         ctx.saveGState(); defer { ctx.restoreGState() }
         ctx.textMatrix = .identity
         ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3 * l.scale, color: style.shadow)
