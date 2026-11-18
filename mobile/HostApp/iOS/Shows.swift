@@ -22,6 +22,13 @@ struct RecenseRoot: View {
         }
     }
 
+    /// FEAT-07 P0 Rename and Delete, FEAT-13 "+" and Move to… on the rows; a moved file keeps its saved transcript.
+    static func homeFiles() -> HomeFiles {
+        let f = HomeFiles { Playback.rescan() }
+        f.transcripts = PlaybackEars.cache
+        return f
+    }
+
     static func store() -> MemoryCatalog {
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
         return ProcessInfo.processInfo.environment["RECENSE_TRANSCRIPT"] == "sample" ? .sample(device: device) : MemoryCatalog(device: device)
@@ -38,7 +45,7 @@ struct RecenseRoot: View {
         .onChange(of: listen.episodes.map { "\($0.key)\($0.updated)" } + [listen.episode?.key ?? ""], initial: true) { recentFromListen() }
         .onAppear {
             Playback.model = model
-            model.files = HomeFiles { Playback.rescan() }   // FEAT-07 P0: Rename and Delete on the rows
+            model.files = Self.homeFiles()
             NativePlayer.shared.saved = { [model] path in
                 Playback.rescan()
                 Playback.landed(path)

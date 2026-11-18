@@ -122,4 +122,19 @@ final class FileActionsTests: XCTestCase {
         let e = try XCTUnwrap(eps.first)
         XCTAssertEqual(m.destinations(for: e), [], "and no Move to…")
     }
+
+    func testAMovedFileKeepsItsSavedTranscript() throws {
+        let cache = TranscriptCache(dir: FileManager.default.temporaryDirectory.appendingPathComponent("feat13-tc-\(UUID().uuidString)"))
+        let line = [TranscriptLine(id: "0", start: 0, end: 1, text: "Bonjour, xin chào")]
+        cache.write("library/Music/Cours/Séance 1.m4a", line)
+        cache.move(from: "library/Music/Cours/Séance 1.m4a", to: "library/Study/Droit/Séance 1.m4a")
+        XCTAssertEqual(cache.read("library/Study/Droit/Séance 1.m4a"), line, "the copy follows the file")
+        XCTAssertNil(cache.read("library/Music/Cours/Séance 1.m4a"))
+        let other = [TranscriptLine(id: "0", start: 0, end: 1, text: "autre")]
+        cache.write("library/Music/B.m4a", other)
+        cache.move(from: "library/Study/Droit/Séance 1.m4a", to: "library/Music/B.m4a")
+        XCTAssertEqual(cache.read("library/Music/B.m4a"), other, "never overwrites a copy saved for the new path")
+        cache.move(from: "library/none.m4a", to: "library/x.m4a")   // nothing saved: no change, no crash
+        XCTAssertNil(cache.read("library/x.m4a"))
+    }
 }
