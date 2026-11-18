@@ -1,5 +1,6 @@
 import { deviceLayout, layoutVars } from './devicelayout.js';
 import { isMixed } from './lenses.js';
+import { LANGS, LANG_NAMES } from './langs.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightSpecialChars } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -948,8 +949,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
   recenseBtn.title = 'Recense layer';
   recenseBtn.setAttribute('aria-label', 'Recense layer');
   toolbar.insertBefore(recenseBtn, menuWrap);
-  const INTO = ['', 'en', 'vi', 'fr'];
-  const INTO_NAMES = { '': 'Auto', en: 'English', vi: 'Vietnamese', fr: 'French' };
+  const INTO = ['', ...LANGS];
+  const INTO_NAMES = { '': 'Auto', ...LANG_NAMES };
   function syncRecenseControls() {
     const on = recense.isEnabled();
     recenseBtn.setAttribute('aria-pressed', String(on));
