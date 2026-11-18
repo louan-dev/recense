@@ -207,6 +207,8 @@ do {
     check(locked.trusted == had, "a failed read keeps the peers this process had")
     check(!locked.writable, "a failed read refuses to write peers.v2")
     check(locked.needsPairing.isEmpty, "and lists nobody as needing pairing")
+    let atLaunch = CarryTrust.load(.failed(errSecInteractionNotAllowed), mirror: had, previous: [])
+    check(atLaunch.needsPairing.isEmpty, "a failed read at launch asks nobody to pair again: \(atLaunch.needsPairing.map(\.name))")
     let none = CarryTrust.load(.notFound, mirror: had, previous: had)
     check(none.trusted.isEmpty && none.writable, "only not found starts empty, and may be written")
     let v2 = try JSONEncoder().encode([peer("iPad", ipad)])

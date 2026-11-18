@@ -136,7 +136,9 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
 13. **Keychain read error ≠ no peers:** a Keychain read is found, not found, or failed (`CarryStored`).
     A failed read of `peers.v2` keeps the trust store this process last had, and `writable` is false:
     pair, forget and re-pair refuse to write `peers.v2` (and its mirror) and set `lastError`. A failed read of
-    `identity` never makes and saves a new key. Only "not found" starts empty.
+    `identity` never makes and saves a new key. Only "not found" starts empty. A failed read lists nobody new under
+    "Needs pairing again" (the list stays as it was; never re-pair during a Keychain failure), and the
+    unreadable message clears once every read works again.
 14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
     No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
 15. **The 10 s proof deadline is per session:** each handshake session gets its own token (`CarryDeadlines`).

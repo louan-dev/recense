@@ -464,13 +464,16 @@ private enum CarryKeychain {
         mirror = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
         let trust = CarryTrust.load(CarryKeychain.load("peers.v2"), mirror: mirror, previous: peers)   // invariant 13
         trustWritable = trust.writable
-        if !trust.writable { lastError = Self.unreadable }
         if trust.trusted != peers { peers = trust.trusted }
-        let names = CarryTrust.listed(needsPairing: trust.needsPairing, refused: refusedNames, trusted: trust.trusted)   // invariant 16
-        if names != needsPairing { needsPairing = names }
+        if trust.writable {   // invariant 13: a failed read keeps the list as it was
+            let names = CarryTrust.listed(needsPairing: trust.needsPairing, refused: refusedNames, trusted: trust.trusted)   // invariant 16
+            if names != needsPairing { needsPairing = names }
+        }
         let g = CarryKeychain.load("group")
         if let d = g.data { group = d }
         if g.failed != groupUnread { groupUnread = g.failed }   // a failed read keeps the last group, refuses pairing
+        let unread = !trustWritable || groupUnread || identityUnread
+        if unread { lastError = Self.unreadable } else if lastError == Self.unreadable { lastError = nil }   // recovered
     }
 
     private func startFlow(_ peer: MCPeerID) {

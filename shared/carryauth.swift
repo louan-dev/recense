@@ -137,7 +137,7 @@ enum CarryTrust {
     /// pairings it could not see. Only `.notFound` (or an unreadable item) starts empty.
     static func load(_ v2: CarryStored, mirror: [CarryPeer], previous: [CarryPeer])
         -> (trusted: [CarryPeer], needsPairing: [CarryPeer], writable: Bool) {
-        if v2.failed { return (previous, mirror.filter { m in !previous.contains { $0.key == m.key } }, false) }
+        if v2.failed { return (previous, [], false) }   // nobody new is asked to pair again during a Keychain failure
         let t = load(v2: v2.data, mirror: mirror)
         return (t.trusted, t.needsPairing, true)
     }
