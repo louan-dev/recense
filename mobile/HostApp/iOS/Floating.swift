@@ -65,8 +65,10 @@ enum Floating {
     /// T-0077/T-0139 (11-16): any open window with nothing to caption rests, whatever closes it later. Before, a window
     /// that could close (Reshow.works, an active iPad) or a Listen pause kept the last caption on screen until the
     /// close landed, and when iOS ignored the close, for good: frozen text, or black once its content was detached.
-    static func rest(open: Bool, quiet: Double, paused: Bool) -> Bool {
-        open && (paused || quiet >= hideAfter)
+    /// `held`: the window's own pause button (T-0036, T-0038, owner 11-12 "floating bar pause bug. doesnt collapse"): it
+    /// rests at once too, instead of holding the old words on a full window; play wakes it.
+    static func rest(open: Bool, quiet: Double, paused: Bool, held: Bool = false) -> Bool {
+        open && (paused || held || quiet >= hideAfter)
     }
 
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12

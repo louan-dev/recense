@@ -58,6 +58,10 @@ if !Floating.rest(open: true, quiet: Floating.stayAwake + 1, paused: false) { ba
 // Regression guard: T-0077 (11-14: frozen caption, then black, after pause): Listen's pause rests it blank at once,
 // even while the other app still plays, so no stale words stay while the hide lands or if iOS ignores it
 if !Floating.rest(open: true, quiet: 0, paused: true) { bad += 1; print("FAIL paused window keeps its caption") }
+// Regression guard: T-0036, T-0038 (owner 11-12: "floating bar pause bug. doesnt collapse"): the window's own pause
+// button held the old words on a full window; it rests as the thin strip at once, and wakes on play
+if !Floating.rest(open: true, quiet: 0, paused: false, held: true) { bad += 1; print("FAIL the window's pause doesn't collapse it") }
+if Floating.rest(open: true, quiet: 0, paused: false, held: false) { bad += 1; print("FAIL play after the window's pause stays collapsed") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

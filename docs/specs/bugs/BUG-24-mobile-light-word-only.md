@@ -1,6 +1,6 @@
 # BUG-24 · On iPhone and iPad the light steps word by word: no sweep inside a word, no prosody, and no number for lag or drift
 
-From: T-0141 (owner, 2026-11-16, relayed by session 6d8dbabe; the same wish as T-0132); T-0031 (the floating window's animations match Learn: P1b) ·
+From: T-0141 (owner, 2026-11-16, relayed by session 6d8dbabe; the same wish as T-0132); T-0031 (the floating window's animations match Learn: P1b); T-0036, T-0038 (the window's pause collapses it) ·
 Device: iPhone 12 Pro Max, iPad Air 13-inch (M3) · Status: `[ ]` written, not built ·
 Builds on: FEAT-20 (the Mac's song light on iOS), FEAT-04 (one clock), BUG-12 (headphone latency), FEAT-09 (carry).
 
@@ -162,6 +162,8 @@ One phase at a time. Each ends at its check. Bugs before features.
   picture changes exactly at the stamps; at 1.5× a stamp 1.5 s of file ahead is 1 s of wall ahead.
   Known limit: a line still too long at 60 % size is cut at both ends (FEAT-05 rule 8); before, its start faded.
   Not measured: pictures per minute and app memory on the device (the risk above).
+- **Also (T-0036, T-0038):** the window's own pause button rests it as the thin strip at once (`Floating.rest(held:)`),
+  and pauses our player when it is the one captioned; play wakes it with the newest words. Check: `mobile/ios/Tests/floating`.
 
 ### P2 · The voice measured on the phone, for speech in the Player · effort: high
 - Move `Features.measure` from `strip/recense.swift:5164-5300` into `shared/` (one source; the Mac compiles the same

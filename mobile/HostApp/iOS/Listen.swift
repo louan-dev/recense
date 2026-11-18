@@ -1022,7 +1022,7 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
-        let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused)
+        let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused, held: Listener.held)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
             floatNote(rest ? "rest: thin strip" : "wake: full captions")
@@ -1098,11 +1098,15 @@ final class Listener: NSObject, ObservableObject {
     /// What the window shows changed (a heard line, a translation, our player's line): draw it now.
     private func changed() { draw() }
 
-    // the floating window's middle button: holds the words where they are (Listen keeps hearing; play shows the newest)
+    // the floating window's middle button (T-0036, T-0038): pause collapses it to the resting strip at once (Listen keeps
+    // hearing; our player pauses too), play brings back the newest words
     nonisolated(unsafe) static var held = false
     func hold(_ on: Bool) {
         Listener.held = on
+        let p = NativePlayer.shared
+        if own, p.isPlaying == on { p.toggle() }
         pip?.invalidatePlaybackState()
+        floatTick()
         if !on { draw() }
     }
 
