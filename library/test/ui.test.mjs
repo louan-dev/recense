@@ -2362,6 +2362,9 @@ await test("T-0148: while a file goes up, Refresh resends a stuck part at once a
   for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/001")); t++) await pg.waitForTimeout(250);
   assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "it finished after the nudge");
   assert.deepEqual(sent, [1, 2, 2, 3], "only the stuck part went again");
+  // the server can hold the file before this page has read `complete`'s answer; until then the first row still has
+  // Refresh + Remove, and the click below would take back the finished file (CI run 44296726679, 2026-11-18)
+  await pg.waitForSelector(".lup button[aria-label^='Refresh']", { state: "detached", timeout: 20000 });
 
   // a second file stuck on its first part: Remove while it goes
   let aborted = 0;
