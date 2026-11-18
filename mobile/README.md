@@ -210,10 +210,13 @@ updates in place.
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
   time, the last on screen (11-10: both took it on every layout and iOS's watchdog ended Recense as Now Playing opened).
-  The floating window's middle button holds the words where they are and play shows the newest.
-  Its words light on the refresh they start on: each coming word's picture is drawn up to 1.5 s ahead and stamped for
-  that moment (`Floating.onsets`); the layer runs on the host clock and shows it then. Before (11-10), a word waited
-  for the next redraw, at most 10 a second and up to a second behind other apps.
+  The floating window's middle button pauses it: the window rests as the thin strip at once (our player pauses too;
+  T-0036, T-0038, 11-18; before, it held the old words on a full window), and play brings back the newest words.
+  Its words light on the refresh they start on, and sweep inside a word (BUG-24 P1b, 11-18): every moment the picture
+  changes (a word's start, each quarter of a word of 0.25 s or more, a line's turn, a Learn fade) is drawn up to 1.5 s
+  ahead and stamped for that moment at the player's speed (ShowsKit `FloatingFrames`); the layer runs on the host clock
+  and shows it then. At most 12 pictures wait. Before (11-10), a word waited for the next redraw, at most 10 a second
+  and up to a second behind other apps; until 11-18 a word lit whole at its start, and at 1.5× each lit late.
   Nothing lost: the extension also keeps its recent lines in a ring in the shared Keychain (`HostApp/iOS/CaptionRing.swift`,
   200 lines or 128 KB, text only), and the app takes the ones it missed when it wakes or is opened again, so a stretch
   heard while iOS had the app asleep or closed still reaches the episode.
@@ -275,9 +278,11 @@ focus (another app's window can cover it while it stays active), so the floating
 (`Floating.front`); a line heard again (a song's chorus) stays in order at the end and keeps the light, and only three
 in a row, or a replay that reaches where the listening was, counts as a rewind (`Align.fit`). Pause rests the broadcast
 instead of ending it (`Captions.State.hold`; the extension drops the sound and its clock keeps the gap), so iOS shows
-no "stopped" alert and Resume needs no broadcast sheet. The floating window shows whole lines only: the sentence before
-only when it fits with the current one, and a current line taller than the window keeps its newest words at the bottom
-and fades its start (`HostApp/iOS/FloatingCaption.swift`, rendered on the Mac by `ios/Tests/floatingcaption`).
+no "stopped" alert and Resume needs no broadcast sheet. The floating window is drawn by the one caption painter
+(ShowsKit `CaptionPainter`, FEAT-05), as the in-app modes: Follow, the line the transcript turns to, gold up to the
+voice, its translation under it; Learn, the two places, each sentence turning into its translation once heard. Only
+whole lines show: a long line shrinks (to 60 %) before it is cut (`HostApp/iOS/FloatingCaption.swift`, drawn straight
+into the frame's pixels, rendered on the Mac by `ios/Tests/floatingcaption`).
 
 New Swift files in `HostApp/iOS/` or `../shared/` are built in automatically (synchronized folders); others go into the project by hand.
 `../shared/ShowsKit/` is the exception: a Swift package the app links (`import ShowsKit`), excluded from the synchronized group.

@@ -42,7 +42,9 @@ final class NativePlayer: Transport {
     /// Where the listener is (BUG-12): the position less the route's latency while it plays, so a word lights as it is
     /// heard through Bluetooth headphones, not as it leaves the phone. ShowsKit's transcript and the floating window
     /// read it; a seek to a line's start lights that line once its sound arrives.
-    var time: Double { TranscriptLight.heard(position, latency: RouteLatency.current, playing: player.rate != 0) }
+    var time: Double { TranscriptLight.heard(position: position, rate: rate, latency: RouteLatency.current, playing: player.rate != 0) }
+    /// The player's speed (0 paused): the route's latency is wall time, so it holds back `rate` times as much file (BUG-24).
+    var rate: Double { Double(player.rate) }
     var duration: Double? {
         guard let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 else { return nil }
         return d

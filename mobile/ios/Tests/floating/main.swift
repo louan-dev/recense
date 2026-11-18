@@ -42,10 +42,7 @@ if Floating.reattach(open: false, attached: false, closing: true) { bad += 1; pr
 if Floating.reattach(open: true, attached: false, closing: false) { bad += 1; print("FAIL reattach while open") }
 if Floating.reattach(open: false, attached: true, closing: false) { bad += 1; print("FAIL reattach attached") }
 
-// each coming word gets its own picture, stamped for its start; past ones and ones too far ahead don't
-let on = Floating.onsets([9.0, 10.2, 10.2, 10.6, 11.4, 13.0], after: 10.0, ahead: 1.5)
-if on != [10.2, 10.6, 11.4] { bad += 1; print("FAIL onsets \(on)") }
-if !Floating.onsets([10.0], after: 10.0).isEmpty { bad += 1; print("FAIL onset at now is already shown") }
+// the pictures' moments (each word's start and quarters, stamped ahead) are ShowsKit's FloatingFrames (swift test, BUG-24)
 // awake behind: while open, hearing, or within 10 minutes of quiet (11-10 log: asleep behind, no play ever seen)
 if !Floating.awake(front: false, open: false, hearing: false, quiet: 30) { bad += 1; print("FAIL awake after leaving quiet") }
 if Floating.awake(front: false, open: false, hearing: false, quiet: 601) { bad += 1; print("FAIL asleep after 10 min quiet") }
@@ -61,6 +58,10 @@ if !Floating.rest(open: true, quiet: Floating.stayAwake + 1, paused: false) { ba
 // Regression guard: T-0077 (11-14: frozen caption, then black, after pause): Listen's pause rests it blank at once,
 // even while the other app still plays, so no stale words stay while the hide lands or if iOS ignores it
 if !Floating.rest(open: true, quiet: 0, paused: true) { bad += 1; print("FAIL paused window keeps its caption") }
+// Regression guard: T-0036, T-0038 (owner 11-12: "floating bar pause bug. doesnt collapse"): the window's own pause
+// button held the old words on a full window; it rests as the thin strip at once, and wakes on play
+if !Floating.rest(open: true, quiet: 0, paused: false, held: true) { bad += 1; print("FAIL the window's pause doesn't collapse it") }
+if Floating.rest(open: true, quiet: 0, paused: false, held: false) { bad += 1; print("FAIL play after the window's pause stays collapsed") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

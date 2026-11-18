@@ -55,16 +55,9 @@ enum Floating {
     /// (iPhone log 11-10 17:44–17:47: hidden in front, then "behind playing closed" on every leave).
     static func reattach(open: Bool, attached: Bool, closing: Bool) -> Bool { !open && !attached && !closing }
 
-    /// How far ahead the window's pictures are drawn and stamped (longer than the 1 s tick that draws them).
+    /// How far ahead the window's pictures are drawn and stamped (longer than the 1 s tick that draws them; the moments
+    /// are ShowsKit's FloatingFrames, BUG-24 P1b).
     static let ahead = 1.5
-
-    /// When the lit line changes in the next `ahead` seconds after `now`, in the light's time: each word's start,
-    /// once each, in order. Each gets its own picture, stamped for that moment, so the window shows it on the refresh the
-    /// word starts on instead of at the next 10-a-second redraw (owner 11-10: "time each word light to the moment the
-    /// screen actually shows it").
-    static func onsets(_ starts: [Double], after now: Double, ahead: Double = ahead) -> [Double] {
-        Array(Set(starts.filter { $0 > now && $0 <= now + ahead })).sorted()
-    }
 
     /// iOS won't open the window from behind (iPhone 11-10 19:19:42: AVKitErrorDomain -1001 with Recense awake and the
     /// window possible), so once it's up behind it stays up, and a pause there rests it instead of closing it: a thin
@@ -72,8 +65,10 @@ enum Floating {
     /// T-0077/T-0139 (11-16): any open window with nothing to caption rests, whatever closes it later. Before, a window
     /// that could close (Reshow.works, an active iPad) or a Listen pause kept the last caption on screen until the
     /// close landed, and when iOS ignored the close, for good: frozen text, or black once its content was detached.
-    static func rest(open: Bool, quiet: Double, paused: Bool) -> Bool {
-        open && (paused || quiet >= hideAfter)
+    /// `held`: the window's own pause button (T-0036, T-0038, owner 11-12 "floating bar pause bug. doesnt collapse"): it
+    /// rests at once too, instead of holding the old words on a full window; play wakes it.
+    static func rest(open: Bool, quiet: Double, paused: Bool, held: Bool = false) -> Bool {
+        open && (paused || held || quiet >= hideAfter)
     }
 
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12

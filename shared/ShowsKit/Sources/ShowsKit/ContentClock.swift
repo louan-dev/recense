@@ -23,6 +23,9 @@ public enum ContentClock {
         public var rate: Double
         public init(wall: Double, content: Double, rate: Double = 1) { self.wall = wall; self.content = content; self.rate = rate }
         public func content(atWall w: Double) -> Double { content + (w - wall) * rate }
+        /// When the content reaches `c`, on the wall clock: a second of content takes 1/rate of the wall's (BUG-24: the
+        /// floating window stamps its pictures by it). Nil at rate 0: paused, it never gets there.
+        public func wall(atContent c: Double) -> Double? { rate > 0 ? wall + (c - content) / rate : nil }
         /// Content words back on the wall clock (only for scheduling frames; rate 0 has no wall time, so they stay).
         public func wall(_ ws: [Word]) -> [Word] {
             guard rate > 0, !ContentClock.isWall(ws) else { return ws }

@@ -12,6 +12,8 @@ import Observation
     /// Where the player is, in seconds, and how long the episode is: the transcript's playhead and the scrubber's.
     var time: Double { get }
     var duration: Double? { get }
+    /// How fast `time` moves (the player's speed; 0 paused): the light scales its wall-time leads by it (BUG-24).
+    var rate: Double { get }
     func seek(to seconds: Double)
 }
 
@@ -19,6 +21,7 @@ import Observation
 public extension Transport {
     var time: Double { 0 }
     var duration: Double? { nil }
+    var rate: Double { isPlaying ? 1 : 0 }
     func seek(to seconds: Double) {}
 }
 

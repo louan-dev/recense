@@ -28,11 +28,16 @@ public enum TranscriptLight {
     /// How often the lit word is redrawn: the screen's rate, capped at 60 a second (the Mac's light runs on its display
     /// link). At 12 a second a word could light up to 83 ms late, over the 50 ms the owner allows against the Mac.
     public static let frame: Double = 1.0 / 60
-    /// Where the listener is in the file (Derived from Spec: BUG-12): the player's position less the audio route's latency
-    /// while it plays (Bluetooth headphones play a position ~0.2 s after it leaves the phone); paused, nothing is in
-    /// flight. The latency is held to 0–1 s, as the web player's (mobile Player.swift, RouteLatency).
-    public static func heard(_ position: Double, latency: Double, playing: Bool) -> Double {
-        playing ? max(0, position - min(1, max(0, latency))) : position
+    /// Where the listener is in the file (Derived from Spec: BUG-12, BUG-24): the one heard-time rule every light reads
+    /// (iPhone and iPad's player, the transcript view's frame lead, the floating window, the Mac's overlay).
+    /// - latency: what is still in flight to the ear while it plays (Bluetooth headphones play a position ~0.2 s after
+    ///   it leaves the phone; the Mac's EQ/Key/Space chain); paused, nothing is. Held to 0–1 s, as the web player's.
+    /// - ahead: how far ahead of the sound the light is read (the frame's own lead to the screen, the Mac's sync offset).
+    /// - rate: both are seconds of wall time, and the file moves `rate` seconds in each, so they are scaled by it
+    ///   (at 1.5× a 0.2 s route holds back 0.3 s of the file). A rate of 0 (paused) scales by 1.
+    public static func heard(position: Double, rate: Double = 1, latency: Double, ahead: Double = 0, playing: Bool) -> Double {
+        let r = rate > 0 ? rate : 1, flight = playing ? min(1, max(0, latency)) : 0
+        return max(0, position + (ahead - flight) * r)
     }
     /// How long the view takes to scroll to the next line, when the pause before it leaves room.
     public static let scroll: Double = 0.45
@@ -80,6 +85,22 @@ public enum TranscriptLight {
 
     /// How much of the line's text has been said at `t`: up to the end of the last word begun. Without word times,
     /// in proportion to the line's time, at the end of a whole word.
+    /// Derived from Spec: BUG-24 P1 · `spoken`, but the word being said is lit up to the letter the clock has reached
+    /// (the Mac's no-data rule: `SongLight.litCount` on the word as `Cadence.beats` reads it). No word times: `spoken`.
+    public static func swept(_ line: TranscriptLine, at t: Double) -> String.Index {
+        guard !line.words.isEmpty else { return spoken(line, at: t) }
+        let rs = ranges(line), beats = Cadence.beats(line.words)
+        var to = line.text.startIndex
+        for (i, w) in line.words.enumerated() where w.start <= t {
+            guard let r = rs[i] else { continue }
+            if t >= w.end || i >= beats.count { to = r.upperBound; continue }
+            let k = SongLight.litCount(beats[i], at: t)
+            guard k > 0 else { continue }   // begun, nothing lit yet: the cut stays after the last lit word
+            to = line.text.index(r.lowerBound, offsetBy: k, limitedBy: r.upperBound) ?? r.upperBound
+        }
+        return to
+    }
+
     public static func spoken(_ line: TranscriptLine, at t: Double, ranges: [Range<String.Index>?]? = nil) -> String.Index {
         let text = line.text
         if !line.words.isEmpty {
@@ -169,7 +190,7 @@ public struct TranscriptLineText: View {
         }
         guard let t else { var a = AttributedString(line.text); a.foregroundColor = .white; return a }
         if SongLight.sung(line) { return sung(line, t) }
-        let cut = TranscriptLight.spoken(line, at: t)
+        let cut = TranscriptLight.swept(line, at: t)
         var said = AttributedString(String(line.text[..<cut])), rest = AttributedString(String(line.text[cut...]))
         said.foregroundColor = .white
         rest.foregroundColor = .white.opacity(0.4)
@@ -203,6 +224,7 @@ public struct TranscriptView<Extra: View>: View {
     let title: String
     let seed: String
     let time: () -> Double?
+    let rate: () -> Double
     let active: Int?
     let ticking: Bool
     let seek: ((Double) -> Void)?
@@ -215,21 +237,25 @@ public struct TranscriptView<Extra: View>: View {
 
     /// - lines: in time order. title: the episode's (shared lines say where they're from). seed: the show's colours.
     /// - time: the playhead now (nil: nothing is playing, so nothing is lit). ticking: read it every frame (TranscriptLight.frame).
+    /// - rate: how fast the playhead moves (the player's speed; 1 for live sound).
     /// - active: the line being heard, when the host knows it better than the times do (Listen's live captions).
     /// - seek: plays from a time; nil where the audio can't be moved (another app's).
     /// - duration: the episode's length; with `seek`, our scrubber sits under the transcript (Scrubber.swift), and it
     ///   and the lines share one playhead: dragging it moves the lit line, tapping a line moves it.
     /// - extra: the host's own items, added to the ··· menu.
-    public init(lines: [TranscriptLine], title: String, seed: String? = nil, time: @escaping () -> Double?, ticking: Bool = true,
-                active: Int? = nil, seek: ((Double) -> Void)?, duration: Double? = nil, empty: String = "No transcript yet.",
-                @ViewBuilder extra: () -> Extra) {
-        self.lines = lines; self.title = title; self.seed = seed ?? title; self.time = time; self.ticking = ticking
+    public init(lines: [TranscriptLine], title: String, seed: String? = nil, time: @escaping () -> Double?, rate: @escaping () -> Double = { 1 },
+                ticking: Bool = true, active: Int? = nil, seek: ((Double) -> Void)?, duration: Double? = nil,
+                empty: String = "No transcript yet.", @ViewBuilder extra: () -> Extra) {
+        self.lines = lines; self.title = title; self.seed = seed ?? title; self.time = time; self.rate = rate; self.ticking = ticking
         self.active = active; self.seek = seek; self.duration = duration; self.empty = empty; self.extra = extra()
     }
 
     /// The one playhead: the scrubber's while it's held, else the player's at the moment this frame reaches the screen
-    /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed).
-    private func now() -> Double? { scrub.held ?? time().map { ticking ? $0 + FrameClock.shared.lead : $0 } }
+    /// (FrameClock: one refresh after it's drawn, which a light worked out for "now" missed), at the player's speed
+    /// (TranscriptLight.heard, BUG-24: the lead is wall time).
+    private func now() -> Double? {
+        scrub.held ?? time().map { TranscriptLight.heard(position: $0, rate: rate(), latency: 0, ahead: ticking ? FrameClock.shared.lead : 0, playing: ticking) }
+    }
 
     /// The lines holding what's typed in the pill. Kept after Back to Scrubbing (the text stays), so the hits stay marks
     /// on the scrubber's track and strong detents under the finger (FEAT-07 rule 1; FEAT-16 P5, owner's delegation 11-16).

@@ -1002,7 +1002,7 @@ final class Listener: NSObject, ObservableObject {
                                        broadcastAgo: st.b.map { Date().timeIntervalSince1970 - $0 },   // BUG-14
                                        own: NativePlayer.shared.isPlaying)   // BUG-10
         // Learn's two places follow the player's line as they follow the broadcast's
-        if own, let p = shown().place, p != ownPlace { ownPlace = p; changed() }
+        if own, let p = ownLine(), p != ownPlace { ownPlace = p; changed() }
         // iPad windows: another app's window can cover Recense while it stays active (11-10 iPad log: "front playing" for
         // 2 min under a full-screen Firefox), so in front also needs the focus; active without it may start the window
         let active = UIApplication.shared.applicationState == .active
@@ -1022,7 +1022,7 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
-        let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused)
+        let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused, held: Listener.held)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast
             floatNote(rest ? "rest: thin strip" : "wake: full captions")
@@ -1095,41 +1095,18 @@ final class Listener: NSObject, ObservableObject {
             pip?.startPictureInPicture(); pipNote() } }
     }
 
-    // Learn's two places: top holds even sentences, bottom odd; when a new one takes a place, what was there fades
-    // out, then the new one fades in, while the other place stays
-    // out, then the new one fades in, while the other place stays. Once heard, a sentence dissolves into its
-    // translation in the same place (row 31, as the website's Learn: TURN in gallery.js)
-    private struct Slot { var now: Sentence?; var was: Sentence?; var since = Date.distantPast; var heard: Date? }
-    private var slots = [Slot(), Slot()]
-    private var animating = false
+    /// What the window shows changed (a heard line, a translation, our player's line): draw it now.
+    private func changed() { draw() }
 
-    private func changed() {
-        let (all, place) = shown()
-        let p = place ?? 0
-        for j in [p - 1, p] where j >= 0 && j < all.count {
-            let s = all[j], k = j % 2
-            if slots[k].now?.id != s.id { slots[k] = Slot(now: s, was: slots[k].now, since: Date()); animate() }
-            else { slots[k].now = s }
-            if j < p, slots[k].heard == nil { slots[k].heard = Date(); animate() }
-        }
-        draw()
-    }
-
-    private func animate() {
-        guard !animating else { return }
-        animating = true
-        Task {
-            while slots.contains(where: { Date().timeIntervalSince($0.since) < 0.55 || Date().timeIntervalSince($0.heard ?? .distantPast) < 0.6 }) { draw(); try? await Task.sleep(for: .milliseconds(33)) }
-            animating = false
-            draw()
-        }
-    }
-
-    // the floating window's middle button: holds the words where they are (Listen keeps hearing; play shows the newest)
+    // the floating window's middle button (T-0036, T-0038): pause collapses it to the resting strip at once (Listen keeps
+    // hearing; our player pauses too), play brings back the newest words
     nonisolated(unsafe) static var held = false
     func hold(_ on: Bool) {
         Listener.held = on
+        let p = NativePlayer.shared
+        if own, p.isPlaying == on { p.toggle() }
         pip?.invalidatePlaybackState()
+        floatTick()
         if !on { draw() }
     }
 
@@ -1141,11 +1118,11 @@ final class Listener: NSObject, ObservableObject {
     private var drawnAt = Date.distantPast
     private var drawSoon = false
 
-    /// Draws what the floating window shows, in the transcript's look (ShowsKit's TranscriptLineText, as Read along):
-    /// a new picture when what it shows changes (at most 10 a second), the same one again each second, as PiP goes stale
-    /// without frames; and, ahead of time, one picture per coming word, stamped for the moment it starts (the layer runs on
-    /// the host clock and shows each on the refresh its word starts on; before, a word waited for the next redraw, up to
-    /// a second late behind other apps).
+    /// Draws what the floating window shows with the one painter (FloatingCaption → ShowsKit FloatingFrames; Derived
+    /// from Spec: BUG-24 P1b, FEAT-05 rule 7): a new picture when what it shows changes (at most 10 a second), the same
+    /// one again each second, as PiP goes stale without frames; and, ahead of time, a picture for every moment the light
+    /// changes (each word's start, its quarters in a word of 0.25 s or more, a line's turn, a Learn place's fade), stamped
+    /// on the host clock at the player's speed, so the layer shows each on the refresh it belongs to.
     func draw() {
         if resting {   // before the hold: a held window still rests blank, never keeps the old words (T-0077)
             guard drawnKey != "rest" || Date().timeIntervalSince(drawnAt) >= 1, let sb = Self.restPicture() else { return }
@@ -1154,13 +1131,13 @@ final class Listener: NSObject, ObservableObject {
             return
         }
         if Listener.held { if !queued.isEmpty { layer.flush(); queued = [] }; return }
-        let wall = Date(), lagNow = clockLag(), nowL = wall.timeIntervalSince1970 - lagNow
-        let (rows, note) = frame(at: wall, lag: lagNow)
-        let key = Self.key(rows, note), shape = Self.key(rows.map(\.unlit), note)
+        let wall = Date(), w = wall.timeIntervalSince1970, clock = lightClock(at: w), now = clock.content
+        let f = frame()
+        let key = f.key(now), shape = f.shape
         // a picture stamped ahead that's on screen by now already shows this
-        if let shown = queued.last(where: { $0.at <= nowL }) { drawnKey = shown.key; drawnAt = wall }
-        queued.removeAll { $0.at <= nowL }
-        let stale = shape != queuedShape || abs(lagNow - queuedLag) > 0.008
+        if let shown = queued.last(where: { $0.at <= now }) { drawnKey = shown.key; drawnAt = wall }
+        queued.removeAll { $0.at <= now }
+        let stale = shape != queuedShape || !Self.same(queuedClock, clock)
         let since = wall.timeIntervalSince(drawnAt)
         if key != drawnKey || since >= 1 || stale {
             if since < 0.1 {
@@ -1169,76 +1146,101 @@ final class Listener: NSObject, ObservableObject {
                 Task { try? await Task.sleep(for: .milliseconds(100)); drawSoon = false; draw() }
                 return
             }
-            guard let sb = picture(rows, note, at: nil) else { return }
+            guard let sb = picture(f, at: now, stamp: nil) else { return }
             if layer.status == .failed || !queued.isEmpty || stale { layer.flush() }   // keeps the picture on screen
-            queued = []; queuedShape = shape; queuedLag = lagNow
+            queued = []; queuedShape = shape; queuedClock = clock
             drawnKey = key; drawnAt = wall
             layer.enqueue(sb)
         }
-        // the coming words of the lit line(s), each in its own picture stamped for its start
-        let starts = rows.filter(\.on).flatMap { $0.line.words.map(\.start) }
+        // every moment the picture changes in the next `Floating.ahead` seconds of the wall, each in its own picture
+        let from = queued.last?.at ?? now, until = clock.content(atWall: w + Floating.ahead)
+        guard clock.rate > 0, until > from, queued.count < Self.queueCap else { return }
         let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
-        for at in Floating.onsets(starts, after: queued.last?.at ?? nowL) where at - nowL > 0.004 {
-            let (r, n) = frame(at: Date(timeIntervalSince1970: at + lagNow + 0.0005), lag: lagNow)
-            guard let sb = picture(r, n, at: host + (at - nowL)) else { break }
+        for s in FloatingFrames.schedule(f.stamps(after: from, ahead: until - from), on: clock) where s.at - now > 0.004 {
+            guard queued.count < Self.queueCap, let sb = picture(f, at: s.at, stamp: host + (s.wall - w)) else { break }
             layer.enqueue(sb)
-            queued.append((at, Self.key(r, n)))
+            queued.append((s.at, f.key(s.at)))
         }
     }
-    /// Pictures stamped ahead, in the light's time, with what each shows; the shape (lines without their light) and lag
-    /// they were drawn for: either changing makes them wrong, so they're dropped and drawn again.
+    /// Pictures stamped ahead, in the light's time, with what each shows; the shape (the lines, without their light)
+    /// and the clock they were drawn for: either changing makes them wrong, so they're dropped and drawn again.
     private var queued: [(at: Double, key: String)] = []
     private var queuedShape = ""
-    private var queuedLag = 0.0
+    private var queuedClock: ContentClock.Anchor?
+    /// At most this many pictures wait in the layer (each 1200 × 564 BGRA, 2.7 MB: about 32 MB).
+    static let queueCap = 12
+    /// The canvas's pixels per point.
+    static let scale: CGFloat = 3
 
-    private static func key(_ rows: [FloatingCaption.Row], _ note: String?) -> String {
-        rows.map { "\($0.line.id)|\($0.line.text)|\($0.line.translation ?? "")|\($0.cut)|\(Int($0.alpha * 10))|\(Int($0.turned * 10))" }.joined(separator: "/") + (note ?? "")
+    /// The same light clock: same speed, and the light where it said it would be (8 ms: half a refresh).
+    private static func same(_ a: ContentClock.Anchor?, _ b: ContentClock.Anchor) -> Bool {
+        guard let a else { return false }
+        return a.rate == b.rate && abs(a.content(atWall: b.wall) - b.content) <= 0.008
     }
 
-    /// One picture of the window; `at` (host-clock seconds) stamps it for that moment, nil shows it at once.
-    private func picture(_ rows: [FloatingCaption.Row], _ note: String?, at: Double?) -> CMSampleBuffer? {
-        let r = ImageRenderer(content: FloatingCaption(rows: rows, learn: look == "learn", note: note)
-            .frame(width: Self.canvas.width, height: Self.canvas.height)
-            .environment(\.dynamicTypeSize, .xLarge))
-        r.scale = 3
-        guard let cg = r.cgImage else { return nil }
-        return Self.sample(cg, at: at)
+    /// What the window draws from: the painter's lines, the transcript Follow turns through (our player) or the line
+    /// being heard (the broadcast), or a note instead; `shape` names the content, apart from the light.
+    private struct Frame {
+        var lines: [Caption.Line] = []
+        var transcript: [TranscriptLine]? = nil
+        var place: Int? = nil
+        var learn = false
+        var note: String? = nil
+        var shape = ""
+        func current(_ t: Double) -> Int? { transcript.map { FloatingFrames.current($0, at: t) } ?? place }
+        func key(_ t: Double) -> String {
+            note.map { "note:" + $0 } ?? FloatingFrames.signature(lines, current: current(t), mode: learn ? .learn : .follow, at: t)
+        }
+        func stamps(after a: Double, ahead: Double) -> [Double] {
+            guard note == nil else { return [] }
+            if learn { return FloatingFrames.learnStamps(lines, after: a, ahead: ahead) }
+            if let tl = transcript { return FloatingFrames.followStamps(tl, lines, after: a, ahead: ahead) }
+            guard let p = place, lines.indices.contains(p) else { return [] }
+            return FloatingFrames.stamps(lines[p], after: a, ahead: ahead)
+        }
     }
 
-    /// What the window shows now: Follow, the sentence before (quiet) and the one being heard (lit as it's said, its
-    /// translation under it); Learn, two places taking turns, each sentence dissolving into its translation once heard.
-    private func frame(at wall: Date = Date(), lag clock: Double? = nil) -> ([FloatingCaption.Row], String?) {
-        let (sentences, place) = shown()
-        guard let p = place, p < sentences.count else {
-            if own { return ([], Playback.model?.transcriptNote ?? "No transcript yet") }   // "Hearing Français on this device…"
-            return ([], hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off")
+    /// One picture of the window at light time `t`; `stamp` (host-clock seconds) stamps it for that moment, nil shows it at once.
+    private func picture(_ f: Frame, at t: Double, stamp: Double?) -> CMSampleBuffer? {
+        let s = Self.scale, c = Self.canvas, still = UIAccessibility.isReduceMotionEnabled
+        return Self.sample(width: Int(c.width * s), height: Int(c.height * s), at: stamp) { ctx in
+            FloatingCaption.paint(ctx, canvas: c, scale: s, lines: f.lines, current: f.current(t), learn: f.learn, note: f.note, at: t, reduceMotion: still)
         }
-        // our player's lines carry their translation already (FEAT-10); the broadcast's need Listen's translator
-        let mine = own, two = mine || config != nil, now = wall.timeIntervalSince1970 - (clock ?? clockLag())
-        func line(_ s: Sentence, said: Bool) -> TranscriptLine {
-            // the broadcast's window is drawn on the wall clock (its frames are scheduled by word onsets): words go back
-            // to it; our player's words stay on the file's clock, which clockLag() maps the window onto
-            TranscriptLine(id: s.id, start: s.time, end: s.time, text: s.heard,
-                           words: mine ? s.words ?? [] : anchor.map { $0.wall(s.words ?? []) } ?? s.words ?? [],
-                           translation: said && two && !s.said.isEmpty ? s.said : nil)
-        }
-        if look == "learn" {
-            let cur = sentences[p]
-            return ((0..<2).compactMap { k -> FloatingCaption.Row? in
-                let t = wall.timeIntervalSince(slots[k].since), old = t < 0.15
-                guard let s = old ? slots[k].was : slots[k].now else { return nil }
-                let a = old ? 1 - t / 0.15 : min(1, (t - 0.15) / 0.4)
-                let turned = !two || s.said.isEmpty || s.id == cur.id ? 0 : old ? 1 : min(1, wall.timeIntervalSince(slots[k].heard ?? wall) / 0.3)
-                let on = s.id == cur.id
-                return FloatingCaption.Row(line: line(s, said: false), on: on, t: on ? now : nil, alpha: a, said: s.said.isEmpty ? nil : s.said, turned: turned)
-            }, nil)
-        }
-        var rows: [FloatingCaption.Row] = []
-        if p > 0 { rows.append(FloatingCaption.Row(line: line(sentences[p - 1], said: false), on: false, t: nil)) }
-        rows.append(FloatingCaption.Row(line: line(sentences[p], said: true), on: true, t: now))
-        let savedNote = wall.timeIntervalSince(savedNoteAt) < 2.5 ? "Note saved" : nil
-        return (rows, savedNote)
     }
+
+    /// What the window shows: Follow, the line being heard over its translation; Learn, the two places, each sentence
+    /// turning into its translation once heard (FEAT-05: the in-app modes, mirrored).
+    private func frame() -> Frame {
+        let learn = look == "learn"
+        let saved = Date().timeIntervalSince(savedNoteAt) < 2.5 ? "Note saved" : nil
+        if own {
+            guard let tl = Playback.model?.transcript, let a = tl.first, let b = tl.last else {   // still being heard
+                let n = Playback.model?.transcriptNote ?? "No transcript yet"   // "Hearing Français on this device…"
+                return Frame(learn: learn, note: n, shape: "note|" + n)
+            }
+            let k = "\(tl.count)|\(a.id)|\(b.id)|\(tl.reduce(0) { $0 + $1.text.count + ($1.translation?.count ?? 0) })"
+            if k != ownLines.key { ownLines = (k, tl.map(FloatingFrames.line)) }
+            return Frame(lines: ownLines.all, transcript: tl, learn: learn, note: saved, shape: "own|" + k + (saved ?? ""))
+        }
+        guard let p = episode?.place, p < sentences.count else {
+            let n = hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off"
+            return Frame(learn: learn, note: n, shape: "note|" + n)
+        }
+        // the broadcast's window is drawn on the wall clock (its frames are stamped by the light's moments): words go
+        // back to it; Listen's translator gives the translation, once it has one
+        let two = config != nil, an = anchor
+        let k = "\(sentences.count)|\(sentences.first?.id ?? "")|\(sentences[sentences.count - 1].id)|"
+            + "\(sentences.reduce(0) { $0 + $1.heard.count + $1.said.count })|\(two)|\(an.map { "\($0.wall),\($0.content),\($0.rate)" } ?? "")"
+        if k != liveLines.key {
+            liveLines = (k, sentences.map { s in
+                let ws = s.words?.isEmpty == false ? s.words! : FloatingFrames.spread(s.heard, from: s.time, to: s.time)
+                return Caption.Line(words: an.map { $0.wall(ws) } ?? ws, translationText: two && !s.said.isEmpty ? s.said : nil)
+            })
+        }
+        return Frame(lines: liveLines.all, place: p, learn: learn, note: saved, shape: "live|" + k + (saved ?? ""))
+    }
+    private var ownLines: (key: String, all: [Caption.Line]) = ("", [])
+    private var liveLines: (key: String, all: [Caption.Line]) = ("", [])
 
     // MARK: what the window shows (BUG-10)
     // Derived from Spec: BUG-10
@@ -1249,40 +1251,33 @@ final class Listener: NSObject, ObservableObject {
         return p.isPlaying || (!hearing && p.path != nil && !(Playback.model?.transcript.isEmpty ?? true))
     }
     private var ownPlace: Int?
-    private var ownCache: (key: String, all: [Sentence]) = ("", [])
-    /// The sentences the window draws from and the one being heard: our player's transcript lines at its time (each
-    /// as a Sentence, its translation as `said`), else Listen's episode.
-    private func shown() -> (all: [Sentence], place: Int?) {
-        guard own else { return (sentences, episode?.place) }
-        guard let lines = Playback.model?.transcript, let a = lines.first, let b = lines.last else { return ([], nil) }   // still being heard
-        let key = "\(lines.count)|\(a.id)|\(b.id)|\(lines.reduce(0) { $0 + ($1.translation?.count ?? 0) })"
-        if key != ownCache.key {
-            ownCache = (key, lines.map { Sentence(id: $0.id, heard: $0.text, said: $0.translation ?? "", at: $0.start, t: $0.start, words: $0.words) })
-        }
-        let t = NativePlayer.shared.time
-        return (ownCache.all, lines.lastIndex { $0.start <= t } ?? 0)
+    /// Our player's line, as the window shows it (Learn's places and Follow's line follow it; a change redraws).
+    private func ownLine() -> Int? {
+        guard let lines = Playback.model?.transcript, !lines.isEmpty else { return nil }
+        return FloatingFrames.current(lines, at: NativePlayer.shared.time)
     }
-    /// The window's clock offset: the broadcast's lag behind the voice; for our player, wall − player time, so each
-    /// word lights at its own time in the file, and a seek or a pause redraws (the offset moves, so pictures go stale).
-    private func clockLag() -> Double { own ? Date().timeIntervalSince1970 - NativePlayer.shared.time : lag }
+    /// The window's light clock at wall time `w` (BUG-24: one heard() and the player's speed): our player's heard time,
+    /// moving at its rate (0 paused: nothing is stamped ahead, and a seek, pause or speed change makes the pictures stale);
+    /// the broadcast's, the wall less its lag behind the voice.
+    private func lightClock(at w: Double) -> ContentClock.Anchor {
+        let p = NativePlayer.shared
+        return own ? .init(wall: w, content: p.time, rate: p.isPlaying ? max(0, p.rate) : 0) : .init(wall: w, content: w - lag, rate: 1)
+    }
 
     /// The resting window: a thin dark strip (PiP sizes the window to the picture's shape).
     private static func restPicture() -> CMSampleBuffer? {
-        guard let ctx = CGContext(data: nil, width: 1200, height: 40, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        ctx.setFillColor(CGColor(gray: 0.06, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 40))
-        return ctx.makeImage().flatMap { sample($0) }
+        sample(width: 1200, height: 40) { ctx in ctx.setFillColor(CGColor(gray: 0.06, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 1200, height: 40)) }
     }
 
-    private static func sample(_ cg: CGImage, at: Double? = nil) -> CMSampleBuffer? {
+    /// A frame drawn straight into its pixel buffer (no picture made first and copied in); `at` stamps it.
+    private static func sample(width: Int, height: Int, at: Double? = nil, paint: (CGContext) -> Void) -> CMSampleBuffer? {
         var pb: CVPixelBuffer?
         let attrs = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
-        guard CVPixelBufferCreate(nil, cg.width, cg.height, kCVPixelFormatType_32BGRA, attrs, &pb) == kCVReturnSuccess, let pb else { return nil }
+        guard CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attrs, &pb) == kCVReturnSuccess, let pb else { return nil }
         CVPixelBufferLockBaseAddress(pb, [])
-        let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb), width: cg.width, height: cg.height, bitsPerComponent: 8,
-                            bytesPerRow: CVPixelBufferGetBytesPerRow(pb), space: CGColorSpaceCreateDeviceRGB(),
-                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-        ctx?.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        if let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb), width: width, height: height, bitsPerComponent: 8,
+                               bytesPerRow: CVPixelBufferGetBytesPerRow(pb), space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) { paint(ctx) }
         CVPixelBufferUnlockBaseAddress(pb, [])
         var fmt: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pb, formatDescriptionOut: &fmt)

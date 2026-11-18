@@ -111,7 +111,7 @@ extension NowPlaying {
     func transcript(_ e: Episode) -> some View {
         let t = model.transport
         return TranscriptView(lines: model.transcript, title: e.title, seed: model.playingShow ?? e.title,
-                              time: { t?.time }, ticking: t?.isPlaying ?? false,
+                              time: { t?.time }, rate: { t?.rate ?? 1 }, ticking: t?.isPlaying ?? false,
                               seek: t.map { tr in { tr.seek(to: $0) } }, duration: t?.duration ?? e.duration,
                               empty: model.transcriptNote ?? "No transcript yet.") {
             translateIntoMenu
