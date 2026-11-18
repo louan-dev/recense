@@ -60,7 +60,8 @@ struct RecenseRoot: View {
             // FEAT-10 Heard in = Listen's "Hear in" (one setting): set it there, then replan
             model.heardInChanged = { [model] in
                 let l = Listener.shared, want = model.heardIn
-                let now = l.heard == Captions.automatic ? Langs.auto : SpeechCore.code(l.heard)
+                // a Hear in outside en/fr/vi (Deutsch) reads as Auto-detect here: same value, so it is kept, never reset
+                let now = l.heard == Captions.automatic ? Langs.auto : Langs.heard(kept: SpeechCore.code(l.heard))
                 if now != want { l.heard = want == Langs.auto ? Captions.automatic : Langs.locale(want) }
                 PlaybackTranslator.shared.run(model, lang: l.lang)
             }
