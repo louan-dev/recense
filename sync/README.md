@@ -119,6 +119,21 @@ Run from `sync/` (`cd ~/Developer/recense/sync`).
     sed "s#__HOME__#$HOME#g" launchd/com.chauphan.ledger.obsidian.plist.example \
       > ~/Library/LaunchAgents/com.chauphan.ledger.obsidian.plist
 
+## Downloads hold (AirDrop stays 2 minutes, then moves to tmp)
+`bin/downloads-hold.zsh` is what the `com.chauphan.downloads-to-r2` agent runs. It moves finished files from `~/Downloads`
+to the `gallery-tmp` bucket.
+- A file the system marked as delivered by `sharingd` (AirDrop) waits `HOLD_SECONDS` (120, one constant in the script)
+  from its arrival, then moves. Arrival is the stamp inside the file's quarantine mark: birth time is not it
+  (APFS pulls it back to the sender's old modified time), and the old `rclone --min-age 2m` read that modified time,
+  so AirDrop files used to move at once.
+- A file opened or renamed during the hold is left in Downloads for good. A name already in the bucket is kept
+  (renamed `.replaced-<time>`), never overwritten. Everything else keeps the old rule (modified 2 minutes ago).
+- No state to lose: quit, reboot or a missed run changes nothing; a file past its time moves on the next run.
+- `zsh bin/downloads-hold.zsh plan` prints what is due and moves nothing; `selftest` runs the rule and a real move.
+- Install the agent (once, after the branch is merged):
+      sed "s#__HOME__#$HOME#g" launchd/com.chauphan.downloads-to-r2.plist > ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist &&
+        launchctl bootout gui/$(id -u)/com.chauphan.downloads-to-r2; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist
+
 ## Triage watch (save triage.md → bug gets worked on)
 - No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
 - The fixer's prompt goes on stdin (`--add-dir` takes several folders and swallowed it: fixers exited 1 at once, 11-12).
