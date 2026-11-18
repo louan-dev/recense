@@ -1,11 +1,12 @@
 // Derived from Spec: SEC-02 (carry peer auth: a paired device proves its key, not its name)
-// Pure: messages in, messages out; no radio, no Keychain, CryptoKit only. The glue (carrymanager.swift) keeps one
+// Pure: messages in, messages out; no radio, no Keychain calls (only its status codes), CryptoKit only. The glue (carrymanager.swift) keeps one
 // CarryAuthSession per connection, sends `hello` on connect, and lets only `pair` and `auth` through until the peer's
 // proof checks out. After that every carry message rides `sealed`; a plain `seen`/`ops`/`gone` is dropped.
 // The handshake is Noise-KK-like (described, not copied): both long-term keys are known from pairing, both sides add
 // a fresh key per session, so a key stolen later cannot open sessions recorded before (forward secrecy).
 import Foundation
 import CryptoKit
+import Security
 
 enum CarryAuthMessage: Codable, Equatable, Sendable {
     case hello(key: Data, eph: Data, nonce: Data)   // long-term key, this session's fresh key, 32 random bytes
@@ -132,5 +133,103 @@ enum CarryTrust {
         return (trusted, mirror.filter { m in !trusted.contains { $0.key == m.key } })
     }
 
+    /// Invariant 13: a failed Keychain read keeps `previous` and is not `writable`, so no write can replace the
+    /// pairings it could not see. Only `.notFound` (or an unreadable item) starts empty.
+    static func load(_ v2: CarryStored, mirror: [CarryPeer], previous: [CarryPeer])
+        -> (trusted: [CarryPeer], needsPairing: [CarryPeer], writable: Bool) {
+        if v2.failed { return (previous, [], false) }   // nobody new is asked to pair again during a Keychain failure
+        let t = load(v2: v2.data, mirror: mirror)
+        return (t.trusted, t.needsPairing, true)
+    }
+
+    /// Invariant 16: the names under "Needs pairing again": old mirror entries, then refused names, each once.
+    static func listed(needsPairing: [CarryPeer], refused: Set<String>, trusted: [CarryPeer]) -> [String] {
+        let kept = Set(trusted.map(\.name))
+        var names: [String] = []
+        for n in needsPairing.map(\.name) + refused.sorted() where !kept.contains(n) && !names.contains(n) { names.append(n) }
+        return names
+    }
+
     static func forgetting(_ list: [CarryPeer], key: Data) -> [CarryPeer] { list.filter { $0.key != key } }
+}
+
+// Derived from Spec: SEC-02 invariant 13
+/// One Keychain read: found, not there, or failed (locked, denied, damaged). A failure is never "not there".
+enum CarryStored: Equatable {
+    case found(Data), notFound, failed(OSStatus)
+    static func from(_ status: OSStatus, _ data: Data?) -> CarryStored {
+        switch status {
+        case errSecSuccess: return data.map { .found($0) } ?? .failed(errSecDecode)
+        case errSecItemNotFound: return .notFound
+        default: return .failed(status)
+        }
+    }
+    var data: Data? { if case .found(let d) = self { return d }; return nil }
+    var failed: Bool { if case .failed = self { return true }; return false }
+
+    /// Invariant 14: what an update changes, and what an add sets on top of the item's service and account.
+    static func updating(_ data: Data) -> [String: Any] { [kSecValueData as String: data] }
+    static func adding(_ data: Data) -> [String: Any] {
+        [kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+    }
+
+    /// Invariant 14: update in place; add only when the item is not there yet. Never delete first.
+    static func save(update: () -> OSStatus, add: () -> OSStatus) -> Bool {
+        switch update() {
+        case errSecSuccess: return true
+        case errSecItemNotFound: return add() == errSecSuccess
+        default: return false
+        }
+    }
+}
+
+// Derived from Spec: SEC-02 invariant 15
+/// The 10 s proof deadline belongs to one handshake session, not to a peer: `begin` on every new session, and a
+/// timer armed for an earlier session of the same peer finds its token dead.
+struct CarryDeadlines<P: Hashable> {
+    private var tokens: [P: UUID] = [:]
+    mutating func begin(_ p: P) -> UUID { let t = UUID(); tokens[p] = t; return t }
+    func token(_ p: P) -> UUID? { tokens[p] }
+    func live(_ p: P, _ t: UUID) -> Bool { tokens[p] == t }
+}
+
+enum CarryAuthTimeout: Equatable {
+    case badProof, unknownKey, noAnswer
+    /// What a due deadline does (§2.6): nothing while pairing, once proven, or after the link went.
+    static func verdict(authenticated: Bool, gotHello: Bool, held: Bool, pairing: Bool, connected: Bool) -> CarryAuthTimeout? {
+        guard !authenticated, !pairing, connected else { return nil }
+        return gotHello ? .badProof : held ? .unknownKey : .noAnswer
+    }
+}
+
+// Derived from Spec: SEC-02 §2.5, invariant 18
+enum CarryForget {
+    /// What "Forget" reports. `told`: a sealed `forget` reached the device, so it unpaired this one too.
+    static func reply(_ name: String, told: Bool) -> String {
+        told ? "Forgot \(name); it unpaired this device too. Files on both devices stay; pair again to carry with it."
+             : "Forgot \(name) here. Forget it on \(name) too: until then it still trusts this device. "
+               + "Files on both devices stay; pair again to carry with it."
+    }
+}
+
+// Derived from Spec: SEC-02 invariant 19
+/// What this launch may do with the Keychain it could read. A stand-in identity must never reach a peer:
+/// the peer's `CarryPeer.replacing` drops our entry by name and would swap our real key for it.
+struct CarryKeychainGate: Equatable {
+    var identityUnread = false, groupUnread = false, trustWritable = true
+    /// Pairing hands our key to the peer and writes peers.v2.
+    var canPair: Bool { !identityUnread && !groupUnread && trustWritable }
+    /// Forget writes peers.v2 and tells the peer: both checked before anything is sent.
+    var canForget: Bool { !identityUnread && trustWritable }
+    /// The handshake proves our key: never a stand-in.
+    var canAuth: Bool { !identityUnread }
+}
+
+/// The identity key as read from the Keychain: use it, make one (truly absent), or wait and read again.
+enum CarryIdentityRead: Equatable {
+    case use(Data), make, unread
+    static func from(_ s: CarryStored) -> CarryIdentityRead {
+        if let d = s.data { return .use(d) }
+        return s.failed ? .unread : .make
+    }
 }

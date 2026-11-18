@@ -300,5 +300,15 @@ do {
     check(CarrySync.safeKey("downloads/a..b.txt") && CarrySync.safeKey("trash/.hidden"), "dots inside a name are fine")
 }
 
+// SEC-02 invariant 17 · the .check copy being hashed keeps the old mtime: the sweep must not delete it mid-hash
+// Regression guard: SEC-02
+do {
+    let name = CarrySync.stagingName("library/Music/a.m4a"), old = Date(timeIntervalSince1970: 0), now = Date()
+    let staged = [(name: name + ".check", modified: old), (name: "dead.check", modified: old), (name: "dead", modified: old)]
+    let gone = CarrySync.orphans(staged, expecting: [name], now: now, maxAge: CarrySync.orphanAge)
+    check(!gone.contains(name + ".check"), "an expected key's .check is kept: \(gone)")
+    check(Set(gone) == ["dead.check", "dead"], "a .check nobody expects is still swept: \(gone)")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

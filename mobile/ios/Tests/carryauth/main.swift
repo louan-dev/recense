@@ -196,6 +196,106 @@ do {
     check(empty.trusted.isEmpty && empty.needsPairing.isEmpty, "everyone forgotten: nothing listed")
 } catch { check(false, "migration setup threw \(error)") }
 
+// 13 · A Keychain read error is not "no peers": the pairings stay and nothing overwrites peers.v2
+// Regression guard: SEC-02
+do {
+    let had = [peer("iPad", ipad), peer("iPhone", iphone)]
+    check(CarryStored.from(errSecItemNotFound, nil) == .notFound, "not found is not found")
+    check(CarryStored.from(errSecInteractionNotAllowed, nil).failed, "a locked Keychain is a failure, not empty")
+    check(CarryStored.from(errSecSuccess, nil).failed, "success with no data is a failure")
+    let locked = CarryTrust.load(.failed(errSecInteractionNotAllowed), mirror: had, previous: had)
+    check(locked.trusted == had, "a failed read keeps the peers this process had")
+    check(!locked.writable, "a failed read refuses to write peers.v2")
+    check(locked.needsPairing.isEmpty, "and lists nobody as needing pairing")
+    let atLaunch = CarryTrust.load(.failed(errSecInteractionNotAllowed), mirror: had, previous: [])
+    check(atLaunch.needsPairing.isEmpty, "a failed read at launch asks nobody to pair again: \(atLaunch.needsPairing.map(\.name))")
+    let none = CarryTrust.load(.notFound, mirror: had, previous: had)
+    check(none.trusted.isEmpty && none.writable, "only not found starts empty, and may be written")
+    let v2 = try JSONEncoder().encode([peer("iPad", ipad)])
+    let ok = CarryTrust.load(.found(v2), mirror: had, previous: [])
+    check(ok.trusted.map(\.name) == ["iPad"] && ok.writable, "found: read as before")
+} catch { check(false, "13 setup threw \(error)") }
+
+// 14 · A Keychain save updates in place: no delete-then-add window that can leave peers.v2 empty
+// Regression guard: SEC-02
+do {
+    var calls: [String] = []
+    func run(_ u: OSStatus, _ a: OSStatus) -> Bool {
+        calls = []
+        return CarryStored.save(update: { calls.append("update"); return u }, add: { calls.append("add"); return a })
+    }
+    check(run(errSecSuccess, errSecDuplicateItem) && calls == ["update"], "an existing item is updated, nothing added: \(calls)")
+    check(run(errSecItemNotFound, errSecSuccess) && calls == ["update", "add"], "a missing item is added: \(calls)")
+    check(!run(errSecInteractionNotAllowed, errSecSuccess) && calls == ["update"], "any other update error saves nothing: \(calls)")
+    check(!run(errSecItemNotFound, errSecDuplicateItem), "a failed add is reported")
+    let d = Data("k".utf8)
+    check(Set(CarryStored.updating(d).keys) == [kSecValueData as String], "an update changes only the data: \(CarryStored.updating(d).keys.sorted())")
+    check(CarryStored.adding(d)[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+          "the add sets this-device-only accessibility")
+}
+
+// 15 · The 10 s proof deadline is per session: an earlier connection's timer never judges a reconnect
+// Regression guard: SEC-02
+do {
+    var d = CarryDeadlines<String>()
+    let first = d.begin("iPad")
+    check(d.live("iPad", first), "the session's own timer is live")
+    let second = d.begin("iPad")   // dropped and reconnected within 10 s: a new session
+    check(!d.live("iPad", first), "the first session's timer finds its token dead")
+    check(d.live("iPad", second) && d.token("iPad") == second, "the reconnect's own timer stays live")
+    check(!d.live("iPhone", second), "a token belongs to one peer")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: true, pairing: true, connected: true) == nil,
+          "while pairing, a held hello is left alone")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: true, pairing: false, connected: true) == .unknownKey,
+          "after Stop Pairing (re-armed), a held stranger is refused: unknown key")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: true, held: false, pairing: false, connected: true) == .badProof, "hello, no proof")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: false, held: false, pairing: false, connected: true) == .noAnswer, "no hello")
+    check(CarryAuthTimeout.verdict(authenticated: true, gotHello: true, held: false, pairing: false, connected: true) == nil, "proven: nothing")
+    check(CarryAuthTimeout.verdict(authenticated: false, gotHello: true, held: false, pairing: false, connected: false) == nil, "gone: nothing")
+}
+
+// 16 · "Needs pairing again" never lists a name that still has a trusted key, so its Forget can't un-trust it
+// Regression guard: SEC-02
+do {
+    let oldPhone = Key()
+    let trusted = [peer("iPad", ipad)]
+    check(CarryTrust.listed(needsPairing: [], refused: ["iPad"], trusted: trusted).isEmpty,
+          "an impostor refused under a trusted name lists nothing")
+    check(CarryTrust.listed(needsPairing: [peer("iPad", oldPhone)], refused: [], trusted: trusted).isEmpty,
+          "an old mirror key under a trusted name lists nothing")
+    check(CarryTrust.listed(needsPairing: [peer("iPhone", oldPhone)], refused: ["iPad", "Mac", "iPhone"], trusted: trusted) == ["iPhone", "Mac"],
+          "others are listed once, mirror first, then refused names")
+}
+
+// 18 · §2.5: a forget that could not tell the device (the CLI has no link) says to forget it there too
+// Regression guard: SEC-02
+do {
+    let here = CarryForget.reply("iPad", told: false), both = CarryForget.reply("iPad", told: true)
+    check(here.contains("Forget it on iPad too"), "not told: forget it there too: \(here)")
+    check(!both.contains("Forget it on"), "told: nothing more to do: \(both)")
+    check(here.contains("Files on both devices stay") && both.contains("Files on both devices stay"), "files stay, either way")
+}
+
+// 19 · Nothing runs on a Keychain this launch could not read (review of d730ee6)
+// Regression guard: SEC-02
+do {
+    let fine = CarryKeychainGate()
+    check(fine.canPair && fine.canAuth, "a readable Keychain pairs and proves")
+    let standIn = CarryKeychainGate(identityUnread: true)
+    check(!standIn.canPair, "a stand-in identity never pairs (the peer would store it over our real key)")
+    check(!standIn.canAuth, "a stand-in identity never starts a handshake")
+    check(!CarryKeychainGate(trustWritable: false).canPair, "an unreadable peers.v2 never pairs")
+    check(!CarryKeychainGate(groupUnread: true).canPair, "an unreadable group secret never pairs (it would be overwritten)")
+    check(CarryKeychainGate(groupUnread: true).canAuth, "an unreadable group still lets paired devices prove their keys")
+    check(!CarryKeychainGate(trustWritable: false).canForget, "forget sends nothing when peers.v2 can't be written")
+    check(!CarryKeychainGate(identityUnread: true).canForget, "forget sends nothing on a stand-in key")
+    check(CarryKeychainGate(groupUnread: true).canForget && fine.canForget, "forget needs no group")
+    let raw = Key().rawRepresentation
+    check(CarryIdentityRead.from(.found(raw)) == .use(raw), "a read key is used")
+    check(CarryIdentityRead.from(.failed(errSecInteractionNotAllowed)) == .unread, "a failed read (before first unlock) stays unread, retried")
+    check(CarryIdentityRead.from(.notFound) == .make, "only not found makes a new key")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])

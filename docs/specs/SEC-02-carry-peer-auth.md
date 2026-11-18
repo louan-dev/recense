@@ -89,6 +89,8 @@ Terms: **SAS** = the six digits compared or typed; **MAC** = a checksum only the
   - Terminal: `recense carry forget <name>`.
 - Forgetting removes the entry from the trust store and from `peers.json`.
   - If the peer is connected, a sealed `forget` goes first, then it is disconnected.
+  - The Terminal's `recense carry forget` has no link of its own (the running app holds it), so it cannot send
+    the sealed `forget`. It says so: "Forget it on <name> too", and the running app drops that peer on its next frame.
   - The receiver removes the sender's key and shows "<name> unpaired this device".
 - **Lost device:** forget it on each remaining device, no forwarding (open question 1); its key is then refused there.
 - Data on forget: local files, ops logs and `appliedSeq` are kept. Staged bytes owed by it are discarded.
@@ -130,6 +132,40 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     - T-0121: disconnecting the prompt's peer clears `askingCode` and `pairingWith`; another peer's disconnect clears nothing;
     - T-0123: re-picking an already-connected peer updates `picked`, so that side shows the code;
     - T-0122 (AppKit, no pure test): device check on the Mac: close the pairing window with X, then open it again from the menu.
+
+13. **Keychain read error ≠ no peers:** a Keychain read is found, not found, or failed (`CarryStored`).
+    A failed read of `peers.v2` keeps the trust store this process last had, and `writable` is false:
+    pair, forget and re-pair refuse to write `peers.v2` (and its mirror) and set `lastError`. A failed read of
+    `identity` never makes and saves a new key. Only "not found" starts empty. A failed read lists nobody new under
+    "Needs pairing again" (the list stays as it was; never re-pair during a Keychain failure), and the
+    unreadable message clears once every read works again.
+14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
+    No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
+    The update changes only `kSecValueData` (the Mac's file keychain may refuse a changed `kSecAttrAccessible`);
+    the accessibility (`AfterFirstUnlockThisDeviceOnly`) is set on the add.
+15. **The 10 s proof deadline is per session:** each handshake session gets its own token (`CarryDeadlines`).
+    A timer acts only if the peer's current session still carries its token, so a timer from an earlier
+    connection never judges a reconnect early. While pairing, a timer does nothing; "Stop Pairing" re-arms
+    10 s for every hello still held, so a stranger left unpaired is refused (unknown key) instead of waiting forever.
+    A finished pairing ends pairing too: it re-arms every other held hello the same way (glue: no pure test reaches it).
+16. **"Needs pairing again" never lists a trusted name:** a name that still has a trusted key is left out of the
+    list (`CarryTrust.listed`), whether it came from `peers.json` or from a refused connection (an impostor or a
+    reset device using that name). So no Forget on that list can un-trust the real device; its own row's Forget still can.
+17. **Bytes being hashed are never swept:** the `.check` copy of a staged file keeps the file's old mtime, so
+    `CarrySync.orphans` treats `<name>.check` as expected whenever `<name>` is, and the sweep counts keys in
+    `placing` as expected. A `.check` nobody expects (left by a crash) is still swept. Tested in `Tests/carrysync`.
+18. **Forget says what the other side still knows:** when no sealed `forget` was sent (`CarryForget.reply`,
+    told = false: the CLI, or the peer not connected), the reply names the device and says "Forget it on <name> too".
+    The same reply is the status after Forget on the Devices screen and in the Mac menu (both show `status`).
+19. **Nothing runs on a Keychain this launch could not read** (`CarryKeychainGate`, review of d730ee6):
+    - an unread identity (a stand-in key) never pairs, advertises or starts a handshake, so no peer ever stores it;
+    - an unread `group` secret never pairs (a pairing would save a peer's or a new group over it), and a pairing
+      saves the group only after `peers.v2` was saved;
+    - Forget checks it can write `peers.v2` before it sends the sealed `forget`: otherwise it sends nothing, keeps
+      the peer, returns false and sets `lastError`, and every surface (voice included) shows that error;
+    - an unread identity is read again (`CarryIdentityRead`) on each reload and on coming to the front, while no
+      session or pairing runs; once read, the real key is taken and the link starts if it was asked for.
+      Only "not found" makes a new key; a failed read never does;
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -180,3 +216,10 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   from both turns 6 (relay replaced nonce) red. While pairing, a not-yet-trusted hello and any `auth` after it are held,
   in order, and answered once the pairing finishes (a proof that came first was otherwise lost). T-0123 also needed the
   failed pick cleared on both sides (`PairPrompt.failed`), or both sides stay "picked" and the greater key keeps showing.
+- 2026-11-18 · follow-ups (A3-fix, review of 80ad4c0): 13 Keychain read error keeps pairings and refuses writes.
+  14 Keychain save updates in place, adds only when not found.
+  15 the proof deadline is per session (token); Stop Pairing re-arms held hellos.
+  16 Needs pairing again leaves out names that still have a trusted key.
+  17 a .check copy being hashed is never swept.
+  18 §2.5: `recense carry forget` sends no sealed forget; it prints "Forget it on <name> too".
+  19 (review of d730ee6) a stand-in identity never pairs, advertises or proves.
