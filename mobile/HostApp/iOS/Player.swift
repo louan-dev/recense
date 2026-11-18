@@ -180,8 +180,13 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
         }
     }
 
+    // Derived from Spec: BUG-33 (M-B5): every export's folder lives under one parent, and what an earlier run left
+    // behind (a crash, a cancelled share sheet) is swept after a day.
     private static func dir() throws -> URL {
-        let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("recense-export", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        ExportJobs.sweepTemp(parent, olderThan: 86_400)
+        let d = parent.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -192,6 +197,8 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
         let asset = AVURLAsset(url: src)
         guard let s = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else { throw URLError(.cannotDecodeContentData) }
         let d = try dir(), m4a = d.appendingPathComponent("audio.m4a")
+        var made = false
+        defer { if !made { try? FileManager.default.removeItem(at: d) } }   // a failed export leaves no folder
         func item(_ id: AVMetadataIdentifier, _ v: String) -> AVMetadataItem {
             let i = AVMutableMetadataItem(); i.identifier = id; i.value = v as NSString; return i
         }
@@ -200,6 +207,7 @@ func galleryURL(_ path: String, _ query: [String: String?] = [:]) -> URL {
         try await s.export(to: m4a, as: .m4a)
         let out = d.appendingPathComponent(title.replacingOccurrences(of: "/", with: "-") + ".m4b")
         try FileManager.default.moveItem(at: m4a, to: out)
+        made = true
         return out
     }
 

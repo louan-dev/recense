@@ -70,7 +70,40 @@ public struct Event: Codable {
 }
 
 public enum FeedError: Error, Equatable {
-    case offline, notSignedIn, expired, notFound, server(Int)
+    case offline, notSignedIn, expired, notFound, server(Int), uploadGone
+}
+
+// Derived from Spec: FEAT-31 P1
+/// The parts of one big upload that R2 already holds, kept on disk so a failure or a kill resumes (not restarts).
+public struct PartRecord: Codable, Equatable {
+    public struct Part: Codable, Equatable { public var partNumber: Int; public var etag: String; public var sha256: String }
+    public var uploadId: String
+    public var partSize: Int64
+    public var parts: [Part]
+    public var started: Date
+}
+
+public struct PartStore {
+    public let dir: URL
+    /// R2 drops unfinished uploads after 7 days; a record older than 6 is not trusted.
+    public static let maxAge: TimeInterval = 6 * 86_400
+    public static var standard: PartStore { PartStore(dir: Gallery.container.appendingPathComponent("parts", isDirectory: true)) }
+    public init(dir: URL) { self.dir = dir }
+
+    public static func key(path: String, size: Int64, mtime: Int) -> String {
+        SHA256.hash(data: Data("\(path)|\(size)|\(mtime)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    func url(_ key: String) -> URL { dir.appendingPathComponent(key + ".json") }
+    public func load(_ key: String, now: Date = Date()) -> PartRecord? {
+        guard let d = try? Data(contentsOf: url(key)), let r = try? JSONDecoder().decode(PartRecord.self, from: d) else { return nil }
+        if now.timeIntervalSince(r.started) > Self.maxAge { delete(key); return nil }
+        return r
+    }
+    public func save(_ key: String, _ r: PartRecord) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let d = try? JSONEncoder().encode(r) { try? d.write(to: url(key), options: .atomic) }
+    }
+    public func delete(_ key: String) { try? FileManager.default.removeItem(at: url(key)) }
 }
 
 public final class Feed {
@@ -174,61 +207,114 @@ public final class Feed {
     }
 
     // A file over one request's cap goes up in parts (src/fp.js parts): 16-90 MiB each, at most 10,000 (~879 GiB).
-    // Each part is tried 4 times, waiting 2/4/6 s; a failure aborts the upload so R2 keeps no stray parts.
+    // Each part is tried 4 times, waiting 2/4/6 s. Derived from Spec: FEAT-31 P1: like the web client, the part list
+    // is kept on disk after every part; a failure or a kill keeps it and the next attempt carries on from the next
+    // part. It is dropped only when the upload is done, R2 no longer knows the id, or the name was taken meanwhile.
     static let partMax: Int64 = 90 * 1024 * 1024
-    func putParts(_ q: [String: String], file: URL, size: Int64) async throws {
+    /// One request to the parts endpoint; the tests put a fake here, so no network is needed.
+    typealias PartCall = (_ extra: [String: String], _ method: String, _ body: Data?, _ from: URL?) async throws -> Data
+
+    /// SHA-256 of `length` bytes of the file from `offset` (the last part may be shorter).
+    static func hashRange(_ h: FileHandle, offset: Int64, length: Int64) throws -> String {
+        try h.seek(toOffset: UInt64(offset))
+        var hasher = SHA256(), left = length
+        while left > 0, let block = try autoreleasepool(invoking: { try h.read(upToCount: Int(min(left, 4 << 20))) }), !block.isEmpty {
+            hasher.update(data: block); left -= Int64(block.count)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    func putParts(_ q: [String: String], file: URL, size: Int64, store: PartStore = .standard,
+                  retryUnit: UInt64 = 2_000_000_000, call override: PartCall? = nil) async throws {
         let mb: Int64 = 1024 * 1024
         let part = min(90, max(16, (size + 10000 * mb - 1) / (10000 * mb))) * mb
         let total = Int((size + part - 1) / part)
         guard total <= 10000 else { throw FeedError.server(413) }
-        func call(_ extra: [String: String], method: String, body: Data? = nil, from: URL? = nil) async throws -> Data {
+        func realCall(_ extra: [String: String], _ method: String, _ body: Data?, _ from: URL?) async throws -> Data {
             var r = try request("file", q.merging(extra) { $1 })
             r.httpMethod = method
             r.timeoutInterval = 600
             r.setValue("1", forHTTPHeaderField: "x-gallery")
             let (data, response) = if let from { try await session.upload(for: r, fromFile: from) }
                 else if let body { try await session.upload(for: r, from: body) } else { try await session.data(for: r) }
+            // R2 no longer knows the id (expired or completed): the Worker says so in the body of its error
+            if let h = response as? HTTPURLResponse, !(200...299).contains(h.statusCode),
+               String(decoding: data, as: UTF8.self).range(of: "does not exist|NoSuchUpload|10024", options: .regularExpression) != nil {
+                throw FeedError.uploadGone
+            }
             try check(response, nil)
             return data
         }
-        let uploadId = String(decoding: try await call(["action": "start"], method: "POST"), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let ids = ["uploadId": uploadId]
+        let call: PartCall = override ?? realCall
+        let mtime = Int((((try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate]) as? Date) ?? .distantPast).timeIntervalSince1970)
+        let key = PartStore.key(path: q["path"] ?? file.path, size: size, mtime: mtime)
+        func text(_ d: Data) -> String { String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        var rec = store.load(key)
+        // The key is path|size|mtime, which a same-size rewrite in the same second leaves unchanged. So before parts
+        // are trusted, each recorded part is hashed again from the file; one that differs voids the upload (BUG-33 review 1).
+        if let r = rec, !r.parts.isEmpty {
+            var same = true
+            if let vh = try? FileHandle(forReadingFrom: file) {
+                defer { try? vh.close() }
+                for p in r.parts where same { same = (try? Self.hashRange(vh, offset: Int64(p.partNumber - 1) * r.partSize, length: r.partSize)) == p.sha256 }
+            } else { same = false }
+            if !same {
+                _ = try? await call(["action": "abort", "uploadId": r.uploadId], "POST", nil, nil)
+                store.delete(key); rec = nil
+            }
+        }
+        if rec == nil || rec!.partSize != part || rec!.uploadId.isEmpty {
+            rec = PartRecord(uploadId: text(try await call(["action": "start"], "POST", nil, nil)), partSize: part, parts: [], started: Date())
+            store.save(key, rec!)
+        }
+        var state = rec!
+        let ids = ["uploadId": state.uploadId]
         do {
             let h = try FileHandle(forReadingFrom: file)
             // each part is copied to a file and sent from disk: the File Provider extension can't hold 90 MiB in memory
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("part-" + UUID().uuidString)
             defer { try? h.close(); try? FileManager.default.removeItem(at: tmp) }
-            var parts: [[String: Any]] = []
-            for k in 0..<total {
+            for k in state.parts.count..<max(total, state.parts.count) {
                 try h.seek(toOffset: UInt64(Int64(k) * part))
                 FileManager.default.createFile(atPath: tmp.path, contents: nil)
                 let out = try FileHandle(forWritingTo: tmp)
                 var left = part
+                var hasher = SHA256()
                 while left > 0, let block = try autoreleasepool(invoking: { try h.read(upToCount: Int(min(left, 4 * mb))) }), !block.isEmpty {
                     try out.write(contentsOf: block)
+                    hasher.update(data: block)
                     left -= Int64(block.count)
                 }
                 try out.close()
+                let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
                 var etag = ""
                 for t in 1... {
                     do {
-                        etag = String(decoding: try await call(ids.merging(["action": "part", "part": String(k + 1)]) { $1 }, method: "PUT", from: tmp), as: UTF8.self)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        etag = text(try await call(ids.merging(["action": "part", "part": String(k + 1)]) { $1 }, "PUT", nil, tmp))
                         if etag.isEmpty { throw FeedError.server(-1) }
                         break
                     } catch {
-                        if t >= 4 || error as? FeedError == .notSignedIn { throw error }
-                        try await Task.sleep(nanoseconds: UInt64(t) * 2_000_000_000)
+                        if t >= 4 || error as? FeedError == .notSignedIn || error as? FeedError == .uploadGone { throw error }
+                        try await Task.sleep(nanoseconds: UInt64(t) * retryUnit)
                     }
                 }
-                parts.append(["partNumber": k + 1, "etag": etag])
+                state.parts.append(PartRecord.Part(partNumber: k + 1, etag: etag, sha256: digest))
+                store.save(key, state)
             }
-            _ = try await call(ids.merging(["action": "complete"]) { $1 }, method: "POST", body: try JSONSerialization.data(withJSONObject: parts))
-        } catch {
-            _ = try? await call(ids.merging(["action": "abort"]) { $1 }, method: "POST")
-            throw error
+            let list = state.parts.map { ["partNumber": $0.partNumber, "etag": $0.etag] as [String: Any] }
+            _ = try await call(ids.merging(["action": "complete"]) { $1 }, "POST", try JSONSerialization.data(withJSONObject: list), nil)
+            store.delete(key)
+        } catch FeedError.uploadGone {
+            store.delete(key); throw FeedError.uploadGone          // start fresh next time
+        } catch FeedError.server(let code) where code == 409 || code == 400 {
+            // 409: the name was taken meanwhile. 400: the Worker refused the part list ("Complete failed"). Either
+            // way these parts can never complete: give them back and start fresh next time.
+            store.delete(key)
+            _ = try? await call(ids.merging(["action": "abort"]) { $1 }, "POST", nil, nil)
+            throw FeedError.server(code)
         }
+        // any other failure: the record stays, the next attempt resumes
     }
 
     public func folder(_ path: String) async throws {
