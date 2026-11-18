@@ -77,11 +77,13 @@ check((try? String(contentsOf: v3.appendingPathComponent("draftpad.matter.json")
 check((try? String(contentsOf: v3.appendingPathComponent("draftpad.md"), encoding: .utf8)) == "n\n\nsaid", "and the words still reach the note")
 
 // The page's sidecar never writes over one another writer changed: the host hands it to the page to merge first.
-check(MatterWrite.plan(json: "P", disk: nil, seen: nil) == .write, "no file yet: write")
-check(MatterWrite.plan(json: "P2", disk: "P1", seen: "P1") == .write, "the file is ours: write")
-check(MatterWrite.plan(json: "P2", disk: "D", seen: "P1") == .mergeFirst("D"), "the intent or another device wrote: merge first")
-check(MatterWrite.plan(json: "U", disk: "D", seen: "D") == .write, "after the page merged it: write the union")
-check(MatterWrite.plan(json: "D", disk: "D", seen: nil) == .write, "same as the file: write (no loop)")
+check(MatterWrite.plan(json: "P", disk: .missing, seen: nil) == .write, "no file yet: write")
+check(MatterWrite.plan(json: "P2", disk: .text("P1"), seen: "P1") == .write, "the file is ours: write")
+check(MatterWrite.plan(json: "P2", disk: .text("D"), seen: "P1") == .mergeFirst("D"), "the intent or another device wrote: merge first")
+check(MatterWrite.plan(json: "U", disk: .text("D"), seen: "D") == .write, "after the page merged it: write the union")
+check(MatterWrite.plan(json: "D", disk: .text("D"), seen: nil) == .write, "same as the file: write (no loop)")
+// Regression guard: BUG-29 (T-0176). An evicted or unreadable sidecar is not "no file": nothing is written over it.
+check(MatterWrite.plan(json: "x", disk: .unreadable, seen: "") == .wait, "an unreadable sidecar: wait, write nothing")
 
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

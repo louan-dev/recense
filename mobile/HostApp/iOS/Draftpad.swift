@@ -21,13 +21,14 @@ func log(_ s: String) { NSLog("draftpad: %@", s) }
 // MARK: The file
 
 /// The vault folder you picked once (a security-scoped bookmark), with draftpad.md and draftpad.ink.json inside it.
+/// The load and save rules are shared with the Mac (shared/draftpadfile.swift, BUG-29); this class holds the vault.
 final class DraftpadFile: ObservableObject {
     static let key = "draftpadVaultBookmark"
-    @Published private(set) var vault: URL?
-    private(set) var base = ""          // what this device last read or wrote: the merge's base
-    private(set) var readable = true    // false: the note existed but could not be read at load (T-0114); nothing is saved over it
-    private(set) var pending = false    // a save could not reach the file; the poll tries again (T-0114)
-    private(set) var lastInk = ""       // what this device last read or wrote for draftpad.ink.json
+    @Published private(set) var vault: URL? { didSet { open() } }
+    private(set) var noteFile: DraftpadNote?   // draftpad.md: load, save, the merge's base (T-0114, BUG-29)
+    private(set) var ink: DraftpadInk?         // draftpad.ink.json: never written over strokes not read here (T-0125)
+    var base: String { noteFile?.base ?? "" }
+    var pending: Bool { noteFile?.pending ?? false }
     var note: URL? { vault?.appendingPathComponent("draftpad.md") }
     var inkNote: URL? { vault?.appendingPathComponent("draftpad.ink.json") }
     /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
@@ -43,6 +44,20 @@ final class DraftpadFile: ObservableObject {
             vault = u
             if stale, let fresh = try? u.bookmarkData() { UserDefaults.standard.set(fresh, forKey: Self.key) }
         }
+        open()   // didSet does not run inside init
+    }
+
+    // What was typed while the note could not be read or written is kept on this device, one file per launch
+    // (DraftpadNote, Unsaved).
+    private let launch = Date()
+    static var unsavedFolder: URL { DraftpadNote.unsavedFolder }   // also used by AddToDraftpadIntent (FEAT-08)
+
+    private func open() {
+        guard let n = note, let i = inkNote else { noteFile = nil; ink = nil; return }
+        let f = DraftpadNote(path: n.path, launch: launch)
+        f.say = { log($0) }
+        noteFile = f
+        ink = DraftpadInk(path: i.path)
     }
 
     func choose(_ folder: URL) {
@@ -51,47 +66,11 @@ final class DraftpadFile: ObservableObject {
         vault = folder
     }
 
-    /// The file as it is now (coordinated, so iCloud downloads it first if needed); it becomes the base.
-    /// A note that exists but cannot be read now (iCloud offline, a sync mid-replace) is not a blank note (T-0114): the editor
-    /// starts empty, nothing is saved over the note, and the first save after it can be read joins what was typed to it.
-    func load() -> String {
-        guard let p = note?.path else { return "" }
-        switch readNote(p) {
-        case .text(let s): base = s; readable = true; return joinKept(note: s, path: p)
-        case .missing: base = ""; readable = true; return joinKept(note: "", path: p)
-        case .unreadable:
-            base = ""; readable = false
-            log("the note can't be read now (iCloud offline?); nothing is saved over it until it can be")
-            return ""
-        }
-    }
+    /// The file as it is now; it becomes the base (DraftpadNote.load: an unreadable note is never a blank one).
+    func load() -> String { noteFile?.load() ?? "" }
 
-    // What was typed while the note could not be read or written is kept on this device, one file per launch, so a second
-    // launch never replaces the first's (T-0114 review F1). It is joined after the note once the note reads, and each file
-    // moves to recovered/ only after the write that holds its text succeeded.
-    private let launch = Date()
-    static var unsavedFolder: URL {   // also used by AddToDraftpadIntent (FEAT-08)
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Recense", isDirectory: true)
-    }
-    private var unsavedDir: URL { Self.unsavedFolder }
-    private var launchFile: URL { Unsaved.file(in: unsavedDir, launch: launch) }
-    private func keepSafe(_ text: String) { if !text.isEmpty { Unsaved.keep(text, as: launchFile) } }
-    private func settleLaunch() { Unsaved.settle(launchFile, in: unsavedDir) }   // its text reached the note
-    /// The note with the text kept by earlier failed saves added after it, written to the note; else the note as it is.
-    private func joinKept(note s: String, path p: String) -> String {
-        guard let joined = Unsaved.recover(note: s, in: unsavedDir, write: { coordinatedWrite($0, to: p) }) else { return s }
-        base = joined
-        log("text typed while the note could not be saved was added after it")
-        return joined
-    }
-
-    /// Reads the line-anchored ink sidecar JSON from the vault folder.
-    func loadInk() -> String {
-        guard let p = inkNote?.path else { return "" }
-        let s = coordinatedRead(p) ?? ""
-        lastInk = s
-        return s
-    }
+    /// The ink sidecar for the page: "" when there is none yet, nil when it can't be read now (T-0125).
+    func loadInk() -> String? { ink?.load() }
 
     /// FEAT-08 · coded, not compiled; device check owed.
     func loadMatter() -> String {
@@ -110,57 +89,9 @@ final class DraftpadFile: ObservableObject {
         lastMatter = json
     }
 
-    /// Writes the line-anchored ink sidecar JSON to the vault folder.
-    func saveInkJSON(_ json: String) {
-        guard let p = inkNote?.path, json != lastInk else { return }
-        coordinatedWrite(json, to: p)
-        lastInk = json
-    }
-
-    /// Saves `mine`, merging any edit that reached the file meanwhile. Returns the text the editor should show when
-    /// that differs from `mine` (a merge, or a newer file adopted), else nil.
-    func save(_ mine: String) -> String? {
-        guard let p = note?.path else { return nil }
-        // T-0114: a note that cannot be read is never written over. Typed text is kept on this device and the save is
-        // tried again (pending) until the note can be read; then what was typed is added after it.
-        if !readable {
-            switch planBlindSave(mine: mine, now: readNote(p)) {
-            case .wait:
-                keepSafe(mine); pending = true
-                return nil
-            case .recovered(let seen, let joined):
-                if joined != seen, !coordinatedWrite(joined, to: p) { keepSafe(mine); pending = true; return nil }
-                settleLaunch()   // this launch's typed text is in the note now
-                base = joined; readable = true; pending = false
-                log("the note can be read again; what was typed meanwhile was added after it")
-                let shown = joinKept(note: joined, path: p)   // and any earlier launch's
-                return shown == mine ? nil : shown
-            }
-        }
-        let theirs: String?
-        switch readNote(p) {
-        case .text(let t): theirs = t == base ? nil : t
-        case .missing: theirs = nil
-        case .unreadable: keepSafe(mine); pending = true; return nil
-        }
-        switch planNoteSave(base: base, mine: mine, theirs: theirs) {
-        case .write(let t):
-            // the base moves only once the file really holds the text; a failed write left base as it was, so the
-            // next poll does not read the old file as "theirs" and put it over the edit (T-0114)
-            if t != (theirs ?? base), !coordinatedWrite(t, to: p) { keepSafe(mine); pending = true; return nil }
-            base = t; pending = false; settleLaunch()
-            return t == mine ? nil : t
-        case .adopt(let t):
-            base = t; pending = false
-            return t
-        case .conflict(let m, let other):
-            // theirs goes beside the note first: only once it is safe is the note replaced
-            guard coordinatedWrite(other, to: freeSiblingPath(p)), coordinatedWrite(m, to: p) else { keepSafe(mine); pending = true; return nil }
-            base = m; pending = false; settleLaunch()
-            log("the same lines changed here and on another device; theirs kept beside the note")
-            return nil
-        }
-    }
+    /// Saves `mine` (DraftpadNote.save, shared with the Mac). Returns the text the editor should show when that differs
+    /// from `mine` (a merge, or a newer file adopted), else nil.
+    func save(_ mine: String) -> String? { noteFile?.save(mine) }
 }
 
 // MARK: The editor
@@ -230,8 +161,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         call("setTheme('dark')")
         // UI-07 · the editor picks its own font and box per device and orientation (editor/src/devicelayout.js).
         call("setText(\(jsLiteral(file.load())))")
-        let initialInk = file.loadInk()
-        if !initialInk.isEmpty {
+        if let initialInk = file.loadInk(), !initialInk.isEmpty {   // nil: unreadable now; the poll merges it once it reads
             call("setInk(\(jsLiteral(initialInk)))")
         }
         let initialMatter = file.loadMatter()
@@ -295,19 +225,17 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 }
             }
         case "ink":
-            if let json = m.body as? String {
-                file.saveInkJSON(json)
-            } else if let obj = m.body as? [String: Any],
-                      let data = try? JSONSerialization.data(withJSONObject: obj),
-                      let json = String(data: data, encoding: .utf8) {
-                file.saveInkJSON(json)
-            }
+            if let json = DraftpadInk.json(from: m.body) { saveInk(json) }
         case "matter":   // FEAT-08
             guard let json = m.body as? String else { break }
-            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: file.matterNote.flatMap { coordinatedRead($0.path) }, seen: file.lastMatter) {
+            guard let mp = file.matterNote?.path else { break }
+            switch MatterWrite.plan(json: json, disk: readNote(mp), seen: file.lastMatter) {
+            case .mergeFirst(let disk):
                 file.sawMatter(disk)
                 call("mergeMatter(\(jsLiteral(disk)))")   // the page unions it and posts the union back here
-            } else { file.saveMatterJSON(json) }
+            case .write: file.saveMatterJSON(json)
+            case .wait: log("draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
         case "audio":
             if let d = m.body as? [String: Any] {
                 if (d["action"] as? String) == "speakSummary", let summaryText = d["text"] as? String, !summaryText.isEmpty {
@@ -439,39 +367,84 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
     }
 
+    /// Runs `work` inside a background task, so leaving the app never cuts a save short (BUG-29); `work` calls `done`.
+    private static func keepAlive(_ work: (@escaping () -> Void) -> Void) {
+        var id = UIBackgroundTaskIdentifier.invalid
+        let done = { if id != .invalid { UIApplication.shared.endBackgroundTask(id); id = .invalid } }
+        id = UIApplication.shared.beginBackgroundTask(withName: "Draftpad save", expirationHandler: done)
+        work(done)
+    }
+
     func saveNow() {
         saveTimer?.invalidate(); saveTimer = nil
         guard let mine = lastPosted else { return }
-        if let shown = file.save(mine) { call("setText(\(jsLiteral(shown)))") }
+        Self.keepAlive { done in
+            if let shown = file.save(mine) { call("setText(\(jsLiteral(shown)))") }
+            done()
+        }
         if Listener.shared.on { Listener.shared.noteSaved() }   // T-0043
     }
 
     /// The page's text right now (skipping its 300 ms debounce), then a save; used before leaving and on a poll.
     func flushAndSave() {
-        call("getText()") { [weak self] v in
-            guard let self = self else { return }
-            if let s = v as? String { self.lastPosted = s }
-            self.saveNow()
+        Self.keepAlive { done in
+            call("getText()") { [weak self] v in
+                defer { done() }
+                guard let self = self else { return }
+                if let s = v as? String { self.lastPosted = s }
+                self.saveNow()
+            }
         }
     }
 
+    /// One ink post (T-0125): written, or the file's strokes not seen here merged into the page first, then the union saved.
+    private func saveInk(_ json: String) {
+        guard let ink = file.ink, case .mergeFirst(let disk) = ink.save(json) else { return }
+        mergeInk(disk)
+    }
+
+    private func mergeInk(_ disk: String) {
+        // a merge that doesn't come back (page not loaded, no ink layer, the call failed) leaves the file unseen, so the
+        // next post merges it again instead of writing over it (BUG-29 review 1); `call` answers nil when not loaded
+        call("mergeInk(\(jsLiteral(disk)))") { [weak self] merged in
+            guard let self = self else { return }
+            if let json = DraftpadInk.json(from: merged) { self.saveInk(json) } else { self.file.ink?.unsee() }
+        }
+    }
+
+    // The poll reads the files off the main thread (a coordinated read can wait on iCloud); the decisions stay on main.
+    private let pollQueue = DispatchQueue(label: "draftpad.poll", qos: .utility)
+    private var polling = false
+
     private func pollExternal() {
+        guard !polling else { return }
+        polling = true
+        let np = file.note?.path, ip = file.inkNote?.path, mp = file.matterNote?.path
+        pollQueue.async { [weak self] in
+            let note = np.flatMap { coordinatedRead($0) }
+            let ink = ip.map { readNote($0) }
+            let matter = mp.flatMap { coordinatedRead($0) }
+            DispatchQueue.main.async { self?.polled(note: note, ink: ink, matter: matter) }
+        }
+    }
+
+    private func polled(note now: String?, ink: NoteRead?, matter remote: String?) {
+        polling = false
         if saveTimer == nil, file.pending { flushAndSave() }   // T-0114: a save that couldn't reach the file is tried again
-        if saveTimer == nil, let p = file.note?.path, let now = coordinatedRead(p), now != file.base {
+        if saveTimer == nil, let now = now, now != file.base {
             flushAndSave()
             if lastPosted == nil { if let shown = file.save(file.base) { call("setText(\(jsLiteral(shown)))") } }
         }
-        if let inkPath = file.inkNote?.path, let remoteInk = coordinatedRead(inkPath), !remoteInk.isEmpty, remoteInk != file.lastInk {
-            call("mergeInk(\(jsLiteral(remoteInk)))") { [weak self] merged in
-                guard let self = self,
-                      let obj = merged,
-                      let data = try? JSONSerialization.data(withJSONObject: obj),
-                      let json = String(data: data, encoding: .utf8) else { return }
-                self.file.saveInkJSON(json)
+        if let i = file.ink {
+            if i.waiting != nil {   // T-0125: a post the sidecar couldn't take yet
+                if case .mergeFirst(let d)? = i.retry() { mergeInk(d) }
+            } else if case .text(let r)? = ink, !r.isEmpty, r != i.seen {   // another device's strokes: union them in
+                i.saw(r)
+                mergeInk(r)
             }
         }
         // FEAT-08 · another device's sidecar: union it (src/matter.js mergeMatter), keep the result.
-        if let mp = file.matterNote?.path, let remote = coordinatedRead(mp), !remote.isEmpty, remote != file.lastMatter {
+        if let remote = remote, !remote.isEmpty, remote != file.lastMatter {
             call("mergeMatter(\(jsLiteral(remote)))") { [weak self] merged in
                 if let json = merged as? String { self?.file.saveMatterJSON(json) }
             }

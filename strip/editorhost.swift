@@ -8,8 +8,8 @@ import NaturalLanguage
 // copied into the bundle by build.sh. It speaks the bridge in .handoff/editor/INBOX.md (bar 8):
 //   native → page: window.recenseEditor.setText(s), getText(), focus(), setTheme('dark'|'light'), setFontSize(px)
 //   page → native: window.webkit.messageHandlers.editor.postMessage(fullText), debounced 300 ms
-// The page never touches the file. Native keeps it: every save goes through App.saveNow → notesync.swift
-// (coordinated write and 3-way merge), the same path as the classic pad.
+// The page never touches the file. Native keeps it: every save goes through App.saveNow → DraftpadNote
+// (shared/draftpadfile.swift, the iPad's rule too: coordinated write and 3-way merge), the same path as the classic pad.
 // Until the core lands, a small stand-in page with the same bridge runs instead, so the wiring and sync can be tested.
 
 /// Which pad the top layer shows. Classic stays the default until the owner tries the new one.
@@ -110,6 +110,9 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let web: EditorWebView
     let vault: URL
     var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
+    /// draftpad.ink.json's load and save, the same rule as the iPad (shared/draftpadfile.swift, BUG-29 / T-0125): a post
+    /// never writes over strokes this host has not seen; the page unions them first.
+    private(set) lazy var ink = DraftpadInk(path: inkPath)
     /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
     var matterPath: String { vault.appendingPathComponent("draftpad.matter.json").path }
     private var lastMatter = ""   // what this host last read or wrote for draftpad.matter.json
@@ -238,6 +241,27 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish(nil) }
     }
 
+    /// One ink post (T-0125): written, or the file's strokes not seen here (the iPad's) merged into the page first, then
+    /// the union saved. The union is the page's own (editor/src/ink.js mergeInkDocuments).
+    private func saveInk(_ json: String) {
+        if case .mergeFirst(let disk) = ink.save(json) { mergeInk(disk) }
+    }
+
+    private func mergeInk(_ disk: String) {
+        // a merge that doesn't come back leaves the file unseen, so the next post merges it again (BUG-29 review 1)
+        guard loaded else { ink.unsee(); return }
+        web.evaluateJavaScript("window.recenseEditor && window.recenseEditor.mergeInk(\(jsString(disk)))") { [weak self] v, err in
+            if let err = err { log("editor: mergeInk failed: \(err.localizedDescription)") }
+            guard let self = self else { return }
+            if let merged = DraftpadInk.json(from: v) { self.saveInk(merged) } else { self.ink.unsee() }
+        }
+    }
+
+    /// An ink post the sidecar couldn't take yet (unreadable, a failed write), tried again (App.pollExternal).
+    func retryInk() {
+        if case .mergeFirst(let disk)? = ink.retry() { mergeInk(disk) }
+    }
+
     /// Runs `window.recenseEditor.<js>` once the page has loaded (wingpanels.swift).
     func send(_ js: String) { if loaded { call(js) } }
     func applyWingsState(_ json: String) { send("setWingsState(\(jsString(json)))") }
@@ -317,21 +341,18 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             return
         }
         if m.name == "ink" {
-            if let json = m.body as? String {
-                coordinatedWrite(json, to: inkPath)
-            } else if let obj = m.body as? [String: Any],
-                      let data = try? JSONSerialization.data(withJSONObject: obj),
-                      let json = String(data: data, encoding: .utf8) {
-                coordinatedWrite(json, to: inkPath)
-            }
+            if let json = DraftpadInk.json(from: m.body) { saveInk(json) }
             return
         }
         if m.name == "matter" {   // FEAT-08 · coded, not compiled; device check owed
             guard let json = m.body as? String, !json.isEmpty else { return }
-            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: coordinatedRead(matterPath), seen: lastMatter) {
+            switch MatterWrite.plan(json: json, disk: readNote(matterPath), seen: lastMatter) {
+            case .mergeFirst(let disk):
                 lastMatter = disk
                 call("mergeMatter(\(jsString(disk)))")   // the page unions it and posts the union back here
-            } else if coordinatedWrite(json, to: matterPath) { lastMatter = json }
+            case .write: if coordinatedWrite(json, to: matterPath) { lastMatter = json }
+            case .wait: log("editor: draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
             return
         }
         if m.name == "audio" {
@@ -490,7 +511,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         call("nativeSwipe(0, false)")   // the Mac reads the trackpad natively (EditorWebView.scrollWheel); web wheel pager off
         call("setText(\(jsString(text)))")
         if nativeWings && wingSide == nil { call("setNativeWings(true)") }
-        if wingSide == nil, let inkJSON = coordinatedRead(inkPath), !inkJSON.isEmpty {
+        // nil: the sidecar can't be read now; nothing counts as seen, so the first post merges the file in (T-0125)
+        if wingSide == nil, let inkJSON = ink.load(), !inkJSON.isEmpty {
             call("setInk(\(jsString(inkJSON)))")
         }
         if wingSide == nil, let matterJSON = coordinatedRead(matterPath), !matterJSON.isEmpty {

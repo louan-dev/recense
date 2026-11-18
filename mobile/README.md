@@ -84,7 +84,9 @@ updates in place.
 - **Draftpad** (top of the sidebar): the Mac's editor (`editor/dist/editor.html`, bundled) on the same `draftpad.md`.
   The first time, choose the Obsidian vault folder (Files › iCloud Drive › Obsidian › Obsidian); it's remembered.
   Saves go through the Mac's 3-way merge (`shared/notesync.swift`), and an edit from the Mac or Obsidian is merged in
-  within 3 s while it's open. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
+  within 3 s while it's open. Load and save are one copy with the Mac (`shared/draftpadfile.swift`, BUG-29): a note or
+  ink file that can't be read now is never written over, ink from another device is unioned in, a save runs to the end
+  when you leave the app, and the 3 s check reads the files off the main thread. Pages as on the Mac: ‹ › in the toolbar, ⌘[ / ⌘] or two fingers on a trackpad.
   Links open in Safari; `![](file.pdf)` and images show inline (vault files directly, web files cached for offline,
   through `shared/embedfiles.swift`).
   The wings' layout (cards moved between the two sides, pins) saves to `draftpad.wings.json`, as on the Mac. In a wing:
