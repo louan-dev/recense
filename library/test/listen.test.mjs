@@ -44,4 +44,13 @@ const theirs = (env, updated) => async () => { await env.KEEP.put(`keep/listen/$
   assert.equal((await put(env, key, ep(5, "ours"))).status, 409);
   assert.equal(stored(env).updated, 9);
 }
+{ // three lost races against an OLDER stored episode: 503 (retry), never 409 (which would make the app drop the newer local edit)
+  const env = { KEEP: bucket() };
+  assert.equal((await put(env, key, ep(1, "a"))).status, 200);
+  const real = env.KEEP.put.bind(env.KEEP);
+  env.KEEP.put = async (k, t, o) => { if (k === `keep/listen/${key}.json` && o?.onlyIf) { await real(k, JSON.stringify({ ...ep(2, "older"), key })); } return real(k, t, o); };
+  const r = await put(env, key, ep(5, "ours"));
+  assert.equal(r.status, 503);
+  assert.equal(stored(env).updated, 2);
+}
 console.log("ok listen: conditional episode save");

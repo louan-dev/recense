@@ -57,7 +57,7 @@ export async function listenApi(req, env, path, method) {
     const onlyIf = cur ? { etagMatches: cur.etag } : { etagDoesNotMatch: "*" };
     saved = !!(await env.KEEP.put(name, JSON.stringify(ep), { ...JSON_TYPE, onlyIf }).catch(() => null));
   }
-  if (!saved) return jsonResponse((await read(env, name))?.body || { error: "Busy, try again" }, 409);
+  if (!saved) return jsonResponse({ error: "Busy, try again" }, 503);   // never 409 here: the stored copy may be older, and 409 means "take theirs"
   // the index: read, change one entry, put on its etag; on a race, once more
   for (let i = 0; i < 3; i++) {
     const idx = (await read(env, "keep/listen/index.json")) || { body: null, etag: null };
