@@ -1203,14 +1203,16 @@ final class Listener: NSObject, ObservableObject {
         var learn = false
         var note: String? = nil
         var shape = ""
-        func current(_ t: Double) -> Int? { transcript.map { FloatingFrames.current($0, at: t) } ?? place }
+        /// Reduce Motion: the line changes as it starts, as the app's transcript jumps (BUG-24 review 7)
+        var jump = false
+        func current(_ t: Double) -> Int? { transcript.map { FloatingFrames.current($0, at: t, jump: jump) } ?? place }
         func key(_ t: Double) -> String {
             note.map { "note:" + $0 } ?? FloatingFrames.signature(lines, current: current(t), mode: learn ? .learn : .follow, at: t)
         }
         func stamps(after a: Double, ahead: Double) -> [Double] {
             guard note == nil else { return [] }
             if learn { return FloatingFrames.learnStamps(lines, after: a, ahead: ahead) }
-            if let tl = transcript { return FloatingFrames.followStamps(tl, lines, after: a, ahead: ahead) }
+            if let tl = transcript { return FloatingFrames.followStamps(tl, lines, after: a, ahead: ahead, jump: jump) }
             guard let p = place, lines.indices.contains(p) else { return [] }
             return FloatingFrames.stamps(lines[p], after: a, ahead: ahead)
         }
@@ -1236,7 +1238,8 @@ final class Listener: NSObject, ObservableObject {
             }
             let k = "\(tl.count)|\(a.id)|\(b.id)|\(tl.reduce(0) { $0 + $1.text.count + ($1.translation?.count ?? 0) })"
             if k != ownLines.key { ownLines = (k, tl.map(FloatingFrames.line)) }
-            return Frame(lines: ownLines.all, transcript: tl, learn: learn, note: saved, shape: "own|" + k + (saved ?? ""))
+            let jump = UIAccessibility.isReduceMotionEnabled
+            return Frame(lines: ownLines.all, transcript: tl, learn: learn, note: saved, shape: "own|" + k + (saved ?? "") + (jump ? "|still" : ""), jump: jump)
         }
         guard let p = episode?.place, p < sentences.count else {
             let n = hearing ? "Listening…" : paused ? "Listen is paused" : "Listen is off"
@@ -1270,7 +1273,7 @@ final class Listener: NSObject, ObservableObject {
     /// Our player's line, as the window shows it (Learn's places and Follow's line follow it; a change redraws).
     private func ownLine() -> Int? {
         guard let lines = Playback.model?.transcript, !lines.isEmpty else { return nil }
-        return FloatingFrames.current(lines, at: NativePlayer.shared.time)
+        return FloatingFrames.current(lines, at: NativePlayer.shared.time, jump: UIAccessibility.isReduceMotionEnabled)
     }
     /// The window's light clock at wall time `w` (BUG-24: one heard() and the player's speed): our player's heard time,
     /// moving at its rate (0 paused: nothing is stamped ahead, and a seek, pause or speed change makes the pictures stale);

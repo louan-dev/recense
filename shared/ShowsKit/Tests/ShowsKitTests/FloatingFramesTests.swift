@@ -46,6 +46,8 @@ final class FloatingFramesTests: XCTestCase {
                   TranscriptLine(id: "b", start: 2, end: 3, text: "Three four", words: [Word(text: "Three", start: 2, end: 2.5), Word(text: "four", start: 2.5, end: 3)])]
         for t in stride(from: -0.5, through: 3.5, by: 0.05) {
             XCTAssertEqual(FloatingFrames.current(ls, at: t), TranscriptLight.following(ls, at: t), "at \(t)")
+            // Regression guard: BUG-24 review 7: with Reduce Motion the app jumps to the active line; the window does too
+            XCTAssertEqual(FloatingFrames.current(ls, at: t, jump: true), TranscriptLight.following(ls, at: t, jump: true), "jump at \(t)")
         }
     }
 
@@ -53,6 +55,8 @@ final class FloatingFramesTests: XCTestCase {
         let ls = [TranscriptLine(id: "a", start: 0, end: 1, text: "One two", words: [Word(text: "One", start: 0, end: 0.5), Word(text: "two", start: 0.5, end: 1)]),
                   TranscriptLine(id: "b", start: 2, end: 3, text: "Three four", words: [Word(text: "Three", start: 2, end: 2.5), Word(text: "four", start: 2.5, end: 3)])]
         let got = FloatingFrames.followStamps(ls, ls.map(FloatingFrames.line), after: 1.2, ahead: 1.5)
+        let still = FloatingFrames.followStamps(ls, ls.map(FloatingFrames.line), after: 1.2, ahead: 1.5, jump: true)
+        XCTAssertFalse(still.contains(TranscriptLight.turn(ls, to: 1).at), "Reduce Motion: no early turn, the line changes as it starts")
         XCTAssertTrue(got.contains(TranscriptLight.turn(ls, to: 1).at), "the next line shows, whole and grey, when the transcript turns to it: \(got)")
         XCTAssertTrue(got.contains(2) && got.contains(2.25), "and its words light in their pictures: \(got)")
     }
