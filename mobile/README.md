@@ -161,6 +161,8 @@ updates in place.
   Pairing holds steady (BUG-26): a duplicate message is ignored instead of ending both sides; the code may be typed
   or spoken in any script's digits or as words in English, Vietnamese, French or Spanish ("one two three…"); anything
   else asks again. One pairing prompt at a time: a second nearby device waits until the first is done.
+  A device that leaves mid-prompt takes its prompt with it (T-0121); after a wrong code, whichever device you
+  pick next shows the new code (T-0123).
   An edit replaces the other device's copy when that copy is the version it was edited from (BUG-27); the old version
   goes to `trash/`. Only when both devices changed the file are both kept, the copy named for the device that made it.
   After a reinstall (pairing survives in the Keychain), the new log is renumbered above what each peer already saw,

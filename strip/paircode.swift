@@ -10,6 +10,8 @@ import SwiftUI
     static let shared = PairCodeWindow()
     private var panel: NSPanel?
     private var watch: AnyCancellable?
+    private var closedFor: String?   // T-0122: closed with X during this peer's prompt; the menu opens it again
+    private var closeWatch: NSObjectProtocol?
 
     /// Called once at launch: follows CarryManager and shows or hides the window.
     func follow(_ cm: CarryManager = .shared) {
@@ -20,8 +22,14 @@ import SwiftUI
 
     private func update(_ cm: CarryManager) {
         let wanted = cm.askingCode || (cm.pairingCode != nil && !cm.codeIsCompare)
-        if wanted, panel == nil { open(cm) }
-        if !wanted, let p = panel { p.close(); panel = nil }
+        if wanted, panel == nil, closedFor != cm.pairingWith { open(cm) }
+        if !wanted { closedFor = nil; if let p = panel { panel = nil; p.close() } }
+    }
+
+    /// Devices menu › the code line: opens the window again after it was closed with X (T-0122).
+    func show(_ cm: CarryManager = .shared) {
+        closedFor = nil
+        if let p = panel { NSApp.activate(ignoringOtherApps: true); p.makeKeyAndOrderFront(nil) } else { open(cm) }
     }
 
     private func open(_ cm: CarryManager) {
@@ -32,6 +40,14 @@ import SwiftUI
         p.isReleasedWhenClosed = false
         p.contentViewController = NSHostingController(rootView: PairCodeView(cm: cm))
         p.center()
+        // Derived from Spec: SEC-02 §4.12 (T-0122): closing with X forgets the panel, so the menu can open it again
+        if let w = closeWatch { NotificationCenter.default.removeObserver(w) }
+        closeWatch = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: p, queue: .main) { [weak self, weak p] _ in
+            MainActor.assumeIsolated {
+                guard let self, let p, self.panel === p else { return }
+                self.panel = nil; self.closedFor = cm.pairingWith
+            }
+        }
         NSApp.activate(ignoringOtherApps: true)
         p.makeKeyAndOrderFront(nil)
         panel = p

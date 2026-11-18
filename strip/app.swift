@@ -7695,7 +7695,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         }
         m.addItem(.separator())
         if cm.askingCode, let who = cm.pairingWith {   // P1b: the window (paircode.swift) takes the typed code
-            m.addItem(withTitle: "Type the code shown on \(who) in the Pair a Device window", action: nil, keyEquivalent: "").isEnabled = false
+            // T-0122: the window can be closed with X; this line opens it again
+            m.addItem(withTitle: "Type the Code Shown on \(who)…", action: #selector(showPairWindow), keyEquivalent: "").target = self
             let stop = m.addItem(withTitle: "Stop Pairing", action: #selector(stopPairingDevice), keyEquivalent: "")
             stop.target = self
         } else if let code = cm.pairingCode, let who = cm.pairingWith {
@@ -7704,7 +7705,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
                 let match = m.addItem(withTitle: "They Match", action: #selector(confirmPairMatch), keyEquivalent: "")
                 match.target = self
             } else {
-                m.addItem(withTitle: "Type \(code) on \(who)", action: nil, keyEquivalent: "").isEnabled = false
+                m.addItem(withTitle: "Type \(code) on \(who)…", action: #selector(showPairWindow), keyEquivalent: "").target = self   // T-0122
             }
             let stop = m.addItem(withTitle: "Stop Pairing", action: #selector(stopPairingDevice), keyEquivalent: "")
             stop.target = self
@@ -7729,6 +7730,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
     @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
     @MainActor @objc func stopPairingDevice() { CarryManager.shared.stopPairing() }
+    @MainActor @objc func showPairWindow() { PairCodeWindow.shared.show() }
     @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
         guard let peer = sender.representedObject as? MCPeerID else { return }
         CarryManager.shared.invite(peer)

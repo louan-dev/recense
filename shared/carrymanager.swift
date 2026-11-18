@@ -170,8 +170,8 @@ private enum CarryKeychain {
     /// The owner picked a nearby device by name.
     func invite(_ peer: MCPeerID) {
         isLookingToPair = true
+        picked = PairPrompt.pick(picked, peer.displayName, at: Date())   // T-0123: before the early return
         if t.session.connectedPeers.contains(peer) { startFlow(peer); return }
-        picked[peer.displayName] = Date()
         t.invite(peer)
         guard !reinviting else { return }
         reinviting = true
@@ -194,6 +194,9 @@ private enum CarryKeychain {
         guard state == .connected else {
             if state == .notConnected {
                 flows[peer] = nil
+                let was = PairPrompt.Shown(pairingWith: pairingWith, askingCode: askingCode, pairingCode: pairingCode)
+                let now = PairPrompt.disconnected(was, peer: peer.displayName)   // T-0121: its peer left, the prompt goes
+                if now != was { pairingWith = now.pairingWith; askingCode = now.askingCode; pairingCode = now.pairingCode }
                 if pairedConnected.isEmpty { trigger(.disconnected) }
             }
             return
@@ -337,6 +340,7 @@ private enum CarryKeychain {
         // T-0118: tell the peer only when this side really failed; never echo its refusal back
         if e?.tellsPeer ?? true { try? t.send(PairMessage.refuse("\(e.map { "\($0)" } ?? "failed")"), type: "pair", to: peer) }
         flows[peer] = nil
+        picked = PairPrompt.failed(picked, peer.displayName)   // T-0123: the next pick alone decides who shows
         guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: another flow's prompt stays
         pairingCode = nil; pairingWith = nil; askingCode = false
         switch e {
