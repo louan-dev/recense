@@ -33404,6 +33404,11 @@ ${PAGE_MARKER}
       ]))
     ];
   }
+  function setPagesLocked(view, locked) {
+    if (!view) return false;
+    view.__pagesLocked = !!locked;
+    return view.__pagesLocked;
+  }
   function attachSwipePaging(view, { threshold = 36, quietMs = 350, edgePx = 28, onSnap = null, onBounce = null, onEdgeZone = null } = {}) {
     let wheelAcc = 0;
     let wheelSpent = false;
@@ -33456,7 +33461,7 @@ ${PAGE_MARKER}
       }, 140);
     }
     view.scrollDOM.addEventListener("wheel", (e) => {
-      if (!isPageMode(view.state) || view.__nativeWheel) return;
+      if (!isPageMode(view.state) || view.__nativeWheel || view.__pagesLocked) return;
       clearTimeout(wheelTimer);
       wheelTimer = setTimeout(() => {
         wheelAcc = 0;
@@ -33494,7 +33499,7 @@ ${PAGE_MARKER}
     let touchStartY = null;
     let touchAxis = null;
     view.scrollDOM.addEventListener("touchstart", (e) => {
-      if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
+      if (!isPageMode(view.state) || view.__pagesLocked || !e.touches || e.touches.length !== 1) {
         touchStartX = null;
         return;
       }
@@ -33546,7 +33551,7 @@ ${PAGE_MARKER}
     let ptrStartY = null;
     let ptrAxis = null;
     view.scrollDOM.addEventListener("pointerdown", (e) => {
-      if (!isPageMode(view.state)) return;
+      if (!isPageMode(view.state) || view.__pagesLocked) return;
       if (e.pointerType === "touch") return;
       const w = widthOf();
       const x = Number(e.clientX) || 0;
@@ -33587,7 +33592,7 @@ ${PAGE_MARKER}
     view.scrollDOM.addEventListener("pointerup", finishPointer);
     view.scrollDOM.addEventListener("pointercancel", finishPointer);
     view.__hostSwipe = (dx, ended) => {
-      if (!isPageMode(view.state)) return "off";
+      if (!isPageMode(view.state) || view.__pagesLocked) return "off";
       const d = Number(dx) || 0;
       if (ended) settleDrag(d);
       else renderDrag(d);
@@ -35446,6 +35451,9 @@ ${PAGE_MARKER}
   var SELECT_TOOL = "select";
   var LASSO_TOOL = "lasso";
   var PALETTE_TOOLS = [SELECT_TOOL, "pen", "highlighter", LASSO_TOOL, "eraser-whole"];
+  function toolLocksPages(tool) {
+    return !!tool && tool !== SELECT_TOOL;
+  }
   var INK_TOOL_NAMES = {
     select: "Select text",
     pen: "Pen",
@@ -43097,6 +43105,8 @@ ${String(text ?? "")}`;
       onToolChange: (tool) => {
         const h = typeof window !== "undefined" && window.webkit?.messageHandlers?.ui;
         if (h && typeof h.postMessage === "function") h.postMessage({ inkTool: tool });
+        const locked = setPagesLocked(view, toolLocksPages(tool));
+        if (h && typeof h.postMessage === "function") h.postMessage({ pagesLocked: locked });
       },
       // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
       onStrokeAdded: (stroke) => {

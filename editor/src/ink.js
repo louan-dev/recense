@@ -29,6 +29,11 @@ export const SELECT_TOOL = 'select';
 export const LASSO_TOOL = 'lasso';
 export const PALETTE_TOOLS = [SELECT_TOOL, 'pen', 'highlighter', LASSO_TOOL, 'eraser-whole'];
 
+// Derived from Spec: BUG-31 — every tool but the text/select one is annotating, so the pages hold still.
+export function toolLocksPages(tool) {
+  return !!tool && tool !== SELECT_TOOL;
+}
+
 export const INK_TOOL_NAMES = {
   select: 'Select text',
   pen: 'Pen',

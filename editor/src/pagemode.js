@@ -615,6 +615,14 @@ export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
   ];
 }
 
+// Derived from Spec: BUG-31. While an ink tool is chosen the gestures (wheel, touch, Pencil edge drag, host swipe)
+// never turn the page; the page bar's buttons and menu call stepPage/newPage directly and stay live.
+export function setPagesLocked(view, locked) {
+  if (!view) return false;
+  view.__pagesLocked = !!locked;
+  return view.__pagesLocked;
+}
+
 /**
  * Horizontal swipes (trackpad two-finger swipe, touch drag, Pencil/pointer drag) move the current window with the
  * fingers (`translateX` + 0.25x rubber-banding) and snap with a 220ms ease-out transition:
@@ -676,7 +684,7 @@ export function attachSwipePaging(
   }
 
   view.scrollDOM.addEventListener('wheel', e => {
-    if (!isPageMode(view.state) || view.__nativeWheel) return;
+    if (!isPageMode(view.state) || view.__nativeWheel || view.__pagesLocked) return;
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
       wheelAcc = 0;
@@ -719,7 +727,7 @@ export function attachSwipePaging(
   let touchStartY = null;
   let touchAxis = null;
   view.scrollDOM.addEventListener('touchstart', e => {
-    if (!isPageMode(view.state) || !e.touches || e.touches.length !== 1) {
+    if (!isPageMode(view.state) || view.__pagesLocked || !e.touches || e.touches.length !== 1) {
       touchStartX = null;
       return;
     }
@@ -778,7 +786,7 @@ export function attachSwipePaging(
   let ptrAxis = null;
 
   view.scrollDOM.addEventListener('pointerdown', e => {
-    if (!isPageMode(view.state)) return;
+    if (!isPageMode(view.state) || view.__pagesLocked) return;
     if (e.pointerType === 'touch') return; // handled by touch listeners above
     const w = widthOf();
     const x = Number(e.clientX) || 0;
@@ -828,7 +836,7 @@ export function attachSwipePaging(
   // Derived from Spec: BUG-02 A8. The Mac host reads the trackpad natively (finger down, lift, momentum ignored)
   // and drives the same drag and glide: total dx since the fingers touched (+ = fingers moved right), ended = lifted.
   view.__hostSwipe = (dx, ended) => {
-    if (!isPageMode(view.state)) return 'off';
+    if (!isPageMode(view.state) || view.__pagesLocked) return 'off';
     const d = Number(dx) || 0;
     if (ended) settleDrag(d); else renderDrag(d);
     return 'ok';

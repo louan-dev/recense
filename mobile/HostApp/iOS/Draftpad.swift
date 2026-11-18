@@ -97,6 +97,8 @@ final class DraftpadFile: ObservableObject {
 // MARK: The editor
 
 final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
+    /// BUG-31: set by EditorSurface; turns the screen-edge recognizers off while an ink tool is chosen.
+    var onPagesLocked: ((Bool) -> Void)?
     let web: WKWebView
     let file: DraftpadFile
     // UI-04 P3: held so the Pencil haptic isn't dropped with a generator freed mid-play.
@@ -205,6 +207,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
             // The ink palette's eyedropper: the system colour picker (its eyedropper samples anything on screen).
             if let d = m.body as? [String: Any], d["sampleColor"] as? Bool == true { pickColor(); return }
+            // Derived from Spec: BUG-31 — an ink tool is chosen: the edge swipes hold still (the page bar's wing button stays).
+            if let d = m.body as? [String: Any], let locked = d["pagesLocked"] as? Bool { onPagesLocked?(locked); return }
             if let d = m.body as? [String: Any], let kind = d["haptic"] as? String {
                 switch kind {
                 case "snap": UISelectionFeedbackGenerator().selectionChanged()
@@ -525,6 +529,7 @@ struct EditorSurface: UIViewRepresentable {
     var onEdge: (String) -> Void = { _ in }
     var onSqueeze: (String, CGPoint) -> Void = { _, _ in }
     let onPencilAction: (String) -> Void
+    var registerLock: (@escaping (Bool) -> Void) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(onPencilAction, onEdge, onSqueeze) }
 
@@ -536,7 +541,10 @@ struct EditorSurface: UIViewRepresentable {
             g.edges = edge
             g.delegate = context.coordinator
             web.addGestureRecognizer(g)
+            context.coordinator.edgeGestures.append(g)
         }
+        let c = context.coordinator
+        registerLock { locked in c.edgeGestures.forEach { $0.isEnabled = !locked } }
         return web
     }
     func updateUIView(_ v: WKWebView, context: Context) {
@@ -550,6 +558,7 @@ struct EditorSurface: UIViewRepresentable {
         var onEdge: (String) -> Void
         var onSqueeze: (String, CGPoint) -> Void
         private var fired = false
+        var edgeGestures: [UIScreenEdgePanGestureRecognizer] = []
         init(_ f: @escaping (String) -> Void, _ e: @escaping (String) -> Void, _ q: @escaping (String, CGPoint) -> Void) {
             onPencilAction = f; onEdge = e; onSqueeze = q
         }
@@ -626,9 +635,9 @@ struct DraftpadEditor: View {
         ZStack {
             Color.black.ignoresSafeArea()
             EditorSurface(web: editor.web.web, onEdge: { editor.web.openWing($0) },
-                          onSqueeze: { editor.web.handleSqueeze($0, at: $1) }) { action in
-                editor.web.handlePencilAction(action)
-            }
+                          onSqueeze: { editor.web.handleSqueeze($0, at: $1) },
+                          onPencilAction: { editor.web.handlePencilAction($0) },
+                          registerLock: { editor.web.onPagesLocked = $0 })
         }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: phase) { _, p in if p != .active { editor.web.flushAndSave() } }
