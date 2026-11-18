@@ -205,3 +205,14 @@ enum CarryForget {
                + "Files on both devices stay; pair again to carry with it."
     }
 }
+
+// Derived from Spec: SEC-02 invariant 19
+/// What this launch may do with the Keychain it could read. A stand-in identity must never reach a peer:
+/// the peer's `CarryPeer.replacing` drops our entry by name and would swap our real key for it.
+struct CarryKeychainGate: Equatable {
+    var identityUnread = false, groupUnread = false, trustWritable = true
+    /// Pairing hands our key to the peer and writes peers.v2.
+    var canPair: Bool { !identityUnread && trustWritable }
+    /// The handshake proves our key: never a stand-in.
+    var canAuth: Bool { !identityUnread }
+}

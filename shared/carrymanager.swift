@@ -94,6 +94,9 @@ private enum CarryKeychain {
     private var placing: Set<String> = []                       // keys whose staged bytes are being hashed (§2.4)
     private var trustWritable = true                            // false while peers.v2 can't be read (invariant 13)
     private var identityUnread = false                          // this launch's key is a stand-in: pair nothing with it
+    private var gate: CarryKeychainGate {                       // invariant 19
+        CarryKeychainGate(identityUnread: identityUnread, trustWritable: trustWritable)
+    }
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
@@ -166,6 +169,7 @@ private enum CarryKeychain {
     }
 
     func start() {
+        guard gate.canAuth else { lastError = Self.unreadable; return }   // invariant 19: never advertise a stand-in key
         t.advertise(); t.browse()
         if !isLookingToPair { status = needsPairing.isEmpty ? "Looking for devices" : Self.pairAgain(needsPairing) }
     }
@@ -184,6 +188,7 @@ private enum CarryKeychain {
 
     /// "Pair a device": opens this device to the next stranger that connects (or that it finds and invites).
     func beginPairing() {
+        guard gate.canPair else { lastError = Self.unreadable; return }   // invariant 19
         isLookingToPair = true; lastError = nil; start(); status = "Pairing"
         for peer in t.session.connectedPeers { startFlow(peer) }   // already connected: no `.connected` will come
     }
@@ -197,6 +202,7 @@ private enum CarryKeychain {
 
     /// The owner picked a nearby device by name.
     func invite(_ peer: MCPeerID) {
+        guard gate.canPair else { lastError = Self.unreadable; return }   // invariant 19
         isLookingToPair = true
         picked = PairPrompt.pick(picked, peer.displayName, at: Date())   // T-0123: before the early return
         if t.session.connectedPeers.contains(peer) { startFlow(peer); return }
@@ -237,7 +243,7 @@ private enum CarryKeychain {
     // MARK: SEC-02 · the handshake on every connection, then sealed messages only
 
     private func startAuth(_ peer: MCPeerID) {
-        guard auth[peer] == nil else { return }
+        guard auth[peer] == nil, gate.canAuth else { return }   // invariant 19: a stand-in key proves nothing
         let s = CarryAuthSession(me: identity)
         auth[peer] = s
         _ = authDeadline.begin(peer)   // invariant 15: earlier sessions' timers go dead
@@ -447,6 +453,7 @@ private enum CarryKeychain {
     }
 
     private func startFlow(_ peer: MCPeerID) {
+        guard gate.canPair else { if isLookingToPair { lastError = Self.unreadable }; return }   // invariant 19
         guard isLookingToPair, flows[peer] == nil else { return }
         guard PairPrompt.owns(pairingWith, peer.displayName) else { return }   // T-0120: one prompt at a time
         reloadFromDisk()
@@ -458,6 +465,7 @@ private enum CarryKeychain {
     }
 
     private func receivePair(_ data: Data, from peer: MCPeerID) {
+        guard gate.canPair else { lastError = Self.unreadable; return }   // invariant 19
         guard let m = try? JSONDecoder().decode(PairMessage.self, from: data) else { return }
         if flows[peer] == nil { startFlow(peer) }   // their hello can beat our own `.connected` callback
         guard var f = flows[peer] else { return }

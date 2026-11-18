@@ -151,6 +151,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     `placing` as expected. A `.check` nobody expects (left by a crash) is still swept. Tested in `Tests/carrysync`.
 18. **Forget says what the other side still knows:** when no sealed `forget` was sent (`CarryForget.reply`,
     told = false: the CLI, or the peer not connected), the reply names the device and says "Forget it on <name> too".
+19. **Nothing runs on a Keychain this launch could not read** (`CarryKeychainGate`, review of d730ee6):
+    - an unread identity (a stand-in key) never pairs, advertises or starts a handshake, so no peer ever stores it;
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -207,3 +209,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   16 Needs pairing again leaves out names that still have a trusted key.
   17 a .check copy being hashed is never swept.
   18 §2.5: `recense carry forget` sends no sealed forget; it prints "Forget it on <name> too".
+  19 (review of d730ee6) a stand-in identity never pairs, advertises or proves.

@@ -270,6 +270,17 @@ do {
     check(here.contains("Files on both devices stay") && both.contains("Files on both devices stay"), "files stay, either way")
 }
 
+// 19 · Nothing runs on a Keychain this launch could not read (review of d730ee6)
+// Regression guard: SEC-02
+do {
+    let fine = CarryKeychainGate()
+    check(fine.canPair && fine.canAuth, "a readable Keychain pairs and proves")
+    let standIn = CarryKeychainGate(identityUnread: true)
+    check(!standIn.canPair, "a stand-in identity never pairs (the peer would store it over our real key)")
+    check(!standIn.canAuth, "a stand-in identity never starts a handshake")
+    check(!CarryKeychainGate(trustWritable: false).canPair, "an unreadable peers.v2 never pairs")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])
