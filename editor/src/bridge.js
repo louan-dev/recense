@@ -116,6 +116,8 @@ export function createEditorBridge({
     if (deferredText === null) return false;
     const text = deferredText;
     deferredText = null;
+    // FEAT-23 review 1: a media note opened during the drag: draftpad's text waits beside it, never in it.
+    if (typeof absorbText === 'function' && absorbText(text)) return true;
     return applyText(text);
   }
 
