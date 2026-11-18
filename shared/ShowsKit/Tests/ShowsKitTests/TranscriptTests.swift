@@ -145,4 +145,12 @@ final class TranscriptTests: XCTestCase {
         XCTAssertLessThanOrEqual(FrameClock.lead(now: 5, target: 9, period: p), p)
         XCTAssertGreaterThanOrEqual(FrameClock.lead(now: 10.010, target: 10.010, period: p), 0)
     }
+
+    func testFollowLandsOnThePlayheadNeverStepsBackAndSnaps() {        // FEAT-05 rule 9
+        XCTAssertEqual(FrameClock.follow(shown: 10, target: 10.0167, paused: false), 10.0167)   // exact, no easing
+        XCTAssertEqual(FrameClock.follow(shown: 10, target: 9.99, paused: false), 10)           // jitter: hold
+        XCTAssertEqual(FrameClock.follow(shown: 10, target: 9.5, paused: false), 9.5)           // a seek back: snap
+        XCTAssertEqual(FrameClock.follow(shown: 10, target: 12, paused: false), 12)             // a seek ahead: snap
+        XCTAssertEqual(FrameClock.follow(shown: 10, target: 9.99, paused: true), 9.99)          // paused: the report
+    }
 }

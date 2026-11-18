@@ -55,6 +55,8 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Each frame reads the playhead for the moment it reaches the screen, one refresh after it's drawn (`FrameClock`,
     the display link's target time; 11-10: lit for "now", every word was a frame late). The Mac's window and the web
     player add the same lead.
+    The Mac's light lands on the playhead each frame with no easing (`FrameClock.follow`, FEAT-05 rule 9): it never
+    steps back for a report's jitter, and a pause or a seek snaps (11-17: the old ease trailed by ~15 frames).
     The view turns to the next line ahead of it (`TranscriptLight.following`): the new line is bold, wrapped and still
     before its first word lights, so the eye lands on a resting line. It waits for the outgoing line's last word first
     (`TranscriptLight.turn`), then scrolls in the time left before the next line.
@@ -63,6 +65,16 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
   - `Phrasing.swift` (BUG-13): timed words to lines by sentence (an end mark, or a pause over 1.2 s), a long one split
     at ≤ 18 words; ids by start. The Mac's `sentences` / `splitWords` call it (one copy). `regrouped` turns this
     device's old one-line-per-breath transcripts into sentences and leaves any other as it is. Tests: `PhrasingTests`.
+  - `Caption.swift` + `CaptionPainter.swift` (FEAT-05 T1): the one caption painter every app shares. `Caption` holds
+    the rules (beats per word and per translated word, progress by clock, syllables or pin, phrases cut at clauses,
+    the Learn turn after `turnTime`); `CaptionPainter.layout` / `draw` paint one line in Core Graphics for `.follow`
+    (heard part gold, spoken white, upcoming dim, translation under it) or `.learn` (each heard phrase turns into its
+    translation, the row stays centred; Reduce Motion snaps). A long line shrinks before it is cut. Tests: `CaptionTests`.
+    From the Mac's renderer (FEAT-05 option A, 11-17): `CaptionStyle.balance` (each language its own size and opacity;
+    a hidden side takes no room), `guess` (the original at half), `translating` (a dim placeholder while the translation
+    is pending); right-to-left lines run right to left (`Caption.rtl`, `Caption.visual`, in `CaptionPlaces.swift`); and
+    Learning's two places: `Caption.places` / `readBy` pick which line holds the top or bottom place, `uniformSize`
+    gives every line one size, `drawPlaces` paints both. The Mac keeps prominence (SPEC 47) and its voice glow until P4.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

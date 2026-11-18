@@ -24,6 +24,14 @@ import AppKit
         return min(period, max(0, t - now))
     }
 
+    /// The light's time this frame (Derived from Spec: FEAT-05 rule 9), from the last frame's (`shown`) and the
+    /// playhead extrapolated from the player's last timestamped report (`target`). No easing: it lands on the
+    /// playhead (the old 0.15-per-frame ease trailed a correction by ~15 frames). It never steps back for a report's
+    /// few-ms jitter: it holds until the playhead passes it. A pause, a seek or a gap over 0.25 s snaps.
+    nonisolated public static func follow(shown: Double, target: Double, paused: Bool) -> Double {
+        paused || abs(target - shown) > 0.25 ? target : max(shown, target)
+    }
+
     /// Seconds until what is drawn now is on screen.
     public var lead: Double { Self.lead(now: CACurrentMediaTime(), target: target, period: period) }
 
