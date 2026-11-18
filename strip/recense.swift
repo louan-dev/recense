@@ -5929,16 +5929,8 @@ let exportDir = FileManager.default.homeDirectoryForCurrentUser
 let readAlongURL = "https://claude.ai/artifact/VA69HKAKdYTWk7MRg1omMs"
 
 /// Exports are named by when they were made, 20261019-1432 (a colon isn't allowed in iCloud file names);
-/// a second export in the same minute gets -2.
-func exportStamp() -> String {
-    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyyMMdd-HHmm"
-    let base = f.string(from: Date())
-    var name = base, n = 2
-    while ["md", "vtt", "m4b"].contains(where: { FileManager.default.fileExists(atPath: exportDir.appendingPathComponent(name + "." + $0).path) }) {
-        name = "\(base)-\(n)"; n += 1
-    }
-    return name
-}
+/// a second export in the same minute, even one still running, gets -2 (ExportJobs.stamp reserves it, BUG-33 M-B1).
+func exportStamp() -> String { ExportJobs.stamp(in: exportDir) }
 
 func vttTime(_ t: Double) -> String {
     let ms = Int((max(0, t) * 1000).rounded())
@@ -7261,6 +7253,13 @@ final class NativeSources {
     /// its trailing language), saved into the vault as <stamp>.m4b. No chapter files, no Audiobook Builder step and no
     /// sidecar are left beside it (Export as MD is its own button).
     func exportAudiobook(_ stamp: String, _ title: String, _ lines: [Line], audio: URL, duration: Double, source: String, complete: Double) async {
+        // one export at a time: two ffmpegs on long recordings, and one working folder each (BUG-33 M-B1)
+        await ExportGate.shared.run { @MainActor in
+            await self.exportAudiobookNow(stamp, title, lines, audio: audio, duration: duration, source: source, complete: complete)
+        }
+    }
+
+    private func exportAudiobookNow(_ stamp: String, _ title: String, _ lines: [Line], audio: URL, duration: Double, source: String, complete: Double) async {
         guard let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first(where: { FileManager.default.isExecutableFile(atPath: $0) })
         else { return fail("ffmpeg is needed to make the audiobook (brew install ffmpeg).") }
         Store.busy.insert(audio.path); defer { Store.busy.remove(audio.path) }
@@ -7279,7 +7278,8 @@ final class NativeSources {
             meta += "\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=\(Int(a * 1000))\nEND=\(Int(b * 1000))\ntitle=\(esc(String(format: "%02d", i + 1) + " " + first))\n"
         }
         let metaURL = work.appendingPathComponent("chapters.txt"), vtt = work.appendingPathComponent("transcript.vtt")
-        let part = work.appendingPathComponent(stamp + ".m4b"), out = exportDir.appendingPathComponent(stamp + ".m4b")
+        let part = work.appendingPathComponent(stamp + ".m4b")
+        var out = exportDir.appendingPathComponent(stamp + ".m4b")
         do {
             try meta.write(to: metaURL, atomically: true, encoding: .utf8)
             try transcriptVTT(lines).write(to: vtt, atomically: true, encoding: .utf8)
@@ -7300,7 +7300,7 @@ final class NativeSources {
         guard ok else { return fail("ffmpeg couldn't make the audiobook.") }
         do {
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: out)
+            out = ExportJobs.freeURL(exportDir, base: stamp, ext: "m4b")   // never replaces a finished audiobook
             try FileManager.default.moveItem(at: part, to: out)
         } catch { return fail(error.localizedDescription) }
         log("audiobook export: \(out.path) (\(starts.count) chapters, the transcript inside)")
