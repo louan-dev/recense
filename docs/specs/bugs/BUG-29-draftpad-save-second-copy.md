@@ -57,6 +57,16 @@ Status: `[~]` (tests pass; device check owed)
 10. Matter (T-0176): `MatterWrite.plan` reads the sidecar with `readNote`; an unreadable `draftpad.matter.json` is
     `.wait`, never "no file": nothing is written over its seeds, links or crossings (tested:
     `mobile/ios/Tests/voiceappend/main.swift`).
+11. A save of the base itself (a poll with nothing typed) while the note is unreadable keeps no unsaved file and owes
+    nothing; real typing is still kept and owed (review 3).
+
+## Later (from the review, 2026-11-18; not fixed here)
+- The mergeFirst window: between `seen = disk` and the page's union coming back, a second post plans against the new
+  `seen`; it converges, but is untested.
+- The Mac's poll does a coordinated read on the main thread every 10 s while the note is unreadable.
+- iOS: `polling` stays true for good if a coordinated read on the poll queue never returns (the poll stops).
+- A note write that keeps failing after its conflict copy was written leaves one more copy on each retry.
+- iOS `saveMatterJSON` moves `lastMatter` even when the write failed.
 
 ## Device check (owed)
 - Mac + iPad: draw on the iPad, then one stroke on the Mac: both strokes remain on both.

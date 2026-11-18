@@ -77,7 +77,11 @@ final class DraftpadNote {
         switch read(path) {
         case .text(let t): theirs = t == base ? nil : t
         case .missing: theirs = nil
-        case .unreadable: keepSafe(mine); pending = true; return nil
+        case .unreadable:
+            // nothing typed since the file was last seen (a poll's save of the base): nothing to keep, nothing owed;
+            // keeping the base would add the whole note after itself later (BUG-29 review 3)
+            guard mine != base else { return nil }
+            keepSafe(mine); pending = true; return nil
         }
         switch planNoteSave(base: base, mine: mine, theirs: theirs) {
         case .write(let t):

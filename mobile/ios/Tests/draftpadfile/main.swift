@@ -89,6 +89,19 @@ _ = d5.save("a\nMAC3\nc")
 check(disk(n5) == "a\nPHONE3\nc" && d5.pending, "a conflict whose copy can't be written leaves the note as it is")
 writeFails = false
 
+// Regression guard: BUG-29 review 3. A poll's save of the base while the note is unreadable keeps nothing: the whole
+// note kept as "unsaved" would be added after itself once it reads.
+let n7 = p("seven.md"), u7 = p("unsaved7")
+try? "the note".write(toFile: n7, atomically: true, encoding: .utf8)
+let d7 = makeNote(n7, unsaved: u7)
+_ = d7.load()
+readFails = true
+check(d7.save(d7.base) == nil && Unsaved.files(in: URL(fileURLWithPath: u7)).isEmpty && !d7.pending,
+      "saving the base while unreadable keeps no unsaved file and owes nothing")
+check(d7.save("the note\nnew") == nil && Unsaved.files(in: URL(fileURLWithPath: u7)).count == 1 && d7.pending,
+      "real typing while unreadable is still kept and owed")
+readFails = false
+
 // A missing note is new: the first save writes it.
 let n6 = p("six.md")
 let d6 = makeNote(n6, unsaved: p("unsaved6"))
