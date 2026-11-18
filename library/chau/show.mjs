@@ -13,7 +13,7 @@
 // The invite and revoke calls sign in with the Access service token in the Keychain (chau/setup.sh).
 // Licensed course material (front matter source: PLIv1…, licensed: true, or --licensed) is marked "licensed" in
 // .show.json; invite refuses it, and refuses any show whose .show.json can't be read.
-// Client matters (A6) never leave the Mac: an outline under a Matters or Raven folder is refused.
+// Matters and Raven outlines publish like any other (owner 2026-11-18: no sealing; A6 refusal removed).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -37,26 +37,10 @@ export const VOICES = {
 
 // ---------- the outline ----------
 
-// A path with a Matters or Raven folder in it is a client matter: never published.
-export function refusePath(p) {
-  return p.split(/[\\/]/).some((s) => /^(matters|raven)$/i.test(s));
-}
-
 // A front-matter block ("---" … "---" at the very top) and the text after it.
 export function frontMatter(md) {
   const m = md.match(/^\uFEFF?---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/);
   return m ? { fm: m[1], body: md.slice(m[0].length) } : { fm: "", body: md };
-}
-
-// Why this outline must not leave the Mac (A6), or null. A guard on names and tags, not a classifier:
-// a client matter copied elsewhere, untagged and under another name, is not caught.
-export function refusal(path, md, show) {
-  if (refusePath(path)) return "it is under a Matters or Raven folder";
-  if (/\b(matters|raven)\b/i.test(show || "")) return "the show's name says Matters or Raven";
-  const { fm, body } = frontMatter(md.normalize("NFC"));
-  if (/\b(matters|raven)\b/i.test(fm)) return "its front matter says matters or raven";
-  if (/(^|\s)#(matters|raven)\b/i.test(body)) return "it is tagged #matters or #raven";
-  return null;
 }
 
 // Licensed course material (PLIv1, the owner's bar course) may be published for the owner's own listening, never
@@ -200,8 +184,6 @@ async function publish(file, opts) {
   if (!outline.episodes.length) throw new Error("no '## ' sections in " + src);
   const show = showName(opts.show || outline.title);
   if (!show) throw new Error("bad show name");
-  const why = refusal(src, md, show);
-  if (why) throw new Error(`refused: client matters never leave this Mac (A6): ${why}`);
   const lang = opts.lang || "en";
   const voice = pickVoice(lang, opts.voice, installedVoices());
 

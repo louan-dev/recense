@@ -115,7 +115,7 @@ final class RulesTests: XCTestCase {
         XCTAssertTrue(Rules.locked("library/Matters/Client A/x.m4a"))
         XCTAssertTrue(Rules.locked("inbox/raven/x.m4a"))
         XCTAssertFalse(Rules.locked("library/Mattersmith/x.m4a"))
-        XCTAssertFalse(Show(id: "d", space: .matters, folder: "library/Matters/A", title: "A", episodeCount: 1, locked: true).shareable)
+        XCTAssertTrue(Show(id: "d", space: .matters, folder: "library/Matters/A", title: "A", episodeCount: 1, locked: true).shareable)   // owner 2026-11-18: no sealing
         XCTAssertFalse(Show(id: "d", space: .study, folder: "library/Study/PLI", title: "PLI", episodeCount: 1, licensed: true).shareable)
     }
 

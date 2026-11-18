@@ -192,7 +192,7 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
   `node chau/show.mjs publish <outline.md>` (show name = the `# ` title; `--show <name>` to choose).
 - Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
-- Client matters never leave the Mac (A6): an outline is refused when it sits under a `Matters` or `Raven` folder, when the show's name says Matters or Raven, or when its front matter or a `#matters` / `#raven` tag does. This is a guard on names and tags, not a classifier: a client document copied elsewhere, renamed and untagged, gets through, so keep client work out of outlines you publish.
+- Matters and Raven outlines publish like any other (owner 2026-11-18: no sealing; the A6 refusal is removed).
 - Licensed course material (PLIv1) is for your own listening, never shared.
   - An outline is licensed when its front matter says `source: PLIv1…` or `licensed: true`, or when you publish
     with `--licensed`.
@@ -213,7 +213,7 @@ Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans se
 published references are trusted, your own writing once checked. Calendar: reads your events and the
 iCloud backup, creates and edits events, invites with a texted link. Indexing runs in bounded steps from a cron every
 10 minutes (every minute until 2026-11-05), within a daily budget of AI-using steps that idle runs no longer spend.
-Any file with a path segment called `Raven`, `Matters` or `Sealed` (any depth, either root, any case) is never indexed or answered from (BUG-30); its old vectors leave on the next sweep, or at once with the owner-only `POST /main/api/ai/purge-sealed` (idempotent; run it once after deploying).
+Every file is indexed and answered from, including `Raven`, `Matters` and `Sealed` paths (owner 2026-11-18 reversed BUG-30 item 1; the purge route is gone).
 
 ### Native apps (moved)
 Recense for iPhone and iPad, and the retiring Gallery for the Mac, are in `../mobile/` (`mobile/README.md`).

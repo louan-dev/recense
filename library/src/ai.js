@@ -23,7 +23,7 @@
 import { jsonResponse } from "./common.js";
 import { transcriptFor } from "./transcript.js";
 import { kindOf, chunkText, chunkTranscript, nameText, pick, buildMessages, vectorId, classifyMessages, parseAuth, AUTH,
-  planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide, sealed } from "./ai-core.js";
+  planMessages, parseQueries, memoryMessages, applyMemory, wantsCalendar, CALENDAR_TOOLS, calendarGuide } from "./ai-core.js";
 import { listEvents, createEvent, updateEvent, addInvitee, dateFacts, TZ_DEFAULT } from "./calendar.js";
 
 const CHAT = "@cf/openai/gpt-oss-120b";       // env.AI_CHAT_MODEL overrides (a var in wrangler.toml)
@@ -48,7 +48,6 @@ export async function aiRoute(req, env, ctx, url, path, method) {
   if (path === "/main/api/ai/memory") return memoryRoute(req, env, url, method);
   if (!ready(env)) return notReady();
   if (path === "/main/api/ai/index" && method === "POST") return jsonResponse(await indexStep(env));
-  if (path === "/main/api/ai/purge-sealed" && method === "POST") return jsonResponse(await purgeSealed(env));   // Derived from Spec: BUG-30
   if (method !== "POST") return new Response("Method not allowed", { status: 405 });
   let body;
   try { body = await req.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
@@ -112,7 +111,7 @@ async function retrieve(env, queries, scope) {
   const results = await Promise.all(vecs.map((v) => env.VECTORS.query(v, opts)));
   const best = new Map();
   for (const res of results) for (const m of res?.matches || []) {
-    if (!m.metadata || sealed(m.metadata.root, m.metadata.path)) continue;   // still in the index until the next sweep
+    if (!m.metadata) continue;
     const had = best.get(m.id);
     if (!had || m.score > had.score) best.set(m.id, m);
   }
@@ -378,7 +377,7 @@ async function listPage(env, s) {
   const r = b ? await b.list({ prefix, cursor: s.cursor || undefined, limit: 1000 }) : { objects: [], truncated: false };
   for (const o of r.objects) {
     const rel = o.key.slice(prefix.length);
-    if (!rel || rel.endsWith("/") || rel.split("/").some((x) => x.startsWith(".")) || sealed(s.root, rel)) continue;   // folders, hidden, trash, client matters
+    if (!rel || rel.endsWith("/") || rel.split("/").some((x) => x.startsWith("."))) continue;   // folders, hidden, trash (owner 2026-11-18: Raven/Matters/Sealed are indexed like any file)
     const key = s.root + ":" + rel, f = s.files[key];
     if (f && f[0] === o.etag) { f[2] = s.gen; continue; }
     if (wantsText(s.root, rel, o.size)) s.todo.push([key, o.etag]); else s.names.push([key, o.etag]);
@@ -451,37 +450,6 @@ async function finishActive(env, s) {
   return used;
 }
 
-/** Owner-only (Main's /api/ai is owner-gated): deletes the vectors and stored text of every file whose path has a sealed
- *  segment, found in R2 and in the index state, then drops them from the state. Idempotent. Derived from Spec: BUG-30 */
-export async function purgeSealed(env) {
-  const s = await readState(env), keys = new Set(Object.keys(s.files || {}).filter((k) => sealed("", k.slice(k.indexOf(":") + 1))));
-  if (s.active && sealed("", s.active.key.slice(s.active.key.indexOf(":") + 1))) keys.add(s.active.key);
-  for (const root of Object.keys(ROOTS)) {
-    const { bucket, prefix } = hostOf(root), b = env[bucket];
-    let cursor;
-    do {
-      const r = b ? await b.list({ prefix, cursor, limit: 1000 }) : { objects: [] };
-      for (const o of r.objects) { const rel = o.key.slice(prefix.length); if (sealed(root, rel)) keys.add(root + ":" + rel); }
-      cursor = r.truncated ? r.cursor : null;
-    } while (cursor);
-  }
-  let vectorIds = 0;
-  for (const key of keys) {
-    const i = key.indexOf(":"), id = await baseId(key.slice(0, i), key.slice(i + 1)), f = s.files[key];
-    const ids = Array.from({ length: Math.min(f ? Math.max(f[1], 1) : 256, 5000) }, (_, k) => `${id}-${k}`);
-    for (let k = 0; k < ids.length; k += 1000) await env.VECTORS.deleteByIds(ids.slice(k, k + 1000));
-    vectorIds += ids.length;
-    for (let n = 0; n < (f ? f[3] || 0 : 0); n++) await env.MAIN.delete(`${TEXT}${id}/${n}.json`);
-    delete s.files[key];
-  }
-  if (s.active && keys.has(s.active.key)) {   // the mid-index file's stored text slices go too
-    for (let n = 0; n < (s.active.slices || 0); n++) await env.MAIN.delete(`${TEXT}${s.active.id}/${n}.json`);
-    s.active = null;
-  }
-  s.todo = (s.todo || []).filter(([k]) => !keys.has(k)); s.names = (s.names || []).filter(([k]) => !keys.has(k));
-  await writeState(env, s);
-  return { ok: true, files: keys.size, vectorIds };
-}
 
 /** Files gone since the last pass: their vectors and stored text go. */
 async function sweepSome(env, s, budget) {

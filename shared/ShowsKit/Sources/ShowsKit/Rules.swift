@@ -13,7 +13,7 @@ public enum Rules {
     // MARK: Locks
 
     /// A Matters or Raven folder anywhere in the path (the same test as library/chau/show.mjs refusePath): it opens
-    /// only with Face ID / Touch ID and never reaches a link, a feed or a guest build.
+    /// only with Face ID / Touch ID. Since 2026-11-18 (owner: no sealing) it may reach a link, a feed or the cloud AI.
     public static func locked(_ path: String) -> Bool {
         path.split(separator: "/").contains { ["matters", "raven"].contains($0.lowercased()) }
     }

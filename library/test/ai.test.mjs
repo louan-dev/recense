@@ -1,7 +1,7 @@
 // The assistant (src/ai.js, src/ai-core.js) against in-memory stand-ins for R2, Workers AI and Vectorize.
 //   node test/ai.test.mjs
 import assert from "node:assert/strict";
-import { chunkText, chunkTranscript, nameText, inScope, pick, buildMessages, vectorId, kindOf, parseAuth, classifyMessages, parseQueries, applyMemory, MEMORY_MAX, sealed } from "../src/ai-core.js";
+import { chunkText, chunkTranscript, nameText, inScope, pick, buildMessages, vectorId, kindOf, parseAuth, classifyMessages, parseQueries, applyMemory, MEMORY_MAX } from "../src/ai-core.js";
 import { aiRoute, indexStep, indexRun, thinkStripper, ruleFor } from "../src/ai.js";
 
 let passed = 0;
@@ -180,11 +180,10 @@ await test("without bindings the assistant says so instead of failing", async ()
 await test("indexing in steps finishes, skips hidden files, and reports progress", async () => {
   let r, steps = 0;
   do { r = await (await post("/main/api/ai/index", {})).json(); steps++; } while (!r.done && steps < 50);
-  assert.ok(r.done, "indexing finished"); assert.equal(r.files, 5);
+  assert.ok(r.done, "indexing finished"); assert.equal(r.files, 6);   // owner 2026-11-18: Music/Raven/song.mp3 counts too
   const paths = new Set([...env.VECTORS.m.values()].map((v) => v.metadata.path));
   assert.ok(paths.has("Books/MPEP.pdf") && paths.has("CV/Loza CV.docx"));
-  // Regression guard: BUG-30
-  assert.ok(!paths.has("Music/Raven/song.mp3"), "a nested Raven folder is private too");
+  assert.ok(paths.has("Music/Raven/song.mp3"), "a nested Raven folder is indexed (owner 2026-11-18: no sealing)");
   assert.ok(![...paths].some((p) => p.includes(".hidden")));
   const authOf = (p) => new Set([...env.VECTORS.m.values()].filter((v) => v.metadata.path === p && v.metadata.kind !== "name").map((v) => v.metadata.auth));
   assert.deepEqual([...authOf("Books/MPEP.pdf")], ["reference"]);
@@ -192,7 +191,7 @@ await test("indexing in steps finishes, skips hidden files, and reports progress
   assert.deepEqual([...authOf("Journal/broken.txt")], ["personal"], "unclear counts as personal");
   assert.ok([...env.VECTORS.m.values()].filter((v) => v.metadata.kind === "name").every((v) => v.metadata.auth === "name"));
   const s = await (await get("/main/api/ai/status")).json();
-  assert.equal(s.files, 5); assert.equal(s.pending, 0); assert.equal(s.chat, "@cf/test/chat");
+  assert.equal(s.files, 6); assert.equal(s.pending, 0); assert.equal(s.chat, "@cf/test/chat");
   const again = await (await post("/main/api/ai/index", {})).json();
   assert.ok(again.done);
 });
@@ -296,16 +295,14 @@ await test("bad requests are refused", async () => {
   assert.equal((await get("/main/api/ai/ask")).status, 405);
 });
 
-await test("client matters (Main's Raven/) are never indexed (A6)", async () => {
-  assert.ok(sealed("main", "Raven/Client A/letter.txt") && sealed("main", "Raven"));
-  // Regression guard: BUG-30
-  assert.ok(!sealed("main", "Ravenna/notes.txt") && !sealed("main", "Sealedness.txt"));
-  assert.ok(sealed("archive", "Raven/x.txt") && sealed("main", "Books/Raven/x.txt") && sealed("main", "a/MATTERS/b.txt") && sealed("archive", "x/sealed"));
+// Owner 2026-11-18: no sealing. Raven, Matters and Sealed are indexed and answered from like any other file.
+await test("Raven, Matters and Sealed paths are indexed like any file (owner 2026-11-18, reverses A6/BUG-30 item 1)", async () => {
   await env.MAIN.put("files/Raven/Client A/letter.txt", "Privileged and confidential. ".repeat(50));
   await restOver();
   await untilDone();
-  assert.ok(![...env.VECTORS.m.values()].some((v) => v.metadata.root === "main" && v.metadata.path.startsWith("Raven/")));
-  assert.ok(!JSON.parse(env.MAIN.m.get("ai/index.json").text).files["main:Raven/Client A/letter.txt"]);
+  assert.ok([...env.VECTORS.m.values()].some((v) => v.metadata.root === "main" && v.metadata.path.startsWith("Raven/")), "Raven indexed");
+  assert.ok(JSON.parse(env.MAIN.m.get("ai/index.json").text).files["main:Raven/Client A/letter.txt"], "in the index state");
+  assert.equal((await post("/main/api/ai/purge-sealed", {})).status === 200, false, "the purge route is gone");
 });
 await test("resting runs spend none of the daily AI budget; indexing does (G20)", async () => {
   await env.MAIN.delete("ai/index-budget.json");
@@ -316,34 +313,6 @@ await test("resting runs spend none of the daily AI budget; indexing does (G20)"
   await indexRun(env, 60000, 24, 3);
   const b = JSON.parse(env.MAIN.m.get("ai/index-budget.json").text);
   assert.ok(b.steps >= 1 && b.steps <= 3, `AI steps counted, within the budget: ${b.steps}`);
-});
-
-// Regression guard: BUG-30
-await test("purge-sealed deletes vectors of any sealed-segment path, and search never returns one", async () => {
-  for (const p of ["Books/Raven/leak.txt", "Matters/a.txt", "x/Sealed/b.txt"]) {
-    await env.MAIN.put("files/" + p, "secret privileged words zebra. ".repeat(20));
-    const id = await vectorId("main", p, 0);
-    env.VECTORS.m.set(id, { id, values: vec("zebra privileged"), metadata: { root: "main", path: p, kind: "doc", auth: "reference", text: "zebra privileged" } });
-  }
-  const hits = await (await post("/main/api/ai/search", { q: "zebra privileged" })).json();
-  assert.ok(!hits.hits.some((h) => /Raven|Matters|Sealed/.test(h.path)), "query time filter");
-  const r = await (await post("/main/api/ai/purge-sealed", {})).json();
-  assert.ok(r.ok && r.files >= 3);
-  assert.ok(![...env.VECTORS.m.values()].some((v) => /(^|\/)(Raven|Matters|Sealed)(\/|$)/i.test(v.metadata.path)), "vectors purged");
-});
-
-// Regression guard: BUG-30
-await test("sealed matches the last segment without its extension, never a prefix; purge clears a sealed active file's text", async () => {
-  assert.ok(sealed("main", "x/Raven.pdf") && sealed("main", "Matters.docx"));
-  assert.ok(!sealed("main", "x/Ravenclaw.pdf") && !sealed("main", "x/Matters-old.txt"));
-  const id = (await vectorId("main", "Books/Raven/live.txt", 0)).replace(/-0$/, "");
-  const s = JSON.parse(env.MAIN.m.get("ai/index.json").text);
-  s.active = { key: "main:Books/Raven/live.txt", etag: "x", id, slices: 2, slice: 0, at: 0, total: 5, had: 0 };
-  await env.MAIN.put("ai/index.json", JSON.stringify(s));
-  await env.MAIN.put(`ai/text/${id}/0.json`, "[]"); await env.MAIN.put(`ai/text/${id}/1.json`, "[]");
-  assert.ok((await (await post("/main/api/ai/purge-sealed", {})).json()).ok);
-  assert.ok(![...env.MAIN.m.keys()].some((k) => k.startsWith(`ai/text/${id}/`)), "no text slices left");
-  assert.equal(JSON.parse(env.MAIN.m.get("ai/index.json").text).active, null);
 });
 
 console.log(`\n${passed} passed`);

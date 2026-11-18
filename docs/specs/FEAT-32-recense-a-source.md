@@ -26,7 +26,7 @@ From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a Noteboo
   - Answers light their source on the page through a text fragment (`#:~:text=`; Safari support **assumed**).
   - The same panel offers "Add to notebook" (= S1).
 - **Finding 6 · S2/S3 narration is the Audio Overview equivalent.** Keep it: a source or an answer heard in en/vi/fr with word times.
-- **Gate:** nothing calls out at the moment of use. The Gallery Ask (Workers AI + Vectorize) stays as an optional fallback only, behind the Raven exclusion.
+- **Gate:** nothing calls out at the moment of use. The Gallery Ask (Workers AI + Vectorize) stays as an optional fallback; it reads every file (owner 2026-11-18).
 
 ### New slice order (replaces the S-order below; S1–S5 keep their text)
 1. **S1** capture (unchanged).
@@ -91,9 +91,8 @@ From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a Noteboo
 - **WebLLM for guests:** a multi-GB download into a guest's browser, and WebGPU support differs across browsers. Guests get hub or Worker answers.
 - **Contacts notes as a source:** restricted entitlement, and outside this feature.
 
-### Owner decision (asked once, default until answered)
-- **Do Raven, Matters and Sealed go into the on-device notebook index?** Their questions would never leave the device. `find.tsv` is already never synced (FEAT-21), so the only risk is the Worker fallback, which stays sealed.
-  - **Default: excluded**, as the Worker excludes them today (`ai-core.js:61`).
+### Owner decision (answered 2026-11-18)
+- **Raven, Matters and Sealed are indexed and answered from**, on the device and by the cloud fallback ("NO sealed, do not withhold the sealed data from cloud ai access"). No sealed rule anywhere in FEAT-32.
 
 ## Verdict first (original, 2026-11-18; scope superseded by the review above)
 - **The owner's idea is mostly assembled already.** Four of its five parts exist as separate pieces. What is missing is the front door (a link or a page in) and one join (narration with word timings, so a page plays like any recording).

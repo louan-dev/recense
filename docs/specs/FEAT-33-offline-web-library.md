@@ -47,7 +47,6 @@ Builds on: UI-12 (editor PWA service worker), FEAT-18 H2 (hub library), PLAN-111
   - `features.json`
   - the item's note
 - Each part's sha256 is checked against the manifest; a mismatch is not kept and says why.
-- **Privacy:** a pin never stores a path the sealed rule covers (Raven, Matters, Sealed). It uses the same rule as `ai-core.js:61`, moved to one JS module that both `ai.js` and the client import.
 - **Guests:** they pin only what their link gives them.
 - **Done when:** a pinned item plays, lights its words and switches en/fr/vi in airplane mode. Unpinning frees its bytes, and the explorer's size badge proves it.
 

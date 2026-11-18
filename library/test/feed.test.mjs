@@ -6,7 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { parseOutline, speakable, episodeFile, refusePath, refusal, showName, pickVoice, makeInvites, episodeIds, MANIFEST, licensed, inviteRefusal } from "../chau/show.mjs";
+import { parseOutline, speakable, episodeFile, showName, pickVoice, makeInvites, episodeIds, MANIFEST, licensed, inviteRefusal } from "../chau/show.mjs";
 import { createHash } from "node:crypto";
 
 const BUILD = new URL("../.test-build/", import.meta.url).pathname;
@@ -99,8 +99,6 @@ await test("outline: file names keep outline order; Matters and Raven are refuse
   assert.equal(episodeFile(1, "..hidden", 1), "01 hidden.m4a");
   assert.equal(showName("../Bar"), "-Bar");
   assert.equal(showName("  "), null);
-  for (const p of ["/Users/a/Matters/x.md", "/Users/a/raven/b/x.md", "C:\\Matters\\x.md"]) assert.ok(refusePath(p), p);
-  for (const p of ["/Users/a/Matters.md", "/Users/a/Bar/Ravenna/x.md"]) assert.ok(!refusePath(p), p);
   const installed = ["Ava (Premium)", "Linh", "Thomas", "Amélie"];
   assert.equal(pickVoice("en", null, installed), "Ava (Premium)");
   assert.equal(pickVoice("vi", null, installed), "Linh");
@@ -253,22 +251,6 @@ await test("guid: two sections with the same heading get different ids; a unique
   assert.equal(new Set(ids).size, 3);
   assert.equal(ids[0], createHash("sha256").update("Bar\nReview").digest("hex").slice(0, 32), "same id as before the fix");
   assert.deepEqual(episodeIds("Bar", ["Torts", "Review"]), [ids[1], ids[0]], "a reorder keeps each id");
-});
-
-await test("A6 guard: refused by folder, show name, front matter or #tag, not only by path", async () => {
-  const clean = "# Bar\n\n## One\nText";
-  assert.equal(refusal("/Users/a/Desktop/x.md", clean, "Bar"), null);
-  assert.match(refusal("/Users/a/Matters/x.md", clean, "Bar"), /folder/);
-  assert.match(refusal("/Users/a/Desktop/x.md", clean, "Matters"), /name/);
-  assert.match(refusal("/Users/a/Desktop/x.md", clean, "Smith (Raven)"), /name/);
-  assert.match(refusal("/Users/a/Desktop/x.md", "---\ntags: [study, matters]\n---\n" + clean, "Bar"), /front matter/);
-  assert.match(refusal("/Users/a/Desktop/x.md", "---\nproject: Raven\n---\n" + clean, "Bar"), /front matter/);
-  assert.match(refusal("/Users/a/Desktop/x.md", clean + "\nSee #raven", "Bar"), /tagged/);
-  assert.equal(refusal("/Users/a/Desktop/x.md", clean + "\nRavenna, matter-of-fact", "Ravenna"), null);
-  // front matter is never spoken
-  const o = parseOutline("---\ntags: [study]\n---\n" + clean, "x");
-  assert.equal(o.title, "Bar");
-  assert.doesNotMatch(o.description + o.episodes[0].text, /tags|study/);
 });
 
 await test("nits: .show.json is never served through a link; a failed guest link names the feed link already made", async () => {

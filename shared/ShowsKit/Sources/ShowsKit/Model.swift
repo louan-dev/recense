@@ -156,7 +156,7 @@ public struct PoolItem: Identifiable, Codable, Hashable, Sendable {
 
     public var name: String { (path as NSString).lastPathComponent }
     public var zone: Zone? { path.split(separator: "/").first.flatMap { Zone(folder: String($0)) } }
-    /// Matters or Raven anywhere in the path: opens only with Face ID / Touch ID, and is never shared (Rules.locked).
+    /// Matters or Raven anywhere in the path: opens only with Face ID / Touch ID (Rules.locked). Shared like any show (owner 2026-11-18).
     public var locked: Bool { Rules.locked(path) }
 }
 
@@ -257,7 +257,7 @@ public struct Show: Identifiable, Codable, Hashable, Sendable {
     }
 
     /// Matters/Raven and licensed shows never reach a share link, a feed or a guest build.
-    public var shareable: Bool { !locked && !licensed }
+    public var shareable: Bool { !licensed }   // owner 2026-11-18: no sealing; Matters/Raven share like any show (Face ID still opens them)
 }
 
 /// A show folder's .show.json, as library/chau/show.mjs writes it and library/src/feed.js reads it. A show with one

@@ -55,18 +55,6 @@ export function nameText(root, path) {
   return `${name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")} (${root === "archive" ? "Archive" : "Main"}${parts.length ? " / " + parts.join(" / ") : ""}, ${kindOf(path)})`;
 }
 
-/** Private text never indexed nor answered from: a path with a segment equal to Raven, Matters or Sealed (the last
- *  segment compared without its extension, so x/Raven.pdf counts), at any depth, in any root, any case, stays out of
- *  Workers AI and Vectorize (spec A6, X7). Whole-segment match only, never a prefix. Derived from Spec: BUG-30 */
-export const SEALED_SEGMENTS = ["raven", "matters", "sealed"];
-export function sealed(_root, rel) {
-  const segs = String(rel || "").split("/");
-  return segs.some((seg, i) => {
-    const s = seg.trim().toLowerCase();
-    return SEALED_SEGMENTS.includes(s) || (i === segs.length - 1 && SEALED_SEGMENTS.includes(s.replace(/\.[^.]*$/, "")));
-  });
-}
-
 /** Whether a passage is inside what the person has open: a root and a folder (or file) path under it; "all" is everything. */
 export function inScope(hit, scope) {
   if (!scope || scope.root === "all" || !scope.root) return true;
