@@ -3,6 +3,8 @@
 From: owner 2026-11-16 · Status: `[ ]` written, not built
 Revised 2026-11-16 (lane notes-search-curve) after the owner's review of the design plan.
 Supersedes the first draft on branch `work/feat23-media-notes` (4c47b9f); its mockup stays on that branch.
+Amended 2026-11-18 (coordinator 89190d4b, PLAN-1118 §3b + §5k): arrivals make no note until you write (P0b rule 4);
+moment links also show as scrubber ticks (rule 5); in-place opening on, copy-never-move for outside files (P0b rule 2).
 Linked specs: FEAT-21 (one search) · FEAT-22 (where it lives, how it catches up, Main and Guest) ·
 FEAT-07 (the pill and the Sound button) · FEAT-08 (Draftpad as one matter) · FEAT-18 (the hub).
 
@@ -40,6 +42,8 @@ The note is a plain Markdown file per item. Draftpad opens it. The editor's tran
    - Tap a line in the pane, or press **Add moment** (clock-plus button at the left of the note's scrubber):
      `[mm:ss](recense://<key>?t=<whole seconds>)` is written at the caret, then a space.
    - Tap a moment link: that item plays from that second. If another item is playing, it is paused first.
+   - **Ticks on the scrubber** (amended 2026-11-18): each moment link is drawn as a tick on the item's scrubber.
+     The ticks are derived from the note each time it is read, never saved in a second synced file.
    - Over an hour the label is `h:mm:ss`. The label is for the eye; only `t=` is read.
 6. **The note breathes with the voice.** While the item plays, the pane lights the line being spoken, and
    the note lines whose moment link is the nearest at or before the playhead get a quiet left mark.
@@ -107,15 +111,22 @@ The note is a plain Markdown file per item. Draftpad opens it. The editor's tran
    (audio → Music, PDF and text → Study, the rest → Inbox). No second folder. FEAT-03 is revised to match.
    - **proven** the sorting rule: `shared/homes.swift:161-163`; the watcher that sorts what lands: `strip/app.swift:6808` (BUG-16).
 2. **iPhone and iPad:** Recense declares the file types it opens (audio, video, pictures, PDF, plain text, Markdown).
-   After an AirDrop, iOS then offers "Open with Recense". The file is moved (never copied) into its home,
-   and the note opens at once, because the person chose Recense.
+   After an AirDrop, iOS then offers "Open with Recense". The note page opens at once, because the person chose Recense.
+   - Amended 2026-11-18 (§5k): `LSSupportsOpeningDocumentsInPlace` is **on** (with `UIFileSharingEnabled`, so the
+     homes show in Files). A file iOS hands us inside our own container (the Inbox copy) is moved into its home.
+     A file opened in place from outside our container (Files, another app's folder) is **copied** into its home;
+     the original is never moved or deleted.
+   - Owner decision first: Matters and Raven must not appear in Files (a hidden subfolder or an exclusion).
 3. **Mac:** Recense also looks in `~/Downloads`, and takes **only** files the system marked as arriving through
    its sharing service (`sharingd`, the service behind AirDrop). Everything else in `~/Downloads` is left alone.
    The note is made but not opened: the notes list shows it at the top, marked **New**. No window jumps up.
-4. **The note made on arrival** (an exception to rule 8: this note exists before anything is typed).
-   Exactly two lines:
-   - `[▶ <title>](recense://<key>)` · for a PDF or a picture: `![<title>](recense://<key>)`, so the page shows it;
-   - `Arrived by AirDrop · 2026-11-16 14:02` (or `Opened in Recense · …` for other "Open with" arrivals).
+4. **No note until you write** (amended 2026-11-18; rule 8 holds for arrivals too).
+   - The arrival is recorded in the item's index `tags` (`arrived:airdrop` or `arrived:open-with`, and the time),
+     not in a note. The item shows at the top of **New** until opened.
+   - The note page opens empty with the item above it. At the first keystroke the file is written with its first line,
+     `[▶ <title>](recense://<key>)` (for a PDF or a picture `![<title>](recense://<key>)`), then what was typed.
+   - Was: a two-line note (link + "Arrived by AirDrop · <time>") written on arrival. Replaced: a file nobody wrote in
+     is clutter, and the arrival fact belongs with the item, where every device's index already carries it.
 5. **Where the media is now** is drawn by the editor under the first line and **never saved in the file**:
    "Music › Song.m4a · on this iPhone", "on the Mac", or "not on this device" (then FEAT-22's ladder).
    - Why: a path saved into the note goes stale the moment the file is renamed, moved or carried.
@@ -123,8 +134,8 @@ The note is a plain Markdown file per item. Draftpad opens it. The editor's tran
 6. **The other direction** (media → note) is the Note dot and button (rule 7).
 7. **Audio and video are transcribed on the device** as soon as they land (FEAT-16's gate). The transcript pane
    fills when the transcript is complete. Typing in the note is never blocked by it.
-8. **The same file again** (same key): no second note. The existing note opens and gets one more line,
-   `Arrived again by AirDrop · <date>`. Nothing in it is replaced.
+8. **The same file again** (same key): no second note and no second file. The arrival time is added to the item's
+   `tags`; an existing note opens unchanged (amended 2026-11-18: no "Arrived again" line is written into it).
 9. **The sender's name is not recorded.** **assumed:** iOS does not tell the receiving app who sent it.
    **untested** on the Mac.
 
@@ -150,8 +161,9 @@ The note is a plain Markdown file per item. Draftpad opens it. The editor's tran
   Recense opens holding it. If it fails, the route is a Share Extension (FEAT-03 P1) and this phase waits for it.
 - **Spike S2 (Mac, 30 min):** AirDrop a file from the iPhone: it carries the `sharingd` mark; a file saved by Safari
   and one saved from Mail do not.
-- **Test (shared):** a fixture file arrives → it is moved into its home, the note has exactly the two lines,
-  `draftpad.md` is untouched; the same bytes again → still one note, one more line.
+- **Test (shared):** a fixture file arrives → it is moved into its home, its index `tags` carry `arrived:airdrop`,
+  **no `note.md` exists**, `draftpad.md` is untouched; one typed character → `note.md` starts with the ▶ line;
+  a file opened in place from outside the container → copied, the original's bytes and path unchanged.
 - **Test (editor):** the "where it is now" line is drawn from the host's answer and the file's text is unchanged.
 - **Device (iPhone via iPhone Mirroring, iPad, Mac):** router off, AirDrop a voice memo: the note opens (iPhone, iPad)
   or appears as New (Mac); the transcript fills in; the ▶ link plays it. Screenshot audit: one Note control per screen.

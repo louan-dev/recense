@@ -3,7 +3,7 @@
 From: owner (2026-11-16, lane prosody-port): "Port Mac syllable prosody to iPhone/iPad 1:1: ports the Mac's song
 pipeline and syllable-by-syllable display to iPhone and iPad, 1:1. Demucs can't run on iOS, so the spec must choose
 between two routes: the Mac separates the vocals and sends the timing, or a separator runs on the device."
-Status: `[~]` P1 coded, not compiled, device check owed · Builds on: FEAT-04 (one Word type), FEAT-07/16 (transcript
+Status: `[~]` P1 compiled and on the devices since merge-all-1117 (b65001e; prosody b355975: swift test 78/78, strip build + selftest, iOS build), device check owed · Builds on: FEAT-04 (one Word type), FEAT-07/16 (transcript
 view), FEAT-09 (carry), `unified-offline-first-and-redesign.md` §stems ("ship `features.json` instead of stems").
 See also: BUG-24 (2026-11-16): P1 compiles and is in the iOS build of 12:16, yet no voice measure has reached the
 iPhone (no `voices` folder), so the light is still word by word there; the iPad is an Air 13-inch (M3), not M2.
@@ -88,7 +88,7 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
 3. The iOS app builds (`xcodebuild … generic/platform=iOS`). **proven** (BUILD SUCCEEDED, 2026-11-17).
 4. Device, against the baseline: the same song with a measure, played on the Mac and on the phone side by side:
    the gold head reaches each syllable at the same moment (≤ 50 ms by eye/video), held words held, an unsung word
-   never lit. iPhone 12 Pro Max and iPad Air M2 13-inch. **untested**.
+   never lit. iPhone 12 Pro Max and iPad Air M3 13-inch. **untested**.
 5. Airplane mode after one online open: the song still lights syllable by syllable. **untested**.
 6. A podcast (no vocal measure) lights word by word exactly as before. **untested**.
 
@@ -144,7 +144,7 @@ are never lit; a listener's timing wins. Files: `shared/ShowsKit/Sources/ShowsKi
 2. Mac: `cd shared/ShowsKit && swift test --filter SongLightTests` (6–7 tests), then `swift test`.
 3. Mac: `cd strip && ./build.sh` (ShowsKit changed: the Mac app must still build; nothing in strip/ changed).
 4. Mac: `cd mobile/ios && ./build.sh`; install on the
-   iPhone 12 Pro Max and the iPad Air M2 13-inch.
+   iPhone 12 Pro Max and the iPad Air M3 13-inch.
 5. Pick a song the Mac has measured (`~/…/keep/<key>.features.json` exists, source `vocals`). Play it on the Mac
    overlay and on each device: Done check 4. Then airplane mode on the device, reopen: Done check 5. Then a
    podcast: Done check 6.
