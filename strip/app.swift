@@ -7182,6 +7182,10 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         // The wings' Recense card follows the line on Recense's screen.
         MainActor.assumeIsolated { Recense.onLine = { [weak self] o, t in self?.wingPanels.setRecenseLine(o, t) } }
         Recense.start()            // last, once Recense's own strip, hover and gestures are set up (start() runs once)
+        MainActor.assumeIsolated { TextHaptics.attachBesideShowCaptions() }
+        NotificationCenter.default.addObserver(forName: Haptics.changedNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { TextHaptics.attachBesideShowCaptions() }
+        }
         run(initialCommand)
     }
 

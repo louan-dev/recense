@@ -294,6 +294,9 @@ enum Haptics {
         }
         timingItem.submenu = timingMenu
         m.addItem(timingItem)
+        let textHapticsItem = NSMenuItem(title: "Text Haptics (\(TextHaptics.mode.label))", action: nil, keyEquivalent: "")
+        textHapticsItem.submenu = TextHaptics.menu()
+        m.addItem(textHapticsItem)
         m.addItem(.separator())
         let openPanel = NSMenuItem(
             title: "Haptics Settings…",
@@ -315,6 +318,7 @@ final class HapticsMenuTarget: NSObject {
     private var speedSeg: NSSegmentedControl?
     private var timingLabel: NSTextField?
     private var timingSlider: NSSlider?
+    private var textHapticsSeg: NSSegmentedControl?
 
     @objc func selectMode(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let m = HapticMode(rawValue: raw) else { return }
@@ -385,6 +389,20 @@ final class HapticsMenuTarget: NSObject {
         Haptics.perform(.thud)
     }
 
+    @objc func selectTextHapticsMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let m = TextHapticMode(rawValue: raw) else { return }
+        TextHaptics.mode = m
+        syncPanel()
+        Haptics.perform(.edge)
+    }
+
+    @objc func textHapticsSegChanged(_ sender: NSSegmentedControl) {
+        let modes = TextHapticMode.allCases
+        guard modes.indices.contains(sender.selectedSegment) else { return }
+        TextHaptics.mode = modes[sender.selectedSegment]
+        Haptics.perform(.edge)
+    }
+
     @objc func closePanel(_ sender: Any?) {
         panel?.orderOut(nil)
     }
@@ -411,11 +429,14 @@ final class HapticsMenuTarget: NSObject {
         let ms = Haptics.cueTimingOffsetMs
         timingSlider?.integerValue = ms
         timingLabel?.stringValue = "Cue Timing · \(Haptics.cueTimingSummary(ms))"
+        if let thSeg = textHapticsSeg, let idx = TextHapticMode.allCases.firstIndex(of: TextHaptics.mode) {
+            thSeg.selectedSegment = idx
+        }
     }
 
     func showSettingsPanel() {
         if panel == nil {
-            let w: CGFloat = 380, h: CGFloat = 332
+            let w: CGFloat = 380, h: CGFloat = 412
             let p = NSPanel(
                 contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                 styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
@@ -494,25 +515,25 @@ final class HapticsMenuTarget: NSObject {
             let tLabel = NSTextField(labelWithString: "Cue Timing · +50 ms (light leads, cue follows)")
             tLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
             tLabel.textColor = NSColor(white: 1.0, alpha: 0.88)
-            tLabel.frame = NSRect(x: 20, y: 44, width: w - 104, height: 16)
+            tLabel.frame = NSRect(x: 20, y: h - 284, width: w - 104, height: 16)
             root.addSubview(tLabel)
             self.timingLabel = tLabel
 
             let resetBtn = NSButton(title: "+50 ms", target: self, action: #selector(resetCueTiming(_:)))
             resetBtn.bezelStyle = .inline
             resetBtn.font = .systemFont(ofSize: 10.5, weight: .medium)
-            resetBtn.frame = NSRect(x: w - 78, y: 43, width: 58, height: 18)
+            resetBtn.frame = NSRect(x: w - 78, y: h - 285, width: 58, height: 18)
             root.addSubview(resetBtn)
 
             let minLbl = NSTextField(labelWithString: "−100 ms")
             minLbl.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             minLbl.textColor = NSColor(white: 1.0, alpha: 0.55)
-            minLbl.frame = NSRect(x: 20, y: 16, width: 48, height: 14)
+            minLbl.frame = NSRect(x: 20, y: h - 310, width: 48, height: 14)
             root.addSubview(minLbl)
 
             let slider = NSSlider(value: 50, minValue: -100, maxValue: 260, target: self, action: #selector(timingSliderChanged(_:)))
             slider.isContinuous = true
-            slider.frame = NSRect(x: 72, y: 14, width: w - 144, height: 20)
+            slider.frame = NSRect(x: 72, y: h - 312, width: w - 144, height: 20)
             root.addSubview(slider)
             self.timingSlider = slider
 
@@ -520,8 +541,31 @@ final class HapticsMenuTarget: NSObject {
             maxLbl.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             maxLbl.textColor = NSColor(white: 1.0, alpha: 0.55)
             maxLbl.alignment = .right
-            maxLbl.frame = NSRect(x: w - 68, y: 16, width: 48, height: 14)
+            maxLbl.frame = NSRect(x: w - 68, y: h - 310, width: 48, height: 14)
             root.addSubview(maxLbl)
+
+            let thLabel = NSTextField(labelWithString: "Text Haptics (Cadence Clock)")
+            thLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
+            thLabel.textColor = NSColor(white: 1.0, alpha: 0.88)
+            thLabel.frame = NSRect(x: 20, y: 62, width: w - 40, height: 16)
+            root.addSubview(thLabel)
+
+            let thSeg = NSSegmentedControl(
+                labels: ["Off", "Emphasis", "Words", "Rhythm"],
+                trackingMode: .selectOne,
+                target: self,
+                action: #selector(textHapticsSegChanged(_:))
+            )
+            thSeg.segmentStyle = .rounded
+            thSeg.frame = NSRect(x: 20, y: 34, width: w - 40, height: 24)
+            root.addSubview(thSeg)
+            self.textHapticsSeg = thSeg
+
+            let thNote = NSTextField(labelWithString: TextHaptics.trackpadRequirementNote)
+            thNote.font = .systemFont(ofSize: 10.5, weight: .regular)
+            thNote.textColor = NSColor(white: 1.0, alpha: 0.62)
+            thNote.frame = NSRect(x: 20, y: 12, width: w - 40, height: 16)
+            root.addSubview(thNote)
 
             self.panel = p
         }
@@ -762,6 +806,322 @@ final class RestHoldConsole {
     }
 }
 
+// MARK: - B5: Text to haptics (spec B10b) on the Cadence light's clock
+
+enum TextHapticMode: String, CaseIterable, Codable {
+    case off = "off"
+    case emphasis = "emphasis"
+    case words = "words"
+    case rhythm = "rhythm"
+
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .emphasis: return "Emphasis"
+        case .words: return "Words"
+        case .rhythm: return "Rhythm"
+        }
+    }
+}
+
+/// Closed obligation tiers for `Emphasis` mode (B10b / B10d):
+///   • mustShall (`must` / `shall`)
+///   • may (`may`)
+///   • mustNotShallNot (`must not` / `shall not`)
+enum ObligationTier: String, Codable, CaseIterable {
+    case mustShall = "must_shall"
+    case may = "may"
+    case mustNotShallNot = "must_not_shall_not"
+
+    var hapticCue: HapticCue {
+        switch self {
+        case .mustShall: return .tick
+        case .may: return .tick
+        case .mustNotShallNot: return .thud
+        }
+    }
+}
+
+struct TextHapticInputWord {
+    var text: String
+    var start: Double
+    var end: Double
+    var lineStart: Bool = false
+    var unsung: Bool = false
+    var joinsNext: Bool = false
+}
+
+struct TextHapticEvent: Codable, Equatable {
+    enum Kind: String, Codable {
+        case emphasis
+        case lineStart
+        case wordOnset
+        case syllableOnset
+    }
+    var time: Double
+    var duration: Double
+    var kind: Kind
+    var cue: String
+    var obligationTier: ObligationTier?
+    var token: String
+}
+
+struct TextHapticScore: Codable, Equatable {
+    var v: Int = 1
+    var key: String
+    var transcript: String
+    var events: [TextHapticEvent]
+}
+
+enum TextHaptics {
+    static let modeKey = "recense.textHaptics.mode"
+    static let trackpadRequirementNote = "felt only while a finger rests on the trackpad"
+    static var computeCountForTest: Int = 0
+
+    static var mode: TextHapticMode {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: modeKey),
+                  let m = TextHapticMode(rawValue: raw) else { return .off }
+            return m
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: modeKey)
+            NotificationCenter.default.post(name: Haptics.changedNotification, object: nil)
+        }
+    }
+
+    static func cleanToken(_ raw: String) -> String {
+        raw.lowercased().trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    }
+
+    /// Closed obligation word list matcher:
+    /// Matches ONLY `must not`/`shall not`, `must`/`shall`, and `may`. Any other word returns `(nil, 1)`.
+    static func matchClosedObligation(at index: Int, in tokens: [String]) -> (tier: ObligationTier?, consumed: Int) {
+        guard tokens.indices.contains(index) else { return (nil, 1) }
+        let w0 = tokens[index]
+        if index + 1 < tokens.count {
+            let w1 = tokens[index + 1]
+            if (w0 == "must" || w0 == "shall") && w1 == "not" {
+                return (.mustNotShallNot, 2)
+            }
+        }
+        if w0 == "must" || w0 == "shall" {
+            return (.mustShall, 1)
+        }
+        if w0 == "may" {
+            return (.may, 1)
+        }
+        return (nil, 1)
+    }
+
+    static func stamp(for words: [TextHapticInputWord]) -> String {
+        Prosody.stamp(words.map { (text: $0.text, start: $0.start, end: $0.end) })
+    }
+
+    /// Cached beside `<key>.features.json` in `keepDir` (or custom `directory` in tests) as `<key>.haptics.json`.
+    static func cacheURL(forKey key: String, directory: URL? = nil) -> URL {
+        if let dir = directory {
+            return dir.appendingPathComponent(key + ".haptics.json")
+        }
+        let featuresURL = KeepHome.url(key + ".features.json")
+        return featuresURL.deletingLastPathComponent().appendingPathComponent(key + ".haptics.json")
+    }
+
+    /// Computes the haptic score once per episode and caches it beside `features.json`; subsequent calls read the cache.
+    static func score(
+        forKey key: String,
+        words: [TextHapticInputWord],
+        lang: String? = "en",
+        directory: URL? = nil
+    ) -> TextHapticScore {
+        let curStamp = stamp(for: words)
+        let url = cacheURL(forKey: key, directory: directory)
+        if let data = try? Data(contentsOf: url),
+           let cached = try? JSONDecoder().decode(TextHapticScore.self, from: data),
+           cached.v == 1, cached.key == key, cached.transcript == curStamp {
+            return cached
+        }
+
+        computeCountForTest += 1
+        let tokens = words.map { cleanToken($0.text) }
+        var events: [TextHapticEvent] = []
+
+        // 1. Emphasis events (closed obligation word list only: must/shall · may · must not/shall not).
+        var idx = 0
+        while idx < words.count {
+            let w = words[idx]
+            if w.unsung { idx += 1; continue }
+            let (tier, consumed) = matchClosedObligation(at: idx, in: tokens)
+            if let tier = tier {
+                let endWord = words[min(words.count - 1, idx + consumed - 1)]
+                let dur = max(0.08, endWord.end - w.start)
+                let label = consumed == 2 ? "\(tokens[idx]) \(tokens[idx + 1])" : tokens[idx]
+                events.append(TextHapticEvent(
+                    time: w.start,
+                    duration: dur,
+                    kind: .emphasis,
+                    cue: tier.hapticCue.rawValue,
+                    obligationTier: tier,
+                    token: label
+                ))
+            }
+            idx += consumed
+        }
+
+        // 2. Words & Rhythm events (line starts, word onsets skipping unsung & collapsing liaison runs, and syllable onsets >= 100 ms apart).
+        var lastSyllableTime = -10.0
+        var inLiaisonRun = false
+        for w in words {
+            if w.unsung {
+                inLiaisonRun = false
+                continue
+            }
+            let dur = max(0.05, w.end - w.start)
+            if w.lineStart {
+                events.append(TextHapticEvent(
+                    time: w.start,
+                    duration: dur,
+                    kind: .lineStart,
+                    cue: HapticCue.edge.rawValue,
+                    obligationTier: nil,
+                    token: w.text
+                ))
+            } else if !inLiaisonRun {
+                events.append(TextHapticEvent(
+                    time: w.start,
+                    duration: dur,
+                    kind: .wordOnset,
+                    cue: HapticCue.tick.rawValue,
+                    obligationTier: nil,
+                    token: w.text
+                ))
+            }
+            inLiaisonRun = w.joinsNext
+
+            let sylEnds = Cadence.syllables(w.text, lang: lang)
+            if sylEnds.count > 1 {
+                let total = max(1, sylEnds.last ?? 1)
+                var prevEnd = 0
+                for (sIdx, endPos) in sylEnds.enumerated() {
+                    let frac = Double(prevEnd) / Double(total)
+                    prevEnd = endPos
+                    if sIdx == 0 {
+                        lastSyllableTime = max(lastSyllableTime, w.start)
+                        continue
+                    }
+                    let sylTime = w.start + frac * dur
+                    if sylTime - lastSyllableTime >= 0.100 {
+                        lastSyllableTime = sylTime
+                        events.append(TextHapticEvent(
+                            time: sylTime,
+                            duration: max(0.04, dur / Double(sylEnds.count)),
+                            kind: .syllableOnset,
+                            cue: HapticCue.tick.rawValue,
+                            obligationTier: nil,
+                            token: w.text
+                        ))
+                    }
+                }
+            } else {
+                lastSyllableTime = max(lastSyllableTime, w.start)
+            }
+        }
+
+        events.sort { $0.time < $1.time }
+        let built = TextHapticScore(v: 1, key: key, transcript: curStamp, events: events)
+        if let encoded = try? JSONEncoder().encode(built) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? encoded.write(to: url, options: .atomic)
+        }
+        return built
+    }
+
+    /// Returns the events active under `mode` whose remapped cue time (`Haptics.effectiveCueTimestamp`) falls in `(fromTime, toTime]`.
+    static func activeEvents(
+        in score: TextHapticScore,
+        mode: TextHapticMode = TextHaptics.mode,
+        from fromTime: Double,
+        to toTime: Double
+    ) -> [TextHapticEvent] {
+        guard mode != .off, toTime >= fromTime else { return [] }
+        return score.events.filter { ev in
+            let matchesMode: Bool
+            switch mode {
+            case .off:
+                matchesMode = false
+            case .emphasis:
+                matchesMode = (ev.kind == .emphasis && ev.obligationTier != nil)
+            case .words:
+                matchesMode = (ev.kind == .lineStart || ev.kind == .wordOnset)
+            case .rhythm:
+                matchesMode = (ev.kind == .lineStart || ev.kind == .wordOnset || ev.kind == .syllableOnset)
+            }
+            guard matchesMode else { return false }
+            let effectiveTime = Haptics.effectiveCueTimestamp(forLightTimestamp: ev.time)
+            return effectiveTime > fromTime && effectiveTime <= toTime
+        }
+    }
+
+    /// Steps the Cadence light's clock from `fromTime` to `toTime`, firing all matching haptic cues.
+    @discardableResult
+    static func stepClock(
+        score: TextHapticScore,
+        mode: TextHapticMode = TextHaptics.mode,
+        from fromTime: Double,
+        to toTime: Double
+    ) -> [TextHapticEvent] {
+        let due = activeEvents(in: score, mode: mode, from: fromTime, to: toTime)
+        for ev in due {
+            if let cue = HapticCue(rawValue: ev.cue) {
+                Haptics.perform(cue)
+            }
+        }
+        return due
+    }
+
+    /// Builds the `Text Haptics` menu (`Off · Emphasis · Words · Rhythm` + plain trackpad note) placed beside `Show Captions`.
+    static func menu() -> NSMenu {
+        let m = NSMenu(title: "Text Haptics")
+        for tm in TextHapticMode.allCases {
+            let item = NSMenuItem(
+                title: tm.label,
+                action: #selector(HapticsMenuTarget.shared.selectTextHapticsMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = HapticsMenuTarget.shared
+            item.representedObject = tm.rawValue
+            item.state = (mode == tm) ? .on : .off
+            m.addItem(item)
+        }
+        m.addItem(.separator())
+        let note = NSMenuItem(title: trackpadRequirementNote, action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        m.addItem(note)
+        return m
+    }
+
+    /// Attaches or refreshes the `Text Haptics` menu item right beside `Show/Hide Captions for This Track` in the Recense menu.
+    @MainActor
+    static func attachBesideShowCaptions(in mainMenu: NSMenu? = NSApp.mainMenu) {
+        guard let recenseMenu = mainMenu?.item(withTitle: "Recense")?.submenu else { return }
+        let itemTitle = "Text Haptics"
+        if let existing = recenseMenu.items.first(where: { $0.identifier?.rawValue == "recense.textHapticsItem" }) {
+            existing.title = "\(itemTitle) (\(mode.label))"
+            existing.submenu = menu()
+            return
+        }
+        let item = NSMenuItem(title: "\(itemTitle) (\(mode.label))", action: nil, keyEquivalent: "")
+        item.identifier = NSUserInterfaceItemIdentifier("recense.textHapticsItem")
+        item.toolTip = trackpadRequirementNote
+        item.submenu = menu()
+        if let capIdx = recenseMenu.items.firstIndex(where: { $0.title.contains("Captions for This Track") }) {
+            recenseMenu.insertItem(item, at: capIdx + 1)
+        } else {
+            recenseMenu.addItem(item)
+        }
+    }
+}
+
 // MARK: - B2: Global gesture navigation feel & ambidextrous finger-origin measurement
 
 enum GestureNavHaptics {
@@ -978,5 +1338,54 @@ func hapticsSelftest() -> Bool {
     let b4OK = default50OK && clampLowOK && clampHighOK && readByCueOK
     print("\(b4OK ? "ok  " : "FAIL") haptics, B4 cue timing defaults to +50 ms, clamps to -100…+260 ms, persists, and every cue reads it")
 
-    return vocabOK && modesOK && spikeOK && b2OK && b3OK && b4OK
+    // 7. B5: Text to haptics (B10b) on Cadence light's clock (Off · Emphasis · Words · Rhythm, closed word list, cached once beside features.json).
+    let savedTextMode = TextHaptics.mode
+    defer { TextHaptics.mode = savedTextMode }
+    Haptics.cueTimingOffsetMs = 50
+    Haptics.mode = .full
+    let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("recense-b5-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+    let sampleWords: [TextHapticInputWord] = [
+        TextHapticInputWord(text: "The", start: 0.00, end: 0.18, lineStart: true),
+        TextHapticInputWord(text: "applicant", start: 0.20, end: 0.65),
+        TextHapticInputWord(text: "must", start: 0.70, end: 0.95),
+        TextHapticInputWord(text: "file,", start: 1.00, end: 1.30),
+        TextHapticInputWord(text: "should", start: 1.35, end: 1.60),   // NOT in closed list -> must NOT fire in Emphasis
+        TextHapticInputWord(text: "wait,", start: 1.65, end: 1.90),
+        TextHapticInputWord(text: "may", start: 2.00, end: 2.25),
+        TextHapticInputWord(text: "amend,", start: 2.30, end: 2.60),
+        TextHapticInputWord(text: "and", start: 2.65, end: 2.80),
+        TextHapticInputWord(text: "shall", start: 2.85, end: 3.05),
+        TextHapticInputWord(text: "not", start: 3.06, end: 3.30),      // "shall not" -> 1 combined mustNotShallNot cue
+        TextHapticInputWord(text: "delay.", start: 3.35, end: 3.70)
+    ]
+    TextHaptics.computeCountForTest = 0
+    let score1 = TextHaptics.score(forKey: "0123456789abcdef01234567", words: sampleWords, lang: "en", directory: tmpDir)
+    let score2 = TextHaptics.score(forKey: "0123456789abcdef01234567", words: sampleWords, lang: "en", directory: tmpDir)
+    let cachedOnceOK = TextHaptics.computeCountForTest == 1 && score1 == score2
+        && FileManager.default.fileExists(atPath: TextHaptics.cacheURL(forKey: "0123456789abcdef01234567", directory: tmpDir).path)
+
+    let emphasisEvents = TextHaptics.activeEvents(in: score1, mode: .emphasis, from: 0.0, to: 5.0)
+    let emphasisTokens = emphasisEvents.map(\.token)
+    let emphasisTiers = emphasisEvents.compactMap(\.obligationTier)
+    let closedListOK = emphasisTokens == ["must", "may", "shall not"]
+        && emphasisTiers == [.mustShall, .may, .mustNotShallNot]
+        && !emphasisTokens.contains("should")
+
+    // Verify +50 ms visual-delay remap on the Cadence clock: "must" at 0.70 s fires at 0.75 s (not before 0.74 s).
+    let beforeRemap = TextHaptics.activeEvents(in: score1, mode: .emphasis, from: 0.65, to: 0.74)
+    let afterRemap = TextHaptics.activeEvents(in: score1, mode: .emphasis, from: 0.74, to: 0.76)
+    let clockRemapOK = beforeRemap.isEmpty && afterRemap.map(\.token) == ["must"]
+
+    let wordsEvents = TextHaptics.activeEvents(in: score1, mode: .words, from: -0.1, to: 5.0)
+    let rhythmEvents = TextHaptics.activeEvents(in: score1, mode: .rhythm, from: -0.1, to: 5.0)
+    let modesHierarchyOK = TextHaptics.activeEvents(in: score1, mode: .off, from: 0, to: 5.0).isEmpty
+        && wordsEvents.count == sampleWords.count
+        && rhythmEvents.count > wordsEvents.count
+        && TextHaptics.trackpadRequirementNote == "felt only while a finger rests on the trackpad"
+    let b5OK = cachedOnceOK && closedListOK && clockRemapOK && modesHierarchyOK
+    print("\(b5OK ? "ok  " : "FAIL") haptics, B5 text-to-haptics modes (Off · Emphasis · Words · Rhythm), closed obligation list, and episode cache")
+
+    return vocabOK && modesOK && spikeOK && b2OK && b3OK && b4OK && b5OK
 }
