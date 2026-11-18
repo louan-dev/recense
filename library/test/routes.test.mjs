@@ -206,7 +206,7 @@ await test("Main refuses a browser upload over 90 MiB with a short message", asy
     assert.equal(r.status, 413);
     assert.equal(await r.text(), "Too big for the browser");
   } catch (e) {
-    if (!/fetch failed/.test(e.message)) throw e;
+    if (!/fetch failed|terminated/.test(e.message)) throw e; // undici says either when the Worker closes first
   }
   assert.equal(await MAIN.head("files/big.bin"), null);
 });
