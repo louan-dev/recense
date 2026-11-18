@@ -1,8 +1,45 @@
 # FEAT-32 · Recense a source: a page, a song or a video becomes one item you can read, hear and translate, offline
 
-From: owner 2026-11-18 ("Recense equivalent of reader mode: find text or audio or video with audio, download offline in the appless hub and the app; AI narration; translation in Vietnamese, French, English, switch between all via the original source; recense in a different language, or learn side by side with the original") · Status: `[ ]` spec only · Effort: high, in slices
+From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a NotebookLM/Ask engine"); owner 2026-11-18 ("Recense equivalent of reader mode: find text or audio or video with audio, download offline in the appless hub and the app; AI narration; translation in Vietnamese, French, English, switch between all via the original source; recense in a different language, or learn side by side with the original") · Status: `[ ]` spec only · Effort: high, in slices
 
-## Verdict first
+## Review 2026-11-18 · owner direction: "a Safari LLM finder on a NotebookLM / Ask engine"
+**Verdict: object to the scope below.** It builds the ingest half and files the engine the owner asked for as a separate wish.
+- **Rule (owner):** FEAT-32 is the finder in Safari plus the notebook engine under it. S1–S5 stay, as the way sources get in.
+- **Finding 1 · scope, proven by the text:** "Not adopting" rejects the Safari layer, and the Owed list defers offline Ask. Both are the owner's core.
+- **Finding 2 · premises, re-checked on main 2d6d398 (all hold):**
+  - `claude -p` is at `strip/app.swift:6685`.
+  - Ask is a web place (`Places.swift:16-17`).
+  - No `askcore` exists.
+  - The SDK header gives `write(_:toBufferCallback:toMarkerCallback:)` as iOS 16 / macOS 13.
+  - `recensetext.swift` lenses run on FoundationModels with a **4,096-token context**.
+- **Finding 3 · the 4,096-token context is the design centre.** NotebookLM reads whole sources at once; we can't.
+  - The engine must retrieve 6–10 passages and give each answer line its passage ids. `recensetext` already checks citations.
+- **Finding 4 · search across languages, proven on this Mac:**
+  - SQLite FTS5 (`unicode61 remove_diacritics 2`) finds "nguoi" → "Người" and "fete" → "fête" (sqlite3 3.54).
+  - iOS's system SQLite having FTS5: **assumed**, so the first check is on the iPhone.
+  - Apple sentence embeddings (`NLEmbedding`): en yes, fr yes, **vi none**. So meaning-search cannot rest on Apple embeddings.
+  - The way round: keyword search (FTS5) in every language, plus a search of each item's existing `tr/en.json` layer, so a Vietnamese question finds French sources.
+  - A bundled multilingual model (bge-m3 is already what the Worker uses) would be a one-time download. It is a later step, not S6.
+- **Finding 5 · "Safari" means real Safari, not a skin.** A Safari Web Extension on iPhone, iPad and Mac.
+  - It uses the FEAT-30 S0 transport (native messaging) to send the question to the app. The engine runs in the app, not in the extension.
+  - Extension memory limits on iOS are **untested**.
+  - Answers light their source on the page through a text fragment (`#:~:text=`; Safari support **assumed**).
+  - The same panel offers "Add to notebook" (= S1).
+- **Finding 6 · S2/S3 narration is the Audio Overview equivalent.** Keep it: a source or an answer heard in en/vi/fr with word times.
+- **Gate:** nothing calls out at the moment of use. The Gallery Ask (Workers AI + Vectorize) stays as an optional fallback only, behind the Raven exclusion.
+
+### New slice order (replaces the S-order below; S1–S5 keep their text)
+1. **S1** capture (unchanged).
+2. **S6 · Notebook index:** FTS5 over `keep/<key>/` (asr, `tr/<lang>`), notes, `draftpad.md`, pages; passage ids = `key#segId`. `shared/notebook/`, Mac + iOS.
+   - Done when: an en/fr/vi query on the iPhone in airplane mode returns ranked passages.
+3. **S7 · Ask with citations:** Apple model, 4k budget, answer schema in `recensetext`, each line cites ids; one UI in `editor/`.
+   - Done when: every answer line opens its source at the cited second or sentence.
+4. **S8 · Safari finder:** the extension panel ("Ask this page" / "Ask my notebook" / "Add to notebook"); answers light on the page.
+   - Waits on the FEAT-30 S0 spike.
+5. **S2/S3** narration (Audio Overview), **S4** extractor, **S5** links, as written.
+6. **Hub:** the same index built with node + SQLite, so the appless hub can search. It has no Apple model, so hub answers use the fallback.
+
+## Verdict first (original, 2026-11-18; scope superseded by the review above)
 - **The owner's idea is mostly assembled already.** Four of its five parts exist as separate pieces. What is missing is the front door (a link or a page in) and one join (narration with word timings, so a page plays like any recording).
 - **The pasted Safari/Zen/Arc skin advice is a UI skin, not this feature.** None of it is adopted here (see "Not adopting").
 - **Several things the pastes name do not exist in the repo.** Checked 2026-11-18 on main 977765c; the table has them.
