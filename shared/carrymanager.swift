@@ -330,12 +330,15 @@ private enum CarryKeychain {
     /// Every entry named `name` leaves the trust store and peers.json. A connected one is told first (a sealed
     /// `forget`), then disconnected. Files, ops logs and appliedSeq stay; bytes still owed by it are discarded.
     /// No forwarding to the owner's other devices (open question 1): a stolen device could unpair the real ones.
-    func forget(_ name: String) {
+    /// Returns whether a sealed `forget` was sent (§2.5, invariant 18): the CLI has no link, so it never is there.
+    @discardableResult
+    func forget(_ name: String) -> Bool {
         reloadFromDisk()
         let keys = Set((peers + mirror).filter { $0.name == name }.map(\.key))
-        guard !keys.isEmpty || refusedNames.contains(name) else { lastError = "\(name) is not paired"; return }
+        guard !keys.isEmpty || refusedNames.contains(name) else { lastError = "\(name) is not paired"; return false }
+        var told = false
         for (peer, s) in auth where s.peer.map({ keys.contains($0.key) }) ?? false {
-            if s.authenticated { try? sendSealed(Data(), type: "forget", to: peer) }
+            if s.authenticated, (try? sendSealed(Data(), type: "forget", to: peer)) != nil { told = true }
             auth[peer] = nil
             Task { @MainActor [weak self] in   // after the forget has left
                 try? await Task.sleep(nanoseconds: 1_000_000_000); self?.t.drop(peer)
@@ -343,6 +346,7 @@ private enum CarryKeychain {
         }
         lastError = nil; status = "Forgot \(name)"
         untrust(keys, name: name)
+        return told
     }
 
     private func receiveForget(from peer: MCPeerID, as name: String) {

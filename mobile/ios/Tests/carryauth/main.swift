@@ -261,6 +261,15 @@ do {
           "others are listed once, mirror first, then refused names")
 }
 
+// 18 · §2.5: a forget that could not tell the device (the CLI has no link) says to forget it there too
+// Regression guard: SEC-02
+do {
+    let here = CarryForget.reply("iPad", told: false), both = CarryForget.reply("iPad", told: true)
+    check(here.contains("Forget it on iPad too"), "not told: forget it there too: \(here)")
+    check(!both.contains("Forget it on"), "told: nothing more to do: \(both)")
+    check(here.contains("Files on both devices stay") && both.contains("Files on both devices stay"), "files stay, either way")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])

@@ -195,3 +195,13 @@ enum CarryAuthTimeout: Equatable {
         return gotHello ? .badProof : held ? .unknownKey : .noAnswer
     }
 }
+
+// Derived from Spec: SEC-02 §2.5, invariant 18
+enum CarryForget {
+    /// What "Forget" reports. `told`: a sealed `forget` reached the device, so it unpaired this one too.
+    static func reply(_ name: String, told: Bool) -> String {
+        told ? "Forgot \(name); it unpaired this device too. Files on both devices stay; pair again to carry with it."
+             : "Forgot \(name) here. Forget it on \(name) too: until then it still trusts this device. "
+               + "Files on both devices stay; pair again to carry with it."
+    }
+}

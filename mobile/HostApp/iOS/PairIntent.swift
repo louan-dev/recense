@@ -119,8 +119,8 @@ struct ForgetDeviceIntent: AppIntent {
             return .result(dialog: "No paired device is called \(device). Paired: \(known.isEmpty ? "none" : known.joined(separator: ", ")).")
         }
         try await requestConfirmation(dialog: "Forget \(name)? Carry with it stops until you pair it again. Files stay.")
-        cm.forget(name)
-        return .result(dialog: "Forgot \(name). Files on both devices stay.")
+        let told = cm.forget(name)   // SEC-02 invariant 18: not told → "Forget it on <name> too"
+        return .result(dialog: "\(CarryForget.reply(name, told: told))")
     }
 }
 

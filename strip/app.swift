@@ -8809,13 +8809,13 @@ if CommandLine.arguments.dropFirst().first == "carry" {
         case "forget":    // SEC-02 §2.5
             guard a.count >= 2 else { fputs(usage + "\n", stderr); exit(1) }
             let name = a.dropFirst().joined(separator: " ")
-            let err: String? = MainActor.assumeIsolated {
+            let (err, told): (String?, Bool) = MainActor.assumeIsolated {
                 let cm = CarryManager.shared
-                cm.forget(name)
-                return cm.lastError
+                let told = cm.forget(name)   // no link here (the app holds it): never told, invariant 18
+                return (cm.lastError, told)
             }
             if let err { fputs("carry forget: \(err)\n", stderr); exit(1) }
-            print("Forgot \(name). Files on both devices stay; pair again to carry with it.")
+            print(CarryForget.reply(name, told: told))
         case "verify":
             try Homes.ensure()
             let lines = try Carry.verify()

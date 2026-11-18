@@ -89,6 +89,8 @@ Terms: **SAS** = the six digits compared or typed; **MAC** = a checksum only the
   - Terminal: `recense carry forget <name>`.
 - Forgetting removes the entry from the trust store and from `peers.json`.
   - If the peer is connected, a sealed `forget` goes first, then it is disconnected.
+  - The Terminal's `recense carry forget` has no link of its own (the running app holds it), so it cannot send
+    the sealed `forget`. It says so: "Forget it on <name> too", and the running app drops that peer on its next frame.
   - The receiver removes the sender's key and shows "<name> unpaired this device".
 - **Lost device:** forget it on each remaining device, no forwarding (open question 1); its key is then refused there.
 - Data on forget: local files, ops logs and `appliedSeq` are kept. Staged bytes owed by it are discarded.
@@ -147,6 +149,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
 17. **Bytes being hashed are never swept:** the `.check` copy of a staged file keeps the file's old mtime, so
     `CarrySync.orphans` treats `<name>.check` as expected whenever `<name>` is, and the sweep counts keys in
     `placing` as expected. A `.check` nobody expects (left by a crash) is still swept. Tested in `Tests/carrysync`.
+18. **Forget says what the other side still knows:** when no sealed `forget` was sent (`CarryForget.reply`,
+    told = false: the CLI, or the peer not connected), the reply names the device and says "Forget it on <name> too".
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -202,3 +206,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   15 the proof deadline is per session (token); Stop Pairing re-arms held hellos.
   16 Needs pairing again leaves out names that still have a trusted key.
   17 a .check copy being hashed is never swept.
+  18 §2.5: `recense carry forget` sends no sealed forget; it prints "Forget it on <name> too".
