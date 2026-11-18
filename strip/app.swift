@@ -7269,6 +7269,13 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     // MARK: Launch
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // BUG-33 D1: a download that failed for good is announced (it sits in downloads/.queue/failed/)
+        Downloads.onFailure = { r, error in
+            let msg = "Couldn't download \(r.url.prefix(60)): \(error)".replacingOccurrences(of: "\\", with: " ").replacingOccurrences(of: "\"", with: "'")
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            p.arguments = ["-e", "display notification \"\(msg)\" with title \"Recense · Downloads\""]
+            try? p.run()
+        }
         Downloads.watchConnection()          // queued downloads go as soon as there is a connection (mediadownload.swift)
         Downloads.watchFolder()              // BUG-16: whatever lands in downloads/ is adopted; audio settles into Music
         try? Homes.ensure()                  // the homes exist on every launch (homes.swift, FEAT-06)
@@ -8738,6 +8745,14 @@ func stripSelftest() -> Bool {
 
 // `recense selftest`: checks that need no running copy, no network and no permissions; exits 1 if any fails.
 if CommandLine.arguments.dropFirst().first == "selftest" {
+    // `recense selftest exportjobs downloads`: only those groups (a full run takes minutes in a debug build)
+    let only = Set(CommandLine.arguments.dropFirst(2))
+    if !only.isEmpty {
+        var good = true
+        if only.contains("exportjobs") { good = exportJobsSelftest() && good }
+        if only.contains("downloads") { good = downloadsSelftest() && good }
+        exit(good ? 0 : 1)
+    }
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()

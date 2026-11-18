@@ -158,6 +158,7 @@ enum Downloads {
     @discardableResult
     static func sweep() throws -> [DownloadEntry] {
         var out: [DownloadEntry] = []
+        sweepStale()
         for e in try adopt() { out.append(try settle(e)) }
         // a file adopted before BUG-16 was fixed (recorded, never settled) settles now
         for e in manifest() where e.mode == .audio && FileManager.default.fileExists(atPath: root.appendingPathComponent(e.name).path) {
@@ -184,12 +185,20 @@ enum Downloads {
         guard FileManager.default.fileExists(atPath: from.path) else { return e }   // already settled
         let moved = try Homes.add(from, to: .music)
         let musicDir = Homes.url(.music)
+        // Derived from Spec: BUG-33 (D3): Music may rename the file (a name taken); its sidecars take the new base
+        let oldBase = (e.name as NSString).deletingPathExtension.components(separatedBy: "/").last ?? ""
+        let newBase = ((moved.path as NSString).lastPathComponent as NSString).deletingPathExtension
+        var subs: [String] = []
         for sub in e.subtitles ?? [] {
             let subFrom = root.appendingPathComponent(sub)
             guard FileManager.default.fileExists(atPath: subFrom.path) else { continue }
-            try? FileManager.default.moveItem(at: subFrom, to: musicDir.appendingPathComponent(subFrom.lastPathComponent))
+            let name = subFrom.lastPathComponent
+            let renamed = !oldBase.isEmpty && name.hasPrefix(oldBase) ? newBase + name.dropFirst(oldBase.count) : Substring(name)
+            try? FileManager.default.moveItem(at: subFrom, to: musicDir.appendingPathComponent(String(renamed)))
+            subs.append(String(renamed))
         }
         var out = e
+        if e.subtitles != nil { out.subtitles = subs }
         out.name = moved.path
         try write(manifest().filter { $0.name != e.name } + [out])
         return out
@@ -197,10 +206,54 @@ enum Downloads {
 
     /// Offline first: the same link in the same mode already here, with its bytes intact, is used without the network.
     static func existing(_ link: String, mode: DownloadMode) -> DownloadEntry? {
-        manifest().first { e in
-            e.source == link && e.mode == mode && FileManager.default.fileExists(atPath: file(e).path)
+        let key = canonical(link)
+        return manifest().first { e in
+            canonical(e.source) == key && e.mode == mode && FileManager.default.fileExists(atPath: file(e).path)
                 && (try? sha256(file(e))) == e.sha256
         }
+    }
+
+    // Derived from Spec: BUG-33 (D2)
+    /// One key for one video however the link is spelled: youtu.be/ID, youtube.com/watch?v=ID&t=5, /shorts/ID,
+    /// /embed/ID and /live/ID are all "yt:ID". Any other link is its own key.
+    static func canonical(_ link: String) -> String {
+        guard let u = URL(string: link), let host = u.host?.lowercased() else { return link }
+        func id(_ s: String?) -> String? { s.flatMap { $0.isEmpty ? nil : $0 } }
+        let parts = u.pathComponents.filter { $0 != "/" }
+        if host == "youtu.be", let v = id(parts.first) { return "yt:" + v }
+        if host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtube-nocookie.com" {
+            if parts.first == "watch",
+               let v = id(URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "v" }?.value) { return "yt:" + v }
+            if ["shorts", "embed", "live", "v"].contains(parts.first ?? ""), parts.count > 1, let v = id(parts[1]) { return "yt:" + v }
+        }
+        return link
+    }
+
+    // Derived from Spec: BUG-33 (D4)
+    /// Room needed before a download starts (a long video is a few GiB); tests set a number to prove the refusal.
+    nonisolated(unsafe) static var minFree: Int64 = 2 << 30
+    nonisolated(unsafe) static var freeSpaceOverride: Int64? = nil
+    static func freeSpace() -> Int64? {
+        if let o = freeSpaceOverride { return o }
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
+    }
+
+    /// Unfinished downloads (.part, .ytdl, .crdownload) nobody has touched for a day are removed, so they stop being
+    /// skipped forever. Returns how many.
+    @discardableResult
+    static func sweepStale(olderThan age: TimeInterval = 86_400, now: Date = Date()) -> Int {
+        let fm = FileManager.default
+        var n = 0
+        for dir in [root, root.appendingPathComponent(pulltubeFolder)] {
+            for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+                let name = f.lastPathComponent.lowercased()
+                guard [".part", ".ytdl", ".crdownload", ".download"].contains(where: { name.hasSuffix($0) }) else { continue }
+                let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantFuture
+                if now.timeIntervalSince(m) >= age, (try? fm.removeItem(at: f)) != nil { n += 1 }
+            }
+        }
+        return n
     }
 
     /// Would retrying later help? (no connection, DNS, timeouts: yes; a removed video or a bad link: no)
@@ -269,6 +322,9 @@ extension Downloads {
         // 1. already on this device (no network)
         if options.section == nil, let e = existing(link, mode: mode) { return e }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if let free = freeSpace(), free < minFree {
+            throw Failure.failed("not enough free space to download (\(free >> 20) MiB left, \(minFree >> 20) MiB needed)")
+        }
         // 2. from the source: resumable, retried; 3. offline, it waits in the queue and never blocks
         do {
             var e = try await fromSource(url, link: link, mode: mode, options: options)
@@ -404,11 +460,13 @@ extension Downloads {
             pending = w
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
         }
-        for dir in [root, root.appendingPathComponent(pulltubeFolder)] {
+        try? fm.createDirectory(at: queueDir, withIntermediateDirectories: true)
+        for dir in [root, root.appendingPathComponent(pulltubeFolder), queueDir] {
+            let isQueue = dir == queueDir
             let fd = open(dir.path, O_EVTONLY)
             guard fd >= 0 else { continue }
             let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .extend], queue: .main)
-            src.setEventHandler { pass() }
+            src.setEventHandler { if isQueue { kickDrain() } else { pass() } }
             src.setCancelHandler { close(fd) }
             src.resume()
             watchers.append(src)
@@ -419,13 +477,26 @@ extension Downloads {
     /// When the Mac (re)gains a connection, the queue is run: a request made offline, here or on another device, goes
     /// without anyone pressing anything. Runs at launch too, once the first path arrives.
     static func watchConnection() {
-        connection.pathUpdateHandler = { path in
-            guard path.status == .satisfied, !queued().isEmpty, !draining else { return }
-            draining = true
-            Task.detached { _ = await drain(log: { NSLog("recense: \($0)") }); draining = false }
-        }
+        connection.pathUpdateHandler = { _ in kickDrain() }
         connection.start(queue: DispatchQueue(label: "recense.downloads.connection"))
+        // D1: a request dropped while online (or by another device) goes within a minute, not at the next network change
+        DispatchQueue.main.async {
+            queueTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in kickDrain() }
+            kickDrain()
+        }
     }
+
+    // Derived from Spec: BUG-33 (D1)
+    /// Told when a queued request failed for good (the file is in .queue/failed/): the app turns it into a notice.
+    nonisolated(unsafe) static var onFailure: (@Sendable (DownloadRequest, Error) -> Void)? = nil
+    /// Runs the queue when there is something in it and no run is going; the timer, the folder watcher and the
+    /// connection monitor all call this, so a request never waits for a network change.
+    static func kickDrain() {
+        guard !draining, !queued().isEmpty, connection.currentPath.status == .satisfied else { return }
+        draining = true
+        Task.detached { _ = await drain(log: { NSLog("recense: \($0)") }); draining = false }
+    }
+    nonisolated(unsafe) private static var queueTimer: Timer?
 
     /// Runs every queued request (oldest first); a done or failed one leaves the queue, a failure logged in .queue/failed/.
     static func drain(log: (String) -> Void = { print($0) }) async -> Int {
@@ -442,6 +513,7 @@ extension Downloads {
                 let failed = queueDir.appendingPathComponent("failed", isDirectory: true)
                 try? FileManager.default.createDirectory(at: failed, withIntermediateDirectories: true)
                 try? FileManager.default.moveItem(at: file, to: failed.appendingPathComponent(file.lastPathComponent))
+                onFailure?(r, error)
             }
         }
         return done
@@ -489,6 +561,7 @@ func downloadsSelftest() -> Bool {
     }
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     Downloads.quiet = 0; defer { Downloads.quiet = 3 }
+    Downloads.freeSpaceOverride = 1 << 40; defer { Downloads.freeSpaceOverride = nil }   // this Mac's real free space must not decide the test
 
     check(DownloadMode.audio.ytdlpArgs.contains("m4a") && DownloadMode.audio.ytdlpArgs.contains("-x"), "audio stays the m4a extraction Recense uses")
     check(DownloadMode.av.ytdlpArgs.joined(separator: " ").contains("avc1") && DownloadMode.av.ytdlpArgs.contains("mp4"), "audio+video asks for H.264 in mp4")
@@ -582,6 +655,57 @@ func downloadsSelftest() -> Bool {
               "a file still being written waits", swept.map(\.name))
         try? FileManager.default.removeItem(at: fresh)
     } catch { check(false, "BUG-16 sweep", error) }
+
+    // Regression guard: BUG-33 D2 — one video, many link spellings, one key (and one file)
+    let ids = ["https://youtu.be/aqz-KE-bpKQ", "https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=5s", "https://m.youtube.com/shorts/aqz-KE-bpKQ"]
+    check(Set(ids.map(Downloads.canonical)) == ["yt:aqz-KE-bpKQ"], "youtu.be, watch?v= and shorts are one video", ids.map(Downloads.canonical))
+    check(Downloads.canonical("https://example.org/a.mp3") == "https://example.org/a.mp3", "any other link is its own key")
+    let vid = dir.appendingPathComponent("Talk [aqz-KE-bpKQ].mp4"); try? Data("v".utf8).write(to: vid)
+    if var ve = try? Downloads.entry(for: vid, source: ids[0], mode: .av, via: "yt-dlp") {
+        ve.name = vid.lastPathComponent; try? Downloads.record(ve)
+        check(Downloads.existing(ids[1], mode: .av)?.name == vid.lastPathComponent, "the other spelling finds the copy already here")
+    } else { check(false, "D2 entry") }
+
+    // Regression guard: BUG-33 D4 — no room, no download; a day-old .part goes, a fresh one stays
+    Downloads.freeSpaceOverride = 100 << 20
+    let semSp = DispatchSemaphore(value: 0); var spErr: Error?
+    Task.detached { do { _ = try await Downloads.fetch("https://example.org/never.mp4", mode: .av, queueWhenOffline: false) } catch { spErr = error }; semSp.signal() }
+    semSp.wait()
+    check(String(describing: spErr as Any).contains("free space"), "a download with no room is refused with the reason", spErr as Any)
+    Downloads.freeSpaceOverride = 1 << 40
+    let oldPart = dir.appendingPathComponent("old.mp4.part"), newPart = dir.appendingPathComponent("new.mp4.part")
+    try? Data("p".utf8).write(to: oldPart); try? Data("p".utf8).write(to: newPart)
+    try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90_000)], ofItemAtPath: oldPart.path)
+    Downloads.sweepStale()
+    check(!FileManager.default.fileExists(atPath: oldPart.path) && FileManager.default.fileExists(atPath: newPart.path), "a day-old .part is swept, a fresh one stays")
+    try? FileManager.default.removeItem(at: newPart)
+
+    // Regression guard: BUG-33 D3 — Music renames a taken name; the .vtt sidecars follow
+    do {
+        try Data("other".utf8).write(to: Homes.url(.music).appendingPathComponent("Clash.m4a"))
+        try Data("new".utf8).write(to: dir.appendingPathComponent("Clash.m4a"))
+        try Data("WEBVTT".utf8).write(to: dir.appendingPathComponent("Clash.en.vtt"))
+        var ce = try Downloads.entry(for: dir.appendingPathComponent("Clash.m4a"), source: "", mode: .audio, via: "adopted")
+        ce.subtitles = ["Clash.en.vtt"]
+        let st = try Downloads.settle(ce)
+        let base = ((st.name as NSString).lastPathComponent as NSString).deletingPathExtension
+        check(base != "Clash" && st.subtitles == [base + ".en.vtt"]
+              && FileManager.default.fileExists(atPath: Homes.url(.music).appendingPathComponent(base + ".en.vtt").path), "a renamed song takes its subtitles with it", st.subtitles as Any)
+    } catch { check(false, "D3 settle", error) }
+
+    // Regression guard: BUG-33 D1 — a request that fails for good leaves the queue, lands in failed/ and is announced
+    do {
+        for (f, _) in Downloads.queued() { try? FileManager.default.removeItem(at: f) }   // the earlier test's request must not hit the network
+        _ = try Downloads.ask("", mode: .audio, from: "iPhone")
+        final class Seen: @unchecked Sendable { var n = 0 }
+        let seen = Seen()
+        Downloads.onFailure = { _, _ in seen.n += 1 }; defer { Downloads.onFailure = nil }
+        let semD = DispatchSemaphore(value: 0)
+        Task.detached { _ = await Downloads.drain(log: { _ in }); semD.signal() }
+        semD.wait()
+        let failed = (try? FileManager.default.contentsOfDirectory(atPath: Downloads.queueDir.appendingPathComponent("failed").path)) ?? []
+        check(seen.n == 1 && failed.count == 1, "a failed request is announced and kept in failed/", (seen.n, failed))
+    } catch { check(false, "D1 ask", error) }
     return ok
 }
 #endif

@@ -2,7 +2,7 @@
 
 From: owner 2026-11-18 (PLAN-1118 §5k "Anything → M4B audiobook, and the offline download infrastructure") ·
 Guards: FEAT-01 (M4B), FEAT-11 (downloads), FEAT-12 (Music), FEAT-31 P1 ·
-Status: `[~]` tests pass; device check owed
+Status: `[~]` tests pass (`strip/recense selftest exportjobs downloads`; `mobile/ios/Tests/partsresume/run.zsh`); device check owed
 
 ## What the owner would see
 - Two Export as M4B in one minute: one file, or none; the first one's work folder deleted under ffmpeg.
@@ -20,7 +20,7 @@ Status: `[~]` tests pass; device check owed
 | M-B4 | ffmpeg stderr to /dev/null, no timeout | run through `Downloads.run` (timeout 7200 s), the last stderr line and "took too long" reach the owner and the log |
 | M-B5 | iOS `Exporter.dir()` folders never deleted | folder removed on failure; older than a day swept before each export |
 | D1 | `.queue/` drained only on a network change or launch; failure moved to `failed/` with no word | also drained every 60 s and when `.queue/` changes; a failure posts a notification callback |
-| D2 | dedupe by exact URL string; youtu.be vs watch?v= twice | `Downloads.canonical(link)` (video id) keys `existing`; same sha256 in the manifest is not recorded twice |
+| D2 | dedupe by exact URL string; youtu.be vs watch?v= twice | `Downloads.canonical(link)` (video id) keys `existing`; `existing` still verifies the bytes by sha256 |
 | D3 | `settle()` moved sidecars under their old names when Music renamed the file | sidecars take the renamed base |
 | D4 | no free-space check; `.part` older than a day kept | fetch refuses under 2 GiB free (queued, with a reason); `sweepStale` removes `.part`/`.ytdl` older than a day |
 Not in this change (open): M-B3 language tags, M-B6 artist/cover/AAC copy, D1-D4's yt-dlp pin/update and the `-P temp:` `.incoming/` move, merge of the second yt-dlp path (`recense.swift:3587`), iOS download engine.
