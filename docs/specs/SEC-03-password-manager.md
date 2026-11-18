@@ -6,9 +6,9 @@ Rule: **never built without its own threat model and a non-author review** (owne
 
 ## Verdict (owner's idea, weighed)
 - **Affirm owning it. Object to writing our own cipher or vault format.** A home-made format is the one place where "build first" can lose every secret at once.
-- **Format: KDBX 4** (the KeePass database, open and documented since 2003): a key derived with Argon2, the body sealed with AES-256 or ChaCha20, read by many free apps. That gives an exit by design (rule: every outside service replaceable; plain open formats, 10-year test).
+- **Format: KDBX 4** (the KeePass database format; KeePass dates from 2003, KDBX 4 from KeePass 2.35 in 2017; **from memory, verify**): a key derived with Argon2, the body sealed with AES-256 or ChaCha20, read by many free apps. That gives an exit by design (rule: every outside service replaceable; plain open formats, 10-year test).
 - **What is ours:** the sync (the file is already encrypted, so carry can move it between devices with no trust in the transport), the Recense screens, and later an iOS AutoFill extension.
-- **Usable on day one, no code:** KeePassXC on the Mac and KeePassium on iOS, both open source, reading the same carried file. (**checked** that both read KDBX 4: from memory, verify before relying.)
+- **Usable on day one, no code:** KeePassXC on the Mac and KeePassium on iOS, both open source, reading the same carried file. (**assumed, untested:** that both read KDBX 4 and the same file; verify on a throwaway vault before relying.)
 - **Assumed, untested:** KeePassXC imports a Bitwarden export. Check on a copy before moving anything. The owner has a `local.sill.bitwarden` Keychain item, so Bitwarden is the likely source today.
 
 ## 1 · Threat model (what we defend against, in order)
@@ -16,7 +16,7 @@ Rule: **never built without its own threat model and a non-author review** (owne
 |---|---|---|
 | A thief with the unlocked laptop or phone | the vault stays sealed until the master key or biometrics release it; auto-lock; clipboard cleared after 20 s | design |
 | A thief with the file only (a stolen backup, the carry folder, R2) | KDBX 4 with Argon2id: the file alone gives nothing; parameters fixed so a guess costs about one second per try on a phone (**assumed**: tune on the real devices) | design |
-| A neighbour on the radio link | the file is ciphertext already; carry's own peer auth (SEC-02) protects the channel on top | built (SEC-02) |
+| A neighbour on the radio link | the file is ciphertext already; carry's own peer auth (SEC-02) protects the channel on top | designed (SEC-02 is `[~]`, not yet built) |
 | A compromised sync server | there is none required: R2 and the hub hold ciphertext only | design |
 | Our own bug | **we do not implement the cipher or the container.** We link a maintained, audited KDBX reader and writer, or use the apps above, so a Recense bug cannot weaken the format | rule |
 | Lost master key | no recovery by design; a printed recovery sheet kept by the owner is the only way back | open question 1 |
@@ -33,7 +33,7 @@ Rule: **never built without its own threat model and a non-author review** (owne
 ## 3 · Planned `[ ]` (in this order; each needs the threat model reviewed first)
 - **P0 · No code: use KeePassXC + KeePassium** on a copy of the vault carried through Recense. Check: the same entry opens on Mac and iPhone; change on each, carry, both converge by the History rule. (Needs the owner; no code.)
 - **P1 · Import check.** Bitwarden export → KeePassXC on a throwaway vault; count entries both sides. Check: a written count and a sample of 5 entries compared by hand.
-- **P2 · Carry the file.** Add `keep/vault.kdbx` to carry as a non-text key. Check (`carrysync` test): a changed vault on two devices keeps both siblings, nothing lost.
+- **P2 · Carry the file.** Add `keep/vault.kdbx` to carry as a non-text key. Check (`carrysync` test): `isText("keep/vault.kdbx")` is false (never text-merged, whatever extensions are added later), and a changed vault on two devices keeps both siblings, nothing lost.
 - **P3 · The Recense screens** over a vetted KDBX library. **Open question 2:** which library (build vs adopt), decided after P0.
 - **P4 · iOS AutoFill extension.** Later; a separate review.
 

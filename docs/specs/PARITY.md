@@ -105,7 +105,7 @@ device: iPhone and iPad, Wi-Fi off, screen-recorded: Home shows what plays; typi
 feature: vault
 home: shared/vault/
 symbols: Vault
-note: SEC-03 password manager; nothing built until the threat model is reviewed
+note: SEC-03 password manager; nothing built until the threat model is reviewed. The check below is the generic carry test; the vault-specific check arrives with P2
 embodiments: mac=[ ] iphone=[ ] ipad=[ ] web=n/a
 events: vault.open vault.lock vault.sync vault.conflict vault.error
 spec: SEC-03 SEC-02

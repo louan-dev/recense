@@ -255,7 +255,7 @@ From: owner 2026-11-18 · Status: `[ ]` written · Depends on UI-13 (the woven H
 **What it adds.** The bead zones above (section B) keep their meaning on the Sound card. UI-13 removes the Now Playing sheet, so the pill, the scrubber and the Sound button now live at the foot of the woven page. This amendment says where the finger can tell by touch which part of the page it is on.
 
 ### Rule
-- **Zones speed actions up; they never carry an action alone.** Every zone keeps a visible twin: a button or a menu item. Voice reaches the same actions (the owner's no-gesture-only law, `docs/law/interaction.md:38`).
+- **Zones speed actions up; they never carry an action alone.** Every zone keeps a visible twin: a button or a menu item. Voice reaches the same actions (the owner's no-gesture-only law, `~/.claude/CLAUDE.md` Purpose; the haptics rule is `docs/law/interaction.md:38`).
 - The three levels of "What the hand feels" stand: **light** inside a zone (each step), **medium** crossing into another zone, **strong** at the end stops. At most one each 40 ms (rule 5).
 
 ### The zones on the woven page (bottom to top)
