@@ -96,9 +96,8 @@ export async function signedInAs(req, env) {
 }
 
 export async function isOwner(req, env) {
-  // OWNER_EMAIL may list several addresses, comma-separated. Left unset, the Access policy decides:
-  // any email it let through counts, since the token's audience is checked and Access only issues
-  // one to emails the policy includes.
+  // OWNER_EMAIL may list several addresses, comma-separated. Unset or empty: nobody is the owner by email
+  // (BUG-30; before, any Access user was). Service-token owners and paired devices are unaffected.
   const emails = String(env.OWNER_EMAIL || "").toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
   // one Access service token per device, comma-separated: a lost device is cut off by revoking just its token
   const clients = String(env.SERVICE_CLIENT_ID || "").split(",").map((c) => c.trim()).filter(Boolean);
@@ -113,7 +112,6 @@ export async function isOwner(req, env) {
 
   // a phone or tablet the signed-in Mac paired (pair.js)
   if (!claims) return deviceOwner(req, env).catch(() => false);
-  if (claims.email && !emails.length) return true;
   if (emails.includes(String(claims.email || "").trim().toLowerCase())) return true;
   if (!claims.email && clients.includes(String(claims.common_name || ""))) return true;
 

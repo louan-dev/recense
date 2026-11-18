@@ -33,7 +33,7 @@ function make(bindings) {
     modules: [{ type: "ESModule", path: BUILD + "worker.js" }, ...textModules.map((f) => ({ type: "Text", path: BUILD + f }))],
     compatibilityDate: "2026-08-01",
     r2Buckets: { PUBLIC: "p", MAIN: "m", KEEP: "k", TMP: "t", ARCHIVE: "a" },
-    bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, ...bindings },
+    bindings: Object.fromEntries(Object.entries({ ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, ...bindings }).filter(([, v]) => v !== undefined)),
     outboundService: (r) => new URL(r.url).pathname === "/cdn-cgi/access/certs" ? Response.json({ keys: [jwk] }) : new Response("offline", { status: 503 }),
   });
 }
@@ -132,5 +132,15 @@ await two.dispose();
 const dv = make({ PAIR_SECRET: SECRET, DEVICE_ORIGIN: "https://dev.test", DEVICE_HOST: "1" });
 assert.equal((await dv.dispatchFetch("https://dev.test/pair")).status, 200); ok("device address serves /pair");
 await dv.dispose();
+
+// Regression guard: BUG-30 (OWNER_EMAIL unset or empty: an Access email is not the owner)
+for (const email of [undefined, ""]) {
+  const un = make({ PAIR_SECRET: SECRET, OWNER_EMAIL: email, SERVICE_CLIENT_ID: "svc.access" });
+  const via = (j) => un.dispatchFetch(ORIGIN + "/main/api/whoami", { redirect: "manual", headers: { "cf-access-jwt-assertion": j } });
+  assert.equal((await via(ownerJwt)).status, 404, "any Access user is not the owner when OWNER_EMAIL is " + JSON.stringify(email));
+  assert.equal((await via(await jwt({ common_name: "svc.access" }))).status, 200, "service token still owns");
+  await un.dispose();
+}
+ok("OWNER_EMAIL unset or empty: nobody is the owner by email; service token still is");
 
 console.log("pair: ALL OK");
