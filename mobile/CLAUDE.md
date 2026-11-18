@@ -77,16 +77,23 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   A hearing that fails is said and retried, and never downloads at the moment of use (T-0098, T-0099):
   `grep -n 'prepare(m, l, download: false)' shared/speechcore.swift` prints the line in `SpeechAhead.loop`,
   `grep -c 'fail(' shared/speechcore.swift` prints 5 or more and `grep -c 'a.failed = ' mobile/HostApp/iOS/Ears.swift` prints 1.
-- Draftpad's note is never overwritten by what it could not read or write (T-0114), after any change to `DraftpadFile.load/save`
-  or to `readNote`/`planBlindSave` in `shared/notesync.swift`: run it outside the sandbox (NSFileCoordinator needs it):
-  `swiftc -O shared/notesync.swift mobile/ios/Tests/notesave/main.swift -o "$TMPDIR/notesave" && "$TMPDIR/notesave"` (ALL OK), and
-  `grep -c 'guard coordinatedWrite\|!coordinatedWrite' mobile/HostApp/iOS/Draftpad.swift` prints 3 (a failed write never moves the base),
-  `grep -c 'draftpad-unsaved.md' mobile/HostApp/iOS/Draftpad.swift shared/notesync.swift` prints 0 for both (typed text is kept one file
-  per launch, `Unsaved.file`, never one fixed file) and `grep -c 'conflictSiblingPath' mobile/HostApp/iOS/Draftpad.swift` prints 0
-  (a conflict copy uses `freeSiblingPath`, so it never replaces one made in the same minute),
-  `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadInk` (the note's own load never reads blank;
-  the ink sidecar still does: filed as its own triage entry).
-  The Mac's own copy of this rule (`strip/app.swift` saveNow/load) is a gap until wired: `docs/specs/PARITY.md`.
+- Draftpad's note and ink are never overwritten by what a device could not read or write (T-0114, BUG-29: T-0124, T-0125, T-0127).
+  One copy for the Mac and iPhone/iPad: `DraftpadNote` and `DraftpadInk` in `shared/draftpadfile.swift`, on `readNote`/`planBlindSave`/
+  `planNoteSave`/`Unsaved`/`freeSiblingPath` in `shared/notesync.swift`. After any change to either, or to `DraftpadFile` here or the
+  Mac's `App.load/saveNow/pollExternal` (`strip/app.swift`) and `EditorHost` ink (`strip/editorhost.swift`), outside the sandbox
+  (NSFileCoordinator needs it), each prints ALL OK:
+  `swiftc -O shared/notesync.swift mobile/ios/Tests/notesave/main.swift -o "$TMPDIR/notesave" && "$TMPDIR/notesave"`
+  `swiftc -O shared/notesync.swift shared/draftpadfile.swift mobile/ios/Tests/draftpadfile/main.swift -o "$TMPDIR/draftpadfile" && "$TMPDIR/draftpadfile"`
+  and each line prints what it says:
+  `grep -c 'guard write(\|!write(' shared/draftpadfile.swift` prints 3 (a failed write never moves the base);
+  `grep -c 'draftpad-unsaved.md' shared/draftpadfile.swift shared/notesync.swift` prints 0 for both (typed text is kept one file per
+  launch, `Unsaved.file`); `grep -c 'conflictSiblingPath' shared/draftpadfile.swift strip/app.swift mobile/HostApp/iOS/Draftpad.swift`
+  prints 0 for all three (a conflict copy uses `freeSiblingPath`, never replacing one made in the same minute);
+  `grep -n 'coordinatedRead(notePath)\|coordinatedWrite(.*notePath\|createFile(atPath: notePath' strip/app.swift` and
+  `grep -n 'coordinatedRead(inkPath)\|to: inkPath' strip/editorhost.swift` print nothing (the Mac goes through the shared copy);
+  `grep -n 'coordinatedRead(p) ?? ""' mobile/HostApp/iOS/Draftpad.swift` prints only `loadMatter` (FEAT-08's sidecar, not yet guarded);
+  `grep -c 'beginBackgroundTask' mobile/HostApp/iOS/Draftpad.swift` prints 1 (`keepAlive`: leaving the app never cuts a save short)
+  and `grep -c 'pollQueue.async' mobile/HostApp/iOS/Draftpad.swift` prints 1 (the poll reads off the main thread).
 - Listen's start and floating-window layer (fixed 11-10 on the iPhone), after any change to `CaptionLayer`, `StartBroadcast`
   or `Listener.name`: each line prints what it says.
   `grep -c 'guard Host.owner === self' mobile/HostApp/iOS/Listen.swift` prints 1 (Home and Listen took the one layer from
