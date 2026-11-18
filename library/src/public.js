@@ -23,8 +23,21 @@ const STALL_MS = 15 * 60 * 1000;
 // Daily: every upload-link object past its expiry goes.
 const ARCHIVE_ROOT = "archive/"; // where the archive keeps what the app and /main/archive show
 
+// Derived from Spec: FEAT-29 P0. A kept link (manifest.keep, set by action=keep) outlives its items' own
+// expiry stamps until the manifest's exp: evidence such as a bug link is never swept on the share timer.
+async function keptLink(env, key, cache) {
+  if (!key.startsWith(LINKS)) return false;
+  const id = key.slice(LINKS.length).split("/")[0];
+  if (cache && cache.has(id)) return cache.get(id);
+  const m = await readManifest(env, id);
+  const yes = !!(m && m.keep && Number(m.exp) > Date.now());
+  if (cache) cache.set(id, yes);
+  return yes;
+}
+
 export async function cleanup(env) {
   const now = Date.now();
+  const kept = new Map();
   let cursor;
 
   do {
@@ -34,7 +47,7 @@ export async function cleanup(env) {
       cursor,
     });
 
-    const dead = r.objects
+    const stale = r.objects
       .filter(
         (o) =>
           o.customMetadata &&
@@ -42,6 +55,8 @@ export async function cleanup(env) {
           Number(o.customMetadata.expires) < now
       )
       .map((o) => o.key);
+    const dead = [];
+    for (const k of stale) if (!(await keptLink(env, k, kept))) dead.push(k);
 
     if (dead.length) {
       await env.PUBLIC.delete(dead);
@@ -109,6 +124,17 @@ async function linkAction(req, env, url) {
   if (action === "folder") return folderLinkApi(env, q);
   if (action === "fromMain") return fromMainLink(req, env, q);
   if (action === "copy") return copyFromMain(env, q);
+  // FEAT-29 P0: Keep. The owner keeps a link (evidence, legal material): it lasts 365 days from now and its
+  // items are never swept on their own stamps meanwhile. POST /main/api/link?action=keep&id=ID
+  if (action === "keep") {
+    const id = q.get("id") || "";
+    const m = /^[A-Za-z0-9_-]{6,64}$/.test(id) ? await readManifest(env, id) : null;
+    if (!m) return new Response("No such link", { status: 404 });
+    m.keep = true;
+    m.exp = Math.max(Number(m.exp) || 0, Date.now() + 365 * 864e5);
+    await writeManifest(env, m);
+    return jsonResponse({ ok: true, id, exp: m.exp, keep: true, url: "/s/" + id });
+  }
 
   if (action === "start") {
     const id = newLinkId();
@@ -1256,7 +1282,8 @@ export async function file(req, env, ctx, url, id, n) {
 
   if (
     Number(meta.expires) &&
-    Date.now() > Number(meta.expires)
+    Date.now() > Number(meta.expires) &&
+    !(await keptLink(env, key))
   ) {
     return notice("Link expired", 410);
   }
@@ -1296,7 +1323,7 @@ async function artFromSource(env, ctx, id, n) {
 
   const meta = head.customMetadata || {};
 
-  if (Number(meta.expires) && Date.now() > Number(meta.expires)) {
+  if (Number(meta.expires) && Date.now() > Number(meta.expires) && !(await keptLink(env, srcKey))) {
     return notice("Link expired", 410);
   }
 

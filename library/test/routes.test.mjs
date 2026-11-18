@@ -368,6 +368,23 @@ await test("the nightly cleanup removes expired upload-link files and leaves Mai
   assert.ok(await MAIN.head("files/keep.txt"));
 });
 
+// Derived from Spec: FEAT-29 P0 (Keep)
+await test("FEAT-29 Keep: a kept link lasts a year and its expired-stamped items survive cleanup and still serve", async () => {
+  const { id } = await (await call("/main/api/link?action=start&days=1", { as: "owner", method: "POST", body: "1\t1700000000000\ttext%2Fplain\ta.txt" })).json();
+  assert.equal((await call(`/main/api/link?action=keep&id=${id}`, { method: "POST" })).status === 200, false, "Keep is owner-only");
+  const k = await call(`/main/api/link?action=keep&id=${id}`, { as: "owner", method: "POST" });
+  assert.equal(k.status, 200);
+  const kept = await k.json();
+  assert.ok(kept.keep && kept.exp > Date.now() + 364 * 864e5, "exp moves a year out");
+  await PUBLIC.put(`links/${id}/000`, "x", { customMetadata: { expires: String(Date.now() - 1000) } });
+  await PUBLIC.put("links/Expired67890/000", "x", { customMetadata: { expires: String(Date.now() - 1000) } });
+  await (await mf.getWorker()).scheduled({ cron: "0 3 * * *" });
+  assert.ok(await PUBLIC.head(`links/${id}/000`), "a kept link's item is never swept");
+  assert.equal(await PUBLIC.head("links/Expired67890/000"), null, "an unkept expired item still goes");
+  assert.equal((await call(`/f/${id}/000`)).status, 200, "a kept item still serves");
+  assert.equal((await call("/main/api/link?action=keep&id=nope!", { as: "owner", method: "POST" })).status, 404);
+});
+
 await test("the player's Key processor is served as a script", async () => {
   const r = await call("/player/key.js");
   assert.equal(r.status, 200);
