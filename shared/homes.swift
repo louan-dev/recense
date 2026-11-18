@@ -353,6 +353,20 @@ enum Carry {
                 out.append(CarryLine(home: h.folder, path: path, size: size, mtime: mtime, sha256: sha, device: Homes.device))
             }
         }
+        // FEAT-22 P1: keep/<key>/note.md and keep/<key>/lines.json, the two files of a media item that travel (CarryKeep.carries)
+        let keepRoot = Homes.root.appendingPathComponent(CarryKeep.folder, isDirectory: true)
+        for key in (try? fm.contentsOfDirectory(at: keepRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? [] {
+            guard (try? key.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            for name in CarryKeep.files.sorted() {
+                let u = key.appendingPathComponent(name), path = key.lastPathComponent + "/" + name
+                guard CarryKeep.carries(CarryKeep.folder + "/" + path),
+                      let v = try? u.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]), v.isRegularFile == true else { continue }
+                let size = Int64(v.fileSize ?? 0), mtime = Int64(v.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                let was = last[CarryKeep.folder + "/" + path]
+                let sha = (was?.size == size && was?.mtime == mtime) ? was!.sha256 : try Homes.sha256(u)
+                out.append(CarryLine(home: CarryKeep.folder, path: path, size: size, mtime: mtime, sha256: sha, device: Homes.device))
+            }
+        }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let body = try out.sorted { ($0.home, $0.path) < ($1.home, $1.path) }

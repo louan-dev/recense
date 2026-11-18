@@ -71,12 +71,37 @@ enum CarryApply {
         return try apply(action, bytesAt: bytesAt)
     }
 
-    /// Where a key ("home/path") lands on disk and which home it belongs to.
-    private static func locate(_ key: String) -> (url: URL, home: Home)? {
-        let folders = Home.allCases.map(\.folder)
-        guard let split = CarrySync.split(key, homes: folders), let home = Home.allCases.first(where: { $0.folder == split.home })
-        else { return nil }
+    /// Where a key ("home/path") lands on disk and which home it belongs to. `keep/<key>/note.md` and `lines.json` (FEAT-22 P1)
+    /// have no Home (no manifest index, no trash/ entry): `home` is nil and the file is placed by path alone.
+    private static func locate(_ key: String) -> (url: URL, home: Home?)? {
+        let folders = Home.allCases.map(\.folder) + [CarryKeep.folder]
+        guard let split = CarrySync.split(key, homes: folders) else { return nil }
+        if split.home == CarryKeep.folder {
+            guard CarryKeep.carries(key) || CarryKeep.isSibling(key) else { return nil }   // only the two files, or a conflict sibling of one
+            return (Homes.root.appendingPathComponent(key), nil)
+        }
+        guard let home = Home.allCases.first(where: { $0.folder == split.home }) else { return nil }
         return (Homes.root.appendingPathComponent(key), home)
+    }
+
+    /// The file at `dest` is about to be replaced: it goes to trash/ with its origin (a home), or, for a keep/ file, to
+    /// `.carry/replaced/` under its own sha: never deleted, never overwritten.
+    private static func setAside(_ dest: URL, _ home: Home?) throws {
+        if let home {
+            let existing = try Homes.entry(for: dest, in: home)
+            _ = try Homes.remove(existing, from: home)
+        } else {
+            let sha = try Homes.sha256(dest)
+            let dir = Carry.dir.appendingPathComponent("replaced", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let to = dir.appendingPathComponent(sha + "-" + dest.deletingLastPathComponent().lastPathComponent + "-" + dest.lastPathComponent)
+            if FileManager.default.fileExists(atPath: to.path) { try FileManager.default.removeItem(at: dest) }   // the same bytes are already kept
+            else { try FileManager.default.moveItem(at: dest, to: to) }
+        }
+    }
+
+    private static func index(_ dest: URL, _ home: Home?) throws {
+        if let home { try Homes.record(Homes.entry(for: dest, in: home), in: home) }
     }
 
     /// `.fetch`/`.replace`/`.keepBoth` need `bytesAt` (a file already on disk, moved into place — never copied,
@@ -88,16 +113,15 @@ enum CarryApply {
         case .nothing:
             return nil
         case .move(let from, let to):
-            let folders = Home.allCases.map(\.folder)
+            let folders = Home.allCases.map(\.folder) + [CarryKeep.folder]
             guard let fromSplit = CarrySync.split(from, homes: folders), let toSplit = CarrySync.split(to, homes: folders),
-                  let fh = Home.allCases.first(where: { $0.folder == fromSplit.home }),
-                  let th = Home.allCases.first(where: { $0.folder == toSplit.home })
+                  let src = locate(from), let dst = locate(to)
             else { throw Failure.badKey(from) }
-            let src = Homes.root.appendingPathComponent(from), dst = Homes.root.appendingPathComponent(to)
-            try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.moveItem(at: src, to: dst)
-            try? Homes.forget(fromSplit.path, in: fh)
-            try Homes.record(Homes.entry(for: dst, in: th), in: th)
+            try fm.createDirectory(at: dst.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.moveItem(at: src.url, to: dst.url)
+            if let fh = src.home { try? Homes.forget(fromSplit.path, in: fh) }
+            if let th = dst.home { try Homes.record(Homes.entry(for: dst.url, in: th), in: th) }
+            _ = toSplit
             return to
         case .fetch(let key, let sha):
             guard let bytesAt else { throw Failure.noBytes }
@@ -106,23 +130,21 @@ enum CarryApply {
             // T-0109: .fetch was decided from a scan taken before these bytes arrived (a big file takes minutes), so a file
             // may sit at the key now. It goes to trash/ as .replace does, never deleted.
             if fm.fileExists(atPath: dest.path) {
-                let existing = try Homes.entry(for: dest, in: home)
-                _ = try Homes.remove(existing, from: home)
+                try setAside(dest, home)
             }
             try fm.moveItem(at: bytesAt, to: dest)
-            try Homes.record(Homes.entry(for: dest, in: home), in: home)
+            try index(dest, home)
             CarryBase.record(key, sha: sha, fileAt: dest)
             return key
         case .replace(let key, _, let sha):
             guard let bytesAt else { throw Failure.noBytes }
             guard let (dest, home) = locate(key) else { throw Failure.badKey(key) }
             if fm.fileExists(atPath: dest.path) {
-                let existing = try Homes.entry(for: dest, in: home)
-                _ = try Homes.remove(existing, from: home)   // into trash/, origin recorded — never silently lost
+                try setAside(dest, home)
             }
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: bytesAt, to: dest)
-            try Homes.record(Homes.entry(for: dest, in: home), in: home)
+            try index(dest, home)
             CarryBase.record(key, sha: sha, fileAt: dest)
             return key
         case .keepBoth(_, let sibling, _):
@@ -130,7 +152,7 @@ enum CarryApply {
             guard let (dest, home) = locate(sibling) else { throw Failure.badKey(sibling) }
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: bytesAt, to: dest)   // the original at `key` is never touched
-            try Homes.record(Homes.entry(for: dest, in: home), in: home)
+            try index(dest, home)
             return sibling   // no base recorded: there is no single agreed version at `key` yet
         case .merge(let key, let base, _, let theirsSha):
             // Non-overlapping edits merge clean (notesync's own 3-way rule); truly overlapping ones, or any of the three
@@ -146,11 +168,10 @@ enum CarryApply {
                 let tmp = dest.deletingLastPathComponent().appendingPathComponent(".merge-\(UUID().uuidString)")
                 try merged.write(to: tmp, atomically: true, encoding: .utf8)
                 do {
-                    let existing = try Homes.entry(for: dest, in: home)
-                    _ = try Homes.remove(existing, from: home)
+                    try setAside(dest, home)
                     try fm.moveItem(at: tmp, to: dest)
                 } catch { try? fm.removeItem(at: tmp); throw error }
-                try Homes.record(Homes.entry(for: dest, in: home), in: home)
+                try index(dest, home)
                 CarryBase.snapshot(sha: theirsSha, fileAt: bytesAt, key: key)   // the peer's next edit names this as its parent (review 2b66a7a)
                 try? fm.removeItem(at: bytesAt)
                 // the merged text is this device's own new version, not yet agreed: keep its text for a later parent lookup, no index entry
@@ -161,7 +182,7 @@ enum CarryApply {
             guard let (sibDest, sibHome) = locate(sib) else { throw Failure.badKey(sib) }
             try fm.createDirectory(at: sibDest.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: bytesAt, to: sibDest)
-            try Homes.record(Homes.entry(for: sibDest, in: sibHome), in: sibHome)
+            try index(sibDest, sibHome)
             return sib
         }
     }
@@ -290,6 +311,44 @@ func carrymanagerSelftest() -> Bool {
         let op = CarryOp(seq: 1, device: "mac", at: 1, op: .put, home: "library/Study", path: "r.md", sha256: "new-from-peer", size: 1)
         let action = CarrySync.decide(op, local: local, base: CarryBase.load())
         check(action == .replace(key: k, old: sha, new: "new-from-peer"), "unmodified since the base → replace, not keepBoth: \(action)")
+    }
+
+    // FEAT-22 P1: of keep/ only <key>/note.md and <key>/lines.json travel; each lands, is set aside never deleted, and merges
+    do {
+        let root = Homes.root
+        func read(_ rel: String) -> String? { try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8) }
+        put("keep/k1/note.md", "hello"); put("keep/k1/lines.json", "{}"); put("keep/k1/find.tsv", "x"); put("keep/k1.v2.json", "y"); put("keep/k1/audio.m4a", "z")
+        let seen = Set(((try? Carry.verify()) ?? []).filter { $0.home == "keep" }.map { CarrySync.key($0.home, $0.path) })
+        check(seen == ["keep/k1/note.md", "keep/k1/lines.json"], "keep: only note.md and lines.json are scanned (not find.tsv, the Mac's working file or the media): \(seen.sorted())")
+
+        let f = try? CarryApply.apply(.fetch(key: "keep/k2/note.md", sha256: "X"), bytesAt: drop("from the Mac"))
+        check(f == "keep/k2/note.md" && read("keep/k2/note.md") == "from the Mac", "keep: a note arrives at its key")
+
+        put("keep/k3/note.md", "old")
+        _ = try? CarryApply.apply(.replace(key: "keep/k3/note.md", old: "o", new: "n"), bytesAt: drop("new"))
+        check(read("keep/k3/note.md") == "new", "keep: a replace lands")
+        let aside = (try? fm.contentsOfDirectory(atPath: Carry.dir.appendingPathComponent("replaced").path)) ?? []
+        check(aside.contains { (try? String(contentsOf: Carry.dir.appendingPathComponent("replaced/\($0)"))) == "old" }, "keep: the old note is set aside in .carry/replaced/, never deleted")
+
+        let nk = "keep/k4/note.md", nurl = root.appendingPathComponent(nk)
+        put(nk, "a\nb\nc"); let nsha = try! Homes.sha256(nurl); CarryBase.snapshot(sha: nsha, fileAt: nurl)
+        put(nk, "a\nB\nc")
+        let mt = drop("a\nb\nc\nd"), mtsha = (try? Homes.sha256(mt)) ?? ""
+        let m = try? CarryApply.place(.merge(key: nk, base: nsha, mine: "m", theirs: mtsha), bytesAt: mt, sha: mtsha)
+        check(m == nk && read(nk) == "a\nB\nc\nd", "keep: two devices' edits to one note merge (FEAT-22 P2 on the new key)")
+
+        let lk = "keep/k5/lines.json"
+        put(lk, "{\"a\":1}")
+        let op = CarryOp(seq: 1, device: "ipad", at: 1, op: .put, home: "keep", path: "k5/lines.json", sha256: "T", size: 1, parent: "P")
+        let act = CarrySync.decide(op, local: [lk: "MINE"], base: [:], zone: TimeZone(identifier: "UTC")!)
+        var sib: String? = nil
+        if case .keepBoth(_, let s, _) = act { sib = s }
+        check(sib != nil, "keep: lines.json is never text-merged (a merge could break the JSON): it keeps both")
+        if let sib { let r = try? CarryApply.apply(act, bytesAt: drop("{\"b\":2}")); check(r == sib && read(lk) == "{\"a\":1}" && read(sib) == "{\"b\":2}" && CarryKeep.isSibling(sib) && !CarryKeep.carries(sib), "keep: the conflict copy lands beside it and is not carried on") }
+
+        var refused = false
+        do { _ = try CarryApply.apply(.fetch(key: "keep/k6/find.tsv", sha256: "Y"), bytesAt: drop("index")) } catch { refused = true }
+        check(refused && read("keep/k6/find.tsv") == nil, "keep: any other file (find.tsv) is refused, nothing lands")
     }
 
     // move: no bytes needed, the index follows the file (even across homes)
