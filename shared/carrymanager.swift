@@ -95,6 +95,7 @@ private enum CarryKeychain {
     private var trustWritable = true                            // false while peers.v2 can't be read (invariant 13)
     private var identityUnread = false                          // this launch's key is a stand-in: pair nothing with it
     private var groupUnread = false                             // the group secret could not be read: pair nothing
+    private var wantsLink = false                               // start() was asked for while the key was unread
     private var gate: CarryKeychainGate {                       // invariant 19
         CarryKeychainGate(identityUnread: identityUnread, groupUnread: groupUnread, trustWritable: trustWritable)
     }
@@ -110,18 +111,9 @@ private enum CarryKeychain {
     private func opsLogURL(_ device: String) -> URL { opsDir.appendingPathComponent("\(device).jsonl") }
 
     override init() {
-        let stored = CarryKeychain.load("identity")
-        var keychainError: String?
-        if let d = stored.data, let k = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: d) {
-            identity = k
-        } else if stored.failed {   // SEC-02 invariant 13: never replace a key this launch could not read
-            identity = Curve25519.KeyAgreement.PrivateKey()
-            keychainError = Self.unreadable; identityUnread = true
-        } else {
-            let k = Curve25519.KeyAgreement.PrivateKey()
-            CarryKeychain.save(k.rawRepresentation, "identity")
-            identity = k
-        }
+        let id = Self.readIdentity()   // SEC-02 invariants 13, 19: never replace a key this launch could not read
+        identity = id.key; identityUnread = id.unread
+        let keychainError: String? = id.unread ? Self.unreadable : nil
         let g = CarryKeychain.load("group")
         group = g.data
         groupUnread = g.failed   // invariant 19: a pairing must not save over a secret it could not read
@@ -172,12 +164,13 @@ private enum CarryKeychain {
     }
 
     func start() {
+        wantsLink = true
         guard gate.canAuth else { lastError = Self.unreadable; return }   // invariant 19: never advertise a stand-in key
         t.advertise(); t.browse()
         if !isLookingToPair { status = needsPairing.isEmpty ? "Looking for devices" : Self.pairAgain(needsPairing) }
     }
     static func pairAgain(_ names: [String]) -> String { "Pair \(names.joined(separator: ", ")) again to keep carrying" }
-    func stop() { t.stop(); stopPairing(); status = "Off" }
+    func stop() { wantsLink = false; t.stop(); stopPairing(); status = "Off" }
 
     // MARK: Pairing — tap "Pair a device" on both screens, in either order (a picked device is invited again, BUG-17)
 
@@ -367,6 +360,18 @@ private enum CarryKeychain {
         lastError = "\(name) unpaired this device"
     }
 
+    /// The identity key: the stored one, a new one only when none is stored, or a stand-in while it can't be read.
+    private static func readIdentity() -> (key: Curve25519.KeyAgreement.PrivateKey, unread: Bool) {
+        switch CarryIdentityRead.from(CarryKeychain.load("identity")) {
+        case .use(let d): if let k = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: d) { return (k, false) }
+        case .unread: return (Curve25519.KeyAgreement.PrivateKey(), true)
+        case .make: break
+        }
+        let k = Curve25519.KeyAgreement.PrivateKey()
+        CarryKeychain.save(k.rawRepresentation, "identity")
+        return (k, false)
+    }
+
     static let unreadable = "the Keychain could not be read: pairings are kept as they were, nothing is saved until it can be"
 
     /// Invariant 13: writes peers.v2 only when it was read (or is truly absent); never over pairings it could not see.
@@ -393,7 +398,10 @@ private enum CarryKeychain {
     }
 
     /// The app came to the front (iOS scenePhase .active).
-    func cameToFront() { trigger(.foreground) }
+    func cameToFront() {
+        if identityUnread { reloadFromDisk() }   // invariant 19: iOS before first unlock; read the key again
+        trigger(.foreground)
+    }
 
     private func trigger(_ e: CarrySchedule.Event) {
         let now = Date().timeIntervalSince(clock0)
@@ -446,6 +454,13 @@ private enum CarryKeychain {
     /// `recense carry pair`): read them fresh before deciding anything, never trust the copy from launch (BUG-17).
     /// SEC-02: trust is the Keychain's `peers.v2`; peers.json is only the mirror, so its old entries need pairing again.
     func reloadFromDisk() {
+        if identityUnread, auth.isEmpty, flows.isEmpty {   // invariant 19: read the real key again, then use it
+            let id = Self.readIdentity()
+            if !id.unread {
+                identity = id.key; identityUnread = false
+                if wantsLink { start() }
+            }
+        }
         mirror = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
         let trust = CarryTrust.load(CarryKeychain.load("peers.v2"), mirror: mirror, previous: peers)   // invariant 13
         trustWritable = trust.writable

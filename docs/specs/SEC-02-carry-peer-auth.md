@@ -157,6 +157,9 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
       saves the group only after `peers.v2` was saved;
     - Forget checks it can write `peers.v2` before it sends the sealed `forget`: otherwise it sends nothing, keeps
       the peer, returns false and sets `lastError`, and every surface (voice included) shows that error;
+    - an unread identity is read again (`CarryIdentityRead`) on each reload and on coming to the front, while no
+      session or pairing runs; once read, the real key is taken and the link starts if it was asked for.
+      Only "not found" makes a new key; a failed read never does;
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 

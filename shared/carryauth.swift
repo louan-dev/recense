@@ -218,3 +218,12 @@ struct CarryKeychainGate: Equatable {
     /// The handshake proves our key: never a stand-in.
     var canAuth: Bool { !identityUnread }
 }
+
+/// The identity key as read from the Keychain: use it, make one (truly absent), or wait and read again.
+enum CarryIdentityRead: Equatable {
+    case use(Data), make, unread
+    static func from(_ s: CarryStored) -> CarryIdentityRead {
+        if let d = s.data { return .use(d) }
+        return s.failed ? .unread : .make
+    }
+}
