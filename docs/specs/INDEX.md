@@ -101,3 +101,4 @@ Row: ID · title · status · From · code pointer
 - `translation-pipeline.md` · Translation pipeline
 - `unified-offline-first-and-redesign.md` · Offline-first + redesign
 - FEAT-26 · Paste as Text: copied file → editable text (Vision OCR, PDFKit, CGEvent paste) · `[~]` P1 built (Mac) · owner 2026-11-18 · `shared/pastetext.swift`, `FEAT-26-paste-as-text.md`
+- FEAT-30 · Safari bridge on iPhone and iPad (the Firefox bridge's script, native-message transport; words on Safari's clock) · `[ ]` plan, S0 spike next · owner 2026-11-14 (first filed as FEAT-12 on work/bug-14; renumbered 2026-11-18, FEAT-12 is downloads → Music) · `FEAT-30-safari-bridge.md`
