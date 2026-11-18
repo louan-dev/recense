@@ -89,7 +89,7 @@ do {
     check(!CarryWatch.counts(root + "/keep/abc/find.tsv", root: root, homes: hs), "P1: find.tsv does not")
     check(!CarryWatch.counts(root + "/keep/abc.tr.fr.json", root: root, homes: hs), "P1: the Mac's .tr.* files do not")
     check(!CarryWatch.counts(root + "/keep/abc/deeper/note.md", root: root, homes: hs) && !CarryWatch.counts(root + "/keep/note.md", root: root, homes: hs), "P1: only keep/<key>/<file>, exactly two levels")
-    check(CarryKeep.isSibling("keep/abc/lines (iPad 2026-11-18 1405).json") && CarryKeep.isSibling("keep/abc/note (iPhone 2026-11-18 1405).md") && !CarryKeep.isSibling("keep/abc/find (x).tsv"), "P1: conflict copies of the two files are recognised")
+    check(CarryKeep.isSibling("keep/abc/lines (iPad 2026-11-18 1405).json") && CarryKeep.isSibling("keep/abc/note (iPhone 2026-11-18 1405).md") && !CarryKeep.isSibling("keep/abc/find (x).tsv") && !CarryKeep.isSibling("keep/abc/note (draft).md"), "P1: conflict copies of the two files are recognised, an owner file named like one is not")
     check(!CarrySync.isText("keep/vault.kdbx") && !CarrySync.isText("keep/k/lines.json"), "P1: .json and .kdbx are never text-merged")
     var au = put; au.parent = "P"
     check({ if case .keepBoth = CarrySync.decide(au, local: [k: "MINE"], base: [:], zone: utc) { return true } else { return false } }(),

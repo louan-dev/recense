@@ -310,7 +310,8 @@ enum CarryKeep {
         let name = String(c[2])
         return files.contains { f in
             let stem = (f as NSString).deletingPathExtension, ext = (f as NSString).pathExtension
-            return name.hasPrefix(stem + " (") && name.hasSuffix("." + ext)
+            // exactly what conflictSiblingPath writes: "lines (iPad 2026-11-18 1405).json"; "note (draft).md" is the owner's
+            return name.range(of: "^" + NSRegularExpression.escapedPattern(for: stem) + " \\(.+ \\d{4}-\\d{2}-\\d{2} \\d{4}\\)\\." + ext + "$", options: .regularExpression) != nil
         }
     }
 }

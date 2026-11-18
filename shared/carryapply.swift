@@ -114,14 +114,13 @@ enum CarryApply {
             return nil
         case .move(let from, let to):
             let folders = Home.allCases.map(\.folder) + [CarryKeep.folder]
-            guard let fromSplit = CarrySync.split(from, homes: folders), let toSplit = CarrySync.split(to, homes: folders),
+            guard let fromSplit = CarrySync.split(from, homes: folders), CarrySync.split(to, homes: folders) != nil,
                   let src = locate(from), let dst = locate(to)
             else { throw Failure.badKey(from) }
             try fm.createDirectory(at: dst.url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: src.url, to: dst.url)
             if let fh = src.home { try? Homes.forget(fromSplit.path, in: fh) }
             if let th = dst.home { try Homes.record(Homes.entry(for: dst.url, in: th), in: th) }
-            _ = toSplit
             return to
         case .fetch(let key, let sha):
             guard let bytesAt else { throw Failure.noBytes }
