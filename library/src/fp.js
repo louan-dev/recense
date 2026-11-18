@@ -121,6 +121,8 @@ export async function fp(req, env, url, path) {
 }
 
 async function write(req, b, root, url, what) {
+  const action = what === "file" ? url.searchParams.get("action") : null;
+  if (action) return parts(req, b, root, url, action);
   if (req.method !== (what === "file" ? "PUT" : "POST")) return bad(405, what === "file" ? "PUT only" : "POST only");
   if (!sameSite(req, url)) return bad(403, "Forbidden");
   const rel = cleanPath(url.searchParams.get("path") || "");
@@ -150,6 +152,86 @@ async function write(req, b, root, url, what) {
   });
   if (!done) return bad(409, "Something with that name is already here");
   return jsonResponse({ ok: true, path: rel, id: await fileId(rel, done.customMetadata), size: done.size });
+}
+
+// A file over UPLOAD_MAX in parts (R2 multipart, as main.js mainMultipart): each part its own request under 90 MiB,
+// at most 10,000 (~879 GiB). Never over anything: start and complete both refuse a taken name.
+//   POST …/file?action=start&path=…[&mtime=<s>]  -> uploadId     PUT …/file?action=part&path=…&uploadId=…&part=N -> etag
+//   POST …/file?action=complete&path=…&uploadId=…  body: [{partNumber, etag}] -> { ok, path, id, size }
+//   POST …/file?action=abort&path=…&uploadId=…
+const PARTS_MAX = 10000;
+async function parts(req, b, root, url, action) {
+  if (req.method !== (action === "part" ? "PUT" : "POST")) return bad(405, action === "part" ? "PUT only" : "POST only");
+  if (!sameSite(req, url)) return bad(403, "Forbidden");
+  const q = url.searchParams;
+  const rel = cleanPath(q.get("path") || "");
+  if (!rel || !visible(rel, root) || rel.split("/").some((s) => s.startsWith("."))) return bad(400, "Bad path");
+  const key = root.prefix + rel;
+  const taken = async () => (await b.head(key)) || (await b.list({ prefix: key + "/", limit: 1 })).objects.length;
+
+  if (action === "start") {
+    const parent = parentOf(rel);
+    if (parent && !(await b.list({ prefix: root.prefix + parent + "/", limit: 1 })).objects.length) return bad(404, "No such folder");
+    if (await taken()) return bad(409, "Something with that name is already here");
+    const now = Math.floor(Date.now() / 1000);
+    const mtime = Math.floor(Number(q.get("mtime"))) || now;
+    const ext = rel.includes(".") ? rel.split(".").pop().toLowerCase() : "";
+    const mp = await b.createMultipartUpload(key, {
+      httpMetadata: { contentType: (MIME_BY_EXT[ext] || IMG_BY_EXT[ext] || q.get("type") || "application/octet-stream").slice(0, 200) },
+      customMetadata: { mtime: String(mtime) },
+    });
+    return new Response(mp.uploadId);
+  }
+
+  const uploadId = q.get("uploadId") || "";
+  if (!uploadId || uploadId.length > 1024) return bad(400, "Bad request");
+  const mp = b.resumeMultipartUpload(key, uploadId);
+
+  if (action === "part") {
+    const n = parseInt(q.get("part") || "", 10);
+    const length = req.headers.get("content-length");
+    const size = length === null ? NaN : Number(length);
+    if (!(n >= 1 && n <= PARTS_MAX)) return bad(400, "Bad part number");
+    if (!req.body || !Number.isSafeInteger(size)) return bad(411, "Missing part or its length");
+    if (size > UPLOAD_MAX) return bad(413, "Part too big");
+    const body = new FixedLengthStream(size);
+    req.body.pipeTo(body.writable).catch(() => {});
+    try {
+      return new Response((await mp.uploadPart(n, body.readable)).etag);
+    } catch (e) {
+      return bad(500, "Part failed: " + (e && e.message));
+    }
+  }
+
+  if (action === "complete") {
+    let list;
+    try {
+      list = await req.json();
+    } catch {
+      return bad(400, "Bad request");
+    }
+    const ok =
+      Array.isArray(list) && list.length >= 1 && list.length <= PARTS_MAX &&
+      list.every((p) => p && Number.isInteger(p.partNumber) && p.partNumber >= 1 && p.partNumber <= PARTS_MAX && typeof p.etag === "string" && p.etag.length > 0 && p.etag.length <= 200);
+    if (!ok) return bad(400, "Bad request");
+    if (await taken()) return bad(409, "Something with that name is already here");
+    list.sort((x, y) => x.partNumber - y.partNumber);
+    let done;
+    try {
+      done = await mp.complete(list);
+    } catch (e) {
+      return bad(400, "Complete failed: " + (e && e.message));
+    }
+    return jsonResponse({ ok: true, path: rel, id: await fileId(rel, done.customMetadata), size: done.size });
+  }
+
+  if (action === "abort") {
+    try {
+      await mp.abort();
+    } catch {}
+    return new Response("ok");
+  }
+  return bad(400, "Bad request");
 }
 
 // a file deleted on a device goes to the trash, never for good; folders are refused (as on the site and WebDAV)
