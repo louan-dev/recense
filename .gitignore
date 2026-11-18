@@ -32,3 +32,8 @@ docs/specs/**/*.PNG
 docs/specs/triage*.md
 docs/specs/**/_raw/
 docs/specs/**/_traces/
+
+# Prep 2026-11-18
+export/
+.playwright-browsers/
+data/
