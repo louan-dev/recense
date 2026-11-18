@@ -345,8 +345,9 @@ private enum CarryKeychain {
                 try? await Task.sleep(nanoseconds: 1_000_000_000); self?.t.drop(peer)
             }
         }
-        lastError = nil; status = CarryForget.reply(name, told: told)   // invariant 18: Devices row and Mac menu show it
+        lastError = nil
         untrust(keys, name: name)
+        if lastError == nil { status = CarryForget.reply(name, told: told) }   // invariant 18: only once it is saved
         return told
     }
 
@@ -470,8 +471,7 @@ private enum CarryKeychain {
         let g = CarryKeychain.load("group")
         if let d = g.data { group = d }
         if g.failed != groupUnread { groupUnread = g.failed }   // a failed read keeps the last group, refuses pairing
-        let unread = !trustWritable || groupUnread || identityUnread
-        if unread { lastError = Self.unreadable } else if lastError == Self.unreadable { lastError = nil }   // recovered
+        if gate.reportsUnreadable { lastError = Self.unreadable }   // a group-only failure: the pairing gate says it else if lastError == Self.unreadable { lastError = nil }   // recovered
     }
 
     private func startFlow(_ peer: MCPeerID) {
