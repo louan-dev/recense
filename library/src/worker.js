@@ -33,7 +33,7 @@ import { listenApi } from "./listen.js";
 import { archive, diskSweep } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexRun } from "./ai.js";
-import { mintCode, pairPage, claimPage, claim, devicesPage, revoke } from "./pair.js";
+import { pairCheck, mintCode, pairPage, claimPage, claim, devicesPage, revoke } from "./pair.js";
 import { inviteIcs, warmCalendar } from "./calendar.js";
 
 export default {
@@ -55,6 +55,7 @@ export default {
 
     // pairing a phone or tablet: the claim page lives outside /main (pair.js)
     if (path === "/pair" && method === "GET") return claimPage("", 200, env, url);
+    if (path === "/pair/check" && method === "GET") return pairCheck(req, env);
     if (path === "/pair" && method === "POST") return claim(req, env, url);
 
     if (path.startsWith("/m/")) return participantRoute(req, env, ctx, url, path);

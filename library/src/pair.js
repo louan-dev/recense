@@ -62,6 +62,26 @@ export async function deviceOwner(req, env) {
   return true;
 }
 
+// What the device check sees, step by step, for a phone that pairs but can't get in.
+// Names only what failed; never a value.
+export async function pairCheck(req, env) {
+  const raw = req.headers.get("cookie") || "";
+  const names = raw.split(";").map((c) => c.split("=")[0].trim()).filter(Boolean);
+  const say = (step) => page(shell("Pairing check", `<p>${esc(step)}</p><p>Cookies this browser sent: ${esc(names.join(", ") || "none")}</p><p><a href="/pair">Pair again</a></p>`));
+  if (!on(env)) return say("Pairing is off on this address (no PAIR_SECRET).");
+  const m = raw.match(/(?:^|;\s*)gdev=([^;]*)/);
+  if (!m) return say("No pairing pass: this browser did not keep or send it. Check Block All Cookies and Private tabs.");
+  const p = m[1].match(/^([0-9a-f]{32})\.(\d{10,13})\.([0-9a-f]{64})$/);
+  if (!p) return say("The pass is malformed.");
+  if (!(Number(p[2]) > Date.now())) return say("The pass has expired.");
+  if (!same(p[3], await hmac(env, p[1] + "." + p[2]))) return say("The pass's signature is wrong (made with another secret?).");
+  const obj = await env.MAIN.get(DEVICE(p[1]));
+  if (!obj) return say("The pass is fine but its device record is missing.");
+  const d = await obj.json();
+  if (d.revoked) return say("This device was revoked.");
+  return say("All checks pass: this device should open /main/ (" + d.name + ").");
+}
+
 // ---------- the Mac: mint a code (owner only, under /main) ----------
 
 export async function mintCode(env) {

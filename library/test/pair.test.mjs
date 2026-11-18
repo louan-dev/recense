@@ -64,6 +64,11 @@ assert.match(r.headers.get("set-cookie"), /HttpOnly; SameSite=Lax/);
 assert.equal((await asDevice(dev)).status, 200); ok("claimed device opens /main");
 assert.equal((await go("/main/api/whoami")).status, 404); ok("no cookie stays 404");
 
+// the check page names the failing step
+assert.match(await (await go("/pair/check")).text(), /No pairing pass/);
+assert.match(await (await go("/pair/check", { headers: { cookie: dev } })).text(), /All checks pass/);
+assert.match(await (await go("/pair/check", { headers: { cookie: dev.slice(0, -4) + "0000" } })).text(), /signature is wrong/); ok("check page names the step");
+
 // replay
 assert.equal((await claim(code)).status, 403); ok("code works once");
 
