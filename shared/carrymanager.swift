@@ -562,3 +562,53 @@ func runCarryPairCLI() async -> Never {
     print("Paired with \(who).")
     exit(0)
 }
+
+// Regression guard: T-0129 / the comment at receiveOps above ("one batch after another, so a later batch
+// never settles before an earlier one"). Drives the real receiveOps→settle chain, no radios: two batches
+// land back-to-back, as two MultipeerConnectivity messages would, before the first has had any chance to
+// finish its off-main-thread hash scan.
+extension CarryManager {
+    fileprivate func receiveOpsForTest(_ data: Data, from peer: MCPeerID) { receiveOps(data, from: peer) }
+    fileprivate var settlingForTest: Task<Void, Never>? { settling }
+}
+
+@MainActor func carrymanagerOrderingSelftest() -> Bool {
+    var ok = true
+    func check(_ pass: Bool, _ what: String) { print("\(pass ? "ok  " : "FAIL") carrymanager, \(what)"); ok = ok && pass }
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory.appendingPathComponent("recense-carrymanager-\(UUID().uuidString)")
+    setenv("RECENSE_HOME", dir.appendingPathComponent("Recense").path, 1)
+    defer { unsetenv("RECENSE_HOME"); try? fm.removeItem(at: dir) }
+    try? Homes.ensure()
+
+    let a = Homes.url(.study).appendingPathComponent("a.md")
+    try? fm.createDirectory(at: a.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? Data("hello".utf8).write(to: a)
+    let sha = (try? Homes.sha256(a)) ?? ""
+    try? Homes.record(try Homes.entry(for: a, in: .study), in: .study)
+
+    let cm = CarryManager()
+    let peer = MCPeerID(displayName: "test-peer")
+    let now = Int64(Date().timeIntervalSince1970)
+    let op1 = CarryOp(seq: 1, device: "test-peer", at: now, op: .move, home: "library/Study", path: "a.md",
+                       toHome: "library/Study", to: "b.md", sha256: sha, size: 5)
+    let op2 = CarryOp(seq: 2, device: "test-peer", at: now, op: .move, home: "library/Study", path: "b.md",
+                       toHome: "library/Study", to: "c.md", sha256: sha, size: 5)
+    let e = JSONEncoder()
+    guard let data1 = try? e.encode([op1]), let data2 = try? e.encode([op2]) else { check(false, "ops encode"); return ok }
+
+    cm.receiveOpsForTest(data1, from: peer)
+    cm.receiveOpsForTest(data2, from: peer)   // arrives right behind the first, before its scan could finish
+
+    var done = false
+    Task { await cm.settlingForTest?.value; done = true }
+    let deadline = Date().addingTimeInterval(5)
+    while !done && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+    check(done, "both batches settle within 5s")
+
+    check(!fm.fileExists(atPath: Homes.url(.study).appendingPathComponent("a.md").path), "a.md is gone")
+    check(!fm.fileExists(atPath: Homes.url(.study).appendingPathComponent("b.md").path), "b.md (the in-between name) never lingers")
+    check((try? String(contentsOf: Homes.url(.study).appendingPathComponent("c.md"))) == "hello",
+          "the file reaches c.md with its bytes intact — op2 saw op1's move, not a stale scan")
+    return ok
+}

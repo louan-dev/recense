@@ -8156,7 +8156,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
     let g = wingsSelftest(), h = speechSelftest(), i = inkOCRSelftest(), j = librarySelftest(), k = recenseTextSelftest(), l = icsSelftest()
     let m = fingerprintSelftest(), n = downloadsSelftest(), o = sshSelftest(), p = appEarSelftest()
     let q = homesSelftest(), r = carrysyncSelftest(), s = carrypairSelftest(), t = boseBridgeSelftest(), u = carrymanagerSelftest(), v = transcriptGateSelftest()
-    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v ? 0 : 1)
+    let w = MainActor.assumeIsolated { carrymanagerOrderingSelftest() }   // top-level code runs on the main thread
+    exit(a && b && c && d && e && f && g && h && i && j && k && l && m && n && o && p && q && r && s && t && u && v && w ? 0 : 1)
 }
 
 // Derived from Spec: FEAT-15
