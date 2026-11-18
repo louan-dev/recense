@@ -175,9 +175,15 @@ async function linkAction(req, env, url) {
     else if (b.cover != null && known.has(String(b.cover))) manifest.coverItem = String(b.cover);
     if ("cover" in b) manifest.coverAt = Number(b.v) || Date.now();
     if (BLURS.includes(b.blur)) manifest.coverBlur = b.blur;
+    // the album's name (T-0142–44 rename): a string is the new name (60 letters at most); an empty one goes back to the automatic name
+    if (typeof b.title === "string") {
+      const t = Array.from(b.title.replace(/\s+/g, " ").trim()).slice(0, 60).join("");
+      if (t) manifest.title = t;
+      else delete manifest.title;
+    }
 
     await writeManifest(env, manifest);
-    return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, blur: manifest.coverBlur || "medium", v: manifest.coverAt || 0 });
+    return jsonResponse({ ok: true, coverItem: manifest.coverItem || null, blur: manifest.coverBlur || "medium", v: manifest.coverAt || 0, title: manifest.title || null });
   }
 
   // POST /main/api/link?action=perms&id=ID   body: { upload?, download? } -> { ok, perms }
@@ -1484,6 +1490,7 @@ export async function getGalleryData(env, id) {
     ...(manifest && manifest.view ? { view: manifest.view } : {}),
     ...(manifest && manifest.coverItem ? { coverItem: String(manifest.coverItem) } : {}),
     ...(manifest && manifest.coverBlur ? { coverBlur: manifest.coverBlur } : {}),
+    ...(manifest && manifest.title ? { title: manifest.title } : {}),
     ...(manifest && manifest.order ? { order: manifest.order } : {}),
     ...(manifest && manifest.coverAt ? { coverAt: manifest.coverAt } : {}),
     perms: linkPerms(manifest),

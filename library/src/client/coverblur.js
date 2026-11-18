@@ -103,7 +103,8 @@
     ".cved .fl{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}.cved .fl button{white-space:nowrap;padding:6px 12px;border-radius:16px;background:#2c2c2e}.cved .fl button.on{background:#0a84ff;color:#fff}" +
     ".cved .gr{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;overflow-y:auto;min-height:80px}.cved .gr button{position:relative;aspect-ratio:1;padding:0;border-radius:8px;overflow:hidden;background:#2c2c2e}" +
     ".cved .gr img,.cved .gr video{width:100%;height:100%;object-fit:cover;pointer-events:none}.cved .gr button.on{outline:3px solid #0a84ff;outline-offset:-3px}" +
-    ".cved small{color:#8e8e93}";
+    ".cved .nm{display:flex;flex-direction:column;gap:4px}.cved .nm div{display:flex;gap:6px}.cved .nm input{flex:1;min-width:0;padding:8px 10px;border-radius:9px;border:0;background:#2c2c2e;color:#fff;font:inherit}.cved .nm button{padding:0 10px;border-radius:9px;background:#2c2c2e}" +
+    ".cved .gr button.vd{display:flex;align-items:center;justify-content:center}.cved small{color:#8e8e93}";
 
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function media(f) {
@@ -114,15 +115,40 @@
     return m;
   }
 
+  var seen = null;
+  function lazyVideo(b, f) {
+    var go = function () { b.textContent = ""; b.appendChild(media(f)); };
+    if (!window.IntersectionObserver) return go();
+    seen = seen || new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { seen.unobserve(e.target); e.target._go(); } });
+    }, { rootMargin: "100px" });
+    b._go = go;
+    seen.observe(b);
+  }
+
   function open(o) {
     if (!document.getElementById("cvedcss")) { var st = mk("style"); st.id = "cvedcss"; st.textContent = CSS; document.head.appendChild(st); }
     var bg = mk("div", "cved"), box = mk("div"), head = mk("header"), title = mk("b", "", "Edit Cover");
-    var cancel = mk("button", "", "Cancel"), done = mk("button", "", "Done");
+    var cancel = mk("button", "", "Cancel"), done = mk("button", "", "Save changes");
     done.style.fontWeight = "600";
     head.append(cancel, title, done);
     var fl = mk("div", "fl"), pv = mk("div", "pv"), seg = mk("div", "seg"), lab = mk("small", "", "Blur on this cover's text"), gr = mk("div", "gr"), pick = mk("small", "", "Pick the cover");
     box.append(head);
     if (o.folders && o.folders.length > 1) box.append(fl);
+    // the album's name (T-0142–44): shown only when the caller passes one; clearing it and saving goes back to the automatic name
+    var nameIn = null;
+    if (o.title != null) {
+      var nm = mk("label", "nm"), row = mk("div"), clr = mk("button", "", "Clear");
+      nameIn = mk("input");
+      nameIn.type = "text"; nameIn.maxLength = 60; nameIn.value = o.title; nameIn.placeholder = "Album name";
+      nameIn.setAttribute("aria-label", "Album name");
+      clr.type = "button"; clr.setAttribute("aria-label", "Clear the album name");
+      clr.onclick = function () { nameIn.value = ""; nameIn.focus(); };
+      row.append(nameIn, clr);
+      nm.append(mk("small", "", "Name"), row);
+      box.append(nm);
+      nameIn.onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); done.click(); } };
+    }
     box.append(pv, lab, seg, pick, gr);
     bg.appendChild(box);
     document.body.appendChild(bg);
@@ -160,7 +186,12 @@
         cur.files.forEach(function (f, i) {
           var b = mk("button");
           b.type = "button"; b.title = f.name || "";
-          b.appendChild(media(f));
+          if (f.video) {
+            // a screen recording is big: its first frame loads only when the tile scrolls into view, not all at once
+            b.classList.add("vd");
+            b.textContent = "▶";
+            lazyVideo(b, f);
+          } else b.appendChild(media(f));
           if (f.value === cur.file || (!cur.file && i === 0)) b.classList.add("on");
           b.onclick = function () { cur.file = f.value; [].forEach.call(gr.children, function (x) { x.classList.toggle("on", x === b); }); preview(); };
           gr.appendChild(b);
@@ -173,8 +204,9 @@
       var ch = {};
       if (st0 && cur.file !== st0.file && cur.file != null) ch.file = cur.file;
       ch.blur = cur.blur;
+      if (nameIn && nameIn.value.trim() !== String(o.title).trim()) ch.title = nameIn.value.trim();
       done.disabled = true;
-      Promise.resolve(o.save(cur.folder, ch)).then(close, function () { done.disabled = false; alert("Couldn't save the cover"); });
+      Promise.resolve(o.save(cur.folder, ch)).then(close, function () { done.disabled = false; alert("Couldn't save the changes"); });
     };
     load(cur.folder);
   }

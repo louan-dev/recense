@@ -230,7 +230,30 @@
 
   // ---------- one share ----------
 
+  // the album now open, for adding files (T-0142–44): Finder drops anywhere on the page, and the Add Files button, both
+  // through linkUp (client/linkup.js), the owner's reserve-and-parts path /main/api/linkadd
+  let openLink = null;
+  let reloadT;
+  const addTo = (s, files) => {
+    if (!files.length || !window.linkUp) return;
+    linkUp.add(files, {
+      who: "",
+      call: async (o, init) => {
+        const r = await fetch("/main/api/linkadd?" + new URLSearchParams({ id: s.id, ...o }), { method: "POST", ...init, headers: { ...H, ...((init && init.headers) || {}) } });
+        if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
+        return r;
+      },
+      done: () => {
+        // the album refreshes once the files stop arriving
+        clearTimeout(reloadT);
+        reloadT = setTimeout(() => { if (openLink && openLink.id === s.id) { shares = null; route(); } }, 1500);
+      },
+    });
+  };
+  if (window.linkUp) linkUp.dropAnywhere(() => !!openLink && !document.querySelector(".view, .cved"), (files) => openLink && addTo(openLink, files));
+
   async function detailView(kind, id) {
+    openLink = null;
     const back = el("a", "back");
     back.href = "#";
     back.append(svg(I.back), "Shared");
@@ -246,6 +269,8 @@
       del.disabled = true;
       return;
     }
+
+    if (s.kind === "link" && s.type !== "folder" && !(s.perms && s.perms.room)) openLink = s;
 
     del.onclick = () =>
       confirmSheet(
@@ -310,6 +335,21 @@
       open.style.textDecoration = "none";
       if (native) open.onclick = (e) => { e.preventDefault(); native.postMessage({ op: "open", path: s.url }); };
       acts.append(copy, open);
+      // Add Files: the button for what a drop on the page also does
+      if (openLink === s) {
+        const inp = el("input");
+        inp.type = "file";
+        inp.multiple = true;
+        inp.hidden = true;
+        inp.onchange = () => {
+          addTo(s, Array.from(inp.files || []));
+          inp.value = "";
+        };
+        const add = el("button", "lnk", "Add Files");
+        add.type = "button";
+        add.onclick = () => inp.click();
+        acts.append(add, inp);
+      }
       // Edit Cover: which file the link's card wears and how much its text is blurred (notes item 16)
       if (s.kind === "link" && s.type !== "folder" && window.coverEditor) {
         const pick = el("button", "lnk", "Edit Cover");
@@ -321,12 +361,14 @@
               file: s.coverItem ? String(s.coverItem) : null,
               blur: s.blur,
             }),
+            title: s.title,
             save: async (_, ch) => {
               const b = { blur: ch.blur };
               if (ch.file != null) b.cover = ch.file;
+              if (ch.title != null) b.title = ch.title;
               await api("/main/api/link?action=arrange&id=" + encodeURIComponent(s.id), { method: "POST", body: JSON.stringify(b) });
               shares = null;
-              toast("Cover saved");
+              toast("Changes saved");
               route();
             },
           });
@@ -608,6 +650,7 @@
   }
 
   async function route() {
+    openLink = null;
     const h = location.hash.replace(/^#/, "");
     const m = h.match(/^s\/(link|invite)\/([A-Za-z0-9]+)$/);
     scrollTo(0, 0);
