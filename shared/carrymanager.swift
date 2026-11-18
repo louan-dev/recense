@@ -345,8 +345,9 @@ private enum CarryKeychain {
                 try? await Task.sleep(nanoseconds: 1_000_000_000); self?.t.drop(peer)
             }
         }
-        lastError = nil; status = CarryForget.reply(name, told: told)   // invariant 18: Devices row and Mac menu show it
+        lastError = nil
         untrust(keys, name: name)
+        if lastError == nil { status = CarryForget.reply(name, told: told) }   // invariant 18: only once it is saved
         return told
     }
 
