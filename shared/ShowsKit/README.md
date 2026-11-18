@@ -58,6 +58,11 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     the Learn turn after `turnTime`); `CaptionPainter.layout` / `draw` paint one line in Core Graphics for `.follow`
     (heard part gold, spoken white, upcoming dim, translation under it) or `.learn` (each heard phrase turns into its
     translation, the row stays centred; Reduce Motion snaps). A long line shrinks before it is cut. Tests: `CaptionTests`.
+    From the Mac's renderer (FEAT-05 option A, 11-17): `CaptionStyle.balance` (each language its own size and opacity;
+    a hidden side takes no room), `guess` (the original at half), `translating` (a dim placeholder while the translation
+    is pending); right-to-left lines run right to left (`Caption.rtl`, `Caption.visual`, in `CaptionPlaces.swift`); and
+    Learning's two places: `Caption.places` / `readBy` pick which line holds the top or bottom place, `uniformSize`
+    gives every line one size, `drawPlaces` paints both. The Mac keeps prominence (SPEC 47) and its voice glow until P4.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.

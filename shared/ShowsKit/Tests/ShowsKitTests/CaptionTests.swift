@@ -184,4 +184,92 @@ final class CaptionTests: XCTestCase {
         XCTAssertLessThan(l.scale, 1)
         XCTAssertEqual(l.items.count, 40)
     }
+
+    // ---------- option A (11-17): what the Mac's renderer carried, now in the one painter ----------
+
+    func testRightToLeftScriptAndVisualOrderKeepALatinRunInItsOwnOrder() {
+        XCTAssertTrue(Caption.rtl("كثيرا")); XCTAssertTrue(Caption.rtl("שלום")); XCTAssertFalse(Caption.rtl("chat"))
+        XCTAssertTrue(Caption.rtl(words: ["و", "New", "York", "كثيرا"]), "opens in Arabic, a third or more Arabic")
+        XCTAssertFalse(Caption.rtl(words: ["I", "love", "the", "word", "حب"]))
+        let seen = Caption.visual(["أحب", "New", "York", "كثيرا"], rtl: true, text: { $0 })
+        XCTAssertEqual(seen, ["كثيرا", "New", "York", "أحب"])
+        XCTAssertEqual(Caption.visual(["a", "b"], rtl: false, text: { $0 }), ["a", "b"])
+    }
+
+    func testFollowRightToLeftLineRunsRightToLeft() {
+        let w = words("أنا أحب القراءة")
+        let l = CaptionPainter.layout(Caption.Line(words: w, translationText: "I love reading"), mode: .follow, at: 0,
+                                      in: CGRect(x: 0, y: 0, width: 900, height: 240))
+        let o = l.items.filter { $0.kind == .original }
+        XCTAssertGreaterThan(o.first { $0.text == "أنا" }!.rect.minX, o.first { $0.text == "القراءة" }!.rect.minX, "first word on the right")
+        let tr = l.items.filter { $0.kind == .translation }
+        XCTAssertLessThan(tr.first { $0.text == "I" }!.rect.minX, tr.first { $0.text == "reading" }!.rect.minX, "English stays left to right")
+    }
+
+    func testBalanceSizesAndOpacityPerLanguageAndAHiddenSideTakesNoRoom() {
+        let line = Caption.Line(words: words("le chat dort"), translationText: "the cat sleeps")
+        let box = CGRect(x: 0, y: 0, width: 900, height: 240)
+        var s = CaptionStyle(); s.balance = .init(l1: 1.2, l2: 0.8, a1: 0.7, a2: 0.5)
+        let l = CaptionPainter.layout(line, mode: .follow, at: 0, in: box, style: s)
+        let o = l.items.first { $0.kind == .original }!, t = l.items.first { $0.kind == .translation }!
+        XCTAssertEqual(CTFontGetSize(o.font), 28 * 1.2, accuracy: 0.01); XCTAssertEqual(CTFontGetSize(t.font), 28 * 0.8, accuracy: 0.01)
+        XCTAssertEqual(o.alpha, 0.7, accuracy: 1e-6); XCTAssertEqual(t.alpha, 0.5, accuracy: 1e-6)
+        s.balance.a2 = 0
+        XCTAssertTrue(CaptionPainter.layout(line, mode: .follow, at: 0, in: box, style: s).items.allSatisfy { $0.kind == .original }, "L2 hidden: no room")
+        s.balance = .init(a1: 0)
+        XCTAssertTrue(CaptionPainter.layout(line, mode: .follow, at: 0, in: box, style: s).items.allSatisfy { $0.kind == .translation }, "L1 hidden")
+        let english = Caption.Line(words: words("the cat sleeps"), translation: [])
+        XCTAssertEqual(CaptionPainter.layout(english, mode: .follow, at: 0, in: box, style: s).items.count, 3, "untranslated speech is never hidden")
+        s.balance = .init(a2: 0)
+        let learn = CaptionPainter.layout(line, mode: .learn, at: 10, in: box, style: s).items
+        XCTAssertTrue(learn.allSatisfy { $0.kind == .original && $0.alpha == 1 }, "Learn, L2 hidden: nothing turns")
+    }
+
+    func testGuessDimsTheOriginalAndTranslatingWaitsInItsPlace() {
+        let box = CGRect(x: 0, y: 0, width: 900, height: 240)
+        var s = CaptionStyle(); s.guess = true; s.translating = "translating…"
+        let pending = Caption.Line(words: words("le chat dort"), translation: nil)
+        let l = CaptionPainter.layout(pending, mode: .follow, at: 0, in: box, style: s)
+        XCTAssertTrue(l.items.filter { $0.kind == .original }.allSatisfy { abs($0.alpha - 0.5) < 1e-6 }, "a guess: half")
+        let w = l.items.filter { $0.placeholder }
+        XCTAssertEqual(w.map(\.text), ["translating…"]); XCTAssertEqual(w.first?.kind, .translation)
+        s.translating = nil
+        XCTAssertFalse(CaptionPainter.layout(pending, mode: .follow, at: 0, in: box, style: s).items.contains { $0.placeholder })
+        // drawn white at 55 %, not as a spoken (white) phrase
+        let c = Canvas(); s.translating = "translating…"; s.guess = false; s.shadow = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+        CaptionPainter.draw(pending, mode: .follow, at: 0, in: c.ctx, box: box, style: s)
+        let r = CaptionPainter.layout(pending, mode: .follow, at: 0, in: box, style: s).items.first { $0.placeholder }!.rect
+        XCTAssertTrue(near(c.core(r), [255, 255, 255, 140]), "placeholder core: \(String(describing: c.core(r)))")
+    }
+
+    func testTwoPlacesTakenInTurnAndALongSilenceClearsThem() {
+        let a = Caption.Line(words: words("one two", from: 0), translation: []), b = Caption.Line(words: words("three four", from: 1), translation: [])
+        let c = Caption.Line(words: words("five six", from: 2), translation: []), far = Caption.Line(words: words("later on", from: 40), translation: [])
+        let lines = [a, b, c, far]
+        XCTAssertEqual(Caption.places(lines, at: 0.2, held: false).first { $0.line == 0 }?.place, 0)
+        let mid = Caption.places(lines, at: 1.2, held: false)
+        XCTAssertEqual(mid.first { $0.line == 1 }?.place, 1, "the next line takes the other place")
+        XCTAssertNotNil(mid.first { $0.line == 0 }, "the line before stays while the light crosses the next")
+        XCTAssertEqual(Caption.places(lines, at: 2.5, held: false).first { $0.line == 2 }?.place, 0, "then back to the top")
+        XCTAssertTrue(Caption.places(lines, at: 25, held: false).isEmpty, "a long silence clears both")
+        XCTAssertEqual(Caption.places(lines, at: 40.3, held: false).first { $0.line == 3 }?.place, 0, "after a silence: top again")
+        XCTAssertFalse(Caption.places(lines, at: 7, held: true).isEmpty, "paused: never cleared")
+        XCTAssertEqual(Caption.readBy(a), a.end + 0.6, accuracy: 1e-9)
+    }
+
+    func testDrawPlacesPutsTheTopPlaceAboveTheBottomAtOneSize() {
+        let a = Caption.Line(words: words("one two", from: 0), translation: []), b = Caption.Line(words: words("three four", from: 1), translation: [])
+        let box = CGRect(x: 0, y: 0, width: 900, height: 300)
+        let boxes = CaptionPainter.placeBoxes(box)
+        XCTAssertGreaterThan(boxes[0].minY, boxes[1].minY, "place 0 is the top (Core Graphics: y up)")
+        XCTAssertLessThanOrEqual(boxes[0].height + boxes[1].height, box.height)
+        let size = CaptionPainter.uniformSize([a, b], in: boxes[1], style: .init(), from: 10, to: 60)
+        XCTAssertGreaterThan(size, 10); XCTAssertLessThanOrEqual(size, 60)
+        let long = Caption.Line(words: words(Array(repeating: "longword", count: 30).joined(separator: " ")), translation: [])
+        XCTAssertLessThan(CaptionPainter.uniformSize([a, long], in: boxes[1], style: .init(), from: 10, to: 60), size, "the longest line sets it")
+        let c = Canvas(900, 300)
+        var s = CaptionStyle(); s.size = size; s.shadow = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+        CaptionPainter.drawPlaces([a, b], at: 1.2, held: false, in: c.ctx, box: box, style: s)
+        XCTAssertNotNil(c.ink(boxes[0]), "top place drawn"); XCTAssertNotNil(c.ink(boxes[1]), "bottom place drawn")
+    }
 }
