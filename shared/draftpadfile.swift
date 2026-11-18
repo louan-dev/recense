@@ -150,6 +150,10 @@ final class DraftpadInk {
     /// The file was merged into the page (the poll found another device's strokes): a post of the union may be written.
     func saw(_ disk: String) { seen = disk }
 
+    /// A merge handed to the page did not come back (page not loaded, no ink layer, the call failed): the file was not
+    /// merged after all, so nothing counts as seen and the next post merges it again instead of writing over it.
+    func unsee() { seen = nil }
+
     /// One post from the page. `.mergeFirst(disk)`: the host calls the page's mergeInk(disk) and saves the result.
     @discardableResult
     func save(_ json: String) -> Plan {

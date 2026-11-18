@@ -52,6 +52,8 @@ Status: `[~]` (tests pass; device check owed)
    over; once seen, the union is written. A missing or empty sidecar, or one equal to what this host last saw, is
    written straight away.
 8. Ink: a failed write keeps the post for the retry and does not move `seen`.
+9. Ink: a merge handed to the page that does not come back (page not loaded, no ink layer, the call failed) undoes
+   `seen` (`unsee()`), so the next post merges the file again instead of writing over it (review 1, 2026-11-18).
 
 ## Device check (owed)
 - Mac + iPad: draw on the iPad, then one stroke on the Mac: both strokes remain on both.

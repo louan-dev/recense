@@ -132,6 +132,15 @@ check(ink.save(union2) == .wait && ink.seen == ipad2 && ink.waiting == union2, "
 inkWriteFails = false
 check(ink.retry() == .write && disk(ip) == union2 && ink.waiting == nil, "the retry writes it")
 check(ink.save(union2) == .write && ink.seen == union2, "posting what was just written writes nothing new")
+// Regression guard: BUG-29 review item 1. A merge the page never answered must not count as seen.
+let ipad3 = #"{"version":1,"strokes":[{"id":"ipad3","at":5}],"removed":[]}"#
+try? ipad3.write(toFile: ip, atomically: true, encoding: .utf8)
+let local = #"{"version":1,"strokes":[{"id":"mac3","at":6}],"removed":[]}"#
+check(ink.save(local) == .mergeFirst(ipad3), "strokes not seen here: merge first")
+ink.unsee()   // the host's page merge failed
+check(ink.save(local) == .mergeFirst(ipad3) && disk(ip) == ipad3, "after a failed merge the next post merges again, never writes over")
+ink.saw(ipad3); ink.unsee()
+check(ink.save(local) == .mergeFirst(ipad3), "the poll's saw() undone by a failed merge: still merge first")
 let ink2 = DraftpadInk(path: p("none.ink.json"))
 check(ink2.load() == "" && ink2.seen == "", "no sidecar yet loads as empty, seen")
 check(DraftpadInk.json(from: ["version": 1]) == #"{"version":1}"# && DraftpadInk.json(from: "s") == "s" && DraftpadInk.json(from: nil) == nil,

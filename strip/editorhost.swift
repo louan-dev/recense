@@ -248,10 +248,12 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     }
 
     private func mergeInk(_ disk: String) {
-        guard loaded else { return }
+        // a merge that doesn't come back leaves the file unseen, so the next post merges it again (BUG-29 review 1)
+        guard loaded else { ink.unsee(); return }
         web.evaluateJavaScript("window.recenseEditor && window.recenseEditor.mergeInk(\(jsString(disk)))") { [weak self] v, err in
             if let err = err { log("editor: mergeInk failed: \(err.localizedDescription)") }
-            if let merged = DraftpadInk.json(from: v) { self?.saveInk(merged) }
+            guard let self = self else { return }
+            if let merged = DraftpadInk.json(from: v) { self.saveInk(merged) } else { self.ink.unsee() }
         }
     }
 

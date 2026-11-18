@@ -400,8 +400,11 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     }
 
     private func mergeInk(_ disk: String) {
+        // a merge that doesn't come back (page not loaded, no ink layer, the call failed) leaves the file unseen, so the
+        // next post merges it again instead of writing over it (BUG-29 review 1); `call` answers nil when not loaded
         call("mergeInk(\(jsLiteral(disk)))") { [weak self] merged in
-            if let json = DraftpadInk.json(from: merged) { self?.saveInk(json) }
+            guard let self = self else { return }
+            if let json = DraftpadInk.json(from: merged) { self.saveInk(json) } else { self.file.ink?.unsee() }
         }
     }
 
