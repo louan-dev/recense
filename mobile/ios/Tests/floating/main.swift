@@ -88,6 +88,11 @@ if Floating.refill(open: false, queued: 0) { bad += 1; print("FAIL refilled with
 if Floating.keepAlive(since: 1.2, queued: 3) { bad += 1; print("FAIL the keep-alive flushed a good queue") }
 if !Floating.keepAlive(since: 1.2, queued: 0) { bad += 1; print("FAIL no keep-alive with nothing queued (PiP goes stale)") }
 if Floating.keepAlive(since: 0.5, queued: 0) { bad += 1; print("FAIL keep-alive before a second") }
+// Regression guard: BUG-24 review 5 (11-18): pictures were stamped ahead on the main thread every tick with no window
+// open; only an open window is drawn ahead, and never past the cap
+if Floating.stampAhead(open: false, queued: 0) { bad += 1; print("FAIL stamped ahead with no window") }
+if !Floating.stampAhead(open: true, queued: 0) { bad += 1; print("FAIL an open window isn't stamped ahead") }
+if Floating.stampAhead(open: true, queued: Floating.queueCap) { bad += 1; print("FAIL stamped past the cap") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

@@ -1162,7 +1162,7 @@ final class Listener: NSObject, ObservableObject {
         logRate(wall)
         // every moment the picture changes in the next `Floating.ahead` seconds of the wall, each in its own picture
         let from = queued.last?.at ?? now, until = clock.content(atWall: w + Floating.ahead)
-        guard clock.rate > 0, until > from, queued.count < Floating.queueCap else { return }
+        guard clock.rate > 0, until > from, Floating.stampAhead(open: pip?.isPictureInPictureActive == true, queued: queued.count) else { return }
         let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
         for s in FloatingFrames.schedule(f.stamps(after: from, ahead: until - from), on: clock) where s.at - now > 0.004 {
             guard queued.count < Floating.queueCap, let sb = picture(f, at: s.at, stamp: host + (s.wall - w)) else { break }

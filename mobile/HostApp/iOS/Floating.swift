@@ -76,6 +76,9 @@ enum Floating {
     /// The 0.1 s tick draws again once the stamped pictures are half spent (BUG-24 review 3): 12 cover only 0.5-1 s of
     /// speech, and the 1 s tick alone let the sweep freeze behind other apps.
     static func refill(open: Bool, queued: Int) -> Bool { open && queued < queueCap / 2 }
+    /// Pictures are stamped ahead only for an open window, and never past the cap (BUG-24 review 5: they were drawn on
+    /// the main thread every tick with no window at all).
+    static func stampAhead(open: Bool, queued: Int) -> Bool { open && queued < queueCap }
     /// The picture shown again each second so PiP never goes stale, only when nothing is stamped ahead: redrawing it
     /// flushed a queue that was still good.
     static func keepAlive(since: Double, queued: Int) -> Bool { since >= 1 && queued == 0 }
