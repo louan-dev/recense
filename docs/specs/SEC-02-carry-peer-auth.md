@@ -131,6 +131,11 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     - T-0123: re-picking an already-connected peer updates `picked`, so that side shows the code;
     - T-0122 (AppKit, no pure test): device check on the Mac: close the pairing window with X, then open it again from the menu.
 
+13. **Keychain read error ≠ no peers:** a Keychain read is found, not found, or failed (`CarryStored`).
+    A failed read of `peers.v2` keeps the trust store this process last had, and `writable` is false:
+    pair, forget and re-pair refuse to write `peers.v2` (and its mirror) and set `lastError`. A failed read of
+    `identity` never makes and saves a new key. Only "not found" starts empty.
+
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
 ## 5 · Phases
@@ -180,3 +185,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
   from both turns 6 (relay replaced nonce) red. While pairing, a not-yet-trusted hello and any `auth` after it are held,
   in order, and answered once the pairing finishes (a proof that came first was otherwise lost). T-0123 also needed the
   failed pick cleared on both sides (`PairPrompt.failed`), or both sides stay "picked" and the greater key keeps showing.
+- 2026-11-18 · follow-ups (A3-fix, review of 80ad4c0): 13 Keychain read error keeps pairings and refuses writes.

@@ -196,6 +196,24 @@ do {
     check(empty.trusted.isEmpty && empty.needsPairing.isEmpty, "everyone forgotten: nothing listed")
 } catch { check(false, "migration setup threw \(error)") }
 
+// 13 · A Keychain read error is not "no peers": the pairings stay and nothing overwrites peers.v2
+// Regression guard: SEC-02
+do {
+    let had = [peer("iPad", ipad), peer("iPhone", iphone)]
+    check(CarryStored.from(errSecItemNotFound, nil) == .notFound, "not found is not found")
+    check(CarryStored.from(errSecInteractionNotAllowed, nil).failed, "a locked Keychain is a failure, not empty")
+    check(CarryStored.from(errSecSuccess, nil).failed, "success with no data is a failure")
+    let locked = CarryTrust.load(.failed(errSecInteractionNotAllowed), mirror: had, previous: had)
+    check(locked.trusted == had, "a failed read keeps the peers this process had")
+    check(!locked.writable, "a failed read refuses to write peers.v2")
+    check(locked.needsPairing.isEmpty, "and lists nobody as needing pairing")
+    let none = CarryTrust.load(.notFound, mirror: had, previous: had)
+    check(none.trusted.isEmpty && none.writable, "only not found starts empty, and may be written")
+    let v2 = try JSONEncoder().encode([peer("iPad", ipad)])
+    let ok = CarryTrust.load(.found(v2), mirror: had, previous: [])
+    check(ok.trusted.map(\.name) == ["iPad"] && ok.writable, "found: read as before")
+} catch { check(false, "13 setup threw \(error)") }
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])

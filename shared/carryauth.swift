@@ -1,11 +1,12 @@
 // Derived from Spec: SEC-02 (carry peer auth: a paired device proves its key, not its name)
-// Pure: messages in, messages out; no radio, no Keychain, CryptoKit only. The glue (carrymanager.swift) keeps one
+// Pure: messages in, messages out; no radio, no Keychain calls (only its status codes), CryptoKit only. The glue (carrymanager.swift) keeps one
 // CarryAuthSession per connection, sends `hello` on connect, and lets only `pair` and `auth` through until the peer's
 // proof checks out. After that every carry message rides `sealed`; a plain `seen`/`ops`/`gone` is dropped.
 // The handshake is Noise-KK-like (described, not copied): both long-term keys are known from pairing, both sides add
 // a fresh key per session, so a key stolen later cannot open sessions recorded before (forward secrecy).
 import Foundation
 import CryptoKit
+import Security
 
 enum CarryAuthMessage: Codable, Equatable, Sendable {
     case hello(key: Data, eph: Data, nonce: Data)   // long-term key, this session's fresh key, 32 random bytes
@@ -132,5 +133,29 @@ enum CarryTrust {
         return (trusted, mirror.filter { m in !trusted.contains { $0.key == m.key } })
     }
 
+    /// Invariant 13: a failed Keychain read keeps `previous` and is not `writable`, so no write can replace the
+    /// pairings it could not see. Only `.notFound` (or an unreadable item) starts empty.
+    static func load(_ v2: CarryStored, mirror: [CarryPeer], previous: [CarryPeer])
+        -> (trusted: [CarryPeer], needsPairing: [CarryPeer], writable: Bool) {
+        if v2.failed { return (previous, mirror.filter { m in !previous.contains { $0.key == m.key } }, false) }
+        let t = load(v2: v2.data, mirror: mirror)
+        return (t.trusted, t.needsPairing, true)
+    }
+
     static func forgetting(_ list: [CarryPeer], key: Data) -> [CarryPeer] { list.filter { $0.key != key } }
+}
+
+// Derived from Spec: SEC-02 invariant 13
+/// One Keychain read: found, not there, or failed (locked, denied, damaged). A failure is never "not there".
+enum CarryStored: Equatable {
+    case found(Data), notFound, failed(OSStatus)
+    static func from(_ status: OSStatus, _ data: Data?) -> CarryStored {
+        switch status {
+        case errSecSuccess: return data.map { .found($0) } ?? .failed(errSecDecode)
+        case errSecItemNotFound: return .notFound
+        default: return .failed(status)
+        }
+    }
+    var data: Data? { if case .found(let d) = self { return d }; return nil }
+    var failed: Bool { if case .failed = self { return true }; return false }
 }

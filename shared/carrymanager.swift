@@ -31,12 +31,14 @@ import CoreServices
 /// this owner's shares is stored only here too, never in a plain file.
 private enum CarryKeychain {
     static let service = "local.recense.carry"
-    static func load(_ account: String) -> Data? {
+    /// SEC-02 invariant 13: found, not found, or failed; an error never reads as "nothing stored".
+    static func load(_ account: String) -> CarryStored {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                  kSecAttrAccount as String: account, kSecReturnData as String: true,
                                  kSecMatchLimit as String: kSecMatchLimitOne]
         var out: CFTypeRef?
-        return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
+        let status = SecItemCopyMatching(q as CFDictionary, &out)
+        return CarryStored.from(status, out as? Data)
     }
     @discardableResult
     static func save(_ data: Data, _ account: String) -> Bool {
@@ -90,6 +92,8 @@ private enum CarryKeychain {
     private var refusedNames: Set<String> = []                  // a known name that sent an unknown key or no proof
     private var stagedFrom: [String: String] = [:]              // staged key → the authenticated peer that sent the bytes
     private var placing: Set<String> = []                       // keys whose staged bytes are being hashed (§2.4)
+    private var trustWritable = true                            // false while peers.v2 can't be read (invariant 13)
+    private var identityUnread = false                          // this launch's key is a stand-in: pair nothing with it
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
@@ -102,15 +106,21 @@ private enum CarryKeychain {
     private func opsLogURL(_ device: String) -> URL { opsDir.appendingPathComponent("\(device).jsonl") }
 
     override init() {
-        if let d = CarryKeychain.load("identity"), let k = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: d) {
+        let stored = CarryKeychain.load("identity")
+        var keychainError: String?
+        if let d = stored.data, let k = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: d) {
             identity = k
+        } else if stored.failed {   // SEC-02 invariant 13: never replace a key this launch could not read
+            identity = Curve25519.KeyAgreement.PrivateKey()
+            keychainError = Self.unreadable; identityUnread = true
         } else {
             let k = Curve25519.KeyAgreement.PrivateKey()
             CarryKeychain.save(k.rawRepresentation, "identity")
             identity = k
         }
-        group = CarryKeychain.load("group")
+        group = CarryKeychain.load("group").data
         super.init()
+        if let keychainError { lastError = keychainError }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: opsDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
@@ -336,9 +346,19 @@ private enum CarryKeychain {
         lastError = "\(name) unpaired this device"
     }
 
+    static let unreadable = "the Keychain could not be read: pairings are kept as they were, nothing is saved until it can be"
+
+    /// Invariant 13: writes peers.v2 only when it was read (or is truly absent); never over pairings it could not see.
+    private func saveTrust(_ list: [CarryPeer]) -> Bool {
+        guard trustWritable, !identityUnread else { lastError = Self.unreadable; return false }
+        guard let d = try? JSONEncoder().encode(list), CarryKeychain.save(d, "peers.v2") else {
+            lastError = "saving the trust store failed"; return false
+        }
+        return true
+    }
+
     private func untrust(_ keys: Set<Data>, name: String) {
-        let trusted = keys.reduce(peers) { CarryTrust.forgetting($0, key: $1) }
-        if let d = try? JSONEncoder().encode(trusted), CarryKeychain.save(d, "peers.v2") {} else { lastError = "saving the trust store failed" }
+        guard saveTrust(keys.reduce(peers) { CarryTrust.forgetting($0, key: $1) }) else { return }
         try? JSONEncoder().encode(keys.reduce(mirror) { CarryTrust.forgetting($0, key: $1) }).write(to: peersURL, options: .atomic)
         refusedNames.remove(name)
         for (k, w) in waiting where w.peer == name { waiting[k] = nil; pendingActions[k] = nil; discardStaged(k) }
@@ -406,12 +426,14 @@ private enum CarryKeychain {
     /// SEC-02: trust is the Keychain's `peers.v2`; peers.json is only the mirror, so its old entries need pairing again.
     func reloadFromDisk() {
         mirror = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
-        let trust = CarryTrust.load(v2: CarryKeychain.load("peers.v2"), mirror: mirror)
+        let trust = CarryTrust.load(CarryKeychain.load("peers.v2"), mirror: mirror, previous: peers)   // invariant 13
+        trustWritable = trust.writable
+        if !trust.writable { lastError = Self.unreadable }
         if trust.trusted != peers { peers = trust.trusted }
         var names = trust.needsPairing.map(\.name)
         for n in refusedNames.sorted() where !names.contains(n) { names.append(n) }
         if names != needsPairing { needsPairing = names }
-        if let g = CarryKeychain.load("group") { group = g }
+        if let g = CarryKeychain.load("group").data { group = g }
     }
 
     private func startFlow(_ peer: MCPeerID) {
@@ -500,15 +522,16 @@ private enum CarryKeychain {
         reloadFromDisk()   // keep what another process wrote since; replace only this device's entry
         let entry = CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now())
         // SEC-02 §2.1: the trust store first (the Keychain, this device only), then its readable mirror
-        if let d = try? JSONEncoder().encode(CarryPeer.replacing(peers, with: entry)), CarryKeychain.save(d, "peers.v2") {}
-        else { lastError = "saving the trust store failed" }
-        do { try JSONEncoder().encode(CarryPeer.replacing(mirror, with: entry)).write(to: peersURL, options: .atomic) }
-        catch { lastError = "saving peers.json failed: \(error)" }
+        let saved = saveTrust(CarryPeer.replacing(peers, with: entry))
+        if saved {   // invariant 13: no write over unread pairings
+            do { try JSONEncoder().encode(CarryPeer.replacing(mirror, with: entry)).write(to: peersURL, options: .atomic) }
+            catch { lastError = "saving peers.json failed: \(error)" }
+        }
         refusedNames.remove(entry.name)
         reloadFromDisk()
         flows[peer] = nil
         pairingCode = nil; pairingWith = nil; askingCode = false; isLookingToPair = false; picked = [:]
-        status = "Paired with \(peer.displayName)"
+        status = saved ? "Paired with \(peer.displayName)" : "Pairing with \(peer.displayName) not saved"
         // SEC-02 §2.3: its hello, held while it was a stranger, is answered now; then the 10 s for its proof
         for h in pendingAuth.removeValue(forKey: peer) ?? [] { if let d = try? JSONEncoder().encode(h) { receiveAuth(d, from: peer) } }
         startAuth(peer)
