@@ -39,6 +39,59 @@ From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a Noteboo
 5. **S2/S3** narration (Audio Overview), **S4** extractor, **S5** links, as written.
 6. **Hub:** the same index built with node + SQLite, so the appless hub can search. It has no Apple model, so hub answers use the fallback.
 
+## Review 2 · the browser-skin pastes (Safari capsule, Arc Peek, Zen Compact / Glance / Split), checked 2026-11-18 on main 9742e52
+**Verdict:** take five interaction ideas into S7/S8. Reject a second in-app browser, the hover-only and button-free controls, and WebLLM.
+
+### Claims checked
+- **True:**
+  - `RecensePlaces` (`Places.swift:6`); `.glassCircle()` (`Places.swift:43`); `MoreMenu` (`:51`); `Theme` (ShowsKit).
+  - The old `Browser.swift` root is "retired (B2 redo)" (`:74`) but still holds an Ask sheet and a `NavigationSplitView`.
+  - Ask is a web place (`Places.swift:16-17`) that can't read local files offline.
+  - Workers AI is capped at 10,000 neurons a day (`ai.js:348`). Study and Folio spaces exist (`Model.swift:224-225`).
+  - Zen is desktop only (`zen-browser/desktop`).
+- **Stale:**
+  - "idle `b.steps++` drains the budget": fixed 2026-11-05 (G20). Steps count only when a step called AI (`ai.js:350,364`).
+  - "Error 1027 breaks Ask": that outage was the docs-sync bisync, since fixed.
+- **False:**
+  - "Safari Reader is functionally identical to Readability": Safari Reader is Apple's own code. Readability is Firefox's.
+  - "Readability.js is about 1,500 lines": it is 2,812 (Apache-2.0).
+- **Not in the code:** `askcore.swift`, `draftpad.seed.jsonl`, `recense://`, `keep/<key>/note.md`, voice-activity detection, a Contacts reader. FEAT-23 owns the note-per-item file.
+- **Partly there:** a local model on the Mac. `recense.swift:41` has an optional OpenAI-compatible server hook (LM Studio, Ollama, llama.cpp), used today for translation only.
+- **Unverified:**
+  - "Apple's model runs outside the app's memory" (assumed, Apple's architecture).
+  - "Arc encourages ten live WebViews" (an opinion).
+  - Reading the Contacts notes field needs an Apple-granted entitlement (assumed).
+- **Cited repos (GitHub API):**
+  - `lukoplt/AI-notebook`: 20 stars, MIT, macOS only, depends on GRDB, SwiftSoup and ZIPFoundation. Study only.
+  - `mozilla/readability`: Apache-2.0.
+  - `LocalMode-AI/LocalMode`: 71 stars, MIT.
+  - `ihiteshsharma/offline-browser-rag`: 0 stars, no licence.
+  - `mlc-ai/web-llm`: Apache-2.0.
+
+### Adopted into S7 (Ask) and S8 (Safari)
+1. **Source list always shown.** Under every answer, the retrieved passages are listed with their place (`mm:ss` or the paragraph), even when the model leaves out a bracket. The reader checks the source, not the model's word. (Principle from LocalMode.)
+2. **Citation card (Arc Peek / Zen Glance).**
+   - Tapping a citation opens one card over the page: the passage lit, or the audio looping its line at the current speed.
+   - Three visible buttons: **Close** (back to the same scroll place) · **Open beside** (two panes, no more) · **Add to Draftpad**.
+   - It reuses FEAT-23 moment links.
+3. **Add to Draftpad with its source.** The answer and its citations are added through the existing FEAT-08 append path (the matter sidecar), not a new file.
+4. **Reading column.** Captured pages and answers open in the existing transcript and editor views, not a new Reader.
+   - Proposed numbers: at most 60 characters a line, line height 1.8. This is within WCAG 1.4.8 (≤ 80 characters, spacing ≥ 1.5).
+   - The repo has no reading-width rule yet: the owner confirms the numbers, and they go into `docs/law/interaction.md`.
+5. **Long answers within 4,096 tokens.** Map-reduce: each passage group is summarised with its ids, then the summaries are joined. On the Mac, the existing optional local-server hook may take the long synthesis. Off unless set; replaceable.
+
+### Rejected (and why)
+- **A Safari-skin browser inside the app** (WKWebView + capsule): a second copy of Safari. The finder lives in real Safari (S8). The app shows sources it already holds.
+- **Zen Compact Mode (chrome only on edge hover):** hover-only breaks `interaction.md:31` (every action has a visible control). The resting stroke (`homebar.css:4-16`) is already the visible rest state.
+- **A 4-way split grid:** clutter. Two panes at most (Open beside).
+- **"Speak the next question, no mic button" and "0 visible buttons, two-finger arc":** each breaks `interaction.md:31`. Voice and gestures only speed up a visible control.
+- **WebLLM for guests:** a multi-GB download into a guest's browser, and WebGPU support differs across browsers. Guests get hub or Worker answers.
+- **Contacts notes as a source:** restricted entitlement, and outside this feature.
+
+### Owner decision (asked once, default until answered)
+- **Do Raven, Matters and Sealed go into the on-device notebook index?** Their questions would never leave the device, but the index must then never sync.
+  - **Default: excluded**, as the Worker excludes them today (`ai-core.js:61`).
+
 ## Verdict first (original, 2026-11-18; scope superseded by the review above)
 - **The owner's idea is mostly assembled already.** Four of its five parts exist as separate pieces. What is missing is the front door (a link or a page in) and one join (narration with word timings, so a page plays like any recording).
 - **The pasted Safari/Zen/Arc skin advice is a UI skin, not this feature.** None of it is adopted here (see "Not adopting").
