@@ -1,0 +1,74 @@
+# Recense clean-text rules: base profile. Every source runs through this first.
+# Stages run in this order:
+#   page   : one line at a time, before reflow (headers, footers, page numbers)
+#   heading: a line that becomes a chapter/section marker (# = chapter, ## = section)
+#   reflow : fixed engine step (join hyphenated words and wrapped lines into paragraphs)
+#   text   : on the clean Markdown (the reading copy; keeps citations exact)
+#   speech : only on the copy sent to the voice (expansions that sound right)
+# Rule keys: id, stage, match (Python regex), action = drop | replace | heading | say,
+#            with (the replacement, or "#"/"##" for heading), why.
+#   heading extras: until (regex the heading must reach within 3 lines), join_next (title on next line)
+#   say: match must name groups int, dec, sub; how = "section" (1901.07(a) -> nineteen oh-one point oh seven a)
+#        or "decimal" (1.291 -> one point two nine one)
+
+[meta]
+name = "base"
+lang = "any"
+
+[[rule]]
+id = "bare-page-number"
+stage = "page"
+match = '^\s*\d{1,4}\s*$'
+action = "drop"
+why = "A line that is only a number is a page number."
+
+[[rule]]
+id = "smart-quotes"
+stage = "text"
+match = '[“”]'
+action = "replace"
+with = '"'
+why = "One quote style; the voice reads both the same."
+
+[[rule]]
+id = "eg"
+stage = "speech"
+match = '\be\.g\.,?'
+action = "replace"
+with = "for example,"
+
+[[rule]]
+id = "ie"
+stage = "speech"
+match = '\bi\.e\.,?'
+action = "replace"
+with = "that is,"
+
+[[rule]]
+id = "etc"
+stage = "speech"
+match = '\betc\.'
+action = "replace"
+with = "et cetera"
+
+[[rule]]
+id = "section-sign-double"
+stage = "speech"
+match = '§§\s*'
+action = "replace"
+with = "sections "
+
+[[rule]]
+id = "section-sign"
+stage = "speech"
+match = '§\s*'
+action = "replace"
+with = "section "
+
+[[rule]]
+id = "url"
+stage = "speech"
+match = 'https?://\S+|www\.\S+'
+action = "replace"
+with = "(link)"
+why = "Never spell out a web address aloud."

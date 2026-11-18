@@ -1,0 +1,112 @@
+# MPEP profile (USPTO Manual of Patent Examining Procedure), on top of base.toml.
+
+[meta]
+name = "mpep"
+extends = "base"
+lang = "en"
+# The chapter's own table of contents is skipped: text before the first heading
+# that repeats later is dropped.
+skip_leading_toc = true
+
+[[rule]]
+id = "rev-footer"
+stage = "page"
+match = '^Rev\. [\d.]+, \w+ \d{4}$'
+action = "drop"
+why = "Page footer, e.g. 'Rev. 10.2019, June 2020'."
+
+[[rule]]
+id = "page-folio"
+stage = "page"
+match = '^\d{3,4}-\d+$'
+action = "drop"
+why = "Page number, e.g. '1900-3'."
+
+[[rule]]
+id = "running-title"
+stage = "page"
+match = '^(MANUAL OF PATENT EXAMINING PROCEDURE|[A-Z][A-Z ,&-]{3,})$'
+action = "drop"
+why = "Running page header: the manual's title or the chapter title in capitals."
+
+[[rule]]
+id = "running-section"
+stage = "page"
+match = '^§ \d{3,4}(\.\d+)*(\([a-z]\))?$'
+action = "drop"
+why = "Running page header naming the section on that page, e.g. '§ 1901.01'."
+
+[[rule]]
+id = "revision-tag"
+stage = "page"
+match = '\s*\[R-[\d.]+\]'
+action = "replace"
+with = ""
+why = "Revision stamp after a heading, e.g. '[R-10.2019]'. Not read aloud."
+
+[[rule]]
+id = "chapter-heading"
+stage = "heading"
+match = '^Chapter (\d{3,4})\s*(.*)$'
+action = "heading"
+with = "#"
+
+[[rule]]
+id = "section-heading"
+stage = "heading"
+match = '^(\d{3,4}(?:\.\d+)*(?:\([a-z]\))?)\s+([A-Z].*)$'
+action = "heading"
+with = "##"
+why = "A numbered section, e.g. '1901.07(a) Filing of Multiple Papers'. Wrapped titles are joined."
+
+[[rule]]
+id = "say-cfr-number"
+stage = "speech"
+match = '(?<=CFR )(?P<int>\d{1,3})(?P<dec>(?:\.\d+)+)(?P<sub>(?:\([a-z0-9]+\))*)'
+action = "say"
+how = "decimal"
+why = "Regulation numbers: '1.291(d)' is 'one point two nine one d'. Runs before 'cfr' below."
+
+[[rule]]
+id = "say-section-number"
+stage = "speech"
+match = '(?<![\d.])(?P<int>\d{3,4})(?P<dec>(?:\.\d+)*)(?P<sub>(?:\([a-z0-9]+\))*)(?![\d.]*\d)'
+action = "say"
+how = "section"
+why = "MPEP sections and U.S. Code sections: '1901.07(a)', '122(c)'. Years like 2019 are left alone by a later rule if needed."
+
+[[rule]]
+id = "cfr"
+stage = "speech"
+match = '\b(\d+) CFR\b'
+action = "replace"
+with = '\1 C.F.R.'
+why = "Reads as letters, not as the word 'cfr'."
+
+[[rule]]
+id = "usc"
+stage = "speech"
+match = '\b(\d+) U\.S\.C\.'
+action = "replace"
+with = '\1 U.S. Code'
+
+[[rule]]
+id = "mpep-word"
+stage = "speech"
+match = '\bMPEP\b'
+action = "replace"
+with = "M.P.E.P."
+
+[[rule]]
+id = "pto"
+stage = "speech"
+match = '\b(US)?PTO\b'
+action = "replace"
+with = "Patent Office"
+
+[[rule]]
+id = "aia"
+stage = "speech"
+match = '\bAIA\b'
+action = "replace"
+with = "A.I.A."
