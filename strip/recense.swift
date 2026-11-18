@@ -7193,8 +7193,8 @@ final class NativeSources {
         do {
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
             let title = cleanTitle(ep.title ?? URL(string: ep.url)?.lastPathComponent ?? "Recense")
-            let f = exportDir.appendingPathComponent(exportStamp() + " " + title).appendingPathExtension(src.pathExtension)
-            try? FileManager.default.removeItem(at: f)
+            // a same-title download in the same minute never replaces the first (BUG-33 M-B2)
+            let f = ExportJobs.freeURL(exportDir, base: exportStamp() + " " + title, ext: src.pathExtension)
             try FileManager.default.copyItem(at: src, to: f)
             log("downloaded \(f.path)")
             NSWorkspace.shared.activateFileViewerSelecting([f])
