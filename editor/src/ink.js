@@ -859,7 +859,9 @@ export function createInkLayer(view, options = {}) {
     radialOuter = null,
     // UI-04 P11: extra lasso-menu items for the selected stroke ids: [{ id, label, pick() }] (FEAT-08 matter actions).
     selectionExtras = null,
-    onStrokeAdded = null   // FEAT-08 #2: called with each new drawn stroke (word attachment)
+    onStrokeAdded = null,   // FEAT-08 #2: called with each new drawn stroke (word attachment)
+    // FEAT-23 P0: the page's save goes here first; true = taken (a media note's strokes, not draftpad.ink.json).
+    routeInk = null
   } = options;
 
   // Regression guard: BUG-07 — prefer the view's own live, measured line height over the
@@ -1320,21 +1322,34 @@ export function createInkLayer(view, options = {}) {
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer);
     }
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      const data = getInk();
-      const handler =
-        globalObj &&
-        globalObj.webkit &&
-        globalObj.webkit.messageHandlers &&
-        globalObj.webkit.messageHandlers.ink;
-      if (handler && typeof handler.postMessage === 'function') {
-        handler.postMessage(JSON.stringify(data));
-      }
-      if (typeof onInkChange === 'function') {
-        onInkChange(data);
-      }
-    }, debounceMs);
+    debounceTimer = setTimeout(postNow, debounceMs);
+  }
+
+  function postNow() {
+    debounceTimer = null;
+    const data = getInk();
+    const json = JSON.stringify(data);
+    const handler =
+      globalObj &&
+      globalObj.webkit &&
+      globalObj.webkit.messageHandlers &&
+      globalObj.webkit.messageHandlers.ink;
+    if (typeof routeInk === 'function' && routeInk(json)) {
+      // FEAT-23: a media note's strokes went to its own file
+    } else if (handler && typeof handler.postMessage === 'function') {
+      handler.postMessage(json);
+    }
+    if (typeof onInkChange === 'function') {
+      onInkChange(data);
+    }
+  }
+
+  /** FEAT-23 P0: a save still waiting in the 300 ms debounce goes now (before the page swaps its document). */
+  function flushPost() {
+    if (debounceTimer === null) return false;
+    clearTimeout(debounceTimer);
+    postNow();
+    return true;
   }
 
   function renderStrokeElement(stroke, targetGroup) {
@@ -2235,6 +2250,7 @@ export function createInkLayer(view, options = {}) {
   render();
 
   return {
+    flushPost,
     getInk,
     setInk,
     addStroke,

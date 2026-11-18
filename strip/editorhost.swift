@@ -119,6 +119,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// FEAT-23 · the media note the page shows instead of draftpad.md, or nil (openNote / closeNote).
     private(set) var openNoteKey: String?
     private var lastMatterMTime: Date?   // FEAT-08 P5: draftpad.matter.json's time when pollMatter last looked
+    /// FEAT-23 A1 rule 3: the open note was emptied and trashed (the host closes its region).
+    var onNoteEmptied: (() -> Void)?
     var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
     var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
@@ -172,7 +174,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         web = EditorWebView(frame: frame, configuration: cfg)
         super.init()
         web.onSwipe = { [weak self] dx, ended in self?.sendSwipe(dx, ended) }
-        for name in ["editor", "link", "ui", "ink", "matter", "audio", "calendar", "wings"] {
+        for name in ["editor", "link", "ui", "ink", "matter", "note", "audio", "calendar", "wings"] {
             cfg.userContentController.add(WeakHandler(self), name: name)
         }
         if let raw = coordinatedRead(eventsPath),
@@ -258,6 +260,28 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             guard let self = self else { return }
             if let merged = DraftpadInk.json(from: v) { self.saveInk(merged) } else { self.ink.unsee() }
         }
+    }
+
+    // Derived from Spec: FEAT-23 P0 (glue only; the rules are editor/src/medianote.js)
+    /// Shows item `key`'s note (keep/<key>/note.md) in this one editor instead of draftpad.md (rule 3: no second web view).
+    /// False when the key is not one, the page is not loaded, or a note file cannot be read now (never shown blank).
+    @discardableResult
+    func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
+        guard loaded, wingSide == nil,
+              let payload = MediaNoteFiles.payload(key: key, keep: keepDir, title: title, trigger: trigger, layout: layout) else {
+            log("editor: note \(key.prefix(8))… not opened")
+            return false
+        }
+        openNoteKey = key
+        call("openNote(\(jsString(key)), \(jsString(payload)))")
+        return true
+    }
+
+    /// Puts draftpad.md back (the page flushes the note first; an emptied note goes to the Trash, A1 rule 3).
+    func closeNote() {
+        guard openNoteKey != nil else { return }
+        openNoteKey = nil
+        call("closeNote()")
     }
 
     // Derived from Spec: FEAT-08 P5
@@ -369,6 +393,14 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                 call("mergeMatter(\(jsString(disk)))")   // the page unions it and posts the union back here
             case .write: if coordinatedWrite(json, to: matterPath) { lastMatter = json }
             case .wait: log("editor: draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
+            return
+        }
+        if m.name == "note" {   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
+            if let d = m.body as? [String: Any] {
+                let r = MediaNoteFiles.handle(d, keep: keepDir)
+                if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("editor: note \(r)") }
+                if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }
             return
         }
@@ -552,6 +584,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
         log("editor: the page's process ended; reloading it")
         loaded = false
+        openNoteKey = nil   // FEAT-23: the reloaded page shows draftpad.md; the note's saves already reached its file
         w.reload()
     }
 

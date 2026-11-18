@@ -52,7 +52,8 @@ export function stepFontSize(px, dir) {
 export function createThemeCompartments() {
   return {
     theme: new Compartment(),
-    fontSize: new Compartment()
+    fontSize: new Compartment(),
+    history: new Compartment()   // FEAT-23 rule 3: emptied when the document swaps, so undo never crosses documents
   };
 }
 

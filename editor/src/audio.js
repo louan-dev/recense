@@ -377,6 +377,8 @@ export function createTranscriptPane(container, options = {}) {
   const onSeek = options.onSeek ?? null;
   const onClose = options.onClose ?? null;
   const sidecar = options.sidecar ?? null;
+  // Derived from Spec: FEAT-23 rule 5 — in a media note a tapped line also writes its moment link at the caret.
+  const onLineTap = options.onLineTap ?? null;
 
   const pane = makeDomElement(doc, 'aside', { className: 'rc-transcript-pane', hidden: true }, {
     'aria-label': 'Live audio transcript',
@@ -669,6 +671,7 @@ export function createTranscriptPane(container, options = {}) {
         didDwell = false;
         return;
       }
+      if (typeof onLineTap === 'function') onLineTap(cue);
       handleSeek(cue.start);
     });
 
@@ -848,6 +851,7 @@ export function createTranscriptPane(container, options = {}) {
 export function createAudioSidecar(options = {}) {
   const globalObj = options.globalObj ?? (typeof window !== 'undefined' ? window : null);
   const onInsertToPage = options.onInsertToPage ?? null;
+  const onLineTap = options.onLineTap ?? null;   // FEAT-23 rule 5
 
   const state = {
     playing: false,
@@ -946,7 +950,8 @@ export function createAudioSidecar(options = {}) {
       pane = createTranscriptPane(container, {
         sidecar: sidecarApi,
         globalObj,
-        onInsertToPage
+        onInsertToPage,
+        onLineTap
       });
       pane.update(state);
       return pane;
