@@ -62,6 +62,17 @@ if !Floating.rest(open: true, quiet: 0, paused: true) { bad += 1; print("FAIL pa
 // button held the old words on a full window; it rests as the thin strip at once, and wakes on play
 if !Floating.rest(open: true, quiet: 0, paused: false, held: true) { bad += 1; print("FAIL the window's pause doesn't collapse it") }
 if Floating.rest(open: true, quiet: 0, paused: false, held: false) { bad += 1; print("FAIL play after the window's pause stays collapsed") }
+// Regression guard: BUG-24 review 1 (11-18): with the ear on, our player stops counting as "own" once paused, so the
+// window's play didn't resume the podcast it had paused. Play resumes exactly what the window's pause stopped.
+func holdCheck(_ name: String, _ got: (toggle: Bool, pausedOurs: Bool), _ want: (Bool, Bool)) {
+    if got.toggle != want.0 || got.pausedOurs != want.1 { bad += 1; print("FAIL hold \(name): got \(got), want \(want)") }
+}
+holdCheck("pause ours", Floating.hold(on: true, own: true, playing: true, pausedOurs: false), (true, true))
+holdCheck("play after, ear on (own false)", Floating.hold(on: false, own: false, playing: false, pausedOurs: true), (true, false))
+holdCheck("play after, already playing", Floating.hold(on: false, own: true, playing: true, pausedOurs: true), (false, false))
+holdCheck("pause, ours not playing", Floating.hold(on: true, own: true, playing: false, pausedOurs: false), (false, false))
+holdCheck("pause, the broadcast's", Floating.hold(on: true, own: false, playing: true, pausedOurs: false), (false, false))
+holdCheck("play, we never paused it", Floating.hold(on: false, own: true, playing: false, pausedOurs: false), (false, false))
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

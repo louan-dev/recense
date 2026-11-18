@@ -1101,10 +1101,12 @@ final class Listener: NSObject, ObservableObject {
     // the floating window's middle button (T-0036, T-0038): pause collapses it to the resting strip at once (Listen keeps
     // hearing; our player pauses too), play brings back the newest words
     nonisolated(unsafe) static var held = false
+    private var pausedOurs = false   // the window's pause stopped our player (Floating.hold)
     func hold(_ on: Bool) {
         Listener.held = on
-        let p = NativePlayer.shared
-        if own, p.isPlaying == on { p.toggle() }
+        let p = NativePlayer.shared, h = Floating.hold(on: on, own: own, playing: p.isPlaying, pausedOurs: pausedOurs)
+        pausedOurs = h.pausedOurs
+        if h.toggle { p.toggle() }
         pip?.invalidatePlaybackState()
         floatTick()
         if !on { draw() }

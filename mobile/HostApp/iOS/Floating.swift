@@ -71,6 +71,13 @@ enum Floating {
         open && (paused || held || quiet >= hideAfter)
     }
 
+    /// The window's pause and play on our player (BUG-24 review 1): pause stops ours if it plays and remembers that;
+    /// play resumes only what that pause stopped, even if our player no longer counts as `own` (the ear on, paused).
+    static func hold(on: Bool, own: Bool, playing: Bool, pausedOurs: Bool) -> (toggle: Bool, pausedOurs: Bool) {
+        if on { let ours = own && playing; return (ours, ours) }
+        return (pausedOurs && !playing, false)
+    }
+
     /// Whether the other app is playing. iOS keeps "other audio playing" on for ~40 s after a pause (iPhone log 11-12
     /// 12:50:52-12:51:36, T-0041: the window never rested), so while the broadcast hears, its last real sound decides.
     static let soundGone = 0.4

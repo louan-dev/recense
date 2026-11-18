@@ -210,8 +210,9 @@ updates in place.
   or iOS had nothing to open as Recense was left (11-10 iPhone log). A start iOS refuses is logged with its error. Each decision is logged in `listen.floatLog` (Library/Preferences).
   Its layer sits behind Home's transcript and is Listen's preview, so leaving from either opens it. One host holds it at a
   time, the last on screen (11-10: both took it on every layout and iOS's watchdog ended Recense as Now Playing opened).
-  The floating window's middle button pauses it: the window rests as the thin strip at once (our player pauses too;
-  T-0036, T-0038, 11-18; before, it held the old words on a full window), and play brings back the newest words.
+  The floating window's middle button pauses it: the window rests as the thin strip at once (our player pauses too,
+  and its play resumes exactly what it paused, `Floating.hold`; T-0036, T-0038, 11-18; before, it held the old words on a
+  full window), and play brings back the newest words.
   Its words light on the refresh they start on, and sweep inside a word (BUG-24 P1b, 11-18): every moment the picture
   changes (a word's start, each quarter of a word of 0.25 s or more, a line's turn, a Learn fade) is drawn up to 1.5 s
   ahead and stamped for that moment at the player's speed (ShowsKit `FloatingFrames`); the layer runs on the host clock
