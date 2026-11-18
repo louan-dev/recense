@@ -5,7 +5,7 @@ import ShowsKit
 
 @MainActor final class PlaybackTranslator {
     static let shared = PlaybackTranslator()
-    @ObservationIgnored private var kept: [String: String] = [:]      // TranslatePlan.key(target, text) → translation
+    @ObservationIgnored private var kept: [String: String] = [:]      // TranslatePlan.key(source, target, text) → translation
     @ObservationIgnored private var inFlight = 0
     @ObservationIgnored private var task: Task<Void, Never>?
 
@@ -40,7 +40,7 @@ import ShowsKit
                     guard let model, self.inFlight == gen else { return }
                     for i in job.ids.indices where i < out.count {
                         let (id, source, text) = (job.ids[i], job.texts[i], out[i])
-                        self.kept[TranslatePlan.key(job.target, source)] = text
+                        self.kept[TranslatePlan.key(job.source, job.target, source)] = text
                         if let row = model.transcript.firstIndex(where: { $0.id == id }) { model.transcript[row].translation = text }
                     }
                 }

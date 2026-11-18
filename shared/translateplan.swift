@@ -51,7 +51,7 @@ enum TranslatePlan {
         for (i, l) in lines.enumerated() where !l.text.trimmingCharacters(in: .whitespaces).isEmpty {
             let src = detect(l.text)
             guard let dst = target(source: src, choice: choice) else { fills[l.id] = .some(nil); continue }
-            if let k = kept[key(dst, l.text)] { fills[l.id] = k; continue }
+            if let k = kept[key(src, dst, l.text)] { fills[l.id] = k; continue }
             todo.append((i, src, dst))
         }
         let p = min(max(playhead ?? 0, 0), max(lines.count - 1, 0))
@@ -85,7 +85,8 @@ enum TranslatePlan {
         return jobs
     }
 
-    static func key(_ target: String, _ text: String) -> String { target + "|" + text }
+    /// A kept translation's key: source, target and text, so one heard under another source is never refilled.
+    static func key(_ source: String, _ target: String, _ text: String) -> String { source + ">" + target + "|" + text }
 
     static func name(_ lang: String) -> String {
         lang == Langs.off ? Langs.say(.off) : lang == Langs.auto ? Langs.say(.autoDetect) : Langs.name(lang)

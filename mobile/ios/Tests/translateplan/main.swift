@@ -27,7 +27,7 @@ check(TranslatePlan.source("The court held", heard: "auto", detect: { _ in "en" 
 // the plan
 let lang = ["a": "en", "b": "vi", "c": "fr", "d": "en", "e": "vi"]
 let lines = [("1", "a"), ("2", "b"), ("3", "c"), ("4", "d"), ("5", "e"), ("6", "  ")].map { (id: $0.0, text: $0.1) }
-let p = TranslatePlan.plan(lines, choice: "en", kept: [TranslatePlan.key("en", "b"): "B-en"], detect: { lang[$0] ?? "en" })
+let p = TranslatePlan.plan(lines, choice: "en", kept: [TranslatePlan.key("vi", "en", "b"): "B-en"], detect: { lang[$0] ?? "en" })
 check(p.fills["2"] == .some("B-en"), "kept translation reused")
 check(p.fills["1"] == .some(nil) && p.fills["4"] == .some(nil), "lines already in English show none")
 check(p.jobs == [TranslatePlan.Job(source: "fr", target: "en", ids: ["3"], texts: ["c"]),
@@ -50,6 +50,10 @@ check(h.jobs[5].ids == (0...3).map { "L\($0)" } && h.jobs.count == 6, "then the 
 check(Set(h.jobs.flatMap(\.ids)).count == 30, "every line once")
 let mixed = TranslatePlan.plan(lines, choice: "fr", kept: [:], playhead: 3, detect: { lang[$0] ?? "en" })
 check(mixed.jobs.map(\.ids) == [["4"], ["5"], ["2"], ["1"]], "pairs split, nearest first: \(mixed.jobs.map(\.ids))")
+// a translation kept from a wrong source (Heard in override) is not refilled under Auto-detect (review fix 3)
+let w = TranslatePlan.plan([(id: "1", text: "a")], choice: "fr", kept: [TranslatePlan.key("vi", "fr", "a"): "from-vi"],
+                           detect: { _ in "en" })
+check(w.fills["1"] == nil && w.jobs.map(\.ids) == [["1"]], "kept under another source → a job, not a fill: \(w)")
 check(TranslatePlan.name("fr") == "Français" && TranslatePlan.name("vi") == "Tiếng Việt", "endonyms from Langs")
 check(TranslatePlan.missing("vi", "en") == "Tiếng Việt → English isn't installed: Settings › General › Language & Region › Translation Languages", "missing note")
 
