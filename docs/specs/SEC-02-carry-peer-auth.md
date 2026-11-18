@@ -141,6 +141,9 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     A timer acts only if the peer's current session still carries its token, so a timer from an earlier
     connection never judges a reconnect early. While pairing, a timer does nothing; "Stop Pairing" re-arms
     10 s for every hello still held, so a stranger left unpaired is refused (unknown key) instead of waiting forever.
+16. **"Needs pairing again" never lists a trusted name:** a name that still has a trusted key is left out of the
+    list (`CarryTrust.listed`), whether it came from `peers.json` or from a refused connection (an impostor or a
+    reset device using that name). So no Forget on that list can un-trust the real device; its own row's Forget still can.
 
 Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must go red.
 
@@ -194,3 +197,4 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
 - 2026-11-18 · follow-ups (A3-fix, review of 80ad4c0): 13 Keychain read error keeps pairings and refuses writes.
   14 Keychain save updates in place, adds only when not found.
   15 the proof deadline is per session (token); Stop Pairing re-arms held hellos.
+  16 Needs pairing again leaves out names that still have a trusted key.

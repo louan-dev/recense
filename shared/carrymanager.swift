@@ -437,8 +437,7 @@ private enum CarryKeychain {
         trustWritable = trust.writable
         if !trust.writable { lastError = Self.unreadable }
         if trust.trusted != peers { peers = trust.trusted }
-        var names = trust.needsPairing.map(\.name)
-        for n in refusedNames.sorted() where !names.contains(n) { names.append(n) }
+        let names = CarryTrust.listed(needsPairing: trust.needsPairing, refused: refusedNames, trusted: trust.trusted)   // invariant 16
         if names != needsPairing { needsPairing = names }
         if let g = CarryKeychain.load("group").data { group = g }
     }

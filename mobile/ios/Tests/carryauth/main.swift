@@ -248,6 +248,19 @@ do {
     check(CarryAuthTimeout.verdict(authenticated: false, gotHello: true, held: false, pairing: false, connected: false) == nil, "gone: nothing")
 }
 
+// 16 · "Needs pairing again" never lists a name that still has a trusted key, so its Forget can't un-trust it
+// Regression guard: SEC-02
+do {
+    let oldPhone = Key()
+    let trusted = [peer("iPad", ipad)]
+    check(CarryTrust.listed(needsPairing: [], refused: ["iPad"], trusted: trusted).isEmpty,
+          "an impostor refused under a trusted name lists nothing")
+    check(CarryTrust.listed(needsPairing: [peer("iPad", oldPhone)], refused: [], trusted: trusted).isEmpty,
+          "an old mirror key under a trusted name lists nothing")
+    check(CarryTrust.listed(needsPairing: [peer("iPhone", oldPhone)], refused: ["iPad", "Mac", "iPhone"], trusted: trusted) == ["iPhone", "Mac"],
+          "others are listed once, mirror first, then refused names")
+}
+
 // A duplicate hello in one session is out of order, never a second channel
 do {
     var a = Side(mac, trusts: [peer("iPad", ipad)]), b = Side(ipad, trusts: [peer("Mac", mac)])

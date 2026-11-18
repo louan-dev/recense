@@ -142,6 +142,14 @@ enum CarryTrust {
         return (t.trusted, t.needsPairing, true)
     }
 
+    /// Invariant 16: the names under "Needs pairing again": old mirror entries, then refused names, each once.
+    static func listed(needsPairing: [CarryPeer], refused: Set<String>, trusted: [CarryPeer]) -> [String] {
+        let kept = Set(trusted.map(\.name))
+        var names: [String] = []
+        for n in needsPairing.map(\.name) + refused.sorted() where !kept.contains(n) && !names.contains(n) { names.append(n) }
+        return names
+    }
+
     static func forgetting(_ list: [CarryPeer], key: Data) -> [CarryPeer] { list.filter { $0.key != key } }
 }
 
