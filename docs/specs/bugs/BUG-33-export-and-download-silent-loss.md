@@ -22,7 +22,7 @@ Status: `[~]` tests pass (`strip/recense selftest exportjobs downloads`; `mobile
 | D1 | `.queue/` drained only on a network change or launch; failure moved to `failed/` with no word | also drained every 60 s and when `.queue/` changes; a failure posts a notification callback |
 | D2 | dedupe by exact URL string; youtu.be vs watch?v= twice | `Downloads.canonical(link)` (video id) keys `existing`; `existing` still verifies the bytes by sha256 |
 | D3 | `settle()` moved sidecars under their old names when Music renamed the file | sidecars take the renamed base |
-| D4 | no free-space check; `.part` older than a day kept | fetch refuses under 2 GiB free (queued, with a reason); `sweepStale` removes `.part`/`.ytdl` older than a day |
+| D4 | no free-space check; `.part` older than a day kept | fetch refuses under 2 GiB free, saying how much is left; `sweepStale` removes `.part`/`.ytdl` older than a day |
 Not in this change (open): M-B3 language tags, M-B6 artist/cover/AAC copy, D1-D4's yt-dlp pin/update and the `-P temp:` `.incoming/` move, merge of the second yt-dlp path (`recense.swift:3587`), iOS download engine.
 
 ## Invariants (tests: `strip/recense selftest`, groups `exportjobs` and `downloads`)
