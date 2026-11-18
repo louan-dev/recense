@@ -6445,56 +6445,28 @@
   // the link), never through Main's one-request /main/api/file: a screen recording of a few hundred MB got a 413.
   // The Add pill shows before /main/api/whoami answers, so the owner clicks the very pill a guest would.
   const linkPost = () => !!(G.perms && G.perms.upload) && (guest() || ownsLink());
-  const PART = 16 * 1024 * 1024;
-  const guestAdd = async (files) => {
+  // T-0142–44: the loop is client/linkup.js, shared with the owner's album page: two files at once, one failing never
+  // stops the rest, and a failed file keeps its row with the reason and a Retry (before, the first failure ended the
+  // whole batch and the rest were never sent).
+  const guestAdd = (files) => {
     const mine = ownsLink();
     const who = mine ? G.owner || "Owner" : guestName() || askName();
     if (!who) return;
     const q = (o) => (mine ? MAIN_API + "/linkadd?" : "/api/upload?") + new URLSearchParams({ id: G.id, ...o });
-    const call = async (o, init) => {
-      const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
-      if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
-      return r;
-    };
-    let done = 0;
-    for (const f of files) {
-      say("Adding " + (files.length > 1 ? done + 1 + " of " + files.length + ": " : "") + f.name + "…");
-      let i = null;
-      let uploadId = "";
-      try {
-        const res = await (await call({ action: "reserve" }, { body: JSON.stringify({ name: f.name, size: f.size, type: f.type, taken: f.lastModified, who }), headers: { "content-type": "application/json" } })).json();
-        i = res.i;
+    linkUp.add(files, {
+      who,
+      call: async (o, init) => {
+        const r = await fetch(q(o), { method: "POST", ...init, headers: { "x-gallery": "1", ...((init && init.headers) || {}) } });
+        if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
+        return r;
+      },
+      reserved: (res) => {
         if (res.you) G.you = res.you;
         if (!timer) timer = setInterval(poll, 2000);
         poll();
-        const total = Math.max(1, Math.ceil(f.size / PART));
-        uploadId = await (await call({ action: "start", i, total })).text();
-        const parts = [];
-        for (let k = 0; k < total; k++) {
-          // a phone drops a request now and then: one lost part of ~20 must not fail the whole video (BUG-23);
-          // four tries with a growing pause, as the owner's /main/share page does (upload.js)
-          let etag = "";
-          for (let tries = 1; !etag; tries++) {
-            try {
-              etag = await (await call({ action: "part", i, uploadId, part: k + 1, total }, { method: "PUT", body: f.slice(k * PART, (k + 1) * PART) })).text();
-            } catch (e) {
-              if (tries >= 4) throw e;
-              await new Promise((ok) => setTimeout(ok, 1500 * tries));
-            }
-          }
-          parts.push({ partNumber: k + 1, etag });
-          say("Adding " + f.name + "… " + Math.round(((k + 1) / total) * 100) + "%");
-        }
-        await call({ action: "complete", i, uploadId }, { body: JSON.stringify(parts), headers: { "content-type": "application/json" } });
-        done++;
-      } catch (e) {
-        if (i != null) call({ action: "abort", i, uploadId }).catch(() => {});
-        say("Couldn’t add " + f.name + ": " + (e.message || e), true);
-        return;
-      }
-    }
-    say(done === 1 ? "Added. Everyone with the link can see it." : "Added " + done + " files.");
-    poll();
+      },
+      done: () => poll(),
+    });
   };
   // Derived from Spec: BUG-20 — the Main-only CSS rule that hides the old Upload pill (#up{display:none!important})
   // must not swallow this same button when it is reused as the guest's visible "Add" pill (item 16).
@@ -6514,19 +6486,10 @@
   // Files dropped anywhere on the page, no drop box (notes item 14): the owner on Main, or an
   // invited person allowed to upload. Not while the viewer is open.
   const canDrop = () =>
-    !G.readOnly && lb.hidden && (guestPost() || (G.main && owner) || !!(G.invite && G.invite.perms && G.invite.perms.upload));
-  const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+    !G.readOnly && lb.hidden && (linkPost() || (G.main && owner) || !!(G.invite && G.invite.perms && G.invite.perms.upload));
 
-  document.addEventListener("dragover", (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault(); // a file dropped where we don't take it must not open in the tab either
-    e.dataTransfer.dropEffect = canDrop() ? "copy" : "none";
-  });
-  document.addEventListener("drop", (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    if (canDrop()) addFiles(Array.from(e.dataTransfer.files || []));
-  });
+  // the drop highlight and the drop itself live in linkup.js (T-0142–44), the same on the owner's album page
+  linkUp.dropAnywhere(canDrop, (files) => addFiles(files));
 
   let upSeq = 0;
 

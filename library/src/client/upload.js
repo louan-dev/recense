@@ -187,6 +187,25 @@
     }
   };
 
+  // lists each failed file with its reason; resolves true when the person taps Retry, false on Leave them
+  const showFailures = (selected, bad) =>
+    new Promise((ok) => {
+      const box = document.createElement("div");
+      box.className = "row";
+      const t = document.createElement("span");
+      t.textContent = bad.map((b) => selected[b.i].name + ": " + b.why).join("\n");
+      t.style.whiteSpace = "pre-wrap";
+      const retry = document.createElement("button");
+      retry.textContent = "Retry";
+      const leave = document.createElement("button");
+      leave.textContent = "Leave them";
+      retry.onclick = () => (box.remove(), ok(true));
+      leave.onclick = () => (box.remove(), ok(false));
+      box.append(t, retry, leave);
+      list.replaceChildren(box);
+      msg.textContent = bad.length + " file(s) did not go up";
+    });
+
   go.onclick = async () => {
     go.disabled = true;
     result.replaceChildren();
@@ -227,16 +246,12 @@
       // Smallest first: a photo is viewable at once while a big video is still going up.
       const order = selected.map((f, i) => i).sort((a, b) => selected[a].size - selected[b].size);
 
-      for (let k = 0; k < order.length; k++) {
-        const i = order[k];
+      const sendOne = async (i) => {
         const f = selected[i];
         const taken = f.lastModified || Date.now();
-        const label = "Uploading " + f.name + " (" + (k + 1) + " of " + selected.length + ")";
-
-        msg.textContent = label + "...";
 
         if (f.size > BIG) {
-          await bigUpload(f, id, i, days, taken, label);
+          await bigUpload(f, id, i, days, taken, "Uploading " + f.name);
         } else {
           const q = new URLSearchParams({
             id,
@@ -256,6 +271,36 @@
 
           if (!r.ok) throw failed(r, "Upload failed");
         }
+      };
+
+      // T-0142–44: one file failing must not cancel the link or stop the rest. Each failure is listed with its reason and a
+      // Retry (the same reserved slot is sent again); the link stays.
+      let todo = order.slice();
+      for (let round = 0; todo.length; round++) {
+        const bad = [];
+        for (let k = 0; k < todo.length; k++) {
+          const i = todo[k];
+          msg.textContent = "Uploading " + selected[i].name + " (" + (k + 1) + " of " + todo.length + ")...";
+          try {
+            await sendOne(i);
+          } catch (e) {
+            bad.push({ i, why: e.message });
+          }
+        }
+        if (!bad.length) break;
+        const again = await showFailures(selected, bad);
+        if (!again) {
+          // their reserved slots would show "uploading" for ever: take those tiles off, keep the rest of the link
+          const gone = new URLSearchParams({ id });
+          bad.forEach((b) => gone.append("item", String(b.i).padStart(3, "0")));
+          fetch("/main/api/link?" + gone, { method: "DELETE", headers: { "x-gallery": "1" } }).catch(() => {});
+          msg.textContent = bad.length + " file(s) did not go up; the link keeps the rest";
+          files = bad.map((b) => selected[b.i]);
+          render();
+          go.disabled = true;
+          return;
+        }
+        todo = bad.map((b) => b.i);
       }
 
       msg.textContent = "All uploads complete";
