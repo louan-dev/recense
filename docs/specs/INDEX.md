@@ -54,6 +54,7 @@ Row: ID · title · status · From · code pointer
 - FEAT-07 · 21 · 22 · 23 open questions (seven choices for the owner) and the build order · owner to answer · 2026-11-16 · `FEAT-21-23-open-questions.md`
 - FEAT-12 · Audio downloads land straight in Music · `[x]` · T-0076 · `shared/mediadownload.swift`, `shared/homes.swift`
 - FEAT-18 · Offline Recense hub: `https://recense.local` served by our own Mac (own root, Bonjour, Draftpad + note sync; H2 library, H3 standby) · `[~]` H1 building · owner 2026-11-16 · `FEAT-18-offline-hub.md`; `hub/`, `editor/src/hubsync.js`
+- FEAT-25 · Global destination: screenshots and trash in one Recense place (renamed from FEAT-04, which is exact time sync) · `[~]` P1 built, P2/P3 open · T-0034 · `shared/destinations.swift`, `FEAT-25-global-destination.md`
 
 ### Bugs
 - BUG-01 · Squeeze-hold menu stuck after hover loss or palm cancel · `[ ]` (anticipated) · owner 2026-11-11 · —

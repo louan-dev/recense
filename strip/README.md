@@ -446,6 +446,22 @@ Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files a
 - Local only: filesystem, CryptoKit and MultipeerConnectivity (device to device), no internet at any point.
 - Automatic carry: a paired device that connects, a change inside a home (2 s after it stops), or the iPhone/iPad app coming to the front starts a carry. Only the homes count: writes to `keep/` (Gallery transcripts) or `.carry/` never start one (T-0091).
 
+## Global destinations: screenshots, trash (FEAT-25)
+One place per device for a screenshot and for anything removed from inside Recense, same shape as
+Downloads above: `~/Recense/screenshots/` and `~/Recense/trash/`, each with `manifest.json` (source,
+size, SHA-256). Code: `shared/destinations.swift`.
+- `Destinations.adopt(.screenshots)` records any file dropped into `screenshots/` the manifest doesn't
+  know yet (nothing is ever deleted by this call).
+- `Destinations.trash(_:source:)` moves a file into `trash/` instead of destroying it, and records it.
+- Redirecting where macOS actually saves a screenshot is a separate, one-time Mac setting, not code:
+  `defaults write com.apple.screencapture location ~/Recense/screenshots && killall SystemUIServer`
+  (undo with `defaults delete com.apple.screencapture location`). Not run automatically — see
+  `docs/specs/FEAT-25-global-destination.md`.
+- iPhone/iPad: no OS redirect exists for where a screenshot saves (always Photos); the sweep side of
+  this (a Photos-library observer that adopts new screenshots) and the Safari-Downloads side (needs a
+  writable File Provider, not built yet) are still open — see the spec's P2/P3.
+- Test (no device needed): `swiftc -O shared/destinations.swift mobile/ios/Tests/destinations/main.swift -o "$TMPDIR/destinations" && "$TMPDIR/destinations"`.
+
 ## SSH (Topic › Connect To)
 The terminal connects to any host in `~/Recense/ssh/hosts.json` (made from `~/.ssh/config` the first time; Topic › Connect To › Edit Hosts…). Each host lists routes tried in order: `lan` (same network, no internet), `tailscale`, `tunnel` (Cloudflare Tunnel through cloudflared, only when installed); the first that answers in 3 s is used. When ssh ends, the terminal goes back to its own session. Code: `shared/sshhosts.swift`.
 
