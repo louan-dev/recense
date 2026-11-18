@@ -159,6 +159,11 @@ Recense/
 - **P4 · One transcript layout on iOS** (move `Application Support/…/transcripts` to `keep/<key>/lines.json`, read-old-write-new).
   Check: an old device copy still opens after the move; nothing is deleted until the new file verifies.
 
+## Reference (2026-11-18, research paste checked)
+- `carrymanager.swift:480` still passes `base: [:]` (proven): P1's tracked base is the fix, as planned.
+- Automerge (`automerge/automerge-swift`, MIT) is a study reference for how marks and cursors keep their place through concurrent edits
+  (ink, voice pins, `segId` highlights). It is not a dependency: a Rust core behind a binary fails the 10-year, own-the-source rule.
+
 ## Risks and edge cases
 - **Clock skew between devices** decides "newer". Use the ops log's order (FEAT-09), not wall-clock time alone.
 - **`keep/` is visible in Files on iOS.** A person could delete a note there. It goes through the system's

@@ -136,6 +136,11 @@ One phase at a time. Each ends at its check. Bugs before features.
   Gold stays for a fitted song only (FEAT-20).
 - Reach: Now Playing and Listen's in-app transcript, on iPhone, iPad and the Mac's ShowsKit views. One source.
 - Not in P1: the floating window (P1b).
+- Renderer note (2026-11-18, research paste checked): P1 ships with today's `AttributedString` (a letter step). SwiftUI `TextRenderer`
+  (iOS 18, the app's target; macOS 15) can wipe inside a letter. Use it only if the letter step looks jumpy at 0.75x on the iPhone.
+  It does not reach the floating window: PiP takes picture frames, so P1b stays in `CaptionPainter`. The Mac caption already draws live text
+  with clipped spans (`recense.swift:2468-2518`), not bitmaps. Reference only: `WillSuo-Github/KaraokeText` (MIT, 2 stars);
+  `kmgcc/melismakit` is AGPL-3.0, so study it, never copy it.
 - Checks:
   1. `swift test` in `shared/ShowsKit/`: a new test, "at the middle of a 1-second word the cut is inside the word";
      at its start the cut is before it; at its end the word is whole. A line with no word times is unchanged.
