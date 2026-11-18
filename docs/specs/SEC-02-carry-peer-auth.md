@@ -138,7 +138,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     pair, forget and re-pair refuse to write `peers.v2` (and its mirror) and set `lastError`. A failed read of
     `identity` never makes and saves a new key. Only "not found" starts empty. A failed read lists nobody new under
     "Needs pairing again" (the list stays as it was; never re-pair during a Keychain failure), and the
-    unreadable message clears once every read works again.
+    unreadable message clears once every read works again. Only an unread `peers.v2` or identity sets that
+    message on reload (`reportsUnreadable`); a group-only failure is reported by the pairing gate when pairing.
 14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
     No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
     The update changes only `kSecValueData` (the Mac's file keychain may refuse a changed `kSecAttrAccessible`);

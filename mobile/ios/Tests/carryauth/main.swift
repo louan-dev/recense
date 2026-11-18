@@ -290,6 +290,9 @@ do {
     check(!CarryKeychainGate(trustWritable: false).canForget, "forget sends nothing when peers.v2 can't be written")
     check(!CarryKeychainGate(identityUnread: true).canForget, "forget sends nothing on a stand-in key")
     check(CarryKeychainGate(groupUnread: true).canForget && fine.canForget, "forget needs no group")
+    check(!CarryKeychainGate(groupUnread: true).reportsUnreadable, "a group-only failure is not a reload error (Forget still succeeds)")
+    check(CarryKeychainGate(trustWritable: false).reportsUnreadable && standIn.reportsUnreadable && !fine.reportsUnreadable,
+          "an unread peers.v2 or identity is reported on reload")
     let raw = Key().rawRepresentation
     check(CarryIdentityRead.from(.found(raw)) == .use(raw), "a read key is used")
     check(CarryIdentityRead.from(.failed(errSecInteractionNotAllowed)) == .unread, "a failed read (before first unlock) stays unread, retried")

@@ -221,6 +221,8 @@ struct CarryKeychainGate: Equatable {
     var canPair: Bool { !identityUnread && !groupUnread && trustWritable }
     /// Forget writes peers.v2 and tells the peer: both checked before anything is sent.
     var canForget: Bool { !identityUnread && trustWritable }
+    /// What a reload reports as "the Keychain could not be read"; a group-only failure is the pairing gate's to say.
+    var reportsUnreadable: Bool { !trustWritable || identityUnread }
     /// The handshake proves our key: never a stand-in.
     var canAuth: Bool { !identityUnread }
 }
