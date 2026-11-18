@@ -2251,5 +2251,114 @@ await test("T-0148: a part with no answer is cut off and sent again; Retry carri
   assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0, "nothing left remembered");
 });
 
+await test("T-0148: the owner selects a stuck upload on their share link and Deletes it", true, async (pg) => {
+  const up = await bug24Link(1);
+  const H = { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" };
+  const res = await (await mf.dispatchFetch(base + "/main/api/linkadd?id=" + up.id + "&action=reserve", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ name: "stuck.mov", size: 863479162, type: "video/quicktime", taken: 1, who: "Owner" }) })).json();
+  const n = String(res.i).padStart(3, "0");
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForSelector(".tile.pending");
+  await pg.click("#sel");
+  await pg.click(".tile.pending");
+  assert.ok(await pg.$(".tile.pending.on"), "the stuck upload is picked");
+  await Promise.all([pg.waitForEvent("load"), pg.click("#del")]);
+  await pg.waitForTimeout(500);
+  assert.equal(await pg.$(".tile.pending"), null, "its tile is gone");
+  const m = JSON.parse(await (await PUBLIC.get("links/" + up.id + "/.manifest")).text());
+  assert.ok(!(m.items || []).some((x) => String(x.i).padStart(3, "0") === n), "the reservation is gone: " + JSON.stringify(m.items));
+});
+
+await test("T-0148: a failed upload's row has Remove: the row, the tile and what this device remembered go", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  let aborted = 0;
+  await pg.route(/\/api\/upload\?.*action=(part|abort)/, (rt) => {
+    if (/action=abort/.test(rt.request().url())) { aborted++; return rt.continue(); }
+    const k = Number(new URL(rt.request().url()).searchParams.get("part"));
+    return k === 2 ? rt.abort("failed") : rt.continue();
+  });
+  await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000));
+  await pg.waitForSelector(".lup .r.bad button[aria-label^='Remove']", { timeout: 60000 });
+  await pg.click(".lup .r.bad button[aria-label^='Remove']");
+  await pg.waitForSelector(".tile.pending", { state: "detached", timeout: 10000 });
+  assert.equal(aborted, 1, "the reservation was taken back");
+  assert.equal(await pg.$(".lup .r.bad"), null, "the row went");
+  assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("lup|")).length), 0);
+});
+
+await test("T-0148: while a file goes up, Refresh resends a stuck part at once and Remove takes it back", false, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(500);
+  pg.removeAllListeners("dialog");
+  pg.on("dialog", (d) => d.accept("Guest"));
+  const sent = [];
+  let hang = true;
+  await pg.route(/\/api\/upload\?.*action=part/, (rt) => {
+    const n = Number(new URL(rt.request().url()).searchParams.get("part"));
+    sent.push(n);
+    if (n === 2 && hang) { hang = false; return; } // stuck, no answer
+    return rt.continue();
+  });
+  await pg.setInputFiles("#upin", bug23Video(40 * 1000 * 1000));
+  await pg.waitForSelector(".lup button[aria-label^='Refresh']");
+  for (let t = 0; t < 40 && !sent.includes(2); t++) await pg.waitForTimeout(250);
+  await pg.click(".lup button[aria-label^='Refresh']");
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/001")); t++) await pg.waitForTimeout(250);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "it finished after the nudge");
+  assert.deepEqual(sent, [1, 2, 2, 3], "only the stuck part went again");
+
+  // a second file stuck on its first part: Remove while it goes
+  let aborted = 0;
+  await pg.unroute(/\/api\/upload\?.*action=part/);
+  await pg.route(/\/api\/upload\?.*action=(part|abort)/, (rt) => (/action=abort/.test(rt.request().url()) ? (aborted++, rt.continue()) : undefined));
+  await pg.setInputFiles("#upin", bug23Video(20 * 1000 * 1000));
+  await pg.waitForSelector(".lup button[aria-label^='Remove']");
+  await pg.waitForSelector(".tile.pending");
+  await pg.click(".lup button[aria-label^='Remove']");
+  await pg.waitForSelector(".tile.pending", { state: "detached", timeout: 10000 });
+  assert.ok(aborted >= 1, "the reservation was taken back");
+});
+
+await test("T-0148: Continue on a stalled tile, from another visit, sends only the parts the server is missing", true, async (pg) => {
+  const up = await bug24Link(1);
+  const path = bug23Video(40 * 1000 * 1000);
+  const bytes = readFileSync(path);
+  const H = { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" };
+  const api = (o, init = {}) => mf.dispatchFetch(base + "/main/api/linkadd?" + new URLSearchParams({ id: up.id, ...o }), { method: "POST", ...init, headers: { ...H, ...(init.headers || {}) } });
+  // another device sent part 1 of 3, then stopped
+  const res = await (await api({ action: "reserve" }, { headers: { "content-type": "application/json" }, body: JSON.stringify({ name: BUG23_NAME, size: bytes.length, type: "video/mp4", taken: 1, who: "Owner" }) })).json();
+  const uploadId = await (await api({ action: "start", i: res.i, total: 3 })).text();
+  const P = 16 * 1024 * 1024;
+  assert.ok((await api({ action: "part", i: res.i, uploadId, part: 1, total: 3 }, { method: "PUT", body: bytes.subarray(0, P) })).ok);
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForSelector(".tile.pending");
+  const sent = [];
+  await pg.route(/\/main\/api\/linkadd\?.*action=part/, (rt) => { sent.push(Number(new URL(rt.request().url()).searchParams.get("part"))); return rt.continue(); });
+  await pg.click(".tile.pending");
+  await pg.waitForSelector(".pw button[aria-label^='Continue']");
+  const [chooser] = await Promise.all([pg.waitForEvent("filechooser"), pg.click(".pw button[aria-label^='Continue']")]);
+  await chooser.setFiles(path);
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/" + res.n)); t++) await pg.waitForTimeout(250);
+  const head = await PUBLIC.head("links/" + up.id + "/" + res.n);
+  assert.ok(head, "the same slot finished; sent " + JSON.stringify(sent) + " · " + (await pg.textContent(".lup").catch(() => "no panel")));
+  assert.equal(head.size, bytes.length);
+  assert.deepEqual(sent, [2, 3], "part 1 was not sent again");
+});
+
+await test("T-0148: a page with a stalled upload looks less and less often (not every 2 s)", false, async (pg) => {
+  const up = await bug24Link(1);
+  const H = { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" };
+  await mf.dispatchFetch(base + "/main/api/linkadd?id=" + up.id + "&action=reserve", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ name: "stuck.mov", size: 1000, type: "video/quicktime", taken: 1, who: "Owner" }) });
+  let looks = 0;
+  await pg.route(/\/api\/gallery\?/, (rt) => { looks++; return rt.continue(); });
+  await pg.goto(base + "/s/" + up.id);
+  await pg.waitForTimeout(16000);
+  assert.ok(looks >= 2 && looks <= 4, "2–4 looks in 16 s (every 2 s would be 8): " + looks);
+});
+
 await browser.close();
 await mf.dispose();

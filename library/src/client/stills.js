@@ -16,7 +16,7 @@
   var MAX = 2;
   var WAIT_MS = 20000;
   var WIDE = 480; // poster width cap: a tile is never wider
-  var made = new Map(); // url -> poster data URL
+  var made = new Map(); // url -> { p: poster data URL, d: seconds }
   var queue = [];
   var busy = 0;
 
@@ -36,13 +36,18 @@
     return c.toDataURL("image/jpeg", 0.8);
   };
 
+  var use = function (v, m) {
+    v.poster = m.p;
+    if (m.d) v.dataset.dur = String(m.d);
+  };
+
   var next = function () {
     while (busy < MAX && queue.length) start(queue.shift());
   };
 
   var start = function (v) {
     var url = v.dataset.still;
-    if (made.has(url)) { v.poster = made.get(url); return; }
+    if (made.has(url)) { use(v, made.get(url)); return; }
     if (!v.isConnected) return; // re-rendered away while waiting
     busy++;
     var over = false;
@@ -54,7 +59,7 @@
       if (ok) {
         try {
           var p = grab(v);
-          if (p) { made.set(url, p); v.poster = p; }
+          if (p) { made.set(url, { p: p, d: isFinite(v.duration) ? v.duration : 0 }); v.poster = p; }
         } catch (e) {}
       }
       release(v);
@@ -90,7 +95,7 @@
     v.setAttribute("playsinline", "");
     v.preload = "none";
     v.dataset.still = url;
-    if (made.has(url)) { v.poster = made.get(url); return v; }
+    if (made.has(url)) { use(v, made.get(url)); return v; }
     if (io) io.observe(v);
     else { queue.push(v); setTimeout(next, 0); }
     return v;
