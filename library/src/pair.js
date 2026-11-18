@@ -54,8 +54,9 @@ export async function deviceOwner(req, env) {
   const dev = await obj.json();
   if (dev.revoked) return false;
 
-  // last seen, at most once an hour
-  if (Date.now() - (dev.seen || 0) > 3600e3) {
+  // the first time the device comes back with its pass, it counts as paired (never before: no false positives)
+  if (!dev.confirmed || Date.now() - (dev.seen || 0) > 3600e3) {
+    dev.confirmed = dev.confirmed || Date.now();
     dev.seen = Date.now();
     await env.MAIN.put(DEVICE(id), JSON.stringify(dev), { onlyIf: { etagMatches: obj.etag } }).catch(() => {});
   }
@@ -132,6 +133,8 @@ export async function claim(req, env, url) {
   const origin = req.headers.get("origin");
   if (origin && origin !== url.origin) return new Response("Forbidden", { status: 403 });
   if (!on(env)) return claimPage("Pairing is off.", 503);
+  // codes are only ever claimed on the device address, where the pass is set
+  if (env.DEVICE_ORIGIN && !env.DEVICE_HOST) return Response.redirect(env.DEVICE_ORIGIN + "/pair", 303);
 
   const form = await req.formData().catch(() => null);
   const code = String(form?.get("code") || "").trim();
@@ -157,7 +160,7 @@ export async function claim(req, env, url) {
   if (!right) return bad();
 
   const now = Date.now();
-  await env.MAIN.put(DEVICE(id), JSON.stringify({ id, name, created: now, seen: now, revoked: false }));
+  await env.MAIN.put(DEVICE(id), JSON.stringify({ id, name, created: now, seen: 0, confirmed: 0, revoked: false }));
   return passTo(env, id);
 }
 
@@ -169,14 +172,11 @@ function req2(req, code, name) {
 async function passTo(env, id) {
   const exp = Date.now() + COOKIE_DAYS * 864e5;
   const value = id + "." + exp + "." + (await hmac(env, id + "." + exp));
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: "/main/",
-      "set-cookie": `${COOKIE}=${value}; Path=/; Max-Age=${COOKIE_DAYS * 86400}; Secure; HttpOnly; SameSite=Lax`,
-      "cache-control": "no-store",
-    },
-  });
+  // a plain 200 page carries the pass (some browsers drop a cookie set on a redirect), then goes to Main
+  const res = page(shell("Paired", `<p>This device is paired.</p><p><a id="go" href="/main/">Open Main</a></p>
+<script>setTimeout(function(){location.replace("/main/")},400)</script>`));
+  res.headers.append("set-cookie", `${COOKIE}=${value}; Path=/; Max-Age=${COOKIE_DAYS * 86400}; Secure; HttpOnly; SameSite=Lax`);
+  return res;
 }
 
 // ---------- the list, with Revoke (owner only) ----------
@@ -188,7 +188,7 @@ async function listDevices(env) {
     const l = await env.MAIN.list({ prefix: ".pair/devices/", cursor });
     for (const o of l.objects) {
       const d = await (await env.MAIN.get(o.key))?.json();
-      if (d) out.push(d);
+      if (d && d.confirmed) out.push(d);
     }
     cursor = l.truncated ? l.cursor : undefined;
   } while (cursor);

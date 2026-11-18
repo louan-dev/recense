@@ -58,7 +58,7 @@ assert.equal((await go("/pair")).status, 200); ok("claim page is public");
 let code = await mint();
 assert.match(code, /^\d{6}$/);
 let r = await claim(code);
-assert.equal(r.status, 303);
+assert.equal(r.status, 200);
 const dev = cookieOf(r);
 assert.match(r.headers.get("set-cookie"), /HttpOnly; SameSite=Lax/);
 assert.equal((await asDevice(dev)).status, 200); ok("claimed device opens /main");
@@ -71,7 +71,7 @@ assert.match(await (await go("/pair/check", { headers: { cookie: dev.slice(0, -4
 
 // Regression guard: iPhone sends the form twice and keeps only the second answer
 r = await claim(code);
-assert.equal(r.status, 303);
+assert.equal(r.status, 200);
 assert.equal(cookieOf(r).slice(5).split(".")[0], dev.slice(5).split(".")[0]); ok("same right code again: same device's pass");
 assert.equal((await asDevice(cookieOf(r))).status, 200); ok("repeat pass opens /main");
 assert.equal((await claim(String((Number(code) + 1) % 1e6).padStart(6, "0"))).status, 403); ok("used code: a wrong guess still refused");
@@ -98,6 +98,9 @@ assert.equal((await asDevice(`gdev=${id}.${Number(exp) + 1000}.${sig}`)).status,
 assert.equal((await asDevice(`gdev=${"a".repeat(32)}.${exp}.${sig}`)).status, 404); ok("other id refused");
 
 // devices list and revoke
+// a claimed device that never came back is not listed
+code = await mint(); const ghost = await claim(code, "Ghost");
+assert.doesNotMatch(await (await asOwner("/main/devices")).text(), /Ghost/); ok("unconfirmed device not listed");
 const list = await (await asOwner("/main/devices")).text();
 assert.match(list, /iPhone/); ok("devices page lists it");
 assert.equal((await go(`/main/api/devices/${id}/revoke`, { method: "POST", headers: { cookie: dev } })).status, 403); ok("revoke needs same-site");
@@ -122,6 +125,8 @@ let t = await two.dispatchFetch(ORIGIN + "/pair", { redirect: "manual" });
 assert.equal(t.status, 302); assert.equal(t.headers.get("location"), "https://dev.test/pair");
 t = await two.dispatchFetch(ORIGIN + "/main/pair", { headers: { "cf-access-jwt-assertion": ownerJwt } });
 assert.match(await t.text(), /https:\/\/dev\.test\/pair/); ok("main address points phones at the device address");
+t = await two.dispatchFetch(ORIGIN + "/pair", { method: "POST", redirect: "manual", headers: { origin: ORIGIN }, body: new URLSearchParams({ code: "123456" }) });
+assert.equal(t.status, 303); ok("main address never claims a code");
 await two.dispose();
 // the device address serves the claim page itself
 const dv = make({ PAIR_SECRET: SECRET, DEVICE_ORIGIN: "https://dev.test", DEVICE_HOST: "1" });
