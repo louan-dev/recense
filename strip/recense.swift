@@ -7285,19 +7285,19 @@ final class NativeSources {
             try transcriptVTT(lines).write(to: vtt, atomically: true, encoding: .utf8)
         } catch { return fail(error.localizedDescription) }
         overlay.setStatus("Exporting audiobook…"); statusUntil = Date().addingTimeInterval(1800)
-        let ok: Bool = await Task.detached {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: ffmpeg)
-            p.arguments = ["-v", "error", "-y", "-i", audio.path, "-f", "ffmetadata", "-i", metaURL.path, "-i", vtt.path,
-                           "-map", "0:a:0", "-map", "2:s:0", "-map_metadata", "1", "-map_chapters", "1",
-                           "-c:a", "aac", "-b:a", "128k", "-c:s", "mov_text", "-movflags", "+faststart", "-f", "ipod", part.path]
-            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-            do { try p.run() } catch { return false }
-            p.waitUntilExit()
-            return p.terminationStatus == 0
-        }.value
+        // stderr is kept and the run has a time limit, so a failure says what happened (BUG-33 M-B4)
+        let args = ["-v", "error", "-y", "-i", audio.path, "-f", "ffmetadata", "-i", metaURL.path, "-i", vtt.path,
+                    "-map", "0:a:0", "-map", "2:s:0", "-map_metadata", "1", "-map_chapters", "1",
+                    "-c:a", "aac", "-b:a", "128k", "-c:s", "mov_text", "-movflags", "+faststart", "-f", "ipod", part.path]
+        let ran: (Int32, String, String)
+        do { ran = try await Downloads.run(ffmpeg, args, timeout: 7200) }
+        catch { overlay.setStatus(""); statusUntil = .distantPast; return fail("ffmpeg couldn't start: \(error.localizedDescription)") }
         overlay.setStatus(""); statusUntil = .distantPast
-        guard ok else { return fail("ffmpeg couldn't make the audiobook.") }
+        guard ran.0 == 0 else {
+            let why = ExportJobs.failure(status: ran.0, stderr: ran.2)
+            log("audiobook export failed: \(why)\n\(ran.2.suffix(2000))")
+            return fail(why)
+        }
         do {
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
             out = ExportJobs.freeURL(exportDir, base: stamp, ext: "m4b")   // never replaces a finished audiobook
