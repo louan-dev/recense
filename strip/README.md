@@ -477,6 +477,10 @@ Mac: `~/Recense/`. iPhone and iPad: `Documents/Recense/`, visible in the Files a
 - `recense carry verify` writes `~/Recense/.carry/manifest.jsonl`: one line per file across every home (home, path, size, mtime, SHA-256, device) — what this Mac holds, readable by any tool.
 - `recense carry move --to <folder>` copies every home there, verifies every SHA-256 after the copy, writes `carry-receipt-<when>.json`, and **leaves the source in place**. That is the exit: any folder works (a USB stick, iCloud Drive, the WebDAV mount), no Recense needed to read it.
 - Local only: filesystem, CryptoKit and MultipeerConnectivity (device to device), no internet at any point.
+- Peer auth (SEC-02): a paired device proves its key on every connection, and seen/ops/gone travel sealed; a renamed or
+  reset device gets nothing. Devices paired before SEC-02 show "— Pair again to keep carrying" in the Devices menu
+  (carry with them pauses; nothing is deleted): Devices › Pair a Device… on both. Devices › Forget › "<device>"… unpairs
+  one on both sides. Terminal: `recense carry devices`, `recense carry forget <name>`.
 - The Pair a Device window, closed with its X, opens again from Devices › "Type the Code Shown on …" or "Type … on …" (T-0122).
 - Automatic carry: a paired device that connects, a change inside a home (2 s after it stops), or the iPhone/iPad app coming to the front starts a carry. Only the homes count: writes to `keep/` (Gallery transcripts) or `.carry/` never start one (T-0091).
 

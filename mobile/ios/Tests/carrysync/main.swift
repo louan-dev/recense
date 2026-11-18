@@ -286,5 +286,19 @@ do {
     check(CarrySync.renumber([], peerSaw: 40) == nil, "an empty log has nothing to renumber")
 }
 
+// Regression guard: SEC-02 §4.10 · no key from a peer ever names a place outside ~/Recense/
+do {
+    let homes = ["library/Music", "library/Study", "downloads", "trash"]
+    check(CarrySync.split("library/Music/a.m4a", homes: homes)! == ("library/Music", "a.m4a"), "a plain key splits")
+    check(CarrySync.split("library/Study/Notes/ghi chú.md", homes: homes)?.path == "Notes/ghi chú.md", "nested and accented keys split")
+    for bad in ["library/Music/../../x", "library/Music/../../../etc/passwd", "../library/Music/a", "/library/Music/a",
+                "library/Music//a", "library/Music/./a", "library/Music/.", "library/Music/..", "library/Music/a\u{0}b",
+                "library/Music/a\\..\\..\\x", "library/Music/", "", "downloads/x/..", "library/Music/a/"] {
+        check(CarrySync.split(bad, homes: homes) == nil, "refused: \(bad.debugDescription)")
+        check(!CarrySync.safeKey(bad), "safeKey refuses \(bad.debugDescription)")
+    }
+    check(CarrySync.safeKey("downloads/a..b.txt") && CarrySync.safeKey("trash/.hidden"), "dots inside a name are fine")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

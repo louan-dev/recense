@@ -7688,10 +7688,18 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         let m = NSMenu()
         let cm = CarryManager.shared
         cm.reloadFromDisk()   // another Recense process may have paired since (BUG-17)
-        if cm.peers.isEmpty {
+        if cm.peers.isEmpty && cm.needsPairing.isEmpty {
             m.addItem(withTitle: "No paired devices yet", action: nil, keyEquivalent: "").isEnabled = false
         } else {
             for p in cm.peers { m.addItem(withTitle: "\(p.name) — paired \(p.paired)", action: nil, keyEquivalent: "").isEnabled = false }
+            // SEC-02 §2.6: paired before keys were checked: carry with it pauses, nothing is lost
+            for n in cm.needsPairing { m.addItem(withTitle: "\(n) — Pair again to keep carrying", action: nil, keyEquivalent: "").isEnabled = false }
+            let forget = NSMenu()   // SEC-02 §2.5: Devices › Forget › <device>
+            for n in cm.peers.map(\.name) + cm.needsPairing where forget.item(withTitle: "Forget “\(n)”…") == nil {
+                let item = forget.addItem(withTitle: "Forget “\(n)”…", action: #selector(forgetDevice(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = n
+            }
+            m.addItem(withTitle: "Forget", action: nil, keyEquivalent: "").submenu = forget
         }
         m.addItem(.separator())
         if cm.askingCode, let who = cm.pairingWith {   // P1b: the window (paircode.swift) takes the typed code
@@ -7731,6 +7739,16 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     @MainActor @objc func beginPairingDevice() { CarryManager.shared.beginPairing() }
     @MainActor @objc func stopPairingDevice() { CarryManager.shared.stopPairing() }
     @MainActor @objc func showPairWindow() { PairCodeWindow.shared.show() }
+    @MainActor @objc func forgetDevice(_ sender: NSMenuItem) {   // SEC-02 §2.5: asks once, then unpairs
+        guard let name = sender.representedObject as? String else { return }
+        let a = NSAlert()
+        a.messageText = "Forget \(name)?"
+        a.informativeText = "Carry with \(name) stops until you pair it again. Files on both devices stay."
+        a.alertStyle = .warning
+        a.addButton(withTitle: "Forget"); a.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if a.runModal() == .alertFirstButtonReturn { CarryManager.shared.forget(name) }
+    }
     @MainActor @objc func pairNearbyDevice(_ sender: NSMenuItem) {
         guard let peer = sender.representedObject as? MCPeerID else { return }
         CarryManager.shared.invite(peer)
@@ -8781,9 +8799,27 @@ if CommandLine.arguments.dropFirst().first == "carry", CommandLine.arguments.dro
 }
 if CommandLine.arguments.dropFirst().first == "carry" {
     let a = Array(CommandLine.arguments.dropFirst(2))
-    let usage = "usage: recense carry verify | carry move --to <folder> | carry pair"
+    let usage = "usage: recense carry verify | carry move --to <folder> | carry pair | carry devices | carry forget <name>"
     do {
         switch a.first {
+        case "devices":   // SEC-02 §2.6: who is trusted, and who needs pairing again
+            MainActor.assumeIsolated {
+                let cm = CarryManager.shared
+                cm.reloadFromDisk()
+                if cm.peers.isEmpty && cm.needsPairing.isEmpty { print("No paired devices yet.") }
+                for p in cm.peers { print("\(p.name) — paired \(p.paired)") }
+                for n in cm.needsPairing { print("\(n) — Pair again to keep carrying (recense carry pair)") }
+            }
+        case "forget":    // SEC-02 §2.5
+            guard a.count >= 2 else { fputs(usage + "\n", stderr); exit(1) }
+            let name = a.dropFirst().joined(separator: " ")
+            let err: String? = MainActor.assumeIsolated {
+                let cm = CarryManager.shared
+                cm.forget(name)
+                return cm.lastError
+            }
+            if let err { fputs("carry forget: \(err)\n", stderr); exit(1) }
+            print("Forgot \(name). Files on both devices stay; pair again to carry with it.")
         case "verify":
             try Homes.ensure()
             let lines = try Carry.verify()

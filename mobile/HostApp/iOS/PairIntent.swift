@@ -101,6 +101,29 @@ struct EnterPairingCodeIntent: AppIntent {
     }
 }
 
+// Derived from Spec: SEC-02 §2.5 · the voice path for Library › Devices › Forget
+struct ForgetDeviceIntent: AppIntent {
+    static var title: LocalizedStringResource = "Forget Device"
+    static var description = IntentDescription("Unpairs a device: carry with it stops until you pair it again. Files stay on both devices.")
+    static var openAppWhenRun: Bool = true
+
+    @Parameter(title: "Device", requestValueDialog: "Which device should Recense forget?")
+    var device: String
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let cm = CarryManager.shared
+        cm.reloadFromDisk()
+        let known = cm.peers.map(\.name) + cm.needsPairing
+        guard let name = known.first(where: { $0.localizedCaseInsensitiveCompare(device) == .orderedSame }) else {
+            return .result(dialog: "No paired device is called \(device). Paired: \(known.isEmpty ? "none" : known.joined(separator: ", ")).")
+        }
+        try await requestConfirmation(dialog: "Forget \(name)? Carry with it stops until you pair it again. Files stay.")
+        cm.forget(name)
+        return .result(dialog: "Forgot \(name). Files on both devices stay.")
+    }
+}
+
 struct RecensePairingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -118,6 +141,11 @@ struct RecensePairingShortcuts: AppShortcutsProvider {
             phrases: ["Enter pairing code in \(.applicationName)", "\(.applicationName), enter pairing code"],
             shortTitle: "Enter Pairing Code",
             systemImageName: "number.square")
+        AppShortcut(
+            intent: ForgetDeviceIntent(),
+            phrases: ["Forget a device in \(.applicationName)", "\(.applicationName), forget device"],
+            shortTitle: "Forget Device",
+            systemImageName: "minus.circle")
         AppShortcut(   // FEAT-08: the app has one AppShortcutsProvider, so Draftpad's voice shortcut lives here
             intent: AddToDraftpadIntent(),
             phrases: ["Add to Draftpad in \(.applicationName)", "\(.applicationName), add to Draftpad"],

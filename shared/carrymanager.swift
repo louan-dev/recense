@@ -53,7 +53,8 @@ private enum CarryKeychain {
 @MainActor final class CarryManager: NSObject, ObservableObject {
     static let shared = CarryManager()
 
-    @Published private(set) var peers: [CarryPeer] = []
+    @Published private(set) var peers: [CarryPeer] = []         // SEC-02: the trust store (Keychain peers.v2) only
+    @Published private(set) var needsPairing: [String] = []     // SEC-02 §2.6: "Pair again to keep carrying"
     @Published private(set) var nearby: [MCPeerID] = []   // seen while browsing, not yet necessarily paired
     @Published var pairingCode: String?                    // non-nil once both nonces are in: show, ask "They match"
     @Published var pairingWith: String?                     // their display name, while `pairingCode` is shown
@@ -82,6 +83,13 @@ private enum CarryKeychain {
     private var pendingActions: [String: CarryAction] = [:]   // destination key → what to do once its bytes land
     private var waiting: [String: (peer: String, seq: Int)] = [:]   // destination key → the op whose bytes are owed (BUG-19)
     private var received: [String: Int] = [:]                 // peer → highest seq of its ops seen this run
+    // Derived from Spec: SEC-02 · every per-peer state above is keyed by the trust-store name, never displayName
+    private var mirror: [CarryPeer] = []                        // peers.json: a readable copy, never read for trust
+    private var auth: [MCPeerID: CarryAuthSession] = [:]        // one handshake per connection (§2.3)
+    private var pendingAuth: [MCPeerID: [CarryAuthMessage]] = [:]   // a not-yet-trusted key's hello (and what follows it), while pairing
+    private var refusedNames: Set<String> = []                  // a known name that sent an unknown key or no proof
+    private var stagedFrom: [String: String] = [:]              // staged key → the authenticated peer that sent the bytes
+    private var placing: Set<String> = []                       // keys whose staged bytes are being hashed (§2.4)
 
     private var dir: URL { Carry.dir }
     private var peersURL: URL { dir.appendingPathComponent("peers.json") }
@@ -106,7 +114,7 @@ private enum CarryKeychain {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: opsDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-        peers = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
+        reloadFromDisk()   // SEC-02 §2.6: trust comes from peers.v2 only; old peers.json entries need pairing again
         lastSent = (try? Data(contentsOf: lastSentURL)).flatMap { try? JSONDecoder().decode([CarryFile].self, from: $0) } ?? []
         appliedSeq = (try? Data(contentsOf: appliedURL)).flatMap { try? JSONDecoder().decode([String: Int].self, from: $0) } ?? [:]
         sweepStaging(maxAge: 0)   // T-0092: nothing waits in memory yet; unsettled ops are asked for again
@@ -115,10 +123,16 @@ private enum CarryKeychain {
     }
 
     private func wire() {
-        t.isPaired = { [weak self] peer in
+        t.isPaired = { [weak self] _, context in   // SEC-02 §2.2: a trusted key and its proof, never a name
             guard let self else { return false }
             self.reloadFromDisk()
-            return self.peers.contains { $0.name == peer.displayName }
+            return CarryInvite.accepts(context, me: self.identity, trusted: self.peers) != nil
+        }
+        t.inviteContext = { [weak self] peer in   // the name picks whom to invite; the handshake proves who it is
+            guard let self else { return nil }
+            self.reloadFromDisk()
+            guard let p = self.peers.first(where: { $0.name == peer.displayName }) else { return nil }
+            return try? CarryInvite.context(me: self.identity, peer: p.key)
         }
         t.confirmUnpaired = { [weak self] _, reply in reply(self?.isLookingToPair ?? false) }
         t.onPeerFound = { [weak self] peer in
@@ -130,10 +144,9 @@ private enum CarryKeychain {
         t.onMessage = { [weak self] type, data, peer in
             switch type {
             case "pair": self?.receivePair(data, from: peer)
-            case "seen": self?.receiveSeen(data, from: peer)
-            case "ops": self?.receiveOps(data, from: peer)
-            case "gone": self?.receiveGone(data, from: peer)
-            default: break
+            case "auth": self?.receiveAuth(data, from: peer)
+            case "sealed": self?.receiveSealed(data, from: peer)
+            default: break   // SEC-02 §2.4: a plain seen/ops/gone is dropped, no fallback
             }
         }
         t.onReceive = { [weak self] url, name, peer in self?.landed(url, named: name, from: peer) }
@@ -142,7 +155,11 @@ private enum CarryKeychain {
         }
     }
 
-    func start() { t.advertise(); t.browse(); if !isLookingToPair { status = "Looking for devices" } }
+    func start() {
+        t.advertise(); t.browse()
+        if !isLookingToPair { status = needsPairing.isEmpty ? "Looking for devices" : Self.pairAgain(needsPairing) }
+    }
+    static func pairAgain(_ names: [String]) -> String { "Pair \(names.joined(separator: ", ")) again to keep carrying" }
     func stop() { t.stop(); stopPairing(); status = "Off" }
 
     // MARK: Pairing — tap "Pair a device" on both screens, in either order (a picked device is invited again, BUG-17)
@@ -193,7 +210,7 @@ private enum CarryKeychain {
     private func connected(_ peer: MCPeerID, _ state: MCSessionState) {
         guard state == .connected else {
             if state == .notConnected {
-                flows[peer] = nil
+                flows[peer] = nil; auth[peer] = nil; pendingAuth[peer] = nil
                 let was = PairPrompt.Shown(pairingWith: pairingWith, askingCode: askingCode, pairingCode: pairingCode)
                 let now = PairPrompt.disconnected(was, peer: peer.displayName)   // T-0121: its peer left, the prompt goes
                 if now != was { pairingWith = now.pairingWith; askingCode = now.askingCode; pairingCode = now.pairingCode }
@@ -203,13 +220,135 @@ private enum CarryKeychain {
         }
         startFlow(peer)
         reloadFromDisk()
-        if peers.contains(where: { $0.name == peer.displayName }) { trigger(.connected) }
+        startAuth(peer)   // SEC-02 §2.3: carry starts only once this peer proves its key (receiveAuth)
+    }
+
+    // MARK: SEC-02 · the handshake on every connection, then sealed messages only
+
+    private func startAuth(_ peer: MCPeerID) {
+        guard auth[peer] == nil else { return }
+        let s = CarryAuthSession(me: identity)
+        auth[peer] = s
+        try? t.send(s.hello, type: "auth", to: peer)
+        armAuthTimeout(peer)
+    }
+
+    /// §2.6: no valid proof within 10 s (outside pairing): this device is listed to pair again; an older build is named.
+    private func armAuthTimeout(_ peer: MCPeerID) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard let self, let s = self.auth[peer], !s.authenticated, !self.isLookingToPair,
+                  self.t.session.connectedPeers.contains(peer) else { return }
+            if s.gotHello { self.refuse(peer, CarryAuthFailure.badProof) }
+            else if self.pendingAuth[peer] != nil { self.refuse(peer, CarryAuthFailure.unknownKey) }   // pairing ended unpaired
+            else { self.t.drop(peer); self.lastError = "\(peer.displayName) did not answer securely: update Recense on \(peer.displayName)" }
+        }
+    }
+
+    private func receiveAuth(_ data: Data, from peer: MCPeerID) {
+        guard let m = try? JSONDecoder().decode(CarryAuthMessage.self, from: data) else { return }
+        if auth[peer] == nil, t.session.connectedPeers.contains(peer) { startAuth(peer) }   // it beat our `.connected`
+        guard var s = auth[peer] else { return }
+        if pendingAuth[peer] != nil { pendingAuth[peer]?.append(m); return }   // held behind its hello, in order
+        reloadFromDisk()
+        do {
+            let reply = try s.receive(m, trusted: peers)
+            auth[peer] = s
+            if let reply { try t.send(reply, type: "auth", to: peer) }
+            if s.authenticated, let p = s.peer {
+                if refusedNames.remove(p.name) != nil { reloadFromDisk() }
+                trigger(.connected)
+            }
+        } catch CarryAuthFailure.unknownKey where isLookingToPair || flows[peer] != nil {
+            pendingAuth[peer] = [m]  // pairing with it: its key is trusted once the pairing finishes (§2.3 step 2)
+        } catch CarryAuthFailure.outOfOrder {
+            // a duplicate; the session goes on
+        } catch { refuse(peer, error) }
+    }
+
+    /// No channel: disconnect it. A name this device knows is listed under "Needs pairing again" (§2.6).
+    private func refuse(_ peer: MCPeerID, _ error: Error) {
+        let name = peer.displayName
+        auth[peer] = nil; pendingAuth[peer] = nil
+        t.drop(peer)
+        if peers.contains(where: { $0.name == name }) || mirror.contains(where: { $0.name == name }) {
+            refusedNames.insert(name); reloadFromDisk()
+        }
+        lastError = (error as? CarryAuthFailure) == .unknownKey
+            ? "\(name) has a key this device doesn't know (reset, or not the device it says): pair it again to carry"
+            : "\(name) did not prove its key: pair it again to carry"
+    }
+
+    /// The trust-store name of a peer that proved a key still trusted, or nil.
+    private func trustedName(_ peer: MCPeerID) -> String? {
+        guard let s = auth[peer], s.authenticated, let p = s.peer, peers.contains(where: { $0.key == p.key }) else { return nil }
+        return p.name
+    }
+
+    private func sendSealed<T: Encodable>(_ value: T, type: String, to peer: MCPeerID) throws {
+        guard var s = auth[peer] else { throw CarryAuthFailure.notAuthenticated }
+        let box = try s.seal(type, try JSONEncoder().encode(value))
+        auth[peer] = s
+        try t.send(box, type: "sealed", to: peer)
+    }
+
+    /// §2.4: a frame that does not open, comes twice, or comes from a peer not (or no longer) trusted is dropped.
+    private func receiveSealed(_ data: Data, from peer: MCPeerID) {
+        guard var s = auth[peer], let box = try? JSONDecoder().decode(CarrySealed.self, from: data),
+              let f = try? s.open(box) else { return }
+        auth[peer] = s
+        reloadFromDisk()   // forgotten meanwhile by another process (the Terminal's `recense carry forget`)
+        guard let name = trustedName(peer) else { auth[peer] = nil; t.drop(peer); return }
+        switch f.type {
+        case "seen": receiveSeen(f.payload, from: peer, as: name)
+        case "ops": receiveOps(f.payload, as: name)
+        case "gone": receiveGone(f.payload, as: name)
+        case "forget": receiveForget(from: peer, as: name)
+        default: break
+        }
+    }
+
+    // MARK: SEC-02 §2.5 · Forget <device> (Devices row or menu, "Forget Device" by voice, `recense carry forget`)
+
+    /// Every entry named `name` leaves the trust store and peers.json. A connected one is told first (a sealed
+    /// `forget`), then disconnected. Files, ops logs and appliedSeq stay; bytes still owed by it are discarded.
+    /// No forwarding to the owner's other devices (open question 1): a stolen device could unpair the real ones.
+    func forget(_ name: String) {
+        reloadFromDisk()
+        let keys = Set((peers + mirror).filter { $0.name == name }.map(\.key))
+        guard !keys.isEmpty || refusedNames.contains(name) else { lastError = "\(name) is not paired"; return }
+        for (peer, s) in auth where s.peer.map({ keys.contains($0.key) }) ?? false {
+            if s.authenticated { try? sendSealed(Data(), type: "forget", to: peer) }
+            auth[peer] = nil
+            Task { @MainActor [weak self] in   // after the forget has left
+                try? await Task.sleep(nanoseconds: 1_000_000_000); self?.t.drop(peer)
+            }
+        }
+        lastError = nil; status = "Forgot \(name)"
+        untrust(keys, name: name)
+    }
+
+    private func receiveForget(from peer: MCPeerID, as name: String) {
+        guard let key = auth[peer]?.peer?.key else { return }
+        auth[peer] = nil
+        untrust([key], name: name)
+        t.drop(peer)
+        lastError = "\(name) unpaired this device"
+    }
+
+    private func untrust(_ keys: Set<Data>, name: String) {
+        let trusted = keys.reduce(peers) { CarryTrust.forgetting($0, key: $1) }
+        if let d = try? JSONEncoder().encode(trusted), CarryKeychain.save(d, "peers.v2") {} else { lastError = "saving the trust store failed" }
+        try? JSONEncoder().encode(keys.reduce(mirror) { CarryTrust.forgetting($0, key: $1) }).write(to: peersURL, options: .atomic)
+        refusedNames.remove(name)
+        for (k, w) in waiting where w.peer == name { waiting[k] = nil; pendingActions[k] = nil; discardStaged(k) }
+        reloadFromDisk()
     }
 
     // MARK: Automatic carry (FEAT-09 P4, T-0084): connect, a change, the front; never on the main thread's time
 
     private var pairedConnected: [MCPeerID] {
-        t.session.connectedPeers.filter { p in peers.contains { $0.name == p.displayName } }
+        t.session.connectedPeers.filter { trustedName($0) != nil }   // SEC-02: proven keys, never names
     }
 
     /// The app came to the front (iOS scenePhase .active).
@@ -264,9 +403,14 @@ private enum CarryKeychain {
     /// Runs the exchange only while "Pair a device" is on — for a listed peer too, which re-pairs it (BUG-17).
     /// peers.json and the Keychain's group are shared with any other Recense process on this device (the Terminal's
     /// `recense carry pair`): read them fresh before deciding anything, never trust the copy from launch (BUG-17).
+    /// SEC-02: trust is the Keychain's `peers.v2`; peers.json is only the mirror, so its old entries need pairing again.
     func reloadFromDisk() {
-        if let d = try? Data(contentsOf: peersURL), let list = try? JSONDecoder().decode([CarryPeer].self, from: d),
-           list != peers { peers = list }
+        mirror = (try? Data(contentsOf: peersURL)).flatMap { try? JSONDecoder().decode([CarryPeer].self, from: $0) } ?? []
+        let trust = CarryTrust.load(v2: CarryKeychain.load("peers.v2"), mirror: mirror)
+        if trust.trusted != peers { peers = trust.trusted }
+        var names = trust.needsPairing.map(\.name)
+        for n in refusedNames.sorted() where !names.contains(n) { names.append(n) }
+        if names != needsPairing { needsPairing = names }
         if let g = CarryKeychain.load("group") { group = g }
     }
 
@@ -354,12 +498,21 @@ private enum CarryKeychain {
         group = p.group
         CarryKeychain.save(p.group, "group")
         reloadFromDisk()   // keep what another process wrote since; replace only this device's entry
-        peers = CarryPeer.replacing(peers, with: CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now()))
-        do { try JSONEncoder().encode(peers).write(to: peersURL, options: .atomic) }
+        let entry = CarryPeer(name: peer.displayName, key: p.key, paired: Homes.now())
+        // SEC-02 §2.1: the trust store first (the Keychain, this device only), then its readable mirror
+        if let d = try? JSONEncoder().encode(CarryPeer.replacing(peers, with: entry)), CarryKeychain.save(d, "peers.v2") {}
+        else { lastError = "saving the trust store failed" }
+        do { try JSONEncoder().encode(CarryPeer.replacing(mirror, with: entry)).write(to: peersURL, options: .atomic) }
         catch { lastError = "saving peers.json failed: \(error)" }
+        refusedNames.remove(entry.name)
+        reloadFromDisk()
         flows[peer] = nil
         pairingCode = nil; pairingWith = nil; askingCode = false; isLookingToPair = false; picked = [:]
         status = "Paired with \(peer.displayName)"
+        // SEC-02 §2.3: its hello, held while it was a stranger, is answered now; then the 10 s for its proof
+        for h in pendingAuth.removeValue(forKey: peer) ?? [] { if let d = try? JSONEncoder().encode(h) { receiveAuth(d, from: peer) } }
+        startAuth(peer)
+        armAuthTimeout(peer)
     }
 
     // MARK: Carry now — scan into this device's own ops log, then settle with every paired, connected device
@@ -387,7 +540,7 @@ private enum CarryKeychain {
     /// "Carry Now": the visible retry. Runs at once, or right after the carry already running.
     func carryNow() {
         reloadFromDisk()
-        guard !peers.isEmpty else { lastError = "no paired device yet"; return }
+        guard !peers.isEmpty else { lastError = needsPairing.isEmpty ? "no paired device yet" : Self.pairAgain(needsPairing); return }
         guard !pairedConnected.isEmpty else { lastError = "no paired device is connected right now"; return }
         trigger(.tapped)
     }
@@ -409,7 +562,10 @@ private enum CarryKeychain {
             try appendOps(ops)
             lastSent = now
             try JSONEncoder().encode(now).write(to: lastSentURL, options: .atomic)
-            for peer in targets { try t.send(appliedSeq[peer.displayName] ?? 0, type: "seen", to: peer) }
+            for peer in targets {
+                guard let name = trustedName(peer) else { continue }
+                try sendSealed(appliedSeq[name] ?? 0, type: "seen", to: peer)   // SEC-02 §2.4: sealed, counted
+            }
             lastCarryAt = Date(); lastError = nil
             status = ops.isEmpty ? "Up to date" : "Settling \(ops.count) change\(ops.count == 1 ? "" : "s")"
             if !waiting.isEmpty { status += " · waiting for \(waiting.count) file\(waiting.count == 1 ? "" : "s")" }   // BUG-19
@@ -417,7 +573,7 @@ private enum CarryKeychain {
     }
 
 
-    private func receiveSeen(_ data: Data, from peer: MCPeerID) {
+    private func receiveSeen(_ data: Data, from peer: MCPeerID, as name: String) {
         guard let since = try? JSONDecoder().decode(Int.self, from: data) else { return }
         var log = myOps()
         if let moved = CarrySync.renumber(log, peerSaw: since) {   // T-0110: this log was reset (a reinstall)
@@ -426,28 +582,28 @@ private enum CarryKeychain {
         }
         let mine = log.filter { $0.seq > since }
         guard !mine.isEmpty else { return }
-        try? t.send(mine, type: "ops", to: peer)
+        try? sendSealed(mine, type: "ops", to: peer)
         // Each key's bytes once; a key with no bytes left is answered "gone", so the peer stops waiting (BUG-25, T-0108)
         let reply = CarrySync.answer(mine) { FileManager.default.fileExists(atPath: Homes.root.appendingPathComponent($0).path) }
-        if !reply.gone.isEmpty { try? t.send(reply.gone, type: "gone", to: peer) }
+        if !reply.gone.isEmpty { try? sendSealed(reply.gone, type: "gone", to: peer) }
         for key in reply.send {
             t.send(fileAt: Homes.root.appendingPathComponent(key), named: Self.encode(key), to: peer) { [weak self] error in
-                if let error { self?.lastError = "sending to \(peer.displayName) failed: \(error)" }
+                if let error { self?.lastError = "sending to \(name) failed: \(error)" }
             }
         }
     }
 
     /// The peer has no bytes for these keys any more: settle them as done, after the ops sent before them (T-0108).
-    private func receiveGone(_ data: Data, from peer: MCPeerID) {
+    private func receiveGone(_ data: Data, as name: String) {
         guard let keys = try? JSONDecoder().decode([String].self, from: data) else { return }
         let before = settling
         settling = Task { [weak self] in
             await before?.value
             guard let self else { return }
-            for k in keys where self.waiting[k]?.peer == peer.displayName {
+            for k in keys where self.waiting[k]?.peer == name {
                 self.waiting[k] = nil; self.pendingActions[k] = nil; self.discardStaged(k)
             }
-            self.advance(peer.displayName)
+            self.advance(name)
         }
     }
 
@@ -467,7 +623,7 @@ private enum CarryKeychain {
     /// main thread, as `carry()`'s does (T-0107): on a big library it froze the screen and risked iOS's watchdog. One batch
     /// after another, so a later batch never settles before an earlier one.
     private var settling: Task<Void, Never>?
-    private func receiveOps(_ data: Data, from peer: MCPeerID) {
+    private func receiveOps(_ data: Data, as name: String) {
         guard let ops = try? JSONDecoder().decode([CarryOp].self, from: data) else { return }
         let before = settling
         settling = Task { [weak self] in
@@ -475,11 +631,11 @@ private enum CarryKeychain {
             guard let lines = try? await Task.detached(priority: .utility, operation: { try Carry.verify(reuse: true) }).value else {
                 self?.lastError = "carry verify failed while settling"; return
             }
-            self?.settle(ops, local: lines, from: peer)
+            self?.settle(ops, local: lines, as: name)
         }
     }
 
-    private func settle(_ ops: [CarryOp], local: [CarryLine], from peer: MCPeerID) {
+    private func settle(_ ops: [CarryOp], local: [CarryLine], as name: String) {
         let localShas = Dictionary(uniqueKeysWithValues: local.map { (CarrySync.key($0.home, $0.path), $0.sha256) })
         for (op, action) in CarrySync.decideAll(ops, local: localShas, base: [:]) {   // T-0106: in order, on the disk as it will be
             let key = CarrySync.resultKey(op)
@@ -488,12 +644,12 @@ private enum CarryKeychain {
             case .move: do { try CarryApply.apply(action) } catch { lastError = "replaying a move failed: \(error)" }
                         discardStaged(key); pendingActions[key] = nil; waiting[key] = nil
             case .fetch, .replace, .keepBoth:
-                pendingActions[key] = action; waiting[key] = (peer.displayName, op.seq); tryPlace(key)
+                pendingActions[key] = action; waiting[key] = (name, op.seq); tryPlace(key)
             case .merge: break   // unreachable with an empty base; text conflicts still settle as keepBoth
             }
         }
-        received[peer.displayName] = max(received[peer.displayName] ?? 0, ops.map(\.seq).max() ?? 0)
-        advance(peer.displayName)
+        received[name] = max(received[name] ?? 0, ops.map(\.seq).max() ?? 0)
+        advance(name)
     }
 
     /// appliedSeq moves only past ops fully settled: an op still owed its bytes is asked for again on the next
@@ -510,33 +666,47 @@ private enum CarryKeychain {
     }
 
     private func stagedURL(_ key: String) -> URL { stagingDir.appendingPathComponent(CarrySync.stagingName(key)) }   // T-0111
-    private func discardStaged(_ key: String) { try? FileManager.default.removeItem(at: stagedURL(key)) }
+    private func discardStaged(_ key: String) { try? FileManager.default.removeItem(at: stagedURL(key)); stagedFrom[key] = nil }
 
     /// Places a staged file's bytes once its action is known — whichever of (op, bytes) arrived second.
     /// The actual file-system work is `CarryApply.apply` (shared/carryapply.swift): one implementation, tested
     /// without radios there, called here and (for `.move`, no bytes needed) from `receiveOps` directly.
+    /// SEC-02 §2.4: only bytes from the peer whose op waits for them, and only when their SHA-256 is that op's.
+    /// The hash runs off the main thread (T-0107), on a copy moved aside so a later arrival cannot swap it meanwhile.
     private func tryPlace(_ key: String) {
-        guard let action = pendingActions[key] else { return }
-        let staged = stagedURL(key)
-        guard FileManager.default.fileExists(atPath: staged.path) else { return }
-        do {
-            _ = try CarryApply.apply(action, bytesAt: staged)
-            pendingActions[key] = nil
-            if let w = waiting.removeValue(forKey: key) { advance(w.peer) }
-        } catch {   // stays owed: the next "seen" asks for it again
-            lastError = "placing \(key) failed: \(error)"; discardStaged(key); pendingActions[key] = nil
+        guard let action = pendingActions[key], let w = waiting[key], stagedFrom[key] == w.peer, !placing.contains(key) else { return }
+        let staged = stagedURL(key), checking = staged.appendingPathExtension("check")
+        try? FileManager.default.removeItem(at: checking)
+        guard (try? FileManager.default.moveItem(at: staged, to: checking)) != nil else { return }
+        stagedFrom[key] = nil
+        placing.insert(key)
+        Task { @MainActor [weak self] in
+            let sha = (try? await Task.detached(priority: .utility) { try Homes.sha256(checking) }.value) ?? ""
+            guard let self else { return }
+            self.placing.remove(key)
+            defer { try? FileManager.default.removeItem(at: checking) }
+            guard self.pendingActions[key] == action, self.waiting[key]?.peer == w.peer else { return }   // settled or forgotten
+            do {
+                _ = try CarryApply.place(action, bytesAt: checking, sha: sha)
+                self.pendingActions[key] = nil
+                if let w = self.waiting.removeValue(forKey: key) { self.advance(w.peer) }
+            } catch {   // stays owed: the next "seen" asks for it again
+                self.lastError = "placing \(key) failed: \(error)"; self.pendingActions[key] = nil
+            }
         }
     }
 
     private func landed(_ url: URL, named name: String, from peer: MCPeerID) {
-        guard let key = Self.decode(name) else {
-            try? FileManager.default.removeItem(at: url); lastError = "a file from \(peer.displayName) had no usable name"; return
+        guard let who = trustedName(peer) else { try? FileManager.default.removeItem(at: url); return }   // SEC-02: proven peers only
+        guard let key = Self.decode(name), CarrySync.safeKey(key) else {
+            try? FileManager.default.removeItem(at: url); lastError = "a file from \(who) had no usable name"; return
         }
         let staged = stagedURL(key)
         do {
             try? FileManager.default.removeItem(at: staged)
             try FileManager.default.moveItem(at: url, to: staged)
-        } catch { lastError = "staging from \(peer.displayName) failed: \(error)"; return }
+        } catch { lastError = "staging from \(who) failed: \(error)"; return }
+        stagedFrom[key] = who
         tryPlace(key)   // the matching op may already have arrived; if not, this waits for receiveOps to call it
     }
 
@@ -617,7 +787,7 @@ func runCarryPairCLI() async -> Never {
 // land back-to-back, as two MultipeerConnectivity messages would, before the first has had any chance to
 // finish its off-main-thread hash scan.
 extension CarryManager {
-    fileprivate func receiveOpsForTest(_ data: Data, from peer: MCPeerID) { receiveOps(data, from: peer) }
+    fileprivate func receiveOpsForTest(_ data: Data, from peer: MCPeerID) { receiveOps(data, as: peer.displayName) }
     fileprivate var settlingForTest: Task<Void, Never>? { settling }
 }
 

@@ -163,6 +163,12 @@ updates in place.
   else asks again. One pairing prompt at a time: a second nearby device waits until the first is done.
   A device that leaves mid-prompt takes its prompt with it (T-0121); after a wrong code, whichever device you
   pick next shows the new code (T-0123).
+  A paired device proves its key, not its name (SEC-02, `../shared/carryauth.swift`): every connection runs a
+  handshake, and what changed (seen, ops, gone) travels sealed and counted, so a renamed or reset device gets nothing
+  and changes nothing. A carried file lands only if its SHA-256 is the one its change promised, and never outside
+  `Recense/`. Devices paired before this need pairing again once: Library › Devices lists them under
+  "Needs pairing again"; carry with them pauses and nothing is deleted. Each paired row has Forget (also "Forget Device"
+  by voice): carry with that device stops on both sides until you pair it again; files stay.
   An edit replaces the other device's copy when that copy is the version it was edited from (BUG-27); the old version
   goes to `trash/`. Only when both devices changed the file are both kept, the copy named for the device that made it.
   After a reinstall (pairing survives in the Keychain), the new log is renumbered above what each peer already saw,
