@@ -34,6 +34,11 @@ section for the task. Architecture: `~/.claude/plans/starry-squishing-knuth.md` 
   `grep -n 'lastPathComponent' shared/carrymanager.swift` prints only the `sweepStaging` line (the key rides the resource name; BUG-25 lists staged files by name).
 - Carry's pairing (`shared/carrypair.swift`: the six-digit code, group sealing, invitation proof), after any change to it:
   `swiftc -O shared/carrypair.swift mobile/ios/Tests/carrypair/main.swift -o "$TMPDIR/carrypair" && "$TMPDIR/carrypair"` (ALL OK).
+- Carry's peer auth (`shared/carryauth.swift`, SEC-02: handshake, sealed seen/ops/gone/forget, invitation context, trust store),
+  after any change to it, to `carrypair.swift` or to the auth glue in `carrymanager.swift`:
+  `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/carryauth/main.swift -o "$TMPDIR/carryauth" && "$TMPDIR/carryauth"` (ALL OK).
+  Nothing plain carries: `grep -nE 'case "(seen|ops|gone)"' shared/carrymanager.swift` prints only the lines inside `receiveSealed`, and
+  `grep -n 'type: "seen"\|type: "ops"\|type: "gone"' shared/carrymanager.swift` shows only `sendSealed(` calls.
 - Carry's settling against real homes (`shared/carryapply.swift`: fetch, replace, keep-both, move — the only place
   that writes to disk for a settled change), after any change to it or to `shared/homes.swift`: it needs ShowsKit
   linked, so it runs inside `strip/recense selftest` (`carrymanagerSelftest`, ALL OK there), not a standalone swiftc test.

@@ -20,8 +20,11 @@ import UIKit
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
 
-    /// FEAT-09 P1's invariant: a peer not in `peers.json` gets no session without the owner's own tap.
-    var isPaired: (MCPeerID) -> Bool = { _ in false }
+    /// FEAT-09 P1's invariant: a peer not trusted gets no session without the owner's own tap. SEC-02 §2.2: decided
+    /// by the invitation's context (a trusted key and its proof, `CarryInvite`), never by the name.
+    var isPaired: (MCPeerID, Data?) -> Bool = { _, _ in false }
+    /// SEC-02 §2.2: the context to invite a trusted peer with; nil = not trusted, no automatic invite.
+    var inviteContext: (MCPeerID) -> Data? = { _ in nil }
     /// Asks the owner before accepting an unpaired peer. Nil (the default) refuses silently.
     var confirmUnpaired: ((MCPeerID, @escaping (Bool) -> Void) -> Void)?
     var onPeerFound: ((MCPeerID) -> Void)?
@@ -75,10 +78,13 @@ import UIKit
     }
 
     /// Invite a peer found while browsing (FEAT-09's "Pair a device": the owner picked it by name, not yet paired,
-    /// so `isPaired` won't trigger the automatic invite in `browser(foundPeer:)`).
+    /// so `inviteContext` gives no automatic invite in `browser(foundPeer:)`).
     func invite(_ peer: MCPeerID, timeout: TimeInterval = 10) {
-        browser?.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
+        browser?.invitePeer(peer, to: session, withContext: inviteContext(peer), timeout: timeout)
     }
+
+    /// SEC-02: ends one peer's connection (a key it could not prove, or a device forgotten).
+    func drop(_ peer: MCPeerID) { session.cancelConnectPeer(peer) }
 
     enum Failure: Error { case notConnected }
 
@@ -137,7 +143,7 @@ extension P2PTransport: MCNearbyServiceAdvertiserDelegate {
                                 withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         Task { @MainActor in
             let t = P2PTransport.shared
-            if t.isPaired(peerID) { invitationHandler(true, t.session); return }
+            if t.isPaired(peerID, context) { invitationHandler(true, t.session); return }
             guard let confirm = t.confirmUnpaired else { invitationHandler(false, nil); return }
             confirm(peerID) { ok in invitationHandler(ok, ok ? t.session : nil) }
         }
@@ -149,7 +155,7 @@ extension P2PTransport: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             let t = P2PTransport.shared
             t.onPeerFound?(peerID)
-            if t.isPaired(peerID) { browser.invitePeer(peerID, to: t.session, withContext: nil, timeout: 10) }
+            if let ctx = t.inviteContext(peerID) { browser.invitePeer(peerID, to: t.session, withContext: ctx, timeout: 10) }
         }
     }
 

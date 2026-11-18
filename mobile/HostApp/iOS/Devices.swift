@@ -13,6 +13,7 @@ struct DevicesPlace: View {
     @ObservedObject private var carry = CarryManager.shared
 
     @State private var typed = ""
+    @State private var forgetting: String?   // SEC-02 §2.5: Forget asks once before it unpairs
     @FocusState private var codeFocused: Bool
 
     var body: some View {
@@ -21,12 +22,33 @@ struct DevicesPlace: View {
                 if carry.peers.isEmpty {
                     Text("No paired devices yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(carry.peers, id: \.name) { p in
-                        VStack(alignment: .leading) {
-                            Text(p.name)
-                            Text("Paired \(p.paired)").font(.caption).foregroundStyle(.secondary)
+                    ForEach(carry.peers, id: \.key) { p in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(p.name)
+                                Text("Paired \(p.paired)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Forget", role: .destructive) { forgetting = p.name }.buttonStyle(.borderless)
                         }
                     }
+                }
+            }
+            if !carry.needsPairing.isEmpty {
+                // SEC-02 §2.6: paired before keys were checked (or its key changed): carry with it pauses, nothing is lost
+                Section {
+                    ForEach(carry.needsPairing, id: \.self) { name in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(name)
+                                Text("Pair again to keep carrying").font(.caption).foregroundStyle(.orange)
+                            }
+                            Spacer()
+                            Button("Forget", role: .destructive) { forgetting = name }.buttonStyle(.borderless)
+                        }
+                    }
+                } header: { Text("Needs pairing again") } footer: {
+                    Text("Carry with these devices is paused; no file is deleted. Tap Pair a Device… on both devices.")
                 }
             }
             if carry.askingCode, let who = carry.pairingWith {
@@ -70,6 +92,10 @@ struct DevicesPlace: View {
                 if let err = carry.lastError { Text(err).font(.caption).foregroundStyle(.red) }
             }
         }
+        .confirmationDialog("Forget \(forgetting ?? "")?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Forget \(forgetting ?? "")", role: .destructive) { if let n = forgetting { carry.forget(n) }; forgetting = nil }
+        } message: { Text("Carry with it stops until you pair it again. Files on both devices stay.") }
         .recenseScreen("Devices")
         .onAppear { carry.reloadFromDisk(); carry.start() }
     }

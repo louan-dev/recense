@@ -468,4 +468,18 @@ extension CarryPasskey {
 /// meanwhile can neither take it over nor receive the code typed for the first (T-0120).
 enum PairPrompt {
     static func owns(_ holder: String?, _ peer: String) -> Bool { holder == nil || holder == peer }
+
+    // Derived from Spec: SEC-02 §4.12 (T-0121, T-0123)
+    /// What the pairing prompt shows right now.
+    struct Shown: Equatable { var pairingWith: String? = nil; var askingCode = false; var pairingCode: String? = nil }
+    /// T-0121: the prompt's own peer left, so the prompt goes; another peer leaving changes nothing.
+    static func disconnected(_ s: Shown, peer: String) -> Shown { s.pairingWith == peer ? Shown() : s }
+    /// T-0123: a pick is recorded even for a device already connected, so this side is the one that shows the code.
+    static func pick(_ picked: [String: Date], _ peer: String, at now: Date) -> [String: Date] {
+        var p = picked; p[peer] = now; return p
+    }
+    /// T-0123: a failed code ends that pick on both sides, so the next pick alone decides who shows.
+    static func failed(_ picked: [String: Date], _ peer: String) -> [String: Date] {
+        var p = picked; p[peer] = nil; return p
+    }
 }

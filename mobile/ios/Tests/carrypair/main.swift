@@ -352,5 +352,33 @@ do {
     check(!PairPrompt.owns("iPad", "iPhone"), "a second device can't take it over")
 }
 
+// Regression guard: SEC-02 §4.12 (T-0121) · the prompt's own peer leaving clears it; another peer leaving clears nothing
+do {
+    let asking = PairPrompt.Shown(pairingWith: "iPad", askingCode: true, pairingCode: nil)
+    check(PairPrompt.disconnected(asking, peer: "iPad") == PairPrompt.Shown(), "the prompt's peer left: code prompt cleared")
+    let showing = PairPrompt.Shown(pairingWith: "iPad", askingCode: false, pairingCode: "123456")
+    check(PairPrompt.disconnected(showing, peer: "iPad") == PairPrompt.Shown(), "the prompt's peer left: shown code cleared")
+    check(PairPrompt.disconnected(asking, peer: "iPhone") == asking, "another peer leaving clears nothing")
+    check(PairPrompt.disconnected(PairPrompt.Shown(), peer: "iPad") == PairPrompt.Shown(), "no prompt: nothing changes")
+}
+
+// Regression guard: SEC-02 §4.12 (T-0123) · after a failed code, re-picking from the other side makes that side show
+do {
+    let t0 = Date()
+    var macPicked = PairPrompt.pick([:], "iPhone", at: t0)          // first try: the Mac picked
+    var phonePicked: [String: Date] = [:]
+    check(macPicked["iPhone"] == t0, "a pick is recorded")
+    macPicked = PairPrompt.failed(macPicked, "iPhone")              // the code failed: both sides end the pick
+    phonePicked = PairPrompt.failed(phonePicked, "Mac")
+    check(macPicked.isEmpty, "a failed code ends the pick")
+    phonePicked = PairPrompt.pick(phonePicked, "Mac", at: t0.addingTimeInterval(5))   // re-picked while still connected
+    var (a, b) = legs(macPicked: macPicked["iPhone"] != nil, phonePicked: phonePicked["Mac"] != nil)
+    passkey(&a, &b) { $0 }
+    check(b.code != nil && a.code == nil && a.wants, "the side that re-picked shows the code")
+    check(a.paired != nil && b.paired != nil, "and both pair")
+    let again = PairPrompt.pick(phonePicked, "Mac", at: t0.addingTimeInterval(9))
+    check(again["Mac"] == t0.addingTimeInterval(9), "re-picking an already-picked device updates its time")
+}
+
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

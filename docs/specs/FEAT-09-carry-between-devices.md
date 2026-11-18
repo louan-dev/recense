@@ -199,6 +199,8 @@ company in the middle. Today each device keeps its own `Recense/` homes and noth
   `carrymanagerSelftest` — fetch, replace with the old version landing in `trash/`, keep-both, and a move that
   carries its index across homes, all exercised with no radio) — 2026-11-15 ✓.
 - `zsh strip/build.sh`; iOS compile (GalleryFiles + RecenseGuest), both BUILD SUCCEEDED — 2026-11-15 ✓.
+- SEC-02 (peer auth guards P1/P1b/P4): `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/carryauth/main.swift
+  -o "$TMPDIR/carryauth" && "$TMPDIR/carryauth"` (ALL OK); safe keys in the carrysync test, the bytes check in `recense selftest`.
 - **Not yet checked (owner, real devices), the one gap left:** pair a Mac and an iPhone or iPad for real;
   airplane mode on with Wi-Fi and Bluetooth on; add, move, trash and restore a file on one device and watch
   "Carry Now" settle it correctly on the other within the session, with the three `recense carry verify`

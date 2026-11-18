@@ -4,7 +4,25 @@
 import Foundation
 
 enum CarryApply {
-    enum Failure: Error { case noBytes, badKey(String) }
+    enum Failure: Error { case noBytes, badKey(String), hashMismatch(String) }
+
+    // Derived from Spec: SEC-02 §2.4 (bytes check)
+    /// The SHA-256 the authenticated op promised for these bytes; nil for an action that carries none.
+    static func expectedSha(_ action: CarryAction) -> String? {
+        switch action {
+        case .fetch(_, let s), .keepBoth(_, _, let s): return s
+        case .replace(_, _, let new): return new
+        case .nothing, .move, .merge: return nil
+        }
+    }
+
+    /// Places staged bytes only when their SHA-256 (`sha`, hashed by the caller off the main thread) is the op's.
+    /// A mismatch throws before any file call; the caller discards the bytes and the op stays owed.
+    @discardableResult
+    static func place(_ action: CarryAction, bytesAt: URL, sha: String) throws -> String? {
+        guard let want = expectedSha(action), want == sha else { throw Failure.hashMismatch(sha) }
+        return try apply(action, bytesAt: bytesAt)
+    }
 
     /// Where a key ("home/path") lands on disk and which home it belongs to.
     private static func locate(_ key: String) -> (url: URL, home: Home)? {
@@ -151,6 +169,33 @@ func carrymanagerSelftest() -> Bool {
         var threw = false
         do { _ = try CarryApply.apply(.fetch(key: "x", sha256: "y")) } catch { threw = true }
         check(threw, "fetch without bytes throws rather than silently doing nothing")
+    }
+
+    // Regression guard: SEC-02 §4.11 · bytes whose SHA-256 differs from the op's are never placed
+    do {
+        let staged = drop("swapped"), real = (try? Homes.sha256(staged)) ?? ""
+        var threw = false
+        do { try CarryApply.place(.fetch(key: "library/Music/sw.m4a", sha256: String(repeating: "0", count: 64)), bytesAt: staged, sha: real) }
+        catch { threw = true }
+        check(threw && !fm.fileExists(atPath: Homes.root.appendingPathComponent("library/Music/sw.m4a").path),
+              "bytes check: a hash that differs from the op's is refused and nothing lands")
+        check(fm.fileExists(atPath: staged.path), "bytes check: the staged bytes stay for the caller to discard (the op stays owed)")
+        let r = try? CarryApply.place(.fetch(key: "library/Music/sw.m4a", sha256: real), bytesAt: staged, sha: real)
+        check(r == "library/Music/sw.m4a", "bytes check: the op's own hash lands")
+    }
+
+    // Regression guard: SEC-02 §4.10 · a `..` key throws badKey before any file call
+    do {
+        let outside = Homes.root.deletingLastPathComponent().appendingPathComponent("escaped.txt")
+        var bad = 0
+        for action in [CarryAction.fetch(key: "library/Music/../../escaped.txt", sha256: "x"),
+                       .keepBoth(key: "library/Music/a", sibling: "library/Music/../../escaped.txt", sha256: "x"),
+                       .replace(key: "/library/Music/a", old: "o", new: "n")] {
+            do { try CarryApply.apply(action, bytesAt: drop("evil")) } catch CarryApply.Failure.badKey { bad += 1 } catch {}
+        }
+        do { try CarryApply.apply(.move(from: "library/Music/a.m4a", to: "library/Music/../../escaped.txt")) }
+        catch CarryApply.Failure.badKey { bad += 1 } catch {}
+        check(bad == 4 && !fm.fileExists(atPath: outside.path), "a key with .. or a leading / throws badKey and nothing lands outside")
     }
     return ok
 }

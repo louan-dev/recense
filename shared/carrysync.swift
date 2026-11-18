@@ -92,7 +92,15 @@ enum CarrySync {
         staged.filter { !expecting.contains($0.name) && now.timeIntervalSince($0.modified) >= maxAge }.map(\.name)
     }
 
+    // Derived from Spec: SEC-02 §2.4 (key safety)
+    /// A key names a place inside ~/Recense/ only: no empty, `.` or `..` component, no leading `/`, no `\`, no NUL.
+    static func safeKey(_ key: String) -> Bool {
+        guard !key.isEmpty, !key.hasPrefix("/"), !key.contains("\\"), !key.contains("\u{0}") else { return false }
+        return key.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
     static func split(_ key: String, homes: [String]) -> (home: String, path: String)? {
+        guard safeKey(key) else { return nil }   // SEC-02: every op key and resource name passes here
         // longest home first: "library/Music/a.m4a" must not split as "library" + "Music/a.m4a"
         for h in homes.sorted(by: { $0.count > $1.count }) where key.hasPrefix(h + "/") {
             return (h, String(key.dropFirst(h.count + 1)))

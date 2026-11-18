@@ -2,7 +2,7 @@
 
 From: T-0121, T-0122, T-0123; PLAN-1118 §3 (owner 2026-11-18) ·
 Guards: FEAT-09 (P1, P1b, P4), FEAT-02, BUG-17, BUG-26 ·
-Status: [ ] written
+Status: [~] building (A3: P3, P1, P2 on one branch; device check owed)
 
 ## 1 · Threat model
 Who can reach the transport (MultipeerConnectivity: Wi-Fi, AWDL peer-to-peer, Bluetooth):
@@ -174,3 +174,9 @@ Mutation check: drop `th` from the proof, or drop the `n` check, and 4 or 6 must
 
 ## Amendments
 - 2026-11-18 · written (A3 design lane).
+- 2026-11-18 · building (A3). Where the tests live: invariant 10 (`split`) in `Tests/carrysync`, since `split` is in
+  carrysync.swift; 10's `badKey` and 11 in `carrymanagerSelftest`. Mutation check run: dropping the `n` check turns 4 red;
+  dropping `th` from the proof alone stays green, because `th` also salts the HKDF (kConfirm differs anyway); dropping it
+  from both turns 6 (relay replaced nonce) red. While pairing, a not-yet-trusted hello and any `auth` after it are held,
+  in order, and answered once the pairing finishes (a proof that came first was otherwise lost). T-0123 also needed the
+  failed pick cleared on both sides (`PairPrompt.failed`), or both sides stay "picked" and the greater key keeps showing.
