@@ -82,7 +82,7 @@ enum Destinations {
         let known = Set(manifest(kind).map(\.name))
         let found = (try? fm.contentsOfDirectory(at: root(kind), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         var added: [DestinationEntry] = []
-        for f in found where !known.contains(f.lastPathComponent) {
+        for f in found where !known.contains(f.lastPathComponent) && f.lastPathComponent != manifestURL(kind).lastPathComponent {   // the manifest is not a file to adopt
             let bytes = (try? fm.attributesOfItem(atPath: f.path)[.size] as? NSNumber)?.int64Value ?? 0
             let e = DestinationEntry(name: f.lastPathComponent, source: "", bytes: bytes,
                                      sha256: try sha256(f), saved: now(), via: "adopted")
