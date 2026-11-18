@@ -132,7 +132,7 @@ enum CarryApply {
             try fm.moveItem(at: bytesAt, to: dest)   // the original at `key` is never touched
             try Homes.record(Homes.entry(for: dest, in: home), in: home)
             return sibling   // no base recorded: there is no single agreed version at `key` yet
-        case .merge(let key, let base, _, _):
+        case .merge(let key, let base, _, let theirsSha):
             // Non-overlapping edits merge clean (notesync's own 3-way rule); truly overlapping ones, or any of the three
             // texts unreadable (the base was pruned, say), keep both instead, the same safe fallback a non-text conflict uses.
             // Never a silent overwrite, and never a throw that leaves the incoming bytes neither placed nor kept.
@@ -151,6 +151,7 @@ enum CarryApply {
                     try fm.moveItem(at: tmp, to: dest)
                 } catch { try? fm.removeItem(at: tmp); throw error }
                 try Homes.record(Homes.entry(for: dest, in: home), in: home)
+                CarryBase.snapshot(sha: theirsSha, fileAt: bytesAt, key: key)   // the peer's next edit names this as its parent (review 2b66a7a)
                 try? fm.removeItem(at: bytesAt)
                 // the merged text is this device's own new version, not yet agreed: keep its text for a later parent lookup, no index entry
                 CarryBase.snapshot(sha: try Homes.sha256(dest), fileAt: dest)
@@ -242,8 +243,22 @@ func carrymanagerSelftest() -> Bool {
         check(CarryBase.load()[k] == nil, "the merged text is this device's own version: not an agreed base")
         check(CarryBase.text(for: (try? Homes.sha256(url)) ?? "") == "a\nB\nc\nd", "but its text is kept for a later parent lookup")
         let trashed = (try? fm.contentsOfDirectory(at: Homes.root.appendingPathComponent("trash"), includingPropertiesForKeys: nil)) ?? []
-        check(trashed.contains { (try? String(contentsOf: $0)) == "a\nB\nc" } || (try? FileManager.default.subpathsOfDirectory(atPath: Homes.root.appendingPathComponent("trash").path))?.isEmpty == false,
-              "my version before the merge went to trash/, never gone")
+        check(trashed.contains { (try? String(contentsOf: $0)) == "a\nB\nc" }, "my version before the merge went to trash/, never gone")
+    }
+
+    // merge twice in a row on one key: the first merge keeps the peer's text, so its next edit (parent = that sha) merges too
+    do {
+        let k = "library/Study/mm.md", url = Homes.root.appendingPathComponent(k)
+        put(k, "1\n2\n3\n4")
+        let s0 = try! Homes.sha256(url); CarryBase.snapshot(sha: s0, fileAt: url)
+        put(k, "1\nTWO\n3\n4")                                              // mine
+        let t1 = drop("1\n2\n3\n4\n5"), t1sha = (try? Homes.sha256(t1)) ?? ""   // theirs adds a line
+        _ = try? CarryApply.place(.merge(key: k, base: s0, mine: "m", theirs: t1sha), bytesAt: t1, sha: t1sha)
+        check((try? String(contentsOf: url)) == "1\nTWO\n3\n4\n5", "first merge: both edits")
+        put(k, "1\nTWO\nTHREE\n4\n5")                                      // mine again
+        let t2 = drop("1\n2\n3\n4\n5\n6"), t2sha = (try? Homes.sha256(t2)) ?? ""  // theirs edits from t1
+        let r = try? CarryApply.place(.merge(key: k, base: t1sha, mine: "m", theirs: t2sha), bytesAt: t2, sha: t2sha)
+        check(r == k && (try? String(contentsOf: url)) == "1\nTWO\nTHREE\n4\n5\n6", "second merge on the same key merges too, not a sibling: \(r ?? "nil")")
     }
 
     // merge: the same line changed on both sides → neither wins silently, it keeps both like any other conflict
