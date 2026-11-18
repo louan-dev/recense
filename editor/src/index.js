@@ -895,6 +895,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       // Derived from Spec: BUG-31 — pages hold still while annotating; the host turns its edge swipes off too.
       const locked = setPagesLocked(view, toolLocksPages(tool));
       if (h && typeof h.postMessage === 'function') h.postMessage({ pagesLocked: locked });
+      // FEAT-23 A1 rule 10: the lock holds the note region only (the transcript region is not this page's).
+      if (mediaNotes && mediaNotes.isOpen()) logEvent('media-notes.lock', { key: mediaNotes.key(), locked: locked ? 1 : 0, tool });
     },
     // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
     onStrokeAdded: stroke => {
@@ -926,9 +928,29 @@ export function mountEditor(root = document.body, initialDoc = '') {
       view.dispatch({ effects: compartments.history.reconfigure([]) });
       view.dispatch({ effects: compartments.history.reconfigure(history()) });
     },
+    // A1 rule 10: when the region hides, { pagesLocked: false } goes first, so no recognizer stays off anywhere.
+    unlockPages: () => {
+      setPagesLocked(view, false);
+      window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: false });
+    },
     post: (channel, body) => window.webkit?.messageHandlers?.[channel]?.postMessage?.(body)
   });
   noteKeyNow = () => mediaNotes.key();
+  // A1 rule 3: focus leaving the note (another control outside the page, the app going to the background) ends an
+  // emptied note: it goes to the Trash in that same flush. Inside the page (palette, Matter menu) is not leaving.
+  shell.addEventListener('focusout', e => {
+    if (mediaNotes.isOpen() && !(e.relatedTarget && shell.contains(e.relatedTarget))) mediaNotes.blur();
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (document.hidden && mediaNotes.isOpen()) mediaNotes.blur(); });
+  }
+  view.dom.addEventListener('keydown', () => mediaNotes.setInput('type'), true);
+  /** A1 rule 9: a transcript line's note, written into the open note as its own line at the end. */
+  function appendLine(line) {
+    const doc = view.state.doc;
+    const lead = doc.length && !doc.toString().endsWith('\n') ? '\n' : '';
+    view.dispatch({ changes: { from: doc.length, insert: `${lead}${line}\n` }, userEvent: 'input' });
+  }
   // Rule 5: a tapped moment link plays that item from that second.
   setMomentHandler(m => playMedia(m.key, m.t, 'link'));
   function insertAtCaret(text) {
@@ -1069,6 +1091,13 @@ export function mountEditor(root = document.body, initialDoc = '') {
   audioSidecar = createAudioSidecar({
     container: workspace,
     onInsertToPage: insertBlock,
+    // FEAT-23 A1 rule 9 (T-0181): a pane line note or bookmark joins the item's note, never stored nowhere.
+    onLineNote: ({ start, text }) => {
+      const r = mediaNotes ? mediaNotes.lineNote(audioSidecar.getState().sourceKey, start, text) : null;
+      if (!r) return false;
+      if (r.insert) appendLine(r.insert);
+      return true;
+    },
     // FEAT-23 rule 5: in a media note, a tapped line writes its moment link at the caret (and still seeks).
     onLineTap: cue => {
       const link = mediaNotes ? mediaNotes.linkForLine(cue) : null;
@@ -1263,8 +1292,24 @@ export function mountEditor(root = document.body, initialDoc = '') {
         if (ok && view) view.focus();
         return ok;
       },
-      closeNote: () => mediaNotes.close(),
+      closeNote: () => {
+        const layout = mediaNotes.layout();
+        const ok = mediaNotes.close();
+        // Back on draftpad.md in the same screen: its tool's lock again (BUG-31). The underlay's host hides the page.
+        if (ok && layout !== 'underlay' && inkLayer) {
+          const locked = setPagesLocked(view, toolLocksPages(inkLayer.getTool()));
+          window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: locked });
+        }
+        return ok;
+      },
       noteKey: () => mediaNotes.key(),
+      // A1 rule 2 · dictation into the note: a partial result writes nothing; a final one lands at the caret.
+      noteDictation: (text, final) => {
+        const s = mediaNotes.dictation(text, Boolean(final));
+        if (s) insertAtCaret(`${s} `);
+        return Boolean(s);
+      },
+      noteDictating: on => mediaNotes.dictationRunning(Boolean(on)),
       step: delta => (stepPage(view, Number(delta) || 0, { allowCreate: true }) ? 'ok' : 'bounce'),
       swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
       swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
@@ -1440,6 +1485,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setAudioTranscript: data => {
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         audioSidecar.setAudioTranscript(parsed);
+        // FEAT-23 A1 rule 8: new lines re-weave by time; the note's files are not touched.
+        if (mediaNotes && mediaNotes.isOpen() && parsed && Array.isArray(parsed.cues)) mediaNotes.reweave(parsed.cues, parsed.reason || 'load');
       },
       // The host's report on one calendar add: saved, or the reason it wasn't.
       calendarResult: (id, ok, message) => {

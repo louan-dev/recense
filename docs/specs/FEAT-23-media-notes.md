@@ -1,6 +1,7 @@
 # FEAT-23 · One note per media item, inside Draftpad
 
-From: owner 2026-11-16 · Status: `[ ]` written, not built
+From: owner 2026-11-16 · Status: `[~]` P0 + P0c editor and files built 2026-11-18 (work/a2-underlay); the hosts' way in
+(Note button, ··· › Open Note, the one editor under the player, play by key, the transcript feed) not built; device checks owed
 Revised 2026-11-16 (lane notes-search-curve) after the owner's review of the design plan.
 Supersedes the first draft on branch `work/feat23-media-notes` (4c47b9f); its mockup stays on that branch.
 Amended 2026-11-18 (coordinator 89190d4b, PLAN-1118 §3b + §5k): arrivals make no note until you write (P0b rule 4);

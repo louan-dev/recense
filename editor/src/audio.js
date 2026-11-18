@@ -441,7 +441,7 @@ export function createTranscriptPane(container, options = {}) {
   function handleAnnotate(cueIndex, text, insert = false) {
     const insertFn = insert ? onInsertToPage : null;
     if (sidecar && typeof sidecar.annotateCue === 'function') {
-      sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn });
+      sidecar.annotateCue(cueIndex, text, { onInsertToPage: insertFn, lineNote: insert });   // FEAT-23 A1 rule 9
     } else if (options.state) {
       annotateCue(options.state, cueIndex, text, { onInsertToPage: insertFn, globalObj });
       updateCue(cueIndex);
@@ -852,6 +852,13 @@ export function createAudioSidecar(options = {}) {
   const globalObj = options.globalObj ?? (typeof window !== 'undefined' ? window : null);
   const onInsertToPage = options.onInsertToPage ?? null;
   const onLineTap = options.onLineTap ?? null;   // FEAT-23 rule 5
+  // Derived from Spec: FEAT-23 A1 rule 9 (T-0181) — a line note or a bookmark joins the item's note:
+  // onLineNote({ start, text }) → true when it was taken, so nothing else is written for it.
+  const onLineNote = options.onLineNote ?? null;
+  const lineNote = (cueIndex, text) => {
+    const cue = state.cues[Number(cueIndex)];
+    return cue && typeof onLineNote === 'function' ? Boolean(onLineNote({ start: cue.start, text })) : false;
+  };
 
   const state = {
     playing: false,
@@ -899,7 +906,9 @@ export function createAudioSidecar(options = {}) {
   }
 
   function bookmark(cueIndex, note = '') {
+    const was = Boolean(state.cues[Number(cueIndex)]?.bookmarked);
     const res = bookmarkCue(state, cueIndex, note, { globalObj });
+    if (res && !was) lineNote(cueIndex, '');
     if (pane) {
       pane.updateCue(cueIndex);
     }
@@ -907,7 +916,9 @@ export function createAudioSidecar(options = {}) {
   }
 
   function toggleBookmark(cueIndex, note = '') {
+    const was = Boolean(state.cues[Number(cueIndex)]?.bookmarked);
     const res = toggleBookmarkCue(state, cueIndex, note, { globalObj });
+    if (res && !was) lineNote(cueIndex, '');
     if (pane) {
       pane.updateCue(cueIndex);
     }
@@ -915,7 +926,12 @@ export function createAudioSidecar(options = {}) {
   }
 
   function annotate(cueIndex, annotationText, opts = {}) {
-    const insertFn = opts.onInsertToPage !== undefined ? opts.onInsertToPage : onInsertToPage;
+    let insertFn = opts.onInsertToPage !== undefined ? opts.onInsertToPage : onInsertToPage;
+    // A1 rule 9: a typed line note (new text, not the same text again on blur) goes to the item's note instead.
+    const before = String(state.cues[Number(cueIndex)]?.annotation ?? '');
+    const text = String(annotationText ?? '').trim();
+    if (opts.lineNote && text && text !== before && lineNote(cueIndex, text)) insertFn = null;
+    else if (opts.lineNote && text === before) insertFn = null;
     const res = annotateCue(state, cueIndex, annotationText, {
       onInsertToPage: insertFn,
       globalObj
