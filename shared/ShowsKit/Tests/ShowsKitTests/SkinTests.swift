@@ -203,4 +203,40 @@ final class SkinTests: XCTestCase {
             XCTAssertNotNil(r.cgImage, "\(name) draws")
         }
     }
+
+    /// Owner 11-10: a mixed folder lists audio, video, PDF, image, note and web page, each with its own action and its
+    /// length or size; a PDF's button never says Play.
+    func testEachKindOfItemHasItsOwnActionAndLengthOrSize() {
+        func entry(_ path: String, size: Int64 = 0, duration: Double? = nil) -> FeedEntry {
+            FeedEntry(episode: Episode(item: PoolItem(id: path, path: path, size: size), show: "s", title: path,
+                                       duration: duration), showTitle: "", position: nil)
+        }
+        XCTAssertEqual(entry("a/talk.m4a", duration: 5220).action.verb, "Play")
+        XCTAssertEqual(entry("a/talk.m4a", duration: 5220).action.detail, FeedEntry.length(5220))
+        XCTAssertEqual(entry("a/clip.mov").action.verb, "Play")
+        XCTAssertNil(entry("a/clip.mov").action.detail)                      // length not known yet: just Play
+        let pdf = entry("a/brief.pdf", size: 2_400_000).action
+        XCTAssertEqual(pdf.verb, "Read"); XCTAssertNotNil(pdf.detail); XCTAssertNotEqual(pdf.symbol, "play.fill")
+        XCTAssertEqual(entry("a/scan.heic", size: 900_000).action.verb, "View")
+        XCTAssertEqual(entry("a/notes.md", size: 12_000).action.verb, "Read")
+        XCTAssertEqual(Kind(path: "a/page.webloc"), .web)
+        XCTAssertEqual(Kind(path: "a/page.html"), .web)
+        XCTAssertEqual(entry("a/page.webloc").action.verb, "Open")
+        XCTAssertNil(entry("a/brief.pdf").action.detail)                     // no size known: no "0 bytes"
+    }
+
+    /// The show page's lines under the title (Podcasts' author line and facts line), from the folder alone.
+    func testShowPageSaysWhereTheFolderLivesAndWhatItHolds() {
+        let show = Show(id: "d1", space: .library, folder: "library/Study/MPEP", title: "MPEP", seasons: [], episodeCount: 2,
+                        locked: false, licensed: false, serial: false, lang: nil)
+        XCTAssertEqual(ShowFacts.source(show), "Study")
+        var top = show; top.folder = "library/MPEP"
+        XCTAssertNil(ShowFacts.source(top))
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func ep(_ path: String, _ t: Int64) -> Episode { Episode(item: PoolItem(id: path, path: path, mtime: t), show: "d1", title: path) }
+        let mixed = ShowFacts.line([ep("a.m4a", 900_000), ep("b.pdf", 990_000)], now: now)!
+        XCTAssertTrue(mixed.hasPrefix("2 items · audio, PDF · Updated"), mixed)
+        XCTAssertEqual(ShowFacts.line([ep("a.m4a", 0)]), "1 item")           // one kind: no kinds; no time: no "Updated"
+        XCTAssertNil(ShowFacts.line([]))
+    }
 }

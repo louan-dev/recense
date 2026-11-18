@@ -2,7 +2,7 @@
 // capsule and each episode's ··· menu (every action there too, so none depends on a swipe).
 import SwiftUI
 
-/// "▶ 43m", or "▶ ━━ 2m" with the part already heard.
+/// "▶ 43m", "▶ ━━ 2m left", or for a file that isn't media its own verb and size ("Read · 2.4 MB").
 struct PlayCapsule: View {
     let entry: FeedEntry
     var playing = false     // this track plays now: the capsule pauses it (FEAT-07 P0)
@@ -10,22 +10,23 @@ struct PlayCapsule: View {
     let action: () -> Void
 
     var body: some View {
+        let a = entry.action
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: playing ? "pause.fill" : "play.fill")
+                Image(systemName: playing ? "pause.fill" : a.symbol)
                 if looping { Image(systemName: "repeat.1").accessibilityLabel("Loop on") }
-                if let p = entry.progress {
+                if entry.episode.item.kind.isMedia, let p = entry.progress {
                     ProgressView(value: p).frame(width: 44).tint(Theme.accent)
                 }
-                if let r = entry.remaining { Text(entry.progress == nil ? Fmt.length(r) : Fmt.length(r) + " left") }
-                else { Text("Play") }
+                if entry.episode.item.kind.isMedia { Text(a.detail ?? a.verb) }
+                else { Text(a.detail.map { "\(a.verb) · \($0)" } ?? a.verb) }
             }
             .font(.headline)
             .padding(.horizontal, 6).padding(.vertical, 4)
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
-        .accessibilityLabel("\(playing ? "Pause" : "Play") \(entry.episode.title)")
+        .accessibilityLabel("\(playing ? "Pause" : a.verb) \(entry.episode.title)")
     }
 }
 
@@ -66,6 +67,12 @@ struct EpisodeActions: View {
         }
         if model.canChange(episode) {
             Button { model.renaming = episode } label: { Label("Rename…", systemImage: "pencil") }
+            let to = model.destinations(for: episode)   // FEAT-13: into another show's folder
+            if !to.isEmpty {
+                Menu {
+                    ForEach(to) { s in Button(s.title) { model.move(episode, to: s) } }
+                } label: { Label("Move to…", systemImage: "folder") }
+            }
             Button(role: .destructive) { model.delete(episode) } label: { Label("Delete", systemImage: "trash") }
         }
     }

@@ -91,6 +91,13 @@ public struct TranscriptCache: Sendable {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let d = try? JSONEncoder().encode(lines) { try? d.write(to: file(path), options: .atomic) }
     }
+    /// The media file moved (FEAT-13 Move to…): its saved copy follows, so it still opens offline. Never overwrites a
+    /// copy already saved for the new path; nothing saved for the old path is no change.
+    public func move(from old: String, to new: String) {
+        let a = file(old), b = file(new), fm = FileManager.default
+        guard a != b, fm.fileExists(atPath: a.path), !fm.fileExists(atPath: b.path) else { return }
+        try? fm.moveItem(at: a, to: b)
+    }
 }
 
 /// A segment id the Worker writes as a number (Recense's) or a string (Listen's).

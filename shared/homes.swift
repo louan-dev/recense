@@ -160,7 +160,7 @@ enum Homes {
         switch Kind(path: path) {
         case .audio: return .music
         case .pdf, .text: return .study
-        case .video, .image, .other: return .downloads
+        case .video, .image, .web, .other: return .downloads
         }
     }
 

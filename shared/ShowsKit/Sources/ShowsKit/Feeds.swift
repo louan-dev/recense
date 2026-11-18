@@ -26,6 +26,26 @@ public struct FeedEntry: Identifiable, Hashable, Sendable {
         guard let d = episode.duration, d > 0, let p = position?.seconds else { return nil }
         return min(1, p / d)
     }
+    /// What the row's button does, as Podcasts' play capsule does for media: "▶ 43m" (or what's left) for audio and
+    /// video; for the rest of a folder, its verb and its size ("Read · 2.4 MB", "View", "Open"), so a PDF never says Play.
+    public var action: (symbol: String, verb: String, detail: String?) {
+        let item = episode.item
+        let size = item.size > 0 ? ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file) : nil
+        switch item.kind {
+        case .audio, .video:
+            guard let r = remaining else { return ("play.fill", "Play", nil) }
+            return ("play.fill", "Play", progress == nil ? FeedEntry.length(r) : FeedEntry.length(r) + " left")
+        case .pdf: return ("doc.richtext", "Read", size)
+        case .text: return ("doc.plaintext", "Read", size)
+        case .image: return ("photo", "View", size)
+        case .web: return ("safari", "Open", nil)
+        case .other: return ("doc", "Open", size)
+        }
+    }
+    /// "43m", "1h 5m".
+    public static func length(_ s: Double) -> String {
+        Duration.seconds(max(60, s)).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
+    }
 }
 
 public extension CatalogReading {
@@ -79,3 +99,34 @@ public extension CatalogReading {
         return Array(out.sorted { ($0.1, $0.0.id) > ($1.1, $1.0.id) }.prefix(limit)).map { (show: $0.0, updated: $0.1) }
     }
 }
+
+/// The lines under a show's title, as Podcasts puts its author and "★ 4.9 · Sports · Updated Weekly" there.
+public enum ShowFacts {
+    /// Where the folder lives: its parent folder ("Study" for library/Study/MPEP), nil at a space's top.
+    public static func source(_ show: Show) -> String? {
+        let parts = show.folder.split(separator: "/")
+        return parts.count > 2 ? String(parts[parts.count - 2]) : nil
+    }
+    /// "12 items · audio, PDF · Updated 2d ago": the kinds only when the folder mixes them, the newest addition last.
+    public static func line(_ episodes: [Episode], now: Date = .now) -> String? {
+        guard !episodes.isEmpty else { return nil }
+        var out = [episodes.count == 1 ? "1 item" : "\(episodes.count) items"]
+        let kinds = Kind.allCases.filter { k in episodes.contains { $0.item.kind == k } }
+        if kinds.count > 1 { out.append(kinds.prefix(3).map(name).joined(separator: ", ") + (kinds.count > 3 ? " …" : "")) }
+        if let newest = episodes.map({ max($0.item.added, $0.item.mtime) }).max(), newest > 0 {
+            let f = RelativeDateTimeFormatter(); f.unitsStyle = .short
+            let ago = f.localizedString(for: Date(timeIntervalSince1970: TimeInterval(newest)), relativeTo: now)
+            out.append("Updated \(ago)")
+        }
+        return out.joined(separator: " · ")
+    }
+    static func name(_ k: Kind) -> String {
+        switch k {
+        case .audio: "audio"; case .video: "video"; case .pdf: "PDF"; case .image: "images"
+        case .text: "notes"; case .web: "web pages"; case .other: "files"
+        }
+    }
+    /// How many rows the show page lists before "See All".
+    public static let firstRows = 10
+}
+

@@ -36,6 +36,10 @@ updates in place.
   unused. Simulator checks: `SIMCTL_CHILD_RECENSE_TAB=new|library|search` opens a tab, `SIMCTL_CHILD_RECENSE_NO_LISTEN=1`
   skips the speech prompt, `SIMCTL_CHILD_RECENSE_PLACE=<id>` (draftpad, listen, archive…) opens one place,
   `SIMCTL_CHILD_RECENSE_TRANSCRIPT=sample` opens Now Playing on the sample transcript (English, Vietnamese, French), playing.
+- **A show page changes its own folder** (FEAT-13, `../shared/homefiles.swift`, shared with the Mac): "+" picks files in
+  the Files app and moves them into the show's folder (a file another app holds on to, such as iCloud Drive, arrives
+  as a copy); ··· › Move to… moves an episode into another show (its saved transcript moves with it, so it still opens
+  offline), beside Rename… and Delete (FEAT-07). Rows show thumbnails.
 - **Lock Screen and Control Center** (BUG-09, 11-14, `NowPlayingInfo.swift`): our player shows its title, folder and a
   time bar you can drag; play, pause, ⏯, back 15 s and forward 30 s work from the Lock Screen and headphones.
   A video's sound plays on when the phone locks or you leave the app (FEAT-19 P2, `BackgroundVideo.swift`): the

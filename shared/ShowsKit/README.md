@@ -34,6 +34,14 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     Downloaded, Latest Episodes, then the app's places; Recently Updated), `Views/Search.swift` (field + filter bars),
     `Views/ShowPage.swift`, `Views/NowPlaying.swift` (mini-player, Now Playing, `VerdictBar`; the quote button shows the
     transcript in place of the player, with back 15 / play / forward 30 under it), `Views/Cards.swift`.
+    Each row's capsule names its own action (`FeedEntry.action`): "▶ 43m" for audio and video, "Read · 2.4 MB" for a
+    PDF or note, "View" for an image, "Open" for a web page (`Kind.web`: .html, .webloc, .url, .webarchive).
+    The show page reads like Podcasts' (owner's IMG_4161-4162): art, title, where the folder lives (`ShowFacts.source`),
+    a "Latest Episode" capsule, "N items · kinds · Updated …" (`ShowFacts.line`), then "Episodes": the first ten and "See All (N)".
+    FEAT-13: "+" on the show page adds files to its folder; each episode's ··· has Move to… (another show in the
+    space) beside FEAT-07's Rename… and Delete. A video, PDF or image row shows a thumbnail. The host does the file
+    work: `ShowFolderFiles` (`FileActions.swift`), on the same `ShowsModel.files` as `EpisodeFiles`; a host without
+    it shows no "+" and no Move to….
   - `Views/Transcript.swift`: `TranscriptView`, the transcript as iOS Podcasts shows it (owner's screenshots in
     `~/.claude/context/recense/research/podcasts-ios/`): serif lines on the show's dark colour, the line being heard bold
     with its spoken words bright and the rest dim, the view following the playhead (a "Now" button after scrolling

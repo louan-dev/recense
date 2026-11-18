@@ -118,7 +118,7 @@ public enum Zone: String, Codable, CaseIterable, Sendable {
 }
 
 public enum Kind: String, Codable, CaseIterable, Sendable {
-    case audio, video, pdf, image, text, other
+    case audio, video, pdf, image, text, web, other
     public var isMedia: Bool { self == .audio || self == .video }
 
     public init(path: String) {
@@ -127,7 +127,8 @@ public enum Kind: String, Codable, CaseIterable, Sendable {
         case "mp4", "m4v", "mov", "webm", "mkv": self = .video
         case "pdf": self = .pdf
         case "png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tif", "tiff": self = .image
-        case "md", "txt", "rtf", "html", "docx", "doc", "pages", "srt", "vtt": self = .text
+        case "md", "txt", "rtf", "docx", "doc", "pages", "srt", "vtt": self = .text
+        case "html", "htm", "webarchive", "webloc", "url": self = .web
         default: self = .other
         }
     }
@@ -376,7 +377,7 @@ public struct OutboxOp: Identifiable, Codable, Hashable, Sendable {
         case put(path: String, key: ContentKey, size: Int64, mtime: Int64)   // send this pool file's bytes to path
         case folder(path: String)
         case move(id: String, from: String, to: String)
-        case delete(id: String, path: String)                                // into .trash/, kept 30 days
+        case delete(id: String, path: String)                                // into the visible trash/, kept until the owner deletes it (FEAT-06)
         case state(ItemState)                                                // stamped fields, merged on arrival
         case listen(ListenPosition)
     }

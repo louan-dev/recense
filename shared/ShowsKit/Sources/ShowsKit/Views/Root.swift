@@ -130,10 +130,6 @@ enum Fmt {
     static func ago(_ secs: Int64) -> String {
         Date(timeIntervalSince1970: TimeInterval(secs)).formatted(.relative(presentation: .numeric, unitsStyle: .narrow))
     }
-    /// "43m", "1h 5m".
-    static func length(_ s: Double) -> String {
-        Duration.seconds(max(60, s)).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
-    }
     static func day(_ secs: Int64) -> String {
         Date(timeIntervalSince1970: TimeInterval(secs)).formatted(.dateTime.day().month(.wide))
     }
