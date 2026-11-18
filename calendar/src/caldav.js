@@ -266,17 +266,53 @@ async function report(env, user, cal, body, href) {
   return xml(207, multistatus(out));
 }
 
-// ---- auth: HTTP Basic, one user, password stored only as a sha256 hex secret (CALDAV_PASS_HASH)
+// ---- auth: HTTP Basic, one user. Derived from Spec: BUG-30
+// The secret CALDAV_PASS_HASH (sha256 hex of the password, set by sync/bin/caldav-passwd.sh) is only the legacy/bootstrap
+// hash. The first correct login rewrites it as a salted PBKDF2-SHA256 record in R2 (caldav/auth/<user>.json: random salt,
+// 100000 iterations, the Workers maximum) and from then on only that record is checked. A new secret (password rotated)
+// differs from the record's `from`, so the next login migrates again. Failed logins: 10 per 15 min per IP, counted in
+// R2 (caldav/auth/fail/<ip>.json); beyond that the answer is 429 until the window ends.
+const PBKDF2_ITER = 100000, FAIL_MAX = 10, FAIL_WINDOW = 15 * 60 * 1000;
+const pbkdf2 = async (pw, saltHex, iter) => {
+  const salt = Uint8Array.from(saltHex.match(/../g) || [], h => parseInt(h, 16));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: iter }, key, 256));
+};
+const same = (a, b) => { if (a.length !== b.length) return false; let d = 0; for (let k = 0; k < a.length; k++) d |= a.charCodeAt(k) ^ b.charCodeAt(k); return d === 0; };
+
 async function authorize(req, env, user) {
   const want = String(env.CALDAV_PASS_HASH || "").trim().toLowerCase();
   const deny = () => new Response("Authentication required", { status: 401, headers: { "WWW-Authenticate": 'Basic realm="sync", charset="UTF-8"' } });
   if (!/^[0-9a-f]{64}$/.test(want)) return text(503, "Not configured");
   const h = req.headers.get("Authorization") || "";
   if (!h.startsWith("Basic ")) return deny();
+  const ip = (req.headers.get("CF-Connecting-IP") || "unknown").replace(/[^0-9a-fA-F:.]/g, "_").slice(0, 45);
+  const failKey = `caldav/auth/fail/${ip}.json`, now = Date.now();
+  const failed = await (await env.STORE.get(failKey).catch(() => null))?.json().catch(() => null);
+  const live = failed && now - failed.since < FAIL_WINDOW ? failed : null;
+  if (live && live.n >= FAIL_MAX) return text(429, "Too many failed logins; try again later", { "Retry-After": String(Math.ceil((live.since + FAIL_WINDOW - now) / 1000)) });
   let dec; try { dec = atob(h.slice(6)); } catch { return deny(); }
   const i = dec.indexOf(":"); if (i < 0) return deny();
-  const got = await sha(dec.slice(i + 1));
-  let diff = dec.slice(0, i) === user ? 0 : 1;
-  for (let k = 0; k < 64; k++) diff |= got.charCodeAt(k) ^ want.charCodeAt(k);
-  return diff ? deny() : null;
+  const pw = dec.slice(i + 1), userOk = dec.slice(0, i) === user;
+  let ok = false;
+  const recKey = `caldav/auth/${user}.json`, rec = await env.STORE.get(recKey).catch(() => null);
+  const r = rec ? await rec.json().catch(() => null) : null;
+  if (r && r.from === want && r.v === 2) {
+    ok = same(await pbkdf2(pw, r.salt, r.iter), r.hash);
+  } else {
+    ok = same(await sha(pw), want);
+    if (ok && userOk) {
+      const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+      const body = JSON.stringify({ v: 2, salt, iter: PBKDF2_ITER, hash: await pbkdf2(pw, salt, PBKDF2_ITER), from: want });
+      await env.STORE.put(recKey, body, rec ? undefined : { onlyIf: { etagDoesNotMatch: "*" } }).catch(() => null);
+    }
+  }
+  ok = ok && userOk;
+  if (!ok) {
+    // TODO: a read-modify-write on R2 can lose a count under parallel failures; fine for a brake, not a ledger.
+    await env.STORE.put(failKey, JSON.stringify({ n: (live?.n || 0) + 1, since: live?.since || now })).catch(() => null);
+    return deny();
+  }
+  if (live) await env.STORE.delete(failKey).catch(() => null);
+  return null;
 }
