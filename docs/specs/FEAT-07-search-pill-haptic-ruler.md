@@ -248,3 +248,35 @@ every detent also snaps the bead and flashes the value.
   P5's device check decides whether the fast path starts only on the pill's row.
 - **Key and Speed together** on mobile depend on P7.
 - **Haptics for comprehension** remain a hypothesis (first Open list); this revision claims only "find neutral without looking".
+
+## Amendment 2026-11-18 · Haptic zoning on the woven Home page (owner, PLAN-1118 §12d; Stream B)
+From: owner 2026-11-18 · Status: `[ ]` written · Depends on UI-13 (the woven Home page).
+
+**What it adds.** The bead zones above (section B) keep their meaning on the Sound card. UI-13 removes the Now Playing sheet, so the pill, the scrubber and the Sound button now live at the foot of the woven page. This amendment says where the finger can tell by touch which part of the page it is on.
+
+### Rule
+- **Zones speed actions up; they never carry an action alone.** Every zone keeps a visible twin: a button or a menu item. Voice reaches the same actions (the owner's no-gesture-only law, `~/.claude/CLAUDE.md` Purpose; the haptics rule is `docs/law/interaction.md:38`).
+- The three levels of "What the hand feels" stand: **light** inside a zone (each step), **medium** crossing into another zone, **strong** at the end stops. At most one each 40 ms (rule 5).
+
+### The zones on the woven page (bottom to top)
+| Zone | A drag here | Visible twin | Felt |
+|---|---|---|---|
+| Scrubber (the stroke) | seeks | the pill's stroke and the ⏮ ⏭ line buttons | light per line, medium per chapter, strong at the ends (as built) |
+| Speed (left edge of the pill) | speed steps 0.5×–2× | Sound card ▸ Speed | light per 0.05×, medium at 1× (neutral), strong at 0.5× and 2× |
+| Page (the woven column) | scrolls; a long press 0.35 s on a transcript line drops a moment anchor | the Note button ("Note at 12:03") | light on entering a new transcript line while scrubbing, medium on a note row |
+| To-dos (top strip) | swipe a row to tick | the row's own checkbox | medium on tick |
+
+### Planned `[ ]`
+- **P4z · The zone model (ShowsKit, pure Swift).** `HapticZones`: `(point, layout) → zone` and `(zone change, now) → level?`, 40 ms limit, medium on a zone change.
+  Check (`shared/ShowsKit/Tests/ShowsKitTests/HapticZonesTests.swift`): a drag from the scrubber into the page gives one medium; ten steps in 100 ms give at most three haptics; at 1× the neutral medium fires once.
+- **P5z · Parity of the twin.** Check (test): for every zone action there is a reachable control without a gesture (a list asserted complete in the test).
+- **P6z · Device.** iPhone, eyes closed: find 1× by touch (as P6 says). iPad (no Taptic Engine, **assumed** from the brief): sight alone carries it, so the zone highlight and value flash must show the same changes.
+
+### Embodiments and registry
+iPhone `[ ]` · iPad `[ ]` (sight only) · Mac (trackpad click, as built for the ruler) `[ ]` · web `n/a` (marks and snaps only, rule 8). Registry block: `home` (shared with UI-13).
+
+### Debug channel
+`haptic.zone` (from, to) · `haptic.fire` (level, dropped by the 40 ms rule yes/no). Never positions of the person's content.
+
+### Outside services
+None. Haptics are on-device.

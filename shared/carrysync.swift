@@ -283,7 +283,36 @@ enum CarryWatch {
         let r = root.hasSuffix("/") ? root : root + "/"
         guard path.hasPrefix(r) else { return false }
         let rel = path.dropFirst(r.count)
+        if rel.hasPrefix(CarryKeep.folder + "/") { return CarryKeep.carries(String(rel)) }   // FEAT-22 P1: two files only, never the cache (T-0091)
         return homes.contains { rel == $0 || rel.hasPrefix($0 + "/") }
+    }
+}
+
+// Derived from Spec: FEAT-22 P1 · carry takes a media item's note and transcript. Of `keep/` only
+// `keep/<key>/note.md` and `keep/<key>/lines.json` travel. The Mac's working files (`<key>.v2.json`, `<key>.tr.*.json`), the search
+// index `find.tsv` and anything else stay put: they are derived or Mac-only, and the cache was written every few seconds (T-0091).
+enum CarryKeep {
+    static let folder = "keep"
+    static let files: Set<String> = ["note.md", "lines.json"]
+
+    private static func parts(_ rel: String) -> [Substring] { rel.split(separator: "/", omittingEmptySubsequences: false) }
+
+    /// `rel` is relative to the Recense folder: "keep/<key>/note.md".
+    static func carries(_ rel: String) -> Bool {
+        let c = parts(rel)
+        return c.count == 3 && c[0] == folder && !c[1].isEmpty && !c[1].hasPrefix(".") && files.contains(String(c[2]))
+    }
+
+    /// A conflict copy of one of the two files that carry itself made ("lines (iPad 2026-11-18 1405).json"): placed, never carried on.
+    static func isSibling(_ rel: String) -> Bool {
+        let c = parts(rel)
+        guard c.count == 3, c[0] == folder, !c[1].isEmpty, !c[1].hasPrefix(".") else { return false }
+        let name = String(c[2])
+        return files.contains { f in
+            let stem = (f as NSString).deletingPathExtension, ext = (f as NSString).pathExtension
+            // exactly what conflictSiblingPath writes: "lines (iPad 2026-11-18 1405).json"; "note (draft).md" is the owner's
+            return name.range(of: "^" + NSRegularExpression.escapedPattern(for: stem) + " \\(.+ \\d{4}-\\d{2}-\\d{2} \\d{4}\\)\\." + ext + "$", options: .regularExpression) != nil
+        }
     }
 }
 
