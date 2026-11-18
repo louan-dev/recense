@@ -387,8 +387,10 @@ from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/strip/sc
 ### Recorder: controls on the strip (2026-11-17)
 - The mic icon on the strip opens the recorder's presets (microphone, camera, screen). That panel is for before only.
 - Start, and the panel folds up at once. The strip then shows, where the date was: a red **● time**,
-  then three red buttons: **pause / go on**, **end** (stop and save) and **cancel** (files go to the Trash).
+  then three red buttons: **cancel** (files go to the Trash), **pause / go on** and **end** (stop and save).
 - The mic icon hides while recording, so the panel can't hang down mid-recording.
+- While recording (and while a warning shows), the strip stays awake without hovering, so the time is always in view.
+- Order: cancel, pause, end: the two that finish a recording are never side by side.
 - Problems show in orange in the same slot (**No audio**, **No screen**, then **Nothing saved** after stop).
 
 ### Recorder: no silent recordings (T-0149, 2026-11-17)

@@ -5178,6 +5178,7 @@ final class RestStrip: NSObject {
     var recordingStatus: (() -> (live: Bool, paused: Bool, text: String, warn: Bool)?)?
     var onRecPause: (() -> Void)?, onRecStop: (() -> Void)?, onRecCancel: (() -> Void)?
     private var recKey = 0                    // what the row was last laid out for
+    private(set) var pinned = false           // awake regardless of the pointer: a recording, or its warning, shows
     let recense = GlassPauseButton()           // Recense's card, right of play/pause (the desktop arrows retired)
     let spaceNext = GlassPauseButton()
     let chevron = GlassPauseButton()           // the hidden menu-bar icons (hider.swift): click, or hover 0.5 s (D23)
@@ -5275,7 +5276,7 @@ final class RestStrip: NSObject {
 
     /// Wake (full context) or go back to sleep. Driven by the spatial controller. Clicks always pass through.
     func wake(_ on: Bool) {
-        guard on != expanded else { return }
+        guard on != expanded, on || !pinned else { return }   // pinned awake while recording (or its warning shows)
         expanded = on
         window.ignoresMouseEvents = !on          // awake, its pause button takes clicks; asleep, everything passes through
         setBand(open: on, animated: true)
@@ -5330,6 +5331,11 @@ final class RestStrip: NSObject {
         }
         let key = (show ? 1 : 0) + (live ? 2 : 0)
         if key != recKey { recKey = key; layoutStatic() }
+        // T-0149 review: the time and any warning must be seen without hovering, so the strip stays awake for them.
+        if show != pinned {
+            pinned = show
+            wake(show)
+        }
     }
     @objc func toggleRecense() { recense.bounce(); MainActor.assumeIsolated { Recense.overlay?.toggleStrip() } }
 
@@ -5386,20 +5392,23 @@ final class RestStrip: NSObject {
         if !recTime.isHidden {
             // the recorder's slot: its time over the date, then its three controls, then the usual icons
             recTime.frame = NSRect(x: date.frame.minX, y: y, width: wide("❙❙ 0:00:00"), height: 15)
-            x0 = recTime.frame.maxX + 8
+            x0 = recTime.frame.maxX + 6
             if !recPause.isHidden {
-                for (i, v) in [recPause, recStop, recCancel].enumerated() {
-                    v.frame = NSRect(x: x0 + CGFloat(i) * 26, y: (b.height - 20) / 2, width: 20, height: 20)
+                // Cancel first and End last, with pause between: the two that finish a recording are never neighbours.
+                for (i, v) in [recCancel, recPause, recStop].enumerated() {
+                    v.frame = NSRect(x: x0 + CGFloat(i) * 24, y: (b.height - 20) / 2, width: 20, height: 20)
                 }
-                x0 = recCancel.frame.maxX + 14
+                x0 = recStop.frame.maxX + 10
             }
         }
+        let recording = !recTime.isHidden
         let icons = record.isHidden ? [sideQuest, pause, recense] : [sideQuest, record, pause, recense]
         for (i, v) in icons.enumerated() {
-            v.frame = NSRect(x: x0 + CGFloat(i) * 30, y: (b.height - 20) / 2, width: 20, height: 20)
+            v.frame = NSRect(x: x0 + CGFloat(i) * (recording ? 26 : 30), y: (b.height - 20) / 2, width: 20, height: 20)
         }
         let bx = recense.frame.maxX + 12
-        battery.frame = NSRect(x: bx, y: y, width: max(40, b.midX + 14 - bx), height: 15)   // up to the Spaces arrows
+        // up to the Spaces arrows, never past them (while recording the batteries may shrink to an ellipsis)
+        battery.frame = NSRect(x: bx, y: y, width: max(recording ? 0 : 40, b.midX + 14 - bx), height: 15)
         battery.lineBreakMode = .byTruncatingTail
         spaceBack.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)
         chevron.frame = NSRect(x: b.midX + 22, y: (b.height - 18) / 2, width: 18, height: 18)   // the old desktop-arrow slot
@@ -5456,7 +5465,7 @@ final class RestStrip: NSObject {
         if let e = next, e.startDate <= now { next = findNext(); checkedAt = now }
         shown = visible
         guard visible else {
-            if window.isVisible { window.orderOut(nil); expanded = false; setBand(open: false, animated: false) }
+            if window.isVisible { window.orderOut(nil); expanded = false; pinned = false; setBand(open: false, animated: false) }
             return
         }
         weather.stringValue = ""
@@ -5505,7 +5514,7 @@ final class RestStrip: NSObject {
         } else {
             countdown.isHidden = true; eventLine.stringValue = ""
         }
-        if !window.isVisible { window.orderFrontRegardless(); layoutStatic(); setBand(open: false, animated: false) }
+        if !window.isVisible { window.orderFrontRegardless(); layoutStatic(); setBand(open: expanded, animated: false) }
     }
 }
 
