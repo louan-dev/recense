@@ -931,7 +931,7 @@ export function createAudioSidecar(options = {}) {
     const before = String(state.cues[Number(cueIndex)]?.annotation ?? '');
     const text = String(annotationText ?? '').trim();
     if (opts.lineNote && text && text !== before && lineNote(cueIndex, text)) insertFn = null;
-    else if (opts.lineNote && text === before) insertFn = null;
+    else if (opts.lineNote && text && text === before) insertFn = null;   // review 7: an empty one still quotes
     const res = annotateCue(state, cueIndex, annotationText, {
       onInsertToPage: insertFn,
       globalObj
