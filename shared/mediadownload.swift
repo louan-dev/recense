@@ -194,8 +194,10 @@ enum Downloads {
             guard FileManager.default.fileExists(atPath: subFrom.path) else { continue }
             let name = subFrom.lastPathComponent
             let renamed = !oldBase.isEmpty && name.hasPrefix(oldBase) ? newBase + name.dropFirst(oldBase.count) : Substring(name)
-            try? FileManager.default.moveItem(at: subFrom, to: musicDir.appendingPathComponent(String(renamed)))
-            subs.append(String(renamed))
+            // a free name (never over another file); listed only when it really moved
+            let want = musicDir.appendingPathComponent(String(renamed))
+            let dest = ExportJobs.freeURL(musicDir, base: want.deletingPathExtension().lastPathComponent, ext: want.pathExtension)
+            if (try? FileManager.default.moveItem(at: subFrom, to: dest)) != nil { subs.append(dest.lastPathComponent) }
         }
         var out = e
         if e.subtitles != nil { out.subtitles = subs }
@@ -230,8 +232,8 @@ enum Downloads {
     }
 
     // Derived from Spec: BUG-33 (D4)
-    /// Room needed before a download starts (a long video is a few GiB); tests set a number to prove the refusal.
-    nonisolated(unsafe) static var minFree: Int64 = 2 << 30
+    /// Room needed before a download starts (the size isn't known beforehand); tests set a number to prove the wait.
+    nonisolated(unsafe) static var minFree: Int64 = 500 << 20
     nonisolated(unsafe) static var freeSpaceOverride: Int64? = nil
     static func freeSpace() -> Int64? {
         if let o = freeSpaceOverride { return o }
@@ -239,16 +241,29 @@ enum Downloads {
         return (try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
     }
 
-    /// Unfinished downloads (.part, .ytdl, .crdownload) nobody has touched for a day are removed, so they stop being
-    /// skipped forever. Returns how many.
+    /// How many fetches or queue runs are going now; the stale sweep waits while any is (a .part may be reopened).
+    nonisolated(unsafe) private static var activeCount = 0
+    private static let activeLock = NSLock()
+    static var isBusy: Bool { activeLock.lock(); defer { activeLock.unlock() }; return activeCount > 0 }
+    static func begin() { activeLock.lock(); activeCount += 1; activeLock.unlock() }
+    static func end() { activeLock.lock(); activeCount -= 1; activeLock.unlock() }
+
+    /// Unfinished downloads (.part, .part-Frag3, .ytdl, .crdownload) nobody has touched for a day are removed, so they
+    /// stop being skipped forever. Not while a download is running, and never one whose [id] a queued request is
+    /// still waiting for (an offline request resumes that .part). Returns how many.
     @discardableResult
     static func sweepStale(olderThan age: TimeInterval = 86_400, now: Date = Date()) -> Int {
+        guard !isBusy else { return 0 }
         let fm = FileManager.default
+        let waiting = Set(queued().map { canonical($0.1.url) })
+        let unfinished = try! NSRegularExpression(pattern: #"(\.part(-Frag\d+)?|\.ytdl|\.crdownload|\.download)$"#, options: .caseInsensitive)
         var n = 0
         for dir in [root, root.appendingPathComponent(pulltubeFolder)] {
             for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
-                let name = f.lastPathComponent.lowercased()
-                guard [".part", ".ytdl", ".crdownload", ".download"].contains(where: { name.hasSuffix($0) }) else { continue }
+                let name = f.lastPathComponent
+                guard unfinished.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil else { continue }
+                let ids = name.components(separatedBy: "[").dropFirst().compactMap { $0.components(separatedBy: "]").first }
+                if ids.contains(where: { waiting.contains("yt:" + $0) }) { continue }
                 let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantFuture
                 if now.timeIntervalSince(m) >= age, (try? fm.removeItem(at: f)) != nil { n += 1 }
             }
@@ -258,6 +273,7 @@ enum Downloads {
 
     /// Would retrying later help? (no connection, DNS, timeouts: yes; a removed video or a bad link: no)
     static func isOffline(_ error: Error) -> Bool {
+        if case Failure.noSpace = error { return true }       // not enough room is a wait, like no connection (BUG-33 D4)
         if let u = error as? URLError {
             return [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
                     .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff].contains(u.code)
@@ -301,12 +317,13 @@ private var pending: DispatchWorkItem?
 
 extension Downloads {
     enum Failure: Error, CustomStringConvertible {
-        case noTool(String), failed(String), queued
+        case noTool(String), failed(String), noSpace(String), queued
         var description: String {
             switch self {
             case .noTool(let t): "\(t) isn't installed (brew install \(t))"
             case .failed(let m): m
-            case .queued: "no connection: queued, it downloads when the connection returns (recense download --queue)"
+            case .noSpace(let m): m
+            case .queued: "queued: it downloads when the connection and the room are back (recense download --queue)"
             }
         }
     }
@@ -322,11 +339,12 @@ extension Downloads {
         // 1. already on this device (no network)
         if options.section == nil, let e = existing(link, mode: mode) { return e }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        if let free = freeSpace(), free < minFree {
-            throw Failure.failed("not enough free space to download (\(free >> 20) MiB left, \(minFree >> 20) MiB needed)")
-        }
         // 2. from the source: resumable, retried; 3. offline, it waits in the queue and never blocks
+        begin(); defer { end() }
         do {
+            if let free = freeSpace(), free < minFree {
+                throw Failure.noSpace("not enough free space to download yet (\(free >> 20) MiB left, \(minFree >> 20) MiB needed): it waits in the queue")
+            }
             var e = try await fromSource(url, link: link, mode: mode, options: options)
             e = try await makePlayable(e)
             if options.subtitles, url.scheme?.hasPrefix("http") == true, !isDirectMedia(url) {
@@ -491,15 +509,22 @@ extension Downloads {
     nonisolated(unsafe) static var onFailure: (@Sendable (DownloadRequest, Error) -> Void)? = nil
     /// Runs the queue when there is something in it and no run is going; the timer, the folder watcher and the
     /// connection monitor all call this, so a request never waits for a network change.
+    /// Every access to `draining` is on the main queue, so two runs never overlap on one .part.
     static func kickDrain() {
-        guard !draining, !queued().isEmpty, connection.currentPath.status == .satisfied else { return }
-        draining = true
-        Task.detached { _ = await drain(log: { NSLog("recense: \($0)") }); draining = false }
+        DispatchQueue.main.async {
+            guard !draining, !queued().isEmpty, connection.currentPath.status == .satisfied else { return }
+            draining = true
+            Task.detached {
+                _ = await drain(log: { NSLog("recense: \($0)") })
+                DispatchQueue.main.async { draining = false }
+            }
+        }
     }
     nonisolated(unsafe) private static var queueTimer: Timer?
 
     /// Runs every queued request (oldest first); a done or failed one leaves the queue, a failure logged in .queue/failed/.
     static func drain(log: (String) -> Void = { print($0) }) async -> Int {
+        begin(); defer { end() }
         var done = 0
         for (file, r) in queued() {
             do {
@@ -530,17 +555,29 @@ extension Downloads {
     }
 
     static func run(_ exe: String, _ args: [String], timeout: TimeInterval) async throws -> (Int32, String, String) {
+        let r = try await runChecked(exe, args, timeout: timeout)
+        return (r.status, r.out, r.err)
+    }
+
+    /// Like run, and says whether the time limit stopped it. stdout and stderr are read at the same time, so a tool
+    /// that writes more than a pipe holds (64 KB) to either never blocks.
+    static func runChecked(_ exe: String, _ args: [String], timeout: TimeInterval) async throws -> (status: Int32, out: String, err: String, timedOut: Bool) {
         try await Task.detached {
             let p = Process(), out = Pipe(), err = Pipe()
             p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
             p.standardOutput = out; p.standardError = err
             try p.run()
-            let watchdog = DispatchWorkItem { if p.isRunning { p.terminate() } }
+            final class Flags: @unchecked Sendable { var stopped = false; var err = Data() }
+            let fl = Flags()
+            let watchdog = DispatchWorkItem { if p.isRunning { fl.stopped = true; p.terminate() } }
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
             defer { watchdog.cancel() }
-            let o = out.fileHandleForReading.readDataToEndOfFile(), e = err.fileHandleForReading.readDataToEndOfFile()
+            let g = DispatchGroup(); g.enter()
+            DispatchQueue.global().async { fl.err = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+            let o = out.fileHandleForReading.readDataToEndOfFile()
+            g.wait()
             p.waitUntilExit()
-            return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
+            return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: fl.err, as: UTF8.self), fl.stopped)
         }.value
     }
 }
@@ -666,19 +703,44 @@ func downloadsSelftest() -> Bool {
         check(Downloads.existing(ids[1], mode: .av)?.name == vid.lastPathComponent, "the other spelling finds the copy already here")
     } else { check(false, "D2 entry") }
 
-    // Regression guard: BUG-33 D4 — no room, no download; a day-old .part goes, a fresh one stays
+    // Regression guard: BUG-33 D4 — no room means the request waits in the queue (not failed/, not announced);
+    // a day-old .part is swept, a fresh one stays, and one a queued request still needs survives
+    for (f, _) in Downloads.queued() { try? FileManager.default.removeItem(at: f) }
+    final class Told: @unchecked Sendable { var n = 0 }
+    let told = Told()
+    Downloads.onFailure = { _, _ in told.n += 1 }; defer { Downloads.onFailure = nil }
     Downloads.freeSpaceOverride = 100 << 20
     let semSp = DispatchSemaphore(value: 0); var spErr: Error?
-    Task.detached { do { _ = try await Downloads.fetch("https://example.org/never.mp4", mode: .av, queueWhenOffline: false) } catch { spErr = error }; semSp.signal() }
+    Task.detached { do { _ = try await Downloads.fetch("https://example.org/never.mp4", mode: .av) } catch { spErr = error }; semSp.signal() }
     semSp.wait()
-    check(String(describing: spErr as Any).contains("free space"), "a download with no room is refused with the reason", spErr as Any)
+    let failedDir = Downloads.queueDir.appendingPathComponent("failed")
+    check(String(describing: spErr as Any).contains("queued") && Downloads.queued().count == 1
+          && ((try? FileManager.default.contentsOfDirectory(atPath: failedDir.path)) ?? []).isEmpty && told.n == 0,
+          "a download with no room waits in the queue, never failed/", (spErr as Any, Downloads.queued().count, told.n))
+    for (f, _) in Downloads.queued() { try? FileManager.default.removeItem(at: f) }
     Downloads.freeSpaceOverride = 1 << 40
     let oldPart = dir.appendingPathComponent("old.mp4.part"), newPart = dir.appendingPathComponent("new.mp4.part")
-    try? Data("p".utf8).write(to: oldPart); try? Data("p".utf8).write(to: newPart)
-    try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90_000)], ofItemAtPath: oldPart.path)
+    let frag = dir.appendingPathComponent("old.mp4.part-Frag7"), keep = dir.appendingPathComponent("Talk [zzzzzzzzzzz].mp4.part")
+    for u in [oldPart, newPart, frag, keep] { try? Data("p".utf8).write(to: u) }
+    for u in [oldPart, frag, keep] { try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90_000)], ofItemAtPath: u.path) }
+    _ = try? Downloads.ask("https://youtu.be/zzzzzzzzzzz", mode: .av, from: "iPhone")
     Downloads.sweepStale()
-    check(!FileManager.default.fileExists(atPath: oldPart.path) && FileManager.default.fileExists(atPath: newPart.path), "a day-old .part is swept, a fresh one stays")
-    try? FileManager.default.removeItem(at: newPart)
+    check(!FileManager.default.fileExists(atPath: oldPart.path) && !FileManager.default.fileExists(atPath: frag.path)
+          && FileManager.default.fileExists(atPath: newPart.path), "a day-old .part and .part-Frag are swept, a fresh one stays")
+    check(FileManager.default.fileExists(atPath: keep.path), "an old .part a queued request still needs survives")
+    Downloads.begin(); try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90_000)], ofItemAtPath: newPart.path)
+    check(Downloads.sweepStale() == 0 && FileManager.default.fileExists(atPath: newPart.path), "nothing is swept while a download runs")
+    Downloads.end()
+    for (f, _) in Downloads.queued() { try? FileManager.default.removeItem(at: f) }
+    for u in [newPart, keep] { try? FileManager.default.removeItem(at: u) }
+
+    // Regression guard: BUG-33 M-B4 — a tool writing 200 KB to stderr must not block (stderr is read at the same time)
+    let semR = DispatchSemaphore(value: 0); var runRes: (Int32, String, String)?; let t0 = Date()
+    Task.detached { runRes = try? await Downloads.run("/bin/sh", ["-c", "yes x | head -c 200000 >&2; echo out"], timeout: 20); semR.signal() }
+    check(semR.wait(timeout: .now() + 15) == .success && runRes?.2.count == 200_000 && Date().timeIntervalSince(t0) < 5, "200 KB of stderr doesn't block the run", runRes?.2.count as Any)
+    let semT = DispatchSemaphore(value: 0); var tr: (status: Int32, out: String, err: String, timedOut: Bool)?
+    Task.detached { tr = try? await Downloads.runChecked("/bin/sleep", ["30"], timeout: 0.5); semT.signal() }
+    check(semT.wait(timeout: .now() + 15) == .success && tr?.timedOut == true, "a run stopped by its time limit says so", tr as Any)
 
     // Regression guard: BUG-33 D3 — Music renames a taken name; the .vtt sidecars follow
     do {

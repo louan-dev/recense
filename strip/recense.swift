@@ -7289,13 +7289,13 @@ final class NativeSources {
         let args = ["-v", "error", "-y", "-i", audio.path, "-f", "ffmetadata", "-i", metaURL.path, "-i", vtt.path,
                     "-map", "0:a:0", "-map", "2:s:0", "-map_metadata", "1", "-map_chapters", "1",
                     "-c:a", "aac", "-b:a", "128k", "-c:s", "mov_text", "-movflags", "+faststart", "-f", "ipod", part.path]
-        let ran: (Int32, String, String)
-        do { ran = try await Downloads.run(ffmpeg, args, timeout: 7200) }
+        let ran: (status: Int32, out: String, err: String, timedOut: Bool)
+        do { ran = try await Downloads.runChecked(ffmpeg, args, timeout: 7200) }
         catch { overlay.setStatus(""); statusUntil = .distantPast; return fail("ffmpeg couldn't start: \(error.localizedDescription)") }
         overlay.setStatus(""); statusUntil = .distantPast
-        guard ran.0 == 0 else {
-            let why = ExportJobs.failure(status: ran.0, stderr: ran.2)
-            log("audiobook export failed: \(why)\n\(ran.2.suffix(2000))")
+        guard ran.status == 0, !ran.timedOut else {
+            let why = ExportJobs.failure(status: ran.status, stderr: ran.err, timedOut: ran.timedOut)
+            log("audiobook export failed: \(why)\n\(ran.err.suffix(2000))")
             return fail(why)
         }
         do {

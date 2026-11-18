@@ -8751,6 +8751,8 @@ if CommandLine.arguments.dropFirst().first == "selftest" {
         var good = true
         if only.contains("exportjobs") { good = exportJobsSelftest() && good }
         if only.contains("downloads") { good = downloadsSelftest() && good }
+        let unknown = only.subtracting(["exportjobs", "downloads"])
+        if !unknown.isEmpty { print("FAIL unknown selftest group: \(unknown.sorted().joined(separator: ", "))"); good = false }
         exit(good ? 0 : 1)
     }
     let a = measureSelftest(), b = hiderSelftest(), c = lyricsSelftest(), d = notesyncSelftest(), e = editorSelftest(), f = stripSelftest()

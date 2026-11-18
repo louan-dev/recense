@@ -33,9 +33,9 @@ enum ExportJobs {
     }
 
     /// What the owner reads when ffmpeg fails: the last line it said, or that it was stopped for time (M-B4).
-    static func failure(status: Int32, stderr: String) -> String {
+    static func failure(status: Int32, stderr: String, timedOut: Bool = false) -> String {
         let last = stderr.split(whereSeparator: \.isNewline).last.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-        if status == 15 || status == 9 { return "ffmpeg took too long and was stopped" + (last.isEmpty ? "" : ": " + last) }
+        if timedOut { return "ffmpeg took too long and was stopped" + (last.isEmpty ? "" : ": " + last) }
         return "ffmpeg couldn't make the audiobook (exit \(status))" + (last.isEmpty ? "" : ": " + last)
     }
 
@@ -90,7 +90,7 @@ func exportJobsSelftest() -> Bool {
 
     // Regression guard: BUG-33 M-B4 — a failure says what ffmpeg said, a timeout says so
     check(ExportJobs.failure(status: 1, stderr: "x\nInvalid data found when processing input\n").hasSuffix("Invalid data found when processing input"), "ffmpeg's last line reaches the owner")
-    check(ExportJobs.failure(status: 15, stderr: "").contains("too long"), "a stopped ffmpeg reads as a timeout")
+    check(ExportJobs.failure(status: 255, stderr: "", timedOut: true).contains("too long") && !ExportJobs.failure(status: 15, stderr: "").contains("too long"), "a run stopped by its time limit reads as a timeout (by the watchdog, not by exit code)")
 
     // one at a time
     let sem = DispatchSemaphore(value: 0)
