@@ -1818,6 +1818,7 @@
     // Whichever element last started playing has it; a parked track keeps it while it plays on.
 
     const ms = navigator.mediaSession;
+    let heldByPerson = false; // FEAT-19 P3: a pause from the Lock Screen or the headphones is the person's own
 
     const nowPos = () => {
       if (!ms || nowEl !== el) return;
@@ -1865,7 +1866,10 @@
         unlockAudio(); // the lock screen's Play is a gesture too
         el.play().catch(() => {});
       });
-      nowAct("pause", () => el.pause());
+      nowAct("pause", () => {
+        heldByPerson = true;
+        el.pause();
+      });
       nowAct("seekto", (e) => {
         if (typeof e.seekTime !== "number") return;
         if (e.fastSeek && el.fastSeek) el.fastSeek(e.seekTime);
@@ -1897,6 +1901,34 @@
 
     el.addEventListener("play", nowClaim);
     ["pause", "ratechange", "durationchange", "seeked", "timeupdate"].forEach((ev) => el.addEventListener(ev, nowPos));
+
+    // ----- a video plays on with the page hidden (FEAT-19 P3) -----
+    //
+    // iOS Safari pauses a playing <video> as the page goes hidden (locked, another app). That pause is the
+    // system's, not the person's: the sound is asked back, once per hide. It may come just before the page is
+    // hidden as well as after, so a pause up to half a second before counts. A pause from the Lock Screen or the
+    // headphones (heldByPerson), or one while the page is seen, holds. Audio elements are never paused so.
+
+    if (tag === "video") {
+      let pausedAt = 0;
+      let retried = false;
+      const again = () => {
+        if (retried || heldByPerson || el.ended) return;
+        retried = true;
+        el.play().catch(() => {});
+      };
+      el.addEventListener("play", () => (heldByPerson = false));
+      el.addEventListener("pause", () => {
+        pausedAt = Date.now();
+        if (document.hidden) again();
+      });
+      const onVis = () => {
+        if (!el.isConnected) return document.removeEventListener("visibilitychange", onVis);
+        if (!document.hidden) return void (retried = false);
+        if (el.paused && Date.now() - pausedAt < 500) again();
+      };
+      document.addEventListener("visibilitychange", onVis);
+    }
 
     // ----- the EQ island: Gallery's tray on the shared vertical bar -----
     //

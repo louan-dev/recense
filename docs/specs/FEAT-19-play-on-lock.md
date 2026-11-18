@@ -29,14 +29,24 @@ Already built (SPEC 69, notes 27). Kept as is:
 - iOS Safari limits:
   - `<video>` in a backgrounded or locked tab: Safari pauses it unless in Picture in Picture. **untested** here;
     PiP is the path (the player's PiP control).
+  - **P3 · built:** when the page is hidden and the system pauses a playing `<video>` (or pauses it up to 500 ms
+    before the hide), the player plays it again, once per hide. A pause from the Lock Screen or headphones
+    (`mediaSession` pause) or one while the page is seen holds. **proven** in Chromium with a faked hidden page
+    (ui.test.mjs "FEAT-19: a video…"); **untested** on iOS Safari, which may refuse `play()` from the background
+    (then the Lock Screen shows paused, truthfully, and PiP stays the path).
+    Edge, accepted: the page's own Pause tapped less than half a second before locking is taken as the system's.
   - Home Screen web app (standalone): background audio and Now Playing as in Safari since iOS 15.4. **assumed**.
 
 ### S-editor · Recense in a browser (offline: the hub at https://recense.local; online: `/main/editor/`)
 - **Fact:** the editor page plays no media in a browser. Seek and play go to the native host
   (`webkit.messageHandlers.audio`, `editor/src/audio.js:420, 926`); only pages are implemented in the library
   (`editor/src/library.js:19`). There is nothing for a Lock Screen to show.
-- **P4 (proposed, coordinator's call):** when the editor gets a browser player, it embeds Gallery's player
-  (the player's one home, `library/src/client/`), so S-web's rules come with it. No second player.
+- **P4 (built, branch `work/lockscreen`):** the Lock Screen wiring has one home, `library/src/client/mediasession.js`
+  (`RecenseNowPlaying.bind(el, {title, artwork, onPrev, onNext})`, a classic script); the editor's esbuild bundles the
+  same file. In a browser (no `webkit.messageHandlers.audio`) the editor menu has **Play a file…**: the system file
+  picker, the file as an object URL (never leaves the device, works offline, no server), a real `<audio>`/`<video>`
+  with the system's controls in one strip under the toolbar, closed by **Close player**. In the app the item hides:
+  the native bridge owns the Lock Screen. **Later:** Gallery loads this module instead of its own copy (parity).
 
 ### S-ios · Recense on iPhone and iPad (`mobile/`)
 Already built (BUG-09):
@@ -62,6 +72,8 @@ New in this feature:
 - `swiftc` nowplaying test (BUG-09) still ALL OK.
 - iOS compile (`CODE_SIGNING_ALLOWED=NO`).
 - `npm test` in `library/` (Media Session tests).
+- `node test/mediasession.test.mjs` in `library/` (the shared module, 7 checks).
+- `npm test` in `editor/` (`feat19-fileplayer.test.mjs`); `npm run build`; then `library/test/editorpwa.test.mjs` (copies match).
 
 ## Device check (owner's iPhone and 13-inch iPad, screen locked)
 1. Gallery in Safari: play an audio file, lock → it plays on; Lock Screen shows title, cover, scrubber; drag it → moves.
@@ -69,3 +81,5 @@ New in this feature:
 3. Recense app: play an audio file, lock → plays on, scrubber works. Then a video file: lock → its sound plays on (P2);
    unlock → picture resumes in step.
 4. Recense app while Listen hears: lock → is our scrubber there? (Gap B)
+5. Editor in Safari (`/main/editor/` or https://recense.local): menu → Play a file… → pick a sound file, lock →
+   plays on; Lock Screen shows the file's name and a scrubber; Lock Screen pause holds.

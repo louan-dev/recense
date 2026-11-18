@@ -1003,6 +1003,55 @@ await test("FEAT-19: the lock screen scrubber has the file's length and place, a
   await pg.waitForFunction(() => { const s = window.__pos[window.__pos.length - 1]; return s && Math.abs(s.position - 2) < 0.1; });
 });
 
+// Derived from Spec: FEAT-19 (P3) · a video plays on when the page is hidden (locked, left); a pause the person asks for holds
+await test("FEAT-19: a video the system pauses on hide plays on; the Lock Screen's pause holds", true, async (pg) => {
+  const webm = (await import("node:fs")).readFileSync(new URL("./fixtures/lock-video.webm", import.meta.url));
+  await MAIN.put("files/Nv/v.webm", webm, { httpMetadata: { contentType: "video/webm" } });
+  await pg.addInitScript(() => {
+    window.__hidden = false;
+    Object.defineProperty(document, "hidden", { get: () => window.__hidden, configurable: true });
+    Object.defineProperty(document, "visibilityState", { get: () => (window.__hidden ? "hidden" : "visible"), configurable: true });
+    // the player's own element sits in a shadow root (gallery.js shelter); tiles have plain previews
+    window.__v = () => [...document.querySelectorAll(".mbox")].map((b) => b.shadowRoot && b.shadowRoot.querySelector("video")).find(Boolean);
+    const ms = navigator.mediaSession;
+    window.__h = {};
+    const set = ms.setActionHandler.bind(ms);
+    ms.setActionHandler = (a, h) => {
+      if (h) window.__h[a] = h;
+      else delete window.__h[a];
+      try { set(a, h); } catch (x) {}
+    };
+  });
+  const hide = (on) => pg.evaluate((on) => { window.__hidden = on; document.dispatchEvent(new Event("visibilitychange")); }, on);
+  const v = (fn) => pg.evaluate(fn);
+  const playing = (t) => pg.waitForFunction(() => window.__v() && !window.__v().paused, null, t ? { timeout: t } : {});
+  await pg.goto(base + "/main?p=Nv");
+  await pg.click('.tile[data-n="00000"]');
+  await pg.waitForFunction(() => window.__v());
+  await v(() => window.__v().play());
+  await pg.waitForFunction(() => !window.__v().paused && navigator.mediaSession.playbackState === "playing");
+  // the system pauses it as the page goes hidden (iOS Safari), in either order
+  await hide(true);
+  await v(() => window.__v().pause());
+  await playing(3000);
+  await hide(false);
+  await v(() => window.__v().pause());
+  await hide(true);
+  await playing(3000);
+  // the Lock Screen's pause (or the headphones') is the person's: it holds while hidden
+  await v(() => window.__h.pause({ action: "pause" }));
+  await pg.waitForTimeout(800);
+  assert.equal(await v(() => window.__v().paused), true, "a pause from the Lock Screen holds");
+  await v(() => window.__h.play({ action: "play" }));
+  await playing();
+  // the page's own pause while seen holds too
+  await hide(false);
+  await pg.waitForTimeout(700);
+  await v(() => window.__v().pause());
+  await pg.waitForTimeout(800);
+  assert.equal(await v(() => window.__v().paused), true, "a pause while seen holds");
+});
+
 await test("SPEC 57 audio: Info and Share leave the bottom bar; the editor holds Download · Share · Transpose · Retranscribe, white, blue only on hover", true, async (pg) => {
   await MAIN.put("files/Bb/k.wav", wavOf(1), { httpMetadata: { contentType: "audio/wav" } });
   await pg.goto(base + "/main?p=Bb");

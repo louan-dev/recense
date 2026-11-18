@@ -253,6 +253,7 @@ test('E1 lighter toolbar: menu keeps every action reachable and page indicator f
     'olderPage',
     'pages',
     'newestFirst',
+    'playFile',
     'theme'
   ]);
   assert.equal(formatPageIndicator(0, 3), 'Page 1 of 3');

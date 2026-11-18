@@ -1,6 +1,6 @@
 // Derived from Spec: UI-12 (S1). Cache the editor page once; open it from the cache from then on, with no network.
 // Opens at once from the cache, then quietly refreshes it when online. A sign-in redirect (Access) or an error is never cached.
-const CACHE = 'recense-editor-b27da194ee';
+const CACHE = 'recense-editor-f946dccaae';
 const SHELL = ['./', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', e => {

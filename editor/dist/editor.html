@@ -2335,6 +2335,13 @@ html.rc-wings-page body {
 .rc-matter-item:hover, .rc-matter-item:focus-visible { background: color-mix(in srgb, var(--rc-muted) 22%, transparent); outline: none; }
 .rc-matter-note { padding: 6px 12px; color: var(--rc-muted); font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { .rc-matter-menu, .rc-matter-pill { transition: none; } }
+/* FEAT-19 P4 · "Play a file…": one calm strip under the toolbar, the system's own controls, closed by one button. */
+.rc-fileplayer { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--rc-border); background: var(--rc-panel); }
+.rc-fileplayer[hidden] { display: none; }
+.rc-fileplayer-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rc-fileplayer-title { color: var(--rc-text); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-fileplayer audio { width: 100%; }
+.rc-fileplayer video { width: 100%; max-height: 40vh; background: #000; border-radius: 6px; }
 
 </style>
 </head>
@@ -32686,6 +32693,183 @@ ${PAGE_MARKER}
     };
   }
 
+  // ../library/src/client/mediasession.js
+  globalThis.RecenseNowPlaying = /* @__PURE__ */ (() => {
+    let owner = null;
+    const bind = (el5, opts = {}) => {
+      const ms = navigator.mediaSession;
+      const isVideo = String(el5.tagName || "").toLowerCase() === "video";
+      let heldByPerson = false;
+      let pausedAt = 0;
+      let retried = false;
+      const offs = [];
+      const on = (t2, ev, f) => {
+        t2.addEventListener(ev, f);
+        offs.push(() => t2.removeEventListener(ev, f));
+      };
+      const act = (a, h) => {
+        try {
+          ms.setActionHandler(a, h);
+        } catch (x) {
+        }
+      };
+      const pos = () => {
+        if (!ms || owner !== el5) return;
+        try {
+          ms.playbackState = el5.paused ? "paused" : "playing";
+          const d = el5.duration;
+          if (!isFinite(d) || d <= 0) return;
+          ms.setPositionState({ duration: d, playbackRate: el5.playbackRate || 1, position: Math.min(d, Math.max(0, el5.currentTime || 0)) });
+        } catch (x) {
+        }
+      };
+      const meta2 = () => {
+        const title = String(opts.title || "").replace(/\.[^/.]+$/, "") || "Recense";
+        const m = { title, artist: opts.artist || "", album: opts.album || "" };
+        try {
+          if (opts.artwork) m.artwork = [{ src: new URL(opts.artwork, location.href).href }];
+        } catch (x) {
+        }
+        try {
+          ms.metadata = new MediaMetadata(m);
+        } catch (x) {
+        }
+      };
+      const claim = () => {
+        heldByPerson = false;
+        try {
+          if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback";
+        } catch (x) {
+        }
+        if (!ms) return;
+        owner = el5;
+        meta2();
+        act("play", () => el5.play().catch(() => {
+        }));
+        act("pause", () => {
+          heldByPerson = true;
+          el5.pause();
+        });
+        act("seekto", (e) => {
+          if (typeof e.seekTime !== "number") return;
+          if (e.fastSeek && el5.fastSeek) el5.fastSeek(e.seekTime);
+          else el5.currentTime = e.seekTime;
+          pos();
+        });
+        act("seekbackward", null);
+        act("seekforward", null);
+        act("previoustrack", opts.onPrev ? () => opts.onPrev() : null);
+        act("nexttrack", opts.onNext ? () => opts.onNext() : null);
+        pos();
+      };
+      const again = () => {
+        if (retried || heldByPerson || el5.ended) return;
+        retried = true;
+        el5.play().catch(() => {
+        });
+      };
+      on(el5, "play", claim);
+      ["pause", "ratechange", "durationchange", "seeked", "timeupdate"].forEach((ev) => on(el5, ev, pos));
+      if (isVideo) {
+        on(el5, "pause", () => {
+          pausedAt = Date.now();
+          if (document.hidden) again();
+        });
+        on(document, "visibilitychange", () => {
+          if (!document.hidden) return void (retried = false);
+          if (el5.paused && Date.now() - pausedAt < 500) again();
+        });
+      }
+      return () => {
+        offs.forEach((f) => f());
+        if (!ms || owner !== el5) return;
+        owner = null;
+        try {
+          ms.metadata = null;
+          ms.playbackState = "none";
+          ms.setPositionState();
+        } catch (x) {
+        }
+        ["play", "pause", "seekto", "previoustrack", "nexttrack"].forEach((a) => act(a, null));
+      };
+    };
+    return { bind };
+  })();
+
+  // src/fileplayer.js
+  var PLAYABLE = "audio/*,video/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.mp4,.m4v,.mov,.webm";
+  var VIDEO_EXT = /\.(mp4|m4v|mov|webm)$/i;
+  function canPlayFiles(win = globalThis) {
+    return !win?.webkit?.messageHandlers?.audio;
+  }
+  function kindOf(file) {
+    const type = String(file?.type || "");
+    if (type.startsWith("video/")) return "video";
+    if (type.startsWith("audio/")) return "audio";
+    return VIDEO_EXT.test(String(file?.name || "")) ? "video" : "audio";
+  }
+  function createFilePlayer({ doc: doc2 = document, urls = URL, nowPlaying = globalThis.RecenseNowPlaying } = {}) {
+    const panel = doc2.createElement("div");
+    panel.className = "rc-fileplayer";
+    panel.setAttribute("aria-label", "Playing a file");
+    panel.hidden = true;
+    const title = doc2.createElement("span");
+    title.className = "rc-fileplayer-title";
+    const closeBtn = doc2.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "rc-btn rc-fileplayer-close";
+    closeBtn.textContent = "Close player";
+    const bar = doc2.createElement("div");
+    bar.className = "rc-fileplayer-bar";
+    bar.append(title, closeBtn);
+    panel.append(bar);
+    let el5 = null;
+    let url = null;
+    let unbind = null;
+    function stop() {
+      if (unbind) unbind();
+      unbind = null;
+      if (el5) {
+        el5.pause();
+        el5.removeAttribute("src");
+        el5.remove();
+      }
+      el5 = null;
+      if (url) urls.revokeObjectURL(url);
+      url = null;
+      panel.hidden = true;
+    }
+    function play(file) {
+      if (!file) return null;
+      stop();
+      el5 = doc2.createElement(kindOf(file));
+      el5.controls = true;
+      el5.setAttribute("playsinline", "");
+      el5.preload = "metadata";
+      url = urls.createObjectURL(file);
+      el5.src = url;
+      title.textContent = String(file.name || "");
+      if (nowPlaying) unbind = nowPlaying.bind(el5, { title: file.name });
+      panel.append(el5);
+      panel.hidden = false;
+      const p = el5.play();
+      if (p && p.catch) p.catch(() => {
+      });
+      return el5;
+    }
+    function pick() {
+      const input = doc2.createElement("input");
+      input.type = "file";
+      input.accept = PLAYABLE;
+      input.addEventListener("change", () => play(input.files && input.files[0]));
+      input.click();
+    }
+    closeBtn.addEventListener("click", stop);
+    return { panel, play, pick, stop, get element() {
+      return el5;
+    } };
+  }
+
   // src/removed.js
   var CONTEXT_RADIUS = 80;
   var recordedDeletionsAnnotation = Annotation.define();
@@ -42179,6 +42363,7 @@ ${clean(nextLineText)}`;
     "olderPage",
     "pages",
     "newestFirst",
+    "playFile",
     "theme"
   ];
   function formatPageIndicator(index, total) {
@@ -42323,6 +42508,9 @@ ${clean(nextLineText)}`;
     const pagesBtn = makeMenuItem("rc-pages-btn", "Pages", "Swipe to glide between pages");
     pagesBtn.setAttribute("aria-pressed", "true");
     const newestFirstMenuBtn = makeMenuItem("rc-newest-first-menu-btn", "Newest first", "Order outline newest first");
+    const playFileBtn = makeMenuItem("rc-play-file-btn", "Play a file\u2026", "Play a sound or video file from this device");
+    playFileBtn.hidden = !canPlayFiles();
+    const filePlayer = createFilePlayer();
     const themeBtn = makeMenuItem("rc-theme-btn", "Light theme", "Switch theme");
     menu.append(
       outlineToggleBtn,
@@ -42338,6 +42526,7 @@ ${clean(nextLineText)}`;
       promoteMenuBtn,
       pagesBtn,
       newestFirstMenuBtn,
+      playFileBtn,
       themeBtn
     );
     menuWrap.append(menuBtn, menu);
@@ -42367,7 +42556,7 @@ ${clean(nextLineText)}`;
     const editorHost = document.createElement("main");
     editorHost.className = "rc-editor-Mount";
     workspace.append(outlinePanel, editorHost);
-    shell.append(toolbar, workspace);
+    shell.append(toolbar, filePlayer.panel, workspace);
     root.innerHTML = "";
     root.appendChild(shell);
     let view = null;
@@ -43535,6 +43724,10 @@ ${String(text ?? "")}`;
     newestFirstMenuBtn.addEventListener("click", () => {
       closeMenu();
       setNewestFirst(!newestFirst);
+    });
+    playFileBtn.addEventListener("click", () => {
+      closeMenu();
+      filePlayer.pick();
     });
     themeBtn.addEventListener("click", () => {
       closeMenu();

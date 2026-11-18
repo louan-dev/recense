@@ -78,6 +78,14 @@ npm run build
 
 Open `editor/dist/editor.html` directly in Safari or load it inside `WKWebView`.
 
+## Play a file on the Lock Screen (FEAT-19 P4, 2026-11-17)
+- In a browser, menu → **Play a file…** opens the file picker; a sound or video file from this device plays in one
+  strip under the toolbar, with the system's controls. **Close player** stops it.
+- It keeps playing when the phone locks; the Lock Screen shows the file's name and a scrubber
+  (`library/src/client/mediasession.js`, bundled from there; `src/fileplayer.js`).
+- Offline: the file never leaves the device. In the app the item hides (the app has its own player).
+- Test: `node --test test/feat19-fileplayer.test.mjs`.
+
 ## Reaching the editor on iPad and iPhone (T-0093)
 - Never a localhost link (the wrangler dev port): on an iPad, localhost is the iPad itself, so it cannot open there.
 - In the Recense app: sidebar > Locations > Draftpad. The page is bundled (`editor.html`), so it works in airplane mode.
