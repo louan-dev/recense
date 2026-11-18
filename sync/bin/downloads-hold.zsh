@@ -25,6 +25,25 @@ STATE=${HOLD_STATE:-$HOME/Library/Application Support/Recense/airdrop-hold.tsv} 
 LOG=${HOLD_LOG:-$HOME/Library/Logs/downloads-to-r2.log}
 RCONF=${HOLD_RCONF-$HOME/.config/rclone/jobs.conf}   # HOLD_RCONF="$T/none.conf" = none (tests)
 
+# FEAT-24 lanes: screenshots and screen recordings follow the same hold-then-move rule (clock = last modified, which is the
+# moment the system finished writing them; nothing here is delivered by AirDrop). Only files modified after LANE_SINCE are
+# ever touched, so the owner's back catalogue stays where it is.
+LANE_SINCE_ISO=${LANE_SINCE_ISO:-}      # empty = the moment the lanes first ran (stamped in ${STATE:r}-since), so the back catalogue is safe
+SHOT_HOLD=120                          # a screenshot: long enough to paste or drag it
+REC_HOLD=600                           # a recording: 10 min after it stops changing
+SHOTS_DIR=${SHOTS_DIR:-$HOME/Documents/Screenshots}   # `defaults read com.apple.screencapture location`
+LANES_ON=${LANES_ON:-0}                # OFF until the owner decides the R2 expiry for these prefixes; LANES_ON=1 turns the lanes on
+
+# The pure lane rule. Args: now mtime hold since used(epoch|0) renamed tagged open  → ignore | keep | wait | move
+lane_rule() {
+  local now=$1 mtime=$2 hold=$3 since=$4 used=$5 renamed=$6 tagged=$7 open=$8
+  (( mtime < since )) && { echo ignore; return }          # older than this feature: never touched
+  [[ $renamed == 1 || $tagged == 1 ]] && { echo keep; return }   # the owner renamed or tagged it: theirs
+  (( used > mtime + 5 )) && { echo keep; return }         # opened after it was written
+  [[ $open == 1 ]] && { echo wait; return }               # still being written
+  (( now - mtime >= hold )) && echo move || echo wait
+}
+
 # The pure rule. Args: now birth mtime airdrop(1/0) lastused(epoch or 0) renamed(1/0)
 # Prints "move" or "wait" or "keep" (keep = hands off for good: opened or renamed in the hold).
 hold_rule() {
@@ -80,17 +99,75 @@ due_list() {
   mv "$newstate" "$STATE"
 }
 
+# lane_due NAME DIR HOLD GLOB: prints the file names (top level of DIR) that are due.
+lane_due() {
+  local name=$1 dir=$2 hold=$3 glob=$4 mode=$5
+  [[ -d $dir ]] || return 0
+  local now=${NOW:-$(date +%s)} since st="${STATE:r}-$name.tsv"
+  mkdir -p "${STATE:h}"; [[ -f $st ]] || : > "$st"
+  if [[ -n $LANE_SINCE_ISO ]]; then since=$(date -j -u -f %Y-%m-%dT%H:%M:%SZ "$LANE_SINCE_ISO" +%s)
+  else
+    local sf="${STATE:r}-since"
+    if [[ -s $sf ]]; then since=$(<"$sf"); else since=$now; [[ $mode == plan ]] || print -r -- "$now" > "$sf"; fi
+  fi
+  local ns; ns=$(mktemp "${TMPDIR:-/tmp}/lane-state.XXXX")
+  local f b ino mtime prev renamed tagged used d open verdict
+  for f in "$dir"/*(.N); do
+    b=${f:t}
+    [[ $b == ${~glob} ]] || continue
+    read -r ino mtime < <(stat -f '%i %m' "$f") || continue
+    (( mtime < since )) && continue                     # cheapest test first: the old catalogue pays only this stat
+    prev=$(awk -F'\t' -v i="$ino" '$1==i{print $2; exit}' "$st")
+    renamed=0; [[ $prev == KEEP ]] && renamed=1; [[ -n $prev && $prev != KEEP && $prev != $b ]] && renamed=1
+    tagged=0; xattr -p com.apple.metadata:_kMDItemUserTags "$f" >/dev/null 2>&1 && tagged=1
+    used=0; d=$(mdls -raw -name kMDItemLastUsedDate "$f" 2>/dev/null)
+    [[ $d == *"+0000"* ]] && used=$(date -j -u -f '%Y-%m-%d %H:%M:%S +0000' "$d" +%s 2>/dev/null || echo 0)
+    open=0; lsof -- "$f" >/dev/null 2>&1 && open=1
+    verdict=$(lane_rule "$now" "$mtime" "$hold" "$since" "$used" $renamed $tagged $open)
+    [[ $verdict == ignore ]] && continue
+    if [[ $verdict == keep ]]; then printf '%s\tKEEP\n' "$ino" >> "$ns"; else printf '%s\t%s\n' "$ino" "$b" >> "$ns"; fi
+    [[ $verdict == move ]] && print -r -- "$b"
+  done
+  if [[ $mode == plan ]]; then rm -f "$ns"; else mv "$ns" "$st"; fi   # a plan never writes state
+}
+
+# move_dir SRC DESTPATH LISTFILE
+move_list() {
+  local src=$1 dest=$2 list=$3
+  local -a cfg; [[ -n $RCONF ]] && cfg=(--config "$RCONF")
+  /opt/homebrew/bin/rclone move "$src" "$dest" "${cfg[@]}" --files-from-raw "$list" \
+    --suffix ".replaced-$(date +%Y%m%d-%H%M%S)" --suffix-keep-extension \
+    --log-file "$LOG" --log-level INFO < /dev/null
+}
+
+# one lane: NAME DIR HOLD PREFIX GLOB [plan]
+run_lane() {
+  local name=$1 dir=$2 hold=$3 prefix=$4 glob=$5 mode=$6
+  local list; list=$(mktemp "${TMPDIR:-/tmp}/lane-list.XXXX")
+  lane_due "$name" "$dir" "$hold" "$glob" "$mode" > "$list"
+  if [[ -s $list ]]; then
+    if [[ $mode == plan ]]; then sed "s|^|$name: |" "$list"; else move_list "$dir" "$DEST/$prefix" "$list"; fi
+  fi
+  rm -f "$list"
+}
+
+lanes() {
+  [[ $LANES_ON == 1 ]] || return 0
+  run_lane screenshots "$SHOTS_DIR" $SHOT_HOLD screenshots 'Screenshot *.(png|jpg|jpeg|heic)' "$1"
+  run_lane screenrec   "$SHOTS_DIR" $REC_HOLD  recordings  'Screen Recording *.mov' "$1"
+}
+
 move_due() {
   local list; list=$(mktemp "${TMPDIR:-/tmp}/hold-list.XXXX")
   due_list > "$list"
-  if [[ ! -s $list ]]; then rm -f "$list"; return 0; fi
-  [[ $1 == plan ]] && { cat "$list"; rm -f "$list"; return 0; }
+  if [[ ! -s $list ]]; then rm -f "$list"; lanes "$1"; return 0; fi
+  [[ $1 == plan ]] && { cat "$list"; rm -f "$list"; lanes plan; return 0; }
   # a file already in the bucket under the same name is renamed aside (kept), never overwritten
   local -a cfg; [[ -n $RCONF ]] && cfg=(--config "$RCONF")
   /opt/homebrew/bin/rclone move "$DL" "$DEST" "${cfg[@]}" --files-from-raw "$list" \
     --suffix ".replaced-$(date +%Y%m%d-%H%M%S)" --suffix-keep-extension \
     --log-file "$LOG" --log-level INFO < /dev/null   # never wait for a password prompt
-  local rc=$?; rm -f "$list"; return $rc
+  local rc=$?; rm -f "$list"; lanes "$1"; return $rc
 }
 
 selftest() {
@@ -109,9 +186,21 @@ selftest() {
   t move 1000 999 100 0 0 0         # not AirDrop: birth is irrelevant, mtime old
   # (the 951 case above is inside the 5 s slack so it must NOT be keep)
   [[ $(hold_rule 1000 950 1 1 951 0) == wait ]] && : || { echo "FAIL slack: want wait"; fail=1 }
+  # lane rule: now mtime hold since used renamed tagged open
+  l() { local want=$1; shift; local got; got=$(lane_rule "$@"); [[ $got == $want ]] || { echo "FAIL lane $*: want $want got $got"; fail=1 }; }
+  l ignore 1000 100 120 500 0 0 0 0    # older than the feature: never touched
+  l wait   1000 900 120 0 0 0 0 0      # 100 s old
+  l move   1020 900 120 0 0 0 0 0      # exactly the hold
+  l move   9000 900 120 0 0 0 0 0      # long past (restart)
+  l keep   9000 900 120 0 0 1 0 0      # renamed
+  l keep   9000 900 120 0 0 0 1 0      # tagged
+  l keep   9000 900 120 0 910 0 0 0    # opened after it was written
+  l move   9000 900 120 0 903 0 0 0    # 3 s of slack
+  l wait   9000 900 120 0 0 0 0 1      # still open (being recorded)
   # real run: temp Downloads, local destination, real rclone
   local T; T=$(mktemp -d "${TMPDIR:-/tmp}/hold-real.XXXX")
   mkdir -p "$T/dl" "$T/dest"; : > "$T/none.conf"
+  mkdir -p "$T/shots" "$T/recs"; export SHOTS_DIR="$T/shots" LANE_SINCE_ISO=2020-01-01T00:00:00Z
   export DOWNLOADS="$T/dl" HOLD_DEST="$T/dest" HOLD_STATE="$T/state.tsv" HOLD_LOG="$T/log" HOLD_RCONF="$T/none.conf"
   local Q; Q=$(printf '0083;%x;sharingd;3238FECF-F0EA-486F-8DCD-A461CFF76411' $(date +%s))   # arrival = now, as sharingd stamps it
   echo air > "$T/dl/air.txt";  xattr -w com.apple.quarantine "$Q" "$T/dl/air.txt"; touch -t 202001010000 "$T/dl/air.txt"   # old sender mtime
@@ -130,6 +219,24 @@ selftest() {
   [[ -f $T/dest/air.txt && ! -e $T/dl/air.txt ]] || { echo "FAIL real: air.txt not moved"; fail=1 }
   [[ -f $T/dl/ren2.txt ]] || { echo "FAIL real: renamed file left Downloads"; fail=1 }
   [[ $(cat "$T/dest/dup.txt") == clash-new && $(ls "$T/dest" | grep -c '^dup\.replaced-.*\.txt$') == 1 ]] || { echo "FAIL real: name clash did not keep both"; ls "$T/dest"; fail=1 }
+  # lanes, real: screenshot 200 s old, recording 200 s old, tagged shot, a page of the owner's own, a pre-feature shot
+  local old; old=$(date -v-200S +%Y%m%d%H%M.%S)
+  echo s > "$T/shots/Screenshot 2026-11-17 at 10.00.00.png"; touch -t $old "$T/shots/Screenshot 2026-11-17 at 10.00.00.png"
+  echo s > "$T/shots/Screenshot tagged.png"; touch -t $old "$T/shots/Screenshot tagged.png"; xattr -w com.apple.metadata:_kMDItemUserTags x "$T/shots/Screenshot tagged.png"
+  echo r > "$T/shots/Screen Recording 2026-11-17 at 10.01.00.mov"; touch -t $old "$T/shots/Screen Recording 2026-11-17 at 10.01.00.mov"
+  echo p > "$T/shots/Drafting-Page_01.png"; touch -t $old "$T/shots/Drafting-Page_01.png"
+  echo o > "$T/shots/Screenshot 2019.png"; touch -t 201901010000 "$T/shots/Screenshot 2019.png"
+  echo v > "$T/recs/talk.m4a"; touch -t $old "$T/recs/talk.m4a"
+  NOW=$(( $(date +%s) + 0 )) zsh "$SELF" >/dev/null 2>&1      # LANES_ON unset: the lanes are off
+  [[ -f "$T/shots/Screenshot 2026-11-17 at 10.00.00.png" ]] || { echo "FAIL lane: lanes ran with LANES_ON unset"; fail=1 }
+  export LANES_ON=1
+  NOW=$(( $(date +%s) + 0 )) zsh "$SELF" >/dev/null 2>&1
+  [[ ! -e "$T/shots/Screenshot 2026-11-17 at 10.00.00.png" && -f "$T/dest/screenshots/Screenshot 2026-11-17 at 10.00.00.png" ]] || { echo "FAIL lane: 200 s old screenshot not moved"; fail=1 }
+  [[ -f "$T/shots/Screen Recording 2026-11-17 at 10.01.00.mov" ]] || { echo "FAIL lane: recording left before its 10 min"; fail=1 }
+  NOW=$(( $(date +%s) + REC_HOLD )) zsh "$SELF" >/dev/null 2>&1
+  [[ -f "$T/dest/recordings/Screen Recording 2026-11-17 at 10.01.00.mov" ]] || { echo "FAIL lane: recordings not moved after 10 min"; fail=1 }
+  [[ -f "$T/shots/Screenshot tagged.png" && -f "$T/shots/Drafting-Page_01.png" && -f "$T/shots/Screenshot 2019.png" ]] || { echo "FAIL lane: tagged / owner's / old file moved"; fail=1 }
+  [[ -f $T/recs/talk.m4a && ! -e $T/dest/recordings/talk.m4a ]] || { echo "FAIL lane: audio in ~/Recordings was moved"; fail=1 }
   rm -rf "$T"
   (( fail )) && { echo "downloads-hold selftest FAILED"; exit 1 }
   echo "downloads-hold selftest OK"
