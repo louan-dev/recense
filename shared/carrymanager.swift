@@ -626,7 +626,7 @@ private enum CarryKeychain {
                                     nextSeq: (mine.map(\.seq).max() ?? 0) + 1, at: Int64(Date().timeIntervalSince1970))
             try appendOps(ops)
             for op in ops where op.op == .put {   // keep this version's text: a peer's later edit names it as its parent (FEAT-22 P2)
-                CarryBase.snapshot(sha: op.sha256, fileAt: Homes.root.appendingPathComponent(resultKey(op)))
+                CarryBase.snapshot(sha: op.sha256, fileAt: Homes.root.appendingPathComponent(CarrySync.resultKey(op)))
             }
             lastSent = now
             try JSONEncoder().encode(now).write(to: lastSentURL, options: .atomic)
