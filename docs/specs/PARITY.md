@@ -87,3 +87,28 @@ spec: FEAT-09 FEAT-22 SEC-02
 check: lock . :: swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"
 device: pair once, change a file on each device, both converge; Wi-Fi off, edit, Wi-Fi on, catches up
 <!-- parity:end -->
+
+<!-- parity:begin home -->
+feature: home
+home: editor/src/
+symbols: weave
+note: UI-13 woven Home (editor/src/weave.js, planned) and FEAT-07 haptic zoning (ShowsKit HapticZones, planned)
+embodiments: mac=[ ] iphone=[ ] ipad=[ ] web=n/a
+events: home.open home.weave home.anchor home.todo home.pip haptic.zone haptic.fire
+spec: UI-13 FEAT-07 FEAT-23
+check: editor :: npm test
+check: lock shared/ShowsKit :: swift test
+device: iPhone and iPad, Wi-Fi off, screen-recorded: Home shows what plays; typing at 3:10 anchors at 3:10; PiP floats on leaving the app
+<!-- parity:end -->
+
+<!-- parity:begin vault -->
+feature: vault
+home: shared/vault/
+symbols: Vault
+note: SEC-03 password manager; nothing built until the threat model is reviewed
+embodiments: mac=[ ] iphone=[ ] ipad=[ ] web=n/a
+events: vault.open vault.lock vault.sync vault.conflict vault.error
+spec: SEC-03 SEC-02
+check: lock . :: swiftc -O shared/notesync.swift shared/carrysync.swift mobile/ios/Tests/carrysync/main.swift -o "$TMPDIR/carrysync" && "$TMPDIR/carrysync"
+device: P0: the same entry opens on Mac and iPhone; change on each, carry, both converge
+<!-- parity:end -->
