@@ -64,10 +64,12 @@ export function wordsOf(text) {
 // Derived from Spec: BUG-32 · â ê ô (and à è é ù) are French and Vietnamese both: only letters French never
 // writes say Vietnamese. Composed first (NFC), so a decomposed (NFD) file reads the same.
 const VI_ONLY = /[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộớờởỡợụủũứừửữựỳỵỷỹáíóúýìòãõ]/;
+// Vietnamese words with no tone mark that French never writes ("là" is French too: left out).
+const VI_WORDS = /(^|[^\p{L}])(và|không|tôi|ông|bà|cô|bên|lên|tên|nên)(?=[^\p{L}]|$)/u;
 const FR = /[éèêëàâçùûüôîïœæÿ]|\b(le|la|les|des|est|une|du|et)\b/;
 export function guessLang(text) {
   const s = String(text || '').normalize('NFC').toLowerCase();
-  if (VI_ONLY.test(s)) return 'vi';
+  if (VI_ONLY.test(s) || VI_WORDS.test(s)) return 'vi';
   if (FR.test(s)) return 'fr';
   return 'en';
 }

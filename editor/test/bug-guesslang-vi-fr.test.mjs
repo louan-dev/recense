@@ -13,4 +13,8 @@ test('decomposed (NFD) input reads the same as composed', () => {
   assert.equal(guessLang('cảm ơn'.normalize('NFD')), 'vi');
   assert.equal(guessLang('fête'.normalize('NFD')), 'fr');
 });
+test('Vietnamese with only â ê ô (no tone mark) is still Vietnamese', () => {
+  for (const s of ['Tôi là sinh viên', 'Không', 'Tên tôi là Nam', 'Bên kia']) assert.equal(guessLang(s), 'vi', s);
+  for (const s of ['fête', 'château', 'hôtel', 'forêt', 'Il est là', 'côté']) assert.equal(guessLang(s), 'fr', s);
+});
 test('plain English stays English', () => assert.equal(guessLang('hello world'), 'en'));

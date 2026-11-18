@@ -16,6 +16,9 @@ Status: `[x]` (editor; every host loads `editor/dist/editor.html`)
 1. Input is composed (`normalize('NFC')`) before any test: NFD and NFC read the same.
 2. Vietnamese only on a letter French never writes: ă đ ơ ư; ạ ả ã ẹ ẻ ẽ ỉ ị ĩ ọ ỏ õ ụ ủ ũ ỳ ỵ ỷ ỹ; ấ ầ ẩ ẫ ậ ắ ằ ẳ ẵ ặ
    ế ề ể ễ ệ ố ồ ổ ỗ ộ ớ ờ ở ỡ ợ ứ ừ ử ữ ự; á í ó ú ý ì ò.
+2b. Vietnamese also on a whole word with no tone mark that French never writes: và · không · tôi · ông · bà · cô ·
+   bên · lên · tên · nên (`Tôi là sinh viên`, `Không`, `Bên kia`; `là` is left out: French writes it). Review fix 11-18:
+   without it these read French, a regression on main.
 3. French on é è ê ë à â ç ù û ü ô î ï œ æ ÿ, or on le · la · les · des · est · une · du · et.
 4. Else English. Three languages only: a Spanish `está` reads Vietnamese (no Spanish target exists).
 Test: `editor/test/bug-guesslang-vi-fr.test.mjs`.

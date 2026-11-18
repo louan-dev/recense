@@ -41768,10 +41768,11 @@ ${clean(nextLineText)}`;
     return String(text || "").match(/[\p{L}\p{N}’']+/gu) || [];
   }
   var VI_ONLY2 = /[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịĩọỏốồổỗộớờởỡợụủũứừửữựỳỵỷỹáíóúýìòãõ]/;
+  var VI_WORDS = /(^|[^\p{L}])(và|không|tôi|ông|bà|cô|bên|lên|tên|nên)(?=[^\p{L}]|$)/u;
   var FR = /[éèêëàâçùûüôîïœæÿ]|\b(le|la|les|des|est|une|du|et)\b/;
   function guessLang(text) {
     const s = String(text || "").normalize("NFC").toLowerCase();
-    if (VI_ONLY2.test(s)) return "vi";
+    if (VI_ONLY2.test(s) || VI_WORDS.test(s)) return "vi";
     if (FR.test(s)) return "fr";
     return "en";
   }
