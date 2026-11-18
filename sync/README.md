@@ -130,9 +130,10 @@ to the `gallery-tmp` bucket.
   (renamed `.replaced-<time>`), never overwritten. Everything else keeps the old rule (modified 2 minutes ago).
 - No state to lose: quit, reboot or a missed run changes nothing; a file past its time moves on the next run.
 - `zsh bin/downloads-hold.zsh plan` prints what is due and moves nothing; `selftest` runs the rule and a real move.
-- Install the agent (once, after the branch is merged):
-      sed "s#__HOME__#$HOME#g" launchd/com.chauphan.downloads-to-r2.plist > ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist &&
-        launchctl bootout gui/$(id -u)/com.chauphan.downloads-to-r2; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist
+- Install the agent (once, after the branch is merged). It builds the file in /tmp first, so a failed step can never empty the live plist:
+      sed "s#__HOME__#$HOME#g" launchd/com.chauphan.downloads-to-r2.plist > /tmp/dl-r2.plist && plutil -lint /tmp/dl-r2.plist &&
+        mv /tmp/dl-r2.plist ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist &&
+        { launchctl bootout gui/$(id -u)/com.chauphan.downloads-to-r2 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.downloads-to-r2.plist; }
 
 ## Triage watch (save triage.md → bug gets worked on)
 - No perl (Apple deprecated scripting runtimes): filing still works through awk; the log says "layout skipped: perl missing".
