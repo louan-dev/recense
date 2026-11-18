@@ -228,6 +228,10 @@ do {
     check(run(errSecItemNotFound, errSecSuccess) && calls == ["update", "add"], "a missing item is added: \(calls)")
     check(!run(errSecInteractionNotAllowed, errSecSuccess) && calls == ["update"], "any other update error saves nothing: \(calls)")
     check(!run(errSecItemNotFound, errSecDuplicateItem), "a failed add is reported")
+    let d = Data("k".utf8)
+    check(Set(CarryStored.updating(d).keys) == [kSecValueData as String], "an update changes only the data: \(CarryStored.updating(d).keys.sorted())")
+    check(CarryStored.adding(d)[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+          "the add sets this-device-only accessibility")
 }
 
 // 15 · The 10 s proof deadline is per session: an earlier connection's timer never judges a reconnect

@@ -141,6 +141,8 @@ Run: `swiftc -O shared/carrypair.swift shared/carryauth.swift mobile/ios/Tests/c
     unreadable message clears once every read works again.
 14. **Keychain save in place:** saving updates the item (`SecItemUpdate`); only `errSecItemNotFound` adds it.
     No save ever deletes first, so a failed add can't leave the store empty; any other update error saves nothing.
+    The update changes only `kSecValueData` (the Mac's file keychain may refuse a changed `kSecAttrAccessible`);
+    the accessibility (`AfterFirstUnlockThisDeviceOnly`) is set on the add.
 15. **The 10 s proof deadline is per session:** each handshake session gets its own token (`CarryDeadlines`).
     A timer acts only if the peer's current session still carries its token, so a timer from an earlier
     connection never judges a reconnect early. While pairing, a timer does nothing; "Stop Pairing" re-arms
