@@ -150,3 +150,14 @@ test("a word timed by the listener with Sweep at 0 keeps the voice's syllables, 
   assert.deepEqual(x.syl.map((y) => [y.s, y.e]), [[11, 12], [12, 15]]);
   assert.equal(globalThis.Cadence.fill(x, 12, 5), 2 / 5);
 });
+
+// Regression guard: BUG-24 (P1, the web's and the woven page's renderer: with no song data at all, a word is still
+// swept by the clock inside itself, never lit whole at its start; the same rule as ShowsKit's TranscriptLight.swept)
+test("with no voice data a word is swept by the clock: nothing at its start, half at its middle, whole at its end", () => {
+  const w = { t: "Everything", s: 10, e: 11 };
+  assert.equal(C.fill(w, 9.9, 10), 0);
+  assert.equal(C.fill(w, 10, 10), 0);
+  assert.ok(Math.abs(C.fill(w, 10.5, 10) - 0.5) < 1e-9, "half way through the word, half of it is lit");
+  assert.equal(C.fill(w, 11, 10), 1);
+  assert.equal(C.fill({ ...w, un: true }, 10.5, 10), 0, "a word marked unsung is never lit");
+});
