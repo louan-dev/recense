@@ -2116,5 +2116,87 @@ await test("A13 L1: Track Loop on the deck plays the file from memory after the 
   for (let i = 0; i < 22; i++) assert.equal(ranges.filter((r) => r === chunkRange(i)).length, 1, "chunk " + i + " is read once");
 });
 
+// Regression guard: T-0142–44 — the owner's album page (/main/shared#s/link/<id>): files dropped from the Finder on blank
+// space upload (with a visible highlight), Edit Cover renames the album, and a failed file keeps its row with a Retry
+// while the other files still go up (before, the first failure ended the batch and the rest were never sent).
+const bug24Link = async (n) => {
+  const r = await mf.dispatchFetch(base + "/main/api/link?action=start&days=7", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" },
+    body: Array.from({ length: n }, (_, k) => "1\t170000000000" + k + "\timage%2Fjpeg\tp" + k + ".jpg").join("\n"),
+  });
+  const up = await r.json();
+  for (let k = 0; k < n; k++) {
+    await PUBLIC.put("links/" + up.id + "/00" + k, "J", { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { name: "p" + k + ".jpg", expires: String(up.exp) } });
+  }
+  return up;
+};
+const dropFiles = (pg, names) =>
+  pg.evaluate(async (names) => {
+    const d = new DataTransfer();
+    names.forEach((n) => d.items.add(new File([n], n, { type: "video/quicktime" })));
+    const fire = (t) => document.body.dispatchEvent(new DragEvent(t, { dataTransfer: d, bubbles: true, cancelable: true }));
+    fire("dragenter");
+    window.__hl = document.body.classList.contains("lupdrop");
+    fire("drop");
+    window.__after = document.body.classList.contains("lupdrop");
+  }, names);
+
+await test("T-0142–44: Finder files dropped on the album page upload, with a drop highlight; Add Files is there too", true, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/main/shared#s/link/" + up.id);
+  await pg.waitForSelector("text=Add Files");
+  await dropFiles(pg, ["rec one.mov", "rec two.mov"]);
+  assert.equal(await pg.evaluate(() => window.__hl), true, "highlight while dragging over the page");
+  assert.equal(await pg.evaluate(() => window.__after), false, "highlight gone after the drop");
+  for (let t = 0; t < 80; t++) {
+    if ((await PUBLIC.head("links/" + up.id + "/001")) && (await PUBLIC.head("links/" + up.id + "/002"))) break;
+    await pg.waitForTimeout(250);
+  }
+  assert.ok(await PUBLIC.head("links/" + up.id + "/001"), "first dropped file landed");
+  assert.ok(await PUBLIC.head("links/" + up.id + "/002"), "second dropped file landed");
+  await pg.screenshot({ path: process.env.SHOTS ? process.env.SHOTS + "/drop.png" : "/dev/null" }).catch(() => {});
+});
+
+await test("T-0142–44: Edit Cover renames the album (type, clear, Save changes) and the new name shows top-left", true, async (pg) => {
+  const up = await bug24Link(2);
+  await pg.goto(base + "/main/shared#s/link/" + up.id);
+  await pg.waitForSelector("text=Edit Cover");
+  assert.match(await pg.textContent(".dhead h2"), /p0/);
+  await pg.click("text=Edit Cover");
+  await pg.waitForSelector('.cved input[aria-label="Album name"]');
+  assert.ok(await pg.isVisible("text=Save changes") && (await pg.isVisible(".cved >> text=Cancel")));
+  await pg.click('.cved button[aria-label="Clear the album name"]');
+  assert.equal(await pg.inputValue('.cved input[aria-label="Album name"]'), "");
+  await pg.fill('.cved input[aria-label="Album name"]', "Family trip");
+  if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/editcover.png" });
+  await pg.click("text=Save changes");
+  await pg.waitForFunction(() => /Family trip/.test(document.querySelector(".dhead h2")?.textContent || ""), null, { timeout: 8000 });
+  const d = await (await mf.dispatchFetch(base + "/main/api/shares/link/" + up.id, { headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" } })).json();
+  assert.equal(d.share.title, "Family trip", "saved on the server");
+  // an empty name goes back to the automatic one
+  await mf.dispatchFetch(base + "/main/api/link?action=arrange&id=" + up.id, { method: "POST", headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" }, body: JSON.stringify({ title: "  " }) });
+  const d2 = await (await mf.dispatchFetch(base + "/main/api/shares/link/" + up.id, { headers: { "cf-access-jwt-assertion": ownerJwt, "x-gallery": "1" } })).json();
+  assert.match(d2.share.title, /p0/);
+});
+
+await test("T-0142–44: a recording that fails shows an error with Retry, the others still upload, and Retry sends it", true, async (pg) => {
+  const up = await bug24Link(1);
+  await pg.goto(base + "/main/shared#s/link/" + up.id);
+  await pg.waitForSelector("text=Add Files");
+  // every part of the first file's slot (001) is refused until we let it through
+  let refuse = true;
+  await pg.route(/\/main\/api\/linkadd\?.*action=part/, (rt) => (refuse && /[?&]i=1&/.test(rt.request().url()) ? rt.abort("failed") : rt.continue()));
+  await dropFiles(pg, ["bad one.mov", "good two.mov"]);
+  await pg.waitForSelector('.lup .r.bad button[aria-label="Retry bad one.mov"]', { timeout: 30000 });
+  assert.ok(await PUBLIC.head("links/" + up.id + "/002"), "the second recording landed although the first failed");
+  assert.ok(!(await PUBLIC.head("links/" + up.id + "/001")), "the failed one is not there");
+  if (process.env.SHOTS) await pg.screenshot({ path: process.env.SHOTS + "/retry.png" });
+  refuse = false;
+  await pg.click('.lup button[aria-label="Retry bad one.mov"]');
+  for (let t = 0; t < 80 && !(await PUBLIC.head("links/" + up.id + "/003")); t++) await pg.waitForTimeout(250);
+  assert.ok(await PUBLIC.head("links/" + up.id + "/003"), "Retry sent it (a fresh slot)");
+}, { });
+
 await browser.close();
 await mf.dispose();
