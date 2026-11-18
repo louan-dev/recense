@@ -75,6 +75,11 @@ Plan: `~/.claude/plans/starry-squishing-knuth.md` (B0.5 is this contract).
     is pending); right-to-left lines run right to left (`Caption.rtl`, `Caption.visual`, in `CaptionPlaces.swift`); and
     Learning's two places: `Caption.places` / `readBy` pick which line holds the top or bottom place, `uniformSize`
     gives every line one size, `drawPlaces` paints both. The Mac keeps prominence (SPEC 47) and its voice glow until P4.
+  - `FloatingFrames.swift` (BUG-24 P1b): what the iPhone and iPad floating window draws and when. Follow shows the line
+    the transcript turns to (`current` = `TranscriptLight.following`), Learn the two places, both with `CaptionPainter`.
+    `stamps` / `followStamps` / `learnStamps` give each moment the picture changes (a word's start, each quarter of a
+    word of 0.25 s or more, a line's turn, every 1/15 s of a fade); `schedule` puts them on the wall at the player's
+    speed (`ContentClock.Anchor`); `signature` names a picture so it is drawn only when it differs. Tests: `FloatingFramesTests`.
   - `Views/Scrubber.swift`: our scrubber (the home bar's Time Seeking, `library/src/client/homebar.js`) under the
     transcript: slide to move from where it was, slide up for ×4/×16/×64, seeks every 90 ms and lands on release, the
     landed time shown a moment; a tap jumps. It and the lines share one playhead. `ScrubMath` holds its rules.
