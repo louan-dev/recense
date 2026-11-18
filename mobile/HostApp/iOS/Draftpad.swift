@@ -394,16 +394,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         if speechSynthesizer.isSpeaking { speechSynthesizer.stopSpeaking(at: .immediate) }
         let u = AVSpeechUtterance(string: text)
         u.rate = AVSpeechUtteranceDefaultSpeechRate
-        u.voice = DraftpadWeb.bestVoice(for: text)
+        u.voice = bestVoice(lang: nil, text: text)
         speechSynthesizer.speak(u)
-    }
-
-    static func bestVoice(for text: String) -> AVSpeechSynthesisVoice? {
-        let r = NLLanguageRecognizer()
-        r.processString(text)
-        guard let lang = r.dominantLanguage?.rawValue else { return nil }
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) }
-        return voices.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: lang)
     }
 
     /// Runs `work` inside a background task, so leaving the app never cuts a save short (BUG-29); `work` calls `done`.

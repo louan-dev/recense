@@ -205,7 +205,9 @@ enum CarrySync {
             if mine == op.sha256 { return .nothing }
             if let b = base[here], b == mine { return .replace(key: here, old: mine, new: op.sha256) }
             if let p = op.parent, p == mine { return .replace(key: here, old: mine, new: op.sha256) }   // T-0106: they edited my version
-            if isText(op.path), let b = base[here] { return .merge(key: here, base: b, mine: mine, theirs: op.sha256) }
+            // a text conflict: merge against the version the peer edited from, else the last version that landed here.
+            // The apply step keeps both when that text is gone or the edits overlap, so a wrong guess never loses a line.
+            if isText(op.path), let b = op.parent ?? base[here] { return .merge(key: here, base: b, mine: mine, theirs: op.sha256) }
             let s = sibling(here, device: op.device, at: op.at, zone: zone)
             return local[s] == op.sha256 ? .nothing : .keepBoth(key: here, sibling: s, sha256: op.sha256)
         case .move, .trash, .restore:

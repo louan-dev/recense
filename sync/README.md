@@ -187,6 +187,8 @@ to the `gallery-tmp` bucket.
 
 ## Triage merge (no AI, no coordinator)
 - `bin/triage-merge.zsh`: after each fixer and hourly (`launchd/com.chauphan.triage-merge.plist`), one `work/t-####` branch per run, under the BUILD LOCK.
+  Also two read-only verbs for the feature registry in `docs/specs/PARITY.md` (PLAN-1118 §11b): `zsh bin/triage-merge.zsh checks <feature>` runs that feature's `check:` lines
+  (builds take `.handoff/build.lock` and wait for 20 % free RAM) and lists the device checks still owed; `sweep <feature>` finds a second copy of its `symbols:` outside its `home:` (textual search; ast-grep is not installed).
 - It merges only if every gate passes:
   1. MERGE-QUEUE line says `ready`, and `~/.local/state/triage-watch/<ID>.tests` shows the regression test `red` before and `green 0` after.
   2. The diff touches only the scout's `Where:` files, their tests and README.md files; never `.claude/**` or settings.

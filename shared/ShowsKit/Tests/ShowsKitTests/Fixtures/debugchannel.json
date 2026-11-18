@@ -1,0 +1,14 @@
+{
+  "note": "Hand-written. Swift (DebugChannelTests) and JS (library/test/debuglog.test.mjs) must both produce each `line` byte for byte from the same input. at = milliseconds since 1970 UTC. `line: null` = refused.",
+  "cases": [
+    { "feature": "carry", "event": "carry.apply", "fields": {}, "at": 1795010364123,
+      "line": "{\"t\":\"2026-11-18T13:59:24.123Z\",\"feature\":\"carry\",\"event\":\"carry.apply\",\"fields\":{}}" },
+    { "feature": "m4b", "event": "m4b.error", "fields": { "why": "ffmpeg: \"no space\"\n\\left", "chapters": "12" }, "at": 1795010364000,
+      "line": "{\"t\":\"2026-11-18T13:59:24.000Z\",\"feature\":\"m4b\",\"event\":\"m4b.error\",\"fields\":{\"chapters\":\"12\",\"why\":\"ffmpeg: \\\"no space\\\"\\n\\\\left\"}}" },
+    { "feature": "notes", "event": "notes.link", "fields": { "key": "Tiếng Việt · café 日本", "tab": "a\tb\u0001c/d" }, "at": 0,
+      "line": "{\"t\":\"1970-01-01T00:00:00.000Z\",\"feature\":\"notes\",\"event\":\"notes.link\",\"fields\":{\"key\":\"Tiếng Việt · café 日本\",\"tab\":\"a\\tb\\u0001c/d\"}}" },
+    { "feature": "carry", "event": "draftpad.save", "fields": {}, "at": 0, "line": null },
+    { "feature": "Carry", "event": "Carry.x", "fields": {}, "at": 0, "line": null },
+    { "feature": "carry", "event": "carry.x", "fields": { "Bad Key": "v" }, "at": 0, "line": null }
+  ]
+}

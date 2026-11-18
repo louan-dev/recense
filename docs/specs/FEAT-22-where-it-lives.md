@@ -144,6 +144,11 @@ Recense/
   - Check 2 (canary, real path): with Wi-Fi off the router and Cloudflare blocked, a note line typed on the Mac
     appears on the iPhone, and a transcript made on the Mac opens on the iPhone. The owner confirms the phone side.
 - **P2 · Three-way note merge with a tracked base; the upgrade rule for transcripts.**
+  - **Built `[~]` (text merge half, 11-18, `work/carry`; device check owed):** a text conflict in carry merges against the sha the peer edited from
+    (`CarryOp.parent`, else the last version that landed from a peer); `CarryBase` keeps text snapshots by sha in `Recense/.carry/base/`
+    (`shared/carryapply.swift`), pruned at 30 days when unreferenced. Overlapping edits, a pruned base or a text over 5 MB keep both
+    as a sibling. This device's version goes to `trash/` before a merge lands. Tests: `carrymanagerSelftest` (merge, overlap, no base, via `place`),
+    `mobile/ios/Tests/carrysync` (parent beats base). **Not built:** the transcript upgrade rule (heavier pass keeps corrections) and P1.
   - Check: tests: two devices edit different lines → one merged note; the same line → both kept, nothing lost;
     a heavier pass replaces a phone transcript and all corrections survive or are listed.
 - **P3 · The hub serves the same two files** (FEAT-18 H2 slice): `GET/POST /api/keep/<key>/note` (the H1 note protocol),

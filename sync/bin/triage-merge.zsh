@@ -10,6 +10,8 @@
 # (iOS is left to the owner), the entry gets MERGED, and the worktree is cleaned up.
 # Any failure: no merge; the entry gets "held: <gate>"; a notification gives one command to merge anyway or trash it.
 # Selftest: zsh triage-merge.zsh selftest
+# Registry verbs (PLAN-1118 §11b): `checks <feature>` runs one feature's Checks from docs/specs/PARITY.md and lists what only a device can prove;
+# `sweep <feature>` finds a second copy of its symbols outside its home. Builds take the one BUILD LOCK, .handoff/build.lock (§12g).
 set -u
 SELF=${0:A}; HERE=${0:A:h}
 [[ ${1:-} == selftest ]] && export TRIAGE_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tm-state.XXXX")
@@ -143,6 +145,82 @@ run() {
   } always { free_lock }
 }
 
+# ---------- registry verbs: checks <feature>, sweep <feature> (PLAN-1118 §11b, §12g) ----------
+# The registry is docs/specs/PARITY.md: one block per feature between "<!-- parity:begin F -->" and "<!-- parity:end -->".
+ROOT=${TRIAGE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || print -r -- $REPO)}
+PARITY=${TRIAGE_PARITY:-$ROOT/docs/specs/PARITY.md}
+BLOCK_LOCK=${TRIAGE_BUILD_LOCK:-$REPO/.handoff/build.lock}   # one lock for every stream; the main checkout holds it
+
+parity_block() { [[ -f $PARITY ]] && awk -v f="$1" '$0=="<!-- parity:begin " f " -->"{on=1;next} $0=="<!-- parity:end -->"{on=0} on' "$PARITY"; }
+block_keys()   { print -r -- "$1" | sed -n "s/^$2: //p"; }
+
+free_pct() {
+  [[ -n ${TRIAGE_FREE_PCT:-} ]] && { print -r -- $TRIAGE_FREE_PCT; return; }
+  memory_pressure 2>/dev/null | awk '/free percentage/{gsub("%","",$NF); print $NF}'
+}
+
+# Waits for 20 % free RAM, then takes build.lock (mkdir is atomic). Returns 1 after TRIAGE_LOCK_WAIT seconds.
+take_build_lock() {
+  local who=$1 waited=0 poll=${TRIAGE_LOCK_POLL:-120} max=${TRIAGE_LOCK_WAIT:-1800} pct
+  mkdir -p "${BLOCK_LOCK:h}"
+  while true; do
+    pct=$(free_pct); pct=${pct:-100}
+    if (( pct >= 20 )) && mkdir "$BLOCK_LOCK" 2>/dev/null; then print -r -- "$who $$ $(date +%T)" > "$BLOCK_LOCK/who"; return 0; fi
+    (( waited >= max )) && return 1
+    sleep $poll; (( waited += poll ))
+  done
+}
+release_build_lock() { ${=TRIAGE_TRASH:-trash} "$BLOCK_LOCK" 2>/dev/null; }
+
+# checks <feature>: runs only that feature's `check:` lines from the registry, prints the embodiments and the owed device checks.
+cmd_checks() {
+  local feat=${1:-} blk line spec dir cmd lock fail=0 n=0
+  [[ -n $feat ]] || { print "usage: triage-merge.zsh checks <feature>"; return 2; }
+  blk=$(parity_block "$feat")
+  [[ -n $blk ]] || { print "no registry block '$feat' in $PARITY (add one: /parity $feat)"; return 2; }
+  export RECENSE_TOOLCHAIN=${RECENSE_TOOLCHAIN:-$REPO/.toolchain/CommandLineTools}
+  for line in ${(f)"$(block_keys "$blk" check)"}; do
+    spec=$line; lock=0; (( n++ ))
+    [[ $spec == "lock "* ]] && { lock=1; spec=${spec#lock }; }
+    dir=${spec%% :: *}; cmd=${spec#* :: }
+    if (( lock )) && ! take_build_lock "checks:$feat"; then print "FAIL lock    $dir :: $cmd (build.lock busy: $(cat $BLOCK_LOCK/who 2>/dev/null))"; fail=1; continue; fi
+    {
+      (( lock )) && trap 'release_build_lock; exit 130' INT TERM   # a Ctrl-C or kill never leaves the lock behind (review 5ee2110)
+      if (cd "$ROOT/$dir" && ROOT=$ROOT eval "$cmd") >/dev/null 2>&1; then print "ok   $dir :: ${cmd[1,70]}"; else print "FAIL $dir :: ${cmd[1,70]}"; fail=1; fi
+    } always {
+      (( lock )) && { release_build_lock; trap - INT TERM; }
+    }
+  done
+  (( n )) || { print "FAIL $feat has no check: line"; fail=1; }
+  print "Embodiments: $(block_keys "$blk" embodiments)"
+  for line in ${(f)"$(block_keys "$blk" device)"}; do print "Not checked (device): $line"; done
+  (( fail )) && { print "checks $feat FAILED"; return 1; } || print "checks $feat ok"
+}
+
+# sweep <feature>: textual search (not an AST) for a definition of one of the block's `symbols:` outside its `home:`.
+# Looks at func/class/struct/enum/actor/protocol/typealias/extension (Swift), function/class/const/let/var (JS) and def (Python); skips tests.
+cmd_sweep() {
+  local feat=${1:-} blk sym h f hit found=0 inhome
+  [[ -n $feat ]] || { print "usage: triage-merge.zsh sweep <feature>"; return 2; }
+  blk=$(parity_block "$feat")
+  [[ -n $blk ]] || { print "no registry block '$feat' in $PARITY"; return 2; }
+  local -a homes syms; homes=(${=$(block_keys "$blk" home)}); syms=(${=$(block_keys "$blk" symbols)})
+  (( ${#syms} )) || { print "FAIL $feat has no symbols: line, nothing to sweep"; return 2; }
+  cd "$ROOT" || return 2
+  for sym in $syms; do
+    for hit in ${(f)"$(grep -rnE --include='*.swift' --include='*.js' --include='*.mjs' --include='*.py' --include='*.ts' \
+        --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.build-sdk27 --exclude-dir=dist --exclude-dir=.git \
+        --exclude-dir=.claude --exclude-dir=.toolchain --exclude-dir=.test-build --exclude-dir=backups --exclude-dir=.scratch \
+        --exclude-dir=test --exclude-dir=tests --exclude-dir=Tests --exclude-dir=docs \
+        "(^|[^[:alnum:]_])((func|class|struct|enum|actor|protocol|typealias|extension|function|def)[[:space:]]+|(const|let|var)[[:space:]]+)$sym([^[:alnum:]_]|$)" . 2>/dev/null | sed 's#^\./##')"}; do
+      f=${hit%%:*}; inhome=0
+      for h in $homes; do [[ $f == ${~h}* ]] && inhome=1; done
+      (( inhome )) || { print "SECOND COPY $sym at $hit"; found=1; }
+    done
+  done
+  (( found )) && { print "sweep $feat FOUND second copies (delete them, do not wrap them)"; return 1; } || print "sweep $feat clean (textual search; ast-grep is not installed)"
+}
+
 # ---------- selftest ----------
 selftest() {
   local d fail=0; d=$(mktemp -d "${TMPDIR:-/tmp}/tm.XXXX") || exit 1
@@ -195,6 +273,54 @@ selftest() {
   setup; fixer_commits app/main.js; sed -i '' 's/^BUILD LOCK: free/BUILD LOCK: someone since 09:00/' $R/.handoff/MERGE-QUEUE.md
   zsh $SELF run; ! merged && grep -q '^BUILD LOCK: someone' $R/.handoff/MERGE-QUEUE.md && ok "BUILD LOCK respected" || bad "lock"
 
+
+  # ---- registry verbs ----
+  local RT=$d/reg; rm -rf $RT; mkdir -p $RT/docs/specs $RT/shared/voice $RT/shared/other $RT/shared/other/test
+  cat > $RT/docs/specs/PARITY.md <<'PEOF'
+<!-- parity:begin demo -->
+feature: demo
+home: shared/voice/ shared/lib*.swift
+symbols: bestVoice Mixer
+embodiments: mac=[ ] iphone=[ ] ipad=[ ] web=n/a
+check: . :: true
+check: lock shared :: test -d voice
+device: Wi-Fi off, play on iPhone
+<!-- parity:end -->
+<!-- parity:begin bad -->
+feature: bad
+check: . :: false
+<!-- parity:end -->
+PEOF
+  print 'func bestVoice() {}' > $RT/shared/voice/a.swift
+  print 'struct Mixer {}' > $RT/shared/libmix.swift
+  export TRIAGE_ROOT=$RT TRIAGE_BUILD_LOCK=$d/build.lock TRIAGE_FREE_PCT=50 TRIAGE_LOCK_POLL=1 TRIAGE_LOCK_WAIT=2
+  local out; out=$(zsh $SELF checks demo 2>&1); local rc=$?
+  (( rc == 0 )) && print -r -- $out | grep -q 'Not checked (device): Wi-Fi off' && print -r -- $out | grep -q 'Embodiments: mac=\[ \]' && ok "checks runs a feature's lines, prints embodiments and owed device checks" || bad "checks demo ($out)"
+  [[ ! -d $d/build.lock ]] && ok "checks frees build.lock after a lock line" || bad "build.lock left behind"
+  zsh $SELF checks bad >/dev/null 2>&1 && bad "checks bad should fail" || ok "a failing check line fails checks"
+  zsh $SELF checks nope >/dev/null 2>&1; (( $? == 2 )) && ok "unknown feature → exit 2" || bad "checks unknown"
+  mkdir $d/build.lock; print other > $d/build.lock/who
+  out=$(zsh $SELF checks demo 2>&1); print -r -- $out | grep -q 'FAIL lock.*build.lock busy: other' && ok "held build.lock makes the lock line fail, not run" || bad "lock held ($out)"
+  rm -rf $d/build.lock
+  out=$(TRIAGE_FREE_PCT=10 zsh $SELF checks demo 2>&1); print -r -- $out | grep -q 'FAIL lock' && ok "under 20 % free RAM the lock line waits, then fails" || bad "ram gate"
+  out=$(zsh $SELF sweep demo 2>&1); (( $? == 0 )) && ok "sweep: definitions inside the home are not second copies" || bad "sweep clean ($out)"
+  print 'func bestVoice() {}' > $RT/shared/other/b.swift; print 'func bestVoice() {}' > $RT/shared/other/test/t.swift
+  out=$(zsh $SELF sweep demo 2>&1); local rc2=$?
+  (( rc2 == 1 )) && print -r -- $out | grep -q 'SECOND COPY bestVoice at shared/other/b.swift:1' && ! print -r -- $out | grep -q 'test/t.swift' && ok "sweep finds a second copy outside the home and skips tests" || bad "sweep copy ($out)"
+  print 'const bestVoice = () => {}' > $RT/shared/other/c.js
+  out=$(zsh $SELF sweep demo 2>&1); print -r -- $out | grep -q 'SECOND COPY bestVoice at shared/other/c.js:1' && ok "sweep finds a const-style second copy" || bad "sweep const ($out)"
+  rm -f $RT/shared/other/c.js
+  zsh $SELF checks demo >/dev/null 2>&1   # warm: the lock line must not leave build.lock behind when killed
+  cat >> $RT/docs/specs/PARITY.md <<'PEOF'
+<!-- parity:begin killme -->
+feature: killme
+check: lock . :: kill -TERM $$; sleep 5
+<!-- parity:end -->
+PEOF
+  zsh $SELF checks killme >/dev/null 2>&1; [[ ! -d $d/build.lock ]] && ok "a killed checks run releases build.lock" || bad "build.lock leaked after kill"
+  rm -rf $d/build.lock
+  unset TRIAGE_ROOT TRIAGE_BUILD_LOCK TRIAGE_FREE_PCT TRIAGE_LOCK_POLL TRIAGE_LOCK_WAIT
+
   rm -rf $d $TRIAGE_STATE
   (( fail )) && { print "selftest FAILED"; exit 1; } || print "selftest ok"
 }
@@ -202,5 +328,7 @@ selftest() {
 case ${1:-run} in
   run) run ;;
   selftest) selftest ;;
-  *) print "usage: triage-merge.zsh [run|selftest]"; exit 2 ;;
+  checks) shift; cmd_checks "$@"; exit $? ;;
+  sweep) shift; cmd_sweep "$@"; exit $? ;;
+  *) print "usage: triage-merge.zsh [run|selftest|checks <feature>|sweep <feature>]"; exit 2 ;;
 esac
