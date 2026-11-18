@@ -190,9 +190,21 @@ await test("Main: upload, list, read, delete to trash", async () => {
   assert.equal(await MAIN.head("files/Raven/notes.txt"), null);
 
   const day = new Date().toISOString().slice(0, 10);
-  const trashed = await MAIN.get("trash/" + day + "/Raven/notes.txt");
+  const tk = (await MAIN.list({ prefix: "trash/" + day + "/Raven/notes.txt@" })).objects;
+  assert.equal(tk.length, 1);
+  const trashed = await MAIN.get(tk[0].key);
   assert.equal(await trashed.text(), "hello");
   assert.equal(trashed.customMetadata.mtime, "1700000000");
+
+  // Regression guard: BUG-30 (two trashes of one name on one day both survive)
+  for (const body of ["first", "second"]) {
+    await MAIN.put("files/Raven/twin.txt", body);
+    assert.equal((await call("/main/api/file?key=Raven/twin.txt", { as: "owner", method: "DELETE" })).status, 200);
+    await new Promise((r) => setTimeout(r, 3));
+  }
+  const twins = (await MAIN.list({ prefix: "trash/" + day + "/Raven/twin.txt@" })).objects;
+  assert.equal(twins.length, 2);
+  assert.deepEqual((await Promise.all(twins.map(async (o) => (await MAIN.get(o.key)).text()))).sort(), ["first", "second"]);
 });
 
 await test("Main refuses a browser upload over 90 MiB with a short message", async () => {
@@ -1319,7 +1331,7 @@ await test("main/dav: MOVE and COPY files with their comments; DELETE to the tra
   assert.equal(await (await MAIN.get("files/Dm/In/x.txt")).text(), "X");
   assert.equal((await md("Dm/In/b.mp3", { method: "COPY", headers: dest("Dm/In/x.txt") })).status, 204);
   assert.equal(await (await MAIN.get("files/Dm/In/x.txt")).text(), "A");
-  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.endsWith("/Dm/In/x.txt")));
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.includes("/Dm/In/x.txt@")));
   // DELETE: files to the trash, never a folder or the root
   assert.equal((await md("Dm/In/x.txt", { method: "DELETE" })).status, 204);
   assert.equal(await MAIN.head("files/Dm/In/x.txt"), null);
@@ -1546,7 +1558,7 @@ await test("fp: a file deleted in Finder or Files goes to the trash, never for g
   assert.equal((await del("archive", "archive/Dels/x.txt")).status, 404);
   assert.equal((await del("main", "Dels/y.txt")).status, 200);
   assert.equal(await MAIN.head("files/Dels/y.txt"), null);
-  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.endsWith("/Dels/y.txt")));
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.includes("/Dels/y.txt@")));
   await AR.delete(kept.map((o) => o.key));
 });
 

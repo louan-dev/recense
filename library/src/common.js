@@ -207,3 +207,11 @@ export function viewOf(b) {
   if (lang === null && notation === null) return null;
   return { ...(lang ? { lang } : {}), ...(notation !== null ? { notation } : {}) };
 }
+
+/** Runs every job to the end: a failing one is logged by name and never stops the others (Derived from Spec: BUG-30). */
+export async function runJobs(jobs) {
+  const names = Object.keys(jobs);
+  const out = await Promise.allSettled(names.map((n) => Promise.resolve().then(jobs[n])));
+  out.forEach((r, i) => { if (r.status === "rejected") console.error(`cron job ${names[i]} failed:`, r.reason?.stack || r.reason); });
+  return out;
+}

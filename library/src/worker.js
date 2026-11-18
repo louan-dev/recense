@@ -14,7 +14,7 @@
 // Everything under /main sits behind Cloudflare Access, and the Worker checks the owner itself
 // (access.js). Anyone else gets the same 404 as a link that doesn't exist.
 
-import { page, notice, jsonResponse, esc, OWNER, cleanPath } from "./common.js";
+import { page, notice, jsonResponse, esc, OWNER, cleanPath, runJobs } from "./common.js";
 import { isOwner, sameSite, signedInAs } from "./access.js";
 import { editorPwa } from "./editorpwa.js";
 import { postbox } from "./postbox.js";
@@ -93,9 +93,10 @@ export default {
     async scheduled(event, env, ctx) {
     // every 10 minutes (wrangler.toml; every minute until 2026-11-05, A10): up to ~45 s of the assistant's indexing
     // steps (ai.js), nothing else. Only the 03:00 run does the nightly sweeps.
-    if (event.cron !== "0 3 * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch(() => {})); return; }
-    ctx.waitUntil(Promise.all([cleanup(env), sweepFolders(env), orderSweep(env), artSweep(env), rateSweep(env), tmpSweep(env), activitySweep(env), diskSweep(env).catch(() => {}),
-      warmCalendar(env).catch(() => {})]));   // reads what changed in the iCloud calendar backup
+    if (event.cron !== "0 3 * * *") { if (env.AI && env.VECTORS) ctx.waitUntil(indexRun(env, 45000, 24, +env.AI_INDEX_DAILY_STEPS || 120).catch((e) => console.error("cron index run failed:", e?.stack || e))); return; }
+    ctx.waitUntil(runJobs({ cleanup: () => cleanup(env), sweepFolders: () => sweepFolders(env), orderSweep: () => orderSweep(env), artSweep: () => artSweep(env),
+      rateSweep: () => rateSweep(env), tmpSweep: () => tmpSweep(env), activitySweep: () => activitySweep(env), diskSweep: () => diskSweep(env),
+      warmCalendar: () => warmCalendar(env) }));   // warmCalendar reads what changed in the iCloud calendar backup; each failure is logged, never stops the rest
   },
 };
 

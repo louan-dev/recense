@@ -255,7 +255,7 @@ await test("Main: Delete picks files, then moves them to the trash", true, async
   assert.equal(await pg.textContent("#ftxt"), "1 Item Selected");
   await Promise.all([pg.waitForEvent("load"), pg.click("#del")]);
   assert.equal(await MAIN.head("files/Raven/one.txt"), null);
-  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.endsWith("/Raven/one.txt")));
+  assert.ok((await MAIN.list({ prefix: "trash/" })).objects.some((o) => o.key.includes("/Raven/one.txt@")));
 });
 
 await test("Main: … > New Folder, then Select > Move puts a file in it", true, async (pg) => {

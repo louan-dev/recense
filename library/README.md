@@ -188,7 +188,7 @@ Arabic and Ethiopic stops is dropped. Recense joins words by the same rule. Push
 
 ### Shows (private podcasts, `chau/show.mjs`)
 - A Markdown outline becomes a show: one episode per `## ` section, spoken by a macOS voice, AAC `.m4a`.
-- Publish (renders, then syncs to Main's `Shows/<show>/` over the rclone remote `gallery-main`; a section you drop goes to `trash/<date>/`):
+- Publish (renders, then syncs to Main's `Shows/<show>/` over the rclone remote `gallery-main`; a section you drop goes to `trash/<date>/` (each trashed file keeps an `@<ms>` suffix, BUG-30)):
   `node chau/show.mjs publish <outline.md>` (show name = the `# ` title; `--show <name>` to choose).
 - Languages: `--lang vi` (Linh), `--lang fr` (Thomas, else Amélie), default English (Ava Premium); `--voice <name>` picks any installed voice (`say -v '?'`).
 - Rendered audio is cached in `~/Library/Caches/recense-shows`, so a re-publish only speaks changed sections. `--dry-run` renders without uploading.
@@ -213,7 +213,7 @@ Ask from the top bar (⌘K), scoped This folder | Main | Archive | All. Plans se
 published references are trusted, your own writing once checked. Calendar: reads your events and the
 iCloud backup, creates and edits events, invites with a texted link. Indexing runs in bounded steps from a cron every
 10 minutes (every minute until 2026-11-05), within a daily budget of AI-using steps that idle runs no longer spend.
-Main's `Raven/` (client matters) is never indexed or answered from; its old vectors leave on the next sweep.
+Any file with a path segment called `Raven`, `Matters` or `Sealed` (any depth, either root, any case) is never indexed or answered from (BUG-30); its old vectors leave on the next sweep, or at once with the owner-only `POST /main/api/ai/purge-sealed` (idempotent; run it once after deploying).
 
 ### Native apps (moved)
 Recense for iPhone and iPad, and the retiring Gallery for the Mac, are in `../mobile/` (`mobile/README.md`).
@@ -241,7 +241,7 @@ gallery/
     dav.js              WebDAV (chunked uploads past the 100 MB request cap)
     fp.js               the feed and app writes
     tmp.js              gallery-tmp
-    listen.js           Listen on iPhone/iPad
+    listen.js           Listen on iPhone/iPad; an episode save is a conditional put on the ETag (BUG-30), re-read and re-decided up to 3 tries
     transcript.js       transcripts, content keys, locks
     corrections.js      corrections, glossary, timing overrides
     layout.js           where transcripts live in R2 (keep/<key>/...)

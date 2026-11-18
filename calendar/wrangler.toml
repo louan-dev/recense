@@ -12,4 +12,4 @@ bucket_name = "sync"
 CALDAV_USER = "chau"
 CALDAV_DEFAULT_NAME = "Calendar"
 
-# Secret (wrangler secret put): CALDAV_PASS_HASH = sha256 hex of the app password. Set by bin/caldav-passwd.sh.
+# Secret (wrangler secret put): CALDAV_PASS_HASH = sha256 hex of the app password, set by sync/bin/caldav-passwd.sh. It is the bootstrap hash only: the first correct login stores a salted PBKDF2 record in R2 (caldav/auth/), BUG-30. Failed logins: 10 per 15 min per IP.

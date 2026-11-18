@@ -48,10 +48,16 @@ export async function listenApi(req, env, path, method) {
   }
   if (!ep || typeof ep.title !== "string" || !Array.isArray(ep.sentences)) return jsonResponse({ error: "Needs title and sentences" }, 400);
   if ((await listenKey(ep.title)) !== key) return jsonResponse({ error: "Key doesn't match the title" }, 400);
-  const have = (await read(env, name))?.body;
-  if (have && (have.updated || 0) > (ep.updated || 0)) return jsonResponse(have, 409);  // someone saved newer: take it
   ep.key = key;
-  await env.KEEP.put(name, JSON.stringify(ep), JSON_TYPE);
+  // Derived from Spec: BUG-30: the write is conditional on the ETag we read; on a race, re-read and re-decide (max 3 tries)
+  let saved = false;
+  for (let i = 0; i < 3 && !saved; i++) {
+    const cur = await read(env, name), have = cur?.body;
+    if (have && (have.updated || 0) > (ep.updated || 0)) return jsonResponse(have, 409);  // someone saved newer: take it
+    const onlyIf = cur ? { etagMatches: cur.etag } : { etagDoesNotMatch: "*" };
+    saved = !!(await env.KEEP.put(name, JSON.stringify(ep), { ...JSON_TYPE, onlyIf }).catch(() => null));
+  }
+  if (!saved) return jsonResponse({ error: "Busy, try again" }, 503);   // never 409 here: the stored copy may be older, and 409 means "take theirs"
   // the index: read, change one entry, put on its etag; on a race, once more
   for (let i = 0; i < 3; i++) {
     const idx = (await read(env, "keep/listen/index.json")) || { body: null, etag: null };
