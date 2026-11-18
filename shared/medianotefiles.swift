@@ -49,9 +49,40 @@ enum MediaNoteFiles {
         return (try? fm.moveItem(at: file, to: dest)) != nil
     }
 
+    // FEAT-23 review 2 · a note's words that could not reach keep/ wait in the Unsaved folder (shared/notesync.swift's
+    // Unsaved.keep), one file per failure: "note-unsaved <action> <key> <ms>.md". `retry` (the hosts' poll) writes them
+    // once it can, then settles them into recovered/. Never deleted. Not "draftpad-unsaved", so never joined into draftpad.md.
+    static func pending(_ unsaved: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: unsaved, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix("note-unsaved ") && $0.pathExtension == "md" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private static func park(_ text: String, action: String, key: String, unsaved: URL?) -> String {
+        guard let unsaved else { return "could not write; nowhere to keep it" }
+        let f = unsaved.appendingPathComponent("note-unsaved \(action) \(key) \(Int(Date().timeIntervalSince1970 * 1000)).md")
+        Unsaved.keep(text, as: f)
+        return FileManager.default.fileExists(atPath: f.path) ? "could not write; kept in \(f.lastPathComponent)" : "could not write or keep"
+    }
+
+    /// The hosts' poll: each parked text, oldest first, written now if it can be. A save parked before a newer save
+    /// that succeeded is stale (the newer text holds it) and is settled without writing.
+    @discardableResult
+    static func retry(keep: URL, unsaved: URL) -> Int {
+        var done = 0
+        for f in pending(unsaved) {
+            let parts = f.deletingPathExtension().lastPathComponent.split(separator: " ").map(String.init)
+            guard parts.count == 4, isKey(parts[2]), let text = try? String(contentsOf: f, encoding: .utf8) else { continue }
+            let d: [String: Any] = parts[1] == "append" ? ["action": "append", "key": parts[2], "line": text]
+                : ["action": "save", "key": parts[2], "text": text]
+            if handle(d, keep: keep, unsaved: nil).hasPrefix("wrote") { Unsaved.settle(f, in: unsaved); done += 1 }
+        }
+        return done
+    }
+
     /// One `note` message from the page. Returns what happened, for the log ("" when the message was not one).
     @discardableResult
-    static func handle(_ d: [String: Any], keep: URL, trashFallback: URL? = nil,
+    static func handle(_ d: [String: Any], keep: URL, trashFallback: URL? = nil, unsaved: URL? = nil,
                        trashFile: (URL, URL?) -> Bool = MediaNoteFiles.trash) -> String {
         guard let action = d["action"] as? String, let key = d["key"] as? String, isKey(key) else { return "" }
         let fm = FileManager.default
@@ -63,7 +94,12 @@ enum MediaNoteFiles {
         switch action {
         case "save":
             guard let s = d["text"] as? String else { return "" }
-            return write(s, text)
+            let r = write(s, text)
+            guard r.hasPrefix("wrote") else { return park(s, action: "save", key: key, unsaved: unsaved) }
+            if let unsaved {   // this newer text holds any parked save of this note
+                for f in pending(unsaved) where f.lastPathComponent.hasPrefix("note-unsaved save \(key) ") { Unsaved.settle(f, in: unsaved) }
+            }
+            return r
         case "ink":
             guard let s = d["json"] as? String else { return "" }
             return write(s, ink)
@@ -72,11 +108,13 @@ enum MediaNoteFiles {
             return write(s, matter)
         case "append":   // A1 rule 9: a transcript line's note, the note not open in the page
             guard let line = d["line"] as? String, !line.isEmpty else { return "" }
+            let r: String
             switch readNote(url(key, text, keep: keep).path) {
-            case .unreadable: return "could not read note.md; line not written"
-            case .missing: return write(line + "\n", text)
-            case .text(let s): return write(s + (s.isEmpty || s.hasSuffix("\n") ? "" : "\n") + line + "\n", text)
+            case .unreadable: r = "could not read note.md"
+            case .missing: r = write(line + "\n", text)
+            case .text(let s): r = write(s + (s.isEmpty || s.hasSuffix("\n") ? "" : "\n") + line + "\n", text)
             }
+            return r.hasPrefix("wrote") ? r : park(line, action: "append", key: key, unsaved: unsaved)
         case "trash":   // A1 rule 3: emptied, focus gone: the three files to the Trash; the media is never touched
             var moved = 0
             for name in names {

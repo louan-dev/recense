@@ -124,6 +124,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     /// page is not loaded, or a note file cannot be read now (a note is never shown blank over its words).
     @discardableResult
     func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
+        if openNoteKey == key { return true }   // review 12: already shown; no swap, no reload
         guard loaded, let payload = MediaNoteFiles.payload(key: key, keep: Self.keep, title: title, trigger: trigger, layout: layout) else {
             log("note \(key.prefix(8))… not opened")
             return false
@@ -270,7 +271,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
         case "note":   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
             if let d = m.body as? [String: Any] {
-                let r = MediaNoteFiles.handle(d, keep: Self.keep, trashFallback: Homes.url(.trash))
+                let r = MediaNoteFiles.handle(d, keep: Self.keep, trashFallback: Homes.url(.trash), unsaved: DraftpadNote.unsavedFolder)
                 if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("note \(r)") }
                 if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }
@@ -468,6 +469,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
 
     private func polled(note now: String?, ink: NoteRead?, matter remote: String?) {
         polling = false
+        MediaNoteFiles.retry(keep: Self.keep, unsaved: DraftpadNote.unsavedFolder)   // FEAT-23: parked note words
         if saveTimer == nil, file.pending { flushAndSave() }   // T-0114: a save that couldn't reach the file is tried again
         if saveTimer == nil, let now = now, now != file.base {
             flushAndSave()

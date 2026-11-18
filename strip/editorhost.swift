@@ -267,6 +267,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     /// False when the key is not one, the page is not loaded, or a note file cannot be read now (never shown blank).
     @discardableResult
     func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
+        if openNoteKey == key { return true }   // review 12: already shown; no swap, no reload
         guard loaded, wingSide == nil,
               let payload = MediaNoteFiles.payload(key: key, keep: keepDir, title: title, trigger: trigger, layout: layout) else {
             log("editor: note \(key.prefix(8))… not opened")
@@ -398,7 +399,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "note" {   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
             if let d = m.body as? [String: Any] {
-                let r = MediaNoteFiles.handle(d, keep: keepDir)
+                let r = MediaNoteFiles.handle(d, keep: keepDir, unsaved: DraftpadNote.unsavedFolder)
                 if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("editor: note \(r)") }
                 if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }
