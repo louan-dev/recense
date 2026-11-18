@@ -30,7 +30,10 @@ From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a Noteboo
 
 ### New slice order (replaces the S-order below; S1–S5 keep their text)
 1. **S1** capture (unchanged).
-2. **S6 · Notebook index:** FTS5 over `keep/<key>/` (asr, `tr/<lang>`), notes, `draftpad.md`, pages; passage ids = `key#segId`. `shared/notebook/`, Mac + iOS.
+2. **S6 · Notebook index = FEAT-21's index, not a second one** (correction 2026-11-18, review 3).
+   - The source is `keep/<key>/find.tsv` + our fold, with FTS5 only as step 2 (FEAT-21 P1, wishes T-0046 ★★★★★★, T-0051 ★★★★★).
+   - Passage ids = `key#segId`. Pages from S1 write their own `find.tsv`.
+   - **Correction to Finding 4:** FTS5 does **not** fold "đ" ("duong" misses "đường", re-run 2026-11-18, as FEAT-21 found 11-16). Our fold runs first.
    - Done when: an en/fr/vi query on the iPhone in airplane mode returns ranked passages.
 3. **S7 · Ask with citations:** Apple model, 4k budget, answer schema in `recensetext`, each line cites ids; one UI in `editor/`.
    - Done when: every answer line opens its source at the cited second or sentence.
@@ -89,7 +92,7 @@ From: owner 2026-11-18 (review: "should be like a Safari LLM finder on a Noteboo
 - **Contacts notes as a source:** restricted entitlement, and outside this feature.
 
 ### Owner decision (asked once, default until answered)
-- **Do Raven, Matters and Sealed go into the on-device notebook index?** Their questions would never leave the device, but the index must then never sync.
+- **Do Raven, Matters and Sealed go into the on-device notebook index?** Their questions would never leave the device. `find.tsv` is already never synced (FEAT-21), so the only risk is the Worker fallback, which stays sealed.
   - **Default: excluded**, as the Worker excludes them today (`ai-core.js:61`).
 
 ## Verdict first (original, 2026-11-18; scope superseded by the review above)
