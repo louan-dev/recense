@@ -384,6 +384,20 @@ update could break it). Turn macOS's own three-finger swipes off in System Setti
 `RECENSE_GESTURES=0 ./recense &` disables them. Swipes are logged to `~/Library/Logs/recense.log` when Recense runs
 from the login item. BetterTouchTool fallback: `zsh ~/Developer/recense/strip/scripts/gesture.sh up` (or `down`, `hide`, `quit`).
 
+### Recorder: controls on the strip (2026-11-17)
+- The mic icon on the strip opens the recorder's presets (microphone, camera, screen). That panel is for before only.
+- Start, and the panel folds up at once. The strip then shows, where the date was: a red **● time**,
+  then three red buttons: **cancel** (files go to the Trash), **pause / go on** and **end** (stop and save).
+- The mic icon hides while recording, so the panel can't hang down mid-recording.
+- While recording (and while a warning shows), the strip stays awake without hovering, so the time is always in view.
+- Order: cancel, pause, end: the two that finish a recording are never side by side.
+- Problems show in orange in the same slot (**No audio**, **No screen**, then **Nothing saved** after stop).
+
+### Recorder: no silent recordings (T-0149, 2026-11-17)
+- If the microphone, computer audio or screen stream fails to start, stops mid-way, or writes nothing for 5 s,
+  the timer turns orange and reads **Audio not recording** or **Screen not recording** instead of counting on.
+- If stopping finds nothing on disk, the strip says **Nothing was saved** rather than going quietly back to Ready.
+
 ## Roadmap
 Idle efficiency (file watchers over polling, clock ticks only while visible); strip colours and panels; Notes in Recense
 (Obsidian, Notability read-only, filesystem); a health chip from `views/health.json`; and a right-edge widget panel starting with Find My.
