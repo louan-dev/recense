@@ -717,6 +717,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let recenseActions = null;
   let speaker = null;
   let audioSidecar = null;
+  let mediaNotes = null;   // FEAT-23 · the media note shown instead of draftpad.md (src/medianote.js); before the view's listener
   let dualWings = null;
   let calendarScanner = null;
 
@@ -770,8 +771,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
           setToolbarFaded(true);
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
-        if (calendarScanner && dualWings) scheduleCalendarScan();
-        if (isExternal) scheduleExpiry();
+        // FEAT-23 review 8: a media note is not draftpad.md: no calendar scan, page expiry or library edit for it.
+        const inNote = Boolean(mediaNotes && mediaNotes.isOpen());
+        if (!inNote && calendarScanner && dualWings) scheduleCalendarScan();
+        if (inNote) { /* the note's pages are its own */ }
+        else if (isExternal) scheduleExpiry();
         else if (library) library.noteEdit();
         if (recense) recense.docChanged();
       }
@@ -813,7 +817,6 @@ export function mountEditor(root = document.body, initialDoc = '') {
   // Derived from Spec: FEAT-08 P6 — a passage born in a media note keeps that item's second (its playhead, when the
   // host has given one for the same key). Never on draftpad.md in this phase (Q-B1).
   let noteKeyNow = () => null;     // set by the media note (FEAT-23)
-  let mediaNotes = null;           // FEAT-23 · the media note shown instead of draftpad.md (src/medianote.js)
   let playheadKey = '';            // the key whose playhead updateAudioTime reports
   const mediaOf = () => {
     const key = noteKeyNow();
@@ -933,7 +936,12 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setPagesLocked(view, false);
       window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: false });
     },
-    post: (channel, body) => window.webkit?.messageHandlers?.[channel]?.postMessage?.(body)
+    post: (channel, body) => {   // true when a host handler took it (the web and the PWA have none)
+      const h = window.webkit?.messageHandlers?.[channel];
+      if (!h || typeof h.postMessage !== 'function') return false;
+      h.postMessage(body);
+      return true;
+    }
   });
   noteKeyNow = () => mediaNotes.key();
   // A1 rule 3: focus leaving the note (another control outside the page, the app going to the background) ends an

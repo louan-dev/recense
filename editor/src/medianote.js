@@ -33,7 +33,8 @@ export function createMediaNotes(deps) {
   let note = null;
   let stash = null;     // draftpad.md while a note is shown: { text, ink, matter }
 
-  function post(action, body) { deps.post('note', { action, key: note.key, ...body }); }
+  // True when a host handler took it (review 4: web / PWA have none).
+  function post(action, body) { return deps.post('note', { action, key: note.key, ...body }) !== false; }
 
   function show(text, ink, matter) {
     deps.setText(text);
@@ -95,7 +96,11 @@ export function createMediaNotes(deps) {
     key: () => (note ? note.key : null),
     title: () => (note ? note.title : ''),
     /** What the host's flush of draftpad.md reads: draftpad's text, also while a note is shown. */
-    hostText: () => (note ? stash.text : deps.getText()),
+    hostText: () => {
+      if (!note) return deps.getText();
+      if (deps.flush) deps.flush();     // review 3: the note's pending typing reaches the note first
+      return stash.text;
+    },
     /** The host handed draftpad.md new text (a save's merge, a poll): kept beside the note. True = taken. */
     absorbHostText(text) { if (!note) return false; stash.text = String(text ?? ''); return true; },
     absorbHostInk(ink) { if (!note) return false; stash.ink = parse(ink, emptyInk); return true; },
@@ -120,7 +125,12 @@ export function createMediaNotes(deps) {
     },
     routeInk(json) {
       if (!note) return false;
-      if (!note.written && strokesOf(parse(json, emptyInk)) === 0) return true;   // no empty sidecar is made
+      const strokes = strokesOf(parse(json, emptyInk));
+      if (!note.written && strokes === 0) return true;   // no empty sidecar is made
+      if (!note.written) {                                // review 5: strokes alone are a written note
+        note.written = true;
+        log('media-notes.underlay.first', { key: note.key, input: 'ink', ms: now() - note.openedAt });
+      }
       post('ink', { json: String(json) });
       return true;
     },
@@ -175,7 +185,7 @@ export function createMediaNotes(deps) {
       const t = String(text ?? '').trim();
       const line = t ? `${momentLink(key, start)} ${t}` : momentLink(key, start);
       if (note && note.key === key) return { insert: line };
-      deps.post('note', { action: 'append', key, line });
+      if (deps.post('note', { action: 'append', key, line }) === false) return null;   // review 4: no store here
       return { append: line };
     },
     /** Rule 5: a tapped transcript line's moment link, written at the caret then a space; null with no note. */
