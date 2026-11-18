@@ -120,7 +120,7 @@ export function claimPage(msg = "", status = 200, env = {}, url = null) {
   if (url && env.DEVICE_ORIGIN && !env.DEVICE_HOST && url.origin !== env.DEVICE_ORIGIN) return Response.redirect(env.DEVICE_ORIGIN + "/pair", 302);
   return page(shell("Pair this device", `
 ${msg ? `<p class="msg">${esc(msg)}</p>` : ""}
-<form method="post" action="/pair">
+<form method="post" action="/pair" onsubmit="if(this.dataset.sent)return false;this.dataset.sent=1;this.querySelector('button').disabled=true">
 <p><label>Code from your Mac<br><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus></label></p>
 <p><label>Name for this device<br><input name="name" maxlength="40" placeholder="iPhone"></label></p>
 <p><button>Pair</button></p>
@@ -142,20 +142,33 @@ export async function claim(req, env, url) {
   const obj = await env.MAIN.get(PENDING);
   if (!obj) return bad();
   const p = await obj.json();
-  if (p.used || p.tries >= MAX_TRIES || !(p.exp > Date.now())) return bad();
-
+  if (p.tries >= MAX_TRIES || !(p.exp > Date.now())) return bad();
   const right = same(await sha(code), p.hash);
-  const next = right ? { ...p, used: true } : { ...p, tries: p.tries + 1 };
-  // conditional write: of two claims racing on the same code, one wins
-  const won = await env.MAIN.put(PENDING, JSON.stringify(next), { onlyIf: { etagMatches: obj.etag } });
-  if (!won || !right) return bad();
+
+  // the same right code sent again (iPhone autofill or a double tap sends the form twice and keeps only the
+  // last answer): hand back the pass of the device the first send paired, while the code is still live
+  if (p.used) return right && p.device ? passTo(env, p.device) : bad();
 
   const id = hex(crypto.getRandomValues(new Uint8Array(16)));
-  const now = Date.now();
-  const exp = now + COOKIE_DAYS * 864e5;
-  await env.MAIN.put(DEVICE(id), JSON.stringify({ id, name, created: now, seen: now, revoked: false }));
-  const value = id + "." + exp + "." + (await hmac(env, id + "." + exp));
+  const next = right ? { ...p, used: true, device: id } : { ...p, tries: p.tries + 1 };
+  // conditional write: of two claims racing on the same code, one wins
+  const won = await env.MAIN.put(PENDING, JSON.stringify(next), { onlyIf: { etagMatches: obj.etag } });
+  if (!won) return right ? claim(req2(req, code, name), env, url) : bad();
+  if (!right) return bad();
 
+  const now = Date.now();
+  await env.MAIN.put(DEVICE(id), JSON.stringify({ id, name, created: now, seen: now, revoked: false }));
+  return passTo(env, id);
+}
+
+// a racing second send re-reads the code (the form body is already consumed)
+function req2(req, code, name) {
+  return new Request(req.url, { method: "POST", headers: req.headers, body: new URLSearchParams({ code, name }) });
+}
+
+async function passTo(env, id) {
+  const exp = Date.now() + COOKIE_DAYS * 864e5;
+  const value = id + "." + exp + "." + (await hmac(env, id + "." + exp));
   return new Response(null, {
     status: 303,
     headers: {

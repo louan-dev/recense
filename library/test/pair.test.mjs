@@ -69,8 +69,12 @@ assert.match(await (await go("/pair/check")).text(), /No pairing pass/);
 assert.match(await (await go("/pair/check", { headers: { cookie: dev } })).text(), /All checks pass/);
 assert.match(await (await go("/pair/check", { headers: { cookie: dev.slice(0, -4) + "0000" } })).text(), /signature is wrong/); ok("check page names the step");
 
-// replay
-assert.equal((await claim(code)).status, 403); ok("code works once");
+// Regression guard: iPhone sends the form twice and keeps only the second answer
+r = await claim(code);
+assert.equal(r.status, 303);
+assert.equal(cookieOf(r).slice(5).split(".")[0], dev.slice(5).split(".")[0]); ok("same right code again: same device's pass");
+assert.equal((await asDevice(cookieOf(r))).status, 200); ok("repeat pass opens /main");
+assert.equal((await claim(String((Number(code) + 1) % 1e6).padStart(6, "0"))).status, 403); ok("used code: a wrong guess still refused");
 
 // wrong guesses kill the code
 code = await mint();
