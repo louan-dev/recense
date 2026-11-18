@@ -1,6 +1,6 @@
 # FEAT-31 · Big uploads resume where they stopped, on every device
 
-From: owner 2026-11-18 (research request: "anything the project does better that would improve offline sync and uploads?"; sources: canopas/cloud-gallery and a pasted survey of Immich, Ente, tus/TUSKit, TanStack DB, automerge-swift) · Status: `[ ]` spec only · Effort: medium
+From: owner 2026-11-18 (research request: "anything the project does better that would improve offline sync and uploads?"; sources: canopas/cloud-gallery and a pasted survey of Immich, Ente, tus/TUSKit, TanStack DB, automerge-swift) · Status: `[~]` P1 built (mobile/ios/Tests/partsresume/run.zsh passes; iOS compile + the kill-at-50% device check owed), P2/P3 `[ ]` · Effort: medium
 
 ## Verdict first
 - **canopas/cloud-gallery: nothing to adopt.** An archived (read-only since 2025-09-18) Flutter app that copies photos to Google Drive and Dropbox. Its README says nothing about resumable upload, dedup or offline behaviour (checked 2026-11-18).
