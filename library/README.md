@@ -61,6 +61,7 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
   sound is asked back once per hide); a pause from the Lock Screen or headphones holds.
   The wiring lives in one file, `src/client/mediasession.js` (`RecenseNowPlaying.bind(el, opts)`); the editor bundles
   the same file (FEAT-19 P4); test: `node test/mediasession.test.mjs`.
+- The debug channel's JS side is `src/client/debuglog.js` (`RecenseDebugLog.event(feature, event, fields)`); the host app gives it a sink that appends to `~/Recense/logs/<feature>.jsonl`. Test: `node test/debuglog.test.mjs` (same fixture as ShowsKit's Swift twin).
 - Grid, strip and viewer; click views or plays, never downloads. Info holds Download, Rename, Change Cover, Key, native
   language and New Window.
 - Collection search (Goal 43.32): a Search pill above the grid ("Search <collection>"). It matches notes and

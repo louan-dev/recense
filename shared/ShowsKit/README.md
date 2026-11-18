@@ -127,3 +127,5 @@ Recense/.trash/…                         → deletes, kept 30 days
 - No SwiftUI macros (`@State`, `@Entry`, `#Preview`): the Mac builds this package with the Command Line Tools
   (`strip/build.sh`), which lack SwiftUI's macro plugin. Use `@StateObject`, `@Observable`, `@Bindable`.
   `testNoSwiftUIMacros` guards it.
+- `DebugChannel.swift`: the debug channel. `DebugChannel.event("carry", "carry.apply", ["n": "3"])` appends one JSON line to `~/Recense/logs/carry.jsonl` (iOS: `Documents/Recense/logs/`), never blocks or throws.
+  Its JS twin is `library/src/client/debuglog.js`; `Tests/ShowsKitTests/Fixtures/debugchannel.json` holds the lines both must produce byte for byte.
