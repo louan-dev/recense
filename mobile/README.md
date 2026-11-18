@@ -212,7 +212,8 @@ updates in place.
   time, the last on screen (11-10: both took it on every layout and iOS's watchdog ended Recense as Now Playing opened).
   The floating window's middle button pauses it: the window rests as the thin strip at once (our player pauses too,
   and its play resumes exactly what it paused, `Floating.hold`; T-0036, T-0038, 11-18; before, it held the old words on a
-  full window), and play brings back the newest words.
+  full window), and play brings back the newest words, as does our player playing again from the app, Control Center or
+  headphones (`Floating.release`).
   Its words light on the refresh they start on, and sweep inside a word (BUG-24 P1b, 11-18): every moment the picture
   changes (a word's start, each quarter of a word of 0.25 s or more, a line's turn, a Learn fade) is drawn up to 1.5 s
   ahead and stamped for that moment at the player's speed (ShowsKit `FloatingFrames`); the layer runs on the host clock

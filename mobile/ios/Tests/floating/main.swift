@@ -73,6 +73,12 @@ holdCheck("play after, already playing", Floating.hold(on: false, own: true, pla
 holdCheck("pause, ours not playing", Floating.hold(on: true, own: true, playing: false, pausedOurs: false), (false, false))
 holdCheck("pause, the broadcast's", Floating.hold(on: true, own: false, playing: true, pausedOurs: false), (false, false))
 holdCheck("play, we never paused it", Floating.hold(on: false, own: true, playing: false, pausedOurs: false), (false, false))
+// Regression guard: BUG-24 review 2 (11-18): paused from the window, then played from the app, Control Center or the
+// headphones, the window stayed a thin strip saying paused. Our player playing again lets the window's pause go.
+if !Floating.release(held: true, own: true, playing: true) { bad += 1; print("FAIL our player resumed elsewhere, the window stays paused") }
+if Floating.release(held: true, own: true, playing: false) { bad += 1; print("FAIL released while still paused") }
+if Floating.release(held: true, own: false, playing: true) { bad += 1; print("FAIL another app's sound released the window's pause") }
+if Floating.release(held: false, own: true, playing: true) { bad += 1; print("FAIL released a window that isn't paused") }
 // regression 11-10 (iPad log 19:29): under a full-screen Firefox, Recense stayed active and read "front playing" for
 // 2 min, so the window never came. On iPad, front needs the focus too; an active app without it may start the window.
 if Floating.front(active: true, pad: true, key: false) { bad += 1; print("FAIL iPad active without focus counted as front") }

@@ -1022,6 +1022,10 @@ final class Listener: NSObject, ObservableObject {
         // behind other apps, awake while the window is open, while hearing, or for 10 minutes of quiet (Floating.awake)
         let quiet = quietFrom.map { Date().timeIntervalSince($0) } ?? 0
         if !front { keepAwake(Floating.awake(front: front, open: pip.isPictureInPictureActive, hearing: hearing, quiet: quiet)) }
+        if Floating.release(held: Listener.held, own: own, playing: NativePlayer.shared.isPlaying) {
+            Listener.held = false; pausedOurs = false; pip.invalidatePlaybackState()
+            floatNote("window pause let go: our player plays again")
+        }
         let rest = Floating.rest(open: pip.isPictureInPictureActive, quiet: quiet, paused: paused, held: Listener.held)
         if rest != resting {
             resting = rest; drawnKey = ""; drawnAt = .distantPast

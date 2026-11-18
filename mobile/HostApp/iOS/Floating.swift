@@ -71,6 +71,10 @@ enum Floating {
         open && (paused || held || quiet >= hideAfter)
     }
 
+    /// The window's pause lets go once our player plays again from anywhere else (the app, Control Center, headphones;
+    /// BUG-24 review 2): else the window stayed a thin strip saying paused while the podcast played.
+    static func release(held: Bool, own: Bool, playing: Bool) -> Bool { held && own && playing }
+
     /// The window's pause and play on our player (BUG-24 review 1): pause stops ours if it plays and remembers that;
     /// play resumes only what that pause stopped, even if our player no longer counts as `own` (the ear on, paused).
     static func hold(on: Bool, own: Bool, playing: Bool, pausedOurs: Bool) -> (toggle: Bool, pausedOurs: Bool) {
