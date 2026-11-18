@@ -211,15 +211,17 @@ await test("Main shows Upload and Delete, and no standing size note", true, asyn
   assert.ok(!(await pg.content()).includes("MiB"));
 });
 
-await test("Main: a file over the limit only shows a warning", true, async (pg) => {
-  await pg.goto(base + "/main?p=Raven");
+await test("Main: a file over one request's cap goes up in parts (iPhone/iPad have no Gallery folder)", true, async (pg) => {
+  await MAIN.put("files/Huge/x.txt", "x", { httpMetadata: { contentType: "text/plain" } });
+  await pg.goto(base + "/main?p=Huge");
   const huge = join(mkdtempSync(join(tmpdir(), "gallery-")), "huge.mov");
   writeFileSync(huge, "");
   truncateSync(huge, 91 * 1024 * 1024);
   await pg.setInputFiles("#upin", huge);
-  await pg.waitForSelector("#note:not([hidden])");
-  assert.match(await pg.textContent("#note"), /huge\.mov is too big for the browser/);
-  assert.equal(await MAIN.head("files/Raven/huge.MOV"), null);
+  await pg.waitForSelector('.tile[aria-label="huge.MOV"]:not(.pending)', { timeout: 120000 });
+  assert.equal((await MAIN.head("files/Huge/huge.mov")).size, 91 * 1024 * 1024);
+  assert.equal(await pg.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("main-up:")).length), 0);
+  await MAIN.delete(["files/Huge/huge.mov", "files/Huge/x.txt"]);
 });
 
 await test("Main: Upload adds a file inline (no reload, no message)", true, async (pg) => {

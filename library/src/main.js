@@ -793,8 +793,85 @@ async function mainOrderSave(req, env, url) {
   return stale(await readOrder(env, rel)); // still racing: let the client reconcile
 }
 
+// Big files from a browser (iPhone/iPad have no Gallery folder): R2 multipart, every part its own request under
+// Cloudflare's 100 MB body cap. 10,000 parts of at most 90 MiB each: ~879 GiB per file.
+// POST ?action=start&key=…&mtime=…  -> uploadId     PUT ?action=part&key=…&uploadId=…&part=N  body: one part -> etag
+// POST ?action=complete&key=…&uploadId=…  body: [{partNumber, etag}]     POST ?action=abort&key=…&uploadId=…
+async function mainMultipart(req, env, url, action) {
+  const q = url.searchParams;
+  const rel = cleanPath(q.get("key"));
+  if (!rel) return new Response("Bad file path", { status: 400 });
+
+  if (action === "start") {
+    const contentType = (q.get("type") || "application/octet-stream").slice(0, 200);
+    const modified = Number(q.get("mtime"));
+    const mtime = Number.isFinite(modified) && modified > 0 ? Math.floor(modified / 1000) : Math.floor(Date.now() / 1000);
+    const mp = await env.MAIN.createMultipartUpload(FILES + rel, {
+      httpMetadata: { contentType },
+      customMetadata: { mtime: String(mtime) },
+    });
+    return new Response(mp.uploadId);
+  }
+
+  const uploadId = q.get("uploadId") || "";
+  if (!uploadId || uploadId.length > 1024) return new Response("Bad request", { status: 400 });
+  const mp = env.MAIN.resumeMultipartUpload(FILES + rel, uploadId);
+
+  if (action === "part") {
+    const n = parseInt(q.get("part") || "", 10);
+    if (!(n >= 1 && n <= 10000) || !req.body) return new Response("Bad request", { status: 400 });
+    const lh = req.headers.get("content-length");
+    if (lh !== null && Number(lh) > PAGE_UPLOAD_MAX) return new Response("Part too big", { status: 413 });
+    try {
+      // R2 takes a stream only when its length is known; a chunked part is buffered instead
+      const known = /^\d+$/.test(lh || "");
+      const part = await mp.uploadPart(n, known ? req.body : await req.arrayBuffer());
+      return new Response(part.etag);
+    } catch (e) {
+      return new Response("Part failed: " + (e && e.message), { status: 500 });
+    }
+  }
+
+  if (action === "complete") {
+    let parts;
+    try {
+      parts = await req.json();
+    } catch (e) {
+      return new Response("Bad request", { status: 400 });
+    }
+    const ok =
+      Array.isArray(parts) &&
+      parts.length >= 1 &&
+      parts.length <= 10000 &&
+      parts.every(
+        (p) => p && Number.isInteger(p.partNumber) && p.partNumber >= 1 && p.partNumber <= 10000 &&
+          typeof p.etag === "string" && p.etag.length > 0 && p.etag.length <= 200
+      );
+    if (!ok) return new Response("Bad request", { status: 400 });
+    parts.sort((a, b) => a.partNumber - b.partNumber);
+    try {
+      await mp.complete(parts);
+    } catch (e) {
+      return new Response("Complete failed: " + (e && e.message), { status: 400 });
+    }
+    await env.MAIN.delete(ART + rel);
+    return jsonResponse({ ok: true, key: rel });
+  }
+
+  if (action === "abort") {
+    try {
+      await mp.abort();
+    } catch (e) {}
+    return new Response("ok");
+  }
+
+  return new Response("Bad request", { status: 400 });
+}
+
 export async function mainUpload(req, env, url) {
   if (url.searchParams.get("order") === "1") return mainOrderSave(req, env, url);
+  const action = url.searchParams.get("action");
+  if (action) return mainMultipart(req, env, url, action);
 
   const rel = cleanPath(url.searchParams.get("key"));
   if (!rel) return new Response("Bad file path", { status: 400 });

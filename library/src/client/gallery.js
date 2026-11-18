@@ -6558,20 +6558,88 @@
       x.send(file);
     });
 
+  // A big file into Main in parts (main.js mainMultipart): 16-90 MB each, at most 10,000. Each part is tried 4 times
+  // and cut off after 5 min without an answer. This device remembers the upload id and each part's etag, so after
+  // Safari suspends the tab, a reload or a locked screen, adding the same file again carries on from the next part.
+  const MB = 1024 * 1024;
+  const PARTS_MAX = 10000 * 90 * MB;
+  const putParts = async (key, mtime, file, onp) => {
+    const call = async (o, init) => {
+      const r = await fetch(MAIN_API + "/file?" + new URLSearchParams({ key, ...o }), {
+        method: "POST",
+        ...init,
+        headers: { "x-gallery": "1", ...((init && init.headers) || {}) },
+      });
+      if (!r.ok) throw new Error((await r.text()) || "Gallery isn’t answering");
+      return r;
+    };
+    const size = Math.min(90, Math.max(16, Math.ceil(file.size / 10000 / MB))) * MB;
+    const total = Math.ceil(file.size / size);
+    const mem = "main-up:" + key + ":" + file.size + ":" + file.lastModified;
+    const save = (v) => {
+      try {
+        v ? localStorage.setItem(mem, JSON.stringify(v)) : localStorage.removeItem(mem);
+      } catch (e) {}
+    };
+    let s = null;
+    try {
+      s = JSON.parse(localStorage.getItem(mem) || "null");
+    } catch (e) {}
+    if (!s || s.size !== size || !s.uploadId) {
+      s = { uploadId: (await (await call({ action: "start", mtime, type: file.type || "" })).text()).trim(), size, parts: [] };
+      save(s);
+    }
+    // the screen stays on while it goes (Safari 16.4+); a locked iPhone stops the page
+    let lock = null;
+    try {
+      lock = navigator.wakeLock ? await navigator.wakeLock.request("screen") : null;
+    } catch (e) {}
+    try {
+      for (let k = s.parts.length; k < total; k++) {
+        onp(k / total);
+        let etag = "";
+        for (let t = 1; !etag; t++) {
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), 5 * 60 * 1000);
+          try {
+            const body = file.slice(k * size, (k + 1) * size);
+            etag = (await (await call({ action: "part", uploadId: s.uploadId, part: k + 1 }, { method: "PUT", body, signal: ac.signal })).text()).trim();
+          } catch (e) {
+            if (t >= 4) throw new Error("part " + (k + 1) + " of " + total + " failed: " + (e.message || e));
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        s.parts.push({ partNumber: k + 1, etag });
+        save(s);
+      }
+      try {
+        await call({ action: "complete", uploadId: s.uploadId }, { body: JSON.stringify(s.parts), headers: { "content-type": "application/json" } });
+      } catch (e) {
+        // an id the server no longer knows (expired, or already completed): start over next time
+        if (/Complete failed/.test(e.message || "")) save(null);
+        throw e;
+      }
+      save(null);
+      onp(1);
+    } finally {
+      if (lock) lock.release().catch(() => {});
+    }
+  };
+
   // Each file shows as a tile in the grid at once and fills its ring as it goes, as on a share
   // link; no message when it's done, and a failed one keeps its red ring.
   const addFiles = async (files) => {
     if (!files.length) return;
     if (linkPost()) return guestAdd(files);
 
-    const big = files.filter((f) => f.size > G.uploadMax);
+    // Main goes up in parts past one request's cap (iPhone/iPad have no Gallery folder); an invite still takes one request
+    const big = files.filter((f) => f.size > (G.invite ? G.uploadMax : PARTS_MAX));
 
     if (big.length) {
       say(
         (big.length === 1 ? big[0].name + " is" : big.length + " files are") +
-          " too big for the browser. Add " +
-          (big.length === 1 ? "it" : "them") +
-          " through the Gallery folder on your Mac.",
+          (G.invite ? " too big for the browser." : " over 879 GB, the most one upload can carry."),
         true
       );
       return;
@@ -6618,11 +6686,13 @@
         : MAIN_API + "/file?" + new URLSearchParams({ key: keyOf(file), mtime });
 
       try {
-        await putFile(to, file, (p) => {
+        const onp = (p) => {
           it.progress = p;
           const b = tileOf(it);
           if (b) paintPending(b, it);
-        });
+        };
+        if (!G.invite && file.size > G.uploadMax) await putParts(keyOf(file), mtime, file, onp);
+        else await putFile(to, file, onp);
       } catch (e) {
         failed++;
         it.failed = true;

@@ -128,7 +128,7 @@ async function mainRoute(req, env, ctx, url, path, method) {
     if (path.startsWith("/main/api/ai/")) return aiRoute(req, env, ctx, url, path, method);
     if (path === "/main/api/listen" || path.startsWith("/main/api/listen/")) return listenApi(req, env, path, method);
 
-    if (path === "/main/api/file" && method === "PUT") return mainUpload(req, env, url);
+    if (path === "/main/api/file" && (method === "PUT" || (method === "POST" && url.searchParams.has("action")))) return mainUpload(req, env, url);
     if (path === "/main/api/img" && method === "PUT") return noteImageUpload(req, env, url);
     if (path === "/main/api/file" && method === "DELETE") return mainDelete(env, url);
     if (path === "/main/api/rename" && method === "POST") return mainRename(req, env);

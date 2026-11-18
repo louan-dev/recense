@@ -211,6 +211,45 @@ await test("Main refuses a browser upload over 90 MiB with a short message", asy
   assert.equal(await MAIN.head("files/big.bin"), null);
 });
 
+await test("Main takes a big file in parts (iPhone/iPad browser), keeps mtime, drops old art", async () => {
+  await MAIN.put("art/Big/clip.mov", "old");
+  const k = "key=Big/clip.mov";
+  let r = await call("/main/api/file?action=start&" + k + "&mtime=1700000000000&type=video/quicktime", { as: "owner", method: "POST" });
+  assert.equal(r.status, 200);
+  const uploadId = (await r.text()).trim();
+  const a = new Uint8Array(5 * 1024 * 1024).fill(1); // R2's smallest non-last part
+  const parts = [];
+  for (const [n, body] of [[1, a], [2, new Uint8Array([2, 2])]]) {
+    r = await call("/main/api/file?action=part&" + k + "&uploadId=" + encodeURIComponent(uploadId) + "&part=" + n, {
+      as: "owner",
+      method: "PUT",
+      body,
+      headers: { "content-length": String(body.length) },
+    });
+    assert.equal(r.status, 200);
+    parts.push({ partNumber: n, etag: (await r.text()).trim() });
+  }
+  r = await call("/main/api/file?action=part&" + k + "&uploadId=" + encodeURIComponent(uploadId) + "&part=0", { as: "owner", method: "PUT", body: "x" });
+  assert.equal(r.status, 400);
+  r = await call("/main/api/file?action=complete&" + k + "&uploadId=" + encodeURIComponent(uploadId), {
+    as: "owner",
+    method: "POST",
+    body: JSON.stringify(parts),
+    headers: { "content-type": "application/json" },
+  });
+  assert.equal(r.status, 200);
+  const o = await MAIN.head("files/Big/clip.mov");
+  assert.equal(o.size, a.length + 2);
+  assert.equal(o.customMetadata.mtime, "1700000000");
+  assert.equal(o.httpMetadata.contentType, "video/quicktime");
+  assert.equal(await MAIN.head("art/Big/clip.mov"), null);
+
+  r = await call("/main/api/file?action=start&key=../x", { as: "owner", method: "POST" });
+  assert.equal(r.status, 400);
+  r = await call("/main/api/file?action=start&key=x.mov", { method: "POST" });
+  assert.notEqual(r.status, 200);
+});
+
 await test("Main refuses paths that climb out", async () => {
   const r = await call("/main/api/file?key=../x", { as: "owner", method: "PUT", body: "x" });
   assert.equal(r.status, 400);
