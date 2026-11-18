@@ -41898,6 +41898,18 @@ ${clean(nextLineText)}`;
     if (!spoken || !spoken.words || !spoken.words.length) throw new Error("no voice: nothing spoken");
     return addPassage(m, id2, "voice", seed, { voice: { spoken: [clone(spoken)] } });
   }
+  function appendVoicePassage(m, { id: id2, text, seed }) {
+    const t2 = String(text ?? "").trim();
+    if (!t2) throw new Error("no voice: nothing spoken");
+    if (!validSeed(seed)) throw new Error("a passage needs its seed: device, input, time");
+    const out = createMatter(m);
+    const d = out.text;
+    out.text = d + (!d.length || d.endsWith("\n\n") ? "" : d.endsWith("\n") ? "\n" : "\n\n") + t2;
+    const typed = makeQuote(out.text, out.text.length - t2.length, t2.length);
+    const from = { cross: 0, ...seedOf(seed) };
+    const entry = { words: t2.split(/\s+/).map((w) => ({ w })), at: seed.time, from, typed };
+    return addPassage(out, id2, "voice", seed, { voice: { spoken: [entry] }, type: { ...typed } });
+  }
   function need(p, state) {
     const f = p.forms[state];
     const ok = state === "ink" ? f && (f.strokes || []).length : !!f;
@@ -43667,6 +43679,12 @@ ${String(text ?? "")}`;
         cross: (n, pid, opts) => applyMatter((m) => cross(m, Number(n), String(pid), typeof opts === "string" ? JSON.parse(opts) : opts || {})),
         reverseCrossing: () => applyMatter((m) => reverseLast(m, { device: matterDevice })),
         // per device
+        // FEAT-08 P2 · spoken words from the host land at the end as their own voice passage; the caret stays.
+        appendVoice: (text, id2) => applyMatter((m) => appendVoicePassage(m, {
+          id: String(id2 || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
+          text,
+          seed: { device: matterDevice, input: "voice", time: Date.now() }
+        })),
         setMatterDevice: (name2) => {
           if (name2) matterDevice = String(name2);
           return matterDevice;

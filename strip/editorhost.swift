@@ -112,6 +112,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var inkPath: String { vault.appendingPathComponent("draftpad.ink.json").path }
     /// FEAT-08 · the sidecar of the one page (seeds, linked forms, crossings log; editor/src/matter.js).
     var matterPath: String { vault.appendingPathComponent("draftpad.matter.json").path }
+    private var lastMatter = ""   // what this host last read or wrote for draftpad.matter.json
     var eventsPath: String { vault.appendingPathComponent("draftpad.events.json").path }
     var wingsPath: String { vault.appendingPathComponent("draftpad.wings.json").path }
     /// The editor's text as last posted by the page or set by native: what a save writes.
@@ -326,7 +327,11 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             return
         }
         if m.name == "matter" {   // FEAT-08 · coded, not compiled; device check owed
-            if let json = m.body as? String, !json.isEmpty { coordinatedWrite(json, to: matterPath) }
+            guard let json = m.body as? String, !json.isEmpty else { return }
+            if case .mergeFirst(let disk) = MatterWrite.plan(json: json, disk: coordinatedRead(matterPath), seen: lastMatter) {
+                lastMatter = disk
+                call("mergeMatter(\(jsString(disk)))")   // the page unions it and posts the union back here
+            } else if coordinatedWrite(json, to: matterPath) { lastMatter = json }
             return
         }
         if m.name == "audio" {
@@ -489,6 +494,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             call("setInk(\(jsString(inkJSON)))")
         }
         if wingSide == nil, let matterJSON = coordinatedRead(matterPath), !matterJSON.isEmpty {
+            lastMatter = matterJSON
             call("setMatter(\(jsString(matterJSON)))")   // FEAT-08 · coded, not compiled
         }
         if wingSide == nil { for c in DraftpadLibrary.loadCalls(vault: vault, quote: jsString) { call(c) } }

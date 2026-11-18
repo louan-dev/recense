@@ -118,6 +118,11 @@ struct RecensePairingShortcuts: AppShortcutsProvider {
             phrases: ["Enter pairing code in \(.applicationName)", "\(.applicationName), enter pairing code"],
             shortTitle: "Enter Pairing Code",
             systemImageName: "number.square")
+        AppShortcut(   // FEAT-08: the app has one AppShortcutsProvider, so Draftpad's voice shortcut lives here
+            intent: AddToDraftpadIntent(),
+            phrases: ["Add to Draftpad in \(.applicationName)", "\(.applicationName), add to Draftpad"],
+            shortTitle: "Add to Draftpad",
+            systemImageName: "waveform.badge.plus")
     }
 }
 #endif

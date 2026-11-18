@@ -46,7 +46,19 @@ Nothing ever moves a section into a new file: sections written apart stay side b
   2. Handwriting → text in vi / en / fr on iPad (Vision). Vietnamese is untested.
   3. A Lock Screen or Action-button voice control that appends to the open page.
 - **P1** seed per passage (sidecar) + the 12-move test harness.
-- **P2** voice continuation from any device and while moving.
+- **P2** voice continuation from any device and while moving. **Built 2026-11-17** (work/draftpad-voice, ported onto `matter.js`):
+  - `shared/voiceappend.swift`: spoken words land at the end of draftpad.md as their own passage through `planBlindSave`;
+    the passage (born voice, seed input "voice", already typed) goes into `draftpad.matter.json`.
+    Note unreadable → the text waits in the Unsaved folder (T-0114) and joins at the next read; nothing lost.
+  - iPhone/iPad: "Add to Draftpad" App Intent (`mobile/HostApp/iOS/DraftpadVoiceIntent.swift`), no app open:
+    Siri ("Recense, add to Draftpad"), the Shortcuts app, or the Action button
+    (Settings › Action Button › Shortcut › Recense › Add to Draftpad). It asks for the words; dictation answers.
+  - Open page: `recenseEditor.appendVoice(text)` → `appendVoicePassage` (same shape as the Swift side).
+  - Sidecar guard (`MatterWrite.plan`, both hosts): a `draftpad.matter.json` another writer changed is merged by the
+    page (`mergeMatter`) before the page writes; no passage is written over.
+  - Checks: `editor/test/feat08-voice.test.mjs`; `mobile/ios/Tests/voiceappend/main.swift` (swiftc).
+  - Open: a Lock Screen / Control Center button (needs a widget extension); the Mac's own voice entry (App Intents
+    need Xcode's metadata step); audio kept with the passage (P4). Untested on the device.
 - **P3** the other formats as live states (export, then import back).
 - **P4** searchable audio and ink inside the page (with T-0046).
 

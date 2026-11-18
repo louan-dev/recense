@@ -241,6 +241,24 @@ export function seedVoicePassage(m, { id, spoken, seed }) {
   return addPassage(m, id, 'voice', seed, { voice: { spoken: [clone(spoken)] } });
 }
 
+/**
+ * FEAT-08 P2 · spoken words that land at the end of the page as their own passage (one blank line before them), born
+ * as voice and already typed, so "Make text" never types them twice. Same shape as shared/voiceappend.swift writes
+ * when no page is open (Siri, the Action button).
+ */
+export function appendVoicePassage(m, { id, text, seed }) {
+  const t = String(text ?? '').trim();
+  if (!t) throw new Error('no voice: nothing spoken');
+  if (!validSeed(seed)) throw new Error('a passage needs its seed: device, input, time');
+  const out = createMatter(m);
+  const d = out.text;
+  out.text = d + (!d.length || d.endsWith('\n\n') ? '' : d.endsWith('\n') ? '\n' : '\n\n') + t;
+  const typed = makeQuote(out.text, out.text.length - t.length, t.length);
+  const from = { cross: 0, ...seedOf(seed) };
+  const entry = { words: t.split(/\s+/).map(w => ({ w })), at: seed.time, from, typed };
+  return addPassage(out, id, 'voice', seed, { voice: { spoken: [entry] }, type: { ...typed } });
+}
+
 // ---- the crossings -----------------------------------------------------------------------------------------
 
 function need(p, state) {
