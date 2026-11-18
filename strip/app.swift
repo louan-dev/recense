@@ -7202,7 +7202,13 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     var settling = false
 
     var lastMTime: Date?
-    var lastWritten = ""
+    var lastOwedTry = Date.distantPast
+    /// draftpad.md's load and save, the same rule as the iPhone and iPad (shared/draftpadfile.swift, BUG-29).
+    lazy var noteFile: DraftpadNote = {
+        let f = DraftpadNote(path: notePath)
+        f.say = { log("draftpad: " + $0) }
+        return f
+    }()
     var saveTimer: Timer?
     var ready = false
 
@@ -7748,7 +7754,7 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
                 guard let self = self else { return }
                 self.saveNow()
                 editorKind = .classic
-                self.showText(self.lastWritten)
+                self.showText(e.text)   // what the editor holds after the save's merge (a failed save keeps the typing)
                 self.applyEditorKind()
             }
             return
@@ -8594,12 +8600,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
 
     func load() {
-        let fm = FileManager.default
-        try? fm.createDirectory(atPath: (notePath as NSString).deletingLastPathComponent,
-                                withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: notePath) { fm.createFile(atPath: notePath, contents: nil) }
-        let text = coordinatedRead(notePath) ?? ""
-        lastWritten = text
+        try? FileManager.default.createDirectory(atPath: (notePath as NSString).deletingLastPathComponent,
+                                                 withIntermediateDirectories: true)
+        // No empty file is made for a missing note: an iCloud-evicted note has no file at its path, and a blank one put
+        // there would replace it. DraftpadNote.load tells "no note yet" from "can't read it now" (BUG-29, T-0124).
+        let text = noteFile.load()
         lastMTime = mtime()
         for t in stripPages(text) { appendView(t) }
     }
@@ -8609,25 +8614,8 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
         guard ready, !views.isEmpty else { return }
         let text = editorOn ? editor!.text : fileText(texts)
         // The file may have changed under us (an edit from the iPhone or iPad arriving through iCloud): merge, never
-        // overwrite it (notesync.swift).
-        var theirs: String? = nil
-        if let m = mtime(), m != lastMTime { theirs = coordinatedRead(notePath) }
-        switch planNoteSave(base: lastWritten, mine: text, theirs: theirs) {
-        case .write(let t):
-            if t != (theirs ?? lastWritten) { coordinatedWrite(t, to: notePath) }
-            if t != text { showText(t); log("draftpad: merged an edit from another device") }
-            lastWritten = t
-        case .adopt(let t):
-            showText(t)
-            lastWritten = t
-            if editorOn { log("draftpad: took an edit from another device into the new editor") }
-        case .conflict(let mine, let other):
-            let sib = conflictSiblingPath(notePath)
-            coordinatedWrite(mine, to: notePath)
-            coordinatedWrite(other, to: sib)
-            lastWritten = mine
-            log("draftpad: the same lines changed here and on another device; theirs kept in \((sib as NSString).lastPathComponent)")
-        }
+        // overwrite it; a note that can't be read, or a write that failed, never moves the base (DraftpadNote, BUG-29).
+        if let shown = noteFile.save(text) { showText(shown) }
         lastMTime = mtime()
         let d = UserDefaults.standard
         d.set(index, forKey: "page")
@@ -8637,16 +8625,24 @@ final class App: NSObject, NSApplicationDelegate, NSTextViewDelegate, LocalProce
     }
 
     func pollExternal() {
-        guard saveTimer == nil, !dragging, !settling, let m = mtime(), m != lastMTime else { return }
+        guard saveTimer == nil, !dragging, !settling else { return }
+        editor?.retryInk()   // T-0125: an ink post the sidecar couldn't take yet
+        // A save that couldn't reach the file, or a note that couldn't be read at load, is owed: tried again at most every
+        // 10 s (reading an evicted note offline can keep the coordinator waiting). Otherwise only a changed file (its
+        // mtime, a cheap stat) is read.
+        let changed = mtime() != lastMTime
+        let owes = noteFile.pending || !noteFile.readable
+        guard changed || (owes && Date().timeIntervalSince(lastOwedTry) >= 10) else { return }
+        if owes { lastOwedTry = Date() }
         if editorOn {
             // The page may hold up to 300 ms of typing it hasn't posted yet: take it, then merge as a save does.
             editor?.flush { [weak self] _ in self?.saveNow() }
             return
         }
-        lastMTime = m
-        guard let text = coordinatedRead(notePath) else { return }
-        lastWritten = text
-        showText(text)
+        if owes { saveNow(); return }   // the panel holds typing the file doesn't have yet: merge it, never adopt over it
+        // Nothing typed since the last save: take the file's text as it is (no rewrite of the pages' spacing).
+        if let shown = noteFile.save(noteFile.base) { showText(shown) }
+        lastMTime = mtime()
     }
 
     /// Show a newer version of the note in the panel, keeping each page's cursor where it can.

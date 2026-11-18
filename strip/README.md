@@ -120,7 +120,12 @@ the panel from any layer. Moving the pointer off the panel never closes it: once
 - **Drafting:** the layer where Draftpad runs; one endless `draftpad.md` in the Obsidian vault, paged by topic, with
   cursor memory. An edit from the iPhone or iPad that lands while you type here is merged in, never overwritten:
   each save merges the last version, yours and the file's by line; if both changed the same lines, yours stays in
-  `draftpad.md` and the other device's goes beside it as `draftpad (other device <date time>).md` (`notesync.swift`).
+  `draftpad.md` and the other device's goes beside it as `draftpad (other device <date time>).md` (`notesync.swift`;
+  a second one in the same minute gets " 2", never replacing the first). Load and save are the iPad's own rule
+  (`../shared/draftpadfile.swift`, BUG-29): a note iCloud can't hand over now (evicted, offline) opens blank and is
+  never written over; what you type waits in `~/Library/Application Support/Recense/` and is added after the note once
+  it reads; a save that fails is tried again and never counts as done. Ink (`draftpad.ink.json`) is merged, not
+  overwritten: strokes drawn on the iPad are unioned into the page before the Mac writes.
   - **New pages go on top of `draftpad.md`** (D4, safe version). Nothing reorders the file: the strip shows its
     pages bottom-up, so the page it adds at its newest end lands at the top of the file.
   - **Editor: new / classic.** The layer can host the new editor (the CodeMirror core, `editor/dist/editor.html`) in
@@ -254,6 +259,7 @@ Recense lives in `strip/` of the one repo, `~/Developer/recense` (the folders be
 strip/
   app.swift          the strip, panels, gestures, Draftpad (formerly sill.swift)
   ../shared/notesync.swift   Draftpad's file sync: 3-way merge, coordinated iCloud reads and writes (recense selftest)
+  ../shared/draftpadfile.swift   Draftpad's load and save of draftpad.md and its ink, shared with iOS (BUG-29)
   editorhost.swift   the new editor's web view host and its bridge; the page order for new pages on top
   recense.swift      Recense: players, transcripts, light, editor, export
   keephome.swift     where transcripts live (~/Recense/keep), the move out of the cache (recense selftest)
