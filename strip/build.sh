@@ -80,6 +80,8 @@ fi
 # Prefer the Apple Development certificate (a real team ID: the keychain's "Always Allow" and macOS permissions
 # survive rebuilds), then the local one, then ad-hoc.
 dev=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')
+# codesign refuses a bundle carrying Finder info or other extended attributes ("detritus not allowed", 11-18).
+xattr -cr "$app"
 if [[ -n "$dev" ]]; then
   codesign --force --sign "$dev" --identifier local.recense "$app"
 elif security find-identity -p codesigning 2>/dev/null | grep -q '"Recense Local Signing"'; then
