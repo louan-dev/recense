@@ -3926,7 +3926,7 @@
     s.setAttribute("aria-label", s.title);
     return s;
   };
-  // Devices: passkey, a confirmed email, a one-time link for another device, the calendar event, sign out
+  // Devices: passkey, a QR of a one-time link for another device, the calendar event, sign out
   const devicesSheet = () => {
     const ID = API.replace(/\/api$/, "") + "/api/id/";
     const H = { "content-type": "application/json", "x-gallery": "1" };
@@ -3962,29 +3962,19 @@
       G.invite.passkeys = j.passkeys;
       msg.textContent = "Passkey added. Use it to sign in on your other devices.";
     });
-    if (G.invite.emailOn) {
-      const f = mkEl("form", "devem");
-      const i = mkEl("input");
-      i.type = "email";
-      i.placeholder = G.invite.email || "Email, to sign in elsewhere";
-      i.autocomplete = "email";
-      const b = mkEl("button", "devb");
-      b.textContent = G.invite.email ? "Change" : "Confirm";
-      f.append(i, b);
-      f.onsubmit = async (e) => {
-        e.preventDefault();
-        try { await post("email", { email: i.value }); msg.textContent = "Check your inbox to confirm."; } catch (er) { msg.textContent = er.message; }
-      };
-      box.append(f);
-    }
+    const qrBox = mkEl("div", "devqr");
+    qrBox.hidden = true;
     row("Sign in another device", async () => {
       const j = await post("device");
-      try { await navigator.clipboard.writeText(j.url); msg.textContent = "One-time link copied. It works once, for 15 minutes."; } catch (_) { prompt("Open this on your other device (once, 15 minutes)", j.url); }
+      qrBox.innerHTML = GalleryQR.svg(j.url, 208);
+      qrBox.hidden = false;
+      msg.textContent = "Scan with the other device’s camera. It works once, for 15 minutes.";
+      try { await navigator.clipboard.writeText(j.url); msg.textContent += " Link copied too."; } catch (_) {}
     });
     if (G.invite.expires) row("Add to Calendar", () => { location.href = ID.replace(/api\/id\/$/, "invite.ics"); });
     row("Sign out", async () => { await post("signout"); location.reload(); });
     row("Sign out everywhere", async () => { await post("signout", { everywhere: true }); location.reload(); });
-    box.append(msg);
+    box.append(qrBox, msg);
     row("Done", () => wrap.remove());
     wrap.append(box);
     wrap.onclick = (e) => e.target === wrap && wrap.remove();

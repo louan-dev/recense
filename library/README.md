@@ -89,11 +89,10 @@ On the Mac, **Gallery** in the Finder sidebar opens `~/Gallery` after Touch ID, 
 - Who said it: an invitee posts as the name on their invitation (one invitation per name, never the owner's). The first
   write with an invite link accepts it and makes one guest (`src/identity.js`, records under `guests/`, `sessions/` in
   the MAIN bucket); from then on the link opens only for that guest, signed in on any of their devices: by passkey
-  (iCloud Keychain or any provider), a one-time link made on a signed-in device (comments › Devices), or an emailed link
-  once email is set up (bind `send_email` as `EMAIL` and set `EMAIL_FROM`; until then the email option is hidden).
+  (iCloud Keychain or any provider), a one-time link made on a signed-in device, shown as a QR code to scan (comments › Devices › Sign in another device; the code is drawn in the page by `src/client/qr.js`, offline, no outside service). No email is asked for anywhere in the sheet or the sign-in page (the `/api/id/email` route stays in the Worker, unused by the UI).
   Revoke ends every session and the guest can't sign back in. `/m/<token>/invite.ics` is the invitation's calendar
   event (Gallery access, start = created, end = expiry, link as location and URL, a reminder before the end); the
-  owner's Invite sheet has Calendar (while the link is known), each guest's devices, passkey and email, and Sign Out.
+  owner's Invite sheet has Calendar (while the link is known), each guest's devices and passkey, and Sign Out.
   A guest on a share
   link types a name once, in the field above their first comment; the server keeps it with their cookie, so it can't be
   changed or be an invitee's. Each comment carries a tiny flag: the country Cloudflare sees the connection from

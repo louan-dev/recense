@@ -2197,8 +2197,9 @@ body.nodl #dl,body.nodl .mdl{display:none!important}
 .devbox>b{font-size:17px;margin-bottom:6px}
 .devb{background:none;border:0;color:#0a84ff;font:inherit;padding:10px;border-radius:10px}
 .devb:active{background:#2c2c2e}
-.devem{display:flex;gap:6px;margin:4px 0}
-.devem input{flex:1;min-width:0;border:0;border-radius:10px;padding:9px 10px;background:#2c2c2e;color:#fff;font:inherit}
+.devqr{display:flex;justify-content:center;margin:8px 0}
+.devqr[hidden]{display:none}
+.devqr svg{border-radius:8px}
 .devmsg{margin:4px 0 0;font-size:13px;color:#ebebf599;min-height:1em}
 
 /* ---------- Phase 4: collection search bar (Goal 43.32) & year-grouped results ---------- */

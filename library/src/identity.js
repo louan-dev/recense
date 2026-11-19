@@ -433,8 +433,7 @@ export function signInPage(inv, env) {
       `<h1>${esc(inv.name)}</h1>
 <p>This invitation is already in use. Sign in to continue.</p>
 <button id="pk">Sign in with a passkey</button>
-${emailOn(env) ? `<form id="em"><input type="email" name="email" placeholder="Email" autocomplete="email" required><button>Email me a link</button></form>` : ""}
-<p class="s">On a device that’s already signed in, you can also make a one-time link for this one (Devices in the comments).</p>
+<p class="s">On a device that’s already signed in, you can show a QR code for this one (Devices in the comments).</p>
 <p class="s" id="msg" role="status"></p>
 <script>
 const api = location.pathname.replace(/\\/$/, "") + "/api/id/";
@@ -449,12 +448,6 @@ document.getElementById("pk").onclick = async () => {
     const r = await fetch(api + "passkey/login", { method: "POST", headers: H, body: JSON.stringify({ id: c.id, clientDataJSON: b64(c.response.clientDataJSON), authenticatorData: b64(c.response.authenticatorData), signature: b64(c.response.signature) }) });
     if (r.ok) location.reload(); else say(await r.text());
   } catch (e) { say("No passkey was used."); }
-};
-const em = document.getElementById("em");
-if (em) em.onsubmit = async e => {
-  e.preventDefault();
-  const r = await fetch(api + "email", { method: "POST", headers: H, body: JSON.stringify({ email: em.email.value }) });
-  say(r.ok ? "If that address belongs to this invitation, a link is on its way." : await r.text());
 };
 </script>`
     ),

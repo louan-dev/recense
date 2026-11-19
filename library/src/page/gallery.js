@@ -12,6 +12,7 @@ import viewerShellCss from "../client/viewer-shell.css";
 import viewerSheet from "../client/viewer-sheet.js";
 import viewerSheetCss from "../client/viewer-sheet.css";
 import keylabel from "../client/keylabel.js";
+import qr from "../client/qr.js";
 import learn from "../client/learn.js";
 import prosody from "../client/prosody.js";
 import prosogram from "../client/prosogram.js";
@@ -258,6 +259,9 @@ ${linkUp}
 </script>
 <script>
 ${keylabel}
+</script>
+<script>
+${qr}
 </script>
 <script>
 ${room}
