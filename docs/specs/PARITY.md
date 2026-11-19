@@ -37,6 +37,19 @@ check: . :: python3 -I text/test_rules.py
 device: Wi-Fi off, play a narrated page on iPhone through iPhone Mirroring, screen-recorded
 <!-- parity:end -->
 
+<!-- parity:begin intake -->
+feature: intake
+home: shared/intake.swift shared/mediadownload.swift shared/ShowsKit/
+note: Mac watcher, iOS Share extension and the refresh hook are glue; the transfer path (P4) is open
+symbols: Intake Downloads.sweep Downloads.queued
+embodiments: mac=[ ] iphone=[ ] ipad=[ ] web=n/a
+events: intake.telegram.moved intake.telegram.skipped intake.share.received intake.link.queued intake.link.fetched intake.refresh.run
+spec: FEAT-38 FEAT-12
+check: lock strip :: zsh build.sh && ./recense selftest intake downloads
+check: lock shared/ShowsKit :: swift test
+device: Telegram track on the Mac lands in Music; share from Telegram on iPhone lands in Music after pull to refresh; airplane-mode proof
+<!-- parity:end -->
+
 <!-- parity:begin m4b -->
 feature: m4b
 home: shared/m4b/ shared/exportjobs.swift
