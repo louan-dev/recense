@@ -775,7 +775,7 @@ selftest() {
   tz hello-quiet-stderr "$hs"
   t log-empty-value '"role":""' "$(grep coordinator.hello $T/logs/coordinator.jsonl)"
   # an unwritable log dir is silent too (the hook must never print noise)
-  tz log-unwritable-quiet "$(COORD_LOGS=/dev/null/x zsh $SELF who 2>&1 >/dev/null; COORD_LOGS=/dev/null/x zsh $SELF retire --end 2>&1 >/dev/null)"
+  mkdir -p $T/h2; tz log-unwritable-quiet "$(COORD_HOME=$T/h2 COORD_SID=aaaaaaaa-1 CLAUDE_CODE_SESSION_ID= COORD_LOGS=/dev/null/x zsh $SELF take 2>&1 >/dev/null)"   # take logs, so the old redirect order would print here
   # every log line is valid JSON
   t log-valid 0 "$(python3 -I -c 'import json,sys
 print(sum(1 for l in open(sys.argv[1]) if l.strip() and not json.loads(l)))' $T/logs/coordinator.jsonl 2>&1)"
