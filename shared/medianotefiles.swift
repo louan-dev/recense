@@ -64,7 +64,7 @@ enum MediaNoteFiles {
         }
     }
 
-    /// What the page opens (`recenseEditor.openNote(key, <this>)`): { text, ink, matter, title, trigger, layout }.
+    /// What the page opens (`recenseEditor.openNote(key, <this>)`): { text, ink, matter, title, trigger, layout, others }.
     /// nil when a file is there but cannot be read now: a note is never shown blank over its words (T-0114's rule).
     /// With `unsaved`, the parked writes go first (review-2 item 5): a note reopened before the poll shows them.
     static func payload(key: String, keep: URL, title: String = "", trigger: String = "note-button", layout: String = "note",
@@ -80,8 +80,16 @@ enum MediaNoteFiles {
             }
         }
         see(url(key, text, keep: keep).path, d["text"] as? String)
+        d["others"] = siblings(key, keep: keep)   // item 6: another device's version beside note.md, for the page to show
         guard let data = try? JSONSerialization.data(withJSONObject: d), let s = String(data: data, encoding: .utf8) else { return nil }
         return s
+    }
+
+    /// Carry's conflict copies of note.md in keep/<key>/ ("note (iPad 2026-11-14 1605).md"), by name, oldest name first.
+    static func siblings(_ key: String, keep: URL) -> [String] {
+        let dir = keep.appendingPathComponent(key, isDirectory: true).path
+        return ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
+            .filter { $0.hasPrefix("note (") && $0.hasSuffix(").md") }.sorted()
     }
 
     /// Moves one file to the Trash (Put Back works); where the system has no Trash (iOS), into `fallback` instead.

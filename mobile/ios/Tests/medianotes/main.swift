@@ -134,5 +134,14 @@ try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: d5.path)
 let p5 = MediaNoteFiles.payload(key: key, keep: k5, unsaved: u5, device: "Test") ?? ""
 check(p5.contains("\"text\":\"parked five\""), "item 5: the reopened note shows the parked words (\(p5))")
 check(MediaNoteFiles.pending(u5).isEmpty, "item 5: written and settled on open")
+// Regression guard: FEAT-23 review-2 item 6
+// carry's conflict copies beside note.md are named in the payload, so the page can show "another device's version".
+let k6 = root.appendingPathComponent("keep6"), d6 = k6.appendingPathComponent(key)
+try? fm.createDirectory(at: d6, withIntermediateDirectories: true)
+try! "mine".write(to: d6.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+check(MediaNoteFiles.payload(key: key, keep: k6).map { $0.contains("\"others\":[]") } == true, "item 6: no sibling: others is empty")
+try! "theirs".write(to: d6.appendingPathComponent("note (iPad 2026-11-14 1605).md"), atomically: true, encoding: .utf8)
+let p6 = MediaNoteFiles.payload(key: key, keep: k6) ?? ""
+check(p6.contains("note (iPad 2026-11-14 1605).md") && p6.contains("\"others\""), "item 6: the payload names the sibling (\(p6))")
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)
