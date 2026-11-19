@@ -206,3 +206,22 @@ to the `gallery-tmp` bucket.
         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.triage-merge.plist
 
 - Turn off: `launchctl bootout gui/$(id -u)/com.chauphan.triage-merge`
+
+## Coordinator: a file plus a lease (`bin/coord.zsh`, owner 2026-11-18)
+- The coordinator is a role, not a session. Its memory and rules are one file, `.handoff/coordinator/COORDINATOR.md`
+  (`## 1` every session reads, `## 2` how to decide, `## 3` state). Who acts for it right now is one line, `.handoff/coordinator/CURRENT`.
+- No session is worth reviving: any session in the main checkout can take a free lease; a coordinator retires at its cap.
+- Messages are files in `.handoff/coordinator/inbox/` (handled ones in `inbox/done/`); SendMessage is only the doorbell.
+- Review judges are a panel of open worktree sessions (`.handoff/coordinator/PANEL`); `assign` picks one that is not the author.
+- Every verb logs one line to `~/Recense/logs/coordinator.jsonl` (the DebugChannel shape). No network; `spawn` is the only AI call.
+- Verbs (`zsh bin/coord.zsh <verb>`):
+  - `who` · `take [--owner-said]` · `retire` — the lease. `take` is atomic; a second taker prints `STAND DOWN`.
+  - `post <file>` · `inbox` · `done <file>` — messages (`post` moves the file in and signs it).
+  - `state-check` — the caps on COORDINATOR.md (220 lines, 20 KB, `## 1` ≤ 40 lines, lines ≤ 160 chars, no `Session:` line).
+  - `reviewed <branch>` · `gate <branch> [--dry]` — `REVIEW: OK` at the tip; merged, conflicts (`git merge-tree`), registry checks.
+  - `join` · `leave` · `assign <branch> [--risky]` — the review panel.
+  - `worktrees` · `handoff-sweep` — what can be cleaned up (print only).
+  - `doctor` — 9 invariants (lease, caps, old messages, ghost coordinator, queue trimmed, double holder, hook, unanswered and stale reviews).
+  - `hello` (SessionStart hook) · `leave --hook` (SessionEnd hook) · `spawn` (a fresh headless coordinator when work waits and nobody holds the lease, at most one per hour).
+  - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` — moves that verify by sha / line multiset that nothing was lost.
+- Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`).
