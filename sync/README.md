@@ -222,6 +222,6 @@ to the `gallery-tmp` bucket.
   - `join` · `leave` · `assign <branch> [--risky]` — the review panel.
   - `worktrees` · `handoff-sweep` — what can be cleaned up (print only).
   - `doctor` — 9 invariants (lease, caps, old messages, ghost coordinator, queue trimmed, double holder, hook, unanswered and stale reviews).
-  - `hello` (SessionStart hook) · `leave --hook` (SessionEnd hook) · `spawn` (a fresh headless coordinator when work waits and nobody holds the lease, at most one per hour).
-  - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` — moves that verify by sha / line multiset that nothing was lost.
+  - `hello` (SessionStart hook) · `leave --hook` (SessionEnd hook) · `stop-hook` (Stop hook: doctor, the holder's memory and retire checks; `bin/coord-stop.py`) · `spawn` (a fresh headless coordinator when work waits and nobody holds the lease, at most one per hour).
+  - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` · `trim-queue` (whole merged entries of MERGE-QUEUE.md) — moves that verify by sha / line multiset that nothing was lost.
 - Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`).

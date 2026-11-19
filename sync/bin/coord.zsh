@@ -290,6 +290,36 @@ cmd_trim() {   # trim <file> <archive> <egrep pattern>: matching lines move to t
   print "trim: moved $n lines to $a; verify OK"
 }
 
+cmd_trim_queue() {   # trim-queue: whole entries ("- work/x …" + its indented lines) whose branch git shows merged move to the archive
+  local f=${1:-$Q} a=${2:-${Q:r}-archive.md} repo=${COORD_GIT:-$REPO} t=$TMPDIR/coord-tq.$$
+  [[ -f $f ]] || { print "trim-queue: no $f"; return 2; }
+  awk -v t=$t 'BEGIN{g=0} /^- /{g++} { print g "\t" $0 > (t ".lines") }' $f
+  # an entry is merged when its branch still exists and is in main, or (branch deleted) the commit it cites after "@" is in main
+  local -a merged; local g head br sha
+  while IFS=$'\t' read -r g head; do
+    br=${${head#- }%% *}; sha=$(print -r -- $head | grep -oE '@ [0-9a-f]{7,40}' | head -1 | cut -c3-)
+    [[ $br == (work|fix)/* || $br == worktree-* ]] || continue
+    if git -C $repo rev-parse -q --verify "refs/heads/$br" >/dev/null 2>&1; then
+      git -C $repo merge-base --is-ancestor $br main 2>/dev/null && merged+=($g)
+    elif [[ -n $sha ]] && git -C $repo cat-file -e "$sha^{commit}" 2>/dev/null && git -C $repo merge-base --is-ancestor $sha main 2>/dev/null; then
+      merged+=($g)
+    fi
+  done < <(grep -E '^[0-9]+	- ' $t.lines)
+  awk -F'\t' -v list="${merged}" -v t=$t '
+    BEGIN{ n=split(list, L, " "); for (i=1;i<=n;i++) M[L[i]]=1 }
+    { line=substr($0, index($0, "\t")+1) }
+    ($1 in M) { print line > (t ".moved"); next }
+    { print line > (t ".kept") }' $t.lines
+  touch $t.moved $t.kept
+  local n=$(grep -c '^- ' $t.moved)
+  if [[ $(cat $t.kept $t.moved | sort | shasum) != $(sort $f | shasum) ]]; then print "trim-queue: VERIFY FAILED, nothing changed"; rm -f $t.*; return 1; fi
+  (( n == 0 )) && { print "trim-queue: no merged entries"; rm -f $t.*; return 0; }
+  { [[ -f $a ]] || print "# Archive of ${f:t} (moved verbatim by coord.zsh)"; cat $t.moved; } >> $a
+  mv $t.kept $f; rm -f $t.*
+  log trim file=${f:t} moved=$n
+  print "trim-queue: moved $n merged entries to $a; verify OK"
+}
+
 legacy_classify() {   # CLOSED | OPEN? | INFO | STALE for one entry file; $2 = its date (yyyymmdd)
   local e=$1 day=${2:-0} repo=${COORD_GIT:-$REPO} cutoff=${COORD_STALE_BEFORE:-20261117}
   local head=$(head -1 $e)
@@ -374,8 +404,8 @@ for l in sys.stdin:
         last=(s,t)')
   [[ -n $dbl ]] && ko "6 double holder: $dbl took the lease within 10 min" || ok "6 double holder: none"
   # 7 the Stop hook knows the lease (regression: it once matched only "(coordinator)" and never fired)
-  local hk=${COORD_HOOK:-$HOME/.local/bin/coordinator-memory-check}
-  grep -q 'coord.zsh' $hk 2>/dev/null && ok "7 hook: reads the lease" || ko "7 hook: $hk does not call coord.zsh (role check is blind)"
+  local hk=${COORD_HOOK:-$HOME/.claude/settings.json}
+  grep -q "coord.zsh stop-hook" $hk 2>/dev/null && ok "7 hook: the Stop hook runs coord.zsh stop-hook" || ko "7 hook: $hk has no coord.zsh stop-hook (the lease holder is not checked)"
   # 8 review requests unanswered over 10 min
   local rq=($H/inbox/*-review-*.md(N.mm+10)); (( ${#rq} )) && ko "8 review: ${#rq} requests unanswered 10+ min (${rq[1]:t}) · fix: reassign once, then mark UNREVIEWED" || ok "8 review: none waiting"
   # 9 a REVIEW: OK older than its branch tip
@@ -446,6 +476,7 @@ selftest() {
   mkdir -p $T/h $T/projects/p $T/handoff
   t() { local name=$1 want=$2 got=$3; [[ $got == *$want* ]] || { print "FAIL $name: want '$want' got '${got[1,200]}'"; fail=1; }; }
   run() { zsh $SELF "$@" 2>&1; }
+  tz() { [[ -z $2 ]] || { print "FAIL $1: want no output, got '${2[1,200]}'"; fail=1; }; }
   # who / take / standdown / retire
   t who-vacant VACANT "$(run who)"
   t take-needs-id "no session id" "$(CLAUDE_CODE_SESSION_ID= COORD_SID= run take)"
@@ -473,7 +504,7 @@ selftest() {
   # post / inbox / done
   print 'PLAN: a test' > $T/msg.md
   t post "posted: inbox/" "$(CLAUDE_CODE_SESSION_ID=ffffffff-6 run post $T/msg.md)"
-  t post-moved "" "$([[ -e $T/msg.md ]] && print COPIED)"; [[ -e $T/msg.md ]] && { print "FAIL post copied instead of moving"; fail=1; }
+  tz post-moved "$([[ -e $T/msg.md ]] && print COPIED)"; [[ -e $T/msg.md ]] && { print "FAIL post copied instead of moving"; fail=1; }
   t post-signed "Session: ffffffff-6" "$(cat $T/h/inbox/*.md)"
   mkdir -p $T/h/inbox/done; print 'old' > $T/h/inbox/done/x.md
   t inbox-list "PLAN: a test" "$(run inbox)"; t inbox-skips-done 1 "$(run inbox | grep -c .)"
@@ -510,6 +541,11 @@ selftest() {
   # trim: moves, verifies
   t trim "moved 1 lines" "$(run trim $T/q.md $T/q-archive.md '^- .*MERGED')"
   t trim-kept 2 "$(grep -c . $T/q.md)"; t trim-archived "MERGED abc1234" "$(cat $T/q-archive.md)"
+  print -l -- "BUILD LOCK: free" "- work/merged · done thing" "  more about it" "- work/rev · open thing" "  detail" > $T/q2.md
+  local msha=$(git -C $T/repo rev-parse --short=7 work/merged); git -C $T/repo branch -q -D work/merged
+  print -l -- "BUILD LOCK: free" "- work/merged @ $msha · done thing" "  more about it" "- work/rev · open thing" "  detail" "- work/gone @ 1234567 · unknown" > $T/q2.md
+  t trim-queue "moved 1 merged entries" "$(run trim-queue $T/q2.md $T/q2-archive.md)"
+  t trim-queue-kept "work/rev" "$(cat $T/q2.md)"; t trim-queue-unknown "work/gone" "$(cat $T/q2.md)"; t trim-queue-cont "more about it" "$(cat $T/q2-archive.md)"; t trim-queue-head "BUILD LOCK" "$(cat $T/q2.md)"
   # legacy-split: pieces re-assemble to the original; open items land in inbox/
   print -l -- '# Inbox' 'preamble' '## 2026-11-08 10:30 · PLAN for your OK' 'body' '— Agent: claude · Session: 44444444-d · Dir: x' \
            '## 2026-11-09 · status MERGED work/merged' 'done' '## 2026-11-10 · heads-up' 'fyi' '## 2026-11-11 · READY FOR REVIEW: work/rev' 'x' > $T/INBOX.md
@@ -523,7 +559,7 @@ selftest() {
   print 'coordinator 9d8e0a68 lives here' > $T/routing.md; print '' > $T/hook
   local d=$(run doctor)
   t doc-ghost "FAIL 4 ghost" "$d"; t doc-hook "FAIL 7 hook" "$d"; t doc-review-stale "FAIL 9 review" "$d"
-  print 'nothing' > $T/routing.md; print 'zsh coord.zsh who --id' > $T/hook
+  print 'nothing' > $T/routing.md; print 'zsh coord.zsh stop-hook' > $T/hook
   d=$(run doctor); t doc-ghost-ok "OK   4 ghost" "$d"; t doc-hook-ok "OK   7 hook" "$d"
   print -r -- '- work/z · MERGED' >> $T/q.md; t doc-queue "FAIL 5 queue" "$(run doctor)"
   touch -t 202601010000 $T/h/inbox/*.md(N[1]); t doc-old "FAIL 3 inbox" "$(run doctor)"
@@ -537,7 +573,7 @@ selftest() {
   print -l -- '## 1 · Every session' '- read me' '## 2 · decide' '- rules' > $T/h/COORDINATOR.md
   rm -f $T/h/CURRENT
   local hj=$(print '{"session_id":"77777777-g","cwd":"'$T/repo'"}' | run hello)
-  t hello-json '"additionalContext"' "$hj"; t hello-top "read me" "$hj"; t hello-no-rules "" "$(print -r -- $hj | grep -o rules)"
+  t hello-json '"additionalContext"' "$hj"; t hello-top "read me" "$hj"; tz hello-no-rules "$(print -r -- $hj | grep -o rules)"
   t hello-took "77777777-g" "$(run who --id)"
   print '{"session_id":"88888888-h","cwd":"'$T/repo/.claude/worktrees/w'"}' | run hello >/dev/null
   t hello-joined "88888888-h" "$(cat $T/h/PANEL)"
@@ -549,6 +585,18 @@ selftest() {
   t spawn "spawned" "$(run spawn)"; sleep 0.3
   t spawn-hourly "one spawn per hour" "$(run spawn)"
   CLAUDE_CODE_SESSION_ID=99999999-i run take >/dev/null; t spawn-held "skip: holder is LIVE" "$(run spawn)"
+  # stop-hook (regression for the dead hook: it once knew a coordinator only by "(coordinator)" and never fired)
+  local now_iso=$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')
+  print -r -- '{"type":"user","timestamp":"'$now_iso'","message":{"content":"go"}}' > $T/tr.jsonl
+  print -r -- '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"SendMessage","input":{"to":"x"}}]}}' >> $T/tr.jsonl
+  touch -t 202601010000 $T/h/COORDINATOR.md
+  local sj='{"session_id":"99999999-i","transcript_path":"'$T/tr.jsonl'"}'
+  t stop-blocks-holder '"decision": "block"' "$(print -r -- $sj | run stop-hook)"
+  tz stop-silent-worker "$(print -r -- '{"session_id":"12121212-z","transcript_path":"'$T/tr.jsonl'"}' | run stop-hook)"
+  tz stop-loop-guard "$(print -r -- '{"session_id":"99999999-i","stop_hook_active":true,"transcript_path":"'$T/tr.jsonl'"}' | run stop-hook)"
+  touch $T/h/COORDINATOR.md; tz stop-ok-after-write "$(print -r -- $sj | run stop-hook)"
+  t stop-retire-cap "retire" "$(print -r -- $sj | COORD_BIG=10 run stop-hook)"
+  tz stop-retire-once "$(print -r -- $sj | COORD_BIG=10 run stop-hook)"
   rm -rf $T
   (( fail )) && { print "coord selftest FAILED"; return 1; }
   print "coord selftest OK"
@@ -574,8 +622,10 @@ case ${1:-help} in
   doctor) shift; cmd_doctor "$@" ;;
   hello) cmd_hello ;;
   spawn) cmd_spawn ;;
+  stop-hook) COORD_SELF=$SELF exec python3 -I ${SELF:h}/coord-stop.py ;;
   legacy-split) shift; cmd_legacy_split "$@" ;;
   trim) shift; cmd_trim "$@" ;;
+  trim-queue) shift; cmd_trim_queue "$@" ;;
   selftest) selftest ;;
   *) help ;;
 esac
