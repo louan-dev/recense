@@ -98,19 +98,34 @@ enum MediaNoteFiles {
     }
 
     // FEAT-23 review 2 · a note's words that could not reach keep/ wait in the Unsaved folder (shared/notesync.swift's
-    // Unsaved.keep), one file per failure: "note-unsaved <action> <key> <ms> <base>.md". `retry` (the hosts' poll) writes them
+    // Unsaved.keep), one file per failure: "note-unsaved <ms> <action> <key> <base>.md". `retry` (the hosts' poll) writes them
     // once it can, then settles them into recovered/. Never deleted. Not "draftpad-unsaved", so never joined into draftpad.md.
     // A save's name ends with the digest of the note it was written over ("x": not known), so the retry never writes over
     // a note that changed since (review-2 item 1).
+    /// Oldest first by the time in the name, whatever the action (review-2 item 3: a later line note never replays
+    /// before an earlier save).
     static func pending(_ unsaved: URL) -> [URL] {
-        ((try? FileManager.default.contentsOfDirectory(at: unsaved, includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.lastPathComponent.hasPrefix("note-unsaved ") && $0.pathExtension == "md" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let all: [URL] = (try? FileManager.default.contentsOfDirectory(at: unsaved, includingPropertiesForKeys: nil)) ?? []
+        var dated: [(file: URL, ms: Int)] = []
+        for f in all where f.lastPathComponent.hasPrefix("note-unsaved ") && f.pathExtension == "md" {
+            if let p = parked(f) { dated.append((f, p.ms)) }
+        }
+        dated.sort { $0.ms != $1.ms ? $0.ms < $1.ms : $0.file.lastPathComponent < $1.file.lastPathComponent }
+        return dated.map(\.file)
+    }
+
+    /// A parked file's name, read by what each part is, so an earlier layout ("<action> <key> <ms>") still reads.
+    static func parked(_ f: URL) -> (ms: Int, action: String, key: String, base: String?)? {
+        let parts = f.deletingPathExtension().lastPathComponent.split(separator: " ").map(String.init).dropFirst()
+        guard let key = parts.first(where: isKey), let action = parts.first(where: { ["save", "append", "ink", "matter"].contains($0) }),
+              let ms = parts.first(where: { !isKey($0) && !$0.isEmpty && $0.allSatisfy(\.isNumber) }).flatMap({ Int($0) }) else { return nil }
+        let base = parts.first { $0.count == 16 && !isKey($0) && $0.allSatisfy(\.isHexDigit) }
+        return (ms, action, key, base)
     }
 
     private static func park(_ text: String, action: String, key: String, base: String = "x", unsaved: URL?) -> String {
         guard let unsaved else { return "could not write; nowhere to keep it" }
-        let f = unsaved.appendingPathComponent("note-unsaved \(action) \(key) \(Int(Date().timeIntervalSince1970 * 1000)) \(base).md")
+        let f = unsaved.appendingPathComponent("note-unsaved \(Int(Date().timeIntervalSince1970 * 1000)) \(action) \(key) \(base).md")
         Unsaved.keep(text, as: f)
         return FileManager.default.fileExists(atPath: f.path) ? "could not write; kept in \(f.lastPathComponent)" : "could not write or keep"
     }
@@ -122,14 +137,12 @@ enum MediaNoteFiles {
     static func retry(keep: URL, unsaved: URL, device: String = "this device") -> Int {
         var done = 0
         for f in pending(unsaved) {
-            let parts = f.deletingPathExtension().lastPathComponent.split(separator: " ").map(String.init)
-            guard parts.count == 4 || parts.count == 5, isKey(parts[2]), let body = try? String(contentsOf: f, encoding: .utf8) else { continue }
+            guard let p = parked(f), let body = try? String(contentsOf: f, encoding: .utf8) else { continue }
             let r: String
-            if parts[1] == "append" {
-                r = handle(["action": "append", "key": parts[2], "line": body], keep: keep, unsaved: nil)
-            } else {
-                let base: Base = parts.count == 5 && parts[4] != "x" ? .digest(parts[4]) : .unknown
-                r = place(body, key: parts[2], keep: keep, base: base, device: device)
+            switch p.action {
+            case "append": r = handle(["action": "append", "key": p.key, "line": body], keep: keep, unsaved: nil)
+            case "save": r = place(body, key: p.key, keep: keep, base: p.base.map { .digest($0) } ?? .unknown, device: device)
+            default: continue
             }
             if r.hasPrefix("wrote") || r.hasPrefix("kept beside") { Unsaved.settle(f, in: unsaved); done += 1 }
         }
@@ -157,7 +170,7 @@ enum MediaNoteFiles {
                 return park(s, action: "save", key: key, base: base.tag, unsaved: unsaved)
             }
             if let unsaved {   // this newer text holds any parked save of this note
-                for f in pending(unsaved) where f.lastPathComponent.hasPrefix("note-unsaved save \(key) ") { Unsaved.settle(f, in: unsaved) }
+                for f in pending(unsaved) where parked(f).map({ $0.action == "save" && $0.key == key }) == true { Unsaved.settle(f, in: unsaved) }
             }
             return r
         case "ink":
