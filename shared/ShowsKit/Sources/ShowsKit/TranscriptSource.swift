@@ -52,6 +52,27 @@ public enum TranscriptSource {
         }
     }
 
+    /// The inverse of `decode`: `keep/<key>/lines.json` (FEAT-22 P1), the transcript as shown, in the shape the Worker sends and every
+    /// screen already reads: { lines: [{ id, s, e, text, en, words: [{ t, s, e, lang, syl, un, tm }] }] }. Sorted keys, so the same
+    /// lines always make the same bytes (carry hashes the file, so an unchanged transcript must not look changed). nil: no lines.
+    public static func encode(_ lines: [TranscriptLine]) -> Data? {
+        struct Y: Encodable { let c: Int; let s: Double; let e: Double }
+        struct T: Encodable { let s: Double; let e: Double; let k: Double; let c: [Double]? }
+        struct W: Encodable { let t: String; let s: Double; let e: Double; let lang: String?; let syl: [Y]?; let un: Bool?; let tm: T? }
+        struct L: Encodable { let id: String; let s: Double; let e: Double; let text: String; let en: String?; let words: [W] }
+        struct Body: Encodable { let lines: [L] }
+        guard !lines.isEmpty else { return nil }
+        let body = Body(lines: lines.map { l in
+            L(id: l.id, s: l.start, e: l.end, text: l.text, en: l.translation?.isEmpty == false ? l.translation : nil,
+              words: l.words.map { w in
+                  W(t: w.text, s: w.start, e: w.end, lang: w.lang, syl: w.syl?.map { Y(c: $0.c, s: $0.s, e: $0.e) }, un: w.un,
+                    tm: w.tm.map { T(s: $0.s, e: $0.e, k: $0.k, c: $0.c) })
+              })
+        })
+        let e = JSONEncoder(); e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try? e.encode(body)
+    }
+
     /// The query the Worker reads: the file's path under files/ in Main.
     public static func remotePath(_ path: String) -> String {
         var c = URLComponents()
@@ -61,10 +82,18 @@ public enum TranscriptSource {
     }
 
     /// Device copy first, then the Mac's (saved here when it comes), else none.
+    /// `keep` (FEAT-22 P1): the `keep/<key>/lines.json` that carry brought, with its modified time. It is read before the Worker, so a
+    /// transcript made on the Mac opens with no network. A device copy older than it is replaced (the Mac's pass is newer: the upgrade
+    /// rule); one newer than it, or the same, stays. A `keep` file that is not a transcript is ignored.
     /// `fetch` answers a site path with its body, or nil (offline, refused, not found).
-    public static func load(path: String, cache: TranscriptCache,
+    public static func load(path: String, cache: TranscriptCache, keep: (data: Data, modified: Date)? = nil,
                             fetch: @Sendable (String) async -> Data?) async -> LoadedTranscript {
-        if let saved = cache.read(path) { return LoadedTranscript(lines: saved, origin: .device) }
+        let saved = cache.read(path)
+        if let keep, let lines = decode(keep.data), saved == nil || (cache.modified(path).map { keep.modified > $0 } ?? true) {
+            cache.write(path, lines)
+            return LoadedTranscript(lines: lines, origin: .mac)
+        }
+        if let saved { return LoadedTranscript(lines: saved, origin: .device) }
         if let d = await fetch(remotePath(path)), let lines = decode(d) {
             cache.write(path, lines)
             return LoadedTranscript(lines: lines, origin: .mac)
@@ -81,6 +110,10 @@ public struct TranscriptCache: Sendable {
     public func file(_ path: String) -> URL {
         let h = SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined().prefix(24)
         return dir.appendingPathComponent("\(h).json")
+    }
+    /// When this device's copy was last saved; nil when there is none.
+    public func modified(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: file(path).path))?[.modificationDate] as? Date
     }
     public func read(_ path: String) -> [TranscriptLine]? {
         guard let d = try? Data(contentsOf: file(path)), let ls = try? JSONDecoder().decode([TranscriptLine].self, from: d),

@@ -137,7 +137,12 @@ Recense/
 | Cloudflare Worker + R2 | catch-up rung 4 only | **no** | `rclone copy` to any S3-compatible store or disk; rungs 2 and 3 need no company |
 
 ## Phases (each ends with its check)
-- **P1 · Carry takes `note.md` and `lines.json`** (Mac, iPhone, iPad). The Mac writes `lines.json` when a transcript
+- **P1 · Carry takes `note.md` and `lines.json`** (Mac, iPhone, iPad).
+  - **Built `[~]` (11-18, device check owed):** carry takes both files (`CarryKeep`, `shared/carrysync.swift`; scan in `Carry.verify`;
+    check 1 passes in `mobile/ios/Tests/carrysync`). The Mac writes `keep/<key>/lines.json` when a transcript is complete and a moment after
+    a correction (`strip/recense.swift` `writeLinesFile`; bytes unchanged → no write); the file is `TranscriptSource.encode`, the inverse of
+    `decode`. iOS reads it before the Worker and replaces an older device copy (`TranscriptSource.load(keep:)`, `Ears.carriedLines`).
+    Tests: ShowsKit `TranscriptSourceTests` (4 new). **Not built:** the phone writing its own `lines.json` after its ears finish; check 2 (canary, Wi-Fi off). The Mac writes `lines.json` when a transcript
   completes or is corrected; iOS reads `keep/<key>/lines.json` before asking the Worker.
   - Check 1 (test, `carrysync`): a write to `keep/<key>/note.md` counts for the watcher; a write to
     `keep/<key>.v2.json` or `find.tsv` does not (guards T-0091).

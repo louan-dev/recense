@@ -3222,7 +3222,7 @@ private func lyricsSelftestRun() async -> Bool {
     var file: URL?
     var duration = 0.0
     var lines: [Line] = [] { didSet { _shown = nil; _display = nil; _sung = nil; _blanked = nil } }   // as the pipeline made them
-    var edits = Edits() { didSet { _shown = nil; _display = nil; _sung = nil; _blanked = nil } }       // the listener's corrections, over them
+    var edits = Edits() { didSet { _shown = nil; _display = nil; _sung = nil; _blanked = nil; if complete { scheduleLinesFile() } } }       // the listener's corrections, over them
     /// Its translations beyond the English (vi, fr), by segment (<key>.tr.<lang>.json, keep/<key>/tr/<lang>.json).
     var native: [String: TrFile] = [:] { didSet { _display = nil; _sung = nil } }
     /// A song's voice, measured on its stem (<key>.features.json, keep/<key>/features.json): what the light follows.
@@ -3519,6 +3519,28 @@ private func lyricsSelftestRun() async -> Bool {
         let langs = due.langs; due.langs = []
         for l in langs { saveNative(l) }
     }
+    // Derived from Spec: FEAT-22 P1 · keep/<key>/lines.json, the transcript as shown, for carry to take to the phone and iPad.
+    // Written when the transcript is complete and again, a moment after the last one, when a correction changes it; never while it is still
+    // being made (the file would change every few seconds and carry with it). Not written when the bytes are the same.
+    private var linesWork: DispatchWorkItem?
+    private func scheduleLinesFile() {
+        linesWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.writeLinesFile() }
+        linesWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: w)
+    }
+    func writeLinesFile() {
+        guard !stopped && !dry && complete, key.range(of: #"^[0-9a-f]{24}$"#, options: .regularExpression) != nil,   // a content key, never an address key
+              let data = TranscriptSource.encode(shown.map { l in
+                  TranscriptLine(id: String(l.id), start: l.start, end: l.end, text: lineText(l), words: l.words,
+                                 translation: l.english.flatMap { $0.isEmpty ? nil : joinWords($0.map(\.w)) })
+              }) else { return }
+        let dir = keepDir.appendingPathComponent(key, isDirectory: true), file = dir.appendingPathComponent("lines.json")
+        if let was = try? Data(contentsOf: file), was == data { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? data.write(to: file, options: .atomic)
+    }
+
     func save() {
         guard !stopped && !dry else { return }
         due.transcript = false; saveDueNative()
@@ -3528,6 +3550,7 @@ private func lyricsSelftestRun() async -> Bool {
                       complete: complete, engine: engine, lexicon: lexiconSeen,
                       lyricsAt: lyricsAt, lyricsFor: lyricsFor, heardMusic: heardMusic)
         if let d = try? JSONEncoder().encode(c) { try? d.write(to: KeepHome.url(key + ".v2.json"), options: .atomic) }
+        if complete { scheduleLinesFile() }   // FEAT-22 P1
         Library.flush()
     }
 

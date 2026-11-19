@@ -20,6 +20,16 @@ import ShowsKit
         return Offline.url(e.item.path)
     }
 
+    /// `keep/<key>/lines.json` for a file on this device (the key is its content, the same on every device), with its modified time;
+    /// nil when carry has not brought one or the file is not here yet.
+    static func carriedLines(for file: URL?) -> (data: Data, modified: Date)? {
+        guard let file, let key = ContentKey.ofFile(file) else { return nil }
+        let u = Homes.root.appendingPathComponent("keep/\(key.rawValue)/lines.json")
+        guard let d = try? Data(contentsOf: u),
+              let m = (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return nil }
+        return (d, m)
+    }
+
     /// This device's saved transcripts (TranscriptSource's cache), one JSON file per media path.
     static let cache = TranscriptCache(dir: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Recense/transcripts"))
@@ -35,8 +45,9 @@ import ShowsKit
         model.transcriptSource = nil
         model.transcriptNote = "Opening the transcript…"
         let path = Offline.origin(e.item.path)
+        let carried = Self.carriedLines(for: Self.file(e))   // FEAT-22 P1: the Mac's transcript, brought by carry
         Task {
-            let r = await TranscriptSource.load(path: path, cache: Self.cache) { await siteData($0) }
+            let r = await TranscriptSource.load(path: path, cache: Self.cache, keep: carried) { await siteData($0) }
             guard key == e.id else { return }
             if !r.lines.isEmpty {
                 // FEAT-20: a song's words hung on its voice, as the Mac's (the Mac's measure; the lines unchanged without one)
