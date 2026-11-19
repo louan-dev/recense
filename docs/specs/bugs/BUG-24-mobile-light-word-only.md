@@ -196,7 +196,7 @@ One phase at a time. Each ends at its check. Bugs before features.
      Does `Recense/voices/` appear on the iPhone? This turns the **untested** Worker lookup into a fact.
   2. Wi-Fi on, internet off (router unplugged from the modem): the measure arrives by carry; the song lights in gold,
      syllable by syllable. Then Airplane Mode: it still does.
-  3. FEAT-20's Done check 4: the Mac and the phone side by side, the same syllable within 50 ms.
+  3. FEAT-20's Done check 4: the Mac and the phone side by side, the same syllable within 30 ms (owner 2026-11-19, was 50 ms).
 
 ### P4 · Prosody ribbon on mobile · effort: high
 - This is FEAT-20 P2, unchanged. After P2 here, the phone has its own speech measure, so the ribbon can be drawn for
@@ -216,7 +216,7 @@ One phase at a time. Each ends at its check. Bugs before features.
   the flash of each word against the click in the film's sound is the light error.
   iPhone Mirroring cannot time this: its own delay is unknown. **assumed**
 - Check: the log lines appear after a device run; one filmed run per route (speaker, Bluetooth) gives a signed
-  figure in milliseconds, written in this spec. Target: within 50 ms (the owner's allowance, FEAT-20).
+  figure in milliseconds, written in this spec. Target: within 30 ms (owner 2026-11-19, was 50 ms; 40 ms blocks shipping). The word-time error of each engine (aligner timestamp minus true onset) is scored by script on a generated ground-truth corpus, p95 reported.
 
 ### L2 · Two devices in step · needs the owner's one-line answer first
 - Missing piece: a shared clock. Smallest version: over the existing peer link, exchange four timestamps,

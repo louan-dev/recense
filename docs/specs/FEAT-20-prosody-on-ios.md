@@ -20,7 +20,7 @@ The Mac's karaoke overlay today, on a song with a measured voice (`<key>.feature
 - a listener's own timing (`tm`, corrections field "time") wins over the voice (`Cadence.pin`, `strip/cadence.swift:267`);
 - under the line, in Follow: the prosody ribbon (prosogram); in Learn: chords and sung notes too (`strip/prosody.swift:170-176`).
 
-The light's position must match the Mac's to the frame (the owner's allowance against the Mac is 50 ms,
+The light's position must match the Mac's to the frame (the owner's allowance against the Mac is 30 ms (owner 2026-11-19, was 50 ms; 40 ms blocks shipping, 30 ms is the target; measured by script or 240 fps film, never by ear),
 `shared/ShowsKit/Sources/ShowsKit/Views/Transcript.swift` `TranscriptLight.frame`).
 
 ## The Mac pipeline, stage by stage, and its iOS counterpart
@@ -87,7 +87,7 @@ iPhone 12 Pro Max. Ladder for a song's light on iOS:
    Swift engine fits the fixture song to cadence.js's own numbers; decode reads syl/un/tm). **proven** (85/85, 2026-11-17).
 3. The iOS app builds (`xcodebuild … generic/platform=iOS`). **proven** (BUILD SUCCEEDED, 2026-11-17).
 4. Device, against the baseline: the same song with a measure, played on the Mac and on the phone side by side:
-   the gold head reaches each syllable at the same moment (≤ 50 ms by eye/video), held words held, an unsung word
+   the gold head reaches each syllable at the same moment (≤ 30 ms, measured from a 240 fps film, not by eye), held words held, an unsung word
    never lit. iPhone 12 Pro Max and iPad Air M3 13-inch. **untested**.
 5. Airplane mode after one online open: the song still lights syllable by syllable. **untested**.
 6. A podcast (no vocal measure) lights word by word exactly as before. **untested**.

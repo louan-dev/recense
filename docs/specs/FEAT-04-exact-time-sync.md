@@ -29,7 +29,7 @@ not after it is heard. The transcript is found and the place is kept by an acous
 - P3 Match in the app: the extension sends fingerprint words of the last ~15 s every 2-3 s over the Keychain item
   plus a Darwin notification; the app runs `CaptionSeek.refTime`, locks after two calls agree within 0.1 s,
   and re-matches to follow pause, seek and ads. Check: a harness plays a stored song from offset X and the lock
-  lands within 50 ms; then the device through iPhone Mirroring.
+  lands within 30 ms (owner 2026-11-19, was 50 ms); then the device through iPhone Mirroring.
 - P4 Preload: Mac to iPhone over FEAT-02 (P2P); the Worker only as catch-up.
 
 ## Outside services
