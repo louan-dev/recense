@@ -1,6 +1,7 @@
 # FEAT-23 · One note per media item, inside Draftpad
 
-From: owner 2026-11-16 · Status: `[ ]` written, not built
+From: owner 2026-11-16 · Status: `[~]` P0 + P0c editor and files built 2026-11-18 (work/a2-underlay); the hosts' way in
+(Note button, ··· › Open Note, the one editor under the player, play by key, the transcript feed) not built; device checks owed
 Revised 2026-11-16 (lane notes-search-curve) after the owner's review of the design plan.
 Supersedes the first draft on branch `work/feat23-media-notes` (4c47b9f); its mockup stays on that branch.
 Amended 2026-11-18 (coordinator 89190d4b, PLAN-1118 §3b + §5k): arrivals make no note until you write (P0b rule 4);
@@ -430,6 +431,18 @@ Rule (owner, "Ship to my devices first"): only two things block shipping: it doe
 5. **The web** writes notes only once the hub serves them (FEAT-22 P3) and P2 has merged.
    Before that the web underlay is read-only, opened from the hub or the cached page.
    Browser storage is never the only copy of a note.
+6. **Never blind over a carried note (review 2, 2026-11-18).** main carries `keep/<key>/note.md` already (8935ad0),
+   so the hosts never write over a note.md that changed since the page saw it. The page's text goes beside it as
+   carry's conflict sibling `note (<device> <yyyy-MM-dd HHmm>).md` (`conflictSiblingPath`); merge3 comes with FEAT-22 P2.
+   - A parked save names the digest of the note it was written over; the retry writes it only over that note
+     (guard: `mobile/ios/Tests/medianotes`, item 1).
+   - An open note's save writes note.md only while it still holds the text the page opened or last wrote; otherwise
+     into one sibling, which later autosaves keep current. Emptying the page never trashes a note.md it did not see (item 2).
+   - Parked writes are named `note-unsaved <ms> <action> <key> <base>.md` and replay in time order, whatever the action (item 3).
+   - A failed `note.ink.json` or `note.matter.json` write is parked too; the retry writes the newest one per note (item 4).
+   - Opening a note runs the retry first, so a note reopened before the poll shows its parked words (item 5).
+   - The payload names carry's conflict copies beside note.md in `others` (item 6); the page's "another device's
+     version" control is not built yet (a UI change, checked on the devices).
 - **Check (P0e):** FEAT-22 P2's tests pass. Then the canary: with the Mac and the iPhone apart, type one note line
   on each → reconnect → one note holding both lines, their strokes and note times, on both. The owner confirms the phone.
 

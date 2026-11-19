@@ -860,9 +860,11 @@ test('P6 Native Host Parity: strip/editorhost.swift and mobile/HostApp/iOS/Draft
     assert.ok(src.includes('private func saveEvents('), `${label} must save only confirmed events (saveEvents)`);
     assert.ok(src.includes('.withFractionalSeconds'), `${label} must read JS toISOString() dates (milliseconds), E2 review regression`);
     assert.ok(src.includes('calendarResult('), `${label} must report each save back to the page`);
-    assert.ok(src.includes('NLLanguageRecognizer'), `${label} must pick the read-aloud voice from the text's language`);
+    assert.ok(src.includes('bestVoice('), `${label} must pick the read-aloud voice through the shared bestVoice (shared/voice)`);
     assert.ok(!src.includes('try? self.eventStore.save'), `${label} must not drop calendar save errors`);
   }
+  const sharedVoice = fs.readFileSync(path.resolve(__dirname, '../../shared/voice/SystemVoice.swift'), 'utf8');
+  assert.ok(sharedVoice.includes('NLLanguageRecognizer'), 'shared/voice must pick the read-aloud voice from the text\'s language');
 });
 
 test('Widgets move between wings from each card\'s ··· menu (one visible control per card)', () => {

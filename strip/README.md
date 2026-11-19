@@ -301,6 +301,7 @@ zsh scripts/install-autoupdate.sh         # rebuild within 5 min of a push to ma
 
 What a build or a tool leaves in `strip/` stays on this Mac and out of git: `.build-log.txt`, the `./recense`
 launcher (build.sh writes both), `_CodeSignature/` and wrangler's `.wrangler/` cache.
+build.sh clears the bundle's extended attributes (`xattr -cr`) before signing: codesign refuses Finder info ("detritus not allowed").
 
 **Deploy from anywhere.** A push to `main` (from a phone or cloud session) reaches this Mac on its own:
 `scripts/autoupdate.sh` runs every 5 minutes, fast-forwards the repo when `main` has new commits (in the main checkout only, never a worktree; never over

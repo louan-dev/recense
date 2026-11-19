@@ -113,6 +113,35 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     private let eventStore = EKEventStore()
     private var syncedEventIds = Set<String>()
     var onAudioAction: (([String: Any]) -> Void)?
+    /// FEAT-23 · the media note shown instead of draftpad.md, or nil; and the open note was emptied (A1 rule 3).
+    private(set) var openNoteKey: String?
+    var onNoteEmptied: (() -> Void)?
+    /// keep/ on this device: Documents/Recense/keep. Carry brings note.md from other devices (main 8935ad0), so writes go
+    /// through MediaNoteFiles' base check, never blind.
+    static var keep: URL { Homes.root.appendingPathComponent("keep", isDirectory: true) }
+
+    // Derived from Spec: FEAT-23 P0 (glue only; the rules are editor/src/medianote.js)
+    /// Shows item `key`'s note in this one editor instead of draftpad.md (rule 3). False when the key is not one, the
+    /// page is not loaded, or a note file cannot be read now (a note is never shown blank over its words).
+    @discardableResult
+    func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
+        if openNoteKey == key { return true }   // review 12: already shown; no swap, no reload
+        guard loaded, let payload = MediaNoteFiles.payload(key: key, keep: Self.keep, title: title, trigger: trigger, layout: layout,
+                                                             unsaved: DraftpadNote.unsavedFolder, device: Homes.device) else {
+            log("note \(key.prefix(8))… not opened")
+            return false
+        }
+        openNoteKey = key
+        call("openNote(\(jsLiteral(key)), \(jsLiteral(payload)))")
+        return true
+    }
+
+    /// Puts draftpad.md back; the page flushes the note first.
+    func closeNote() {
+        guard openNoteKey != nil else { return }
+        openNoteKey = nil
+        call("closeNote()")
+    }
 
     init(file: DraftpadFile) {
         self.file = file
@@ -126,7 +155,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         web = WKWebView(frame: .zero, configuration: cfg)
         super.init()
-        for name in ["editor", "link", "ui", "ink", "matter", "audio", "calendar", "wings"] {
+        for name in ["editor", "link", "ui", "ink", "matter", "note", "audio", "calendar", "wings"] {
             cfg.userContentController.add(Weak(self), name: name)
         }
         if let p = file.eventsNote?.path,
@@ -168,6 +197,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         }
         let initialMatter = file.loadMatter()
         if !initialMatter.isEmpty { call("setMatter(\(jsLiteral(initialMatter)))") }   // FEAT-08
+        // Derived from Spec: FEAT-08 P5 — a crossing's device is the carry name ("iPhone", "iPad" without the entitlement).
+        call("setMatterDevice(\(jsLiteral(P2PTransport.deviceName())))")
         if let wp = file.wingsNote?.path, let wingsJSON = coordinatedRead(wp), !wingsJSON.isEmpty {
             call("setWingsState(\(jsLiteral(wingsJSON)))")
         }
@@ -183,7 +214,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
         decisionHandler(["file", "about", "", "recense-file"].contains(a.request.url?.scheme ?? "") ? .allow : .cancel)
     }
 
-    func webViewWebContentProcessDidTerminate(_ w: WKWebView) { loaded = false; w.reload() }
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) { loaded = false; openNoteKey = nil; w.reload() }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         switch m.name {
@@ -239,6 +270,12 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
                 call("mergeMatter(\(jsLiteral(disk)))")   // the page unions it and posts the union back here
             case .write: file.saveMatterJSON(json)
             case .wait: log("draftpad.matter.json can't be read now; nothing written over it (T-0176)")
+            }
+        case "note":   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
+            if let d = m.body as? [String: Any] {
+                let r = MediaNoteFiles.handle(d, keep: Self.keep, trashFallback: Homes.url(.trash), unsaved: DraftpadNote.unsavedFolder, device: Homes.device)
+                if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("note \(r)") }
+                if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }
         case "audio":
             if let d = m.body as? [String: Any] {
@@ -426,6 +463,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
 
     private func polled(note now: String?, ink: NoteRead?, matter remote: String?) {
         polling = false
+        MediaNoteFiles.retry(keep: Self.keep, unsaved: DraftpadNote.unsavedFolder, device: Homes.device)   // FEAT-23: parked note words
         if saveTimer == nil, file.pending { flushAndSave() }   // T-0114: a save that couldn't reach the file is tried again
         if saveTimer == nil, let now = now, now != file.base {
             flushAndSave()

@@ -79,8 +79,8 @@ T-0050 (Draftpad at the Notability standard); PLAN-1118 §12c. Phase ids P0–P4
 | P0 spikes | alone | `[ ]` |
 | P1 seed + 12-move harness | built 11-16 | `[~]` |
 | P2 voice continuation | built 11-17 | `[~]` |
-| P5 hosts name the device | batch 1 | `[ ]` |
-| P6 note time in the seed | batch 1 | `[ ]` |
+| P5 hosts name the device | batch 1 | `[~]` built 11-18 (work/a2-underlay); device check owed |
+| P6 note time in the seed | batch 1 | `[~]` built 11-18 (work/a2-underlay); device check owed |
 | P7 marks drawn | batch 2 | `[ ]` |
 | P11 the Notability bar | batch 2 | `[ ]` |
 | P8 strokes follow words | batch 3 | `[ ]` |

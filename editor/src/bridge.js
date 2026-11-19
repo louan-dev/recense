@@ -42,6 +42,11 @@ export function createEditorBridge({
   getRemoved = () => [],
   // Derived from Spec: BUG-08 — true while the owner is dragging a selection (pointer down in the text).
   isSelecting = () => false,
+  // Derived from Spec: FEAT-23 rule 2 — while a media note is shown: its saves go to the note (true = taken), the
+  // host's flush still reads draftpad.md, and the host's draftpad text waits beside the note.
+  routeText = null,
+  hostText = null,
+  absorbText = null,
   extra = {},
   globalObj = typeof window !== 'undefined' ? window : {},
   debounceMs = DEBOUNCE_MS
@@ -56,6 +61,7 @@ export function createEditorBridge({
   }
 
   function postToNative(text) {
+    if (typeof routeText === 'function' && routeText(text)) return;
     const handler =
       globalObj &&
       globalObj.webkit &&
@@ -93,6 +99,7 @@ export function createEditorBridge({
   }
 
   function getText() {
+    if (typeof hostText === 'function') return hostText();
     const state = getState();
     return state ? state.doc.toString() : '';
   }
@@ -109,12 +116,15 @@ export function createEditorBridge({
     if (deferredText === null) return false;
     const text = deferredText;
     deferredText = null;
+    // FEAT-23 review 1: a media note opened during the drag: draftpad's text waits beside it, never in it.
+    if (typeof absorbText === 'function' && absorbText(text)) return true;
     return applyText(text);
   }
 
   // Derived from Spec: BUG-04
   function setText(nextText) {
     const s = typeof nextText === 'string' ? nextText : String(nextText ?? '');
+    if (typeof absorbText === 'function' && absorbText(s)) return;
     if (typeof isSelecting === 'function' && isSelecting()) {
       deferredText = s;          // the newest round-trip wins; it lands when the drag ends
       return;
@@ -183,6 +193,7 @@ export function createEditorBridge({
     api,
     notifyDocChanged,
     clearPendingPost,
+    flushPendingPost,
     // Derived from Spec: BUG-08 — the host called while the owner was dragging; this lands it once, after.
     applyDeferredText
   };

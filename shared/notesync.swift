@@ -197,8 +197,8 @@ func conflictSiblingPath(_ path: String, _ d: Date = Date(), device: String = "o
 
 /// `conflictSiblingPath`, but never the name of a file already there (T-0114, review F2): a second conflict in the same
 /// minute gets " 2", " 3"… before the extension instead of replacing the first copy.
-func freeSiblingPath(_ path: String, _ d: Date = Date(), zone: TimeZone = .current) -> String {
-    let first = conflictSiblingPath(path, d, zone: zone)
+func freeSiblingPath(_ path: String, _ d: Date = Date(), device: String = "other device", zone: TimeZone = .current) -> String {
+    let first = conflictSiblingPath(path, d, device: device, zone: zone)
     let stem = (first as NSString).deletingPathExtension, ext = (first as NSString).pathExtension
     var out = first, n = 2
     while FileManager.default.fileExists(atPath: out) { out = "\(stem) \(n).\(ext)"; n += 1 }

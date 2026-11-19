@@ -1,7 +1,7 @@
 import { deviceLayout, layoutVars } from './devicelayout.js';
 import { isMixed } from './lenses.js';
 import { LANGS, LANG_NAMES } from './langs.js';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightSpecialChars } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -55,7 +55,8 @@ import {
   reopenMemo
 } from './pagemode.js';
 import { embedsExtension, formatDroppedEmbed } from './embeds.js';
-import { linksExtension } from './links.js';
+import { linksExtension, setMomentHandler } from './links.js';
+import { createMediaNotes } from './medianote.js';
 import {
   formatDotIndicator,
   detectHapticZone,
@@ -103,6 +104,7 @@ import { createCalendarSheet } from './calsheet.js';
 import { squeezeHost } from './pencilstate.js';
 import * as matterCore from './matter.js';
 import { createMatterMenu } from './mattermenu.js';
+import { logEvent } from './logevent.js';
 import { passageOfStrokes } from './inkselection.js';
 import {
   DEFAULT_FONT_SIZE,
@@ -178,7 +180,7 @@ export function createEditorExtensions({
     EditorState.lineSeparator.of('\n'),
     // T-0090 · raw control characters (0x04 …) as measured widgets, so a click among them lands where it is aimed.
     highlightSpecialChars({ render: renderControlChar }),
-    history(),
+    compartments.history ? compartments.history.of(history()) : history(),
     drawSelection(),
     // BUG-22 · no band behind the caret's line (owner 2026-11-16: "remove the blue line guide").
     EditorView.lineWrapping,
@@ -715,6 +717,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   let recenseActions = null;
   let speaker = null;
   let audioSidecar = null;
+  let mediaNotes = null;   // FEAT-23 · the media note shown instead of draftpad.md (src/medianote.js); before the view's listener
   let dualWings = null;
   let calendarScanner = null;
 
@@ -768,8 +771,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
           setToolbarFaded(true);
         }
         if (bridge) bridge.notifyDocChanged(update.transactions);
-        if (calendarScanner && dualWings) scheduleCalendarScan();
-        if (isExternal) scheduleExpiry();
+        // FEAT-23 review 8: a media note is not draftpad.md: no calendar scan, page expiry or library edit for it.
+        const inNote = Boolean(mediaNotes && mediaNotes.isOpen());
+        if (!inNote && calendarScanner && dualWings) scheduleCalendarScan();
+        if (inNote) { /* the note's pages are its own */ }
+        else if (isExternal) scheduleExpiry();
         else if (library) library.noteEdit();
         if (recense) recense.docChanged();
       }
@@ -804,19 +810,30 @@ export function mountEditor(root = document.body, initialDoc = '') {
   // FEAT-08 · the sidecar of the one page. A crossing runs on (body, ink, sidecar) together, then lands the body
   // change as one ordinary edit (so the host saves it through its 3-way merge) and the ink through setInk.
   let matterSide = { version: 1, passages: {}, log: [] };
-  // This device's name for seeds and per-device undo; the host may set a better one (setMatterDevice).
-  let matterDevice = (() => {
-    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-    if (/iPhone/.test(ua)) return 'iPhone';
-    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)) return 'iPad';
-    if (/Macintosh/.test(ua)) return 'Mac';
-    return 'web';
-  })();
+  // This device's name for seeds and per-device undo; the host names it at load (setMatterDevice, FEAT-08 P5).
+  const matterDevice = matterCore.createMatterDevice(typeof navigator !== 'undefined'
+    ? { userAgent: navigator.userAgent || '', maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
   let matterInput = 'keys';
-  const matterSeed = () => ({ device: matterDevice, input: matterInput, time: Date.now() });
+  // Derived from Spec: FEAT-08 P6 — a passage born in a media note keeps that item's second (its playhead, when the
+  // host has given one for the same key). Never on draftpad.md in this phase (Q-B1).
+  let noteKeyNow = () => null;     // set by the media note (FEAT-23)
+  let playheadKey = '';            // the key whose playhead updateAudioTime reports
+  const mediaOf = () => {
+    const key = noteKeyNow();
+    if (!key || !audioSidecar || playheadKey !== key) return null;
+    const t = matterCore.noteTime(audioSidecar.getState().currentTime);
+    return t === null ? null : { key, t };
+  };
+  const matterSeed = () => {
+    const media = mediaOf();
+    return media ? { device: matterDevice.get(), input: matterInput, time: Date.now(), media: { key: media.key, t: matterCore.noteTime(media.t) } }
+      : { device: matterDevice.get(), input: matterInput, time: Date.now() };
+  };
   function postMatter() {
+    const json = JSON.stringify(matterSide);
+    if (mediaNotes && mediaNotes.routeMatter(json)) return;   // FEAT-23: a media note's sidecar is its own file
     const h = window.webkit?.messageHandlers?.matter;
-    if (h && typeof h.postMessage === 'function') h.postMessage(JSON.stringify(matterSide));
+    if (h && typeof h.postMessage === 'function') h.postMessage(json);
   }
   function applyMatter(fn) {
     if (!view) return { ok: false, error: 'no editor' };
@@ -838,12 +855,23 @@ export function mountEditor(root = document.body, initialDoc = '') {
     if (inkLayer && JSON.stringify(after.ink) !== JSON.stringify(before.ink)) {
       inkLayer.setInk(after.ink);
       inkLayer.relayout();
-      window.webkit?.messageHandlers?.ink?.postMessage?.(JSON.stringify(after.ink));   // setInk alone does not save
+      const inkJSON = JSON.stringify(after.ink);
+      if (!(mediaNotes && mediaNotes.routeInk(inkJSON))) window.webkit?.messageHandlers?.ink?.postMessage?.(inkJSON);   // setInk alone does not save
     }
     const sideChanged = JSON.stringify(after.side) !== JSON.stringify(matterSide);
     matterSide = after.side;
     if (sideChanged) postMatter();
     return { ok: true };
+  }
+
+  // FEAT-23 rule 5 / A1 rule 7 · one way to ask the host to play an item from a second (a moment link, a passage,
+  // a stroke, a backlink). The host pauses another item first.
+  function playMedia(key, t, from) {
+    const h = window.webkit?.messageHandlers?.audio;
+    const sec = Math.max(0, Number(t) || 0);
+    logEvent('media-notes.play', { key, t: sec, from, found: h ? 'here' : 'missing' });
+    if (h && typeof h.postMessage === 'function') { h.postMessage({ action: 'play', key, t: sec, from }); return { ok: true }; }
+    return { ok: false, error: 'no player here' };
   }
 
   function insertBlock(text) {
@@ -863,12 +891,15 @@ export function mountEditor(root = document.body, initialDoc = '') {
     mount: editorHost,
     radialOuter: () => radialOuterItems(),
     selectionExtras: ids => selectionMatterItems(ids),
+    routeInk: json => (mediaNotes ? mediaNotes.routeInk(json) : false),   // FEAT-23: a note's strokes, its own file
     onToolChange: tool => {
       const h = typeof window !== 'undefined' && window.webkit?.messageHandlers?.ui;
       if (h && typeof h.postMessage === 'function') h.postMessage({ inkTool: tool });
       // Derived from Spec: BUG-31 — pages hold still while annotating; the host turns its edge swipes off too.
       const locked = setPagesLocked(view, toolLocksPages(tool));
       if (h && typeof h.postMessage === 'function') h.postMessage({ pagesLocked: locked });
+      // FEAT-23 A1 rule 10: the lock holds the note region only (the transcript region is not this page's).
+      if (mediaNotes && mediaNotes.isOpen()) logEvent('media-notes.lock', { key: mediaNotes.key(), locked: locked ? 1 : 0, tool });
     },
     // FEAT-08 #2 · a stroke drawn over a frozen passage attaches to the word under its start.
     onStrokeAdded: stroke => {
@@ -882,6 +913,59 @@ export function mountEditor(root = document.body, initialDoc = '') {
     }
   });
 
+  // Derived from Spec: FEAT-23 P0 · one note per media item: the one editor swaps to keep/<key>/note.md and back.
+  const swapText = text => view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: String(text ?? '') },
+    selection: { anchor: 0 },
+    annotations: [externalSetTextAnnotation.of(true), Transaction.addToHistory.of(false)]
+  });
+  mediaNotes = createMediaNotes({
+    getText: () => view.state.doc.toString(),
+    setText: swapText,
+    getInk: () => (inkLayer ? inkLayer.getInk() : { version: 1, strokes: [], removed: [] }),
+    setInk: ink => { if (inkLayer) { inkLayer.setInk(ink); inkLayer.relayout(); } },
+    getMatter: () => matterSide,
+    setMatter: side => { matterSide = side; },
+    flush: () => { if (bridge) bridge.flushPendingPost(); if (inkLayer) inkLayer.flushPost(); },
+    resetHistory: () => {
+      view.dispatch({ effects: compartments.history.reconfigure([]) });
+      view.dispatch({ effects: compartments.history.reconfigure(history()) });
+    },
+    // A1 rule 10: when the region hides, { pagesLocked: false } goes first, so no recognizer stays off anywhere.
+    unlockPages: () => {
+      setPagesLocked(view, false);
+      window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: false });
+    },
+    post: (channel, body) => {   // true when a host handler took it (the web and the PWA have none)
+      const h = window.webkit?.messageHandlers?.[channel];
+      if (!h || typeof h.postMessage !== 'function') return false;
+      h.postMessage(body);
+      return true;
+    }
+  });
+  noteKeyNow = () => mediaNotes.key();
+  // A1 rule 3: focus leaving the note (another control outside the page, the app going to the background) ends an
+  // emptied note: it goes to the Trash in that same flush. Inside the page (palette, Matter menu) is not leaving.
+  shell.addEventListener('focusout', e => {
+    if (mediaNotes.isOpen() && !(e.relatedTarget && shell.contains(e.relatedTarget))) mediaNotes.blur();
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (document.hidden && mediaNotes.isOpen()) mediaNotes.blur(); });
+  }
+  view.dom.addEventListener('keydown', () => mediaNotes.setInput('type'), true);
+  /** A1 rule 9: a transcript line's note, written into the open note as its own line at the end. */
+  function appendLine(line) {
+    const doc = view.state.doc;
+    const lead = doc.length && !doc.toString().endsWith('\n') ? '\n' : '';
+    view.dispatch({ changes: { from: doc.length, insert: `${lead}${line}\n` }, userEvent: 'input' });
+  }
+  // Rule 5: a tapped moment link plays that item from that second.
+  setMomentHandler(m => playMedia(m.key, m.t, 'link'));
+  function insertAtCaret(text) {
+    const head = view.state.selection.main.head;
+    view.dispatch({ changes: { from: head, insert: text }, selection: { anchor: head + text.length }, scrollIntoView: true, userEvent: 'input' });
+  }
+
   // FEAT-08 · the Matter menu on a selection (pill, right-click, long-press).
   view.dom.addEventListener('pointerdown', e => {
     matterInput = e.pointerType === 'pen' ? 'pencil' : e.pointerType === 'touch' ? 'touch' : 'keys';
@@ -889,7 +973,11 @@ export function mountEditor(root = document.body, initialDoc = '') {
   view.dom.addEventListener('keydown', () => { matterInput = 'keys'; }, true);
   const matterMenuFor = (from, to) => matterCore.menuForSelection(
     matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide }), from, to);
-  const runMatter = action => applyMatter(m => action.run(m, { seed: matterSeed() }));
+  const runMatter = action => {
+    // FEAT-08 P6 · "Play from mm:ss": the host plays the item from there; the matter is unchanged.
+    if (action && action.play) return playMedia(action.key, action.t, 'passage');
+    return applyMatter(m => action.run(m, { seed: matterSeed() }));
+  };
   matterMenu = createMatterMenu({ mount: editorHost, view, getMenu: matterMenuFor, onRun: runMatter });
   // UI-04 P2 · the radial menu's outer ring places the same matter actions for the text selection (one list).
   radialOuterItems = () => {
@@ -1011,6 +1099,20 @@ export function mountEditor(root = document.body, initialDoc = '') {
   audioSidecar = createAudioSidecar({
     container: workspace,
     onInsertToPage: insertBlock,
+    // FEAT-23 A1 rule 9 (T-0181): a pane line note or bookmark joins the item's note, never stored nowhere.
+    onLineNote: ({ start, text }) => {
+      const r = mediaNotes ? mediaNotes.lineNote(audioSidecar.getState().sourceKey, start, text) : null;
+      if (!r) return false;
+      if (r.insert) appendLine(r.insert);
+      return true;
+    },
+    // FEAT-23 rule 5: in a media note, a tapped line writes its moment link at the caret (and still seeks).
+    onLineTap: cue => {
+      const link = mediaNotes ? mediaNotes.linkForLine(cue) : null;
+      if (!link) return false;
+      insertAtCaret(link);
+      return true;
+    },
     globalObj: typeof window !== 'undefined' ? window : null
   });
 
@@ -1184,7 +1286,38 @@ export function mountEditor(root = document.body, initialDoc = '') {
     setFontSize,
     getRemoved: () => (view ? getRemoved(view.state) : []),
     isSelecting: () => dragSelecting,
+    // FEAT-23 rule 2: a media note's saves go to the note; the host's draftpad.md is never handed the note.
+    routeText: text => (mediaNotes ? mediaNotes.routeText(text) : false),
+    hostText: () => (mediaNotes ? mediaNotes.hostText() : view.state.doc.toString()),
+    absorbText: text => (mediaNotes ? mediaNotes.absorbHostText(text) : false),
     extra: {
+      // Derived from Spec: FEAT-23 P0 · the host opens an item's note ({ text, ink, matter, title, trigger, layout })
+      // in this editor, and puts draftpad.md back. One document at a time (rule 3).
+      openNote: (key, payload) => {
+        const p = typeof payload === 'string' ? JSON.parse(payload || '{}') : payload || {};
+        const ok = mediaNotes.open(String(key || ''), p);
+        if (ok && p.layout !== 'underlay' && audioSidecar && audioSidecar.pane && audioSidecar.getState().cues.length) audioSidecar.pane.show();
+        if (ok && view) view.focus();
+        return ok;
+      },
+      closeNote: () => {
+        const layout = mediaNotes.layout();
+        const ok = mediaNotes.close();
+        // Back on draftpad.md in the same screen: its tool's lock again (BUG-31). The underlay's host hides the page.
+        if (ok && layout !== 'underlay' && inkLayer) {
+          const locked = setPagesLocked(view, toolLocksPages(inkLayer.getTool()));
+          window.webkit?.messageHandlers?.ui?.postMessage?.({ pagesLocked: locked });
+        }
+        return ok;
+      },
+      noteKey: () => mediaNotes.key(),
+      // A1 rule 2 · dictation into the note: a partial result writes nothing; a final one lands at the caret.
+      noteDictation: (text, final) => {
+        const s = mediaNotes.dictation(text, Boolean(final));
+        if (s) insertAtCaret(`${s} `);
+        return Boolean(s);
+      },
+      noteDictating: on => mediaNotes.dictationRunning(Boolean(on)),
       step: delta => (stepPage(view, Number(delta) || 0, { allowCreate: true }) ? 'ok' : 'bounce'),
       swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
       swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
@@ -1216,24 +1349,39 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setInk: data => {
         if (!inkLayer) return;
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+        if (mediaNotes && mediaNotes.absorbHostInk(parsed)) return;   // FEAT-23: draftpad's ink, kept beside the note
         inkLayer.setInk(parsed);
         inkLayer.relayout();
       },
       mergeInk: remote => {
         if (!inkLayer) return null;
         const parsed = typeof remote === 'string' ? JSON.parse(remote) : remote;
+        if (mediaNotes && mediaNotes.isOpen()) {   // FEAT-23: the union is draftpad's, made beside the note
+          const union = mergeInkDocuments(mediaNotes.stash().ink, parsed);
+          mediaNotes.absorbHostInk(union);
+          return union;
+        }
         const merged = mergeInkDocuments(inkLayer.getInk(), parsed);
         inkLayer.setInk(merged);
         inkLayer.relayout();
         return merged;
       },
       // FEAT-08 · one matter: draftpad.matter.json beside draftpad.md and draftpad.ink.json (src/matter.js).
-      getMatter: () => JSON.stringify(matterSide),
+      getMatter: () => JSON.stringify(mediaNotes && mediaNotes.isOpen() ? mediaNotes.stash().matter : matterSide),
       setMatter: data => {
-        matterSide = matterCore.fromFiles({ [matterCore.FILES.side]: typeof data === 'string' ? data : JSON.stringify(data || {}) }).side;
+        const side = matterCore.fromFiles({ [matterCore.FILES.side]: typeof data === 'string' ? data : JSON.stringify(data || {}) }).side;
+        if (mediaNotes && mediaNotes.absorbHostMatter(side)) return;   // FEAT-23: draftpad's sidecar, beside the note
+        matterSide = side;
       },
       mergeMatter: remote => {
         const r = typeof remote === 'string' ? JSON.parse(remote) : remote;
+        if (mediaNotes && mediaNotes.isOpen()) {   // FEAT-23: draftpad's union, posted to draftpad's sidecar
+          const union = matterCore.mergeMatter(mediaNotes.stash().matter, r);
+          mediaNotes.absorbHostMatter(union);
+          const json = JSON.stringify(union);
+          window.webkit?.messageHandlers?.matter?.postMessage?.(json);
+          return json;
+        }
         matterSide = matterCore.mergeMatter(matterSide, r);
         postMatter();
         return JSON.stringify(matterSide);
@@ -1245,14 +1393,14 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return matterCore.seedTypePassage(m, a);
       }),
       cross: (n, pid, opts) => applyMatter(m => matterCore.cross(m, Number(n), String(pid), typeof opts === 'string' ? JSON.parse(opts) : opts || {})),
-      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice })),   // per device
+      reverseCrossing: () => applyMatter(m => matterCore.reverseLast(m, { device: matterDevice.get() })),   // per device
       // FEAT-08 P2 · spoken words from the host land at the end as their own voice passage; the caret stays.
       appendVoice: (text, id) => applyMatter(m => matterCore.appendVoicePassage(m, {
         id: String(id || `vo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`),
         text,
-        seed: { device: matterDevice, input: 'voice', time: Date.now() }
+        seed: { ...matterSeed(), input: 'voice' }   // FEAT-08 P6: in a media note, with the item's second
       })),
-      setMatterDevice: name => { if (name) matterDevice = String(name); return matterDevice; },
+      setMatterDevice: name => matterDevice.set(name),
       // The Matter menu as data (any menu, radial or voice can place it): [{ id, label, from, to }].
       matterMenu: (from, to) => {
         const m = matterCore.createMatter({ text: view.state.doc.toString(), ink: inkLayer ? inkLayer.getInk() : null, side: matterSide });
@@ -1345,6 +1493,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       setAudioTranscript: data => {
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         audioSidecar.setAudioTranscript(parsed);
+        // FEAT-23 A1 rule 8: new lines re-weave by time; the note's files are not touched.
+        if (mediaNotes && mediaNotes.isOpen() && parsed && Array.isArray(parsed.cues)) mediaNotes.reweave(parsed.cues, parsed.reason || 'load');
       },
       // The host's report on one calendar add: saved, or the reason it wasn't.
       calendarResult: (id, ok, message) => {
@@ -1365,7 +1515,10 @@ export function mountEditor(root = document.body, initialDoc = '') {
       },
       // A widget only this host can run (the Mac: 'iphone').
       enableWidget: id => (dualWings ? dualWings.enableHostWidget(id) : null),
-      updateAudioTime: sec => audioSidecar.updateTime(sec),
+      updateAudioTime: sec => {
+        playheadKey = audioSidecar.getState().sourceKey;   // FEAT-08 P6: whose second this is
+        return audioSidecar.updateTime(sec);
+      },
       bookmarkAudioCue: (idx, note) => voiceHandlers.bookmarkAudio(idx, note),
       annotateAudioCue: (idx, text) => {
         const targetIdx = typeof idx === 'number' ? idx : Math.max(0, audioSidecar.getActiveCueIndex());
