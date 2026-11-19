@@ -283,8 +283,9 @@ gallery/
   `mainFile`, `mainUpload`, `mainDelete` (into `trash/` for 30 days), `mainRename` (keeps `was` in metadata),
   `mainCover` / `mainCoverDelete`, `mainKey`.
 - Pair a phone or tablet (`pair.js`): on the signed-in Mac open `/main/pair` for a six-digit code (5 minutes, works
-  once, dies after 5 wrong guesses); on the phone open `/pair`, type it, and a signed `gdev` cookie (90 days) lets that
-  device into `/main`. `/main/devices` lists devices with Revoke. Needs the `PAIR_SECRET` Worker secret (32+ chars;
+  once, dies after 5 wrong guesses); on the phone open `/pair`, type it, and a signed `gdev` cookie lets that
+  device into `/main` until it is revoked: the pass never expires by date and the cookie is renewed for 400 days (the
+  browser maximum) each time the device is used; a valid pass also wins over an Access session for another email. `/main/devices` lists devices with Revoke. Needs the `PAIR_SECRET` Worker secret (32+ chars;
   unset = off) and an Access bypass for `/pair` and the device's `/main` requests. Stored in `gallery-main/.pair/`.
 - `/main/api/link`: a share link from Main (`linkApi`). `/main/api/invites`, `/m/<token>`: participant links.
 - Cover blur and Edit Cover (notes 20261029 item 16): covers on the front pages keep their art and colours but text

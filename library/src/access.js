@@ -117,7 +117,8 @@ export async function isOwner(req, env) {
   if (emails.includes(String(claims.email || "").trim().toLowerCase())) return true;
   if (!claims.email && clients.includes(String(claims.common_name || ""))) return true;
 
-  return false;
+  // an Access session for some other email must not hide a valid pairing pass (it showed "This account can't open Main")
+  return deviceOwner(req, env).catch(() => false);
 }
 
 // Every state-changing request must come from this site's own pages or the owner's Mac.

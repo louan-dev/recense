@@ -97,6 +97,20 @@ assert.equal((await asDevice(`gdev=${id}.${exp}.${"0".repeat(64)}`)).status, 404
 assert.equal((await asDevice(`gdev=${id}.${Number(exp) + 1000}.${sig}`)).status, 404); ok("extended expiry refused");
 assert.equal((await asDevice(`gdev=${"a".repeat(32)}.${exp}.${sig}`)).status, 404); ok("other id refused");
 
+// a paired device stays paired: the pass never expires by date, and the cookie is renewed for 400 days
+assert.equal(exp, "9999999999999");
+assert.match(r.headers.get("set-cookie"), /Max-Age=34560000/); ok("pass never expires by date; cookie lasts 400 days");
+const otherJwt = await jwt({ email: "other@example.com" });
+const wrongAcct = await go("/main/api/whoami", { headers: { "cf-access-jwt-assertion": otherJwt, cookie: dev } });
+assert.equal(wrongAcct.status, 200); ok("a wrong-account Access session does not hide a valid pass (regression: 'This account can't open Main')");
+assert.equal((await go("/main/api/whoami", { headers: { "cf-access-jwt-assertion": otherJwt } })).status, 404); ok("wrong account without a pass: still refused");
+const hk = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+const old = Date.now() + 90 * 864e5;
+const oldSig = Buffer.from(await crypto.subtle.sign("HMAC", hk, new TextEncoder().encode(id + "." + old))).toString("hex");
+const renewed = await asDevice(`gdev=${id}.${old}.${oldSig}`);
+assert.equal(renewed.status, 200);
+assert.match(renewed.headers.get("set-cookie") || "", new RegExp(`gdev=${id}\\.9999999999999\\.[0-9a-f]{64}; .*Max-Age=34560000`)); ok("an old 90-day pass is swapped for a never-expiring one on use");
+
 // devices list and revoke
 // a claimed device that never came back is not listed
 code = await mint(); const ghost = await claim(code, "Ghost");

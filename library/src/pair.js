@@ -5,6 +5,9 @@
 // as long as the device's record exists and is not revoked (/main/devices lists and revokes them).
 //
 // Rules:
+//   - a paired device stays paired until it is revoked: the pass never expires by date, the cookie is renewed
+//     for the browser's maximum (400 days) each time the device is used, so only a device unused for over a
+//     year (or one that was revoked) has to pair again
 //   - one live code at a time; it lasts 5 minutes, works once, and dies after 5 wrong guesses
 //     (5 in a million: no brute force), checked with a conditional R2 write so two claims can't both win
 //   - the code is stored only as a hash; the cookie is HMAC-SHA256 over id.expiry with PAIR_SECRET
@@ -18,7 +21,8 @@ const DEVICE = (id) => ".pair/devices/" + id + ".json";
 const CODE_TTL = 5 * 60e3;
 const MAX_TRIES = 5;
 const COOKIE = "gdev";
-const COOKIE_DAYS = 90;
+const COOKIE_DAYS = 400; // the longest a browser keeps a cookie (Chrome's cap; Safari honours it for server-set cookies)
+const FOREVER = 9999999999999; // the pass's signed expiry: revoking the device record is what ends a pass
 const enc = new TextEncoder();
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -41,6 +45,17 @@ const on = (env) => typeof env.PAIR_SECRET === "string" && env.PAIR_SECRET.lengt
 
 // ---------- the device cookie, read by isOwner() ----------
 
+const renewals = new WeakMap();
+
+// A fresh cookie for a device that just proved its pass (a request flagged by deviceOwner), or the response as it was.
+export async function withRenewal(req, env, res) {
+  const id = renewals.get(req);
+  if (!id || res.status === 101) return res;
+  const out = new Response(res.body, res);
+  out.headers.append("set-cookie", await passCookie(env, id));
+  return out;
+}
+
 export async function deviceOwner(req, env) {
   if (!on(env)) return false;
   const m = (req.headers.get("cookie") || "").match(/(?:^|;\s*)gdev=([0-9a-f]{32})\.(\d{10,13})\.([0-9a-f]{64})(?:;|$)/);
@@ -55,7 +70,10 @@ export async function deviceOwner(req, env) {
   if (dev.revoked) return false;
 
   // the first time the device comes back with its pass, it counts as paired (never before: no false positives)
+  // an old 90-day pass is swapped for a never-expiring one on its next use; every pass is renewed hourly while in use
+  if (Number(exp) !== FOREVER) renewals.set(req, id);
   if (!dev.confirmed || Date.now() - (dev.seen || 0) > 3600e3) {
+    renewals.set(req, id);
     dev.confirmed = dev.confirmed || Date.now();
     dev.seen = Date.now();
     await env.MAIN.put(DEVICE(id), JSON.stringify(dev), { onlyIf: { etagMatches: obj.etag } }).catch(() => {});
@@ -104,10 +122,13 @@ export function pairPage(env) {
 <p><a href="/main/devices">Paired Devices</a></p>
 <script>
 if (!document.getElementById("where").textContent.startsWith("http")) document.getElementById("where").textContent = location.origin + "/pair";
+let timer;
 async function mint() {
   const r = await fetch("/main/api/pair", { method: "POST" });
   const j = await r.json();
   document.getElementById("code").textContent = j.ok ? j.code : j.error;
+  clearTimeout(timer);
+  if (j.ok) timer = setTimeout(mint, Math.max(5000, j.exp - Date.now() - 20000)); // a fresh code just before this one dies
 }
 document.getElementById("new").onclick = mint;
 mint();
@@ -169,13 +190,16 @@ function req2(req, code, name) {
   return new Request(req.url, { method: "POST", headers: req.headers, body: new URLSearchParams({ code, name }) });
 }
 
+async function passCookie(env, id) {
+  const value = id + "." + FOREVER + "." + (await hmac(env, id + "." + FOREVER));
+  return `${COOKIE}=${value}; Path=/; Max-Age=${COOKIE_DAYS * 86400}; Secure; HttpOnly; SameSite=Lax`;
+}
+
 async function passTo(env, id) {
-  const exp = Date.now() + COOKIE_DAYS * 864e5;
-  const value = id + "." + exp + "." + (await hmac(env, id + "." + exp));
   // a plain 200 page carries the pass (some browsers drop a cookie set on a redirect), then goes to Main
   const res = page(shell("Paired", `<p>This device is paired.</p><p><a id="go" href="/main/">Open Main</a></p>
 <script>setTimeout(function(){location.replace("/main/")},400)</script>`));
-  res.headers.append("set-cookie", `${COOKIE}=${value}; Path=/; Max-Age=${COOKIE_DAYS * 86400}; Secure; HttpOnly; SameSite=Lax`);
+  res.headers.append("set-cookie", await passCookie(env, id));
   return res;
 }
 

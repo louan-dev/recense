@@ -34,7 +34,7 @@ import { listenApi } from "./listen.js";
 import { archive, diskSweep } from "./archive.js";
 import { noteImage, noteImageUpload } from "./images.js";
 import { aiRoute, indexRun } from "./ai.js";
-import { pairCheck, mintCode, pairPage, claimPage, claim, devicesPage, revoke } from "./pair.js";
+import { withRenewal, pairCheck, mintCode, pairPage, claimPage, claim, devicesPage, revoke } from "./pair.js";
 import { inviteIcs, warmCalendar } from "./calendar.js";
 
 export default {
@@ -51,7 +51,7 @@ export default {
         const who = method === "GET" && !path.startsWith("/main/api/") ? await signedInAs(req, env) : null;
         return who ? wrongAccount(who) : notice("Link not found", 404);
       }
-      return mainRoute(req, env, ctx, url, path, method);
+      return withRenewal(req, env, await mainRoute(req, env, ctx, url, path, method));
     }
 
     // pairing a phone or tablet: the claim page lives outside /main (pair.js)
