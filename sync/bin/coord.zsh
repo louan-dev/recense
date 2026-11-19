@@ -43,23 +43,18 @@ log() {
   return 0
 }
 
-# a mutex for read-check-write on coordinator files: mkdir is atomic; the owner's pid lives inside.
-# A lock is broken only when its pid is gone ("no such process"; a sandbox's "not permitted" counts as alive),
-# or when it has no pid after 5 s. A waiter never proceeds without holding the lock: after 30 s it gives up (status 1).
-pid_dead() { [[ $(kill -0 $1 2>&1) == *"no such process"* ]]; }
+# a mutex for read-check-write on coordinator files: the kernel's file lock (zsystem flock). The system frees it
+# when the holder exits or dies, so no script ever breaks a lock. A waiter gives up after 30 s (status 1).
+zmodload zsh/system
+typeset -gA LOCKFD
 lock() {
-  local d=$H/.$1.lock i=0 p
-  mkdir -p $H
-  while ! mkdir "$d" 2>/dev/null; do
-    p=$(cat "$d/pid" 2>/dev/null)
-    if [[ -n $p ]] && pid_dead $p; then rm -rf "$d"; continue; fi
-    if [[ -z $p ]] && (( i > 50 )); then rm -rf "$d"; continue; fi
-    (( ++i > ${COORD_LOCK_WAIT:-300} )) && return 1
-    sleep 0.1
-  done
-  print $$ > "$d/pid"
+  local f=$H/.$1.lockfile fd
+  mkdir -p $H; : >> $f
+  zsystem flock -t ${COORD_LOCK_WAIT_S:-30} -f fd $f 2>/dev/null || return 1
+  LOCKFD[$1]=$fd
 }
-unlock() { rm -rf "$H/.$1.lock"; }
+unlock() { [[ -n ${LOCKFD[$1]:-} ]] && { zsystem flock -u ${LOCKFD[$1]}; unset "LOCKFD[$1]"; }; return 0; }
+pid_dead() { [[ $(kill -0 $1 2>&1) == *"no such process"* ]]; }
 
 transcript() {   # newest transcript file of session $1, or nothing
   local id=$1 r f best="" bm=0
@@ -142,14 +137,15 @@ cmd_post() {   # post <file> (moved in) or post - (stdin); the sign line is adde
   local src=${1:-} kind=${2:-} f tmp
   mkdir -p $H/inbox/done
   [[ $src == - || -z $src || -f $src ]] || { print "post: no file $src"; return 2; }
-  # claim a name no one else holds, in inbox/ or done/: noclobber creation is atomic
+  tmp=$(mktemp $H/inbox/.post.XXXXXX) || { print "post: cannot write in inbox/"; return 1; }
+  if [[ $src == - || -z $src ]]; then cat > $tmp; else cat "$src" > $tmp; fi || { rm -f $tmp; print "post: write failed, nothing posted"; return 1; }
+  grep -q '— Agent:' $tmp || sign >> $tmp
+  # place the full body under a name no one holds (in inbox/ or done/): ln refuses an existing name, atomically
   local base=$H/inbox/$(date +%Y%m%d-%H%M)-${SID[1,8]:-unknown-$$}${kind:+-$kind} n=0
   f=$base.md
-  while [[ -e $H/inbox/done/${f:t} ]] || ! ( set -C; : > $f ) 2>/dev/null; do f=$base-$(( ++n )).md; done
-  tmp=$(mktemp $H/inbox/.post.XXXXXX) || { rm -f $f; print "post: cannot write in inbox/"; return 1; }
-  if [[ $src == - || -z $src ]]; then cat > $tmp; else cat "$src" > $tmp; fi || { rm -f $tmp $f; print "post: write failed, nothing posted"; return 1; }
-  grep -q '— Agent:' $tmp || sign >> $tmp
-  mv -f $tmp $f || { rm -f $tmp; print "post: could not place the message"; return 1; }
+  while [[ -e $H/inbox/done/${f:t} ]] || ! ln $tmp $f 2>/dev/null; do
+    (( ++n > 999 )) && { rm -f $tmp; print "post: no free name"; return 1; }; f=$base-$n.md; done
+  rm -f $tmp   # the message now lives under its name only
   [[ $src == - || -z $src ]] || rm -f "$src"   # a move: the source goes only once the message is in place
   log post file=${f:t} session=${SID[1,8]:-unknown}
   print "posted: inbox/${f:t}"
@@ -327,10 +323,16 @@ fsig() { stat -f '%z:%m:%i' "$1" 2>/dev/null; }
 move_out() {
   local f=$1 kept=$2 moved=$3 a=$4 sig=$5 title=$6
   [[ $(fsig $f) == $sig ]] || { print "changed while trimming, nothing changed: run again"; return 1; }
-  local before=$(wc -c < $a 2>/dev/null | tr -d ' '); before=${before:-0}
   { [[ -s $a ]] || print -r -- "$title"; cat $moved; } >> $a || { print "archive append failed, nothing changed"; return 1; }
-  [[ $(fsig $f) == $sig ]] || { print "changed while trimming (archive got a copy, source untouched): run again"; return 1; }
+  # keep the old inode reachable: a hand append (no lock) that lands after the last check is carried over, not dropped
+  local pre=${f:h}/.${f:t}.pre.$$ size0=${sig%%:*}
+  ln $f $pre 2>/dev/null || { print "cannot link $f, nothing changed"; return 1; }
+  [[ $(fsig $f) == $sig ]] || { rm -f $pre; print "changed while trimming (archive got a copy, source untouched): run again"; return 1; }
+  [[ -n ${COORD_TEST_LATE_APPEND:-} ]] && print -r -- $COORD_TEST_LATE_APPEND >> $f   # selftest only: an append in the last gap
   mv -f $kept $f
+  local size1=$(stat -f %z $pre)
+  (( size1 > size0 )) && tail -c +$(( size0 + 1 )) $pre >> $f
+  rm -f $pre
 }
 cmd_trim() {   # trim <file> <archive> <egrep pattern>: matching lines move to the archive, verbatim
   local f=${1:?trim <file> <archive> <pattern>} a=${2:?} pat=${3:?} t=$(mktemp -d $TMPDIR/coord-trim.XXXXXX)/x
@@ -451,8 +453,8 @@ cmd_legacy_split() {   # legacy-split <INBOX.md> [--dry] : one file per "## " en
 # ---------- doctor: the bug-detection loop (run by the Stop hook) ----------
 routing_files() {   # every rules file a session may load (account dirs may be links: listed once each), plus lane headers
   if [[ -n ${COORD_ROUTING:-} ]]; then print -l ${=COORD_ROUTING}; return; fi
-  print -l ${(u)${:-$HOME/.claude/CLAUDE.md ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md $HOME/.claude-swap-backup/sessions/*/CLAUDE.md(N)}:A} \
-    $REPO/.handoff/LANES.md $H/COORDINATOR.md $REPO/.handoff/listen/HANDOFF.md $REPO/.handoff/shows/HANDOFF.md
+  local -a cf=($HOME/.claude/CLAUDE.md ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md $HOME/.claude-swap-backup/sessions/*/CLAUDE.md(N))
+  print -l ${(u)cf:A} $REPO/.handoff/LANES.md $H/COORDINATOR.md $REPO/.handoff/listen/HANDOFF.md $REPO/.handoff/shows/HANDOFF.md
 }
 cmd_doctor() {
   local fix=0 bad=0 out f; [[ ${1:-} == --fix ]] && fix=1
@@ -540,6 +542,7 @@ cmd_spawn() {   # one fresh headless coordinator when the lease is free and work
   (( fails >= 3 )) && { print "skip: 3 failed spawns; fix, then trash $H/.spawn.fail"; return 0; }
   local sp=$(cat $H/.spawn.lock/pid 2>/dev/null)
   [[ -d $H/.spawn.lock && -n $sp ]] && pid_dead $sp && rm -rf $H/.spawn.lock
+  [[ -z $sp && -n $H/.spawn.lock(N/mm+2) ]] && rm -rf $H/.spawn.lock
   mkdir $H/.spawn.lock 2>/dev/null || { print "skip: a spawn is running"; return 0; }
   (( $(now) - $(mtime $H/.spawn.last) < 3600 )) && { rm -rf $H/.spawn.lock; print "skip: one spawn per hour"; return 0; }
   touch $H/.spawn.last
@@ -704,9 +707,16 @@ selftest() {
   # leave --hook reads the session id from the hook's stdin
   print '{"session_id":"abababab-1"}' | env -u CLAUDE_CODE_SESSION_ID zsh $SELF leave --hook >/dev/null 2>&1; t leave-hook-stdin "VACANT" "$(run who)"
   # a lock held by a live process is never broken; a dead one is
-  mkdir -p $T/h/.take.lock; print $$ > $T/h/.take.lock/pid
-  t lock-live "busy" "$(COORD_LOCK_WAIT=5 CLAUDE_CODE_SESSION_ID=efefefef-3 run take)"
-  print 99999 > $T/h/.take.lock/pid; t lock-dead "LEASE" "$(CLAUDE_CODE_SESSION_ID=efefefef-3 run take)"
+  : >> $T/h/.take.lockfile
+  zsh -c "zmodload zsh/system; zsystem flock -f fd $T/h/.take.lockfile; print held > $T/held; sleep 5" </dev/null >/dev/null 2>&1 & local lp=$!
+  while [[ ! -e $T/held ]]; do sleep 0.05; done
+  t lock-live "busy" "$(COORD_LOCK_WAIT_S=1 CLAUDE_CODE_SESSION_ID=efefefef-3 run take)"
+  kill -9 $lp 2>/dev/null; wait $lp 2>/dev/null
+  # after the holder is killed: 6 parallel takers, exactly one lease, 5 stand down
+  CLAUDE_CODE_SESSION_ID=efefefef-3 run retire --end >/dev/null; print -l -- '- a line' > $T/h/c2.md
+  for k in {1..6}; do ( CLAUDE_CODE_SESSION_ID=5${k}5${k}5${k}5${k}-r zsh $SELF take > $T/lr$k 2>&1 ) & done; wait
+  t lock-dead-one-lease 1 "$(cat $T/lr<1-6> | grep -c '^LEASE')"; t lock-dead-standdown 5 "$(cat $T/lr<1-6> | grep -c 'STAND DOWN')"
+  CLAUDE_CODE_SESSION_ID=efefefef-3 run take --owner-said >/dev/null
   # parallel posts with one id: 8 files, 8 bodies; post → done → post → done keeps both
   rm -rf $T/h/inbox; local k; for k in {1..8}; do ( print "body $k" | CLAUDE_CODE_SESSION_ID=fafafafa-4 zsh $SELF post - >/dev/null ) & done; wait
   t post-parallel-files 8 "$(ls $T/h/inbox/*.md | grep -c .)"; t post-parallel-bodies 8 "$(cat $T/h/inbox/*.md | grep '^body' | sort -u | grep -c .)"
@@ -741,6 +751,18 @@ selftest() {
   # a just-joined member with no transcript survives doctor --fix; a dead one leaves
   print '' > $T/h/PANEL; CLAUDE_CODE_SESSION_ID=13131313-n run join; print '24242424-m · old · joined 2026-01-01T00:00' >> $T/h/PANEL
   run doctor --fix >/dev/null; t doc-keeps-new "13131313-n" "$(cat $T/h/PANEL)"; tz doc-drops-dead "$(grep 24242424 $T/h/PANEL)"
+  # doctor 4 with the default routing list reads $CLAUDE_CONFIG_DIR/CLAUDE.md
+  mkdir -p $T/home $T/cfg; print 'ask chauphan-e0' > $T/cfg/CLAUDE.md
+  t doc-ghost-config "FAIL 4 ghost" "$(env -u COORD_ROUTING HOME=$T/home CLAUDE_CONFIG_DIR=$T/cfg zsh $SELF doctor 2>&1)"
+  # a hand append that lands during trim-queue survives
+  print -l -- "- work/done1 @ $m2 · merged" "work/keep @ 1234567 · open" > $T/q4.md
+  ( for k in {1..40}; do print -r -- "  append $k" >> $T/q4.md; sleep 0.01; done ) & local ap=$!
+  for k in {1..5}; do run trim-queue $T/q4.md $T/q4-a.md >/dev/null; done; wait $ap
+  run trim-queue $T/q4.md $T/q4-a.md >/dev/null
+  t tq-append-survives 40 "$(cat $T/q4.md $T/q4-a.md(N) | grep -c '^  append')"
+  print -l -- "- work/done1 @ $m2 · merged" "work/keep @ 1234567 · open" > $T/q5.md
+  t tq-late-append "moved 1" "$(COORD_TEST_LATE_APPEND='  late line' run trim-queue $T/q5.md $T/q5-a.md)"
+  t tq-late-kept "late line" "$(cat $T/q5.md)"; tz tq-late-no-pre "$(ls -a $T | grep '\.pre\.')"
   # every log line is valid JSON
   t log-valid 0 "$(python3 -I -c 'import json,sys
 print(sum(1 for l in open(sys.argv[1]) if l.strip() and not json.loads(l)))' $T/logs/coordinator.jsonl 2>&1)"

@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Stop hook for every Claude session (run as `zsh coord.zsh stop-hook`). Silent unless the lease holder must act.
 
-- Runs `coord.zsh doctor --fix` (the bug-detection loop; script-fixable problems are fixed and logged, never shown).
+- Starts `coord.zsh doctor --fix` detached, first (the bug-detection loop; script-fixable problems are fixed and logged, never shown).
 - The lease holder only: blocks the stop once when
   1. this turn sent a message or wrote a coordinator/lane inbox file, but COORDINATOR.md was not updated in the turn;
   2. COORDINATOR.md breaks its caps (`coord.zsh state-check`);
@@ -23,7 +23,9 @@ BIG = int(os.environ.get("COORD_BIG", "3000000"))
 
 def coord(*args, env=None):
     e = dict(os.environ, **(env or {}))
-    left = max(0.5, DEADLINE - time.monotonic())
+    left = DEADLINE - time.monotonic()
+    if left < 0.5:
+        raise subprocess.TimeoutExpired(args, 0)
     return subprocess.run(["zsh", COORD, *args], capture_output=True, text=True, timeout=left, env=e,
                           stdin=subprocess.DEVNULL)
 
@@ -78,8 +80,9 @@ def main():
     if data.get("stop_hook_active"):
         return
     sid = data.get("session_id", "")
-    try:
-        coord("doctor", "--fix")
+    try:   # doctor runs on its own (its output is discarded), so the holder checks below never wait on it
+        subprocess.Popen(["zsh", COORD, "doctor", "--fix"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
     except Exception:
         pass
     holder = coord("who", "--id").stdout.strip()

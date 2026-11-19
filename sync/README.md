@@ -226,8 +226,10 @@ to the `gallery-tmp` bucket.
   - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` · `trim-queue [--dry]` (whole merged entries of MERGE-QUEUE.md,
     in both `- work/x` and bare `work/x` form) — moves that verify by sha / line multiset that nothing was lost.
     A move never overwrites (`mv -n`, names carry the source's sha8, one manifest per split), and aborts when the file changed
-    while it ran or the archive append failed.
-- Concurrency: read-check-write runs under a `mkdir` lock holding its pid; a lock is broken only when that pid is gone;
-  a waiter never enters without the lock (it gives up after 30 s). `retire` (also `--end`) frees only the caller's own lease.
-- Hooks never hold a session: `spawn` detaches from the hook's pipes; the Stop hook has one 8.5 s budget in all.
+    while it ran or the archive append failed; a hand append landing in the last gap is carried over to the new file.
+- Concurrency: read-check-write runs under the kernel's file lock (`zsystem flock`), which the system frees when the
+  holder exits or dies, so no script breaks a lock; a waiter gives up after 30 s. `retire` (also `--end`) frees only the caller's lease.
+  `post` writes the whole message first, then claims its name with `ln` (atomic; never an empty or overwritten message).
+- Hooks never hold a session: `spawn` detaches from the hook's pipes; the Stop hook starts doctor detached and runs the
+  holder checks within one 8.5 s budget.
 - Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`); each review-1 finding has a regression case.
