@@ -126,7 +126,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     @discardableResult
     func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
         if openNoteKey == key { return true }   // review 12: already shown; no swap, no reload
-        guard loaded, let payload = MediaNoteFiles.payload(key: key, keep: Self.keep, title: title, trigger: trigger, layout: layout) else {
+        guard loaded, let payload = MediaNoteFiles.payload(key: key, keep: Self.keep, title: title, trigger: trigger, layout: layout,
+                                                             unsaved: DraftpadNote.unsavedFolder, device: Homes.device) else {
             log("note \(key.prefix(8))… not opened")
             return false
         }

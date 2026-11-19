@@ -269,7 +269,8 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     func openNote(key: String, title: String = "", trigger: String = "note-button", layout: String = "note") -> Bool {
         if openNoteKey == key { return true }   // review 12: already shown; no swap, no reload
         guard loaded, wingSide == nil,
-              let payload = MediaNoteFiles.payload(key: key, keep: keepDir, title: title, trigger: trigger, layout: layout) else {
+              let payload = MediaNoteFiles.payload(key: key, keep: keepDir, title: title, trigger: trigger, layout: layout,
+                                                   unsaved: DraftpadNote.unsavedFolder, device: Homes.device) else {
             log("editor: note \(key.prefix(8))… not opened")
             return false
         }

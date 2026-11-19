@@ -66,8 +66,11 @@ enum MediaNoteFiles {
 
     /// What the page opens (`recenseEditor.openNote(key, <this>)`): { text, ink, matter, title, trigger, layout }.
     /// nil when a file is there but cannot be read now: a note is never shown blank over its words (T-0114's rule).
-    static func payload(key: String, keep: URL, title: String = "", trigger: String = "note-button", layout: String = "note") -> String? {
+    /// With `unsaved`, the parked writes go first (review-2 item 5): a note reopened before the poll shows them.
+    static func payload(key: String, keep: URL, title: String = "", trigger: String = "note-button", layout: String = "note",
+                        unsaved: URL? = nil, device: String = "this device") -> String? {
         guard isKey(key) else { return nil }
+        if let unsaved { retry(keep: keep, unsaved: unsaved, device: device) }   // item 5: parked words first, so the page shows them
         var d: [String: Any] = ["title": title, "trigger": trigger, "layout": layout]
         for (field, name) in [("text", text), ("ink", ink), ("matter", matter)] {
             switch readNote(url(key, name, keep: keep).path) {

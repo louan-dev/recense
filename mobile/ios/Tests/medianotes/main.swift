@@ -122,5 +122,17 @@ MediaNoteFiles.retry(keep: k4, unsaved: u4)
 check((try? String(contentsOf: d4.appendingPathComponent(MediaNoteFiles.ink), encoding: .utf8)) == "{\"strokes\":[1,2]}", "item 4: the retry writes the newest strokes to note.ink.json")
 check((try? String(contentsOf: d4.appendingPathComponent(MediaNoteFiles.matter), encoding: .utf8)) == "{\"passages\":{}}", "item 4: and note.matter.json")
 check(MediaNoteFiles.pending(u4).isEmpty, "item 4: all settled into recovered/")
+// Regression guard: FEAT-23 review-2 item 5
+// reopening a note before the poll's retry shows the parked words, not the note without them.
+let k5 = root.appendingPathComponent("keep5"), u5 = root.appendingPathComponent("Unsaved5")
+let d5 = k5.appendingPathComponent(key)
+try? fm.createDirectory(at: d5, withIntermediateDirectories: true)
+_ = MediaNoteFiles.payload(key: key, keep: k5)
+try? fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: d5.path)
+MediaNoteFiles.handle(["action": "save", "key": key, "text": "parked five"], keep: k5, unsaved: u5)
+try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: d5.path)
+let p5 = MediaNoteFiles.payload(key: key, keep: k5, unsaved: u5, device: "Test") ?? ""
+check(p5.contains("\"text\":\"parked five\""), "item 5: the reopened note shows the parked words (\(p5))")
+check(MediaNoteFiles.pending(u5).isEmpty, "item 5: written and settled on open")
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

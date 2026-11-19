@@ -440,6 +440,7 @@ Rule (owner, "Ship to my devices first"): only two things block shipping: it doe
      into one sibling, which later autosaves keep current. Emptying the page never trashes a note.md it did not see (item 2).
    - Parked writes are named `note-unsaved <ms> <action> <key> <base>.md` and replay in time order, whatever the action (item 3).
    - A failed `note.ink.json` or `note.matter.json` write is parked too; the retry writes the newest one per note (item 4).
+   - Opening a note runs the retry first, so a note reopened before the poll shows its parked words (item 5).
 - **Check (P0e):** FEAT-22 P2's tests pass. Then the canary: with the Mac and the iPhone apart, type one note line
   on each → reconnect → one note holding both lines, their strokes and note times, on both. The owner confirms the phone.
 
