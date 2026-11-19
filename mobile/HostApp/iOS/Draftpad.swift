@@ -272,7 +272,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
             }
         case "note":   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
             if let d = m.body as? [String: Any] {
-                let r = MediaNoteFiles.handle(d, keep: Self.keep, trashFallback: Homes.url(.trash), unsaved: DraftpadNote.unsavedFolder)
+                let r = MediaNoteFiles.handle(d, keep: Self.keep, trashFallback: Homes.url(.trash), unsaved: DraftpadNote.unsavedFolder, device: Homes.device)
                 if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("note \(r)") }
                 if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }

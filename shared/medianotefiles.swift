@@ -22,8 +22,12 @@ enum MediaNoteFiles {
     // FEAT-23 review-2 item 1: the text the page opened each note.md with, or last wrote to it, by path (this process).
     private static let lock = NSLock()
     private static var seen: [String: String] = [:]
+    /// Item 2: the sibling an open note's text went to after a conflict, so later autosaves update it, not make more.
+    private static var sideCopy: [String: URL] = [:]
+    static func sibling(_ path: String) -> URL? { lock.lock(); defer { lock.unlock() }; return sideCopy[path] }
+    static func setSibling(_ path: String, _ u: URL?) { lock.lock(); sideCopy[path] = u; lock.unlock() }
     static func seenText(_ path: String) -> String? { lock.lock(); defer { lock.unlock() }; return seen[path] }
-    static func see(_ path: String, _ s: String?) { lock.lock(); seen[path] = s; lock.unlock() }
+    static func see(_ path: String, _ s: String?) { lock.lock(); seen[path] = s; sideCopy[path] = nil; lock.unlock() }
 
     /// A short digest of a text, for a parked file's name (the note it was written over).
     static func digest(_ s: String) -> String { SHA256.hash(data: Data(s.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() }
@@ -42,14 +46,17 @@ enum MediaNoteFiles {
     /// Writes `mine` to note.md only when note.md is missing, already holds it, or still holds what `base` names. Otherwise
     /// note.md changed under the page (carry, an append) and `mine` goes beside it as carry's conflict sibling
     /// (`note (<device> <date>).md`, conflictSiblingPath): neither text is overwritten. "wrote…"/"kept beside…" on success.
-    static func place(_ mine: String, key: String, keep: URL, base: Base, device: String) -> String {
+    /// `into`: this page's sibling from an earlier conflict, written again instead of a new one.
+    static func place(_ mine: String, key: String, keep: URL, base: Base, device: String, into: URL? = nil) -> String {
         let note = url(key, text, keep: keep)
         try? FileManager.default.createDirectory(at: note.deletingLastPathComponent(), withIntermediateDirectories: true)
         switch readNote(note.path) {
         case .unreadable: return "could not read \(text)"
         case .text(let t) where t != mine && !base.matches(t):
-            let sib = freeSiblingPath(note.path, Date(), device: device)
-            return coordinatedWrite(mine, to: sib) ? "kept beside \(text) as \((sib as NSString).lastPathComponent)" : "could not write a sibling"
+            let sib = into.map(\.path).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? freeSiblingPath(note.path, Date(), device: device)
+            guard coordinatedWrite(mine, to: sib) else { return "could not write a sibling" }
+            setSibling(note.path, URL(fileURLWithPath: sib))
+            return "kept beside \(text) as \((sib as NSString).lastPathComponent)"
         default:
             guard coordinatedWrite(mine, to: note.path) else { return "could not write \(text)" }
             see(note.path, mine)
@@ -131,7 +138,7 @@ enum MediaNoteFiles {
 
     /// One `note` message from the page. Returns what happened, for the log ("" when the message was not one).
     @discardableResult
-    static func handle(_ d: [String: Any], keep: URL, trashFallback: URL? = nil, unsaved: URL? = nil,
+    static func handle(_ d: [String: Any], keep: URL, trashFallback: URL? = nil, unsaved: URL? = nil, device: String = "this device",
                        trashFile: (URL, URL?) -> Bool = MediaNoteFiles.trash) -> String {
         guard let action = d["action"] as? String, let key = d["key"] as? String, isKey(key) else { return "" }
         let fm = FileManager.default
@@ -141,11 +148,12 @@ enum MediaNoteFiles {
             return coordinatedWrite(s, to: url(key, name, keep: keep).path) ? "wrote \(name)" : "could not write \(name)"
         }
         switch action {
-        case "save":
+        case "save":   // item 2: never blind; over note.md only while it still holds what the page saw
             guard let s = d["text"] as? String else { return "" }
-            let r = write(s, text)
-            guard r.hasPrefix("wrote") else {
-                let base: Base = seenText(url(key, text, keep: keep).path).map { .text($0) } ?? .unknown
+            let notePath = url(key, text, keep: keep).path
+            let base: Base = seenText(notePath).map { .text($0) } ?? .unknown
+            let r = place(s, key: key, keep: keep, base: base, device: device, into: sibling(notePath))
+            guard r.hasPrefix("wrote") || r.hasPrefix("kept beside") else {
                 return park(s, action: "save", key: key, base: base.tag, unsaved: unsaved)
             }
             if let unsaved {   // this newer text holds any parked save of this note
@@ -171,7 +179,10 @@ enum MediaNoteFiles {
             var moved = 0
             for name in names {
                 let f = url(key, name, keep: keep)
+                // item 2: a note.md with words the page never saw (carried in since it opened) is not the page's to empty
+                if name == text, case .text(let t) = readNote(f.path), t.contains(where: { !$0.isWhitespace }), seenText(f.path) != t { continue }
                 if fm.fileExists(atPath: f.path), trashFile(f, trashFallback) { moved += 1 }
+                if name == text { see(f.path, nil) }
             }
             if let left = try? fm.contentsOfDirectory(atPath: folder.path), left.isEmpty { try? fm.removeItem(at: folder) }
             return "trashed \(moved)"

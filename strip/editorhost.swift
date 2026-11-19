@@ -399,7 +399,7 @@ final class EditorHost: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         }
         if m.name == "note" {   // FEAT-23 · keep/<key>/note.md and its sidecars (shared/medianotefiles.swift)
             if let d = m.body as? [String: Any] {
-                let r = MediaNoteFiles.handle(d, keep: keepDir, unsaved: DraftpadNote.unsavedFolder)
+                let r = MediaNoteFiles.handle(d, keep: keepDir, unsaved: DraftpadNote.unsavedFolder, device: Homes.device)
                 if r.hasPrefix("could not") || r.hasPrefix("trashed") { log("editor: note \(r)") }
                 if (d["action"] as? String) == "trash", (d["key"] as? String) == openNoteKey { onNoteEmptied?() }
             }

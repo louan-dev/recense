@@ -37,6 +37,7 @@ MediaNoteFiles.handle(["action": "ink", "key": key, "json": "{\"version\":1,\"st
 MediaNoteFiles.handle(["action": "matter", "key": key, "json": "{\"version\":1,\"passages\":{},\"log\":[]}"], keep: keep, trashFile: toBin)
 check(bytes(draftpad) == draftBefore, "typing in the note never changes draftpad.md")
 
+_ = MediaNoteFiles.payload(key: key, keep: keep)   // the page empties the note it shows: opened after the line note
 let r = MediaNoteFiles.handle(["action": "trash", "key": key], keep: keep, trashFile: toBin)
 check(r == "trashed 3", "clearing: note.md, note.ink.json, note.matter.json go to the Trash (\(r))")
 check(fm.fileExists(atPath: bin.appendingPathComponent("note.md").path), "note.md is in the Trash, not deleted")
@@ -73,5 +74,23 @@ check(MediaNoteFiles.retry(keep: k1, unsaved: u1, device: "Test") == 1, "item 1:
 check((try? String(contentsOf: n1, encoding: .utf8)) == "newer", "item 1: the newer note.md is not overwritten")
 let sibs1 = ((try? fm.contentsOfDirectory(atPath: n1.deletingLastPathComponent().path)) ?? []).filter { $0.hasPrefix("note (Test ") && $0.hasSuffix(".md") }
 check(sibs1.count == 1 && (try? String(contentsOf: n1.deletingLastPathComponent().appendingPathComponent(sibs1[0]), encoding: .utf8)) == "parked words", "item 1: the parked text is in the conflict sibling (\(sibs1))")
+// Regression guard: FEAT-23 review-2 item 2
+// an open note's save never overwrites a note.md that changed since the page opened it (a carried iPad edit):
+// both texts stay under keep/<key>/, and later autosaves update the same sibling instead of making more.
+let k2 = root.appendingPathComponent("keep2")
+let n2 = MediaNoteFiles.url(key, MediaNoteFiles.text, keep: k2), d2 = n2.deletingLastPathComponent()
+try? fm.createDirectory(at: d2, withIntermediateDirectories: true)
+try! "opened".write(to: n2, atomically: true, encoding: .utf8)
+_ = MediaNoteFiles.payload(key: key, keep: k2)
+check(MediaNoteFiles.handle(["action": "save", "key": key, "text": "opened, typed"], keep: k2, device: "Test") == "wrote note.md", "item 2: unchanged on disk: the save writes note.md")
+try! "theirs".write(to: n2, atomically: true, encoding: .utf8)   // carry replaces it with the iPad's edit
+let r2 = MediaNoteFiles.handle(["action": "save", "key": key, "text": "mine"], keep: k2, device: "Test")
+check(r2.hasPrefix("kept beside"), "item 2: changed on disk: kept beside (\(r2))")
+MediaNoteFiles.handle(["action": "save", "key": key, "text": "mine, more"], keep: k2, device: "Test")
+let sibs2 = ((try? fm.contentsOfDirectory(atPath: d2.path)) ?? []).filter { $0.hasPrefix("note (Test ") }
+check((try? String(contentsOf: n2, encoding: .utf8)) == "theirs", "item 2: theirs stays note.md")
+check(sibs2.count == 1 && (try? String(contentsOf: d2.appendingPathComponent(sibs2[0]), encoding: .utf8)) == "mine, more", "item 2: mine is in one sibling, kept current (\(sibs2))")
+let t2 = MediaNoteFiles.handle(["action": "trash", "key": key], keep: k2, trashFile: toBin)
+check(t2.hasPrefix("trashed 0") && (try? String(contentsOf: n2, encoding: .utf8)) == "theirs", "item 2: emptying the page never trashes a note.md it did not see (\(t2))")
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

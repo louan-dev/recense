@@ -436,6 +436,8 @@ Rule (owner, "Ship to my devices first"): only two things block shipping: it doe
    carry's conflict sibling `note (<device> <yyyy-MM-dd HHmm>).md` (`conflictSiblingPath`); merge3 comes with FEAT-22 P2.
    - A parked save names the digest of the note it was written over; the retry writes it only over that note
      (guard: `mobile/ios/Tests/medianotes`, item 1).
+   - An open note's save writes note.md only while it still holds the text the page opened or last wrote; otherwise
+     into one sibling, which later autosaves keep current. Emptying the page never trashes a note.md it did not see (item 2).
 - **Check (P0e):** FEAT-22 P2's tests pass. Then the canary: with the Mac and the iPhone apart, type one note line
   on each → reconnect → one note holding both lines, their strokes and note times, on both. The owner confirms the phone.
 
