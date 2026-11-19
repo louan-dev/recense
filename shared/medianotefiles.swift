@@ -136,12 +136,19 @@ enum MediaNoteFiles {
     @discardableResult
     static func retry(keep: URL, unsaved: URL, device: String = "this device") -> Int {
         var done = 0
-        for f in pending(unsaved) {
+        let all = pending(unsaved)
+        for (i, f) in all.enumerated() {
             guard let p = parked(f), let body = try? String(contentsOf: f, encoding: .utf8) else { continue }
+            // item 4: a parked ink or matter state with a newer one parked after it is stale; the newer one is written
+            if p.action == "ink" || p.action == "matter",
+               all[(i + 1)...].contains(where: { parked($0).map { $0.action == p.action && $0.key == p.key } == true }) {
+                Unsaved.settle(f, in: unsaved); done += 1; continue
+            }
             let r: String
             switch p.action {
             case "append": r = handle(["action": "append", "key": p.key, "line": body], keep: keep, unsaved: nil)
             case "save": r = place(body, key: p.key, keep: keep, base: p.base.map { .digest($0) } ?? .unknown, device: device)
+            case "ink", "matter": r = handle(["action": p.action, "key": p.key, "json": body], keep: keep, unsaved: nil)
             default: continue
             }
             if r.hasPrefix("wrote") || r.hasPrefix("kept beside") { Unsaved.settle(f, in: unsaved); done += 1 }
@@ -173,12 +180,14 @@ enum MediaNoteFiles {
                 for f in pending(unsaved) where parked(f).map({ $0.action == "save" && $0.key == key }) == true { Unsaved.settle(f, in: unsaved) }
             }
             return r
-        case "ink":
+        case "ink", "matter":   // item 4: strokes and note times are parked like words; the newest one wins
             guard let s = d["json"] as? String else { return "" }
-            return write(s, ink)
-        case "matter":
-            guard let s = d["json"] as? String else { return "" }
-            return write(s, matter)
+            let r = write(s, action == "ink" ? ink : matter)
+            guard r.hasPrefix("wrote") else { return park(s, action: action, key: key, unsaved: unsaved) }
+            if let unsaved {   // this newer state holds any parked one
+                for f in pending(unsaved) where parked(f).map({ $0.action == action && $0.key == key }) == true { Unsaved.settle(f, in: unsaved) }
+            }
+            return r
         case "append":   // A1 rule 9: a transcript line's note, the note not open in the page
             guard let line = d["line"] as? String, !line.isEmpty else { return "" }
             let r: String
