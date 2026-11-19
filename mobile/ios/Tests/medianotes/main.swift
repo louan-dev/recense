@@ -57,5 +57,21 @@ try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roKeep.appending
 check(MediaNoteFiles.retry(keep: roKeep, unsaved: unsaved) == 1, "writable again: the retry writes it")
 check((try? String(contentsOf: MediaNoteFiles.url(key, MediaNoteFiles.text, keep: roKeep), encoding: .utf8)) == "words that must not be lost", "note.md holds the kept words")
 check(MediaNoteFiles.pending(unsaved).isEmpty && fm.fileExists(atPath: unsaved.appendingPathComponent("recovered").path), "settled into recovered/, not deleted")
+// Regression guard: FEAT-23 review-2 item 1
+// a parked save is never replayed blind: note.md changed since the page opened it (a carry, a later append) stays,
+// and the parked text goes beside it as carry's conflict sibling.
+let k1 = root.appendingPathComponent("keep1"), u1 = root.appendingPathComponent("Unsaved1")
+let n1 = MediaNoteFiles.url(key, MediaNoteFiles.text, keep: k1)
+try? fm.createDirectory(at: n1.deletingLastPathComponent(), withIntermediateDirectories: true)
+try! "opened".write(to: n1, atomically: true, encoding: .utf8)
+_ = MediaNoteFiles.payload(key: key, keep: k1)
+try? fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: n1.deletingLastPathComponent().path)
+check(MediaNoteFiles.handle(["action": "save", "key": key, "text": "parked words"], keep: k1, unsaved: u1).hasPrefix("could not write; kept in"), "item 1: the save is parked")
+try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: n1.deletingLastPathComponent().path)
+try! "newer".write(to: n1, atomically: true, encoding: .utf8)   // carry brings another device's note meanwhile
+check(MediaNoteFiles.retry(keep: k1, unsaved: u1, device: "Test") == 1, "item 1: the retry settles the parked save")
+check((try? String(contentsOf: n1, encoding: .utf8)) == "newer", "item 1: the newer note.md is not overwritten")
+let sibs1 = ((try? fm.contentsOfDirectory(atPath: n1.deletingLastPathComponent().path)) ?? []).filter { $0.hasPrefix("note (Test ") && $0.hasSuffix(".md") }
+check(sibs1.count == 1 && (try? String(contentsOf: n1.deletingLastPathComponent().appendingPathComponent(sibs1[0]), encoding: .utf8)) == "parked words", "item 1: the parked text is in the conflict sibling (\(sibs1))")
 print(failed == 0 ? "ALL OK" : "\(failed) FAILED")
 exit(failed == 0 ? 0 : 1)

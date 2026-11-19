@@ -431,6 +431,11 @@ Rule (owner, "Ship to my devices first"): only two things block shipping: it doe
 5. **The web** writes notes only once the hub serves them (FEAT-22 P3) and P2 has merged.
    Before that the web underlay is read-only, opened from the hub or the cached page.
    Browser storage is never the only copy of a note.
+6. **Never blind over a carried note (review 2, 2026-11-18).** main carries `keep/<key>/note.md` already (8935ad0),
+   so the hosts never write over a note.md that changed since the page saw it. The page's text goes beside it as
+   carry's conflict sibling `note (<device> <yyyy-MM-dd HHmm>).md` (`conflictSiblingPath`); merge3 comes with FEAT-22 P2.
+   - A parked save names the digest of the note it was written over; the retry writes it only over that note
+     (guard: `mobile/ios/Tests/medianotes`, item 1).
 - **Check (P0e):** FEAT-22 P2's tests pass. Then the canary: with the Mac and the iPhone apart, type one note line
   on each → reconnect → one note holding both lines, their strokes and note times, on both. The owner confirms the phone.
 

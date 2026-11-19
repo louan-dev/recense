@@ -3,8 +3,10 @@
 // only, one copy for the Mac (strip/editorhost.swift) and iPhone/iPad (mobile/HostApp/iOS/Draftpad.swift). Every rule
 // of the note (when it is first written, when it empties, moment links, line notes) lives in editor/src/medianote.js;
 // the page posts { action, key, … } on its `note` channel and this does what it says. Never draftpad.md, never media.
-// Single device (A3): keep/ is not carried; nothing here merges with another device.
+// Carry brings note.md from other devices (main 8935ad0, 762b638): a write never goes blind over a note.md that changed
+// since the page saw it; the page's text goes beside it as carry's conflict sibling instead (review 2, items 1-2).
 import Foundation
+import CryptoKit
 
 enum MediaNoteFiles {
     static let text = "note.md", ink = "note.ink.json", matter = "note.matter.json"
@@ -15,6 +17,44 @@ enum MediaNoteFiles {
 
     static func url(_ key: String, _ name: String, keep: URL) -> URL {
         keep.appendingPathComponent(key, isDirectory: true).appendingPathComponent(name)
+    }
+
+    // FEAT-23 review-2 item 1: the text the page opened each note.md with, or last wrote to it, by path (this process).
+    private static let lock = NSLock()
+    private static var seen: [String: String] = [:]
+    static func seenText(_ path: String) -> String? { lock.lock(); defer { lock.unlock() }; return seen[path] }
+    static func see(_ path: String, _ s: String?) { lock.lock(); seen[path] = s; lock.unlock() }
+
+    /// A short digest of a text, for a parked file's name (the note it was written over).
+    static func digest(_ s: String) -> String { SHA256.hash(data: Data(s.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() }
+
+    /// What a page's text is written over: the note it saw, that note's digest (a parked save), or nothing known.
+    enum Base {
+        case text(String), digest(String), unknown
+        func matches(_ t: String) -> Bool {
+            switch self { case .text(let b): return b == t; case .digest(let h): return MediaNoteFiles.digest(t) == h; case .unknown: return false }
+        }
+        var tag: String {
+            switch self { case .text(let b): return MediaNoteFiles.digest(b); case .digest(let h): return h; case .unknown: return "x" }
+        }
+    }
+
+    /// Writes `mine` to note.md only when note.md is missing, already holds it, or still holds what `base` names. Otherwise
+    /// note.md changed under the page (carry, an append) and `mine` goes beside it as carry's conflict sibling
+    /// (`note (<device> <date>).md`, conflictSiblingPath): neither text is overwritten. "wrote…"/"kept beside…" on success.
+    static func place(_ mine: String, key: String, keep: URL, base: Base, device: String) -> String {
+        let note = url(key, text, keep: keep)
+        try? FileManager.default.createDirectory(at: note.deletingLastPathComponent(), withIntermediateDirectories: true)
+        switch readNote(note.path) {
+        case .unreadable: return "could not read \(text)"
+        case .text(let t) where t != mine && !base.matches(t):
+            let sib = freeSiblingPath(note.path, Date(), device: device)
+            return coordinatedWrite(mine, to: sib) ? "kept beside \(text) as \((sib as NSString).lastPathComponent)" : "could not write a sibling"
+        default:
+            guard coordinatedWrite(mine, to: note.path) else { return "could not write \(text)" }
+            see(note.path, mine)
+            return "wrote \(text)"
+        }
     }
 
     /// What the page opens (`recenseEditor.openNote(key, <this>)`): { text, ink, matter, title, trigger, layout }.
@@ -29,6 +69,7 @@ enum MediaNoteFiles {
             case .unreadable: return nil
             }
         }
+        see(url(key, text, keep: keep).path, d["text"] as? String)
         guard let data = try? JSONSerialization.data(withJSONObject: d), let s = String(data: data, encoding: .utf8) else { return nil }
         return s
     }
@@ -50,32 +91,40 @@ enum MediaNoteFiles {
     }
 
     // FEAT-23 review 2 · a note's words that could not reach keep/ wait in the Unsaved folder (shared/notesync.swift's
-    // Unsaved.keep), one file per failure: "note-unsaved <action> <key> <ms>.md". `retry` (the hosts' poll) writes them
+    // Unsaved.keep), one file per failure: "note-unsaved <action> <key> <ms> <base>.md". `retry` (the hosts' poll) writes them
     // once it can, then settles them into recovered/. Never deleted. Not "draftpad-unsaved", so never joined into draftpad.md.
+    // A save's name ends with the digest of the note it was written over ("x": not known), so the retry never writes over
+    // a note that changed since (review-2 item 1).
     static func pending(_ unsaved: URL) -> [URL] {
         ((try? FileManager.default.contentsOfDirectory(at: unsaved, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.lastPathComponent.hasPrefix("note-unsaved ") && $0.pathExtension == "md" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private static func park(_ text: String, action: String, key: String, unsaved: URL?) -> String {
+    private static func park(_ text: String, action: String, key: String, base: String = "x", unsaved: URL?) -> String {
         guard let unsaved else { return "could not write; nowhere to keep it" }
-        let f = unsaved.appendingPathComponent("note-unsaved \(action) \(key) \(Int(Date().timeIntervalSince1970 * 1000)).md")
+        let f = unsaved.appendingPathComponent("note-unsaved \(action) \(key) \(Int(Date().timeIntervalSince1970 * 1000)) \(base).md")
         Unsaved.keep(text, as: f)
         return FileManager.default.fileExists(atPath: f.path) ? "could not write; kept in \(f.lastPathComponent)" : "could not write or keep"
     }
 
     /// The hosts' poll: each parked text, oldest first, written now if it can be. A save parked before a newer save
-    /// that succeeded is stale (the newer text holds it) and is settled without writing.
+    /// that succeeded is stale (the newer text holds it) and is settled without writing. A parked save goes through
+    /// `place`: never over a note.md that changed since it was parked (review-2 item 1).
     @discardableResult
-    static func retry(keep: URL, unsaved: URL) -> Int {
+    static func retry(keep: URL, unsaved: URL, device: String = "this device") -> Int {
         var done = 0
         for f in pending(unsaved) {
             let parts = f.deletingPathExtension().lastPathComponent.split(separator: " ").map(String.init)
-            guard parts.count == 4, isKey(parts[2]), let text = try? String(contentsOf: f, encoding: .utf8) else { continue }
-            let d: [String: Any] = parts[1] == "append" ? ["action": "append", "key": parts[2], "line": text]
-                : ["action": "save", "key": parts[2], "text": text]
-            if handle(d, keep: keep, unsaved: nil).hasPrefix("wrote") { Unsaved.settle(f, in: unsaved); done += 1 }
+            guard parts.count == 4 || parts.count == 5, isKey(parts[2]), let body = try? String(contentsOf: f, encoding: .utf8) else { continue }
+            let r: String
+            if parts[1] == "append" {
+                r = handle(["action": "append", "key": parts[2], "line": body], keep: keep, unsaved: nil)
+            } else {
+                let base: Base = parts.count == 5 && parts[4] != "x" ? .digest(parts[4]) : .unknown
+                r = place(body, key: parts[2], keep: keep, base: base, device: device)
+            }
+            if r.hasPrefix("wrote") || r.hasPrefix("kept beside") { Unsaved.settle(f, in: unsaved); done += 1 }
         }
         return done
     }
@@ -95,7 +144,10 @@ enum MediaNoteFiles {
         case "save":
             guard let s = d["text"] as? String else { return "" }
             let r = write(s, text)
-            guard r.hasPrefix("wrote") else { return park(s, action: "save", key: key, unsaved: unsaved) }
+            guard r.hasPrefix("wrote") else {
+                let base: Base = seenText(url(key, text, keep: keep).path).map { .text($0) } ?? .unknown
+                return park(s, action: "save", key: key, base: base.tag, unsaved: unsaved)
+            }
             if let unsaved {   // this newer text holds any parked save of this note
                 for f in pending(unsaved) where f.lastPathComponent.hasPrefix("note-unsaved save \(key) ") { Unsaved.settle(f, in: unsaved) }
             }

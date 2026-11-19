@@ -116,7 +116,8 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
     /// FEAT-23 · the media note shown instead of draftpad.md, or nil; and the open note was emptied (A1 rule 3).
     private(set) var openNoteKey: String?
     var onNoteEmptied: (() -> Void)?
-    /// keep/ on this device: Documents/Recense/keep (single device until FEAT-22 P2, A3).
+    /// keep/ on this device: Documents/Recense/keep. Carry brings note.md from other devices (main 8935ad0), so writes go
+    /// through MediaNoteFiles' base check, never blind.
     static var keep: URL { Homes.root.appendingPathComponent("keep", isDirectory: true) }
 
     // Derived from Spec: FEAT-23 P0 (glue only; the rules are editor/src/medianote.js)
@@ -461,7 +462,7 @@ final class DraftpadWeb: NSObject, ObservableObject, WKScriptMessageHandler, WKN
 
     private func polled(note now: String?, ink: NoteRead?, matter remote: String?) {
         polling = false
-        MediaNoteFiles.retry(keep: Self.keep, unsaved: DraftpadNote.unsavedFolder)   // FEAT-23: parked note words
+        MediaNoteFiles.retry(keep: Self.keep, unsaved: DraftpadNote.unsavedFolder, device: Homes.device)   // FEAT-23: parked note words
         if saveTimer == nil, file.pending { flushAndSave() }   // T-0114: a save that couldn't reach the file is tried again
         if saveTimer == nil, let now = now, now != file.base {
             flushAndSave()
