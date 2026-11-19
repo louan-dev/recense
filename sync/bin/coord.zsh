@@ -329,7 +329,7 @@ move_out() {
   ln $f $pre 2>/dev/null || { print "cannot link $f, nothing changed"; return 1; }
   [[ $(fsig $f) == $sig ]] || { rm -f $pre; print "changed while trimming (archive got a copy, source untouched): run again"; return 1; }
   [[ -n ${COORD_TEST_LATE_APPEND:-} ]] && print -r -- $COORD_TEST_LATE_APPEND >> $f   # selftest only: an append in the last gap
-  mv -f $kept $f
+  mv -f $kept $f || { rm -f $pre; print "could not replace $f; the archive has a copy"; return 1; }
   local size1=$(stat -f %z $pre)
   (( size1 > size0 )) && tail -c +$(( size0 + 1 )) $pre >> $f
   rm -f $pre
@@ -542,7 +542,7 @@ cmd_spawn() {   # one fresh headless coordinator when the lease is free and work
   (( fails >= 3 )) && { print "skip: 3 failed spawns; fix, then trash $H/.spawn.fail"; return 0; }
   local sp=$(cat $H/.spawn.lock/pid 2>/dev/null)
   [[ -d $H/.spawn.lock && -n $sp ]] && pid_dead $sp && rm -rf $H/.spawn.lock
-  [[ -z $sp && -n $H/.spawn.lock(N/mm+2) ]] && rm -rf $H/.spawn.lock
+  local old=($H/.spawn.lock(N/mm+2)); [[ -z $sp && -n $old ]] && rm -rf $H/.spawn.lock   # glob only expands outside [[ ]]
   mkdir $H/.spawn.lock 2>/dev/null || { print "skip: a spawn is running"; return 0; }
   (( $(now) - $(mtime $H/.spawn.last) < 3600 )) && { rm -rf $H/.spawn.lock; print "skip: one spawn per hour"; return 0; }
   touch $H/.spawn.last
@@ -701,6 +701,11 @@ selftest() {
   local t0=$SECONDS; COORD_CLAUDE=$T/slow run spawn >/dev/null; t spawn-detached 1 "$(( SECONDS - t0 < 2 ))"
   t spawn-lock-pid 1 "$([[ $(cat $T/h/.spawn.lock/pid 2>/dev/null) == <-> ]] && print 1)"
   print 99999 > $T/h/.spawn.lock/pid; rm -f $T/h/.spawn.last; t spawn-dead-lock "spawned" "$(COORD_CLAUDE=true run spawn)"; sleep 0.3
+  # a fresh pid-less spawn lock is respected; one older than 2 min is broken
+  CLAUDE_CODE_SESSION_ID=99999999-i run take --owner-said >/dev/null; CLAUDE_CODE_SESSION_ID=99999999-i run retire --end >/dev/null
+  rm -rf $T/h/.spawn.lock; mkdir $T/h/.spawn.lock; rm -f $T/h/.spawn.last; touch -t 202601010000 $T/h/inbox/zz.md
+  t spawn-fresh-lock "a spawn is running" "$(COORD_CLAUDE=true run spawn)"
+  touch -t 202601010000 $T/h/.spawn.lock; t spawn-old-lock "spawned" "$(COORD_CLAUDE=true run spawn)"; sleep 0.3
   # retire --end by a non-holder never frees another's lease
   CLAUDE_CODE_SESSION_ID=abababab-1 run take --owner-said >/dev/null
   t retire-end-not-holder "do not hold" "$(CLAUDE_CODE_SESSION_ID=cdcdcdcd-2 run retire --end)"
