@@ -9,8 +9,10 @@
 - Starts a fresh coordinator in the background when the lease is free and a message has waited 10+ min (`coord.zsh spawn`).
 Any error: allow the stop. Nothing is ever trapped.
 """
-import json, os, re, subprocess, sys
+import json, os, re, subprocess, sys, time
 from datetime import datetime
+
+DEADLINE = time.monotonic() + 8.5   # the whole hook, under the 10 s hook limit
 
 COORD = os.environ.get("COORD_SELF") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "coord.zsh")
 REPO = os.environ.get("COORD_REPO", os.path.expanduser("~/Developer/recense"))
@@ -21,12 +23,19 @@ BIG = int(os.environ.get("COORD_BIG", "3000000"))
 
 def coord(*args, env=None):
     e = dict(os.environ, **(env or {}))
-    return subprocess.run(["zsh", COORD, *args], capture_output=True, text=True, timeout=8, env=e)
+    left = max(0.5, DEADLINE - time.monotonic())
+    return subprocess.run(["zsh", COORD, *args], capture_output=True, text=True, timeout=left, env=e,
+                          stdin=subprocess.DEVNULL)
 
 
 def last_turn(transcript):
     """Entries after the last real user prompt (not a tool result), and that prompt's time."""
-    rows = [json.loads(l) for l in open(transcript, encoding="utf-8") if l.strip()]
+    rows = []
+    for l in open(transcript, encoding="utf-8", errors="replace"):
+        try:
+            rows.append(json.loads(l))
+        except ValueError:   # a half-written last line, or noise: skip it, keep the rest
+            continue
     start, t0 = 0, None
     for i, r in enumerate(rows):
         if r.get("type") != "user":
@@ -48,11 +57,16 @@ def decided(rows):
             name, inp = x.get("name", ""), x.get("input") or {}
             if name == "SendMessage":
                 return True
-            path = str(inp.get("file_path", "")) + " " + str(inp.get("command", ""))
-            if (".handoff/coordinator/inbox" in path) or re.search(r"\.handoff/[^/ ]+/INBOX\.md", path) \
-                    or " post " in path and "coord.zsh" in path:
+            if name in WRITERS and INBOX.search(str(inp.get("file_path", ""))):
+                return True
+            cmd = str(inp.get("command", "")) if name == "Bash" else ""
+            if re.search(r"coord\.zsh\s+(post|done|assign)\b", cmd) or re.search(r">>?\s*\S*" + INBOX.pattern, cmd):
                 return True
     return False
+
+
+WRITERS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+INBOX = re.compile(r"\.handoff/(coordinator/inbox/|[^/ ]+/INBOX\.md)")
 
 
 def block(reason):
@@ -70,6 +84,10 @@ def main():
         pass
     holder = coord("who", "--id").stdout.strip()
     if sid and holder and sid == holder:
+        try:   # the holder is alive even when its transcript lives where `who` can't see it (web, desktop)
+            os.utime(os.path.join(HOME, "CURRENT"))
+        except OSError:
+            pass
         tr = data.get("transcript_path", "")
         if tr and os.path.exists(tr):
             rows, t0 = last_turn(tr)

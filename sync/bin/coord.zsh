@@ -7,8 +7,9 @@
 #   Log:            ~/Recense/logs/coordinator.jsonl (the DebugChannel line shape)
 # Verbs: who take retire post inbox done state-check reviewed join leave assign gate worktrees handoff-sweep
 #        doctor hello spawn legacy-split trim selftest. Run `zsh coord.zsh help` for one line each.
-# Hooks: SessionStart → `coord.zsh hello`, SessionEnd → `coord.zsh leave --hook`, Stop → doctor via coordinator-memory-check.
+# Hooks: SessionStart → `coord.zsh hello`, SessionEnd → `coord.zsh leave --hook`, Stop → `coord.zsh stop-hook` (coord-stop.py).
 set -u
+: ${TMPDIR:=/tmp}
 setopt null_glob extended_glob
 unsetopt bg_nice
 SELF=${0:A}
@@ -30,7 +31,7 @@ mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
 mins_since() { echo $(( ($(now) - $1) / 60 )); }
 
 # one JSON line per event, same shape as shared/ShowsKit DebugChannel: {"t","feature","event","fields":{sorted}}
-jq_s() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; print -rn -- "\"$s\""; }
+jq_s() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}; s=${s//[[:cntrl:]]/}; print -rn -- "\"$s\""; }
 log() {
   local ev=$1; shift
   local -a kv; local k body=""
@@ -42,9 +43,23 @@ log() {
   return 0
 }
 
-# a mutex for read-check-write on coordinator files: mkdir is atomic
-lock() { local d=$H/.$1.lock i=0; while ! mkdir "$d" 2>/dev/null; do (( ++i > 50 )) && { rm -rf "$d"; mkdir "$d" 2>/dev/null; break; }; sleep 0.1; done; }
-unlock() { rmdir "$H/.$1.lock" 2>/dev/null; }
+# a mutex for read-check-write on coordinator files: mkdir is atomic; the owner's pid lives inside.
+# A lock is broken only when its pid is gone ("no such process"; a sandbox's "not permitted" counts as alive),
+# or when it has no pid after 5 s. A waiter never proceeds without holding the lock: after 30 s it gives up (status 1).
+pid_dead() { [[ $(kill -0 $1 2>&1) == *"no such process"* ]]; }
+lock() {
+  local d=$H/.$1.lock i=0 p
+  mkdir -p $H
+  while ! mkdir "$d" 2>/dev/null; do
+    p=$(cat "$d/pid" 2>/dev/null)
+    if [[ -n $p ]] && pid_dead $p; then rm -rf "$d"; continue; fi
+    if [[ -z $p ]] && (( i > 50 )); then rm -rf "$d"; continue; fi
+    (( ++i > ${COORD_LOCK_WAIT:-300} )) && return 1
+    sleep 0.1
+  done
+  print $$ > "$d/pid"
+}
+unlock() { rm -rf "$H/.$1.lock"; }
 
 transcript() {   # newest transcript file of session $1, or nothing
   local id=$1 r f best="" bm=0
@@ -65,6 +80,8 @@ state_of() {   # LIVE | QUIET | DEAD for session $1 (VACANT when empty); a fresh
   [[ -n $tr ]] && age=$(mins_since $(mtime $tr))
   [[ $id == $(holder_id) ]] && lease=$(mins_since $(mtime $H/CURRENT))
   (( lease < age )) && age=$lease
+  local j=$(grep "^$id " $H/PANEL 2>/dev/null | grep -oE 'joined [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' | tail -1 | cut -c8-) js
+  if [[ -n $j ]] && js=$(date -j -f '%Y-%m-%dT%H:%M' $j +%s 2>/dev/null); then (( $(mins_since $js) < age )) && age=$(mins_since $js); fi
   if (( age < LIVE_MIN )); then print LIVE; elif (( age < DEAD_MIN )); then print QUIET; else print DEAD; fi
 }
 
@@ -86,7 +103,7 @@ cmd_take() {
   [[ -z $SID ]] && { print "take: no session id (CLAUDE_CODE_SESSION_ID)"; return 2; }
   [[ $REPO == *"/Library/Mobile Documents/"* ]] && { print "take: repo is inside iCloud Drive; mv is not atomic there"; return 2; }
   mkdir -p $H/archive
-  lock take
+  lock take || { print "take: the lease lock is busy; try again"; return 4; }
   local cur=$(holder_id) st=$(state_of "$(holder_id)")
   if [[ -n $cur && $cur != $SID && $st == LIVE ]] && (( ! owner )); then
     unlock take; log standdown session=${SID[1,8]} holder=${cur[1,8]}
@@ -101,17 +118,19 @@ cmd_take() {
   print "Next: read all of $H/COORDINATOR.md, then \`zsh $SELF inbox\`; \`done <file>\` each one handled; retire at your cap."
 }
 
-cmd_retire() {
-  local force=0; [[ ${1:-} == --end || ${1:-} == --force ]] && force=1
-  local cur=$(holder_id)
-  [[ -n $cur && $cur != $SID ]] && (( ! force )) && { print "retire: you ($SID) do not hold the lease ($cur)"; return 2; }
+cmd_retire() {   # only the holder; --end (SessionEnd hook) skips the caps check, never the holder check
+  local end=0; [[ ${1:-} == --end ]] && end=1
   if ! cmd_state_check >/dev/null; then
-    (( force )) || { cmd_state_check; print "retire: fix the state file first (it is the next holder's whole memory)"; return 1; }
+    (( end )) || { cmd_state_check; print "retire: fix the state file first (it is the next holder's whole memory)"; return 1; }
     log retire.overcap session=${SID[1,8]}
   fi
   mkdir -p $H/archive
+  lock take || { print "retire: the lease lock is busy; try again"; return 4; }
+  local cur=$(holder_id)   # re-read under the lock: a take may have landed since
+  if [[ -z $SID || $cur != $SID ]]; then unlock take; print "retire: you (${SID:-no id}) do not hold the lease (${cur:-VACANT})"; return 2; fi
   print -r -- "$(holder_line) · retired $(stamp)" >> $H/archive/CURRENT.log
   print -r -- "VACANT since $(stamp)" > $H/.CURRENT.$$ && mv -f $H/.CURRENT.$$ $H/CURRENT
+  unlock take
   log retire session=${SID[1,8]}
   print "VACANT: lease released."
 }
@@ -120,13 +139,18 @@ cmd_retire() {
 sign() { print -r -- "— Agent: claude · Session: ${SID:-unknown} · Dir: ${PWD}"; }
 
 cmd_post() {   # post <file> (moved in) or post - (stdin); the sign line is added when missing
-  local src=${1:-} kind=${2:-} f
+  local src=${1:-} kind=${2:-} f tmp
   mkdir -p $H/inbox/done
-  f=$H/inbox/$(date +%Y%m%d-%H%M)-${SID[1,8]:-unknown}${kind:+-$kind}
-  local n=0 base=$f; while [[ -e $f.md ]]; do f=$base-$(( ++n )); done; f=$f.md
-  if [[ $src == - || -z $src ]]; then cat > $f.tmp; else [[ -f $src ]] || { print "post: no file $src"; return 2; }; mv "$src" $f.tmp; fi
-  grep -q '— Agent:' $f.tmp || sign >> $f.tmp
-  mv $f.tmp $f
+  [[ $src == - || -z $src || -f $src ]] || { print "post: no file $src"; return 2; }
+  # claim a name no one else holds, in inbox/ or done/: noclobber creation is atomic
+  local base=$H/inbox/$(date +%Y%m%d-%H%M)-${SID[1,8]:-unknown-$$}${kind:+-$kind} n=0
+  f=$base.md
+  while [[ -e $H/inbox/done/${f:t} ]] || ! ( set -C; : > $f ) 2>/dev/null; do f=$base-$(( ++n )).md; done
+  tmp=$(mktemp $H/inbox/.post.XXXXXX) || { rm -f $f; print "post: cannot write in inbox/"; return 1; }
+  if [[ $src == - || -z $src ]]; then cat > $tmp; else cat "$src" > $tmp; fi || { rm -f $tmp $f; print "post: write failed, nothing posted"; return 1; }
+  grep -q '— Agent:' $tmp || sign >> $tmp
+  mv -f $tmp $f || { rm -f $tmp; print "post: could not place the message"; return 1; }
+  [[ $src == - || -z $src ]] || rm -f "$src"   # a move: the source goes only once the message is in place
   log post file=${f:t} session=${SID[1,8]:-unknown}
   print "posted: inbox/${f:t}"
   local who=$(holder_name); [[ -n $who ]] && print "ping: SendMessage to \"$who\": new: inbox/${f:t}" || print "ping: no holder (VACANT); decide by COORDINATOR.md ## 2 after 10 min"
@@ -137,7 +161,10 @@ cmd_inbox() { local f; for f in $H/inbox/*.md(N.Om); do print -r -- "${f:t} · $
 cmd_done() {
   local f=${1:?done <file>}; f=${f:t}
   [[ -f $H/inbox/$f ]] || { print "done: no inbox/$f"; return 2; }
-  mkdir -p $H/inbox/done; mv $H/inbox/$f $H/inbox/done/$f && log done file=$f && print "done: inbox/done/$f"
+  mkdir -p $H/inbox/done
+  local to=$f n=0; while [[ -e $H/inbox/done/$to ]]; do to=${f:r}-d$(( ++n )).md; done
+  mv -n $H/inbox/$f $H/inbox/done/$to && [[ ! -e $H/inbox/$f ]] || { print "done: could not move inbox/$f"; return 1; }
+  log done file=$to; print "done: inbox/done/$to"
 }
 
 # ---------- the state file's caps ----------
@@ -146,7 +173,13 @@ cmd_state_check() {
   [[ -f $f ]] || { print "FAIL state: no $f"; return 1; }
   local lines=$(wc -l < $f | tr -d ' ') bytes=$(wc -c < $f | tr -d ' ')
   local top=$(awk '/^## 2/{exit} {n++} END{print n+0}' $f)
-  local wide=$(awk -v w=$CAP_WIDTH '/^```/{c=!c; next} !c && length($0)>w {n++} END{print n+0}' $f)
+  local wide=$(python3 -I -c 'import sys
+c=n=0
+for l in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    l=l.rstrip("\n")
+    if l.startswith("```"): c=not c; continue
+    if not c and len(l)>int(sys.argv[2]): n+=1
+print(n)' $f $CAP_WIDTH)
   (( lines > CAP_LINES )) && { print "FAIL state: $lines lines (cap $CAP_LINES): collapse finished items to one line, move detail to archive/"; bad=1; }
   (( bytes > CAP_BYTES )) && { print "FAIL state: $bytes bytes (cap $CAP_BYTES)"; bad=1; }
   (( top > CAP_TOP )) && { print "FAIL state: ## 1 is $top lines (cap $CAP_TOP); every session reads it"; bad=1; }
@@ -157,37 +190,49 @@ cmd_state_check() {
 }
 
 # ---------- review ----------
-queue_lines() { grep -F -- "$1" "$Q" 2>/dev/null; }
+ENTRY_RE='^(- )?((work|fix)/|worktree-)'
+queue_lines() {   # the whole entry of branch $1 (head line first), exact branch match
+  [[ -f $Q ]] || return 0
+  awk -v br="$1" '/^[^ \t]/ { l=$0; sub(/^- /,"",l); split(l,a," "); on=(a[1]==br && $0 ~ /^(- )?((work|fix)\/|worktree-)/) } on' "$Q"
+}
 cmd_reviewed() {
   local br=${1:?reviewed <branch>} repo=${COORD_GIT:-$REPO}
   local tip=$(git -C $repo rev-parse --short=7 $br 2>/dev/null)
   local l=$(queue_lines "$br" | grep 'REVIEW: OK' | tail -1)
   [[ -z $l ]] && { print "reviewed no · $br tip ${tip:-?}"; return 1; }
-  local c=$(print -r -- ${l##*REVIEW: OK} | grep -oE '\b[0-9a-f]{7,40}\b' | head -1)
+  # the reviewed commit is the last hex word git knows as a commit (a judge's 8-hex session prefix is not one)
+  local c="" w; for w in ${(f)"$(print -r -- ${l##*REVIEW: OK} | grep -oE '\b[0-9a-f]{7,40}\b')"}; do
+    [[ -n $w ]] && git -C $repo cat-file -e "$w^{commit}" 2>/dev/null && c=$w; done
   if [[ -n $c && -n $tip ]] && git -C $repo merge-base --is-ancestor $tip $c 2>/dev/null; then
     print "reviewed yes · at $c · tip $tip · current"; return 0
   fi
   print "reviewed yes · at ${c:-?} · tip $tip · STALE (commits after the review)"; return 1
 }
 
-panel_write() { print -r -- "$1" > $H/.PANEL.$$; mv -f $H/.PANEL.$$ $H/PANEL; }
+panel_write() { print -r -- "$1" | grep -v '^$' > $H/.PANEL.$$; mv -f $H/.PANEL.$$ $H/PANEL; }
 cmd_join() {
   local id=${1:-$SID} name=${2:-${COORD_NAME:-${SID[1,8]}}}
   [[ -z $id ]] && return 2
-  mkdir -p $H; touch $H/PANEL; lock panel
+  mkdir -p $H; touch $H/PANEL; lock panel || return 4
   if ! grep -q "^$id " $H/PANEL; then panel_write "$(cat $H/PANEL; print -r -- "$id · $name · joined $(stamp)")"; log join session=${id[1,8]}; fi
-  unlock panel; sed -i '' '/^$/d' $H/PANEL
+  unlock panel
 }
 cmd_leave() {
   local hook=0; [[ ${1:-} == --hook ]] && { hook=1; shift; }
+  if (( hook )) && [[ -z ${1:-} && ! -t 0 ]]; then local hid=$(hook_field session_id); [[ -n $hid ]] && SID=$hid; fi
   local id=${1:-$SID}
   [[ -z $id ]] && return 0
-  if [[ -f $H/PANEL ]]; then lock panel; panel_write "$(grep -v "^$id " $H/PANEL)"; unlock panel; sed -i '' '/^$/d' $H/PANEL; log leave session=${id[1,8]}; fi
+  if [[ -f $H/PANEL ]]; then lock panel || return 0; panel_write "$(grep -v "^$id " $H/PANEL)"; unlock panel; log leave session=${id[1,8]}; fi
   (( hook )) && [[ $(holder_id) == $id ]] && SID=$id cmd_retire --end >/dev/null
   return 0
 }
 
-author_of() { queue_lines "$1" | tail -1 | grep -oE 'Session: [0-9a-f]{8}' | tail -1 | cut -c10-; }
+author_of() {   # the first Session: on the entry's head line (a reviewer signs later); else the entry's first
+  local e=$(queue_lines "$1") a
+  a=$(print -r -- ${e%%$'\n'*} | grep -oE 'Session: [0-9a-f]{8}' | head -1 | cut -c10-)
+  [[ -z $a ]] && a=$(print -r -- $e | grep -oE 'Session: [0-9a-f]{8}' | head -1 | cut -c10-)
+  print -r -- $a
+}
 cmd_assign() {
   local br=${1:?assign <branch> [--risky]} risky=0; [[ ${2:-} == --risky ]] && risky=1
   local author=$(author_of $br) id sz best="" bsz=0 bopen=0 line
@@ -205,10 +250,10 @@ cmd_assign() {
   local f=$H/inbox/$(date +%Y%m%d-%H%M)-review-$slug-${best[1,8]}.md
   mkdir -p $H/inbox/done
   { print "REVIEW REQUEST: $br @ $(git -C ${COORD_GIT:-$REPO} rev-parse --short=7 $br 2>/dev/null)"
-    print "- Judge: $best (not the author ${author:-unknown}). Read only the diff and what it needs. Read-only: no builds."
-    print "- Return triage lines: file:line · severity · evidence · proven/assumed/untested · smallest fix · its check."
-    print "- Last line: REVIEW: OK <you> <commit>, or a fix list. Post it with \`coord.zsh post\`, then \`coord.zsh done ${f:t}\`."
-    (( risky )) && print "- RISKY (data loss / sync / offline / concurrency): the holder adds one fresh subagent judge; both must say OK."
+    print -r -- "- Judge: $best (not the author ${author:-unknown}). Read only the diff and what it needs. Read-only: no builds."
+    print -r -- "- Return triage lines: file:line · severity · evidence · proven/assumed/untested · smallest fix · its check."
+    print -r -- "- Last line: REVIEW: OK <you> <commit>, or a fix list. Post it with \`coord.zsh post\`, then \`coord.zsh done ${f:t}\`."
+    (( risky )) && print -r -- "- RISKY (data loss / sync / offline / concurrency): the holder adds one fresh subagent judge; both must say OK."
     sign; } > $f
   log assign branch=$br judge=${best[1,8]} risky=$risky
   print "assigned: $(grep "^$best " $H/PANEL | cut -d'·' -f2 | tr -d ' ') ($best) · inbox/${f:t}"
@@ -221,8 +266,8 @@ features_touched() {   # registry blocks (docs/specs/PARITY.md) whose home: cont
   local br=$1 repo=${COORD_GIT:-$REPO} parity=${COORD_PARITY:-$REPO/docs/specs/PARITY.md}
   [[ -f $parity ]] || return
   local files=$(git -C $repo diff --name-only main...$br 2>/dev/null)
-  awk -v files="$files" '
-    BEGIN{ n=split(files, F, "\n") }
+  FILES=$files awk '
+    BEGIN{ n=split(ENVIRON["FILES"], F, "\n") }
     /^<!-- parity:begin /{ feat=$3; next }
     /^home:/ && feat!="" { for (i=2;i<=NF;i++) { h=$i; gsub(/\*.*/,"",h); for (j=1;j<=n;j++) if (F[j]!="" && index(F[j],h)==1) hit[feat]=1 } }
     /^embodiments:/ && feat!="" { emb[feat]=substr($0, 14) }
@@ -277,47 +322,71 @@ cmd_handoff_sweep() {
 }
 
 # ---------- trim and split (moves; each verifies nothing was lost) ----------
+fsig() { stat -f '%z:%m:%i' "$1" 2>/dev/null; }
+# replace $f by $kept after appending $moved to $a; aborts (nothing changed) if $f changed since $sig or the append failed
+move_out() {
+  local f=$1 kept=$2 moved=$3 a=$4 sig=$5 title=$6
+  [[ $(fsig $f) == $sig ]] || { print "changed while trimming, nothing changed: run again"; return 1; }
+  local before=$(wc -c < $a 2>/dev/null | tr -d ' '); before=${before:-0}
+  { [[ -s $a ]] || print -r -- "$title"; cat $moved; } >> $a || { print "archive append failed, nothing changed"; return 1; }
+  [[ $(fsig $f) == $sig ]] || { print "changed while trimming (archive got a copy, source untouched): run again"; return 1; }
+  mv -f $kept $f
+}
 cmd_trim() {   # trim <file> <archive> <egrep pattern>: matching lines move to the archive, verbatim
-  local f=${1:?trim <file> <archive> <pattern>} a=${2:?} pat=${3:?} t=$TMPDIR/coord-trim.$$
+  local f=${1:?trim <file> <archive> <pattern>} a=${2:?} pat=${3:?} t=$(mktemp -d $TMPDIR/coord-trim.XXXXXX)/x
   [[ -f $f ]] || { print "trim: no $f"; return 2; }
+  lock trim || { print "trim: busy"; return 4; }
+  local sig=$(fsig $f) out
   grep -E -- "$pat" $f > $t.moved; grep -vE -- "$pat" $f > $t.kept
   local n=$(wc -l < $t.moved | tr -d ' ')
-  (( n == 0 )) && { print "trim: nothing matches"; rm -f $t.*; return 0; }
-  if [[ $(cat $t.kept $t.moved | sort | shasum) != $(sort $f | shasum) ]]; then print "trim: VERIFY FAILED, nothing changed"; rm -f $t.*; return 1; fi
-  { [[ -f $a ]] || print "# Archive of ${f:t} (moved verbatim by coord.zsh trim)"; cat $t.moved; } >> $a
-  mv $t.kept $f; rm -f $t.moved
-  log trim file=${f:t} moved=$n
-  print "trim: moved $n lines to $a; verify OK"
+  if (( n == 0 )); then print "trim: nothing matches"
+  elif [[ $(cat $t.kept $t.moved | sort | shasum) != $(sort $f | shasum) ]]; then print "trim: VERIFY FAILED, nothing changed"; n=-1
+  elif out=$(move_out $f $t.kept $t.moved $a "$sig" "# Archive of ${f:t} (moved verbatim by coord.zsh trim)"); then
+    log trim file=${f:t} moved=$n; print "trim: moved $n lines to $a; verify OK"
+  else print "trim: $out"; n=-1; fi
+  unlock trim; rm -rf ${t:h}
+  (( n >= 0 ))
 }
 
-cmd_trim_queue() {   # trim-queue: whole entries ("- work/x …" + its indented lines) whose branch git shows merged move to the archive
-  local f=${1:-$Q} a=${2:-${Q:r}-archive.md} repo=${COORD_GIT:-$REPO} t=$TMPDIR/coord-tq.$$
-  [[ -f $f ]] || { print "trim-queue: no $f"; return 2; }
-  awk -v t=$t 'BEGIN{g=0} /^- /{g++} { print g "\t" $0 > (t ".lines") }' $f
-  # an entry is merged when its branch still exists and is in main, or (branch deleted) the commit it cites after "@" is in main
-  local -a merged; local g head br sha
+queue_groups() {   # $1 queue file, $2 out prefix: writes <prefix>.lines (group<TAB>line) and <prefix>.heads
+  awk -v t=$2 'BEGIN{g=0} /^[^ \t]/{g++; print g "\t" $0 > (t ".heads")} { print g "\t" $0 > (t ".lines") }' $1
+  touch $2.heads $2.lines
+}
+merged_groups() {   # group numbers of entries whose branch git shows merged (or, deleted, whose cited "@ sha" is in main)
+  local repo=${COORD_GIT:-$REPO} g head br sha
   while IFS=$'\t' read -r g head; do
+    [[ $head =~ $ENTRY_RE ]] || continue
     br=${${head#- }%% *}; sha=$(print -r -- $head | grep -oE '@ [0-9a-f]{7,40}' | head -1 | cut -c3-)
-    [[ $br == (work|fix)/* || $br == worktree-* ]] || continue
     if git -C $repo rev-parse -q --verify "refs/heads/$br" >/dev/null 2>&1; then
-      git -C $repo merge-base --is-ancestor $br main 2>/dev/null && merged+=($g)
+      git -C $repo merge-base --is-ancestor $br main 2>/dev/null && print $g
     elif [[ -n $sha ]] && git -C $repo cat-file -e "$sha^{commit}" 2>/dev/null && git -C $repo merge-base --is-ancestor $sha main 2>/dev/null; then
-      merged+=($g)
+      print $g
     fi
-  done < <(grep -E '^[0-9]+	- ' $t.lines)
+  done < $1
+}
+cmd_trim_queue() {   # trim-queue [file] [archive] [--dry]: whole merged entries (head line + its indented lines) move to the archive
+  local -a args; local dry=0 x; for x in "$@"; do [[ $x == --dry ]] && dry=1 || args+=($x); done
+  local f=${args[1]:-$Q} a=${args[2]:-${Q:r}-archive.md} t=$(mktemp -d $TMPDIR/coord-tq.XXXXXX)/x
+  [[ -f $f ]] || { print "trim-queue: no $f"; rm -rf ${t:h}; return 2; }
+  if (( ! dry )); then lock queue || { print "trim-queue: busy"; rm -rf ${t:h}; return 4; }; fi
+  local sig=$(fsig $f) rc=0 out
+  queue_groups $f $t
+  local -a merged; merged=(${(f)"$(merged_groups $t.heads)"})
+  local n=${#merged}
+  if (( dry )); then print "trim-queue: $n merged entries"; rm -rf ${t:h}; return 0; fi
   awk -F'\t' -v list="${merged}" -v t=$t '
     BEGIN{ n=split(list, L, " "); for (i=1;i<=n;i++) M[L[i]]=1 }
     { line=substr($0, index($0, "\t")+1) }
     ($1 in M) { print line > (t ".moved"); next }
     { print line > (t ".kept") }' $t.lines
   touch $t.moved $t.kept
-  local n=$(grep -c '^- ' $t.moved)
-  if [[ $(cat $t.kept $t.moved | sort | shasum) != $(sort $f | shasum) ]]; then print "trim-queue: VERIFY FAILED, nothing changed"; rm -f $t.*; return 1; fi
-  (( n == 0 )) && { print "trim-queue: no merged entries"; rm -f $t.*; return 0; }
-  { [[ -f $a ]] || print "# Archive of ${f:t} (moved verbatim by coord.zsh)"; cat $t.moved; } >> $a
-  mv $t.kept $f; rm -f $t.*
-  log trim file=${f:t} moved=$n
-  print "trim-queue: moved $n merged entries to $a; verify OK"
+  if (( n == 0 )); then print "trim-queue: no merged entries"
+  elif [[ $(cat $t.kept $t.moved | sort | shasum) != $(sort $f | shasum) ]]; then print "trim-queue: VERIFY FAILED, nothing changed"; rc=1
+  elif out=$(move_out $f $t.kept $t.moved $a "$sig" "# Archive of ${f:t} (moved verbatim by coord.zsh)"); then
+    log trim file=${f:t} moved=$n; print "trim-queue: moved $n merged entries to $a; verify OK"
+  else print "trim-queue: $out"; rc=1; fi
+  unlock queue; rm -rf ${t:h}
+  return $rc
 }
 
 legacy_classify() {   # CLOSED | OPEN? | INFO | STALE for one entry file; $2 = its date (yyyymmdd)
@@ -338,14 +407,15 @@ legacy_classify() {   # CLOSED | OPEN? | INFO | STALE for one entry file; $2 = i
 }
 cmd_legacy_split() {   # legacy-split <INBOX.md> [--dry] : one file per "## " entry; OPEN? → inbox/, rest → inbox/done/
   local src=${1:?legacy-split <INBOX.md> [--dry]} dry=0; [[ ${2:-} == --dry ]] && dry=1
-  local w=$TMPDIR/coord-split.$$; rm -rf $w; mkdir -p $w
+  [[ -f $src ]] || { print "legacy-split: no $src"; return 2; }
+  local w=$(mktemp -d $TMPDIR/coord-split.XXXXXX) src8=$(shasum -a 256 < $src | cut -c1-8)
   awk -v w=$w 'BEGIN{n=1; f=sprintf("%s/%04d", w, n)} /^## /{ if (seen) { n++; f=sprintf("%s/%04d", w, n) } seen=1 } { print > f }' $src
   local e cls name h d s total=0 o=0 c=0 i=0; local -a manifest
   for e in $w/<->(n); do
     (( total++ ))
     h=$(grep -m1 '^## ' $e); d=$(print -r -- $h | grep -oE '20[0-9]{2}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2})?' | head -1)
     s=$(grep -oE 'Session: [0-9a-f]{8}' $e | tail -1 | cut -c10-); [[ -z $s ]] && s=unknown
-    name="${${${d:-00000000}//-/}// /-}-${s}-${e:t}.md"; name=${name//:/}
+    name="${${${d:-00000000}//-/}// /-}-${s}-${src8}-${e:t}.md"; name=${name//:/}
     cls=$(legacy_classify $e ${${${d:-0}//-/}[1,8]})
     if [[ $cls == 'OPEN?' ]]; then o=$(( o + 1 )); else c=$(( c + 1 )); fi
     manifest+=("$cls $name")
@@ -356,13 +426,21 @@ cmd_legacy_split() {   # legacy-split <INBOX.md> [--dry] : one file per "## " en
   print "legacy-split: $total entries · OPEN? $o · CLOSED/INFO/STALE $c · sha-256 of the pieces == original"
   if (( ! dry )); then
     mkdir -p $H/inbox/done $H/archive; i=0
+    local man=$H/archive/legacy-manifest-$(date +%Y%m%d-%H%M%S)-$src8.txt to
+    for e in $w/<->(n); do   # refuse before moving anything if a target exists (the same file split twice)
+      cls=${manifest[++i]%% *}; name=${manifest[i]#* }
+      [[ $cls == 'OPEN?' ]] && to=$H/inbox/$name || to=$H/inbox/done/$name
+      [[ -e $to ]] && { print "legacy-split: $to exists (already split?); nothing written"; rm -rf $w; return 1; }
+    done
+    i=0
     for e in $w/<->(n); do
       cls=${manifest[++i]%% *}; name=${manifest[i]#* }
-      [[ $cls == 'OPEN?' ]] && mv $e $H/inbox/$name || mv $e $H/inbox/done/$name
-      print -r -- "$cls ${name}" >> $H/archive/legacy-manifest.txt
+      [[ $cls == 'OPEN?' ]] && to=$H/inbox/$name || to=$H/inbox/done/$name
+      mv -n $e $to && [[ ! -e $e ]] || { print "legacy-split: could not place $name; pieces left in $w"; return 1; }
+      print -r -- "$cls ${name}" >> $man
     done
-    # re-verify from where the pieces landed, in manifest order
-    local again=$(while read -r cls name; do [[ $cls == 'OPEN?' ]] && cat $H/inbox/$name || cat $H/inbox/done/$name; done < $H/archive/legacy-manifest.txt | shasum -a 256 | cut -c1-64)
+    # re-verify from where the pieces landed, in this run's manifest order
+    local again=$(while read -r cls name; do [[ $cls == 'OPEN?' ]] && cat $H/inbox/$name || cat $H/inbox/done/$name; done < $man | shasum -a 256 | cut -c1-64)
     [[ $again == $sum_src ]] || { print "legacy-split: LANDED SHA MISMATCH; the original is untouched"; return 1; }
     log split entries=$total open=$o
     print "legacy-split: written and re-verified; the original can go to the Trash: trash $src"
@@ -371,7 +449,11 @@ cmd_legacy_split() {   # legacy-split <INBOX.md> [--dry] : one file per "## " en
 }
 
 # ---------- doctor: the bug-detection loop (run by the Stop hook) ----------
-routing_files() { print -l ${=COORD_ROUTING:-$HOME/.claude/CLAUDE.md $REPO/.handoff/LANES.md $H/COORDINATOR.md $REPO/.handoff/listen/HANDOFF.md $REPO/.handoff/shows/HANDOFF.md}; }
+routing_files() {   # every rules file a session may load (account dirs may be links: listed once each), plus lane headers
+  if [[ -n ${COORD_ROUTING:-} ]]; then print -l ${=COORD_ROUTING}; return; fi
+  print -l ${(u)${:-$HOME/.claude/CLAUDE.md ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md $HOME/.claude-swap-backup/sessions/*/CLAUDE.md(N)}:A} \
+    $REPO/.handoff/LANES.md $H/COORDINATOR.md $REPO/.handoff/listen/HANDOFF.md $REPO/.handoff/shows/HANDOFF.md
+}
 cmd_doctor() {
   local fix=0 bad=0 out f; [[ ${1:-} == --fix ]] && fix=1
   ok() { print "OK   $1"; }; ko() { print "FAIL $1"; bad=1; }
@@ -388,8 +470,8 @@ cmd_doctor() {
   local hits=$(routing_files | while read -r f; do [[ -f $f ]] && grep -lE -- "$GHOST" $f; done)
   [[ -n $hits ]] && ko "4 ghost: ${hits//$'\n'/ } name an abandoned coordinator" || ok "4 ghost: none"
   # 5 merge queue trimmed
-  local m=$(grep -cE '^- .*MERGED' $Q 2>/dev/null); m=${m:-0}
-  (( m > 0 )) && ko "5 queue: $m MERGED lines · fix: zsh $SELF trim $Q ${Q:r}-archive.md '^- .*MERGED'" || ok "5 queue: no MERGED lines"
+  local m=$(cmd_trim_queue $Q --dry 2>/dev/null | grep -oE '[0-9]+' | head -1); m=${m:-0}
+  (( m > 0 )) && ko "5 queue: $m merged entries still queued · fix: zsh $SELF trim-queue" || ok "5 queue: no merged entries"
   # 6 double holder: two takes by different sessions within 10 min with no standdown between
   local dbl=$(tail -200 $LOGS/coordinator.jsonl 2>/dev/null | python3 -I -c '
 import sys, json, datetime
@@ -398,19 +480,21 @@ for l in sys.stdin:
     try: r=json.loads(l)
     except Exception: continue
     ev=r.get("event"); s=r.get("fields",{}).get("session"); t=datetime.datetime.fromisoformat(r["t"].replace("Z","+00:00"))
-    if ev=="coordinator.standdown": last=None
+    if ev in ("coordinator.standdown", "coordinator.retire"): last=None   # a handover after retire is the design
     elif ev=="coordinator.take":
         if last and last[0]!=s and (t-last[1]).total_seconds()<600 and r["fields"].get("by")!="owner": print(last[0], s); last=None; continue
         last=(s,t)')
   [[ -n $dbl ]] && ko "6 double holder: $dbl took the lease within 10 min" || ok "6 double holder: none"
   # 7 the Stop hook knows the lease (regression: it once matched only "(coordinator)" and never fired)
   local hk=${COORD_HOOK:-$HOME/.claude/settings.json}
-  grep -q "coord.zsh stop-hook" $hk 2>/dev/null && ok "7 hook: the Stop hook runs coord.zsh stop-hook" || ko "7 hook: $hk has no coord.zsh stop-hook (the lease holder is not checked)"
+  python3 -I -c 'import json,sys
+h=json.load(open(sys.argv[1])).get("hooks",{}).get("Stop",[])
+sys.exit(0 if "coord.zsh stop-hook" in json.dumps(h) else 1)' $hk 2>/dev/null && ok "7 hook: the Stop hook runs coord.zsh stop-hook" || ko "7 hook: $hk has no coord.zsh stop-hook (the lease holder is not checked)"
   # 8 review requests unanswered over 10 min
   local rq=($H/inbox/*-review-*.md(N.mm+10)); (( ${#rq} )) && ko "8 review: ${#rq} requests unanswered 10+ min (${rq[1]:t}) · fix: reassign once, then mark UNREVIEWED" || ok "8 review: none waiting"
   # 9 a REVIEW: OK older than its branch tip
   local stale="" br
-  for br in ${(u)$(grep 'REVIEW: OK' $Q 2>/dev/null | grep -v MERGED | grep -oE '^- work/[A-Za-z0-9._/-]+' | cut -c3-)}; do
+  for br in ${(u)$(grep 'REVIEW: OK' $Q 2>/dev/null | grep -v MERGED | grep -oE '^(- )?work/[A-Za-z0-9._/-]+' | sed 's/^- //')}; do
     git -C ${COORD_GIT:-$REPO} rev-parse -q --verify $br >/dev/null || continue
     cmd_reviewed $br | grep -q STALE && stale+="$br "
   done
@@ -454,8 +538,10 @@ cmd_spawn() {   # one fresh headless coordinator when the lease is free and work
   local waiting=($H/inbox/*.md(N.mm+10)); (( ${#waiting} )) || { print "skip: nothing waiting 10+ min"; return 0; }
   local fails=$(cat $H/.spawn.fail 2>/dev/null || print 0)
   (( fails >= 3 )) && { print "skip: 3 failed spawns; fix, then trash $H/.spawn.fail"; return 0; }
-  (( $(now) - $(mtime $H/.spawn.last) < 3600 )) && { print "skip: one spawn per hour"; return 0; }
+  local sp=$(cat $H/.spawn.lock/pid 2>/dev/null)
+  [[ -d $H/.spawn.lock && -n $sp ]] && pid_dead $sp && rm -rf $H/.spawn.lock
   mkdir $H/.spawn.lock 2>/dev/null || { print "skip: a spawn is running"; return 0; }
+  (( $(now) - $(mtime $H/.spawn.last) < 3600 )) && { rm -rf $H/.spawn.lock; print "skip: one spawn per hour"; return 0; }
   touch $H/.spawn.last
   local p="You are a fresh Recense coordinator started because work is waiting and nobody holds the lease. Run: zsh $SELF take. Then read all of $H/COORDINATOR.md, run zsh $SELF inbox, handle each file by the rules in its ## 2 (merges only after REVIEW: OK; code decisions by agent consensus, never the owner), record decisions in its ## 3, run zsh $SELF done <file> for each, then zsh $SELF retire. Do not resume any older session."
   local run=${COORD_CLAUDE:-claude} out=${COORD_SPAWN_LOG:-$HOME/Library/Logs/coord-spawn.log}
@@ -463,7 +549,8 @@ cmd_spawn() {   # one fresh headless coordinator when the lease is free and work
     if (( rc )); then print $(( fails + 1 )) > $H/.spawn.fail
       (( fails + 1 >= 3 )) && osascript -e 'display notification "3 coordinator spawns failed: see ~/Library/Logs/coord-spawn.log" with title "coord"' 2>/dev/null
     else rm -f $H/.spawn.fail; fi
-    rmdir $H/.spawn.lock ) &!
+    rm -rf $H/.spawn.lock ) </dev/null >/dev/null 2>&1 &!
+  print $! > $H/.spawn.lock/pid 2>/dev/null
   log spawn waiting=${#waiting}
   print "spawned: fresh coordinator (log $out)"
 }
@@ -516,7 +603,7 @@ selftest() {
   git checkout -qb work/merged && print b >> shared/x/f.txt && git commit -qam m && git checkout -q main && git merge -q --no-ff --no-edit work/merged
   git checkout -qb work/rev && print c > other.txt && git add . && git commit -qm r && local revtip=$(git rev-parse --short=7 HEAD)
   git checkout -qb work/stale && print d >> other.txt && git commit -qam s
-  git checkout -q main && git checkout -qb work/clash && print X > shared/x/f.txt && git commit -qam clash
+  git checkout -q main && git checkout -qb work/clash && print X > shared/x/f.txt && print Z > two.txt && git add . && git commit -qm clash
   git checkout -q main && print Y > shared/x/f.txt && git commit -qam main-side
   cd - >/dev/null
   print -l -- "- work/rev · thing · REVIEW: OK judge $revtip — Agent: claude · Session: 11111111-a" \
@@ -559,9 +646,9 @@ selftest() {
   print 'coordinator 9d8e0a68 lives here' > $T/routing.md; print '' > $T/hook
   local d=$(run doctor)
   t doc-ghost "FAIL 4 ghost" "$d"; t doc-hook "FAIL 7 hook" "$d"; t doc-review-stale "FAIL 9 review" "$d"
-  print 'nothing' > $T/routing.md; print 'zsh coord.zsh stop-hook' > $T/hook
+  print 'nothing' > $T/routing.md; print '{"hooks":{"Stop":[{"hooks":[{"command":"zsh coord.zsh stop-hook"}]}]}}' > $T/hook
   d=$(run doctor); t doc-ghost-ok "OK   4 ghost" "$d"; t doc-hook-ok "OK   7 hook" "$d"
-  print -r -- '- work/z · MERGED' >> $T/q.md; t doc-queue "FAIL 5 queue" "$(run doctor)"
+  print -r -- "- work/merged @ $msha · MERGED" >> $T/q.md; t doc-queue "FAIL 5 queue" "$(run doctor)"
   touch -t 202601010000 $T/h/inbox/*.md(N[1]); t doc-old "FAIL 3 inbox" "$(run doctor)"
   # double holder in the log
   print -l -- '{"t":"2026-11-18T10:00:00.000Z","feature":"coordinator","event":"coordinator.take","fields":{"by":"hook","session":"aaaa"}}' \
@@ -597,6 +684,66 @@ selftest() {
   touch $T/h/COORDINATOR.md; tz stop-ok-after-write "$(print -r -- $sj | run stop-hook)"
   t stop-retire-cap "retire" "$(print -r -- $sj | COORD_BIG=10 run stop-hook)"
   tz stop-retire-once "$(print -r -- $sj | COORD_BIG=10 run stop-hook)"
+  # ---- regression guards: coord-stateless review 1 (2 judges, 2026-11-18) ----
+  # a half-written last transcript line still lets the holder check run
+  print -r -- '{"type":' >> $T/tr.jsonl; touch -t 202601010000 $T/h/COORDINATOR.md
+  t stop-partial-line '"decision": "block"' "$(print -r -- $sj | run stop-hook)"
+  # reading the inbox is not a decision
+  print -r -- '{"type":"user","timestamp":"'$now_iso'","message":{"content":"go"}}' > $T/tr2.jsonl
+  print -r -- '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/r/.handoff/coordinator/inbox/a.md"}}]}}' >> $T/tr2.jsonl
+  tz stop-read-only "$(print -r -- '{"session_id":"99999999-i","transcript_path":"'$T/tr2.jsonl'"}' | run stop-hook)"
+  # a slow spawned claude does not hold the hook (fds detached)
+  print -rl -- '#!/bin/zsh' 'sleep 3' > $T/slow; chmod +x $T/slow
+  CLAUDE_CODE_SESSION_ID=99999999-i run retire --end >/dev/null; rm -f $T/h/.spawn.last; touch -t 202601010000 $T/h/inbox/zz.md
+  local t0=$SECONDS; COORD_CLAUDE=$T/slow run spawn >/dev/null; t spawn-detached 1 "$(( SECONDS - t0 < 2 ))"
+  t spawn-lock-pid 1 "$([[ $(cat $T/h/.spawn.lock/pid 2>/dev/null) == <-> ]] && print 1)"
+  print 99999 > $T/h/.spawn.lock/pid; rm -f $T/h/.spawn.last; t spawn-dead-lock "spawned" "$(COORD_CLAUDE=true run spawn)"; sleep 0.3
+  # retire --end by a non-holder never frees another's lease
+  CLAUDE_CODE_SESSION_ID=abababab-1 run take --owner-said >/dev/null
+  t retire-end-not-holder "do not hold" "$(CLAUDE_CODE_SESSION_ID=cdcdcdcd-2 run retire --end)"
+  # leave --hook reads the session id from the hook's stdin
+  print '{"session_id":"abababab-1"}' | env -u CLAUDE_CODE_SESSION_ID zsh $SELF leave --hook >/dev/null 2>&1; t leave-hook-stdin "VACANT" "$(run who)"
+  # a lock held by a live process is never broken; a dead one is
+  mkdir -p $T/h/.take.lock; print $$ > $T/h/.take.lock/pid
+  t lock-live "busy" "$(COORD_LOCK_WAIT=5 CLAUDE_CODE_SESSION_ID=efefefef-3 run take)"
+  print 99999 > $T/h/.take.lock/pid; t lock-dead "LEASE" "$(CLAUDE_CODE_SESSION_ID=efefefef-3 run take)"
+  # parallel posts with one id: 8 files, 8 bodies; post → done → post → done keeps both
+  rm -rf $T/h/inbox; local k; for k in {1..8}; do ( print "body $k" | CLAUDE_CODE_SESSION_ID=fafafafa-4 zsh $SELF post - >/dev/null ) & done; wait
+  t post-parallel-files 8 "$(ls $T/h/inbox/*.md | grep -c .)"; t post-parallel-bodies 8 "$(cat $T/h/inbox/*.md | grep '^body' | sort -u | grep -c .)"
+  rm -rf $T/h/inbox; local pf2
+  for k in one two; do print $k | CLAUDE_CODE_SESSION_ID=fafafafa-4 run post - >/dev/null; pf2=$(ls $T/h/inbox/*.md); run done ${pf2:t} >/dev/null; done
+  t done-no-overwrite 2 "$(ls $T/h/inbox/done/*.md | grep -c .)"
+  # split two inboxes with the same date and sender: all pieces survive, both runs re-verify
+  print -l -- '## 2026-11-18 · READY FOR REVIEW: one' 'a?' '## 2026-11-18 · two' 'b' > $T/I1.md
+  print -l -- '## 2026-11-18 · READY FOR REVIEW: three' 'c?' '## 2026-11-18 · four' 'd' > $T/I2.md
+  rm -rf $T/h/inbox; t split-run1 "re-verified" "$(run legacy-split $T/I1.md)"; t split-run2 "re-verified" "$(run legacy-split $T/I2.md)"
+  t split-all-bodies 4 "$(cat $T/h/inbox/*.md $T/h/inbox/done/*.md | grep -cE '^(a\?|b|c\?|d)$')"
+  t split-twice-refused "exists" "$(run legacy-split $T/I1.md)"
+  # the reviewed commit is a commit, not a judge's 8-hex session prefix; branch match is exact
+  print -l -- "- work/rev · thing · Session: 12345678-a · REVIEW: OK judge 33333333 $revtip — Agent: claude · Session: 33333333-c" "- work/rev2 · other · Session: 87654321-b" > $T/q.md
+  t reviewed-prefix "current" "$(run reviewed work/rev)"
+  rm -f $T/h/inbox/*-review-*(N); t author-head "author 12345678" "$(run assign work/rev; cat $T/h/inbox/*-review-rev-*.md(N) 2>/dev/null)"
+  # queue entries in both formats ("- work/x" and bare "work/x"); an open bare entry never leaves with a merged one
+  local m2=$(git -C $T/repo rev-parse --short=7 main)
+  print -l -- "BUILD LOCK: free" "- work/done1 @ $m2 · merged" "  its detail" "work/open @ 1234567 · open bare entry" "  open detail" "work/done2 @ $m2 · merged bare" > $T/q3.md
+  t tq-mixed "moved 2 merged entries" "$(run trim-queue $T/q3.md $T/q3-a.md)"
+  t tq-open-kept "open detail" "$(cat $T/q3.md)"; tz tq-open-not-archived "$(grep -o 'open bare' $T/q3-a.md)"
+  # doctor 6: retire then take within 10 min is a handover, not a double holder
+  : > $T/logs/coordinator.jsonl; print -l -- '{"t":"2026-11-18T11:00:00.000Z","feature":"coordinator","event":"coordinator.take","fields":{"by":"hook","session":"aaaa"}}' \
+           '{"t":"2026-11-18T11:01:00.000Z","feature":"coordinator","event":"coordinator.retire","fields":{"session":"aaaa"}}' \
+           '{"t":"2026-11-18T11:02:00.000Z","feature":"coordinator","event":"coordinator.take","fields":{"by":"hook","session":"bbbb"}}' >> $T/logs/coordinator.jsonl
+  t doc-handover "OK   6" "$(run doctor)"
+  # doctor 7 reads hooks.Stop, not any mention
+  print '{"permissions":{"allow":["Bash(zsh coord.zsh stop-hook)"]}}' > $T/hook; t doc-hook-json "FAIL 7" "$(run doctor)"
+  print '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"zsh coord.zsh stop-hook"}]}]}}' > $T/hook; t doc-hook-json-ok "OK   7" "$(run doctor)"
+  # caps count characters: 150 "·" is 150 wide, not 300
+  { print '## 1'; print -r -- "- ${(l:150::·::·:)${:-}}"; } > $T/c.md; t cap-width-chars "OK state" "$(run state-check $T/c.md)"
+  # a just-joined member with no transcript survives doctor --fix; a dead one leaves
+  print '' > $T/h/PANEL; CLAUDE_CODE_SESSION_ID=13131313-n run join; print '24242424-m · old · joined 2026-01-01T00:00' >> $T/h/PANEL
+  run doctor --fix >/dev/null; t doc-keeps-new "13131313-n" "$(cat $T/h/PANEL)"; tz doc-drops-dead "$(grep 24242424 $T/h/PANEL)"
+  # every log line is valid JSON
+  t log-valid 0 "$(python3 -I -c 'import json,sys
+print(sum(1 for l in open(sys.argv[1]) if l.strip() and not json.loads(l)))' $T/logs/coordinator.jsonl 2>&1)"
   rm -rf $T
   (( fail )) && { print "coord selftest FAILED"; return 1; }
   print "coord selftest OK"

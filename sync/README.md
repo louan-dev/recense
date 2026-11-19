@@ -223,5 +223,11 @@ to the `gallery-tmp` bucket.
   - `worktrees` · `handoff-sweep` — what can be cleaned up (print only).
   - `doctor` — 9 invariants (lease, caps, old messages, ghost coordinator, queue trimmed, double holder, hook, unanswered and stale reviews).
   - `hello` (SessionStart hook) · `leave --hook` (SessionEnd hook) · `stop-hook` (Stop hook: doctor, the holder's memory and retire checks; `bin/coord-stop.py`) · `spawn` (a fresh headless coordinator when work waits and nobody holds the lease, at most one per hour).
-  - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` · `trim-queue` (whole merged entries of MERGE-QUEUE.md) — moves that verify by sha / line multiset that nothing was lost.
-- Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`).
+  - `legacy-split <INBOX.md> [--dry]` · `trim <file> <archive> <pattern>` · `trim-queue [--dry]` (whole merged entries of MERGE-QUEUE.md,
+    in both `- work/x` and bare `work/x` form) — moves that verify by sha / line multiset that nothing was lost.
+    A move never overwrites (`mv -n`, names carry the source's sha8, one manifest per split), and aborts when the file changed
+    while it ran or the archive append failed.
+- Concurrency: read-check-write runs under a `mkdir` lock holding its pid; a lock is broken only when that pid is gone;
+  a waiter never enters without the lock (it gives up after 30 s). `retire` (also `--end`) frees only the caller's own lease.
+- Hooks never hold a session: `spawn` detaches from the hook's pipes; the Stop hook has one 8.5 s budget in all.
+- Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`); each review-1 finding has a regression case.
