@@ -3,7 +3,7 @@
 """audiobook.py <speech.md> <out.m4b> <title> [voice]   (BOOK_LANG=eng by default)
 Offline: Kokoro-82M (ONNX) renders each heading's section; ffmpeg joins them into one
 M4B with a chapter marker per heading. Needs KOKORO_DIR with kokoro-v1.0.onnx + voices-v1.0.bin."""
-import os, re, sys, subprocess, tempfile, pathlib
+import os, re, sys, subprocess, tempfile, pathlib, shutil, atexit
 import numpy as np, soundfile as sf
 from kokoro_onnx import Kokoro
 
@@ -43,6 +43,7 @@ def chunks(text, limit=400):
     return parts + ([buf] if buf else [])
 
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="book-", dir=os.environ.get("TMPDIR")))
+atexit.register(shutil.rmtree, tmp, ignore_errors=True)  # the WAVs are ~0.6 GB per 3 h of audio
 SR = 24000
 gap_para, gap_chap = np.zeros(int(SR * 0.45), np.float32), np.zeros(int(SR * 1.2), np.float32)
 meta = [";FFMETADATA1", f"title={title}", "artist=Recense", "genre=Audiobook"]
