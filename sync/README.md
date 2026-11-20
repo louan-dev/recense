@@ -62,6 +62,14 @@ decisions, changelog), with detail in `../docs/BACKLOG.md` and `../docs/SPEC.md`
   the Worker's WebDAV and used most of the account's daily budget. What a pass replaces in Docs goes to Main's
   `trash/<day>/Docs/`; what it would delete on the Mac is kept in `~/.docs-sync/kept/`. The same file edited on both
   sides: the newer keeps its name, the other becomes `name.conflict1.ext`. Hourly, and at login.
+- **Live edits** (FEAT-39; `src/livestate.mjs`, `bin/live.zsh`, launchd `com.chauphan.live`): lists what changed in every git
+  worktree before it is committed, with last-edited times. `live.zsh watch` runs always (FSEvents, no polling), waits 5 s after the
+  last save, and keeps `~/Recense/live/live.json` current; events go to `~/Recense/logs/live.jsonl`. Secrets (`.env*`, `Secrets/`,
+  `*.key`, `*.pem`, `node_modules/`, `.build/`) are never listed. `live.zsh snapshot [name]` makes a review snapshot without touching the
+  branch, index or files (a temporary index, kept at `refs/wip/<name>/<stamp>`): a `.patch` (and a `.zip` for binary files) in
+  `.handoff/coordinator/inbox/live/`, and a note posted with `coord.zsh post - live`. `live.zsh built` marks a worktree's files BUILT after its
+  cheapest check passed. Optional `~/.config/recense/live-ignore` lists worktree paths to skip. Tests: `node --test test/` (the watcher
+  test needs FSEvents, so it skips inside the Claude sandbox). Install: `cp launchd/com.chauphan.live.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chauphan.live.plist`.
 - **Markdown mirror** (`bin/md-mirror.zsh`, launchd `com.chauphan.md-mirror`): every Markdown file made on the Mac is
   in the Obsidian vault too, under `Mac/Developer`, `Mac/Desktop` and `Mac/Documents`, so it opens in Obsidian on the
   iPhone and iPad, and an edit made there reaches the original on the next pass. Two-way, disk to disk (rclone bisync,
