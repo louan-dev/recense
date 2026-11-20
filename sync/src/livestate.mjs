@@ -139,7 +139,7 @@ export function createDebouncer(ms, fn, timers = {}) {
 }
 
 /** fs.watch recursive (FSEvents on macOS) on every worktree: no polling, nothing runs between events. */
-export function startWatcher({ repo = REPO, debounceMs = DEBOUNCE_MS, onWake, ignoreFile = IGNORE_FILE } = {}) {
+export function startWatcher({ repo = REPO, debounceMs = DEBOUNCE_MS, onWake, ignoreFile = IGNORE_FILE, log = defaultLog } = {}) {
   const watchers = new Map(); let closed = false;
   const deb = createDebouncer(debounceMs, () => { if (closed) return; reconcile(); onWake(); });
   const handle = (root, filename) => {
@@ -154,7 +154,8 @@ export function startWatcher({ repo = REPO, debounceMs = DEBOUNCE_MS, onWake, ig
     const want = new Map(listWorktrees(repo, { ignoreFile }).map((w) => [w.path, w]));
     for (const [p, w] of watchers) if (!want.has(p)) { try { w.close(); } catch { /* gone */ } watchers.delete(p); }
     for (const p of want.keys()) if (!watchers.has(p)) {
-      try { const w = fs.watch(p, { recursive: true }, (_e, f) => handle(p, f)); w.on('error', () => {}); watchers.set(p, w); } catch { /* missing now; next wake retries */ }
+      try { const w = fs.watch(p, { recursive: true }, (_e, f) => handle(p, f)); w.on('error', (e) => log({ event: 'live.manifest.skipped', reason: `watch error ${e.code || e.message}: ${path.basename(p)}` })); watchers.set(p, w); }
+      catch (e) { log({ event: 'live.manifest.skipped', reason: `watch failed ${e.code || e.message}: ${path.basename(p)}` }); }   // never silent: a worktree nobody watches must show in the log; the next wake retries
     }
   }
   reconcile();
@@ -236,19 +237,29 @@ export function snapshot(wtPath, { inboxDir = INBOX, now = Date.now(), post = de
 }
 
 // ---- command line --------------------------------------------------------------------------------------------------
-function resolveWorktree(arg) {
+/** The reply the hub gives the iPad after a snapshot: small, no Mac paths, no READY line (the button files the snapshot, it never claims a review). */
+export function snapshotReply(res, name) {
+  if (!res.ok) return { ok: false, status: 'refused', worktree: name, reason: res.reason, ...(res.path ? { path: res.path } : {}) };
+  return { ok: true, status: 'made', worktree: name, sha: res.sha, state: res.state, files: res.files.length, zip: !!res.zip };
+}
+
+/** A worktree name from `git worktree list` wins; otherwise an existing path; no argument means the one you are in. */
+export function resolveWorktree(arg, { repo = REPO } = {}) {
   if (!arg) return git(process.cwd(), ['rev-parse', '--show-toplevel']).trim();
-  if (fs.existsSync(arg)) return fs.realpathSync(arg);
-  const w = listWorktrees().find((x) => x.name === arg); if (!w) throw new Error(`no worktree "${arg}"`); return w.path;
+  const w = listWorktrees(repo).find((x) => x.name === arg); if (w) return w.path;
+  if (path.isAbsolute(arg) && fs.existsSync(arg)) return fs.realpathSync(arg);
+  throw new Error(`no worktree "${arg}"`);
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [cmd, arg] = process.argv.slice(2);
+  const rest = process.argv.slice(2); const json = rest.includes('--json');
+  const [cmd, arg] = rest.filter((a, i) => !a.startsWith('--') && rest[i - 1] !== '--out');
   try {
-    if (cmd === 'manifest') { const i = process.argv.indexOf('--out'); console.log(writeManifest(REPO, i > 0 ? process.argv[i + 1] : LIVE_FILE)); }
+    if (cmd === 'manifest') { const i = rest.indexOf('--out'); console.log(writeManifest(REPO, i >= 0 ? rest[i + 1] : LIVE_FILE)); }
     else if (cmd === 'built') console.log(`built: ${markBuilt(resolveWorktree(arg))}`);
     else if (cmd === 'snapshot') {
-      const r = snapshot(resolveWorktree(arg));
+      const wt = resolveWorktree(arg); const r = snapshot(wt);
+      if (json) { console.log(JSON.stringify(snapshotReply(r, path.basename(wt)))); process.exit(r.ok ? 0 : 2); }   // one line for the hub; exit 2 = refused
       if (!r.ok) { console.error(`snapshot refused: ${r.reason}${r.path ? ` (${r.path})` : ''}`); process.exit(2); }
       console.log(`snapshot: ${r.ref} · ${r.files.length} files · ${r.state}\n${r.posted || ''}\n${r.readyLine}`);
     } else if (cmd === 'watch') {
@@ -256,6 +267,6 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
       run(); const w = startWatcher({ onWake: run });
       for (const s of ['SIGTERM', 'SIGINT']) process.on(s, () => { w.close(); process.exit(0); });
       setInterval(() => {}, 1 << 30);   // keep the process alive; the watcher is event-driven, this timer never fires work
-    } else { console.error('usage: livestate.mjs manifest [--out F] | watch | snapshot [WORKTREE] | built [WORKTREE]'); process.exit(64); }
+    } else { console.error('usage: livestate.mjs manifest [--out F] | watch | snapshot [--json] [WORKTREE] | built [WORKTREE]'); process.exit(64); }
   } catch (e) { console.error(`livestate: ${e.message}`); process.exit(1); }
 }

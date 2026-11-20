@@ -7,6 +7,7 @@ The spec is `docs/specs/FEAT-18-offline-hub.md`.
 - **The page:** Draftpad's offline web app, served from `editor/dist/pwa/`.
   It installs once, then opens with no network.
 - **Note sync:** `POST /api/note` merges a browser's text into `draftpad.md`.
+- **Live edits (FEAT-39):** `GET /api/live` gives the manifest of uncommitted work that `sync/bin/live.zsh watch` keeps in `~/Recense/live/live.json`; `POST /api/live/snapshot` with `{"worktree":"<name>"}` files a review snapshot in the coordinator inbox (only a name the manifest lists). Both need the token.
   The merge is the apps' own (`shared/notesync.swift`).
   A browser with no hub keeps writing to its own storage and catches up later.
 - **Names:** Bonjour publishes `recense.local` and `mac.recense.local` (`--name mini` on the Mac mini).
@@ -56,4 +57,4 @@ This prints `https://recense.local/#pair=…`. Open that link once on each devic
 The page keeps the token; without it, the page still works but doesn't sync.
 
 ## Commands
-`recense-hub serve [--port 443] [--shell DIR] [--note FILE] [--name mac] [--no-mdns]` · `recense-hub pair` · `recense-hub selftest`
+`recense-hub serve [--port 443] [--shell DIR] [--note FILE] [--name mac] [--live FILE] [--live-script FILE] [--conf DIR] [--no-mdns]` · `recense-hub pair` · `recense-hub selftest`

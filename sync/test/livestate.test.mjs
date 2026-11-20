@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   DEBOUNCE_MS, ZIP_CAP, isSkipped, ageLabel, fileState, listWorktrees, buildManifest, writeManifest,
-  createDebouncer, startWatcher, snapshot,
+  createDebouncer, startWatcher, snapshot, snapshotReply, resolveWorktree,
 } from '../src/livestate.mjs';
 
 const ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
@@ -135,7 +135,8 @@ test('invariant 3 (real timers): a burst gives one wake', async () => {
 
 // The Claude Bash sandbox blocks FSEvents (checked 2026-11-19: this test fails inside it, passes outside). Probe first, skip loudly.
 async function fseventsWorks() {
-  const d = tmp(); let hit = false; const w = fs.watch(d, { recursive: true }, () => { hit = true; });
+  const d = tmp(); let hit = false, w;
+  try { w = fs.watch(d, { recursive: true }, () => { hit = true; }); w.on('error', () => {}); } catch { return false; }   // sandbox: EMFILE or EPERM
   await sleep(200); fs.writeFileSync(path.join(d, 'p'), 'x'); for (let i = 0; i < 15 && !hit; i++) await sleep(100); w.close(); return hit;
 }
 test('watcher: a real write wakes once; node_modules and the inbox do not', async (t) => {
@@ -240,4 +241,29 @@ test('label: UNBUILT without a stamp, BUILT only when every file is at or before
 test('snapshot event carries worktree, files, bytes, state', () => {
   const r = mkWork(); const { ev, res } = snap(r); const e = ev.find((x) => x.event === 'live.snapshot.made');
   assert.equal(e.worktree, path.basename(r)); assert.equal(e.files, res.files.length); assert.equal(typeof e.bytes, 'number'); assert.equal(e.state, 'UNBUILT');
+});
+
+// ---- slice 2: what the hub and the command line hand to the iPad -----------------------------------------------------
+test('snapshotReply: made → small JSON, no absolute paths, no file bodies', () => {
+  const r = mkWork(); const { res } = snap(r); const j = snapshotReply(res, 'lane');
+  assert.deepEqual(Object.keys(j).sort(), ['files', 'ok', 'sha', 'state', 'status', 'worktree', 'zip']);
+  assert.equal(j.ok, true); assert.equal(j.status, 'made'); assert.equal(j.worktree, 'lane'); assert.equal(j.files, res.files.length);
+  assert.equal(j.zip, true); assert.equal(j.sha, res.sha);   // no READY line: the iPad never claims one (Decision 2)
+  assert.doesNotMatch(JSON.stringify(j), new RegExp(os.tmpdir().replace(/[/\\]/g, '.')), 'no Mac path leaves the Mac');
+});
+
+test('snapshotReply: refused keeps the reason (and the offending relative path)', () => {
+  assert.deepEqual(snapshotReply({ ok: false, reason: 'clean' }, 'lane'), { ok: false, status: 'refused', worktree: 'lane', reason: 'clean' });
+  assert.deepEqual(snapshotReply({ ok: false, reason: 'secret', path: 'notes.txt' }, 'lane'), { ok: false, status: 'refused', worktree: 'lane', reason: 'secret', path: 'notes.txt' });
+});
+
+test('resolveWorktree: a name from git wins over a same-named folder in the current directory; a path still works', () => {
+  const r = mkRepo(); const w = path.join(tmp(), 'lane'); git(r, 'worktree', 'add', '-q', '-b', 'work/lane2', w);
+  const decoy = tmp(); fs.mkdirSync(path.join(decoy, 'lane'));
+  const prev = process.cwd(); process.chdir(decoy);
+  try {
+    assert.equal(resolveWorktree('lane', { repo: r }), fs.realpathSync(w));
+    assert.equal(resolveWorktree(fs.realpathSync(w), { repo: r }), fs.realpathSync(w));
+    assert.throws(() => resolveWorktree('nope', { repo: r }), /no worktree "nope"/);
+  } finally { process.chdir(prev); }
 });
