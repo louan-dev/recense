@@ -41,3 +41,22 @@ with tempfile.TemporaryDirectory() as d:
 c, _ = clean.run("mpep", "1901.02 Information Which Can Be Relied\non in Protest [R-10.2019]\nAny information may be relied on.\n")
 want = "## 1901.02 Information Which Can Be Relied on in Protest"
 print("wrapped heading ok" if c.splitlines()[0] == want else "FAIL wrapped heading: " + repr(c[:120]))
+
+# Regression (2026-11-20): M4B chapter titles use the written form; the audio stream is tagged eng.
+# Runs only where the voice is installed (KOKORO_DIR and VOICE_PY set); otherwise prints "skip".
+import os, json
+kd, vpy = os.environ.get("KOKORO_DIR"), os.environ.get("VOICE_PY")
+if kd and vpy:
+    with tempfile.TemporaryDirectory() as d:
+        pathlib.Path(d, "speech.md").write_text("## nineteen oh-one Protest\n\nA short line.\n\n## nineteen oh-two Who\n\nAnother.\n")
+        pathlib.Path(d, "clean.md").write_text("## 1901 Protest\n\nA short line.\n\n## 1902 Who\n\nAnother.\n")
+        out = pathlib.Path(d, "t.m4b")
+        subprocess.run([vpy, "-I", str(pathlib.Path(__file__).parent / "audiobook.py"), str(pathlib.Path(d, "speech.md")), str(out), "T"],
+                       check=True, capture_output=True, env={**os.environ, "TMPDIR": d})
+        j = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_chapters", "-show_streams", "-of", "json", str(out)],
+                                      capture_output=True, text=True).stdout)
+        titles = [c["tags"]["title"] for c in j["chapters"]]
+        lang = j["streams"][0].get("tags", {}).get("language")
+        print("m4b titles ok" if titles == ["1901 Protest", "1902 Who"] and lang == "eng" else f"FAIL m4b: {titles} {lang}")
+else:
+    print("m4b titles skip (no KOKORO_DIR/VOICE_PY)")
