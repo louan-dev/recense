@@ -230,6 +230,8 @@ to the `gallery-tmp` bucket.
 - Concurrency: read-check-write runs under the kernel's file lock (`zsystem flock`), which the system frees when the
   holder exits or dies, so no script breaks a lock; a waiter gives up after 30 s. `retire` (also `--end`) frees only the caller's lease.
   `post` writes the whole message first, then claims its name with `ln` (atomic; never an empty or overwritten message).
+- Hooks stay quiet: every verb logs through one function that keeps empty values and prints nothing to stderr, even when
+  `~/Recense/logs` is unwritable (regression: `hello` outside the repo once logged an empty value and broke the line).
 - Hooks never hold a session: `spawn` detaches from the hook's pipes; the Stop hook starts doctor detached and runs the
   holder checks within one 8.5 s budget.
 - Selftest: `zsh bin/coord.zsh selftest` (part of `npm test`); each review-1 finding has a regression case.

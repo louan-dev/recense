@@ -31,15 +31,15 @@ mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
 mins_since() { echo $(( ($(now) - $1) / 60 )); }
 
 # one JSON line per event, same shape as shared/ShowsKit DebugChannel: {"t","feature","event","fields":{sorted}}
-jq_s() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}; s=${s//[[:cntrl:]]/}; print -rn -- "\"$s\""; }
+jq_s() { local s=${1-}; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}; s=${s//[[:cntrl:]]/}; print -rn -- "\"$s\""; }
 log() {
   local ev=$1; shift
   local -a kv; local k body=""
   for k in "$@"; do kv+=("$k"); done
-  for k in ${(o)kv}; do body+="${body:+,}$(jq_s ${k%%=*}):$(jq_s ${k#*=})"; done
+  for k in ${(o)kv}; do body+="${body:+,}$(jq_s "${k%%=*}"):$(jq_s "${k#*=}")"; done
   local t=$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')
   mkdir -p "$LOGS" 2>/dev/null
-  print -r -- "{\"t\":\"$t\",\"feature\":\"coordinator\",\"event\":\"coordinator.$ev\",\"fields\":{$body}}" >> "$LOGS/coordinator.jsonl" 2>/dev/null
+  { print -r -- "{\"t\":\"$t\",\"feature\":\"coordinator\",\"event\":\"coordinator.$ev\",\"fields\":{$body}}" >> "$LOGS/coordinator.jsonl"; } 2>/dev/null
   return 0
 }
 
@@ -768,6 +768,14 @@ selftest() {
   print -l -- "- work/done1 @ $m2 · merged" "work/keep @ 1234567 · open" > $T/q5.md
   t tq-late-append "moved 1" "$(COORD_TEST_LATE_APPEND='  late line' run trim-queue $T/q5.md $T/q5-a.md)"
   t tq-late-kept "late line" "$(cat $T/q5.md)"; tz tq-late-no-pre "$(ls -a $T | grep '\.pre\.')"
+  # regression (real-path check 11-18): hello outside the repo logs an empty value; stdout stays hook JSON, stderr stays empty,
+  # and the log line is valid JSON with the empty field kept
+  : > $T/logs/coordinator.jsonl
+  local hs=$(print '{"session_id":"66666666-q","cwd":"/tmp"}' | zsh $SELF hello 2>&1 >/dev/null)
+  tz hello-quiet-stderr "$hs"
+  t log-empty-value '"role":""' "$(grep coordinator.hello $T/logs/coordinator.jsonl)"
+  # an unwritable log dir is silent too (the hook must never print noise)
+  mkdir -p $T/h2; tz log-unwritable-quiet "$(COORD_HOME=$T/h2 COORD_SID=aaaaaaaa-1 CLAUDE_CODE_SESSION_ID= COORD_LOGS=/dev/null/x zsh $SELF take 2>&1 >/dev/null)"   # take logs, so the old redirect order would print here
   # every log line is valid JSON
   t log-valid 0 "$(python3 -I -c 'import json,sys
 print(sum(1 for l in open(sys.argv[1]) if l.strip() and not json.loads(l)))' $T/logs/coordinator.jsonl 2>&1)"
