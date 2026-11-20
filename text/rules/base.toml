@@ -7,7 +7,8 @@
 #   speech : only on the copy sent to the voice (expansions that sound right)
 # Rule keys: id, stage, match (Python regex), action = drop | replace | heading | say,
 #            with (the replacement, or "#"/"##" for heading), why.
-#   heading extras: until (regex the heading must reach within 3 lines), join_next (title on next line)
+#   heading extras: until (regex the heading must reach within 3 lines), join_next (title on next line),
+#                    titles (table: first group -> title, used when the heading line is bare)
 #   say: match must name groups int, dec, sub; how = "section" (1901.07(a) -> nineteen oh-one point oh seven a)
 #        or "decimal" (1.291 -> one point two nine one)
 

@@ -51,6 +51,7 @@ match = '^Chapter (\d{3,4})\s*(.*)$'
 action = "heading"
 with = "#"
 join_next = '^[A-Z][^\d]*$'
+titles = { "300" = "Ownership and Assignment", "1900" = "Protest", "2100" = "Patentability" }
 why = "A chapter title wraps onto up to two more lines without digits, e.g. 'Chapter 100 ... and Foreign' / 'Filing'."
 
 [[rule]]

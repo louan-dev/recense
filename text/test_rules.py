@@ -47,6 +47,10 @@ c, _ = clean.run("mpep", "Chapter 100 Secrecy, Access, National Security, and Fo
 want = "# Chapter 100 Secrecy, Access, National Security, and Foreign Filing"
 print("chapter title ok" if c.splitlines()[0] == want else "FAIL chapter title: " + repr(c[:120]))
 
+# Regression (2026-11-20): a bare "Chapter 2100" line takes its title from the profile's titles table.
+c, _ = clean.run("mpep", "Chapter 2100\n2101\n")
+print("bare chapter ok" if c.splitlines()[0] == "# Chapter 2100 Patentability" else "FAIL bare chapter: " + repr(c[:80]))
+
 # Regression (2026-11-20): M4B chapter titles use the written form; the audio stream is tagged eng.
 # Runs only where the voice is installed (KOKORO_DIR and VOICE_PY set); otherwise prints "skip".
 import os, json
