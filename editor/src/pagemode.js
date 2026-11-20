@@ -243,7 +243,22 @@ export function deleteEmptyWindow(view, index = currentPage(view.state), { onSna
   if (pages.length <= 1) return false;
   const i = Math.max(0, Math.min(pages.length - 1, index));
   if (!isWindowEmpty(pages[i].rawContent)) return false;
-  // UI-14 E4 · a page with ink is never empty: the host says whether strokes sit on it (ink anchors by page).
+  return removePage(view, i, pages, docText, { onSnap, globalObj });
+}
+
+/**
+ * UI-14 C4 · Deletes page `index` with its text, as one editor change (Undo brings it back byte for byte).
+ * Refuses the only page and a page with ink (ink anchors by page; erase it first). Returns true if deleted.
+ */
+export function deletePage(view, index = currentPage(view.state), { onSnap = null, globalObj } = {}) {
+  const docText = view.state.doc.toString();
+  const pages = inspectDraftpadPages(docText);
+  if (pages.length <= 1 || index < 0 || index >= pages.length) return false;
+  return removePage(view, index, pages, docText, { onSnap, globalObj });
+}
+
+function removePage(view, i, pages, docText, { onSnap = null, globalObj } = {}) {
+  // UI-14 E4 · a page with ink is never removed: the host says whether strokes sit on it (ink anchors by page).
   if (typeof view.__pageHasInk === 'function' && view.__pageHasInk(i)) return false;
 
   const mem = getMemory(view);

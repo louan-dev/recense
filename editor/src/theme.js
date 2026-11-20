@@ -49,6 +49,15 @@ export function stepFontSize(px, dir) {
   return normalizeFontSize(normalizeFontSize(px) + FONT_STEP_PX * Math.sign(Number(dir) || 0));
 }
 
+// Derived from Spec: UI-14 Z2 · a pinch sets the text size: the size when the fingers touched, times the pinch's
+// scale, on the 2 px steps the menu uses, inside 12–36.
+export function pinchFontSize(basePx, scale) {
+  const sc = Number(scale);
+  if (!Number.isFinite(sc) || sc <= 0) return normalizeFontSize(basePx);
+  const raw = normalizeFontSize(basePx) * sc;
+  return normalizeFontSize(Math.round(raw / FONT_STEP_PX) * FONT_STEP_PX);
+}
+
 export function createThemeCompartments() {
   return {
     theme: new Compartment(),

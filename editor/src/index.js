@@ -3,7 +3,8 @@ import { isMixed } from './lenses.js';
 import { LANGS, LANG_NAMES } from './langs.js';
 import { EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, highlightSpecialChars } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, undo, redo } from '@codemirror/commands';
+import { createContentManager } from './contents.js';
 import { markdown } from '@codemirror/lang-markdown';
 import { pageMarkersExtension, controlCharFilter, inspectDraftpadPages, isWindowEmpty } from './pages.js';
 import {
@@ -42,6 +43,7 @@ import {
   swipeRightToLeft,
   openNewWindowOnLeft,
   deleteEmptyWindow,
+  deletePage,
   computeEffectiveDrag,
   goToPage,
   newPage,
@@ -113,7 +115,8 @@ import {
   buildFontSizeExtension,
   normalizeThemeName,
   normalizeFontSize,
-  stepFontSize
+  stepFontSize,
+  pinchFontSize
 } from './theme.js';
 
 export {
@@ -259,6 +262,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const newPageNavBtn = navButton('rc-nav-new', 'New page', '＋');
   const newerNavBtn = navButton('rc-nav-newer', 'Newer page', '‹');
   const olderNavBtn = navButton('rc-nav-older', 'Older page', '›');
+  // UI-14 C1 · the Overview (Content Manager): every page as a thumbnail.
+  const overviewNavBtn = navButton('rc-nav-overview', 'Overview', '▦');
   const pageIndicator = document.createElement('span');
   pageIndicator.className = 'rc-page-indicator';
   pageIndicator.id = 'rc-page-indicator';
@@ -273,7 +278,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   dotSheet.className = 'rc-dot-sheet';
   dotSheet.setAttribute('role', 'menu');
   dotSheet.hidden = true;
-  nav.append(newPageNavBtn, newerNavBtn, pageIndicator, olderNavBtn, slotRow, dotSheet);
+  nav.append(newPageNavBtn, newerNavBtn, pageIndicator, olderNavBtn, slotRow, overviewNavBtn, dotSheet);
 
   const menuWrap = document.createElement('div');
   menuWrap.className = 'rc-menu-wrap';
@@ -316,6 +321,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   const recenseIntoBtn = makeMenuItem('rc-recense-into-btn', 'Translate into: Auto', 'The Source lens’s language for this page');
   const searchBtn = makeMenuItem('rc-search-btn', 'Find', 'Find (⌘F)');
   const newPageMenuBtn = makeMenuItem('rc-new-page-btn', 'New page', 'A new page at the front');
+  const overviewMenuBtn = makeMenuItem('rc-overview-btn', 'Overview', 'Every page: search, move, delete, undo');
   const prevPageBtn = makeMenuItem('rc-prev-page-btn', 'Newer page', 'One page to the left');
   const nextPageBtn = makeMenuItem('rc-next-page-btn', 'Older page', 'One page to the right');
   const promoteMenuBtn = makeMenuItem('rc-promote-btn', 'Promote to front', 'Move this page to the front');
@@ -343,6 +349,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     recenseIntoBtn,
     searchBtn,
     newPageMenuBtn,
+    overviewMenuBtn,
     prevPageBtn,
     nextPageBtn,
     promoteMenuBtn,
@@ -708,6 +715,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   }
 
   let inkLayer = null;
+  let contents = null;   // UI-14 · the Overview, made once the view exists
   let matterMenu = null;   // FEAT-08
   let selectionMatterItems = () => [];   // UI-04 P11: FEAT-08 matter actions for lasso-selected strokes
   let radialOuterItems = () => [];   // UI-04 P2 outer ring: FEAT-08 matter actions for the text selection
@@ -762,6 +770,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
         hideOutline();
       }
       updatePageIndicator(update.state);
+      if (update.docChanged && contents && contents.isOpen()) contents.render();
       if (update.docChanged) {
         const isExternal = update.transactions.some(tr => Boolean(tr.annotation(externalSetTextAnnotation)));
         // UI-06: page actions (new, delete, promote, slot) come from the bar itself; only writing fades it.
@@ -831,7 +840,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       endCard.appendChild(b);
     };
     item('New page at the front', () => newPage(view));
-    item('Pages', () => showOutline());
+    item('Overview', () => contents.open(side));
     item(side === 'newest' ? 'Go to oldest' : 'Go to newest',
       () => goToPage(view, side === 'newest' ? pageCount(view.state) - 1 : 0));
     endCard.hidden = false;
@@ -839,6 +848,30 @@ export function mountEditor(root = document.body, initialDoc = '') {
   endCard.addEventListener('pointerdown', e => e.stopPropagation());
   document.addEventListener('pointerdown', e => { if (!endCard.hidden && !endCard.contains(e.target)) closeEndCard(); });
   view.__pageEnd = side => openEndCard(side);
+
+  // Derived from Spec: UI-14 C1–C8. The Overview; every action is one editor change, so Undo reverts it.
+  contents = createContentManager(workspace, {
+    getText: () => view.state.doc.toString(),
+    getSide: () => matterSide,
+    current: () => currentPage(view.state),
+    hasInk: i => view.__pageHasInk(i),
+    inkText: i => {
+      const ink = inkLayer ? inkLayer.getInk() : null;
+      if (!ink || !Array.isArray(ink.strokes)) return '';
+      const doc = view.state.doc.toString();
+      return ink.strokes.filter(st => st && st.ocr && st.ocr.t && resolveStrokeAnchor(st, doc).pageIndex === i).map(st => st.ocr.t).join(' ');
+    },
+    open: i => { goToPage(view, i); updatePageIndicator(); },
+    promote: i => { promotePage(view, i); updatePageIndicator(); },
+    slot: (i, anchor) => openDotSheet(i, pageIndicator.querySelector(`[data-page="${i}"]`) || anchor),
+    remove: i => { const ok = deletePage(view, i); updatePageIndicator(); return ok; },
+    move: (i, to) => { const ok = movePage(view, i, to); updatePageIndicator(); return ok; },
+    undo: () => { undo(view); updatePageIndicator(); },
+    redo: () => { redo(view); updatePageIndicator(); },
+    seek: (key, t) => playMedia(key, t, 'overview'),
+    jump: off => { contents.close(); jumpToOffset(view, off); },
+    haptic: kind => postHaptic(kind)
+  });
   // UI-14 E4 · ink anchors by page, so a page holding strokes is never removed as empty.
   view.__pageHasInk = i => {
     const ink = inkLayer ? inkLayer.getInk() : null;
@@ -1273,6 +1306,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
       if (outlineVisible) hideOutline();
       else showOutline();
     },
+    toggleOverview: () => contents.toggle(),
     openFind: () => {
       hideOutline();
       return openFindReplace(view);
@@ -1648,6 +1682,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
   newerNavBtn.addEventListener('click', () => { setToolbarFaded(false); swipeLeftToRight(view, { allowCreate: false }); });
   olderNavBtn.addEventListener('click', () => { setToolbarFaded(false); swipeRightToLeft(view); });
   newPageMenuBtn.addEventListener('click', () => { closeMenu(); newPage(view); });
+  overviewMenuBtn.addEventListener('click', () => { closeMenu(); contents.toggle(); });
+  overviewNavBtn.addEventListener('click', () => { setToolbarFaded(false); contents.toggle(); });
   promoteMenuBtn.addEventListener('click', () => { closeMenu(); promotePage(view, currentPage(view.state)); });
   deletePageMenuBtn.addEventListener('click', () => { closeMenu(); deleteEmptyWindow(view); updatePageIndicator(); });
   slotMenuBtn.addEventListener('click', e => {
@@ -1657,6 +1693,40 @@ export function mountEditor(root = document.body, initialDoc = '') {
     openDotSheet(i, pageIndicator.querySelector(`[data-page="${i}"]`) || menuBtn);
   });
   largerTextBtn.addEventListener('click', () => { setFontSize(stepFontSize(currentFontSize, 1)); });
+  // Derived from Spec: UI-14 Z2/Z3 · pinch the page: the text grows or shrinks and reflows in its column.
+  // WebKit (iPhone, iPad, Mac) sends gesture events; other browsers send a trackpad pinch as ctrl+wheel.
+  // Never while an ink tool is chosen, and never when a finger began at an edge (that is the wings' inward swipe).
+  {
+    let pinchBase = null;
+    let edgeStart = false;
+    const EDGE = 28;
+    view.scrollDOM.addEventListener('touchstart', e => {
+      if (!e.touches || e.touches.length < 2) { edgeStart = false; return; }
+      const w = view.scrollDOM.clientWidth || 400;
+      edgeStart = [...e.touches].some(t => t.clientX <= EDGE || t.clientX >= w - EDGE);
+    }, { passive: true });
+    view.scrollDOM.addEventListener('gesturestart', e => {
+      if (view.__pagesLocked || edgeStart) { pinchBase = null; return; }
+      e.preventDefault();
+      pinchBase = currentFontSize;
+    });
+    view.scrollDOM.addEventListener('gesturechange', e => {
+      if (pinchBase == null) return;
+      e.preventDefault();
+      const next = pinchFontSize(pinchBase, e.scale);
+      if (next !== currentFontSize) setFontSize(next);
+    });
+    view.scrollDOM.addEventListener('gestureend', () => { pinchBase = null; });
+    let wheelStepAt = 0;
+    view.scrollDOM.addEventListener('wheel', e => {
+      if (!e.ctrlKey || view.__pagesLocked) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (Math.abs(e.deltaY) < 2 || now - wheelStepAt < 80) return;
+      wheelStepAt = now;
+      setFontSize(stepFontSize(currentFontSize, e.deltaY < 0 ? 1 : -1));
+    }, { passive: false });
+  }
   smallerTextBtn.addEventListener('click', () => { setFontSize(stepFontSize(currentFontSize, -1)); });
 
   outlineToggleBtn.addEventListener('click', () => {
@@ -1715,6 +1785,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
   shell.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (!endCard.hidden) closeEndCard();
+      if (contents && contents.isOpen()) contents.close();
       if (menuOpen) closeMenu();
       if (outlineVisible) hideOutline();
       if (dualWings && dualWings.isWingOpen()) dualWings.closeWing('both');

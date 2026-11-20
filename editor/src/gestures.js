@@ -341,6 +341,11 @@ export function executeVoiceMove(commandStr, handlers = {}) {
     if (typeof handlers.slotPage === 'function') handlers.slotPage(Number(slotMatch[1]));
     return { matched: true, action: 'slotPage' };
   }
+  // Derived from Spec: UI-14 C1 · the Overview (every page): "overview", "show pages", "aperçu", "tổng quan".
+  if (hasWord('overview') || ['show pages', 'all pages', 'aperçu', 'tổng quan'].some(hasPhrase)) {
+    if (typeof handlers.toggleOverview === 'function') handlers.toggleOverview();
+    return { matched: true, action: 'toggleOverview' };
+  }
   if (typeof handlers.newPage === 'function' &&
       ['new page', 'new topic', 'new window', 'nouvelle page', 'nouveau sujet', 'trang mới', 'chủ đề mới'].some(hasPhrase)) {
     handlers.newPage();

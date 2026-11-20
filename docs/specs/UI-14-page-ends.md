@@ -1,7 +1,7 @@
 # UI-14 · Draftpad page ends: no dead end, either hand; the Content Manager
 
 From: owner 2026-11-20 (sketch "Haptic Seam", Notability recordings 11-18 iPhone and 11-20 iPad)
-Status: `[~]` E1–E7 built (slice 1); C1–C8 (Content Manager) and Z1–Z3 (zoom) `[ ]` written
+Status: `[~]` E1–E7, C1–C8, Z1–Z3 built 2026-11-20 (work/pagering); device checks owed (iPhone, iPad, Mac)
 Amends: UI-06 G1, G2, D3 (`ui-teardowns/UI-06-antinote-navigation/UI-06.md`). Law: `docs/law/interaction.md:28`, treaty Article 12.
 
 ## Verdict
@@ -26,7 +26,7 @@ Amends: UI-06 G1, G2, D3 (`ui-teardowns/UI-06-antinote-navigation/UI-06.md`). La
   - the `edge` haptic plays once (the seam), and the end card appears.
 - **E3 · The end card** holds three buttons, in this order, the same at both ends:
   - **New page** (today's date; always at the newest end, so dates stay in order; the card says "at the front");
-  - **Pages** (the Content Manager, C1; until it ships, the existing outline panel);
+  - **Overview** (the Content Manager, C1; named Overview because the ··· menu's "Pages" already toggles page mode);
   - **Go to the other end** ("Go to oldest" at the newest end, "Go to newest" at the oldest end).
   - It closes on a swipe back, a tap outside, Escape, or any button. It never opens on its own.
 - **E4 · Empty pages tidy themselves.** Leaving an empty page by a swipe removes it, when it is not the only page.
@@ -38,24 +38,31 @@ Amends: UI-06 G1, G2, D3 (`ui-teardowns/UI-06-antinote-navigation/UI-06.md`). La
 - **E6 · Explicit making stays.** ＋, the ··· menu "New page" and voice "new page" still make a page (`newPage`), unchanged.
 - **E7 · Every way in.** The end card is reachable by gesture, by the bar's ‹ › at an end, by voice ("newer page" at the front), and by Mac's step keys.
 
-## Content Manager (slice 2, written)
+## Content Manager: the Overview (slice 2)
 Model: Notability's Content Manager (owner recordings). Clean-room: behaviour only.
-- **C1 · Opens from:** the end card's Pages; a top-bar button; ··· › "Show Pages"; voice "show pages".
+- **C1 · Opens from:** the end card's Overview; the bar's ▦ button; ··· › Overview; voice "overview", "show pages", "aperçu", "tổng quan".
   iPad and Mac: a side panel on the side of the end you came from (else the end side of the layout). iPhone: a sheet.
-- **C2 · Holds:** Search · "All pages ▾" filter with a count · numbered page thumbnails · Select · Expand · Close.
+- **C2 · Holds:** Search · "All pages ▾" filter (All pages / Slotted) with a count · ↶ ↷ · − + · numbered page thumbnails · Select · Expand · Close.
 - **C3 · Thumbnails (owner 11-20):** each page drawn small, its number under it, the current one outlined.
-- **C4 · Each thumbnail's ··· :** Open, Promote to front, Slot, Delete page. Select: many pages, then Delete.
+- **C4 · Each thumbnail's ··· :** Open, Promote to front, Slot…, Delete page. Select: many pages, then Delete.
+  Delete refuses the only page and a page with ink, and says so (`deletePage`, `pagemode.js`).
 - **C5 · Undo:** every add, delete and reorder is one editor change, so Undo (↶ in the panel and the bar, Edit › Undo, voice "undo") reverts it.
 - **C6 · Reorder:** drag a thumbnail (same rule as UI-06 G4).
 - **C7 · Search:** typed text, and ink where OCR text exists; hits counted, words bold.
 - **C8 · Underlay feed (owner 11-20):** in a media note or any page with a recording, the list shows what you wrote, word by word, each with its note time;
   tap a word: the media (or the page's recording) jumps to that moment (FEAT-23 note time; FEAT-08 P6 real-life time).
+  Built: rows per passage (`timedEntries`, `contents.js`), media rows seek (`playMedia`); rows with only a real-life time
+  jump the caret to the passage. **Owed:** seeking a Draftpad recording by real-life time (recordings keep no wall-clock start yet).
 
-## Zoom (slice 3, written)
+## Zoom (slice 3)
 - **Z1 · Thumbnails:** pinch, or − / + in the panel: 1 to 5 columns.
-- **Z2 · Page:** pinch, or the ··· menu's larger / smaller text: text grows and reflows in the column; never sideways scroll.
-- **Z3 · Mac:** trackpad pinch arrives as ctrl+wheel; the page bar's A− / A+ do the same.
+- **Z2 · Page:** pinch, or the ··· menu's Larger / Smaller text: text grows and reflows in the column; never sideways scroll.
+  `pinchFontSize` (`theme.js`): base × scale on 2 px steps, 12–36. Not while an ink tool is chosen; not when a finger began
+  in the 28 px edge zone (the wings' two-edge inward swipe).
+- **Z3 · Mac:** WebKit sends the trackpad pinch as gesture events; other browsers as ctrl+wheel (one 2 px step per 80 ms).
+  The ··· menu's Larger / Smaller text do the same.
 
 ## Checks
-- `npm test` in `editor/`: `test/ui14-page-ends.test.mjs` (E1–E5), `test/p1-navigation.test.mjs` updated to E1–E4.
+- `npm test` in `editor/`: `test/ui14-page-ends.test.mjs` (E1–E5), `test/ui14-contents.test.mjs` (C1–C8, Z1, Z2),
+  `test/p1-navigation.test.mjs` updated to E1–E4.
 - Device: iPhone + iPad through iPhone Mirroring, swipe past both ends; Mac trackpad. `device:` owed until shot.
