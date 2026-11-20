@@ -58,5 +58,7 @@ if kd and vpy:
         titles = [c["tags"]["title"] for c in j["chapters"]]
         lang = j["streams"][0].get("tags", {}).get("language")
         print("m4b titles ok" if titles == ["1901 Protest", "1902 Who"] and lang == "eng" else f"FAIL m4b: {titles} {lang}")
+        left = list(pathlib.Path(d).glob("book-*"))
+        print("m4b temp cleaned ok" if not left else f"FAIL m4b temp left: {left}")
 else:
     print("m4b titles skip (no KOKORO_DIR/VOICE_PY)")
