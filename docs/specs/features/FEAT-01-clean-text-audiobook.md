@@ -46,9 +46,9 @@ Output: a reading copy (`clean.md`) and a voice copy (`speech.md`); headings bec
 ## Voice
 Kokoro-82M ONNX (`af_heart`), fully offline. Setup-only download: GitHub release
 `thewh1teagle/kokoro-onnx` model-files-v1.0:
-- `kokoro-v1.0.onnx` sha256 `7d5df8ec…3636a6c5`;
-- `voices-v1.0.bin` sha256 `bca610b8…1fbf7d`.
-- Amended 2026-11-18: only these prefixes and suffixes are recorded. The full values: `TO FILL at install` (A4).
+- `kokoro-v1.0.onnx` sha256 `7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5`, 325,532,387 bytes;
+- `voices-v1.0.bin` sha256 `bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d`, 28,214,398 bytes.
+- Filled 2026-11-20 at install (match the 11-18 prefixes; `~/.local/share/recense/voice/manifest.json`).
 
 ## Open
 - Per-word timings: Kokoro-ONNX gives sentence-level timing only; P2 asks for timings from TTS.
@@ -204,7 +204,7 @@ Kokoro-82M ONNX (`af_heart`), fully offline. Setup-only download: GitHub release
 - **Setup-only installs** (once, then offline forever), into a venv beside the ears env: `~/.local/share/recense/voice`.
   - Manifest `~/.local/share/recense/voice/manifest.json`, one entry per file: `name`, `source`, `version`, `bytes`, `sha256`, `installed`.
   - **Kokoro:** GitHub release `thewh1teagle/kokoro-onnx` model-files-v1.0, and PyPI `kokoro-onnx`.
-    - Sizes: `TO FILL at install`. Checksums: full values `TO FILL at install` (only prefixes are known, Voice above).
+    - Sizes and checksums: Voice above (filled 2026-11-20).
   - **VieNeu v3 Turbo 3.8.3** (Apache-2.0): Hugging Face `pnnbao-ump/VieNeu-TTS-v3-Turbo`, PyPI `vieneu`.
     - Size: model cache 608 MB (measured 2026-11-08, research note). Checksum: `TO FILL at install`.
   - The install script verifies each sha256 and refuses a mismatch.
