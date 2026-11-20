@@ -2,7 +2,7 @@ import Foundation
 import Network
 import Security
 
-// Derived from Spec: FEAT-18 (H1a). HTTPS on the LAN: the Draftpad page, /api/health, and /api/note (needs the token).
+// Derived from Spec: FEAT-18 (H1a), FEAT-39 (P2). HTTPS on the LAN: the Draftpad page, /api/health, /api/note and /api/live (all but health need the token).
 // The port can be 443 because macOS lets a normal user bind it.
 
 final class HubServer {
@@ -11,11 +11,15 @@ final class HubServer {
     let notePath: String
     let token: String
     let name: String
+    let liveFile: String
+    let liveScript: String
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "recense.hub")
+    private let liveQueue = DispatchQueue(label: "recense.hub.live")   // one snapshot at a time; it never blocks the note
 
-    init(port: UInt16, shell: String, notePath: String, token: String, name: String) {
+    init(port: UInt16, shell: String, notePath: String, token: String, name: String, liveFile: String, liveScript: String) {
         self.port = port; self.shell = shell; self.notePath = notePath; self.token = token; self.name = name
+        self.liveFile = liveFile; self.liveScript = liveScript
     }
 
     static func identity(p12: String, passphrase: String) -> SecIdentity? {
@@ -76,6 +80,22 @@ final class HubServer {
             let base = obj["base"] as? String
             let reply = hubSaveNote(path: notePath, base: base, mine: mine)
             return json(c, reply.status, reply.body)
+        }
+        if path == "/api/live" {
+            guard r.method == "GET" else { return json(c, 405, ["error": "GET only"]) }
+            guard hubTokenOK(r.headers["authorization"], token: token) else { return json(c, 401, ["error": "no token"]) }
+            let reply = hubLiveManifest(path: liveFile)
+            return json(c, reply.status, reply.body)
+        }
+        if path == "/api/live/snapshot" {
+            guard r.method == "POST" else { return json(c, 405, ["error": "POST only"]) }
+            guard hubTokenOK(r.headers["authorization"], token: token) else { return json(c, 401, ["error": "no token"]) }
+            let body = r.body, file = liveFile, script = liveScript
+            liveQueue.async { [weak self] in
+                let reply = hubLiveSnapshot(body: body, manifestPath: file, script: script, run: hubLiveProcessRunner)
+                self?.json(c, reply.status, reply.body)
+            }
+            return
         }
         guard r.method == "GET" || r.method == "HEAD" else { return json(c, 405, ["error": "GET only"]) }
         guard let file = hubShellFile(root: shell, urlPath: r.target),

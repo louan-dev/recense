@@ -1,11 +1,10 @@
 import Foundation
 
-// Derived from Spec: FEAT-18 (H1). recense-hub [serve|pair|selftest] [--port N] [--shell DIR] [--note FILE] [--name mac] [--no-mdns]
+// Derived from Spec: FEAT-18 (H1), FEAT-39 (P2). recense-hub [serve|pair|selftest] [--port N] [--shell DIR] [--note FILE] [--name mac] [--live FILE] [--live-script FILE] [--conf DIR] [--no-mdns]
 // A headless helper: serves Draftpad at https://recense.local and keeps the note in step between devices. It is never
 // the only copy of anything; every device keeps its own.
 
 let home = NSHomeDirectory()
-let confDir = home + "/.config/recense/hub"
 var args = Array(CommandLine.arguments.dropFirst())
 let command = args.first.flatMap { ["serve", "pair", "selftest"].contains($0) ? $0 : nil } ?? "serve"
 if args.first == command { args.removeFirst() }
@@ -15,11 +14,14 @@ func opt(_ name: String) -> String? {
     return args[i + 1]
 }
 let env = ProcessInfo.processInfo.environment
+let confDir = opt("--conf") ?? env["HUB_CONF"] ?? home + "/.config/recense/hub"   // certificate and token; another folder lets a test run a hub of its own
 let port = UInt16(opt("--port") ?? env["HUB_PORT"] ?? "443") ?? 443
 let shell = opt("--shell") ?? env["HUB_SHELL"] ?? home + "/Developer/recense/editor/dist/pwa"
 let notePath = opt("--note") ?? env["HUB_NOTE"]
     ?? home + "/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/draftpad.md"
 let hubName = opt("--name") ?? env["HUB_NAME"] ?? "mac"
+let liveFile = opt("--live") ?? env["HUB_LIVE"] ?? home + "/Recense/live/live.json"
+let liveScript = opt("--live-script") ?? env["HUB_LIVE_SCRIPT"] ?? home + "/Developer/recense/sync/bin/live.zsh"
 
 func readToken() -> String {
     let path = confDir + "/token"
@@ -34,7 +36,7 @@ func readToken() -> String {
 
 switch command {
 case "selftest":
-    let ok = hubNoteSelftest() && notesyncSelftest()
+    let ok = hubNoteSelftest() && hubLiveSelftest() && notesyncSelftest()
     print(ok ? "hub selftest ok" : "hub selftest FAILED")
     exit(ok ? 0 : 1)
 
@@ -52,7 +54,8 @@ default:
         FileHandle.standardError.write(Data("hub: no page at \(shell)/index.html (run npm run build in editor/)\n".utf8))
         exit(2)
     }
-    let server = HubServer(port: port, shell: shell, notePath: notePath, token: readToken(), name: hubName)
+    let server = HubServer(port: port, shell: shell, notePath: notePath, token: readToken(), name: hubName,
+                           liveFile: liveFile, liveScript: liveScript)
     do { try server.start(identity: identity) } catch {
         FileHandle.standardError.write(Data("hub: could not listen on \(port): \(error)\n".utf8)); exit(1)
     }

@@ -12,6 +12,7 @@ enum RecensePlaces {
             Place(id: "main", title: "Main", symbol: "square.grid.2x2") { MainView() },
             Place(id: "terminal", title: "Terminal", symbol: "terminal") { TerminalPlace() },  // SSH to the Macs (Terminal.swift)
             Place(id: "devices", title: "Devices", symbol: "point.3.connected.trianglepath.dotted") { DevicesPlace() },  // FEAT-09 carry (Devices.swift)
+            Place(id: "live", title: "Live edits", symbol: "pencil.and.list.clipboard") { LiveEditsPlace() },  // FEAT-39 uncommitted work on the Mac (LiveEdits.swift)
             Place(id: "headphones", title: "Headphones", symbol: "headphones") { HeadphonesPlace() },  // FEAT-15 Bose Bridge (Headphones.swift)
             Place(id: "ask", title: "Ask", symbol: "lightbulb") {
                 PlayerView(url: galleryURL("/main/archive", ["ask": "1"])).webPlace("Ask")
