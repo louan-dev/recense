@@ -1,6 +1,6 @@
 # FEAT-39 · Live edits: the iPad sees what changed on the Mac before it is committed, and a review snapshot reaches the coordinator inbox
 
-From: owner 2026-11-19 ("iPad sees what's updated in real time on my Mac, not committed, with last-edited times, and zip files sent to you for code review") · Status: `[~]` P1 and P3 built and checked on the Mac (2026-11-19); P2 (iPad view) and the hub endpoints not built
+From: owner 2026-11-19 ("iPad sees what's updated in real time on my Mac, not committed, with last-edited times, and zip files sent to you for code review") · Status: `[~]` P1, P3, the hub endpoints and the iPad list built and compiled (2026-11-19); not installed, no device check yet; the diff view and the LAN/R2 rungs are open
 Linked specs: FEAT-22 (catch-up ladder: device → paired device → hub → R2 optional) · FEAT-18 (hub) · FEAT-38 (intake, same transfer path) · `.claude/CLAUDE.md` § Sessions working together (review dialogue)
 
 Labels: **checked** = seen this session · **assumption** = not yet verified.
@@ -23,8 +23,22 @@ cannot read work that has no commit. Git can snapshot uncommitted work without t
 - Invariants 1-4 and 6 are tests in `sync/test/livestate.test.mjs`. Real path: manifest of the live repo wrote in 913 ms (two worktrees, 14 files); a snapshot of this worktree applied cleanly to a clone at its base; the real watcher re-wrote the manifest about 8 s after an edit (5 s debounce).
 - The watcher test needs FSEvents, which the Claude Bash sandbox blocks (**checked**); there it skips with a message.
 
-## Not built `[ ]` (P2 and transfer)
-- The iOS app has no hub client (**checked**: only `editor/src/hubsync.js` talks to the hub). P2 needs: hub `GET /api/live` and `POST /api/live/snapshot` (token), a token store and hub address on iOS, and `mobile/HostApp/iOS/LiveEdits.swift`. FUNCTION ONLY until then: the Mac has the command line, the iPad has no control yet.
+## Built `[x]` slice 2 (hub and iPad; compiled, not installed)
+- Hub: `GET /api/live` and `POST /api/live/snapshot`, both with the token: `hub/Sources/recense-hub/HubLive.swift` (`hubLiveManifest`, `hubLiveWorktreeName`, `hubLiveSnapshot`, `hubLiveProcessRunner`), routes in `HubServer.swift` (`route`), options `--live`, `--live-script`, `--conf` in `main.swift`.
+  A snapshot may name only a worktree the manifest lists (never a path); the name goes to the script as its own argument; one snapshot runs at a time.
+  Checks: `recense-hub selftest` (hub; a mutation of the name guard failed 5 cases). Real path: a hub of its own on port 8443 with a throwaway certificate and token (`--conf`): no token 401, wrong token 401, wrong method 405, unknown worktree 404, `GET /api/live` the manifest, snapshot 200 `made`, patch and note in the inbox.
+- Mac command line for it: `live.zsh snapshot --json <name>` (`snapshotReply`, `resolveWorktree` in `sync/src/livestate.mjs`; a name from git wins over a same-named folder). Watch failures are logged (`live.manifest.skipped`, reason `watch failed …`), never silent.
+- Reader rules (one copy for iPhone and iPad): `shared/ShowsKit/Sources/ShowsKit/LiveEdits.swift` (`LiveManifest` decode and `sorted`, `LiveAge.of`, `LiveHub.pairToken` / `baseURL` / `request` / `reach`, `LiveSnapshotReply.decode`, `LiveCache`). 13 tests in `Tests/ShowsKitTests/LiveEditsTests.swift`; mutations of the age step, the row order and the https rule each failed tests.
+- Screen: `mobile/HostApp/iOS/LiveEdits.swift` (`LiveEditsPlace`), a row in the Library (`Places.swift`: **Library › Live edits**; the app has no Settings screen, so this replaces "Settings ›" above). Pairing: on the Mac `recense-hub pair | pbcopy`, on the iPad the **Paste** button in that screen (token kept in the Keychain, this device only). Controls: per worktree **Make Review Snapshot**; `···` menu **Refresh** and **Forget the Mac**; pull down also refreshes; refresh runs every 10 s while the screen is open (30 s when the Mac is out of reach). Offline: the last copy opens at once, marked "Mac not reachable" with its "as of" time (`LiveCache`, Application Support).
+  The iPad button files the snapshot and never sends `READY FOR REVIEW` (Decision 2).
+- Compile: `xcodebuild … -scheme GalleryFiles` and `-scheme RecenseGuest` (the Guest build gets an empty stub) both BUILD SUCCEEDED, `CODE_SIGNING_ALLOWED=NO`. `NSLocalNetworkUsageDescription` now names the Mac hub.
+
+## Not built `[ ]`
+- **The file's diff on a row tap** (P2): needs `GET /api/live/diff?worktree=&path=` on the hub (`git diff HEAD -- path`; the file itself for untracked text) and a detail screen. Filed T-0185.
+- **LAN-first and R2 rungs** of the catch-up ladder: only the hub over the LAN (`https://recense.local`, or the address typed in the screen) is built; `live.view.refreshed` reports `hub` or `cache`. The device must trust the hub's root (the FEAT-18 profile) or the screen says so.
+- **Siri/Shortcuts name "Live edits"** (an App Intent like `DraftpadVoiceIntent.swift`): not built; the Library row is the one control.
+- **Device checks 2, 3, 5** below on the owner's iPad and the screenshot audit (no install from a worktree: the coordinator installs after review).
+- Singular/plural ("1 files") in the header: no String Catalog in the app yet; English literals only.
 
 ## Planned `[ ]` (original text, P1 and P3 now built above)
 
@@ -40,7 +54,7 @@ cannot read work that has no commit. Git can snapshot uncommitted work without t
 - Idle cost: no polling loop; zero CPU between events.
 
 ### P2 · The iPad view (read-only list)
-- Screen: **Live edits** (Recense mobile › Settings › Live edits; also reachable by Siri/Shortcuts name "Live edits").
+- Screen: **Live edits** (Recense mobile › Library › Live edits; a Siri/Shortcuts name "Live edits" is owed, see Not built).
 - One row per file: name, folder, "edited 3 min ago", `+12 −4`. Rows sorted by newest edit. Group header per worktree/branch.
 - Visible controls: **Refresh** button (pull down also works, never alone), **Make review snapshot** button (P3).
 - Tapping a row shows the file's diff, large text, narrow column.
@@ -97,10 +111,10 @@ cannot read work that has no commit. Git can snapshot uncommitted work without t
 
 ## Device checks
 1. Mac: edit any file in a worktree, wait 6 s, then: `tail -2 ~/Recense/logs/live.jsonl` shows `live.manifest.written`.
-2. iPad: open Settings › Live edits; the file appears with "just now" within 10 s (assumption, measure).
-3. iPad: tap **Make review snapshot**; then on the Mac: `ls -t ~/Developer/recense/.handoff/coordinator/inbox ~/Developer/recense/.handoff/coordinator/inbox/live | head -6` shows the `-live.md` note and the `.patch`.
+2. iPad (once, pairing: on the Mac `recense-hub pair | pbcopy`; on the iPad Library › Live edits › **Paste**; the hub's root profile must be trusted, FEAT-18): open Library › Live edits; the file appears with "just now" within 10 s (assumption, measure).
+3. iPad: tap **Make Review Snapshot** under the worktree; then on the Mac: `ls -t ~/Developer/recense/.handoff/coordinator/inbox ~/Developer/recense/.handoff/coordinator/inbox/live | head -6` shows the `-live.md` note and the `.patch`.
 4. Mac: `git -C ~/Developer/recense status --short | head` is unchanged by step 3 (invariant 1).
-5. Offline proof: iPad Wi-Fi off; Settings › Live edits still opens and reads "Mac not reachable", showing the last copy.
+5. Offline proof: iPad Wi-Fi off; Library › Live edits still opens and reads "Mac not reachable", showing the last copy.
 6. Secret proof: create `.env` in a worktree with a fake line; it never appears in the list, the patch or the zip.
 
 ## Decisions (answered 2026-11-19; supersede the two open questions)

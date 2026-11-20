@@ -7,7 +7,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Recense opens Matters and Raven only with Face ID.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Recense finds your other paired devices over Bluetooth and Wi-Fi, with no internet, to carry files between them.</string>
+	<string>Recense finds your other paired devices, and the hub on your Mac, over Bluetooth and Wi-Fi, with no internet, to carry files between them and to show what changed on the Mac.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_recense-p2p._tcp</string>
