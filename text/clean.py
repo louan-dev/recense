@@ -86,8 +86,6 @@ def run(profile, src, path=None):
         for r, rx in stage(rules, "page"):
             if r["action"] == "drop" and rx.search(s):
                 dropped = True; break
-            if r["action"] == "replace":
-                s = rx.sub(r.get("with", ""), s)
         if not dropped:
             out.append(s)
     lines = out
@@ -117,6 +115,14 @@ def run(profile, src, path=None):
         if meta.get("skip_leading_toc") and blocks and not seen_section:
             i += 1; continue  # inside the chapter's own table of contents
         blocks.append(("T", None, s)); i += 1
+
+    # page replace rules run after headings are joined, so a heading's `until` marker is still there
+    reps = [(r, rx) for r, rx in stage(rules, "page") if r["action"] == "replace"]
+    def rep(t):
+        for r, rx in reps:
+            t = rx.sub(r.get("with", ""), t)
+        return t.strip()
+    blocks = [(k, lv, rep(t)) for k, lv, t in blocks]
 
     # reflow: blank line ends a paragraph; join hyphenated breaks and wrapped lines
     md, para = [], []

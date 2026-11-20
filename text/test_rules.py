@@ -36,3 +36,8 @@ with tempfile.TemporaryDirectory() as d:
                        capture_output=True, text=True)
     ok = r.returncode == 0 and "Patent" in pathlib.Path(d, "clean.md").read_text()
     print("pdf cli ok" if ok else "FAIL pdf cli: " + r.stderr[-300:])
+
+# Regression (2026-11-20): a section title wrapped onto a second line is joined up to its [R-…] stamp.
+c, _ = clean.run("mpep", "1901.02 Information Which Can Be Relied\non in Protest [R-10.2019]\nAny information may be relied on.\n")
+want = "## 1901.02 Information Which Can Be Relied on in Protest"
+print("wrapped heading ok" if c.splitlines()[0] == want else "FAIL wrapped heading: " + repr(c[:120]))
