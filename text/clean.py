@@ -145,6 +145,7 @@ def run(profile, src, path=None):
 if __name__ == "__main__":
     profile, src, outdir = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
     outdir.mkdir(parents=True, exist_ok=True)
-    clean, speech = run(profile, src.read_text())
+    text = "" if src.suffix.lower() == ".pdf" else src.read_text()
+    clean, speech = run(profile, text, path=src)
     (outdir / "clean.md").write_text(clean)
     (outdir / "speech.md").write_text(speech)
