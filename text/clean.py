@@ -106,6 +106,10 @@ def run(profile, src, path=None):
                     j += 1; title += " " + lines[j]
                 if not end.search(title):
                     continue
+            if r.get("join_next"):
+                nxt = re.compile(r["join_next"])
+                while j < i + 2 and j + 1 < len(lines) and lines[j + 1] and nxt.match(lines[j + 1]):
+                    j += 1; title += " " + lines[j]
             hit = (r["with"], title, j); break
         if hit:
             level, title, j = hit

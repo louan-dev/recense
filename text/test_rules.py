@@ -42,6 +42,11 @@ c, _ = clean.run("mpep", "1901.02 Information Which Can Be Relied\non in Protest
 want = "## 1901.02 Information Which Can Be Relied on in Protest"
 print("wrapped heading ok" if c.splitlines()[0] == want else "FAIL wrapped heading: " + repr(c[:120]))
 
+# Regression (2026-11-20): a chapter title wrapped onto the next line is joined (join_next); a number line is not.
+c, _ = clean.run("mpep", "Chapter 100 Secrecy, Access, National Security, and Foreign\nFiling\n101\n")
+want = "# Chapter 100 Secrecy, Access, National Security, and Foreign Filing"
+print("chapter title ok" if c.splitlines()[0] == want else "FAIL chapter title: " + repr(c[:120]))
+
 # Regression (2026-11-20): M4B chapter titles use the written form; the audio stream is tagged eng.
 # Runs only where the voice is installed (KOKORO_DIR and VOICE_PY set); otherwise prints "skip".
 import os, json
