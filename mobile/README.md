@@ -156,6 +156,7 @@ updates in place.
   forever. No network at any point. Moving bytes between devices by themselves (FEAT-09): pairing and a one-way
   "Carry Now" push are wired (Library › Devices, `HostApp/iOS/Devices.swift`); the full move/trash/restore replay
   across devices is not built yet. Pairing finishes on both devices whichever taps "They Match" first (BUG-17).
+- **Live edits** (FEAT-39, Library › Live edits, `HostApp/iOS/LiveEdits.swift`): what changed on the Mac and is not committed yet, with each file's last-edited time, read from the Mac's hub (`recense-hub`, `GET /api/live`). Pair once: on the Mac `recense-hub pair | pbcopy`, then tap Paste in the screen (the token stays in this device's Keychain). **Make Review Snapshot** files a patch with the coordinator. The last copy opens offline, marked "Mac not reachable". The device must trust the hub's root profile (FEAT-18). The rules are `shared/ShowsKit/Sources/ShowsKit/LiveEdits.swift`; the file diff on a tap is not built yet.
   A device paired on one side only is fixed by pairing again: Library › Devices › Pair a Device… on both, in
   either order (the device you pick is invited again until it answers).
   A carried file counts as settled only once its bytes are placed; a file still owed shows "Waiting for N files" and

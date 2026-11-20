@@ -127,5 +127,6 @@ Recense/.trash/…                         → deletes, kept 30 days
 - No SwiftUI macros (`@State`, `@Entry`, `#Preview`): the Mac builds this package with the Command Line Tools
   (`strip/build.sh`), which lack SwiftUI's macro plugin. Use `@StateObject`, `@Observable`, `@Bindable`.
   `testNoSwiftUIMacros` guards it.
+- `LiveEdits.swift` (FEAT-39): the reading side of Live edits: the manifest the Mac's `sync/src/livestate.mjs` writes (`LiveManifest`, newest edit first), `LiveAge` (the steps "just now" / minutes / hours / days), `LiveHub` (pair link, https-only address, requests, why a call failed), `LiveSnapshotReply`, `LiveCache` (the last copy for offline). The screen is `mobile/HostApp/iOS/LiveEdits.swift`.
 - `DebugChannel.swift`: the debug channel. `DebugChannel.event("carry", "carry.apply", ["n": "3"])` appends one JSON line to `~/Recense/logs/carry.jsonl` (iOS: `Documents/Recense/logs/`), never blocks or throws.
   Its JS twin is `library/src/client/debuglog.js`; `Tests/ShowsKitTests/Fixtures/debugchannel.json` holds the lines both must produce byte for byte.
