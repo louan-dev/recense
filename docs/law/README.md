@@ -9,11 +9,15 @@ Read this folder before planning work in any part of the repo.
 - `offline.md` — what may need a network, and when.
 - `interaction.md` — how every screen, gesture, sound and haptic must behave.
 - `order.md` — which wish is granted first: stars set the group, emphasis the order. Run by `sync/src/wishrank.mjs`.
+- `treaty.md` — the Articles: one cure for every twin, reuse before new code, the Locus Declaration, zero-deletion retrofit, standing priorities, effort, ambidextrous ergonomics, siblings.
+- `regulations.md` — the Rules: the first-instinct intake, the five loops, accounts and terminals, the closing block, effort tiers.
+- `instructions.md` — the Administrative Instructions: paths, templates, commands, hook text.
 
 ## Order of authority (highest first)
 1. The owner's words, dated.
 2. The owner's global rules (`~/.claude/CLAUDE.md`). Not repeated here; this folder only adds to them.
 3. This folder.
+   Inside it: `treaty.md` first, then `regulations.md`, then `instructions.md`, then the other files (2026-11-20).
 4. Specs (`docs/specs/`), binding as `.claude/rules/spec-and-index-law.md` says.
 5. Design notes (`docs/architecture.md`, `docs/specs/organism.md`, proposals): *how* a thing works, never *what* Recense is.
 6. Code.
@@ -49,3 +53,4 @@ When files here change, re-upload them so the Project's chats see the same law.
 - 2026-11-14 · created from the 2026-11-05 note; replaces `export/00_NORTH_STAR.md`, `02_ARCHITECTURE.md`,
   `03_DESIGN_PHILOSOPHY.md`, `06_DECISIONS.md`, and the "Names" section of `docs/architecture.md`.
 - 2026-11-14 · added `order.md` (the owner's wish-order law).
+- 2026-11-20 · owner · added `treaty.md`, `regulations.md`, `instructions.md` on approval of the plan "PCT-Model Constitution, Genetic Map and Provisional Spec". Nothing above was removed. The index of Articles to files is `docs/PROVISIONAL-SPEC.md`, Appendix T.

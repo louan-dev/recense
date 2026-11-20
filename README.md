@@ -157,6 +157,8 @@ Recense's own sources also live at the root: `datasets/` (hello-pronunciation) a
 The player Gallery and Recense share (home bar, key labels, rooms, prosody) has one home, `library/src/client/`.
 `strip/build.sh` copies it into the app and stops if a file is missing.
 
+One treaty binds every agent that works here. Its Articles are `docs/law/treaty.md`, its Rules are `docs/law/regulations.md` and its Administrative Instructions are `docs/law/instructions.md`. The map of every place the same logic lives twice is `docs/GENETIC-MAP.md`, and `docs/PROVISIONAL-SPEC.md` lines the Articles up against the files that carry them out.
+
 ## Status
 Audio downloads land in Music (FEAT-12, 2026-11-15): a finished `.audio` download — fetched with `recense download <link> audio` or dropped into `downloads/Pulltube/` — moves straight into the Music home (`library/Music`) and its manifest entry points there; `av` and `video` stay in `downloads/` for review. Offline dedup still skips a re-download of the same link.
 
