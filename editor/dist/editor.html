@@ -2343,6 +2343,26 @@ html.rc-wings-page body {
 .rc-fileplayer audio { width: 100%; }
 .rc-fileplayer video { width: 100%; max-height: 40vh; background: #000; border-radius: 6px; }
 
+/* Derived from Spec: UI-14 E3 · the end card, on the side of the end reached (logical start = newest). */
+.rc-end-card {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 25;
+  min-width: 200px;
+  max-width: min(280px, calc(100% - 32px));
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--rc-bg, #111);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.rc-end-card[data-side="newest"] { inset-inline-start: 16px; }
+.rc-end-card[data-side="oldest"] { inset-inline-end: 16px; }
+.rc-end-card .rc-menu-item { display: block; width: 100%; min-height: 44px; text-align: start; }
+.rc-end-note { margin: 4px 8px 6px; font-size: 0.85em; opacity: 0.7; }
+
 </style>
 </head>
 <body>
@@ -2647,7 +2667,7 @@ html.rc-wings-page body {
   var LANGS = ["en", "fr", "vi"];
   var LANG_NAMES = { en: "English", fr: "French", vi: "Vietnamese" };
 
-  // node_modules/@marijn/find-cluster-break/src/index.js
+  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -2721,7 +2741,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // node_modules/@codemirror/state/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -6133,7 +6153,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // node_modules/style-mod/src/style-mod.js
+  // ../../../../editor/node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -6269,7 +6289,7 @@ html.rc-wings-page body {
     }
   };
 
-  // node_modules/w3c-keyname/index.js
+  // ../../../../editor/node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6375,7 +6395,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // node_modules/crelt/index.js
+  // ../../../../editor/node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6404,7 +6424,7 @@ html.rc-wings-page body {
     }
   }
 
-  // node_modules/@codemirror/view/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -16134,7 +16154,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // node_modules/@lezer/common/dist/index.js
+  // ../../../../editor/node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -18195,7 +18215,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // node_modules/@lezer/highlight/dist/index.js
+  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -18919,7 +18939,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // node_modules/@codemirror/language/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -20405,7 +20425,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // node_modules/@codemirror/commands/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -21499,7 +21519,7 @@ html.rc-wings-page body {
     { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
   ].concat(standardKeymap);
 
-  // node_modules/@codemirror/autocomplete/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -21964,7 +21984,7 @@ html.rc-wings-page body {
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // node_modules/@lezer/markdown/dist/index.js
+  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -24052,7 +24072,7 @@ html.rc-wings-page body {
     }]
   };
 
-  // node_modules/@lezer/lr/dist/index.js
+  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -25830,7 +25850,7 @@ html.rc-wings-page body {
     return spec.get;
   }
 
-  // node_modules/@lezer/html/dist/index.js
+  // ../../../../editor/node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -26174,7 +26194,7 @@ html.rc-wings-page body {
     });
   }
 
-  // node_modules/@lezer/css/dist/index.js
+  // ../../../../editor/node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -26354,7 +26374,7 @@ html.rc-wings-page body {
     tokenPrec: 2433
   });
 
-  // node_modules/@codemirror/lang-css/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -27215,7 +27235,7 @@ html.rc-wings-page body {
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // node_modules/@lezer/javascript/dist/index.js
+  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -27427,7 +27447,7 @@ html.rc-wings-page body {
     tokenPrec: 15205
   });
 
-  // node_modules/@codemirror/lang-javascript/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -27739,7 +27759,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-html/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -28479,7 +28499,7 @@ html.rc-wings-page body {
     return true;
   });
 
-  // node_modules/@codemirror/lang-markdown/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -29386,7 +29406,7 @@ ${PAGE_MARKER}
     });
   }
 
-  // node_modules/@codemirror/search/dist/index.js
+  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -33126,6 +33146,7 @@ ${PAGE_MARKER}
     if (pages.length <= 1) return false;
     const i = Math.max(0, Math.min(pages.length - 1, index));
     if (!isWindowEmpty(pages[i].rawContent)) return false;
+    if (typeof view.__pageHasInk === "function" && view.__pageHasInk(i)) return false;
     const mem = getMemory(view);
     const delFrom = i === 0 ? 0 : pages[i - 1].to;
     const delTo = i === 0 ? pages[1].from : pages[i].to;
@@ -33187,14 +33208,28 @@ ${PAGE_MARKER}
     if (typeof onSnap === "function") onSnap(0);
     return true;
   }
-  function swipeLeftToRight(view, { allowCreate = true, onSnap = null, onBounce = null, globalObj } = {}) {
+  function pageEndAhead(state, dir) {
+    const n = pageCount(state);
+    const cur = currentPage(state);
+    if (dir < 0 && cur <= 0) return "newest";
+    if (dir > 0 && cur >= n - 1) return "oldest";
+    return null;
+  }
+  var QUIET = {};
+  function reachEnd(view, side, { onEnd = null, onBounce = null, globalObj } = {}) {
+    postHaptic("edge", globalObj);
+    if (typeof onEnd === "function") onEnd(side);
+    else if (typeof view.__pageEnd === "function") view.__pageEnd(side);
+    if (typeof onBounce === "function") onBounce();
+    return false;
+  }
+  function swipeLeftToRight(view, { allowCreate = false, onSnap = null, onBounce = null, onEnd = null, globalObj } = {}) {
     if (!isPageMode(view.state)) return false;
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const cur = currentPage(view.state);
-    if (cur > 0 && cur === pages.length - 1 && isWindowEmpty(pages[cur].rawContent)) {
-      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
-    }
     if (cur > 0) {
+      if (typeof view.__pageEndClose === "function") view.__pageEndClose();
+      deleteEmptyWindow(view, cur, { globalObj: QUIET });
       showPage(view, cur - 1);
       postHaptic("snap", globalObj);
       if (typeof onSnap === "function") onSnap(cur - 1);
@@ -33203,26 +33238,19 @@ ${PAGE_MARKER}
     if (allowCreate && !isWindowEmpty(pages[0].rawContent)) {
       return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
     }
-    postHaptic("edge", globalObj);
-    if (typeof onBounce === "function") onBounce();
-    return false;
+    return reachEnd(view, "newest", { onEnd, onBounce, globalObj });
   }
-  function swipeRightToLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+  function swipeRightToLeft(view, { onSnap = null, onBounce = null, onEnd = null, globalObj } = {}) {
     if (!isPageMode(view.state)) return false;
     const pages = inspectDraftpadPages(view.state.doc.toString());
     const cur = currentPage(view.state);
-    if (pages.length > 1 && isWindowEmpty(pages[cur].rawContent)) {
-      return deleteEmptyWindow(view, cur, { onSnap, globalObj });
-    }
-    if (cur < pages.length - 1) {
-      showPage(view, cur + 1);
-      postHaptic("snap", globalObj);
-      if (typeof onSnap === "function") onSnap(cur + 1);
-      return true;
-    }
-    postHaptic("edge", globalObj);
-    if (typeof onBounce === "function") onBounce();
-    return false;
+    if (cur >= pages.length - 1) return reachEnd(view, "oldest", { onEnd, onBounce, globalObj });
+    if (typeof view.__pageEndClose === "function") view.__pageEndClose();
+    if (isWindowEmpty(pages[cur].rawContent) && deleteEmptyWindow(view, cur, { onSnap, globalObj })) return true;
+    showPage(view, cur + 1);
+    postHaptic("snap", globalObj);
+    if (typeof onSnap === "function") onSnap(cur + 1);
+    return true;
   }
   function stepPage(view, delta, { allowCreate = false, allowDeleteEmpty = true, onSnap = null, onBounce = null, globalObj } = {}) {
     if (!isPageMode(view.state)) return false;
@@ -33234,11 +33262,7 @@ ${PAGE_MARKER}
         return swipeRightToLeft(view, { onSnap, onBounce, globalObj });
       }
       const target = currentPage(view.state) + delta;
-      if (target >= pageCount(view.state)) {
-        postHaptic("edge", globalObj);
-        if (typeof onBounce === "function") onBounce();
-        return false;
-      }
+      if (target >= pageCount(view.state)) return reachEnd(view, "oldest", { onBounce, globalObj });
       showPage(view, target);
       postHaptic("snap", globalObj);
       if (typeof onSnap === "function") onSnap(target);
@@ -33379,12 +33403,8 @@ ${PAGE_MARKER}
   }
   function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
     const w = Math.max(120, Number(viewportWidth) || 400);
-    const pages = inspectDraftpadPages(state.doc.toString());
-    const idx = currentPage(state);
-    const curEmpty = isWindowEmpty(pages[idx] ? pages[idx].rawContent : "");
     let v = Number(dragX) || 0;
-    if (v > 0 && idx <= 0 && curEmpty) v *= 0.25;
-    if (v < 0 && idx >= pages.length - 1 && (!curEmpty || pages.length <= 1)) v *= 0.25;
+    if (v !== 0 && pageEndAhead(state, v > 0 ? -1 : 1)) v *= 0.25;
     return Math.max(-w, Math.min(w, v));
   }
   function selectAllRange(state) {
@@ -33444,12 +33464,14 @@ ${PAGE_MARKER}
     function settleDrag(dx) {
       const el5 = targetEl();
       const limit = Math.min(threshold, widthOf() * 0.12);
-      const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce }) : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
+      const turn = dx >= limit ? () => swipeLeftToRight(view, { onSnap, onBounce }) : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
       if (!el5 || !el5.style) {
         if (turn) turn();
         return;
       }
-      if (!turn) {
+      const atEnd = turn && pageEndAhead(view.state, dx > 0 ? -1 : 1);
+      if (atEnd) turn();
+      if (!turn || atEnd) {
         el5.style.transition = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
         el5.style.transform = "";
         return;
@@ -33570,8 +33592,11 @@ ${PAGE_MARKER}
       const w = widthOf();
       const x = Number(e.clientX) || 0;
       const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
-      if (e.pointerType === "mouse" ? !e.altKey : !inEdgeZone && !e.altKey) return;
-      if (typeof onEdgeZone === "function") onEdgeZone(x <= edgePx * 1.5 ? "left" : "right");
+      if (e.pointerType !== "mouse" && inEdgeZone) {
+        if (typeof onEdgeZone === "function") onEdgeZone(x <= edgePx * 1.5 ? "left" : "right");
+        return;
+      }
+      if (!e.altKey) return;
       ptrId = e.pointerId;
       ptrStartX = x;
       ptrStartY = Number(e.clientY) || 0;
@@ -43422,6 +43447,59 @@ ${clean(nextLineText)}`;
       parent: editorHost
     });
     attachSwipePaging(view);
+    const endCard = document.createElement("div");
+    endCard.className = "rc-end-card";
+    endCard.setAttribute("role", "dialog");
+    endCard.setAttribute("aria-label", "End of pages");
+    endCard.hidden = true;
+    workspace.appendChild(endCard);
+    function closeEndCard() {
+      endCard.hidden = true;
+      clearEl(endCard);
+      delete endCard.dataset.side;
+    }
+    function openEndCard(side) {
+      clearEl(endCard);
+      endCard.dataset.side = side;
+      const note = document.createElement("p");
+      note.className = "rc-end-note";
+      note.textContent = side === "newest" ? "Newest page" : "Oldest page";
+      endCard.appendChild(note);
+      const item = (label, run) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "rc-menu-item";
+        b.textContent = label;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeEndCard();
+          run();
+          updatePageIndicator();
+        });
+        endCard.appendChild(b);
+      };
+      item("New page at the front", () => newPage(view));
+      item("Pages", () => showOutline());
+      item(
+        side === "newest" ? "Go to oldest" : "Go to newest",
+        () => goToPage(view, side === "newest" ? pageCount(view.state) - 1 : 0)
+      );
+      endCard.hidden = false;
+    }
+    endCard.addEventListener("pointerdown", (e) => e.stopPropagation());
+    document.addEventListener("pointerdown", (e) => {
+      if (!endCard.hidden && !endCard.contains(e.target)) closeEndCard();
+    });
+    view.__pageEnd = (side) => openEndCard(side);
+    view.__pageHasInk = (i) => {
+      const ink = inkLayer ? inkLayer.getInk() : null;
+      if (!ink || !Array.isArray(ink.strokes) || ink.strokes.length === 0) return false;
+      const doc2 = view.state.doc.toString();
+      return ink.strokes.some((st) => resolveStrokeAnchor(st, doc2).pageIndex === i);
+    };
+    view.__pageEndClose = () => {
+      if (!endCard.hidden) closeEndCard();
+    };
     let matterSide = { version: 1, passages: {}, log: [] };
     const matterDevice = createMatterDevice(typeof navigator !== "undefined" ? { userAgent: navigator.userAgent || "", maxTouchPoints: navigator.maxTouchPoints || 0 } : {});
     let matterInput = "keys";
@@ -43859,7 +43937,7 @@ ${String(text ?? "")}`;
       newPage: () => newPage(view) ? "ok" : "bounce",
       promotePage: () => promotePage(view, currentPage(view.state)) ? "ok" : "bounce",
       slotPage: (n) => slotPage(view, n) ? "ok" : "bounce",
-      swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+      swipeLeftToRight: () => swipeLeftToRight(view) ? "ok" : "bounce",
       swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
       deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
       toggleOutline: () => {
@@ -43943,8 +44021,8 @@ ${String(text ?? "")}`;
           return Boolean(s);
         },
         noteDictating: (on) => mediaNotes.dictationRunning(Boolean(on)),
-        step: (delta) => stepPage(view, Number(delta) || 0, { allowCreate: true }) ? "ok" : "bounce",
-        swipeLeftToRight: () => swipeLeftToRight(view, { allowCreate: true }) ? "ok" : "bounce",
+        step: (delta) => stepPage(view, Number(delta) || 0) ? "ok" : "bounce",
+        swipeLeftToRight: () => swipeLeftToRight(view) ? "ok" : "bounce",
         swipeRightToLeft: () => swipeRightToLeft(view) ? "ok" : "bounce",
         openNewWindowOnLeft: () => openNewWindowOnLeft(view) ? "ok" : "bounce",
         deleteEmptyWindow: () => deleteEmptyWindow(view) ? "ok" : "bounce",
@@ -44325,6 +44403,7 @@ ${String(text ?? "")}`;
     });
     shell.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
+        if (!endCard.hidden) closeEndCard();
         if (menuOpen) closeMenu();
         if (outlineVisible) hideOutline();
         if (dualWings && dualWings.isWingOpen()) dualWings.closeWing("both");

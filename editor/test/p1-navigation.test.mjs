@@ -35,26 +35,30 @@ function makeFakeView(initialDoc) {
   return view;
 }
 
-test('P1 navigation: left-to-right swipe at window 0 opens a new window on the left (top <!-- page --> block)', () => {
+// Amended by UI-14 (owner 2026-11-20): a swipe at window 0 shows the end card; new pages come from openNewWindowOnLeft / newPage.
+test('P1 navigation: left-to-right swipe at window 0 reaches the end; an explicit new window opens on the left (top <!-- page --> block)', () => {
   const original = ['Friday, November 6, 2026\n\nTopic A', 'Monday, November 2, 2026\n\nTopic B'].join(PAGE_JOINER);
   const view = makeFakeView(original);
+  const ends = [];
+  view.__pageEnd = side => ends.push(side);
 
   assert.equal(currentPage(view.state), 0);
   assert.equal(pageCount(view.state), 2);
 
-  // Left-to-right swipe at window 0 (which has text) opens a new empty window on the left
-  assert.equal(swipeLeftToRight(view), true);
+  // A swipe never makes a page: window 0 reports the newest end
+  assert.equal(swipeLeftToRight(view), false);
+  assert.deepEqual(ends, ['newest']);
+  assert.equal(view.state.doc.toString(), original);
+
+  // The explicit action (＋, menu, the end card) opens a new empty window on the left
+  assert.equal(openNewWindowOnLeft(view), true);
   assert.equal(currentPage(view.state), 0);
   assert.equal(pageCount(view.state), 3);
   // UI-06 D3: the new page opens with today's date line, and an empty line for the caret before the marker
   // (Regression guard: UI-06 D3 — typed text must never join the <!-- page --> line).
   assert.equal(view.state.doc.toString(), `${formatDateLine()}\n\n${PAGE_JOINER}` + original);
 
-  // A second left-to-right swipe while window 0 is still empty bounces instead of piling up empty windows
-  assert.equal(swipeLeftToRight(view), false);
-  assert.equal(pageCount(view.state), 3);
-
-  // Swiping right-to-left on that empty window deletes it and restores the .md file byte-for-byte
+  // Leaving that empty window by a swipe removes it and restores the .md file byte-for-byte (UI-14 E4)
   assert.equal(swipeRightToLeft(view), true);
   assert.equal(pageCount(view.state), 2);
   assert.equal(currentPage(view.state), 0);
@@ -137,18 +141,20 @@ test('P1 navigation: deleting an empty middle or trailing window removes its <!-
   assert.equal(currentPage(view.state), 1);
 });
 
-test('P1 navigation: rubber-band effectiveDrag matches reference/draftpad', () => {
-  const nonEmptyView = makeFakeView('Topic 1');
-  // Window 0 has text -> pulling left-to-right (dragX > 0) is undamped because it can create a new window
-  assert.equal(computeEffectiveDrag(nonEmptyView.state, 80, 400), 80);
-  // Only 1 non-empty window -> pulling right-to-left (dragX < 0) is damped by 0.25x
-  assert.equal(computeEffectiveDrag(nonEmptyView.state, -80, 400), -20);
+// Amended by UI-14 E2: both ends rubber-band the same (0.25x); the middle never does.
+test('P1 navigation: rubber-band effectiveDrag is the same at both ends', () => {
+  const one = makeFakeView('Topic 1');
+  assert.equal(computeEffectiveDrag(one.state, 80, 400), 20, 'only window: pulling newer is damped');
+  assert.equal(computeEffectiveDrag(one.state, -80, 400), -20, 'only window: pulling older is damped');
 
-  // Open an empty window on the left -> now pulling left-to-right is damped by 0.25x
-  openNewWindowOnLeft(nonEmptyView);
-  assert.equal(computeEffectiveDrag(nonEmptyView.state, 80, 400), 20);
-  // While pulling right-to-left on that empty window is undamped (deletes and steps to Topic 1)
-  assert.equal(computeEffectiveDrag(nonEmptyView.state, -80, 400), -80);
+  const three = makeFakeView(['A', 'B', 'C'].join(PAGE_JOINER));
+  assert.equal(computeEffectiveDrag(three.state, 80, 400), 20, 'window 0: newer end damped');
+  assert.equal(computeEffectiveDrag(three.state, -80, 400), -80, 'window 0: older is free');
+  showPage(three, 1);
+  assert.equal(computeEffectiveDrag(three.state, 80, 400), 80);
+  assert.equal(computeEffectiveDrag(three.state, -80, 400), -80);
+  showPage(three, 2);
+  assert.equal(computeEffectiveDrag(three.state, -80, 400), -20, 'last window: older end damped');
 });
 
 test('P1 navigation: date-only window is treated as empty and deleted on right-to-left swipe, and Pencil/touchcancel work', () => {

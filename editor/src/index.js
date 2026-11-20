@@ -806,6 +806,49 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   attachSwipePaging(view);
 
+  // Derived from Spec: UI-14 E3. Past either end, the same card: New page (at the front), Pages, Go to the other end.
+  // It sits on the side of the end you reached (logical start = newest, end = oldest) and never opens on its own.
+  const endCard = document.createElement('div');
+  endCard.className = 'rc-end-card';
+  endCard.setAttribute('role', 'dialog');
+  endCard.setAttribute('aria-label', 'End of pages');
+  endCard.hidden = true;
+  workspace.appendChild(endCard);
+  function closeEndCard() { endCard.hidden = true; clearEl(endCard); delete endCard.dataset.side; }
+  function openEndCard(side) {
+    clearEl(endCard);
+    endCard.dataset.side = side;
+    const note = document.createElement('p');
+    note.className = 'rc-end-note';
+    note.textContent = side === 'newest' ? 'Newest page' : 'Oldest page';
+    endCard.appendChild(note);
+    const item = (label, run) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rc-menu-item';
+      b.textContent = label;
+      b.addEventListener('click', e => { e.stopPropagation(); closeEndCard(); run(); updatePageIndicator(); });
+      endCard.appendChild(b);
+    };
+    item('New page at the front', () => newPage(view));
+    item('Pages', () => showOutline());
+    item(side === 'newest' ? 'Go to oldest' : 'Go to newest',
+      () => goToPage(view, side === 'newest' ? pageCount(view.state) - 1 : 0));
+    endCard.hidden = false;
+  }
+  endCard.addEventListener('pointerdown', e => e.stopPropagation());
+  document.addEventListener('pointerdown', e => { if (!endCard.hidden && !endCard.contains(e.target)) closeEndCard(); });
+  view.__pageEnd = side => openEndCard(side);
+  // UI-14 E4 · ink anchors by page, so a page holding strokes is never removed as empty.
+  view.__pageHasInk = i => {
+    const ink = inkLayer ? inkLayer.getInk() : null;
+    if (!ink || !Array.isArray(ink.strokes) || ink.strokes.length === 0) return false;
+    const doc = view.state.doc.toString();
+    return ink.strokes.some(st => resolveStrokeAnchor(st, doc).pageIndex === i);
+  };
+  // A page turn back from the end closes the card (the swipe back is the way out).
+  view.__pageEndClose = () => { if (!endCard.hidden) closeEndCard(); };
+
   /** Puts `text` on a new line under the cursor's line, as your own edit (it saves like typing). */
   // FEAT-08 · the sidecar of the one page. A crossing runs on (body, ink, sidecar) together, then lands the body
   // change as one ordinary edit (so the host saves it through its 3-way merge) and the ink through setInk.
@@ -1223,7 +1266,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
     newPage: () => (newPage(view) ? 'ok' : 'bounce'),
     promotePage: () => (promotePage(view, currentPage(view.state)) ? 'ok' : 'bounce'),
     slotPage: n => (slotPage(view, n) ? 'ok' : 'bounce'),
-    swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
+    swipeLeftToRight: () => (swipeLeftToRight(view) ? 'ok' : 'bounce'),
     swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
     deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
     toggleOutline: () => {
@@ -1318,8 +1361,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
         return Boolean(s);
       },
       noteDictating: on => mediaNotes.dictationRunning(Boolean(on)),
-      step: delta => (stepPage(view, Number(delta) || 0, { allowCreate: true }) ? 'ok' : 'bounce'),
-      swipeLeftToRight: () => (swipeLeftToRight(view, { allowCreate: true }) ? 'ok' : 'bounce'),
+      step: delta => (stepPage(view, Number(delta) || 0) ? 'ok' : 'bounce'),
+      swipeLeftToRight: () => (swipeLeftToRight(view) ? 'ok' : 'bounce'),
       swipeRightToLeft: () => (swipeRightToLeft(view) ? 'ok' : 'bounce'),
       openNewWindowOnLeft: () => (openNewWindowOnLeft(view) ? 'ok' : 'bounce'),
       deleteEmptyWindow: () => (deleteEmptyWindow(view) ? 'ok' : 'bounce'),
@@ -1671,6 +1714,7 @@ export function mountEditor(root = document.body, initialDoc = '') {
 
   shell.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (!endCard.hidden) closeEndCard();
       if (menuOpen) closeMenu();
       if (outlineVisible) hideOutline();
       if (dualWings && dualWings.isWingOpen()) dualWings.closeWing('both');

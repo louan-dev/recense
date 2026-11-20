@@ -1,12 +1,10 @@
 // Isolated mini-document windows (restoring old Draftpad navigation, reference/draftpad):
 // - Each window is a mini document: hiddenRanges + Decoration.replace({ block: true }) hides all other pages so
 //   vertical scrolling stays strictly inside the current window's text and never crosses into another topic.
-// - Left-to-right swipe (or stepPage(view, -1) / swipeLeftToRight(view)): steps one window left toward index 0;
-//   when already at index 0 and window 0 has text, opens a new window on the left by prepending a `<!-- page -->`
-//   block at the top of the .md file.
-// - Right-to-left swipe (or stepPage(view, 1) / swipeRightToLeft(view)): if the current window's text is empty
-//   (and there is more than 1 window), deletes that window and removes its `<!-- page -->` block from the .md file;
-//   otherwise steps one window right toward older topics.
+// - Left-to-right swipe (or stepPage(view, -1) / swipeLeftToRight(view)): one window newer, toward index 0.
+// - Right-to-left swipe (or stepPage(view, 1) / swipeRightToLeft(view)): one window older.
+// - UI-14: past either end the same end card appears (`view.__pageEnd`); a swipe never makes a page, and leaving
+//   an empty window removes its `<!-- page -->` block (no text is lost). New pages come from newPage / ＋ / the card.
 // - Per-window cursor and vertical scroll memory, plus live finger-follow drag with 0.25x rubber-banding and
 //   220ms ease-out snap.
 import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
@@ -245,6 +243,8 @@ export function deleteEmptyWindow(view, index = currentPage(view.state), { onSna
   if (pages.length <= 1) return false;
   const i = Math.max(0, Math.min(pages.length - 1, index));
   if (!isWindowEmpty(pages[i].rawContent)) return false;
+  // UI-14 E4 · a page with ink is never empty: the host says whether strokes sit on it (ink anchors by page).
+  if (typeof view.__pageHasInk === 'function' && view.__pageHasInk(i)) return false;
 
   const mem = getMemory(view);
   const delFrom = i === 0 ? 0 : pages[i - 1].to;
@@ -319,21 +319,41 @@ export function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, glob
   return true;
 }
 
+// Derived from Spec: UI-14 (E1–E4). A swipe only moves. Past either end the same end card appears (the host draws it
+// through `view.__pageEnd`, or `onEnd`), with one `edge` haptic. Leaving an empty page removes it (no text is lost).
+/** Which end is ahead of a move: 'newest' (dir < 0 at page 0), 'oldest' (dir > 0 at the last page), or null. */
+export function pageEndAhead(state, dir) {
+  const n = pageCount(state);
+  const cur = currentPage(state);
+  if (dir < 0 && cur <= 0) return 'newest';
+  if (dir > 0 && cur >= n - 1) return 'oldest';
+  return null;
+}
+
+/** A globalObj with no message handler: postHaptic stays silent (one haptic per swipe). */
+const QUIET = {};
+
+function reachEnd(view, side, { onEnd = null, onBounce = null, globalObj } = {}) {
+  postHaptic('edge', globalObj);
+  if (typeof onEnd === 'function') onEnd(side);
+  else if (typeof view.__pageEnd === 'function') view.__pageEnd(side);
+  if (typeof onBounce === 'function') onBounce();
+  return false;
+}
+
 /**
- * Left-to-right swipe: moves one window left (`index - 1`); if already at window 0 and window 0 has text,
- * opens a new window on the left (new `<!-- page -->` block at the top of the .md file).
+ * Left-to-right swipe: one page newer (`index - 1`). At page 0: the end card ('newest').
+ * `allowCreate: true` (explicit callers only, never a swipe) keeps the old "new page at the front" for page 0 with text.
  */
-export function swipeLeftToRight(view, { allowCreate = true, onSnap = null, onBounce = null, globalObj } = {}) {
+export function swipeLeftToRight(view, { allowCreate = false, onSnap = null, onBounce = null, onEnd = null, globalObj } = {}) {
   if (!isPageMode(view.state)) return false;
   const pages = inspectDraftpadPages(view.state.doc.toString());
   const cur = currentPage(view.state);
 
-  // If leaving a trailing empty window on the right, clean it up just like reference/draftpad.swift finishSettle().
-  if (cur > 0 && cur === pages.length - 1 && isWindowEmpty(pages[cur].rawContent)) {
-    return deleteEmptyWindow(view, cur, { onSnap, globalObj });
-  }
-
   if (cur > 0) {
+    if (typeof view.__pageEndClose === 'function') view.__pageEndClose();
+    // UI-14 E4 · leaving an empty page removes it; the newer page is still cur - 1.
+    deleteEmptyWindow(view, cur, { globalObj: QUIET });   // removes it only if it has no text and no ink; one haptic
     showPage(view, cur - 1);
     postHaptic('snap', globalObj);
     if (typeof onSnap === 'function') onSnap(cur - 1);
@@ -343,35 +363,27 @@ export function swipeLeftToRight(view, { allowCreate = true, onSnap = null, onBo
   if (allowCreate && !isWindowEmpty(pages[0].rawContent)) {
     return openNewWindowOnLeft(view, { onSnap, onBounce, globalObj });
   }
-
-  postHaptic('edge', globalObj);
-  if (typeof onBounce === 'function') onBounce();
-  return false;
+  return reachEnd(view, 'newest', { onEnd, onBounce, globalObj });
 }
 
 /**
- * Right-to-left swipe: if the current window's text is empty (and there is more than 1 window), deletes that window
- * and removes its `<!-- page -->` block from the .md file; otherwise steps one window right (`index + 1`).
+ * Right-to-left swipe: one page older (`index + 1`). At the last page: the end card ('oldest').
+ * Leaving an empty page removes it; the older page then takes its index.
  */
-export function swipeRightToLeft(view, { onSnap = null, onBounce = null, globalObj } = {}) {
+export function swipeRightToLeft(view, { onSnap = null, onBounce = null, onEnd = null, globalObj } = {}) {
   if (!isPageMode(view.state)) return false;
   const pages = inspectDraftpadPages(view.state.doc.toString());
   const cur = currentPage(view.state);
 
-  if (pages.length > 1 && isWindowEmpty(pages[cur].rawContent)) {
-    return deleteEmptyWindow(view, cur, { onSnap, globalObj });
-  }
+  if (cur >= pages.length - 1) return reachEnd(view, 'oldest', { onEnd, onBounce, globalObj });
+  if (typeof view.__pageEndClose === 'function') view.__pageEndClose();
 
-  if (cur < pages.length - 1) {
-    showPage(view, cur + 1);
-    postHaptic('snap', globalObj);
-    if (typeof onSnap === 'function') onSnap(cur + 1);
-    return true;
-  }
-
-  postHaptic('edge', globalObj);
-  if (typeof onBounce === 'function') onBounce();
-  return false;
+  // UI-14 E4 · an empty page (no text, no ink) goes; the older page slides into `cur`.
+  if (isWindowEmpty(pages[cur].rawContent) && deleteEmptyWindow(view, cur, { onSnap, globalObj })) return true;
+  showPage(view, cur + 1);
+  postHaptic('snap', globalObj);
+  if (typeof onSnap === 'function') onSnap(cur + 1);
+  return true;
 }
 
 /**
@@ -392,11 +404,7 @@ export function stepPage(
       return swipeRightToLeft(view, { onSnap, onBounce, globalObj });
     }
     const target = currentPage(view.state) + delta;
-    if (target >= pageCount(view.state)) {
-      postHaptic('edge', globalObj);
-      if (typeof onBounce === 'function') onBounce();
-      return false;
-    }
+    if (target >= pageCount(view.state)) return reachEnd(view, 'oldest', { onBounce, globalObj });
     showPage(view, target);
     postHaptic('snap', globalObj);
     if (typeof onSnap === 'function') onSnap(target);
@@ -565,14 +573,9 @@ export function decideAxis(dx, dy) {
 
 export function computeEffectiveDrag(state, dragX, viewportWidth = 400) {
   const w = Math.max(120, Number(viewportWidth) || 400);
-  const pages = inspectDraftpadPages(state.doc.toString());
-  const idx = currentPage(state);
-  const curEmpty = isWindowEmpty(pages[idx] ? pages[idx].rawContent : '');
   let v = Number(dragX) || 0;
-  // Pulling left-to-right at index 0 when index 0 is already empty cannot open another blank window -> rubber-band
-  if (v > 0 && idx <= 0 && curEmpty) v *= 0.25;
-  // Pulling right-to-left at the rightmost window when it is non-empty (or only 1 window) -> rubber-band
-  if (v < 0 && idx >= pages.length - 1 && (!curEmpty || pages.length <= 1)) v *= 0.25;
+  // UI-14 E2 · pulling past either end rubber-bands the same (0.25x); a swipe never makes a page.
+  if (v !== 0 && pageEndAhead(state, v > 0 ? -1 : 1)) v *= 0.25;
   return Math.max(-w, Math.min(w, v));
 }
 
@@ -658,10 +661,13 @@ export function attachSwipePaging(
   function settleDrag(dx) {
     const el = targetEl();
     const limit = Math.min(threshold, widthOf() * 0.12);
-    const turn = dx >= limit ? () => swipeLeftToRight(view, { allowCreate: true, onSnap, onBounce })
+    const turn = dx >= limit ? () => swipeLeftToRight(view, { onSnap, onBounce })
       : dx <= -limit ? () => swipeRightToLeft(view, { onSnap, onBounce }) : null;
     if (!el || !el.style) { if (turn) turn(); return; }
-    if (!turn) {
+    // UI-14 E2 · at an end the page settles back (no exit glide) and the end card appears.
+    const atEnd = turn && pageEndAhead(view.state, dx > 0 ? -1 : 1);
+    if (atEnd) turn();
+    if (!turn || atEnd) {
       el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
       el.style.transform = '';
       return;
@@ -779,7 +785,7 @@ export function attachSwipePaging(
     renderDrag(0);
   }, { passive: true });
 
-  // Apple Pencil / pointer edge-swipe navigation (hand-neutral left or right edge zone)
+  // Pencil / mouse paging with Option held; the edge zones belong to the wings (UI-14 E5)
   let ptrId = null;
   let ptrStartX = null;
   let ptrStartY = null;
@@ -791,10 +797,13 @@ export function attachSwipePaging(
     const w = widthOf();
     const x = Number(e.clientX) || 0;
     const inEdgeZone = x <= edgePx * 1.5 || x >= w - edgePx * 1.5;
-    // Pencil pages from either edge zone (central strokes draw ink). A mouse pages only with
-    // Option held: a plain mouse drag near the margin is selecting text, never turning the page.
-    if (e.pointerType === 'mouse' ? !e.altKey : !inEdgeZone && !e.altKey) return;
-    if (typeof onEdgeZone === 'function') onEdgeZone(x <= edgePx * 1.5 ? 'left' : 'right');
+    // UI-14 E5 · a Pencil from either edge zone belongs to the wing, as a finger does (central strokes draw ink).
+    // A mouse or Pencil pages only with Option held: a plain drag near the margin selects text or draws.
+    if (e.pointerType !== 'mouse' && inEdgeZone) {
+      if (typeof onEdgeZone === 'function') onEdgeZone(x <= edgePx * 1.5 ? 'left' : 'right');
+      return;
+    }
+    if (!e.altKey) return;
     ptrId = e.pointerId;
     ptrStartX = x;
     ptrStartY = Number(e.clientY) || 0;
