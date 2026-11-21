@@ -47,6 +47,10 @@ c, _ = clean.run("mpep", "Chapter 100 Secrecy, Access, National Security, and Fo
 want = "# Chapter 100 Secrecy, Access, National Security, and Foreign Filing"
 print("chapter title ok" if c.splitlines()[0] == want else "FAIL chapter title: " + repr(c[:120]))
 
+# Regression (2026-11-20): join_next never appends a line that repeats the title (ch.2000's TOC line).
+c, _ = clean.run("mpep", "Chapter 2000 Duty of Disclosure\n2000\nDuty of Disclosure\n2000.01\n")
+print("no repeat ok" if c.splitlines()[0] == "# Chapter 2000 Duty of Disclosure" else "FAIL repeat: " + repr(c[:80]))
+
 # Regression (2026-11-20): a bare "Chapter 2100" line takes its title from the profile's titles table.
 c, _ = clean.run("mpep", "Chapter 2100\n2101\n")
 print("bare chapter ok" if c.splitlines()[0] == "# Chapter 2100 Patentability" else "FAIL bare chapter: " + repr(c[:80]))
