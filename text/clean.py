@@ -110,7 +110,8 @@ def run(profile, src, path=None):
                 title += " " + r["titles"][m.group(1)]  # title printed apart from its "Chapter N" line
             if r.get("join_next"):
                 nxt = re.compile(r["join_next"])
-                while j < i + 2 and j + 1 < len(lines) and lines[j + 1] and nxt.match(lines[j + 1]):
+                while j < i + 2 and j + 1 < len(lines) and lines[j + 1] and nxt.match(lines[j + 1]) \
+                        and not title.endswith(lines[j + 1]):  # a TOC line repeating the title
                     j += 1; title += " " + lines[j]
             hit = (r["with"], title, j); break
         if hit:
