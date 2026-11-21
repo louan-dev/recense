@@ -26,3 +26,7 @@ jobs:
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.GALLERY_GITHUB }}
+      # the Worker phones and tablets pair on (wrangler.toml [env.device]); without this it goes stale
+      - run: npx wrangler deploy --env device
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.GALLERY_GITHUB }}
