@@ -89,8 +89,9 @@ body {
   color: var(--rc-muted);
 }
 
-.rc-nav-btn:disabled {
-  opacity: 0.3;
+.rc-nav-btn:disabled,
+.rc-nav-btn.is-end {
+  opacity: 0.45;
 }
 
 .rc-page-indicator,

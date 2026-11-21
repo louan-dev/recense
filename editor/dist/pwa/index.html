@@ -96,8 +96,9 @@ body {
   color: var(--rc-muted);
 }
 
-.rc-nav-btn:disabled {
-  opacity: 0.3;
+.rc-nav-btn:disabled,
+.rc-nav-btn.is-end {
+  opacity: 0.45;
 }
 
 .rc-page-indicator,
@@ -43868,8 +43869,8 @@ ${t2.text}`).includes(q)) return true;
           slotRow.appendChild(b);
         }
       }
-      newerNavBtn.disabled = cur <= 0;
-      olderNavBtn.disabled = cur >= count2 - 1 && !isWindowEmpty(inspectDraftpadPages(state2.doc.toString())[cur]?.rawContent);
+      newerNavBtn.classList[cur <= 0 ? "add" : "remove"]("is-end");
+      olderNavBtn.classList[cur >= count2 - 1 ? "add" : "remove"]("is-end");
       deletePageMenuBtn.disabled = !isWindowEmpty(inspectDraftpadPages(state2.doc.toString())[cur]?.rawContent);
       saveReopenMemo(state2);
     }

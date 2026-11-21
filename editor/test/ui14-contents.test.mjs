@@ -116,3 +116,42 @@ test('UI-14 Z2: a pinch sets the text size on 2 px steps inside 12–36', async 
   assert.equal(pinchFontSize(30, 3), 36);     // ceiling
   assert.equal(pinchFontSize(18, NaN), 18);
 });
+
+// Derived from Spec: UI-14 (E3, C1). The Content Manager is reachable from the first page and from the last page.
+test('UI-14 E3/C1: the end card opens the Overview from the newest page and from the oldest page', async (t) => {
+  const fs = await import('node:fs'), http = await import('node:http'), path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  let playwright = null;
+  try { playwright = await import('playwright'); } catch { /* no browser here */ }
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'pwa');
+  if (!playwright || !fs.existsSync(dir)) return t.skip('no browser or no dist/pwa');
+  const types = { html: 'text/html', js: 'text/javascript', svg: 'image/svg+xml', webmanifest: 'application/manifest+json' };
+  const server = http.createServer((req, res) => {
+    const f = path.join(dir, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+    if (!f.startsWith(dir) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'content-type': types[f.split('.').pop()] || 'text/plain' });
+    res.end(fs.readFileSync(f));
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  let browser;
+  try { browser = await playwright.webkit.launch(); } catch (e) { server.close(); throw e; }
+  try {
+    const page = await (await browser.newContext({ viewport: { width: 820, height: 1000 } })).newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForFunction(() => window.recenseEditor);
+    await page.evaluate(() => window.recenseEditor.setText('newer page\n\n<!-- page -->\n\nolder page'));
+    const click0 = () => page.evaluate(() => { const b = document.querySelector('.rc-pages-btn'); if (b && b.getAttribute('aria-pressed') !== 'true') b.click(); });
+    await click0();
+    const click = cls => page.evaluate(c => document.querySelector(c).click(), cls);
+    // E7: the bar's ‹ › at an end opens the end card. Newest first: ‹ at page 0; then › twice reaches past the last page.
+    const walks = [['newest', ['.rc-nav-newer']], ['oldest', ['.rc-nav-older', '.rc-nav-older']]];
+    for (const [side, steps] of walks) {
+      for (const s of steps) await click(s);
+      await page.waitForSelector(`.rc-end-card[data-side="${side}"]`, { timeout: 3000 });
+      await page.locator('.rc-end-card .rc-menu-item', { hasText: 'Overview' }).click();
+      await page.waitForSelector('.rc-cm:not([hidden])', { timeout: 3000 });
+      await page.locator('.rc-cm button[aria-label="Close pages"]').first().click();
+      await page.waitForSelector('.rc-cm', { state: 'hidden', timeout: 3000 });
+    }
+  } finally { await browser.close(); server.close(); }
+});

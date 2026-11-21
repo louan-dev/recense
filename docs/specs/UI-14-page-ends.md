@@ -36,7 +36,7 @@ Amends: UI-06 G1, G2, D3 (`ui-teardowns/UI-06-antinote-navigation/UI-06.md`). La
 - **E5 · One meaning at the edge.** A finger or a Pencil that starts in the edge zone (28 px; Pencil 42 px) belongs to the wing.
   It never turns the page (treaty Article 12(4): Pencil and finger work the same). Pencil turns pages with the bar's ‹ ›, the card, or voice.
 - **E6 · Explicit making stays.** ＋, the ··· menu "New page" and voice "new page" still make a page (`newPage`), unchanged.
-- **E7 · Every way in.** The end card is reachable by gesture, by the bar's ‹ › at an end, by voice ("newer page" at the front), and by Mac's step keys.
+- **E7 · Every way in.** The end card is reachable by gesture, by the bar's ‹ › at an end (the buttons stay tappable there, only dimmed; a disabled button made this untrue until 2026-11-21), by voice ("newer page" at the front), and by Mac's step keys.
 
 ## Content Manager: the Overview (slice 2)
 Model: Notability's Content Manager (owner recordings). Clean-room: behaviour only.

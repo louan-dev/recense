@@ -573,8 +573,9 @@ export function mountEditor(root = document.body, initialDoc = '') {
         slotRow.appendChild(b);
       }
     }
-    newerNavBtn.disabled = cur <= 0;
-    olderNavBtn.disabled = cur >= count - 1 && !isWindowEmpty(inspectDraftpadPages(state.doc.toString())[cur]?.rawContent);
+    // UI-14 E7: at an end the button still works (it opens the end card); it only looks quieter.
+    newerNavBtn.classList[cur <= 0 ? 'add' : 'remove']('is-end');
+    olderNavBtn.classList[cur >= count - 1 ? 'add' : 'remove']('is-end');
     deletePageMenuBtn.disabled = !isWindowEmpty(inspectDraftpadPages(state.doc.toString())[cur]?.rawContent);
     saveReopenMemo(state);
   }
