@@ -279,6 +279,18 @@ export function anchorStrokeToDoc(
  * Computes deltaLines = newLineIndexInPage - (anchor.offsetInPage ?? 0) so changes
  * in earlier/later windows do NOT shift this window's ink!
  */
+/** T-0188 · Moves stroke anchors with their pages; map[oldIndex] = newIndex. Returns whether any stroke moved. */
+export function remapInkAnchors(strokes, map) {
+  let changed = false;
+  for (const st of strokes) {
+    const from = st.anchor?.pageIndex;
+    if (typeof from !== 'number') continue;
+    const to = map[from];
+    if (typeof to === 'number' && to >= 0 && to !== from) { st.anchor = { ...st.anchor, pageIndex: to }; changed = true; }
+  }
+  return changed;
+}
+
 export function resolveStrokeAnchor(stroke, docText = '', lineHeight = DEFAULT_LINE_HEIGHT) {
   const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
   const anchor = stroke?.anchor;
@@ -2082,6 +2094,9 @@ export function createInkLayer(view, options = {}) {
     if (changed) { schedulePost(); render(); }
     return changed;
   }
+  function remapPageInk(map) {
+    if (remapInkAnchors(inkDoc.strokes, map)) schedulePost();
+  }
   /** The host's reading of a group: kept on its strokes (and saved with the ink), so Find sees it on every device. */
   function setInkText(id, text) {
     const strokes = ocrSent.get(id) || inkDoc.strokes.filter(st => st.ocr && st.ocr.g === id);
@@ -2277,6 +2292,7 @@ export function createInkLayer(view, options = {}) {
     getPaletteColors: () => [...paletteColors],
     setInkText,
     removePageInk,
+    remapPageInk,
     findInk,
     markInk,
     recognizeNow,

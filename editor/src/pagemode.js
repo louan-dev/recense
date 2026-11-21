@@ -9,6 +9,7 @@
 //   220ms ease-out snap.
 import { StateField, StateEffect, Prec, EditorState, EditorSelection } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
+import { invertedEffects } from '@codemirror/commands';
 import { PAGE_JOINER, inspectDraftpadPages, isWindowEmpty, SLOT_RE, isMetaLine, CONTROL_CHARS_RE, formatDateLine } from './pages.js';
 import { postHaptic } from './bridge.js';
 
@@ -16,6 +17,15 @@ export { isWindowEmpty };
 
 export const setPageMode = StateEffect.define();
 export const setPageIndex = StateEffect.define();
+/** T-0188 · Pages were removed, moved or prepended: value[oldIndex] = newIndex (-1 = removed). Ink follows it, undo inverts it. */
+export const remapPages = StateEffect.define();
+function invertPageMap(map) {
+  const out = [];
+  map.forEach((to, from) => { if (to >= 0) out[to] = from; });
+  return out;
+}
+const remapPagesHistory = invertedEffects.of(tr =>
+  tr.effects.filter(e => e.is(remapPages)).map(e => remapPages.of(invertPageMap(e.value))));
 
 const viewMemory = new WeakMap();
 
@@ -278,7 +288,11 @@ function removePage(view, i, pages, docText, { onSnap = null, globalObj } = {}) 
   view.dispatch({
     changes: { from: delFrom, to: delTo, insert: '' },
     selection: { anchor: nextAnchor },
-    effects: [setPageIndex.of(nextIndex), EditorView.scrollIntoView(nextAnchor, { y: 'start', yMargin: 8 })],
+    effects: [
+      remapPages.of(pages.map((_, k) => (k < i ? k : k === i ? -1 : k - 1))),
+      setPageIndex.of(nextIndex),
+      EditorView.scrollIntoView(nextAnchor, { y: 'start', yMargin: 8 })
+    ],
     userEvent: 'delete.page'
   });
 
@@ -317,7 +331,11 @@ export function openNewWindowOnLeft(view, { onSnap = null, onBounce = null, glob
   view.dispatch({
     changes: { from: 0, to: 0, insert: dateHead + PAGE_JOINER },
     selection: { anchor: dateHead.length },
-    effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: 'start', yMargin: 8 })],
+    effects: [
+      remapPages.of(pages.map((_, k) => k + 1)),
+      setPageIndex.of(0),
+      EditorView.scrollIntoView(0, { y: 'start', yMargin: 8 })
+    ],
     userEvent: 'input.page'
   });
 
@@ -480,7 +498,9 @@ export function movePage(view, index, to, { onSnap = null, globalObj } = {}) {
     if (mem.scrolls.has(old)) scrolls.set(dst, mem.scrolls.get(old));
   });
   mem.cursors = cursors; mem.scrolls = scrolls;
-  view.dispatch({ changes: { from, to: end, insert }, userEvent: 'move.page' });
+  const pageMap = [];
+  order.forEach((old, dst) => { pageMap[old] = dst; });
+  view.dispatch({ changes: { from, to: end, insert }, effects: remapPages.of(pageMap), userEvent: 'move.page' });
   showPage(view, to, { preserveMemory: false });
   postHaptic('snap', globalObj);
   if (typeof onSnap === 'function') onSnap(to);
@@ -624,6 +644,7 @@ const narrowWholeSelection = EditorState.transactionFilter.of(tr => {
 
 export function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
   return [
+    remapPagesHistory,
     pageModeField,
     narrowWholeSelection,
     Prec.highest(keymap.of([

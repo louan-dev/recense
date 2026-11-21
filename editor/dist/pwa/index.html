@@ -2990,7 +2990,7 @@ html.rc-wings-page body {
   var LANGS = ["en", "fr", "vi"];
   var LANG_NAMES = { en: "English", fr: "French", vi: "Vietnamese" };
 
-  // ../../../../editor/node_modules/@marijn/find-cluster-break/src/index.js
+  // node_modules/@marijn/find-cluster-break/src/index.js
   var rangeFrom = [];
   var rangeTo = [];
   (() => {
@@ -3064,7 +3064,7 @@ html.rc-wings-page body {
     return code < 65536 ? 1 : 2;
   }
 
-  // ../../../../editor/node_modules/@codemirror/state/dist/index.js
+  // node_modules/@codemirror/state/dist/index.js
   var Text = class _Text {
     /**
     Get the line description around the given position.
@@ -6476,7 +6476,7 @@ html.rc-wings-page body {
     return strict === true ? -1 : string2.length;
   }
 
-  // ../../../../editor/node_modules/style-mod/src/style-mod.js
+  // node_modules/style-mod/src/style-mod.js
   var C = "\u037C";
   var COUNT = typeof Symbol == "undefined" ? "__" + C : Symbol.for(C);
   var SET = typeof Symbol == "undefined" ? "__styleSet" + Math.floor(Math.random() * 1e8) : Symbol("styleSet");
@@ -6612,7 +6612,7 @@ html.rc-wings-page body {
     }
   };
 
-  // ../../../../editor/node_modules/w3c-keyname/index.js
+  // node_modules/w3c-keyname/index.js
   var base = {
     8: "Backspace",
     9: "Tab",
@@ -6718,7 +6718,7 @@ html.rc-wings-page body {
     return name2;
   }
 
-  // ../../../../editor/node_modules/crelt/index.js
+  // node_modules/crelt/index.js
   function crelt() {
     var elt2 = arguments[0];
     if (typeof elt2 == "string") elt2 = document.createElement(elt2);
@@ -6747,7 +6747,7 @@ html.rc-wings-page body {
     }
   }
 
-  // ../../../../editor/node_modules/@codemirror/view/dist/index.js
+  // node_modules/@codemirror/view/dist/index.js
   var nav = typeof navigator != "undefined" ? navigator : { userAgent: "", vendor: "", platform: "" };
   var doc = typeof document != "undefined" ? document : { documentElement: { style: {} } };
   var ie_edge = /* @__PURE__ */ /Edge\/(\d+)/.exec(nav.userAgent);
@@ -16477,7 +16477,7 @@ html.rc-wings-page body {
     return true;
   }
 
-  // ../../../../editor/node_modules/@lezer/common/dist/index.js
+  // node_modules/@lezer/common/dist/index.js
   var DefaultBufferLength = 1024;
   var nextPropID = 0;
   var Range2 = class {
@@ -18538,7 +18538,7 @@ html.rc-wings-page body {
     return result;
   }
 
-  // ../../../../editor/node_modules/@lezer/highlight/dist/index.js
+  // node_modules/@lezer/highlight/dist/index.js
   var nextTagID = 0;
   var Tag = class _Tag {
     /**
@@ -19262,7 +19262,7 @@ html.rc-wings-page body {
     { tag: tags.punctuation, class: "tok-punctuation" }
   ]);
 
-  // ../../../../editor/node_modules/@codemirror/language/dist/index.js
+  // node_modules/@codemirror/language/dist/index.js
   var _a;
   var languageDataProp = /* @__PURE__ */ new NodeProp();
   function defineLanguageFacet(baseData) {
@@ -20748,7 +20748,7 @@ html.rc-wings-page body {
     auto: /* @__PURE__ */ Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "auto" }, bidiIsolate: null })
   };
 
-  // ../../../../editor/node_modules/@codemirror/commands/dist/index.js
+  // node_modules/@codemirror/commands/dist/index.js
   var toggleComment = (target) => {
     let { state } = target, line = state.doc.lineAt(state.selection.main.from), config = getConfig(target.state, line.from);
     return config.line ? toggleLineComment(target) : config.block ? toggleBlockCommentByLine(target) : false;
@@ -23510,6 +23510,19 @@ ${clean(nextLineText)}`;
     }
     return anchor;
   }
+  function remapInkAnchors(strokes, map) {
+    let changed = false;
+    for (const st of strokes) {
+      const from = st.anchor?.pageIndex;
+      if (typeof from !== "number") continue;
+      const to = map[from];
+      if (typeof to === "number" && to >= 0 && to !== from) {
+        st.anchor = { ...st.anchor, pageIndex: to };
+        changed = true;
+      }
+    }
+    return changed;
+  }
   function resolveStrokeAnchor(stroke, docText = "", lineHeight = DEFAULT_LINE_HEIGHT) {
     const points = stroke && Array.isArray(stroke.points) ? stroke.points : [];
     const anchor = stroke?.anchor;
@@ -25088,6 +25101,9 @@ ${clean(nextLineText)}`;
       }
       return changed;
     }
+    function remapPageInk(map) {
+      if (remapInkAnchors(inkDoc.strokes, map)) schedulePost();
+    }
     function setInkText(id2, text) {
       const strokes = ocrSent.get(id2) || inkDoc.strokes.filter((st) => st.ocr && st.ocr.g === id2);
       ocrSent.delete(id2);
@@ -25284,6 +25300,7 @@ ${clean(nextLineText)}`;
       getPaletteColors: () => [...paletteColors],
       setInkText,
       removePageInk,
+      remapPageInk,
       findInk,
       markInk,
       recognizeNow,
@@ -27724,7 +27741,7 @@ ${t2.text}`).includes(q)) return true;
     };
   }
 
-  // ../../../../editor/node_modules/@codemirror/autocomplete/dist/index.js
+  // node_modules/@codemirror/autocomplete/dist/index.js
   var CompletionContext = class {
     /**
     Create a new completion context. (Mostly useful for testing
@@ -28189,7 +28206,7 @@ ${t2.text}`).includes(q)) return true;
   closedBracket.endSide = -1;
   var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
 
-  // ../../../../editor/node_modules/@lezer/markdown/dist/index.js
+  // node_modules/@lezer/markdown/dist/index.js
   var CompositeBlock = class _CompositeBlock {
     static create(type, value, from, parentHash, end) {
       let hash2 = parentHash + (parentHash << 8) + type + (value << 4) | 0;
@@ -30277,7 +30294,7 @@ ${t2.text}`).includes(q)) return true;
     }]
   };
 
-  // ../../../../editor/node_modules/@lezer/lr/dist/index.js
+  // node_modules/@lezer/lr/dist/index.js
   var Stack = class _Stack {
     /**
     @internal
@@ -32055,7 +32072,7 @@ ${t2.text}`).includes(q)) return true;
     return spec.get;
   }
 
-  // ../../../../editor/node_modules/@lezer/html/dist/index.js
+  // node_modules/@lezer/html/dist/index.js
   var scriptText = 55;
   var StartCloseScriptTag = 1;
   var styleText = 56;
@@ -32399,7 +32416,7 @@ ${t2.text}`).includes(q)) return true;
     });
   }
 
-  // ../../../../editor/node_modules/@lezer/css/dist/index.js
+  // node_modules/@lezer/css/dist/index.js
   var descendantOp = 148;
   var Unit = 1;
   var identifier = 149;
@@ -32579,7 +32596,7 @@ ${t2.text}`).includes(q)) return true;
     tokenPrec: 2433
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-css/dist/index.js
+  // node_modules/@codemirror/lang-css/dist/index.js
   var _properties = null;
   function properties() {
     if (!_properties && typeof document == "object" && document.body) {
@@ -33440,7 +33457,7 @@ ${t2.text}`).includes(q)) return true;
     return new LanguageSupport(cssLanguage, cssLanguage.data.of({ autocomplete: cssCompletionSource }));
   }
 
-  // ../../../../editor/node_modules/@lezer/javascript/dist/index.js
+  // node_modules/@lezer/javascript/dist/index.js
   var noSemi = 317;
   var noSemiType = 318;
   var incdec = 1;
@@ -33652,7 +33669,7 @@ ${t2.text}`).includes(q)) return true;
     tokenPrec: 15205
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-javascript/dist/index.js
+  // node_modules/@codemirror/lang-javascript/dist/index.js
   var snippets = [
     /* @__PURE__ */ snippetCompletion("function ${name}(${params}) {\n	${}\n}", {
       label: "function",
@@ -33964,7 +33981,7 @@ ${t2.text}`).includes(q)) return true;
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-html/dist/index.js
+  // node_modules/@codemirror/lang-html/dist/index.js
   var Targets = ["_blank", "_self", "_top", "_parent"];
   var Charsets = ["ascii", "utf-8", "utf-16", "latin1", "latin1"];
   var Methods = ["get", "post", "put", "delete"];
@@ -34704,7 +34721,7 @@ ${t2.text}`).includes(q)) return true;
     return true;
   });
 
-  // ../../../../editor/node_modules/@codemirror/lang-markdown/dist/index.js
+  // node_modules/@codemirror/lang-markdown/dist/index.js
   var data = /* @__PURE__ */ defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
   var headingProp = /* @__PURE__ */ new NodeProp();
   var commonmark = /* @__PURE__ */ parser.configure({
@@ -35125,7 +35142,7 @@ ${t2.text}`).includes(q)) return true;
     }
   });
 
-  // ../../../../editor/node_modules/@codemirror/search/dist/index.js
+  // node_modules/@codemirror/search/dist/index.js
   var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
   var SearchCursor = class {
     /**
@@ -38674,6 +38691,15 @@ ${t2.text}`).includes(q)) return true;
   // src/pagemode.js
   var setPageMode = StateEffect.define();
   var setPageIndex = StateEffect.define();
+  var remapPages = StateEffect.define();
+  function invertPageMap(map) {
+    const out = [];
+    map.forEach((to, from) => {
+      if (to >= 0) out[to] = from;
+    });
+    return out;
+  }
+  var remapPagesHistory = invertedEffects.of((tr) => tr.effects.filter((e) => e.is(remapPages)).map((e) => remapPages.of(invertPageMap(e.value))));
   var viewMemory = /* @__PURE__ */ new WeakMap();
   function getMemory(view) {
     if (!view || typeof view !== "object") {
@@ -38890,7 +38916,11 @@ ${t2.text}`).includes(q)) return true;
     view.dispatch({
       changes: { from: delFrom, to: delTo, insert: "" },
       selection: { anchor: nextAnchor },
-      effects: [setPageIndex.of(nextIndex), EditorView.scrollIntoView(nextAnchor, { y: "start", yMargin: 8 })],
+      effects: [
+        remapPages.of(pages.map((_, k) => k < i ? k : k === i ? -1 : k - 1)),
+        setPageIndex.of(nextIndex),
+        EditorView.scrollIntoView(nextAnchor, { y: "start", yMargin: 8 })
+      ],
       userEvent: "delete.page"
     });
     if (view.scrollDOM) {
@@ -38922,7 +38952,11 @@ ${t2.text}`).includes(q)) return true;
     view.dispatch({
       changes: { from: 0, to: 0, insert: dateHead + PAGE_JOINER },
       selection: { anchor: dateHead.length },
-      effects: [setPageIndex.of(0), EditorView.scrollIntoView(0, { y: "start", yMargin: 8 })],
+      effects: [
+        remapPages.of(pages.map((_, k) => k + 1)),
+        setPageIndex.of(0),
+        EditorView.scrollIntoView(0, { y: "start", yMargin: 8 })
+      ],
       userEvent: "input.page"
     });
     if (view.scrollDOM) {
@@ -39042,7 +39076,11 @@ ${t2.text}`).includes(q)) return true;
     });
     mem.cursors = cursors;
     mem.scrolls = scrolls;
-    view.dispatch({ changes: { from, to: end, insert: insert2 }, userEvent: "move.page" });
+    const pageMap = [];
+    order.forEach((old, dst) => {
+      pageMap[old] = dst;
+    });
+    view.dispatch({ changes: { from, to: end, insert: insert2 }, effects: remapPages.of(pageMap), userEvent: "move.page" });
     showPage(view, to, { preserveMemory: false });
     postHaptic("snap", globalObj);
     if (typeof onSnap === "function") onSnap(to);
@@ -39158,6 +39196,7 @@ ${t2.text}`).includes(q)) return true;
   });
   function pageModeExtension({ onSnap = null, onBounce = null } = {}) {
     return [
+      remapPagesHistory,
       pageModeField,
       narrowWholeSelection,
       Prec.highest(keymap.of([
@@ -44114,6 +44153,9 @@ ${t2.text}`).includes(q)) return true;
         }
         if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
         if (matterMenu && update.selectionSet) matterMenu.selectionChanged();
+        if (inkLayer) {
+          for (const tr of update.transactions) for (const e of tr.effects) if (e.is(remapPages)) inkLayer.remapPageInk(e.value);
+        }
         if (update.docChanged || update.transactions.some((tr) => tr.effects.length > 0)) {
           renderOutline();
           if (inkLayer) inkLayer.relayout();

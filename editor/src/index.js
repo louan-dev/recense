@@ -44,6 +44,7 @@ import {
   openNewWindowOnLeft,
   deleteEmptyWindow,
   deletePage,
+  remapPages,
   computeEffectiveDrag,
   goToPage,
   newPage,
@@ -791,6 +792,8 @@ export function mountEditor(root = document.body, initialDoc = '') {
       }
       if (recense && (update.selectionSet || update.focusChanged)) recense.updateCard();
       if (matterMenu && update.selectionSet) matterMenu.selectionChanged();
+      // T-0188 · ink follows its page before relayout re-resolves anchors.
+      if (inkLayer) for (const tr of update.transactions) for (const e of tr.effects) if (e.is(remapPages)) inkLayer.remapPageInk(e.value);
       if (update.docChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         renderOutline();
         if (inkLayer) inkLayer.relayout();

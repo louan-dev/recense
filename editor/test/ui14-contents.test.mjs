@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { EditorState } from '@codemirror/state';
 import { history, undo, redo } from '@codemirror/commands';
 import { pageThumbs, filterThumbs, markHits, timedEntries, clockOf, stepCols, MIN_COLS, MAX_COLS } from '../src/contents.js';
-import { pageModeExtension, setPageMode, setPageIndex, deletePage, pageCount, currentPage } from '../src/pagemode.js';
+import { pageModeExtension, setPageMode, setPageIndex, deletePage, movePage, remapPages, pageCount, currentPage } from '../src/pagemode.js';
+import { anchorStrokeToDoc, resolveStrokeAnchor, remapInkAnchors } from '../src/ink.js';
 import { executeVoiceMove } from '../src/gestures.js';
 import { PAGE_JOINER } from '../src/pages.js';
 import { makeQuote } from '../src/matter.js';
@@ -154,4 +155,46 @@ test('UI-14 E3/C1: the end card opens the Overview from the newest page and from
       await page.waitForSelector('.rc-cm', { state: 'hidden', timeout: 3000 });
     }
   } finally { await browser.close(); server.close(); }
+});
+
+// T-0188 · repeated lines (every new page opens with a date) must not pull ink to the first matching page.
+function inkOn(doc, page, line) {
+  for (let l = 0; l < 8; l++) {
+    const st = { id: 's', points: [[10, l * 24 + 5, 0.5, 0], [20, l * 24 + 5, 0.5, 1]] };
+    anchorStrokeToDoc(st, doc, 24, page);
+    if (st.anchor.lineText === line) return st;
+  }
+  throw new Error('no line');
+}
+function tracked(doc, st) {
+  const v = view(doc, 0);
+  const inner = v.dispatch;
+  v.dispatch = spec => {
+    inner.call(v, spec);
+    for (const e of [spec.effects ?? []].flat()) if (e.is(remapPages)) remapInkAnchors([st], e.value);
+  };
+  return v;
+}
+const pageOf = (st, v) => resolveStrokeAnchor(st, v.state.doc.toString(), 24).pageIndex;
+
+test('T-0188: ink stays on its page through delete, undo and redo with a repeated line', () => {
+  const doc = ['d', 'x', 'd', 'note'].join(PAGE_JOINER);
+  const st = inkOn(doc, 2, 'd');
+  const v = tracked(doc, st);
+  assert.equal(deletePage(v, 1), true);
+  assert.equal(pageOf(st, v), 1);
+  undo({ state: v.state, dispatch: s => v.dispatch(s) });
+  assert.equal(pageOf(st, v), 2);
+  redo({ state: v.state, dispatch: s => v.dispatch(s) });
+  assert.equal(pageOf(st, v), 1);
+});
+
+test('T-0188: ink follows a moved page, and undo brings it back', () => {
+  const doc = ['same', 'same', 'other'].join(PAGE_JOINER);
+  const st = inkOn(doc, 0, 'same');
+  const v = tracked(doc, st);
+  assert.equal(movePage(v, 0, 2), true);
+  assert.equal(pageOf(st, v), 2);
+  undo({ state: v.state, dispatch: s => v.dispatch(s) });
+  assert.equal(pageOf(st, v), 0);
 });
