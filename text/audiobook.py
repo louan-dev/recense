@@ -52,6 +52,8 @@ for i, ch in enumerate(chapters):
     audio = []
     for p in ch["paras"]:
         for c in chunks(p):
+            if not re.search(r"\w", c.replace("_", "")):
+                continue  # nothing to say (a form blank "____", a rule line); Kokoro raises on it
             a, sr = k.create(c, voice=voice, speed=1.0, lang="en-us")
             audio.append(a.astype(np.float32))
         audio.append(gap_para)

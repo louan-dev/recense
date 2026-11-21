@@ -57,7 +57,8 @@ import os, json
 kd, vpy = os.environ.get("KOKORO_DIR"), os.environ.get("VOICE_PY")
 if kd and vpy:
     with tempfile.TemporaryDirectory() as d:
-        pathlib.Path(d, "speech.md").write_text("## nineteen oh-one Protest\n\nA short line.\n\n## nineteen oh-two Who\n\nAnother.\n")
+        # "______" (a form blank) has nothing to say: it must be skipped, not crash the render (2026-11-20, ch.1300)
+        pathlib.Path(d, "speech.md").write_text("## nineteen oh-one Protest\n\nA short line.\n\n______________________\n\n## nineteen oh-two Who\n\nAnother.\n")
         pathlib.Path(d, "clean.md").write_text("## 1901 Protest\n\nA short line.\n\n## 1902 Who\n\nAnother.\n")
         out = pathlib.Path(d, "t.m4b")
         subprocess.run([vpy, "-I", str(pathlib.Path(__file__).parent / "audiobook.py"), str(pathlib.Path(d, "speech.md")), str(out), "T"],
