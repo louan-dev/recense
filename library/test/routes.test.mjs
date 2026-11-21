@@ -138,7 +138,11 @@ await test("Main is 404 without a token, says who a signed-in stranger is, and 2
   // let through by Access with another email: told so, with a way to switch; the API stays 404
   const w = await call("/main", { as: "stranger" });
   assert.equal(w.status, 403);
-  assert.match(await w.text(), /cdn-cgi\/access\/logout/);
+  const wt = await w.text();
+  assert.match(wt, /cdn-cgi\/access\/logout/);
+  // Regression guard: the wrong-account page was a dead end (sign out, sign in, same page). It leads first to pairing, which needs no email.
+  assert.match(wt, /<a id="pair" href="[^"]*\/pair">Pair this device<\/a>/);
+  assert.ok(wt.indexOf('id="pair"') < wt.indexOf("cdn-cgi/access/logout"), "pairing comes before sign-out");
   assert.equal((await call("/main/api/whoami", { as: "stranger" })).status, 404);
   const r = await call("/main", { as: "owner" });
   assert.equal(r.status, 200);

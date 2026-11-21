@@ -49,7 +49,7 @@ export default {
         // Access guards /main/…; a bare /main (no token yet) goes there, so it gets the sign-in too
         if (path === "/main" && method === "GET") return Response.redirect(url.origin + "/main/" + url.search, 302);
         const who = method === "GET" && !path.startsWith("/main/api/") ? await signedInAs(req, env) : null;
-        return who ? wrongAccount(who) : notice("Link not found", 404);
+        return who ? wrongAccount(who, env) : notice("Link not found", 404);
       }
       return withRenewal(req, env, await mainRoute(req, env, ctx, url, path, method));
     }
@@ -178,7 +178,8 @@ async function mainRoute(req, env, ctx, url, path, method) {
 }
 
 // Signed in to Access, but not as the owner: say who, and offer a clean sign-out to try again.
-function wrongAccount(email) {
+function wrongAccount(email, env) {
+  const pair = String(env.DEVICE_ORIGIN || "") + "/pair";
   return page(`<!doctype html>
 <html lang="en">
 <head>
@@ -198,9 +199,9 @@ a{color:#0a84ff;text-decoration:none}
 <main>
 <h1 style="font-size:24px">This account can’t open Main</h1>
 <p>You’re signed in as <b style="color:#fff">${esc(email)}</b>.</p>
-<p><a href="/cdn-cgi/access/logout" target="_blank" rel="noopener">1. Sign out</a></p>
-<p><a href="/main/">2. Sign in again as the owner</a></p>
-<p style="font-size:13px">After signing out, come back here and tap 2 (going to the Cloudflare page on its own shows “App Launcher is not configured”).</p>
+<p><a id="pair" href="${esc(pair)}">Pair this device</a></p>
+<p style="font-size:13px">Pairing needs no email: ask the Mac for a code (Gallery › Devices › Pair a Device).</p>
+<p style="font-size:13px"><a href="/cdn-cgi/access/logout" target="_blank" rel="noopener">Sign out</a>, then <a href="/main/">sign in with another account</a>.</p>
 </main>
 </body>
 </html>`, 403);
@@ -229,6 +230,7 @@ body{margin:0;color:#fff;font:15px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro
     <h1 style="font-size:28px; font-weight:600; margin-bottom:8px;">Chau's Gallery</h1>
     <p style="color:var(--mut); margin-bottom:24px;">Explore the main collection.</p>
     <a href="/main/" class="pill">Sign In</a>
+    <p style="margin-top:20px"><a id="pair" href="/pair" style="color:var(--blue);text-decoration:none">Pair this device</a></p>
   </div>
 </main>
 </body>

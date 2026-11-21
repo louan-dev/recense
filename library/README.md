@@ -336,7 +336,7 @@ Secrets (set once with `npx wrangler secret put <NAME>`):
 | Name | Value |
 |---|---|
 | `ACCESS_AUD` | The Application Audience tag of the Access application "Gallery Main" |
-| `OWNER_EMAIL` | Your email, the only one allowed into Main |
+| `OWNER_EMAIL` | Optional; leave it unset (the Access policy and pairing decide). Set, it limits Access sign-ins to these addresses and every other account is shown the way to pair |
 | `SERVICE_CLIENT_ID` | The client IDs of the Access service tokens (one per device) |
 
 Cloudflare settings outside this folder:

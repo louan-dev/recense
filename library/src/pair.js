@@ -139,11 +139,14 @@ mint();
 
 export function claimPage(msg = "", status = 200, env = {}, url = null) {
   // the phone pairs on the device address (no Access in front); send it there
-  if (url && env.DEVICE_ORIGIN && !env.DEVICE_HOST && url.origin !== env.DEVICE_ORIGIN) return Response.redirect(env.DEVICE_ORIGIN + "/pair", 302);
+  if (url && env.DEVICE_ORIGIN && !env.DEVICE_HOST && url.origin !== env.DEVICE_ORIGIN) return Response.redirect(env.DEVICE_ORIGIN + "/pair" + url.search, 302);
+  // /pair?code=123456 (the Mac's own script opens it) fills the box; it still takes one tap on Pair, and no GET ever claims
+  const c = url ? url.searchParams.get("code") : "";
+  const prefill = /^\d{6}$/.test(c || "") ? c : "";
   return page(shell("Pair this device", `
 ${msg ? `<p class="msg">${esc(msg)}</p>` : ""}
 <form method="post" action="/pair" onsubmit="if(this.dataset.sent)return false;this.dataset.sent=1;this.querySelector('button').disabled=true">
-<p><label>Code from your Mac<br><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus></label></p>
+<p><label>Code from your Mac<br><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" value="${esc(prefill)}" required autofocus></label></p>
 <p><label>Name for this device<br><input name="name" maxlength="40" placeholder="iPhone"></label></p>
 <p><button>Pair</button></p>
 </form>`), status);

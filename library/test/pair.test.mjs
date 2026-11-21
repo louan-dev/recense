@@ -33,7 +33,7 @@ function make(bindings) {
     modules: [{ type: "ESModule", path: BUILD + "worker.js" }, ...textModules.map((f) => ({ type: "Text", path: BUILD + f }))],
     compatibilityDate: "2026-08-01",
     r2Buckets: { PUBLIC: "p", MAIN: "m", KEEP: "k", TMP: "t", ARCHIVE: "a" },
-    bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, ...bindings },
+    bindings: { ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, OWNER_EMAIL: OWNER, SERVICE_CLIENT_ID: "mac-id.access", ...bindings },
     outboundService: (r) => new URL(r.url).pathname === "/cdn-cgi/access/certs" ? Response.json({ keys: [jwk] }) : new Response("offline", { status: 503 }),
   });
 }
@@ -42,6 +42,7 @@ const mf = make({ PAIR_SECRET: SECRET });
 const MAIN = await mf.getR2Bucket("MAIN");
 const go = (path, init = {}) => mf.dispatchFetch(ORIGIN + path, { redirect: "manual", ...init });
 const asOwner = (path, init = {}) => go(path, { ...init, headers: { "cf-access-jwt-assertion": ownerJwt, origin: ORIGIN, ...(init.headers || {}) } });
+const tokenJwt = await jwt({ common_name: "mac-id.access" });
 const mint = async () => (await (await asOwner("/main/api/pair", { method: "POST" })).json()).code;
 const claim = (code, name = "iPhone") => go("/pair", { method: "POST", headers: { origin: ORIGIN }, body: new URLSearchParams({ code, name }) });
 const cookieOf = (r) => (r.headers.get("set-cookie") || "").split(";")[0];
@@ -53,6 +54,18 @@ const ok = (name) => console.log("ok " + ++n + " " + name);
 assert.equal((await go("/main/api/pair", { method: "POST", headers: { origin: ORIGIN } })).status, 404); ok("mint needs the owner");
 // the claim page is public
 assert.equal((await go("/pair")).status, 200); ok("claim page is public");
+{ const html = await (await go("/pair?code=123456")).text();
+  assert.match(html, /name="code"[^>]*value="123456"/); ok("?code= fills the box");
+  assert.doesNotMatch(await (await go("/pair?code=12<script>")).text(), /value="12/); ok("a bad ?code= is ignored"); }
+
+// the Mac mints with its service token alone (chau/pair-this-mac.zsh): no email, no browser sign-in
+{ const r = await go("/main/api/pair", { method: "POST", headers: { "cf-access-jwt-assertion": tokenJwt, "x-gallery": "1" } });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.match(j.code, /^\d{6}$/);
+  assert.equal((await claim(j.code, "Mac")).status, 200); ok("service token mints a code that a device claims (no email)"); }
+const strangerToken = await jwt({ common_name: "not-mine.access" });
+assert.equal((await go("/main/api/pair", { method: "POST", headers: { "cf-access-jwt-assertion": strangerToken, "x-gallery": "1" } })).status, 404); ok("another service token cannot mint");
 
 // happy path
 let code = await mint();
